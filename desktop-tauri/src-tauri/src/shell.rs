@@ -8,7 +8,6 @@
 //! Pure logic lives in `agentrq_desktop_core` (`links`, `deep_link`, `tray`, `notifications`, `auth`).
 //! This module connects that pure core to Tauri's plugins and window lifecycle.
 
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -32,10 +31,13 @@ use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_opener::OpenerExt;
 
+use crate::notify::Notifier;
+
 /// State for the desktop shell (unread badges, recent workspaces, deep link pending route).
 pub struct ShellState<R: Runtime = tauri::Wry> {
     pub(crate) pending_route: Mutex<PendingRoute>,
-    pub(crate) unread_count: AtomicI64,
+    /// The Notifier's count as shown, and its generation.
+    unread: Mutex<(u64, i64)>,
     pub(crate) recent_workspaces: Mutex<RecentWorkspaces>,
     _runtime: std::marker::PhantomData<fn() -> R>,
 }
@@ -44,7 +46,7 @@ impl<R: Runtime> Default for ShellState<R> {
     fn default() -> Self {
         Self {
             pending_route: Mutex::new(PendingRoute::new()),
-            unread_count: AtomicI64::new(0),
+            unread: Mutex::new((0, 0)),
             recent_workspaces: Mutex::new(RecentWorkspaces::default()),
             _runtime: std::marker::PhantomData,
         }
@@ -96,10 +98,7 @@ impl<R: Runtime> ShellState<R> {
     /// Track page load lifecycle so pending routes are delivered once the renderer is ready.
     pub fn on_page_load(&self, app: &AppHandle<R>, event: &PageLoadEvent) {
         match event {
-            PageLoadEvent::Started => {
-                let mut guard = self.pending_route.lock().unwrap();
-                guard.on_page_load_started();
-            }
+            PageLoadEvent::Started => self.page_leaving(),
             PageLoadEvent::Finished => {
                 let to_emit = {
                     let mut guard = self.pending_route.lock().unwrap();
@@ -110,6 +109,12 @@ impl<R: Runtime> ShellState<R> {
                 }
             }
         }
+    }
+
+    /// The page is about to go: a route is held from now on, not sent to a
+    /// page that will never read it.
+    pub fn page_leaving(&self) {
+        self.pending_route.lock().unwrap().on_page_load_started();
     }
 
     /// When renderer subscribes to `agentrq:navigate`, re-emit pending route if waiting.
@@ -123,17 +128,25 @@ impl<R: Runtime> ShellState<R> {
         }
     }
 
-    /// Update the unread count, refreshing the tray and badge.
-    #[allow(dead_code)]
-    pub fn set_unread_count(&self, app: &AppHandle<R>, count: i64) {
-        self.unread_count.store(count, Ordering::SeqCst);
+    /// Show the Notifier's unread count in the tray and badge. Counts arrive
+    /// after the Notifier's lock is dropped, so in any order: one older than
+    /// the count shown is dropped, and the tray and badge show the kept count,
+    /// so the last of them to run shows the newest.
+    pub fn set_unread_count(&self, app: &AppHandle<R>, count: i64, generation: u64) {
+        {
+            let mut shown = self.unread.lock().unwrap();
+            if generation < shown.0 {
+                return;
+            }
+            *shown = (generation, count);
+        }
         self.refresh_tray(app);
-        self.set_badge_count(app, count);
+        self.set_badge_count(app, self.unread_count());
     }
 
-    /// Clear unread count, updating badge and tray.
-    pub fn clear_unread(&self, app: &AppHandle<R>) {
-        self.set_unread_count(app, 0);
+    /// The unread count shown.
+    pub fn unread_count(&self) -> i64 {
+        self.unread.lock().unwrap().1
     }
 
     /// Set the application badge count (macOS/Linux: dock badge, Windows: taskbar overlay).
@@ -174,7 +187,6 @@ impl<R: Runtime> ShellState<R> {
     }
 
     /// Touch a recent workspace.
-    #[allow(dead_code)]
     pub fn touch_recent_workspace(&self, app: &AppHandle<R>, id: &str, name: Option<&str>) {
         self.recent_workspaces.lock().unwrap().touch(id, name);
         self.refresh_tray(app);
@@ -182,7 +194,7 @@ impl<R: Runtime> ShellState<R> {
 
     /// Re-render the tray menu and tooltip with the latest unread count and recent workspaces.
     pub fn refresh_tray(&self, app: &AppHandle<R>) {
-        let unread = self.unread_count.load(Ordering::SeqCst);
+        let unread = self.unread_count();
         let workspaces = self.recent_workspaces.lock().unwrap().list().to_vec();
         crate::app_menu::update_tray(app, &workspaces, unread);
     }
@@ -200,7 +212,7 @@ pub fn focus_main_window<R: Runtime>(app: &AppHandle<R>) -> Option<tauri::Window
 /// Re-apply badge count when a main window is reopened or rebuilt.
 pub fn reapply_badge<R: Runtime>(app: &AppHandle<R>) {
     if let Some(state) = app.try_state::<ShellState<R>>() {
-        let count = state.unread_count.load(Ordering::SeqCst);
+        let count = state.unread_count();
         state.set_badge_count(app, count);
     }
 }
@@ -289,7 +301,7 @@ pub fn dispatch_new_window<R: Runtime>(
 pub(crate) fn handle_tray_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     if let Some(state) = app.try_state::<ShellState<R>>() {
         let template = {
-            let unread = state.unread_count.load(Ordering::SeqCst);
+            let unread = state.unread_count();
             let workspaces = state.recent_workspaces.lock().unwrap().list().to_vec();
             build_tray_menu_template(&workspaces, unread)
         };
@@ -309,10 +321,7 @@ pub(crate) fn handle_tray_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
                     self.state.navigate(self.app, &format!("/workspaces/{id}"));
                 }
                 fn quit(&mut self) {
-                    #[cfg(not(test))]
-                    self.app.exit(0);
-                    #[cfg(test)]
-                    let _ = self.app;
+                    crate::app_menu::quit(self.app);
                 }
             }
             let mut actions = ShellTrayActions {
@@ -332,12 +341,13 @@ pub(crate) fn handle_second_instance<R: Runtime>(app: &AppHandle<R>, argv: &[Str
     }
 }
 
-/// Handle window focus events for badge and unread clearing.
+/// Looking at the app answers "is there anything new". The count is the
+/// Notifier's, which publishes the cleared badge and tray.
 pub(crate) fn handle_window_event<R: Runtime>(window: &tauri::Window<R>, event: &WindowEvent) {
     if window.label() == "main" {
         if let WindowEvent::Focused(true) = event {
-            if let Some(state) = window.app_handle().try_state::<ShellState<R>>() {
-                state.clear_unread(window.app_handle());
+            if let Some(notifier) = window.app_handle().try_state::<Arc<Notifier>>() {
+                notifier.clear_unread();
             }
         }
     }
@@ -382,6 +392,14 @@ pub(crate) fn check_first_launch_route<R: Runtime>(
     }
 }
 
+/// The main window is about to be replaced or sent elsewhere. Its next
+/// `Started` comes too late: a click in between would go to the old page.
+pub fn page_leaving<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(state) = app.try_state::<ShellState<R>>() {
+        state.page_leaving();
+    }
+}
+
 /// Signals that the renderer's navigation listener is subscribed and ready.
 pub fn navigation_ready<R: Runtime>(app: &AppHandle<R>) {
     if let Some(state) = app.try_state::<ShellState<R>>() {
@@ -404,6 +422,8 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::events::Events;
+    use crate::notify::tests::{reply_event, FakeDesk};
     use std::sync::Arc;
     use tauri::Listener;
 
@@ -587,7 +607,7 @@ mod tests {
         handle_shortcut_event(&handle, ShortcutState::Released);
 
         // Badge without main window
-        state.set_unread_count(&handle, 1);
+        state.set_unread_count(&handle, 1, 1);
         reapply_badge(&handle);
 
         // Window focus, unread count, badge and window event
@@ -597,13 +617,23 @@ mod tests {
         let _ = win.minimize();
         assert!(focus_main_window(&handle).is_some());
 
-        state.set_unread_count(&handle, 5);
-        assert_eq!(state.unread_count.load(Ordering::SeqCst), 5);
+        state.set_unread_count(&handle, 5, 2);
+        assert_eq!(state.unread_count(), 5);
         reapply_badge(&handle);
 
+        // Focus clears the Notifier's count, which the Desk then shows.
+        let desk = Arc::new(FakeDesk::default());
+        let dir = tempfile::tempdir().unwrap();
+        let notifier = Arc::new(Notifier::new(
+            Arc::new(crate::network::tests::network(dir.path(), "")),
+            desk.clone(),
+        ));
+        handle.manage(notifier.clone());
+        notifier.on_event(&reply_event("t1", "agent", "m1"));
         handle_window_event(&win.as_ref().window(), &WindowEvent::Focused(true));
-        assert_eq!(state.unread_count.load(Ordering::SeqCst), 0);
         handle_window_event(&win.as_ref().window(), &WindowEvent::Focused(false));
+        assert_eq!(*desk.unread.lock().unwrap(), [1, 0]);
+        state.set_unread_count(&handle, 0, 3);
 
         // Readiness signal via navigation_ready
         navigation_ready(&handle);
@@ -653,6 +683,7 @@ mod tests {
         check_first_launch_route(&handle, &["app".into()], None);
         handle_tray_menu_event(&handle, "open");
         on_page_load(&handle, &PageLoadEvent::Started);
+        page_leaving(&handle);
         reapply_badge(&handle);
     }
 
@@ -812,5 +843,62 @@ mod tests {
             *delivered.lock().unwrap(),
             vec!["\"/workspaces/subscribed-first\""]
         );
+    }
+
+    #[test]
+    fn holds_a_click_made_while_the_window_is_replaced_until_the_new_page_is_ready() {
+        let (_app, handle) = test_app();
+        init(&handle).unwrap();
+        let state = handle.state::<ShellState<tauri::test::MockRuntime>>();
+        let delivered = Arc::new(Mutex::new(Vec::new()));
+        let delivered_clone = delivered.clone();
+        handle.listen("agentrq:navigate", move |event| {
+            delivered_clone
+                .lock()
+                .unwrap()
+                .push(event.payload().to_string());
+        });
+        on_page_load(&handle, &PageLoadEvent::Finished);
+        navigation_ready(&handle);
+
+        // A profile switch or a reload: the old page is still the last one
+        // that loaded, but it is going.
+        page_leaving(&handle);
+        state.navigate(&handle, "/workspaces/w1/tasks/t1");
+        assert!(delivered.lock().unwrap().is_empty());
+
+        // The new page loads, then subscribes.
+        on_page_load(&handle, &PageLoadEvent::Started);
+        on_page_load(&handle, &PageLoadEvent::Finished);
+        assert!(delivered.lock().unwrap().is_empty());
+        navigation_ready(&handle);
+        on_page_load(&handle, &PageLoadEvent::Finished);
+        navigation_ready(&handle);
+        assert_eq!(
+            *delivered.lock().unwrap(),
+            vec!["\"/workspaces/w1/tasks/t1\""]
+        );
+    }
+
+    #[test]
+    fn shows_the_newest_count_whatever_order_the_counts_arrive_in() {
+        let (_app, handle) = test_app();
+        init(&handle).unwrap();
+        let state = handle.state::<ShellState<tauri::test::MockRuntime>>();
+        let desk = Arc::new(FakeDesk::default());
+        let dir = tempfile::tempdir().unwrap();
+        let notifier = Notifier::new(
+            Arc::new(crate::network::tests::network(dir.path(), "")),
+            desk.clone(),
+        );
+        // A reply counts 1 and focus clears it, but the 1 is shown last.
+        notifier.on_event(&reply_event("t1", "agent", "m1"));
+        notifier.clear_unread();
+        let counts = desk.unread.lock().unwrap().clone();
+        let generations = desk.generations.lock().unwrap().clone();
+        for (count, generation) in counts.into_iter().zip(generations).rev() {
+            state.set_unread_count(&handle, count.into(), generation);
+        }
+        assert_eq!(state.unread_count(), 0);
     }
 }

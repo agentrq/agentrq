@@ -162,6 +162,18 @@
 - **On macOS `ExitRequested { code: None }` must `prevent_exit()`**, or closing the
   window quits and the Dock's reopen never runs. Cmd+Q and Windows' Exit raise only
   `Exit`, so the state is saved there too.
+- **The unread count is the Notifier's (`notify.rs`); `ShellState` only shows it**,
+  and a notification's click goes through `ShellState::navigate`, which holds the
+  route through a reload. Never call the `Desk` with a Notifier lock or `busy` held:
+  a tray update waits on the main thread, whose focus handler takes the count's lock.
+  So counts and mute lists arrive in any order: each is numbered under its lock, and
+  an older one is dropped. Call `shell::page_leaving` before `main` is replaced or
+  sent elsewhere; its `Started` comes too late, and a click in between is lost.
 - **`AGENTRQ_E2E_INIT_SCRIPT` is CI's**: a script the main webview runs first, which seeds
   the theme until WP4 lets the renderer reach the app (`test/e2e/`). Only a debug build or
   `--features e2e` reads it; a release must not run an environment's script in the webview.
+- **The verify scripts see one profile's window only.** WebKitWebDriver automates the web
+  context it launched with, so after `profiles.add()` the session has no window; a save
+  or switch rebuilds `main` under the *same* handle, so `replaceWindow` tells old from new
+  by a marker. A check that follows a rebuild must wait for the new page's own state
+  (`/login`), or its first fetch goes out before the network has moved.

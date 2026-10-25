@@ -141,14 +141,23 @@ pub async fn read(
         Ok(done) => (done, true),
         Err(_) => (job.await, false),
     };
-    (done.unwrap_or_default(), in_time)
+    let cookies = done.unwrap_or_else(|error| {
+        eprintln!("[sign-in] could not read the window's cookies: {error}");
+        Vec::new()
+    });
+    (cookies, in_time)
 }
 
 /// Take `cookies` out of the webview's store, where they would sign the next
-/// sign-in straight back in. Waited for, since the window closes next and a
-/// delete sent to a closed webview is lost.
+/// sign-in straight back in. The wait covers sending the deletes, not their
+/// being done: the window's `close()` is sent after them on the same event
+/// loop, which handles them first. A close sent any other way could beat them,
+/// and the session would stay in the webview.
 pub async fn forget(webview: Arc<dyn CookieWebview>, cookies: Vec<RawCookie<'static>>) {
-    let _ = tokio::task::spawn_blocking(move || delete(&*webview, &cookies)).await;
+    let sent = tokio::task::spawn_blocking(move || delete(&*webview, &cookies)).await;
+    if let Err(error) = sent {
+        eprintln!("[sign-in] could not delete the window's cookies: {error}");
+    }
 }
 
 /// Log Out: every cookie in the profile's webview store, as Electron clears
@@ -285,6 +294,27 @@ pub(crate) mod tests {
         assert!(!in_time);
         assert_eq!(cookies.len(), 1);
         assert!(!clear(webview, deadline).await);
+    }
+
+    /// A webview whose every call fails, as one destroyed under the read does.
+    struct BrokenWebview;
+
+    impl CookieWebview for BrokenWebview {
+        fn cookies(&self) -> Vec<RawCookie<'static>> {
+            panic!("the webview is gone");
+        }
+        fn delete_cookie(&self, _cookie: RawCookie<'static>) {
+            panic!("the webview is gone");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_read_or_delete_is_logged_and_reads_as_nothing() {
+        let (cookies, in_time) = read(Arc::new(BrokenWebview), COOKIE_DEADLINE).await;
+        assert!(cookies.is_empty());
+        assert!(in_time);
+        let at = RawCookie::parse("at=a1").unwrap();
+        forget(Arc::new(BrokenWebview), vec![at]).await;
     }
 
     #[tokio::test]

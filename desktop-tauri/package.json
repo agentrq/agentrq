@@ -15,7 +15,12 @@
     "test:rust": "cargo test --manifest-path core/Cargo.toml && cargo test --manifest-path src-tauri/Cargo.toml",
     "coverage:rust": "cargo llvm-cov --manifest-path core/Cargo.toml --fail-under-lines 100 --show-missing-lines && cargo llvm-cov --manifest-path src-tauri/Cargo.toml --ignore-filename-regex \"desktop-tauri.(core.|src-tauri.src.(lib|main|test_server|chrome|app_menu|side_panel.(linux|macos|windows|handlers))\\.rs)\" --fail-under-lines 100 --show-missing-lines",
     "icons": "node scripts/generate-icons.mjs",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:debug": "npm run build:renderer && tauri build --debug --no-bundle --config scripts/verify.tauri.conf.json",
+    "verify:e2e": "node scripts/verify-e2e.mjs",
+    "verify:connection": "node scripts/verify-connection.mjs",
+    "verify:markdown-links": "node scripts/verify-markdown-links.mjs",
+    "verify": "node scripts/verify.mjs"
   },
   "author": {
     "name": "AgentRQ",

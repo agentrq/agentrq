@@ -44,6 +44,7 @@ tauri-plugin-single-instance = "2.5.4"
 tauri-plugin-global-shortcut = "2.4.1"
 # tauri-plugin-deep-link 2.6.2 fails to compile against rust-ini >= 0.21.2 (missing ParseOption fields)
 rust-ini = "=0.21.1"
+tauri-plugin-notification = "2.7.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = "2.0.2"
