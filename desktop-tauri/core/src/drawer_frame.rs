@@ -49,21 +49,30 @@ pub fn drawer_frame_document(nonce: &str, origin: &str) -> (String, String) {
 mod tests {
     use super::*;
 
+    /// Made at run time: a nonce is never a constant, not even in a test.
+    fn nonce() -> String {
+        format!("{:x}+/=", std::process::id())
+    }
+
     #[test]
     fn names_the_origin_it_is_served_from() {
+        let nonce = nonce();
         assert_eq!(
-            drawer_frame_csp("n0", "app://localhost"),
-            "default-src 'none'; script-src 'nonce-n0' app://localhost; \
-             style-src 'unsafe-inline'; img-src data: blob:; font-src data:; \
-             connect-src 'none'; form-action 'none'; base-uri 'none'"
+            drawer_frame_csp(&nonce, "app://localhost"),
+            format!(
+                "default-src 'none'; script-src 'nonce-{nonce}' app://localhost; \
+                 style-src 'unsafe-inline'; img-src data: blob:; font-src data:; \
+                 connect-src 'none'; form-action 'none'; base-uri 'none'"
+            )
         );
     }
 
     #[test]
     fn the_header_and_the_document_carry_one_nonce() {
-        let (html, csp) = drawer_frame_document("abc+/=", "http://app.localhost");
+        let nonce = nonce();
+        let (html, csp) = drawer_frame_document(&nonce, "http://app.localhost");
         assert!(html.contains(&format!("content=\"{csp}\"")));
-        assert!(html.contains("<script nonce=\"abc+/=\">"));
+        assert!(html.contains(&format!("<script nonce=\"{nonce}\">")));
         assert!(html.contains(&format!("font-family: {FONT};")));
         assert!(!html.contains("@@"));
         assert!(!html.contains("app://agentrq"));
