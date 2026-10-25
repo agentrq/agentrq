@@ -463,9 +463,10 @@ mod tests {
         .map(|body| body.deserialize().unwrap())
     }
 
-    /// Until what was spawned has run, for at most two seconds.
+    /// Until what was spawned has run, for at most ten seconds: a loaded CI
+    /// runner can take more than two to sleep out the media pair window.
     fn wait_for(done: impl Fn() -> bool) {
-        for _ in 0..200 {
+        for _ in 0..1000 {
             if done() {
                 return;
             }
@@ -734,6 +735,7 @@ mod tests {
         let other = rig.request("panel-guest-2", webview2_ask(2, PAGE));
         wait_for(|| lock(&rig.heard).len() == 2);
         let mut asked: Vec<Value> = rig.heard().into_iter().map(|(_, q)| q).collect();
+        assert_eq!(asked.len(), 2, "{asked:?}");
         asked.sort_by_key(|q| q["guestId"].as_u64());
         assert_eq!(asked[0]["permissions"], json!(["microphone"]));
         assert_eq!(asked[1]["permissions"], json!(["camera"]));
