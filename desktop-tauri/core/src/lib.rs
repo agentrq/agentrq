@@ -9,12 +9,14 @@
 
 pub mod app_icon;
 pub mod attachment_store;
+pub mod auth;
 pub mod deep_link;
 pub mod emoji_panel;
 pub mod files;
 pub mod identity;
 pub mod install_log;
 pub mod links;
+pub mod menu;
 pub mod notifications;
 pub mod profiles;
 pub mod protocol;
