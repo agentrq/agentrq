@@ -49,14 +49,18 @@ tauri-plugin-notification = "2.7.0"
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = "2.0.2"
 gtk = "0.18.2"
+cairo-rs = { version = "0.18.5", features = ["png"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std"] }
+objc2 = "0.6.5"
+block2 = "0.6.2"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSEvent", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphics"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSProcessInfo"] }
+objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"] }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39.1"
-windows = { version = "0.62.2", features = ["Win32_Foundation"] }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_UI_Shell"] }
 windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
 [dev-dependencies]

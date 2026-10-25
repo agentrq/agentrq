@@ -104,7 +104,7 @@ pub struct SidePanel<H: SidePanelHost> {
 
 impl<H: SidePanelHost> SidePanel<H> {
     /// `platform` is `process.platform`. `webview2_ext_urls` is
-    /// `cfg!(windows)`: see `normalize_ext_url`.
+    /// True on Windows (the shell's `WEBVIEW2` const): see `normalize_ext_url`.
     pub fn new(host: H, platform: &str, webview2_ext_urls: bool) -> Self {
         Self {
             host,

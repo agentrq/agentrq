@@ -43,6 +43,8 @@ name = "agentrq-tauri"
 version = "0.13.4"
 dependencies = [
  "agentrq-desktop-core",
+ "block2",
+ "cairo-rs",
  "chacha20poly1305",
  "cookie_store",
  "futures-util",
@@ -50,8 +52,10 @@ dependencies = [
  "gtk",
  "http",
  "keyring",
+ "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "objc2-web-kit",
  "reqwest",
  "rust-ini",
  "serde",

@@ -141,7 +141,7 @@ pub struct OpenTarget {
 /// The hub every Extension's `ctx.panel` is closed over.
 pub struct PanelHub<H: PanelHost> {
     host: H,
-    /// See [`normalize_ext_url`]; the shell sets it to `cfg!(windows)`.
+    /// See [`normalize_ext_url`]; the shell sets it to its `WEBVIEW2` const, true on Windows.
     webview2_ext_urls: bool,
     /// owner → the one handler its pages talk to. Never held across a call
     /// into an Extension's handler.

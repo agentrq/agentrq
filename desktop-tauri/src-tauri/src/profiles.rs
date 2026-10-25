@@ -26,6 +26,7 @@ use agentrq_desktop_core::server_config::{
     normalize_server_url, validate_server_url, ConfigFile, ConfigProbe, ProbeResponse, SaveError,
     ServerConfig, ServerConfigStore, CONFIG_FILENAME, CONFIG_PROBE_PATH, CONNECTION_LOCKED_REASON,
 };
+use agentrq_desktop_core::side_panel::child::panel_data_dir;
 use agentrq_desktop_core::side_panel::permission_store::PermissionStore;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -71,6 +72,12 @@ pub fn first_profile(base: &Path, lock: Option<&str>) -> (String, String) {
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 pub fn webview_dir(base: &Path, id: &str) -> PathBuf {
     profile_dir(base, id).join("webview")
+}
+
+/// The storage a profile's side panel guests share, never the profile's own
+/// webview's, in its folder so that it goes with the profile.
+pub fn panel_dir(base: &Path, id: &str) -> PathBuf {
+    profile_dir(base, id).join(panel_data_dir(id))
 }
 
 /// The renderer's origin for a profile. macOS gives each profile its own,
@@ -274,6 +281,10 @@ impl Profiles {
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn webview_dir(&self, id: &str) -> PathBuf {
         webview_dir(&self.base, id)
+    }
+
+    pub fn panel_dir(&self, id: &str) -> PathBuf {
+        panel_dir(&self.base, id)
     }
 
     /// Delete what removed profiles left behind: a webview that was just
@@ -1068,6 +1079,9 @@ pub(crate) mod tests {
         assert!(work.jar.adopt(&cookie, &server));
         let dir = profile_dir(rig.dir.path(), "work");
         std::fs::create_dir_all(dir.join("webview")).unwrap();
+        let panel = rig.profiles.panel_dir("work");
+        assert_eq!(panel, dir.join("panel-work"));
+        std::fs::create_dir_all(&panel).unwrap();
         let permissions = PermissionStore::new(rig.dir.path(), "work");
         permissions.set("https://a.example", "media", "allow");
         assert!(permissions.file().exists());
@@ -1075,6 +1089,7 @@ pub(crate) mod tests {
         let view = rig.profiles.remove("work").await.unwrap();
         assert_eq!(view.profiles.len(), 1);
         assert!(!dir.exists(), "jar, attachments and webview storage");
+        assert!(!panel.exists(), "the side panel's storage too");
         assert!(!permissions.file().exists());
         assert!(
             !work.jar.has("at", &server),
