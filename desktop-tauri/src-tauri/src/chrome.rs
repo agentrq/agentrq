@@ -174,10 +174,15 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             )
             .visible(false)
             .background_color(background)
-            .on_page_load(move |window, payload| {
-                if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
-                    reveal(&window, &on_load);
+            .on_page_load(move |window, payload| match payload.event() {
+                // A reload or a navigation leaves the old page's event streams
+                // running (WP2).
+                tauri::webview::PageLoadEvent::Started => {
+                    if let Some(streams) = window.try_state::<crate::event_source::Streams>() {
+                        streams.close_all();
+                    }
                 }
+                tauri::webview::PageLoadEvent::Finished => reveal(&window, &on_load),
             });
     // CI's harness (`test/e2e/theme-seed.js`): a script for the page to run
     // first. Whoever sets the variable already controls this process.

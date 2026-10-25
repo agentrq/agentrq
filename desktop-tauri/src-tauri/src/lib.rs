@@ -11,19 +11,35 @@ mod app_menu;
 mod chrome;
 mod chrome_state;
 mod commands;
+mod cookie_jar;
+mod event_source;
+mod network;
 mod panic_log;
 mod scheme;
+#[cfg(test)]
+mod test_server;
+mod upstream;
+mod vault;
 
+use std::collections::HashSet;
+use std::io;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
+use agentrq_desktop_core::server_config::{
+    connection_lock, ConfigFile, ServerConfigStore, CONFIG_FILENAME,
+};
 use agentrq_desktop_core::updater::{
     AutoUpdater, PublishedStatus, StdInstallerSpawner, Updater, UpdaterDeps, UpdaterEvent,
 };
-use scheme::Route;
 use tauri::{AppHandle, Emitter, Manager, Runtime, Url};
 use tauri_plugin_updater::UpdaterExt;
+
+use event_source::Streams;
+use network::Network;
+use scheme::{Assets, Scheme};
+use vault::{Keychain, KeychainError};
 
 /// The renderer's origin: `app://localhost`, which WebView2 spells
 /// `http://app.localhost`.
@@ -38,67 +54,90 @@ fn app_url() -> Url {
 
 /// The Vite dev server, when this is `tauri dev`. The scheme forwards to it,
 /// so dev and release share one origin.
-fn dev_url<R: Runtime>(app: &AppHandle<R>) -> Option<Url> {
-    if tauri::is_dev() {
-        app.config().build.dev_url.clone()
-    } else {
-        None
+fn dev_url<R: Runtime>(app: &AppHandle<R>) -> String {
+    match app.config().build.dev_url.clone() {
+        Some(url) if tauri::is_dev() => url.to_string(),
+        _ => String::new(),
     }
 }
 
-async fn handle<R: Runtime>(
-    app: &AppHandle<R>,
-    req: http::Request<Vec<u8>>,
-) -> http::Response<Vec<u8>> {
-    match scheme::route(req.uri().path()) {
-        Route::Proxy => scheme::proxy_pending(),
-        Route::Asset(path) => match dev_url(app) {
-            Some(dev) => from_dev_server(&dev, &req).await,
-            None => scheme::asset(
-                app.asset_resolver()
-                    .get(path)
-                    .map(|a| (a.bytes, a.mime_type)),
-            ),
-        },
+/// The bundled renderer. Tauri's own resolver falls back to `index.html` for
+/// any path, so whether a file exists is asked of the real keys.
+struct Bundled<R: Runtime> {
+    app: AppHandle<R>,
+    keys: HashSet<String>,
+}
+
+impl<R: Runtime> Assets for Bundled<R> {
+    fn exists(&self, path: &str) -> bool {
+        self.keys.contains(path)
+    }
+    fn read(&self, path: &str) -> Option<Vec<u8>> {
+        self.exists(path)
+            .then(|| self.app.asset_resolver().get(path.to_string()))
+            .flatten()
+            .map(|asset| asset.bytes)
     }
 }
 
-/// Fetches a renderer file from Vite. The deadline is a race, never only an
-/// abort (docs/agents/desktop.md).
-async fn from_dev_server(dev: &Url, req: &http::Request<Vec<u8>>) -> http::Response<Vec<u8>> {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    let client = CLIENT.get_or_init(reqwest::Client::new);
-    let path = req.uri().path_and_query().map_or("/", |p| p.as_str());
-    let Ok(url) = dev.join(path) else {
-        return status(400, "bad path");
-    };
-    let fetch = async {
-        let res = client.get(url).send().await?;
-        let code = res.status().as_u16();
-        let kind = res.headers().get("content-type").cloned();
-        Ok::<_, reqwest::Error>((code, kind, res.bytes().await?))
-    };
-    match tokio::time::timeout(Duration::from_secs(30), fetch).await {
-        Ok(Ok((code, kind, body))) => {
-            let mut res = http::Response::builder()
-                .status(code)
-                .header("cache-control", "no-store");
-            if let Some(kind) = kind {
-                res = res.header("content-type", kind.as_bytes());
-            }
-            res.body(body.to_vec())
-                .unwrap_or_else(|_| status(502, "bad answer from vite"))
+/// The key for the cookie jars, in the OS keychain.
+struct OsKeychain;
+
+impl OsKeychain {
+    fn entry() -> Result<keyring::Entry, KeychainError> {
+        keyring::Entry::new("com.agentrq.desktop.tauri", "cookie-jar-key").map_err(keychain_error)
+    }
+}
+
+/// A locked keychain, or a dismissed prompt, is a refusal this time; no store
+/// at all is a missing one. macOS and Windows always have a keychain, so any
+/// other failure there is passing too; on Linux it means there is no Secret
+/// Service.
+fn keychain_error(error: keyring::Error) -> KeychainError {
+    match error {
+        keyring::Error::NoStorageAccess(_) => KeychainError::Refused,
+        keyring::Error::NoDefaultStore | keyring::Error::NotSupportedByStore(_) => {
+            KeychainError::Missing
         }
-        Ok(Err(e)) => status(502, &format!("vite is not answering: {e}")),
-        Err(_) => status(504, "vite did not answer in time"),
+        #[cfg(any(target_os = "macos", windows))]
+        _ => KeychainError::Refused,
+        #[cfg(not(any(target_os = "macos", windows)))]
+        _ => KeychainError::Missing,
     }
 }
 
-fn status(code: u16, text: &str) -> http::Response<Vec<u8>> {
-    http::Response::builder()
-        .status(code)
-        .body(text.as_bytes().to_vec())
-        .expect("static response")
+impl Keychain for OsKeychain {
+    fn get(&self) -> Result<Option<Vec<u8>>, KeychainError> {
+        match Self::entry()?.get_secret() {
+            Ok(secret) => Ok(Some(secret)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(error) => Err(keychain_error(error)),
+        }
+    }
+    fn set(&self, secret: &[u8]) -> Result<(), KeychainError> {
+        Self::entry()?.set_secret(secret).map_err(keychain_error)
+    }
+}
+
+/// `agentrq-desktop.json`, as Electron keeps it.
+struct ConfigOnDisk(PathBuf);
+
+impl ConfigFile for ConfigOnDisk {
+    fn read_file(&self) -> io::Result<String> {
+        std::fs::read_to_string(&self.0)
+    }
+    fn write_file(&self, contents: &str) -> io::Result<()> {
+        vault::write_private(&self.0, contents.as_bytes())
+    }
+}
+
+/// The profile to start on: the stored active one, pointed at
+/// `AGENTRQ_SERVER_URL` when that pins the server. WP4 owns switching.
+fn first_profile(data_dir: &std::path::Path) -> (String, String) {
+    let store = ServerConfigStore::new(ConfigOnDisk(data_dir.join(CONFIG_FILENAME)));
+    let active = store.active();
+    let pinned = connection_lock(std::env::var("AGENTRQ_SERVER_URL").ok().as_deref());
+    (active.id, pinned.unwrap_or(active.server_url))
 }
 
 type DownloadedUpdate = Arc<Mutex<Option<(tauri_plugin_updater::Update, Vec<u8>)>>>;
@@ -309,10 +348,12 @@ fn init_updater<R: Runtime>(app: &AppHandle<R>) {
 pub fn run() {
     let app = chrome::plugins(tauri::Builder::default())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .register_asynchronous_uri_scheme_protocol("app", |ctx, req, responder| {
+        .register_asynchronous_uri_scheme_protocol("app", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
+            let webview = ctx.webview_label().to_string();
             tauri::async_runtime::spawn(async move {
-                responder.respond(handle(&app, req).await);
+                let scheme = app.state::<Scheme>();
+                responder.respond(scheme.handle(&webview, request).await);
             });
         })
         .invoke_handler(commands::handler())
@@ -320,10 +361,29 @@ pub fn run() {
             if let Ok(dir) = app.path().app_log_dir() {
                 panic_log::install(dir);
             }
-            init_updater(app.handle());
-            app.manage(chrome::Chrome::new(app.path().app_data_dir()?));
-            chrome::open_main_window(app.handle())?;
-            app_menu::install(app.handle())?;
+            let data_dir = app.path().app_data_dir()?;
+            let network = Arc::new(Network::new(
+                data_dir.clone(),
+                Arc::new(OsKeychain),
+                first_profile(&data_dir),
+            ));
+            let handle = app.handle().clone();
+            let keys = handle
+                .asset_resolver()
+                .iter()
+                .map(|(key, _)| key.to_string())
+                .collect();
+            let assets = Box::new(Bundled {
+                app: handle.clone(),
+                keys,
+            });
+            app.manage(network.clone());
+            app.manage(Streams::default());
+            app.manage(Scheme::new(network, assets, &dev_url(&handle)));
+            init_updater(&handle);
+            app.manage(chrome::Chrome::new(data_dir));
+            chrome::open_main_window(&handle)?;
+            app_menu::install(&handle)?;
             Ok(())
         })
         .build(tauri::generate_context!())

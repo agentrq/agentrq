@@ -55,6 +55,8 @@ const COMMANDS: &[&str] = &[
     "view_get",
     "view_zoom",
     "theme_set",
+    "event_source_open",
+    "event_source_close",
     "menu_key_bindings",
     "menu_run",
 ];

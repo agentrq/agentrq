@@ -9,14 +9,21 @@ const tauri = vi.hoisted(() => ({
   listen: vi.fn(),
   getTauriVersion: vi.fn(),
 }))
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke, Channel: class {} }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: tauri.listen }))
 vi.mock('@tauri-apps/api/app', () => ({ getTauriVersion: tauri.getTauriVersion }))
 
 let bridge
 beforeAll(async () => {
-  globalThis.window = {}
+  // The bridge wraps fetch and EventSource on the page's window first (net.js).
+  globalThis.window = Object.assign(new EventTarget(), {
+    location: { href: 'app://localhost/' },
+    fetch: () => {},
+    EventSource: class {},
+  })
   tauri.getTauriVersion.mockResolvedValue('2.12.5')
+  // The menu-key listener asks for its table as the bridge loads (WP5).
+  tauri.invoke.mockResolvedValue([])
   bridge = await import('../src/bridge/index.js')
 })
 
@@ -49,7 +56,8 @@ describe('platformOf', () => {
 })
 
 describe('window.agentrq', () => {
-  it('is installed on window when the module loads', () => {
+  it('is installed on window when the module loads, after the fetch and EventSource the scheme needs', () => {
+    expect(window.EventSource.CLOSED).toBe(2)
     expect(window.agentrq.isDesktop).toBe(true)
     expect(window.agentrq.platform).toBe(bridge.platformOf(navigator.userAgent))
   })

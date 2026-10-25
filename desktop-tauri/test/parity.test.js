@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 const tauri = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn(), getTauriVersion: vi.fn() }))
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke, Channel: class {} }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: tauri.listen }))
 vi.mock('@tauri-apps/api/app', () => ({ getTauriVersion: tauri.getTauriVersion }))
 
@@ -110,8 +110,15 @@ const at = (api, path) => path.split('.').reduce((o, k) => o[k], api)
 let electron
 let agentrq
 beforeAll(async () => {
-  globalThis.window = {}
+  // The bridge wraps fetch and EventSource on the page's window first (net.js).
+  globalThis.window = Object.assign(new EventTarget(), {
+    location: { href: 'app://localhost/' },
+    fetch: () => {},
+    EventSource: class {},
+  })
   tauri.getTauriVersion.mockResolvedValue('2.12.5')
+  // The menu-key listener asks for its table as the bridge loads (WP5).
+  tauri.invoke.mockResolvedValue([])
   electron = loadPreload()
   agentrq = (await import('../src/bridge/index.js')).createBridge('Mozilla/5.0 (X11; Linux x86_64)')
 })
@@ -221,14 +228,16 @@ describe('the Rust side serves what the bridge calls', () => {
 
   // The guest preload's, which WP7b gives the `agentrq-ext:` page's own webview.
   const GUEST_ONLY = ['panel_send']
-  // The bridge's own, which the key listener calls and `window.agentrq` does not
-  // expose: Electron has no such channel, its menu runs in the main process.
-  const BRIDGE_ONLY = ['menu_key_bindings', 'menu_run']
+  // The bridge's own: the key listener's menu commands (Electron's menu runs in
+  // the main process) and `EventSource` (net.js); Electron has no channel for either.
+  const BRIDGE_ONLY = ['event_source_close', 'event_source_open', 'menu_key_bindings', 'menu_run']
 
-  it('has one command per channel the preload invokes, plus the guest one', () => {
+  it('has one command per channel the preload invokes, plus the guest one and the bridge\'s own', () => {
     const preload = read('../../desktop/src/preload/index.js')
     const channels = [...preload.matchAll(/invoke\(\s*'(agentrq:[\w:-]+)'/g)].map((m) => commandOf(m[1]))
     expect(defined).toEqual([...new Set([...channels, ...GUEST_ONLY, ...BRIDGE_ONLY])].sort())
+    const net = read('../src/bridge/net.js')
+    expect([...new Set([...net.matchAll(/invoke\('(\w+)'/g)].map((m) => m[1]))].sort()).toEqual(['event_source_close', 'event_source_open'])
   })
 
   it('registers every command in the handler, the manifest and the capability', () => {
@@ -255,7 +264,11 @@ describe('the Rust side serves what the bridge calls', () => {
     keydown({ key: 'w', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, preventDefault() {} })
     const invoked = new Set(tauri.invoke.mock.calls.map(([name]) => name))
     expect([...invoked].filter((name) => !defined.includes(name))).toEqual([])
-    expect(defined.filter((name) => !invoked.has(name))).toEqual(GUEST_ONLY)
+    // Left over: the guest's own, and net.js's EventSource, which this walk of
+    // `window.agentrq` does not reach.
+    expect(defined.filter((name) => !invoked.has(name))).toEqual(
+      [...BRIDGE_ONLY.filter((name) => name.startsWith('event_source_')), ...GUEST_ONLY].sort()
+    )
   })
 
   // A mismatch must reject, not pass `None`: Tauri maps a payload key onto the

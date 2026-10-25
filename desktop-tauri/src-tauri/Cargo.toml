@@ -24,9 +24,16 @@ tauri-plugin-clipboard-manager = "2.5.0"
 tauri-plugin-dialog = "2.8.3"
 tauri-plugin-opener = "2.7.2"
 http = "1.5.0"
+reqwest = { version = "0.13.5", features = ["cookies", "stream", "gzip", "brotli"] }
+tokio = { version = "1.54.1", features = ["time", "sync"] }
+cookie_store = "0.22.1"
+url = "2.5.8"
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-reqwest = { version = "0.13.5", default-features = false }
-tokio = { version = "1.54.1", features = ["time"] }
+futures-util = "0.3.34"
+chacha20poly1305 = "0.11.0"
+getrandom = "0.4.3"
+keyring = "4.2.0"
 tauri-plugin-updater = "2.14.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -44,6 +51,7 @@ windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse
 [dev-dependencies]
 tauri = { version = "2.12.5", features = ["test"] }
 tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["time", "sync", "macros", "rt", "net", "io-util", "test-util"] }
 
 [profile.release]
 codegen-units = 1

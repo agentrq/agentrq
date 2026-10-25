@@ -16,8 +16,9 @@
  * Tauri maps onto the command's snake_case parameters.
  */
 import { getTauriVersion } from '@tauri-apps/api/app'
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { installEventSource, installFetch } from './net.js'
 
 /** Node's name for the OS, as Electron's `process.platform` gives it. */
 export function platformOf(userAgent) {
@@ -220,13 +221,14 @@ export function createBridge(userAgent) {
   })
 }
 
-// WP2 installs its `fetch` wrapper and `EventSource` shim here, before the
-// renderer's first request: Blob/FormData/stream bodies to the app origin are
-// flattened to an ArrayBuffer (docs/agents/desktop-tauri.md).
+// Before the renderer's first request: the app scheme cannot carry these as
+// they are (docs/agents/desktop-tauri.md).
+installFetch(window)
+installEventSource(window, invoke, Channel)
 Object.defineProperty(window, 'agentrq', {
   value: createBridge(navigator.userAgent),
   enumerable: true,
   writable: false,
   configurable: false,
 })
-if (typeof window.addEventListener === 'function') installMenuKeys(window, platformOf(navigator.userAgent))
+installMenuKeys(window, platformOf(navigator.userAgent))

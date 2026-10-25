@@ -57,6 +57,8 @@
     "allow-view-get",
     "allow-view-zoom",
     "allow-theme-set",
+    "allow-event-source-open",
+    "allow-event-source-close",
     "allow-menu-key-bindings",
     "allow-menu-run"
   ]
