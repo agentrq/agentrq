@@ -229,8 +229,8 @@ describe('the Rust side serves what the bridge calls', () => {
   // The guest preload's, which WP7b gives the `agentrq-ext:` page's own webview.
   const GUEST_ONLY = ['panel_send']
   // The bridge's own: the key listener's menu commands (Electron's menu runs in
-  // the main process) and `EventSource` (net.js); Electron has no channel for either.
-  const BRIDGE_ONLY = ['event_source_close', 'event_source_open', 'menu_key_bindings', 'menu_run']
+  // the main process), `EventSource` (net.js), and `navigation_ready`; Electron has no channel for either.
+  const BRIDGE_ONLY = ['event_source_close', 'event_source_open', 'menu_key_bindings', 'menu_run', 'navigation_ready']
 
   it('has one command per channel the preload invokes, plus the guest one and the bridge\'s own', () => {
     const preload = read('../../desktop/src/preload/index.js')
@@ -251,6 +251,8 @@ describe('the Rust side serves what the bridge calls', () => {
     for (const [path] of members(agentrq).filter(([p]) => !/\.on[A-Z]/.test(p))) {
       await at(agentrq, path)(...argsFor(path))
     }
+    // navigation.onNavigate invokes navigation_ready when subscribed
+    agentrq.navigation.onNavigate(() => {})
     // The key listener calls its two on a key, as a page would.
     let keydown
     const target = { addEventListener: (_, fn) => (keydown = fn) }

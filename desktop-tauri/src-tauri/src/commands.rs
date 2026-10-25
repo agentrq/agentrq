@@ -368,6 +368,12 @@ pub fn panel_send() -> Result<(), String> {
     todo("panel.send", "WP7b / WP9")
 }
 
+/// `agentrq:navigation:ready`
+#[tauri::command]
+pub fn navigation_ready<R: Runtime>(app: AppHandle<R>) {
+    crate::shell::navigation_ready(&app);
+}
+
 /// The invoke handler registering every command above.
 pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static
 {
@@ -415,6 +421,7 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         side_panel_permission_remove,
         side_panel_permissions,
         panel_send,
+        navigation_ready,
         crate::chrome::view_fullscreen,
         crate::chrome::view_get,
         crate::chrome::view_zoom,
@@ -567,6 +574,15 @@ mod tests {
                 "{cmd}: {err}"
             );
         }
+    }
+
+    #[test]
+    fn navigation_ready_invokes_through_handler() {
+        let rig = rig();
+        assert_eq!(
+            call(&rig, "navigation_ready", serde_json::json!({})),
+            Ok(serde_json::Value::Null)
+        );
     }
 
     #[test]

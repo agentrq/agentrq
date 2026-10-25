@@ -140,11 +140,11 @@ describe('an on* listener', () => {
     expect(cb).toHaveBeenCalledExactlyOnceWith('/workspaces/w')
   })
 
-  it('ignores a readiness emit error on navigation subscribe', async () => {
+  it('calls navigation_ready command on subscribe without hiding errors', () => {
     fakeListen()
-    tauri.emit.mockRejectedValue(new Error('fail'))
-    const off = bridge.createBridge('Linux').navigation.onNavigate(() => {})
-    await Promise.resolve()
+    const agentrq = bridge.createBridge('Linux')
+    const off = agentrq.navigation.onNavigate(() => {})
+    expect(tauri.invoke).toHaveBeenCalledWith('navigation_ready')
     off()
   })
 

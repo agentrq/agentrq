@@ -27,7 +27,7 @@ use agentrq_desktop_core::tray::{
 #[cfg(target_os = "windows")]
 use tauri::image::Image;
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Emitter, Listener, Manager, Runtime, Url, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, Runtime, Url, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_opener::OpenerExt;
@@ -142,8 +142,9 @@ impl<R: Runtime> ShellState<R> {
         if let Some(win) = app.get_window("main") {
             #[cfg(target_os = "windows")]
             {
-                if let Some(_overlay) = state.overlay {
-                    let img = Image::new_owned(vec![0u8; 16 * 16 * 4], 16, 16);
+                if let Some(overlay) = state.overlay {
+                    let rgba = render_badge_overlay(overlay.count);
+                    let img = Image::new_owned(rgba, 16, 16);
                     let _ = win.set_overlay_icon(Some(img));
                 } else {
                     let _ = win.set_overlay_icon(None);
@@ -204,6 +205,26 @@ pub fn reapply_badge<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// Renders a 16x16 RGBA badge overlay icon (a filled red dot) for the taskbar.
+#[allow(dead_code)]
+pub fn render_badge_overlay(_count: i64) -> Vec<u8> {
+    let mut pixels = vec![0u8; 16 * 16 * 4];
+    for y in 0..16i32 {
+        for x in 0..16i32 {
+            let dx = x - 8;
+            let dy = y - 8;
+            if dx * dx + dy * dy <= 36 {
+                let idx = ((y * 16 + x) * 4) as usize;
+                pixels[idx] = 239; // R (#ef4444)
+                pixels[idx + 1] = 68; // G
+                pixels[idx + 2] = 68; // B
+                pixels[idx + 3] = 255; // A
+            }
+        }
+    }
+    pixels
+}
+
 /// Expose page load handler to chrome window lifecycle.
 pub fn on_page_load<R: Runtime>(app: &AppHandle<R>, event: &PageLoadEvent) {
     if let Some(state) = app.try_state::<ShellState<R>>() {
@@ -231,6 +252,9 @@ pub fn dispatch_navigation<R: Runtime>(app: &AppHandle<R>, url: &Url) -> bool {
         return false;
     }
 
+    // WebKitGTK evaluates on_navigation for all frames including subframes; we allow
+    // safe downloads and app-origin URLs to stay in-webview before handing off-origin
+    // URLs to the system opener.
     if is_allowed_download(url, &app_origin) {
         return true;
     }
@@ -358,17 +382,16 @@ pub(crate) fn check_first_launch_route<R: Runtime>(
     }
 }
 
-/// Initialize shell services: state management, navigate readiness listener, and startup deep link.
+/// Signals that the renderer's navigation listener is subscribed and ready.
+pub fn navigation_ready<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(state) = app.try_state::<ShellState<R>>() {
+        state.on_subscribed(app);
+    }
+}
+
+/// Initialize shell services: state management and startup deep link.
 pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     app.manage(ShellState::<R>::default());
-
-    // Listen for renderer readiness to deliver held routes
-    let app_ready = app.clone();
-    app.listen("agentrq:navigate:ready", move |_| {
-        if let Some(state) = app_ready.try_state::<ShellState<R>>() {
-            state.on_subscribed(&app_ready);
-        }
-    });
 
     // First-launch argv deep link
     let args: Vec<String> = std::env::args().collect();
@@ -391,6 +414,7 @@ mod tests {
         let mut ctx = tauri::test::mock_context(tauri::test::noop_assets());
         ctx.config_mut().identifier = "com.agentrq.desktop.tauri".to_string();
         let app = crate::chrome::plugins(tauri::test::mock_builder())
+            .invoke_handler(crate::commands::handler())
             .build(ctx)
             .unwrap();
         let handle = app.handle().clone();
@@ -421,21 +445,25 @@ mod tests {
         state.open_deep_link(&handle, "agentrq-tauri://workspaces/1");
         assert!(delivered.lock().unwrap().is_empty());
 
-        // 2. Finished delivery
+        // 2. Finished delivery: renderer not subscribed yet, so stays buffered
         on_page_load(&handle, &PageLoadEvent::Finished);
-        assert_eq!(*delivered.lock().unwrap(), vec!["\"/workspaces/1\""]);
+        assert!(delivered.lock().unwrap().is_empty());
 
-        // 3. Renderer subscription signal re-emits if waiting
-        delivered.lock().unwrap().clear();
+        // 3. Renderer subscription signal delivers the pending route once
         state.on_subscribed(&handle);
         assert_eq!(*delivered.lock().unwrap(), vec!["\"/workspaces/1\""]);
 
-        // 4. Once subscribed and page loaded, subsequent navigate delivers immediately
+        // 4. Repeated Finished or subscription call does not deliver again
+        on_page_load(&handle, &PageLoadEvent::Finished);
+        state.on_subscribed(&handle);
+        assert_eq!(*delivered.lock().unwrap(), vec!["\"/workspaces/1\""]);
+
+        // 5. Once subscribed and page loaded, subsequent navigate delivers immediately
         delivered.lock().unwrap().clear();
         state.navigate(&handle, "/workspaces/2");
         assert_eq!(*delivered.lock().unwrap(), vec!["\"/workspaces/2\""]);
 
-        // 5. Started resets
+        // 6. Started resets
         delivered.lock().unwrap().clear();
         on_page_load(&handle, &PageLoadEvent::Started);
         state.navigate(&handle, "/workspaces/3");
@@ -572,8 +600,8 @@ mod tests {
         assert_eq!(state.unread_count.load(Ordering::SeqCst), 0);
         handle_window_event(&win.as_ref().window(), &WindowEvent::Focused(false));
 
-        // Readiness listener in init
-        let _ = handle.emit("agentrq:navigate:ready", ());
+        // Readiness signal via navigation_ready
+        navigation_ready(&handle);
 
         // Open deep link URLs callback
         delivered.lock().unwrap().clear();
@@ -650,6 +678,10 @@ mod tests {
         let data_url = Url::parse("data:text/plain;base64,aGVsbG8=").unwrap();
         assert!(dispatch_navigation(&handle, &data_url));
 
+        // Top-level HTML data navigation is blocked
+        let data_html = Url::parse("data:text/html,<script>alert(1)</script>").unwrap();
+        assert!(!dispatch_navigation(&handle, &data_html));
+
         // 3. External URLs are rejected and opened via opener
         let ext_url = Url::parse("https://agentrq.com/docs").unwrap();
         assert!(!dispatch_navigation(&handle, &ext_url));
@@ -669,5 +701,101 @@ mod tests {
         assert!(!dispatch_navigation(&handle, &signin_url));
         std::thread::sleep(std::time::Duration::from_millis(50));
         assert!(handle.get_window("sign-in-1").is_some());
+    }
+
+    #[test]
+    fn badge_overlay_pixels_are_not_transparent() {
+        let pixels = render_badge_overlay(3);
+        assert_eq!(pixels.len(), 16 * 16 * 4);
+        assert!(pixels.iter().any(|&b| b != 0));
+        let solid_pixels = pixels.chunks(4).filter(|p| p[3] == 255).count();
+        assert!(solid_pixels > 0);
+    }
+
+    #[test]
+    fn navigation_ready_ipc_delivers_pending_route_through_handler() {
+        let (_app, handle) = test_app();
+        init(&handle).unwrap();
+        let state = handle.state::<ShellState<tauri::test::MockRuntime>>();
+        state.navigate(&handle, "/cold-start");
+
+        let delivered = Arc::new(Mutex::new(Vec::new()));
+        let delivered_clone = delivered.clone();
+        handle.listen("agentrq:navigate", move |event| {
+            delivered_clone
+                .lock()
+                .unwrap()
+                .push(event.payload().to_string());
+        });
+
+        on_page_load(&handle, &PageLoadEvent::Finished);
+        assert!(delivered.lock().unwrap().is_empty());
+
+        let win = tauri::WebviewWindowBuilder::new(&handle, "main", tauri::WebviewUrl::default())
+            .build()
+            .unwrap();
+        let resp = tauri::test::get_ipc_response(
+            &win,
+            tauri::webview::InvokeRequest {
+                cmd: "navigation_ready".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "tauri://localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::default(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        );
+        assert!(resp.is_ok());
+        assert_eq!(*delivered.lock().unwrap(), vec!["\"/cold-start\""]);
+
+        // Calling it again does not redeliver
+        let resp2 = tauri::test::get_ipc_response(
+            &win,
+            tauri::webview::InvokeRequest {
+                cmd: "navigation_ready".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "tauri://localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::default(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        );
+        assert!(resp2.is_ok());
+        assert_eq!(*delivered.lock().unwrap(), vec!["\"/cold-start\""]);
+    }
+
+    #[test]
+    fn delivers_pending_route_on_finished_if_already_subscribed() {
+        let (_app, handle) = test_app();
+        init(&handle).unwrap();
+        let state = handle.state::<ShellState<tauri::test::MockRuntime>>();
+
+        let delivered = Arc::new(Mutex::new(Vec::new()));
+        let delivered_clone = delivered.clone();
+        handle.listen("agentrq:navigate", move |event| {
+            delivered_clone
+                .lock()
+                .unwrap()
+                .push(event.payload().to_string());
+        });
+
+        // Started resets ready state
+        on_page_load(&handle, &PageLoadEvent::Started);
+
+        // Renderer subscribes while page is still loading
+        state.on_subscribed(&handle);
+
+        // Route arrives while page is still loading
+        state.navigate(&handle, "/workspaces/subscribed-first");
+        assert!(delivered.lock().unwrap().is_empty());
+
+        // Finished fires and delivers the pending route because it was already subscribed
+        on_page_load(&handle, &PageLoadEvent::Finished);
+        assert_eq!(
+            *delivered.lock().unwrap(),
+            vec!["\"/workspaces/subscribed-first\""]
+        );
     }
 }

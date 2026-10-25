@@ -122,18 +122,26 @@ impl PendingRoute {
     }
 
     /// When page load finishes:
-    /// Returns Some(route) to deliver if there is a pending route.
-    /// Route is kept until subscribed if not subscribed yet.
+    /// Returns Some(route) to deliver if there is a pending route and the renderer has subscribed.
+    /// Route is kept buffered until subscribed if not subscribed yet.
     pub fn on_page_load_finished(&mut self) -> Option<String> {
         self.page_loaded = true;
-        self.route.clone()
+        if self.subscribed {
+            self.route.take()
+        } else {
+            None
+        }
     }
 
     /// When the renderer subscribes (ready signal):
-    /// Returns Some(route) if there was a pending route waiting to be taken.
+    /// Returns Some(route) if there was a pending route waiting to be taken and page load has finished.
     pub fn on_subscribed(&mut self) -> Option<String> {
         self.subscribed = true;
-        self.route.take()
+        if self.page_loaded {
+            self.route.take()
+        } else {
+            None
+        }
     }
 
     pub fn is_ready(&self) -> bool {
@@ -315,11 +323,8 @@ mod tests {
         pr.set_pending("/workspaces/2");
         assert_eq!(pr.pending(), Some("/workspaces/2"));
 
-        // Page load finished returns route for delivery
-        assert_eq!(
-            pr.on_page_load_finished(),
-            Some("/workspaces/2".to_string())
-        );
+        // Page load finished does not deliver until renderer is subscribed
+        assert_eq!(pr.on_page_load_finished(), None);
         // Route is retained until subscribed
         assert_eq!(pr.pending(), Some("/workspaces/2"));
 
@@ -327,6 +332,10 @@ mod tests {
         assert_eq!(pr.on_subscribed(), Some("/workspaces/2".to_string()));
         assert_eq!(pr.pending(), None);
         assert!(pr.is_ready());
+
+        // Finished or subscribed called again does not deliver again
+        assert_eq!(pr.on_page_load_finished(), None);
+        assert_eq!(pr.on_subscribed(), None);
 
         // Subsequent navigation immediately returns route
         assert_eq!(pr.navigate("/tasks/3"), Some("/tasks/3".to_string()));
@@ -336,5 +345,27 @@ mod tests {
         assert!(!pr.is_ready());
         assert_eq!(pr.navigate("/tasks/4"), None);
         assert_eq!(pr.pending(), Some("/tasks/4"));
+    }
+
+    #[test]
+    fn delivers_cold_start_route_once_when_subscribed_before_page_finished() {
+        let mut pr = PendingRoute::new();
+        pr.set_pending("/workspaces/cold");
+
+        // Subscribed before page finished does not deliver yet
+        assert_eq!(pr.on_subscribed(), None);
+        assert_eq!(pr.pending(), Some("/workspaces/cold"));
+
+        // Page finished completes readiness and delivers exactly once
+        assert_eq!(
+            pr.on_page_load_finished(),
+            Some("/workspaces/cold".to_string())
+        );
+        assert_eq!(pr.pending(), None);
+        assert!(pr.is_ready());
+
+        // Repeated calls deliver nothing
+        assert_eq!(pr.on_page_load_finished(), None);
+        assert_eq!(pr.on_subscribed(), None);
     }
 }

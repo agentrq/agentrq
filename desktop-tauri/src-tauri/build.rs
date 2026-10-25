@@ -51,6 +51,7 @@ const COMMANDS: &[&str] = &[
     "side_panel_permission_remove",
     "side_panel_permissions",
     "panel_send",
+    "navigation_ready",
     "view_fullscreen",
     "view_get",
     "view_zoom",

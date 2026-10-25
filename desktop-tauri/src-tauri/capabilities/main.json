@@ -60,6 +60,7 @@
     "allow-event-source-open",
     "allow-event-source-close",
     "allow-menu-key-bindings",
-    "allow-menu-run"
+    "allow-menu-run",
+    "allow-navigation-ready"
   ]
 }

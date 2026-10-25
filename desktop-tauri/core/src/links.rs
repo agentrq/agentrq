@@ -138,10 +138,20 @@ pub fn app_origin(profile_id: &str) -> String {
     app_origin_for(profile_id, PLATFORM)
 }
 
-/// Whether this navigation URL is an app-origin download (blob: with app origin or data:).
+/// Whether this navigation URL is an app-origin download (blob: with app origin or safe data:).
 pub fn is_allowed_download(url: &Url, app_origin: &str) -> bool {
     match url.scheme() {
-        "data" => true,
+        "data" => {
+            let spec = &url.as_str()["data:".len()..];
+            let meta = spec.split(',').next().unwrap_or("");
+            let mime = meta
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase();
+            !matches!(mime.as_str(), "text/html" | "application/xhtml+xml")
+        }
         "blob" => {
             let inner = &url.as_str()["blob:".len()..];
             Url::parse(inner).is_ok_and(|parsed| origin_of(&parsed) == app_origin)
@@ -370,6 +380,19 @@ mod tests {
 
         let data_url = Url::parse("data:application/pdf;base64,JVBERi0xLjQK").unwrap();
         assert!(is_allowed_download(&data_url, origin));
+
+        let data_plain = Url::parse("data:text/plain;base64,aGVsbG8=").unwrap();
+        assert!(is_allowed_download(&data_plain, origin));
+
+        // Top-level HTML and XHTML navigations must be blocked
+        let data_html = Url::parse("data:text/html,<script>alert(1)</script>").unwrap();
+        assert!(!is_allowed_download(&data_html, origin));
+
+        let data_html_b64 = Url::parse("data:text/html;base64,PGgxPkhlbGxvPC9oMT4=").unwrap();
+        assert!(!is_allowed_download(&data_html_b64, origin));
+
+        let data_xhtml = Url::parse("data:application/xhtml+xml,<html/>").unwrap();
+        assert!(!is_allowed_download(&data_xhtml, origin));
 
         let evil_blob = Url::parse("blob:https://evil.example.com/8b248a37").unwrap();
         assert!(!is_allowed_download(&evil_blob, origin));
