@@ -55,6 +55,7 @@ VERSION="${AGENTRQ_VERSION:-}"
 INSTALL_DIR="${AGENTRQ_INSTALL_DIR:-}"
 QUIT="${AGENTRQ_QUIT:-}"
 FORCE="${AGENTRQ_FORCE:-}"
+TAURI="${AGENTRQ_TAURI:-}"
 
 # Set once a disk image is attached, so the exit trap can detach it.
 MOUNTPOINT=""
@@ -71,10 +72,11 @@ usage() {
 	cat <<'EOF'
 AgentRQ desktop installer and updater.
 
-Usage: install.sh [--version <tag>] [--dir <path>] [--quit] [--force]
+Usage: install.sh [--version <tag>] [--dir <path>] [--quit] [--force] [--tauri]
 
   curl -fsSL https://agentrq.com/install.sh | sh
   curl -fsSL https://agentrq.com/install.sh | sh -s -- --quit
+  curl -fsSL https://agentrq.com/install.sh | sh -s -- --tauri
 EOF
 }
 
@@ -110,6 +112,10 @@ while [ $# -gt 0 ]; do
 		FORCE=1
 		shift
 		;;
+	--tauri)
+		TAURI=1
+		shift
+		;;
 	-h | --help)
 		usage
 		exit 0
@@ -137,9 +143,29 @@ esac
 
 case "$arch" in
 arm64 | aarch64) arch="arm64" ;;
-x86_64 | amd64) arch="x64" ;;
+x86_64 | amd64 | x64) arch="x64" ;;
 *) die "unsupported architecture: $arch. See $RELEASES_PAGE" ;;
 esac
+
+if [ -n "$TAURI" ]; then
+	app_product="AgentRQ Tauri"
+	app_bundle="AgentRQ Tauri.app"
+	bin_name="agentrq-tauri"
+	desktop_file="agentrq-tauri.desktop"
+	marker_file=".agentrq-tauri-version"
+	scheme="agentrq-tauri"
+	wm_class="agentrq-tauri"
+	update_cmd="curl -fsSL https://agentrq.com/install.sh | sh -s -- --tauri"
+else
+	app_product="AgentRQ"
+	app_bundle="AgentRQ.app"
+	bin_name="agentrq"
+	desktop_file="agentrq.desktop"
+	marker_file=".agentrq-version"
+	scheme="agentrq"
+	wm_class="AgentRQ"
+	update_cmd="curl -fsSL https://agentrq.com/install.sh | sh"
+fi
 
 # --------------------------------------------------------------- the release
 
@@ -177,29 +203,51 @@ version="${tag#v}"
 assets="$(printf '%s' "$release" |
 	grep -o '"browser_download_url": *"[^"]*"' |
 	sed 's/^[^:]*: *"//; s/"$//' || true)"
-# The Tauri build ships beside the Electron one under AgentRQ-Tauri-* names;
-# this script installs Electron, so none of those may ever be picked.
-assets="$(printf '%s\n' "$assets" | grep -iv -e '-tauri-' -e 'tauri' || true)"
-[ -n "$assets" ] || die "release $tag has no downloadable assets"
+if [ -n "$TAURI" ]; then
+	# The Tauri build ships beside Electron under -tauri- names.
+	assets="$(printf '%s\n' "$assets" | grep -i -e '-tauri-' -e 'tauri' || true)"
+	[ -n "$assets" ] || die "release $tag has no downloadable Tauri assets"
+else
+	# The Tauri build ships beside the Electron one under AgentRQ-Tauri-* names;
+	# this script installs Electron, so none of those may ever be picked.
+	assets="$(printf '%s\n' "$assets" | grep -iv -e '-tauri-' -e 'tauri' || true)"
+	[ -n "$assets" ] || die "release $tag has no downloadable assets"
+fi
 
 pick_asset() {
 	printf '%s\n' "$assets" | grep -i -- "$1" | head -n 1 || true
 }
 
 if [ "$platform" = "mac" ]; then
-	# electron-builder.yml pins the dmg name to include the architecture, so
-	# both slices are always distinguishable.
-	asset="$(pick_asset "-${arch}\.dmg$")"
+	if [ -n "$TAURI" ]; then
+		if [ "$arch" = "arm64" ]; then
+			asset="$(printf '%s\n' "$assets" | grep -i '\.dmg$' | grep -i -e 'arm64' -e 'aarch64' | head -n 1 || true)"
+		else
+			asset="$(printf '%s\n' "$assets" | grep -i '\.dmg$' | grep -i -e 'x64' -e 'x86_64' | head -n 1 || true)"
+		fi
+	else
+		# electron-builder.yml pins the dmg name to include the architecture, so
+		# both slices are always distinguishable.
+		asset="$(pick_asset "-${arch}\\.dmg$")"
+	fi
 	[ -n "$asset" ] || die "release $tag has no macOS $arch disk image"
 else
 	# AppImage over deb: no root needed, and it works on any distribution.
 	# electron-builder only appends the architecture for non-x64 builds, so
 	# x64 is identified by the absence of an arm64 suffix rather than by name.
 	appimages="$(printf '%s\n' "$assets" | grep -i '\.AppImage$' || true)"
-	if [ "$arch" = "arm64" ]; then
-		asset="$(printf '%s\n' "$appimages" | grep -i 'arm64' | head -n 1 || true)"
+	if [ -n "$TAURI" ]; then
+		if [ "$arch" = "arm64" ]; then
+			asset="$(printf '%s\n' "$appimages" | grep -i -e 'arm64' -e 'aarch64' | head -n 1 || true)"
+		else
+			asset="$(printf '%s\n' "$appimages" | grep -i -e 'x86_64' -e 'x64' -e 'amd64' | head -n 1 || true)"
+		fi
 	else
-		asset="$(printf '%s\n' "$appimages" | grep -iv 'arm64' | head -n 1 || true)"
+		if [ "$arch" = "arm64" ]; then
+			asset="$(printf '%s\n' "$appimages" | grep -i 'arm64' | head -n 1 || true)"
+		else
+			asset="$(printf '%s\n' "$appimages" | grep -iv 'arm64' | head -n 1 || true)"
+		fi
 	fi
 	[ -n "$asset" ] || die "release $tag has no Linux $arch AppImage"
 fi
@@ -211,8 +259,8 @@ filename="${asset##*/}"
 if [ -z "$FORCE" ]; then
 	installed=""
 	if [ "$platform" = "mac" ]; then
-		probe="${INSTALL_DIR:-/Applications}/AgentRQ.app"
-		[ -d "$probe" ] || probe="$HOME/Applications/AgentRQ.app"
+		probe="${INSTALL_DIR:-/Applications}/$app_bundle"
+		[ -d "$probe" ] || probe="$HOME/Applications/$app_bundle"
 		if [ -d "$probe" ]; then
 			installed="$(defaults read "$probe/Contents/Info" \
 				CFBundleShortVersionString 2>/dev/null || true)"
@@ -220,14 +268,14 @@ if [ -z "$FORCE" ]; then
 	else
 		# An AppImage does not report its version without being run, so the
 		# installer records what it wrote alongside the binary.
-		marker="${INSTALL_DIR:-$HOME/.local/bin}/.agentrq-version"
+		marker="${INSTALL_DIR:-$HOME/.local/bin}/$marker_file"
 		if [ -f "$marker" ]; then
 			installed="$(cat "$marker" 2>/dev/null || true)"
 		fi
 	fi
 
 	if [ -n "$installed" ] && [ "$installed" = "$version" ]; then
-		say "AgentRQ $version is already installed. Nothing to do."
+		say "$app_product $version is already installed. Nothing to do."
 		note "Reinstall anyway with --force."
 		exit 0
 	fi
@@ -299,18 +347,18 @@ if [ "$platform" = "mac" ]; then
 	mkdir -p "$dest_dir"
 	[ -w "$dest_dir" ] || die "$dest_dir is not writable. Pass --dir <path> to install elsewhere."
 
-	app="$dest_dir/AgentRQ.app"
+	app="$dest_dir/$app_bundle"
 
 	# Replacing the bundle under a running app leaves it in a state where the
 	# window still works but every later launch is broken, which is a confusing
 	# thing to discover hours afterwards.
-	if pgrep -f '/AgentRQ\.app/Contents/MacOS/' >/dev/null 2>&1; then
-		[ -n "$QUIT" ] || die "AgentRQ is running. Quit it and run this again, or pass --quit to have the installer close it."
-		say "Quitting AgentRQ..."
-		osascript -e 'quit app "AgentRQ"' >/dev/null 2>&1 || true
+	if pgrep -f "/$app_bundle/Contents/MacOS/" >/dev/null 2>&1; then
+		[ -n "$QUIT" ] || die "$app_product is running. Quit it and run this again, or pass --quit to have the installer close it."
+		say "Quitting $app_product..."
+		osascript -e "quit app \"$app_product\"" >/dev/null 2>&1 || true
 		waited=0
-		while pgrep -f '/AgentRQ\.app/Contents/MacOS/' >/dev/null 2>&1; do
-			[ "$waited" -lt 15 ] || die "AgentRQ did not quit. Close it manually and run this again."
+		while pgrep -f "/$app_bundle/Contents/MacOS/" >/dev/null 2>&1; do
+			[ "$waited" -lt 15 ] || die "$app_product did not quit. Close it manually and run this again."
 			sleep 1
 			waited=$((waited + 1))
 		done
@@ -338,7 +386,7 @@ if [ "$platform" = "mac" ]; then
 	# Stage the copy, then swap. The existing install is only removed once the
 	# new one is complete on the same volume, so an interrupted copy or a full
 	# disk cannot leave the machine with no AgentRQ at all.
-	staging="$dest_dir/.AgentRQ.app.incoming.$$"
+	staging="$dest_dir/.$app_bundle.incoming.$$"
 	rm -rf "$staging"
 	cp -R "$src_app" "$staging" || die "could not copy the application into $dest_dir"
 
@@ -355,23 +403,27 @@ if [ "$platform" = "mac" ]; then
 	MOUNTPOINT=""
 
 	say ""
-	say "AgentRQ $version installed to $app"
-	note "Launch it with: open -a AgentRQ"
+	say "$app_product $version installed to $app"
+	if [ -n "$TAURI" ]; then
+		note "Launch it with: open -a '$app_product'"
+	else
+		note "Launch it with: open -a $app_product"
+	fi
 else
 	bindir="${INSTALL_DIR:-$HOME/.local/bin}"
 	mkdir -p "$bindir"
 	[ -w "$bindir" ] || die "$bindir is not writable. Pass --dir <path> to install elsewhere."
 
-	target="$bindir/agentrq"
+	target="$bindir/$bin_name"
 	staging="$target.incoming.$$"
 
 	say "Installing to $target..."
 	cp "$download" "$staging"
 	chmod 755 "$staging"
 	mv "$staging" "$target"
-	printf '%s\n' "$version" >"$bindir/.agentrq-version"
+	printf '%s\n' "$version" >"$bindir/$marker_file"
 
-	# Without a file behind `Icon=agentrq` below, the launcher, dock and
+	# Without a file behind `Icon=...` below, the launcher, dock and
 	# alt-tab switcher all show a generic placeholder. The AppImage does carry
 	# the icon, but digging it out means `--appimage-extract`, which unpacks
 	# the whole ~150MB squashfs and executes the binary we just downloaded --
@@ -388,11 +440,11 @@ else
 		*) src_icon="pwa-192x192.png" ;;
 		esac
 		if mkdir -p "$icons_dir/$size/apps" 2>/dev/null &&
-			curl -fsL -o "$icons_dir/$size/apps/agentrq.png" \
+			curl -fsL -o "$icons_dir/$size/apps/$bin_name.png" \
 				"$RAW/$tag/frontend/public/$src_icon" </dev/null; then
 			icon_ok=1
 		else
-			rm -f "$icons_dir/$size/apps/agentrq.png"
+			rm -f "$icons_dir/$size/apps/$bin_name.png"
 		fi
 	done
 	if [ -n "$icon_ok" ]; then
@@ -403,30 +455,30 @@ else
 		note "Could not fetch the application icon; the launcher will show a generic one."
 	fi
 
-	# A launcher entry, and with it the agentrq:// scheme handler -- the Linux
-	# equivalent of the `protocols` block in electron-builder.yml, which only
+	# A launcher entry, and with it the custom scheme handler -- the Linux
+	# equivalent of the `protocols` block, which only
 	# takes effect for installs that went through a package.
 	apps_dir="$HOME/.local/share/applications"
 	mkdir -p "$apps_dir"
-	cat >"$apps_dir/agentrq.desktop" <<EOF
+	cat >"$apps_dir/$desktop_file" <<EOF
 [Desktop Entry]
 Type=Application
-Name=AgentRQ
+Name=$app_product
 Comment=Task orchestration for coding agents
 Exec=$target %u
-Icon=agentrq
+Icon=$bin_name
 Terminal=false
 Categories=Development;
-MimeType=x-scheme-handler/agentrq;
-StartupWMClass=AgentRQ
+MimeType=x-scheme-handler/$scheme;
+StartupWMClass=$wm_class
 EOF
 	update-desktop-database "$apps_dir" >/dev/null 2>&1 || true
 
 	say ""
-	say "AgentRQ $version installed to $target"
+	say "$app_product $version installed to $target"
 
 	case ":$PATH:" in
-	*":$bindir:"*) note "Launch it with: agentrq" ;;
+	*":$bindir:"*) note "Launch it with: $bin_name" ;;
 	*)
 		note "$bindir is not on your PATH. Add this to your shell profile:"
 		note "  export PATH=\"$bindir:\$PATH\""
@@ -436,4 +488,4 @@ fi
 
 say ""
 say "Update later by running the same command:"
-say "  curl -fsSL https://agentrq.com/install.sh | sh"
+say "  $update_cmd"
