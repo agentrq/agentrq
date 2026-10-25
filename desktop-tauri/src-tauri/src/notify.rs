@@ -22,7 +22,7 @@ use serde_json::Value;
 
 use crate::events::{EventStream, Events};
 use crate::network::Network;
-use crate::profiles::Watcher;
+use crate::profiles::{Muted, Watcher};
 
 pub const WORKSPACES_PATH: &str = "/api/v1/workspaces";
 
@@ -40,8 +40,9 @@ pub trait Desk: Send + Sync {
     fn show(&self, notification: &Notification) -> bool;
     /// Bring the main window forward and send it to `route`.
     fn navigate(&self, route: &str);
-    /// The badge and the tray's count.
-    fn set_unread(&self, count: u32);
+    /// The badge and the tray's count. `generation` grows with every change,
+    /// so the Desk can drop a count that arrives after a newer one.
+    fn set_unread(&self, count: u32, generation: u64);
     /// The tray's recent workspaces.
     fn touch_workspace(&self, id: &str, name: &str);
 }
@@ -55,6 +56,20 @@ impl BadgeSink for Unpublished {
     fn set_badge(&self, _count: u32) {}
 }
 
+/// The count, and how many times it has changed: two counts published after
+/// the lock is dropped can reach the Desk in either order.
+struct Unread {
+    counter: UnreadCounter<Unpublished>,
+    generation: u64,
+}
+
+impl Unread {
+    fn changed(&mut self) -> u64 {
+        self.generation += 1;
+        self.generation
+    }
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -62,14 +77,14 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 pub struct Notifier {
     network: Arc<Network>,
     desk: Arc<dyn Desk>,
-    muted: Mutex<Vec<String>>,
+    muted: Mutex<Muted>,
     /// Workspace id to display name, for notification bodies.
     names: Arc<Mutex<HashMap<String, String>>>,
     /// This app's own replies and answers, marked as they are proxied.
     self_actions: Mutex<SelfActionGate<Arc<dyn Clock>>>,
     /// One task creation is published twice; one notification is shown.
     shown: Mutex<NotificationGate<Arc<dyn Clock>>>,
-    unread: Mutex<UnreadCounter<Unpublished>>,
+    unread: Mutex<Unread>,
 }
 
 impl Notifier {
@@ -80,7 +95,10 @@ impl Notifier {
     fn with_clock(network: Arc<Network>, desk: Arc<dyn Desk>, clock: Arc<dyn Clock>) -> Self {
         Self {
             network,
-            unread: Mutex::new(UnreadCounter::new(Unpublished)),
+            unread: Mutex::new(Unread {
+                counter: UnreadCounter::new(Unpublished),
+                generation: 0,
+            }),
             desk,
             muted: Mutex::default(),
             names: Arc::default(),
@@ -95,18 +113,23 @@ impl Notifier {
         lock(&self.self_actions).mark_self(task_id_from_self_action_request(method, path));
     }
 
-    pub fn set_muted(&self, muted: Vec<String>) {
-        *lock(&self.muted) = muted;
+    /// A list older than the one kept is dropped.
+    pub fn set_muted(&self, muted: Muted) {
+        let mut kept = lock(&self.muted);
+        if muted.generation > kept.generation {
+            *kept = muted;
+        }
     }
 
     /// Looking at the app answers "is there anything new".
     pub fn clear_unread(&self) {
         let mut unread = lock(&self.unread);
-        let had = unread.value();
-        unread.clear();
+        let had = unread.counter.value();
+        unread.counter.clear();
+        let generation = unread.changed();
         drop(unread);
         if had > 0 {
-            self.desk.set_unread(0);
+            self.desk.set_unread(0, generation);
         }
     }
 
@@ -162,7 +185,7 @@ fn workspace_names(body: &Value) -> Vec<(String, String)> {
 
 impl Events for Notifier {
     fn on_event(&self, event: &Value) {
-        let muted = lock(&self.muted).clone();
+        let muted = lock(&self.muted).workspaces.clone();
         let names = lock(&self.names).clone();
         let workspace_name = |id: &str| names.get(id).cloned().unwrap_or_default();
         let options = MapOptions {
@@ -185,8 +208,10 @@ impl Events for Notifier {
         if !allow || !self.desk.show(&notification) {
             return;
         }
-        let count = lock(&self.unread).increment();
-        self.desk.set_unread(count);
+        let mut unread = lock(&self.unread);
+        let (count, generation) = (unread.counter.increment(), unread.changed());
+        drop(unread);
+        self.desk.set_unread(count, generation);
         self.desk
             .touch_workspace(workspace, &workspace_name(workspace));
     }
@@ -220,13 +245,13 @@ impl Watcher for Feed {
         self.stream.stop();
     }
 
-    fn switched(&self, muted: Vec<String>) {
+    fn switched(&self, muted: Muted) {
         self.notifier.forget();
         self.notifier.set_muted(muted);
         self.start();
     }
 
-    fn muted(&self, muted: Vec<String>) {
+    fn muted(&self, muted: Muted) {
         self.notifier.set_muted(muted);
     }
 }
@@ -245,6 +270,7 @@ pub(crate) mod tests {
         pub shown: Mutex<Vec<Notification>>,
         pub routes: Mutex<Vec<String>>,
         pub unread: Mutex<Vec<u32>>,
+        pub generations: Mutex<Vec<u64>>,
         pub touched: Mutex<Vec<(String, String)>>,
         pub unsupported: bool,
     }
@@ -257,8 +283,9 @@ pub(crate) mod tests {
         fn navigate(&self, route: &str) {
             lock(&self.routes).push(route.to_string());
         }
-        fn set_unread(&self, count: u32) {
+        fn set_unread(&self, count: u32, generation: u64) {
             lock(&self.unread).push(count);
+            lock(&self.generations).push(generation);
         }
         fn touch_workspace(&self, id: &str, name: &str) {
             lock(&self.touched).push((id.to_string(), name.to_string()));
@@ -313,6 +340,13 @@ pub(crate) mod tests {
         rig_with(FakeDesk::default(), workspaces).await
     }
 
+    fn muted(generation: u64, workspaces: &[&str]) -> Muted {
+        Muted {
+            workspaces: workspaces.iter().map(|w| w.to_string()).collect(),
+            generation,
+        }
+    }
+
     pub(crate) fn reply_event(task: &str, sender: &str, message: &str) -> Value {
         json!({"type": "reply.received", "payload": {
             "id": task, "workspaceId": "w1", "title": "Ship it",
@@ -356,7 +390,7 @@ pub(crate) mod tests {
         let mut thought = reply_event("t1", "agent", "m2");
         thought["payload"]["messages"][0]["metadata"] = json!({"type": "agent_thought"});
         rig.notifier.on_event(&thought);
-        rig.notifier.set_muted(vec!["w1".into()]);
+        rig.notifier.set_muted(muted(1, &["w1"]));
         rig.notifier.on_event(&reply_event("t1", "agent", "m3"));
         assert!(titles(&rig.desk).is_empty());
     }
@@ -408,6 +442,9 @@ pub(crate) mod tests {
         rig.notifier.clicked("/workspaces/w1/tasks/t1");
         assert_eq!(*lock(&rig.desk.routes), ["/workspaces/w1/tasks/t1"]);
         assert_eq!(*lock(&rig.desk.unread), [1, 0]);
+        // Numbered in the order the count changed, for a Desk that gets them
+        // in another.
+        assert_eq!(*lock(&rig.desk.generations), [1, 2]);
     }
 
     /// A Desk that waits on a stand-in main thread, which takes the
@@ -443,7 +480,7 @@ pub(crate) mod tests {
         fn navigate(&self, _route: &str) {
             self.wait_for_main_thread();
         }
-        fn set_unread(&self, _count: u32) {
+        fn set_unread(&self, _count: u32, _generation: u64) {
             self.wait_for_main_thread();
         }
         fn touch_workspace(&self, _id: &str, _name: &str) {
@@ -526,9 +563,9 @@ pub(crate) mod tests {
             stream: EventStream::spawn(network, notifier.clone()),
             notifier: notifier.clone(),
         };
-        feed.switched(vec!["other".into()]);
+        feed.switched(muted(1, &["other"]));
         assert!(until(5_000, &|| titles(&desk).len() == 1).await);
-        assert_eq!(*lock(&notifier.muted), ["other"]);
+        assert_eq!(lock(&notifier.muted).workspaces, ["other"]);
 
         // Leaving the profile stops its stream; the count waits for `switched`.
         feed.switching();
@@ -541,9 +578,23 @@ pub(crate) mod tests {
         assert_eq!(streams, 1);
         assert_eq!(*lock(&desk.unread), [1]);
 
-        feed.muted(vec!["w1".into()]);
-        assert_eq!(*lock(&notifier.muted), ["w1"]);
+        feed.muted(muted(2, &["w1"]));
+        assert_eq!(lock(&notifier.muted).workspaces, ["w1"]);
         feed.stop();
         assert_eq!(*lock(&desk.unread), [1, 0]);
+    }
+
+    #[tokio::test]
+    async fn keeps_the_newest_mutes_whatever_order_they_arrive_in() {
+        let rig = crate::profiles::tests::rig();
+        rig.profiles.set_muted("w1", true).await.unwrap();
+        rig.profiles.set_muted("w2", true).await.unwrap();
+        let notifier = Notifier::new(rig.network.clone(), Arc::new(FakeDesk::default()));
+        let mutes = lock(&rig.watcher.mutes).clone();
+        for muted in mutes.into_iter().rev() {
+            notifier.set_muted(muted);
+        }
+        assert_eq!(lock(&notifier.muted).workspaces, rig.profiles.muted());
+        assert_eq!(rig.profiles.muted(), ["w1", "w2"]);
     }
 }

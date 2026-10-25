@@ -13,6 +13,7 @@
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -129,9 +130,18 @@ pub trait Watcher: Send + Sync {
     /// before its window is gone, or it notifies into the new one.
     fn switching(&self);
     /// Another profile is active, muting these workspaces.
-    fn switched(&self, muted: Vec<String>);
+    fn switched(&self, muted: Muted);
     /// The active profile's mutes changed.
-    fn muted(&self, muted: Vec<String>);
+    fn muted(&self, muted: Muted);
+}
+
+/// The active profile's muted workspaces, numbered as they were read: they
+/// reach the [`Watcher`] after `busy` is dropped, so in any order, and a
+/// higher number is a list at least as new.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Muted {
+    pub workspaces: Vec<String>,
+    pub generation: u64,
 }
 
 /// What waits for the old main window to be gone.
@@ -187,6 +197,8 @@ pub struct Profiles {
     shell: Box<dyn Shell>,
     watcher: Arc<dyn Watcher>,
     config: Mutex<ServerConfig>,
+    /// How many times the mutes were read for the Watcher.
+    mute_reads: AtomicU64,
     /// The live answer per profile, kept between openings of the switcher.
     identities: Mutex<HashMap<String, Option<Account>>>,
     /// The profile an added one came from, to go back to if it is abandoned.
@@ -224,6 +236,7 @@ impl Profiles {
             shell,
             watcher,
             config: Mutex::new(config),
+            mute_reads: AtomicU64::new(0),
             identities: Mutex::new(HashMap::new()),
             return_to: Mutex::new(None),
             busy: tokio::sync::Mutex::new(()),
@@ -268,13 +281,22 @@ impl Profiles {
             .map_err(io_error)?;
         self.keep(self.store().load());
         drop(busy);
-        self.watcher.muted(kept.clone());
+        self.watcher.muted(self.muted_now());
         Ok(kept)
+    }
+
+    /// The mutes for the Watcher, numbered under the lock they are read with.
+    fn muted_now(&self) -> Muted {
+        let config = lock(&self.config);
+        Muted {
+            workspaces: config.active().muted_workspaces.clone(),
+            generation: self.mute_reads.fetch_add(1, Ordering::SeqCst) + 1,
+        }
     }
 
     /// Start following the active profile, at launch.
     pub fn watch(&self) {
-        self.watcher.switched(self.muted());
+        self.watcher.switched(self.muted_now());
     }
 
     /// The folder for a profile's webview storage; macOS has a data store instead.
@@ -442,7 +464,7 @@ impl Profiles {
         let closing = std::mem::take(&mut *lock(&self.closing));
         if let Some(net) = closing.net {
             self.network.activate(net);
-            self.watcher.switched(self.muted());
+            self.watcher.switched(self.muted_now());
         }
         for id in closing.forget {
             self.forget_storage(&id);
@@ -718,6 +740,7 @@ pub(crate) mod tests {
     #[derive(Default)]
     pub struct FakeWatcher {
         pub told: Mutex<Vec<String>>,
+        pub mutes: Mutex<Vec<Muted>>,
         profiles: std::sync::OnceLock<std::sync::Weak<Profiles>>,
     }
 
@@ -740,11 +763,13 @@ pub(crate) mod tests {
         fn switching(&self) {
             self.tell("switching".into());
         }
-        fn switched(&self, muted: Vec<String>) {
-            self.tell(format!("switched {muted:?}"));
+        fn switched(&self, muted: Muted) {
+            self.tell(format!("switched {:?}", muted.workspaces));
+            lock(&self.mutes).push(muted);
         }
-        fn muted(&self, muted: Vec<String>) {
-            self.tell(format!("muted {muted:?}"));
+        fn muted(&self, muted: Muted) {
+            self.tell(format!("muted {:?}", muted.workspaces));
+            lock(&self.mutes).push(muted);
         }
     }
 

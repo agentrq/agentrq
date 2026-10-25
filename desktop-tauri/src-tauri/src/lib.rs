@@ -335,6 +335,8 @@ struct Reopening(AtomicBool);
 
 /// The old main window is gone: the new one, on the active profile.
 fn rebuild_main<R: Runtime>(app: &AppHandle<R>) {
+    // Again: the old page may have finished a load since `reopen`.
+    shell::page_leaving(app);
     app.state::<Arc<Profiles>>().main_window_closed();
     if let Err(error) = chrome::open_active_main_window(app) {
         eprintln!("[profiles] could not reopen the window: {error}");
@@ -346,7 +348,10 @@ struct TauriCookies<R: Runtime>(Webview<R>);
 
 impl<R: Runtime> CookieWebview for TauriCookies<R> {
     fn cookies(&self) -> Vec<Cookie<'static>> {
-        self.0.cookies().unwrap_or_default()
+        self.0.cookies().unwrap_or_else(|error| {
+            eprintln!("[cookies] could not read the webview's cookies: {error}");
+            Vec::new()
+        })
     }
     fn delete_cookie(&self, cookie: Cookie<'static>) {
         // WebView2 deletes later, which is fine: nothing on the app's origin
@@ -365,6 +370,7 @@ impl<R: Runtime> Shell for Windows<R> {
     /// the windows that are left, so building it there means the count never
     /// reaches zero and Linux and Windows do not quit mid-switch.
     fn reopen(&self) {
+        shell::page_leaving(&self.0);
         let app = self.0.clone();
         let _ = self.0.run_on_main_thread(move || {
             let Some(webview) = chrome::main_webview(&app) else {
@@ -383,6 +389,7 @@ impl<R: Runtime> Shell for Windows<R> {
         if let Some(webview) = chrome::main_webview(&self.0) {
             let origin = app_origin(&self.0.state::<Arc<Profiles>>().active_id());
             if let Ok(url) = Url::parse(&format!("{origin}/")) {
+                shell::page_leaving(&self.0);
                 let _ = webview.navigate(url);
             }
         }
@@ -436,9 +443,9 @@ impl<R: Runtime> Desk for TauriDesk<R> {
         }
     }
 
-    fn set_unread(&self, count: u32) {
+    fn set_unread(&self, count: u32, generation: u64) {
         if let Some(shell) = self.shell() {
-            shell.set_unread_count(&self.0, count.into());
+            shell.set_unread_count(&self.0, count.into(), generation);
         }
     }
 
