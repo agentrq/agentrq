@@ -13,6 +13,8 @@ mod chrome_state;
 mod commands;
 mod cookie_jar;
 mod event_source;
+mod ext_host;
+mod extensions;
 mod network;
 mod panic_log;
 mod profiles;
@@ -41,10 +43,14 @@ use tauri::{
 use tauri_plugin_updater::UpdaterExt;
 
 use event_source::Streams;
+use ext_host::{ExtHost, Launch};
+use extensions::{HostDrawers, PickedFolder, Picker, ShellServices};
 use network::Network;
 use profiles::{app_origin, Profiles, Shell};
 use scheme::{Assets, Scheme, MAIN_WEBVIEW};
 use sign_in::CookieWebview;
+use tauri::path::BaseDirectory;
+use tauri_plugin_dialog::DialogExt;
 use vault::{Keychain, KeychainError};
 
 /// The Vite dev server, when this is `tauri dev`. The scheme forwards to it,
@@ -75,12 +81,13 @@ impl<R: Runtime> Assets for Bundled<R> {
     }
 }
 
-/// The key for the cookie jars, in the OS keychain.
-struct OsKeychain;
+/// A key in the OS keychain: the cookie jars' (`cookie-jar-key`) or the
+/// extension secrets' (`extension-secrets-key`).
+struct OsKeychain(&'static str);
 
 impl OsKeychain {
-    fn entry() -> Result<keyring::Entry, KeychainError> {
-        keyring::Entry::new("com.agentrq.desktop.tauri", "cookie-jar-key").map_err(keychain_error)
+    fn entry(&self) -> Result<keyring::Entry, KeychainError> {
+        keyring::Entry::new("com.agentrq.desktop.tauri", self.0).map_err(keychain_error)
     }
 }
 
@@ -103,14 +110,14 @@ fn keychain_error(error: keyring::Error) -> KeychainError {
 
 impl Keychain for OsKeychain {
     fn get(&self) -> Result<Option<Vec<u8>>, KeychainError> {
-        match Self::entry()?.get_secret() {
+        match self.entry()?.get_secret() {
             Ok(secret) => Ok(Some(secret)),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(error) => Err(keychain_error(error)),
         }
     }
     fn set(&self, secret: &[u8]) -> Result<(), KeychainError> {
-        Self::entry()?.set_secret(secret).map_err(keychain_error)
+        self.entry()?.set_secret(secret).map_err(keychain_error)
     }
 }
 
@@ -503,6 +510,65 @@ async fn finish_sign_in<R: Runtime>(window: WebviewWindow<R>, flow: Flow, id: St
     }
 }
 
+/// The extension host: the Node binary bundled beside the app, running the
+/// bundled entry. It starts only once an installed extension is enabled.
+fn extension_host<R: Runtime>(
+    app: &AppHandle<R>,
+    network: Arc<Network>,
+    data_dir: std::path::PathBuf,
+) -> tauri::Result<Arc<ExtHost>> {
+    #[cfg(windows)]
+    const NODE: &str = "agentrq-ext-host.exe";
+    #[cfg(not(windows))]
+    const NODE: &str = "agentrq-ext-host";
+    let program = std::env::current_exe()?
+        .parent()
+        .map(|dir| dir.join(NODE))
+        .unwrap_or_else(|| NODE.into());
+    let entry = app
+        .path()
+        .resolve("ext-host/agentrq-ext-host.mjs", BaseDirectory::Resource)?;
+    let launch = Launch {
+        program,
+        args: vec![
+            entry.into(),
+            data_dir.clone().into(),
+            app.package_info().version.to_string().into(),
+        ],
+    };
+    let emitter = app.clone();
+    let services = ShellServices::new(
+        network,
+        Arc::new(OsKeychain("extension-secrets-key")),
+        Box::new(move |detail| {
+            let _ = emitter.emit("agentrq:extensions:changed", detail);
+        }),
+    );
+    let host = ExtHost::new(launch, data_dir, Arc::new(services));
+    app.manage(host.clone());
+    Ok(host)
+}
+
+/// `chooseFolder`'s dialog, off the async runtime: it blocks until closed.
+fn pick_folder<R: Runtime>(window: WebviewWindow<R>) -> PickedFolder {
+    Box::pin(async move {
+        let picked = tauri::async_runtime::spawn_blocking(move || {
+            window
+                .dialog()
+                .file()
+                .set_title("Choose an extension folder")
+                .set_parent(&window)
+                .blocking_pick_folder()
+        })
+        .await;
+        picked
+            .ok()
+            .flatten()
+            .and_then(|path| path.into_path().ok())
+            .map(|path| path.to_string_lossy().into_owned())
+    })
+}
+
 pub fn run() {
     let app = chrome::plugins(tauri::Builder::default())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -523,7 +589,7 @@ pub fn run() {
             let lock = connection_lock(std::env::var("AGENTRQ_SERVER_URL").ok().as_deref());
             let network = Arc::new(Network::new(
                 data_dir.clone(),
-                Arc::new(OsKeychain),
+                Arc::new(OsKeychain("cookie-jar-key")),
                 profiles::first_profile(&data_dir, lock.as_deref()),
             ));
             let handle = app.handle().clone();
@@ -534,7 +600,7 @@ pub fn run() {
                 Box::new(Windows(handle.clone())),
             ));
             profiles.sweep();
-            app.manage(profiles);
+            app.manage(profiles.clone());
             app.manage(Reopening::default());
             #[cfg(target_os = "macos")]
             sweep_data_stores(&handle);
@@ -549,7 +615,13 @@ pub fn run() {
             });
             app.manage(network.clone());
             app.manage(Streams::default());
-            app.manage(Scheme::new(network, assets, &dev_url(&handle)));
+            let host = extension_host(&handle, network.clone(), data_dir.clone())?;
+            app.manage(Picker::<tauri::Wry>(Box::new(pick_folder)));
+            let drawers = HostDrawers {
+                host: host.clone(),
+                origin: Box::new(move || app_origin(&profiles.active_id())),
+            };
+            app.manage(Scheme::new(network, assets, &dev_url(&handle)).drawers(Box::new(drawers)));
             init_updater(&handle);
             app.manage(chrome::Chrome::new(data_dir));
             shell::init(&handle)?;
@@ -557,6 +629,9 @@ pub fn run() {
             app_menu::install(&handle)?;
             let _ = app_menu::install_tray(&handle);
             chrome::install_hooks(&handle);
+            tauri::async_runtime::spawn(async move {
+                host.boot();
+            });
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -574,6 +649,9 @@ pub fn run() {
                 rebuild_main(app);
             }
             RunEvent::Exit => {
+                // Its stdin closes, and it leaves with the app.
+                let host = app.state::<Arc<ExtHost>>().inner().clone();
+                tauri::async_runtime::block_on(async move { host.stop() });
                 if let Some(installer) = app.try_state::<ExitInstaller>() {
                     (installer.0)();
                 }

@@ -7,7 +7,8 @@
   gate. `src-tauri/src/lib.rs` is wiring only and is outside the gate.
 - **A bridge command is named after its Electron channel** (`agentrq:side-panel:permission-answer`
   is `side_panel_permission_answer`). `commands.rs` holds one per channel, as a
-  `todo` stub until its work package replaces it.
+  `todo` stub until its work package replaces it, sometimes with one in a module of
+  its own (`extensions.rs`), which the parity test then reads too.
 - **`bridge/index.js` mirrors `desktop/src/preload/index.js` member for member**, and
   `test/parity.test.js` loads both. Change the preload and the bridge follows, or CI
   fails. A call's arguments cross as one object keyed by the preload's parameter names.
@@ -108,3 +109,19 @@
 - **`AGENTRQ_E2E_INIT_SCRIPT` is CI's**: a script the main webview runs first, which seeds
   the theme until WP4 lets the renderer reach the app (`test/e2e/`). Only a debug build or
   `--features e2e` reads it; a release must not run an environment's script in the webview.
+- **Extensions run in a Node sidecar, `agentrq-ext-host`**, which imports
+  `desktop/src/main/extensions/*` unchanged; never fork them here. The Node is
+  pinned with SHA-256s in `scripts/fetch-node.mjs` (about 120 MB unpacked, 30 to
+  95 MB a download), and `tauri-build` refuses to build until it and
+  `dist/ext-host/` exist: run `npm run fetch:node && npm run build:ext-host` first.
+- **The host starts only when an installed extension is enabled.** A call a page
+  makes on every render (`entries`, `panelPages`, `drawerFor`) never starts it
+  (`core::ext_host::answer_without_host`), or every page load would spawn Node.
+- **The sidecar's stdout is the wire.** `main.js` sends `console.log` and stdout
+  to stderr before anything loads; an extension's print would otherwise end the
+  host.
+- **Extension secrets use a keychain-only key** (`vault::keychain_only_key`),
+  never a file beside them: with no keychain they are refused, as Electron's
+  `safeStorage` refuses them.
+- **A host call waits for `start`.** One that arrives while it runs and installs
+  what it is loading would load that extension twice.

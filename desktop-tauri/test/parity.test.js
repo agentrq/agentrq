@@ -208,7 +208,7 @@ describe('the command pattern', () => {
 
 describe('the Rust side serves what the bridge calls', () => {
   // The handler lives in commands.rs; the commands of a work package beside it.
-  const SOURCES = ['commands', 'chrome', 'app_menu']
+  const SOURCES = ['commands', 'chrome', 'app_menu', 'extensions']
   const sources = SOURCES.map((name) => read(`../src-tauri/src/${name}.rs`))
   const rust = sources[0]
   const defined = sources.flatMap((source) => [...source.matchAll(COMMAND_PATTERN)].map((m) => m[1])).sort()
@@ -326,6 +326,10 @@ describe('the Rust side serves what the bridge calls', () => {
       profiles_switch: ['id'],
       profiles_rename: ['id', 'label'],
       profiles_remove: ['id'],
+      extensions_uninstall: ['name'],
+      extensions_set_enabled: ['name', 'enabled'],
+      extensions_configure: ['name'],
+      extensions_set_hook_consent: ['name', 'level'],
     }
     for (const [command, names] of Object.entries(required)) {
       for (const name of names) {

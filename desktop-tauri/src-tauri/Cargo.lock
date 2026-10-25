@@ -43,6 +43,7 @@ name = "agentrq-tauri"
 version = "0.13.4"
 dependencies = [
  "agentrq-desktop-core",
+ "base64 0.23.1",
  "chacha20poly1305",
  "cookie_store",
  "futures-util",
@@ -5133,6 +5134,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

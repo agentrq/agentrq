@@ -79,7 +79,7 @@ pub fn random_key() -> [u8; KEY_LEN] {
     random()
 }
 
-fn random<const N: usize>() -> [u8; N] {
+pub(crate) fn random<const N: usize>() -> [u8; N] {
     let mut bytes = [0; N];
     getrandom::fill(&mut bytes).expect("the OS random source is available");
     bytes
@@ -117,6 +117,21 @@ fn no_keychain(error: KeychainError, fallback: &Path) -> io::Result<[u8; KEY_LEN
     let key = random();
     write_private(fallback, &key)?;
     Ok(key)
+}
+
+/// A key held in the keychain and nowhere else, made there on first use;
+/// `None` when there is no keychain or it refused. For extension secrets:
+/// Electron's `safeStorage` refuses them on a Linux box with no keyring, and
+/// so does this, rather than keep their key in a file beside them.
+pub fn keychain_only_key(keychain: &dyn Keychain) -> Option<[u8; KEY_LEN]> {
+    if let Some(found) = keychain.get().ok()? {
+        if let Ok(key) = <[u8; KEY_LEN]>::try_from(found.as_slice()) {
+            return Some(key);
+        }
+    }
+    let key = random();
+    keychain.set(&key).ok()?;
+    Some(key)
 }
 
 /// Writes a file only this user can read, whole or not at all: a sibling is
@@ -182,6 +197,31 @@ mod tests {
         assert_eq!(Vault::new(&random_key()).open(&sealed), None);
         assert_eq!(vault.open(b"plain json"), None);
         assert_eq!(vault.open(b"ARQV1short"), None);
+    }
+
+    #[test]
+    fn keeps_a_secrets_key_in_the_keychain_only() {
+        let keychain = Fake::default();
+        let first = keychain_only_key(&keychain).unwrap();
+        assert_eq!(keychain.secret.borrow().as_deref(), Some(&first[..]));
+        assert_eq!(keychain_only_key(&keychain), Some(first));
+
+        *keychain.secret.borrow_mut() = Some(b"short".to_vec());
+        let replaced = keychain_only_key(&keychain).unwrap();
+        assert_eq!(keychain.secret.borrow().as_deref(), Some(&replaced[..]));
+
+        for error in [KeychainError::Missing, KeychainError::Refused] {
+            let missing = Fake {
+                get_fails: Some(error),
+                ..Fake::default()
+            };
+            assert_eq!(keychain_only_key(&missing), None);
+            let unwritable = Fake {
+                set_fails: Some(error),
+                ..Fake::default()
+            };
+            assert_eq!(keychain_only_key(&unwritable), None);
+        }
     }
 
     #[test]

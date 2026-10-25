@@ -11,20 +11,26 @@
 //! budgets, the policy and the replies. This module only moves bytes between
 //! the webview, the active profile's client and the bundled renderer.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use agentrq_desktop_core::attachment_store::{should_cache_response, WriteOptions};
+use agentrq_desktop_core::drawer_frame::drawer_frame_document;
 use agentrq_desktop_core::protocol::{
     attachment_hit_reply, bad_gateway_reply, dev_failure_message, dev_response_headers,
-    dev_unreachable_reply, drawer_code_reply, filter_request_headers, forbidden_reply,
-    not_found_reply, plan_static_request, proxied_response_headers, proxy_error_reply, sends_body,
-    serve_from_store, stored_content_disposition, AppProtocol, DrawerLookup, HeaderList,
-    ProxyError, Reply, Route, StaticOutcome, PROXY_TIMEOUT_MS,
+    dev_unreachable_reply, drawer_code_reply, drawer_frame_reply, filter_request_headers,
+    forbidden_reply, not_found_reply, plan_static_request, proxied_response_headers,
+    proxy_error_reply, sends_body, serve_from_store, stored_content_disposition, AppProtocol,
+    DrawerLookup, HeaderList, ProxyError, Reply, Route, StaticOutcome, PROXY_TIMEOUT_MS,
 };
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use http::{HeaderName, HeaderValue, Request, Response};
 
 use crate::network::{Network, ProfileNet};
 use crate::upstream::{self, pairs, BodyLimits, Incoming, Outgoing};
+use crate::vault::random;
 
 /// The webview the renderer runs in: the only one whose requests carry the
 /// profile's cookies to the server.
@@ -35,6 +41,16 @@ pub trait Assets: Send + Sync {
     /// Only a real file: never the SPA fallback Tauri's own resolver applies.
     fn exists(&self, path: &str) -> bool;
     fn read(&self, path: &str) -> Option<Vec<u8>>;
+}
+
+/// What draws an extension's format (WP9): the frame's origin, which its
+/// policy names, and a drawer's code by format.
+pub trait Drawers: Send + Sync {
+    fn origin(&self) -> String;
+    fn code(
+        &self,
+        format: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = DrawerLookup> + Send + '_>>;
 }
 
 /// Told about every request forwarded to the server, before it is sent: the
@@ -50,6 +66,7 @@ pub struct Scheme {
     /// For Vite only: it is not the server, so it gets no profile's cookies.
     dev_client: reqwest::Client,
     limits: BodyLimits,
+    drawers: Option<Box<dyn Drawers>>,
 }
 
 impl Scheme {
@@ -61,7 +78,13 @@ impl Scheme {
             on_proxied: Box::new(|_, _| {}),
             dev_client: reqwest::Client::new(),
             limits: BodyLimits::default(),
+            drawers: None,
         }
+    }
+
+    pub fn drawers(mut self, drawers: Box<dyn Drawers>) -> Self {
+        self.drawers = Some(drawers);
+        self
     }
 
     #[allow(dead_code)] // WP6 feeds the notification self-action gate.
@@ -83,9 +106,19 @@ impl Scheme {
             .unwrap_or_default();
         match protocol.route(&path) {
             Route::Forbidden => text(forbidden_reply()),
-            // Extensions are WP9: until then neither has anything to serve.
-            Route::DrawerFrame => text(not_found_reply()),
-            Route::DrawerCode(_) => text(drawer_code_reply(&DrawerLookup::default())),
+            Route::DrawerFrame => text(match &self.drawers {
+                // The header and the document carry one nonce, made here.
+                Some(drawers) => {
+                    let nonce = STANDARD.encode(random::<16>());
+                    let (html, csp) = drawer_frame_document(&nonce, &drawers.origin());
+                    drawer_frame_reply(&html, &csp)
+                }
+                None => not_found_reply(),
+            }),
+            Route::DrawerCode(format) => text(drawer_code_reply(&match &self.drawers {
+                Some(drawers) => drawers.code(format).await,
+                None => DrawerLookup::default(),
+            })),
             Route::Proxy if webview != MAIN_WEBVIEW => text(forbidden_reply()),
             Route::Proxy => {
                 let net = self.network.active().await;
@@ -597,7 +630,64 @@ mod tests {
         assert!(rig.proxied.lock().unwrap().is_empty());
     }
 
-    // drawers, until WP9
+    // drawers
+
+    struct FakeDrawers;
+
+    impl Drawers for FakeDrawers {
+        fn origin(&self) -> String {
+            "app://localhost".into()
+        }
+        fn code(
+            &self,
+            format: Option<String>,
+        ) -> Pin<Box<dyn Future<Output = DrawerLookup> + Send + '_>> {
+            Box::pin(async move {
+                match format.as_deref() {
+                    Some("mermaid") => DrawerLookup::Found {
+                        code: "export default 1".into(),
+                    },
+                    _ => DrawerLookup::Refused { reason: None },
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn serves_the_frame_with_one_fresh_nonce_and_a_drawer_by_format() {
+        let mut rig = rig("", "");
+        rig.scheme = rig.scheme.drawers(Box::new(FakeDrawers));
+        let frame = get(&rig, "/__agentrq/drawer-frame.html").await;
+        assert_eq!(frame.status(), 200);
+        let csp = header(&frame, "content-security-policy")
+            .unwrap()
+            .to_string();
+        assert!(
+            csp.contains("script-src 'nonce-") && csp.contains(" app://localhost"),
+            "{csp}"
+        );
+        let nonce = csp
+            .split("'nonce-")
+            .nth(1)
+            .unwrap()
+            .split('\'')
+            .next()
+            .unwrap();
+        assert_eq!(nonce.len(), 24);
+        assert!(body(&frame).contains(&format!("nonce=\"{nonce}\"")));
+        let again = get(&rig, "/__agentrq/drawer-frame.html").await;
+        assert_ne!(header(&again, "content-security-policy").unwrap(), csp);
+
+        let code = get(&rig, "/__agentrq/drawer/mermaid.js").await;
+        assert_eq!(code.status(), 200);
+        assert_eq!(body(&code), "export default 1");
+        assert_eq!(header(&code, "access-control-allow-origin"), Some("*"));
+        let none = get(&rig, "/__agentrq/drawer/vega.js").await;
+        assert_eq!(
+            (none.status().as_u16(), body(&none).as_str()),
+            (404, "No such drawer")
+        );
+    }
 
     #[tokio::test]
     async fn answers_without_a_drawer_source_at_all() {

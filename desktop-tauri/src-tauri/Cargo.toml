@@ -29,7 +29,8 @@ tauri-plugin-dialog = "2.8.3"
 tauri-plugin-opener = "2.7.2"
 http = "1.5.0"
 reqwest = { version = "0.13.5", features = ["cookies", "stream", "gzip", "brotli"] }
-tokio = { version = "1.54.1", features = ["time", "sync"] }
+tokio = { version = "1.54.1", features = ["time", "sync", "process", "io-util", "macros", "rt"] }
+base64 = "0.23.1"
 cookie_store = "0.22.1"
 url = "2.5.8"
 serde = { version = "1.0.229", features = ["derive"] }

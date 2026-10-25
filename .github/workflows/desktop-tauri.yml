@@ -9,6 +9,9 @@ on:
       - 'frontend/**'
       - 'desktop/src/renderer/**'
       - 'desktop/src/preload/**'
+      # The extension host runs these unchanged, and its tests run the examples.
+      - 'desktop/src/main/extensions/**'
+      - 'examples/extensions/**'
       - '.github/workflows/desktop-tauri.yml'
   # The renderer is desktop's renderer, built from frontend/src, so a change
   # there can break this build without touching desktop-tauri/.
@@ -18,6 +21,9 @@ on:
       - 'frontend/**'
       - 'desktop/src/renderer/**'
       - 'desktop/src/preload/**'
+      # The extension host runs these unchanged, and its tests run the examples.
+      - 'desktop/src/main/extensions/**'
+      - 'examples/extensions/**'
       - '.github/workflows/desktop-tauri.yml'
   workflow_dispatch:
 
@@ -88,6 +94,14 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      # tauri-build checks the externalBin and resources exist: the pinned Node
+      # (checked against its SHA-256) and the extension host's bundle.
+      - name: Fetch Node and bundle the extension host
+        working-directory: desktop-tauri
+        run: |
+          npm run fetch:node
+          npm run build:ext-host
+
       # tauri::generate_context! reads frontendDist, so it must exist.
       - name: Build the renderer
         working-directory: desktop-tauri
@@ -150,6 +164,26 @@ jobs:
               wait $APP || true
               node test/e2e/pixel.mjs shots/linux-$mode-window.png "$want"
             done'
+
+      # WP9's acceptance: the five examples through window.agentrq in the real
+      # app, its steps reported to test/e2e/extensions-server.mjs.
+      - name: Extensions in the app (Linux)
+        if: runner.os == 'Linux'
+        working-directory: desktop-tauri
+        run: |
+          node test/e2e/extensions-server.mjs 39117 > extension-steps.txt &
+          SERVER=$!
+          export AGENTRQ_SERVER_URL=http://127.0.0.1:39117
+          export AGENTRQ_E2E_INIT_SCRIPT="$(sed "s|__EXAMPLES__|$(cd ../examples/extensions && pwd)|" test/e2e/extensions.js)"
+          xvfb-run -a -s "-screen 0 1400x900x24" dbus-run-session -- bash -c '
+            WEBKIT_DISABLE_DMABUF_RENDERER=1 src-tauri/target/release/agentrq-tauri &
+            APP=$!
+            for i in $(seq 1 90); do kill -0 '$SERVER' 2>/dev/null || break; sleep 1; done
+            kill $APP
+            wait $APP || true'
+          cat extension-steps.txt
+          if kill -0 $SERVER 2>/dev/null; then kill $SERVER; echo 'The steps never finished.'; exit 1; fi
+          wait $SERVER
 
       - name: Screenshots and window background (macOS)
         if: runner.os == 'macOS'

@@ -5,9 +5,9 @@
   "version": "0.13.4",
   "identifier": "com.agentrq.desktop.tauri",
   "build": {
-    "beforeDevCommand": "npm run dev:renderer",
+    "beforeDevCommand": "npm run fetch:node && npm run build:ext-host && npm run dev:renderer",
     "devUrl": "http://localhost:5175",
-    "beforeBuildCommand": "npm run build:renderer",
+    "beforeBuildCommand": "npm run fetch:node && npm run build:ext-host && npm run build:renderer",
     "frontendDist": "../dist/renderer"
   },
   "app": {
@@ -18,6 +18,10 @@
     "active": true,
     "targets": ["deb", "appimage", "nsis", "dmg"],
     "createUpdaterArtifacts": true,
+    "externalBin": ["binaries/agentrq-ext-host"],
+    "resources": {
+      "../dist/ext-host/agentrq-ext-host.mjs": "ext-host/agentrq-ext-host.mjs"
+    },
     "category": "DeveloperTool",
     "copyright": "Copyright © 2026 Contextual, Inc.",
     "shortDescription": "Task orchestration for coding agents",

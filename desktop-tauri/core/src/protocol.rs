@@ -690,6 +690,26 @@ impl Default for DrawerLookup {
     }
 }
 
+/// The largest drawer the shell serves: `fetch-source.js`'s `MAX_DRAWER_BYTES`,
+/// checked again on the shell's side of the wire.
+pub const MAX_DRAWER_BYTES: usize = 16 * 1024 * 1024;
+
+/// The extension host's `drawerFor` answer, as a lookup.
+pub fn drawer_lookup(answer: &serde_json::Value) -> DrawerLookup {
+    let reason = || answer["reason"].as_str().map(str::to_string);
+    match answer["code"].as_str() {
+        Some(code) if answer["ok"] == true && code.len() <= MAX_DRAWER_BYTES => {
+            DrawerLookup::Found {
+                code: code.to_string(),
+            }
+        }
+        Some(_) if answer["ok"] == true => DrawerLookup::Refused {
+            reason: Some("That drawer is larger than 16 MB.".to_string()),
+        },
+        _ => DrawerLookup::Refused { reason: reason() },
+    }
+}
+
 /// The answer for a drawer's code.
 pub fn drawer_code_reply(found: &DrawerLookup) -> Reply {
     match found {
@@ -1848,6 +1868,45 @@ mod tests {
         .to_string();
         assert!(csp.contains("default-src 'self'"));
         assert!(!csp.contains("default-src 'none'"));
+    }
+
+    // the extension host's answer for a drawer
+
+    #[test]
+    fn reads_the_hosts_drawer_answer() {
+        use serde_json::json;
+        assert_eq!(
+            drawer_lookup(&json!({"ok": true, "code": "export default 1", "owner": "x"})),
+            DrawerLookup::Found {
+                code: "export default 1".into()
+            }
+        );
+        assert_eq!(
+            drawer_lookup(&json!({"ok": false, "reason": "Nothing installed draws \"x\"."})),
+            DrawerLookup::Refused {
+                reason: Some("Nothing installed draws \"x\".".into())
+            }
+        );
+        assert_eq!(
+            drawer_lookup(&json!(null)),
+            DrawerLookup::Refused { reason: None }
+        );
+        assert_eq!(
+            drawer_lookup(&json!({"ok": "yes", "code": "x"})),
+            DrawerLookup::Refused { reason: None }
+        );
+        let big = "x".repeat(MAX_DRAWER_BYTES + 1);
+        assert_eq!(
+            drawer_lookup(&json!({"ok": true, "code": big})),
+            DrawerLookup::Refused {
+                reason: Some("That drawer is larger than 16 MB.".into())
+            }
+        );
+        let limit = "x".repeat(MAX_DRAWER_BYTES);
+        assert!(matches!(
+            drawer_lookup(&json!({"ok": true, "code": limit})),
+            DrawerLookup::Found { .. }
+        ));
     }
 
     // a drawer's code

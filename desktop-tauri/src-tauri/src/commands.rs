@@ -184,96 +184,6 @@ pub fn notifications_set_muted() -> Result<(), String> {
     todo("notifications.setMuted", "WP6")
 }
 
-/// `agentrq:extensions:authorize`
-#[tauri::command]
-pub fn extensions_authorize() -> Result<(), String> {
-    todo("extensions.authorize", "WP9")
-}
-
-/// `agentrq:extensions:choose-folder`
-#[tauri::command]
-pub fn extensions_choose_folder() -> Result<(), String> {
-    todo("extensions.chooseFolder", "WP9")
-}
-
-/// `agentrq:extensions:configure`
-#[tauri::command]
-pub fn extensions_configure() -> Result<(), String> {
-    todo("extensions.configure", "WP9")
-}
-
-/// `agentrq:extensions:deauthorize`
-#[tauri::command]
-pub fn extensions_deauthorize() -> Result<(), String> {
-    todo("extensions.deauthorize", "WP9")
-}
-
-/// `agentrq:extensions:drawer`
-#[tauri::command]
-pub fn extensions_drawer() -> Result<(), String> {
-    todo("extensions.drawer", "WP9")
-}
-
-/// `agentrq:extensions:entries`
-#[tauri::command]
-pub fn extensions_entries() -> Result<(), String> {
-    todo("extensions.entries", "WP9")
-}
-
-/// `agentrq:extensions:install-catalogue`
-#[tauri::command]
-pub fn extensions_install_catalogue() -> Result<(), String> {
-    todo("extensions.installFromCatalogue", "WP9")
-}
-
-/// `agentrq:extensions:install-local`
-#[tauri::command]
-pub fn extensions_install_local() -> Result<(), String> {
-    todo("extensions.installLocal", "WP9")
-}
-
-/// `agentrq:extensions:invoke`
-#[tauri::command]
-pub fn extensions_invoke() -> Result<(), String> {
-    todo("extensions.invoke", "WP9")
-}
-
-/// `agentrq:extensions:refresh`
-#[tauri::command]
-pub fn extensions_refresh() -> Result<(), String> {
-    todo("extensions.refresh", "WP9")
-}
-
-/// `agentrq:extensions:set-enabled`
-#[tauri::command]
-pub fn extensions_set_enabled() -> Result<(), String> {
-    todo("extensions.setEnabled", "WP9")
-}
-
-/// `agentrq:extensions:set-hook-consent`
-#[tauri::command]
-pub fn extensions_set_hook_consent() -> Result<(), String> {
-    todo("extensions.setHookConsent", "WP9")
-}
-
-/// `agentrq:extensions:state`
-#[tauri::command]
-pub fn extensions_state() -> Result<(), String> {
-    todo("extensions.state", "WP9")
-}
-
-/// `agentrq:extensions:supervisor`
-#[tauri::command]
-pub fn extensions_supervisor() -> Result<(), String> {
-    todo("extensions.supervisor", "WP9")
-}
-
-/// `agentrq:extensions:uninstall`
-#[tauri::command]
-pub fn extensions_uninstall() -> Result<(), String> {
-    todo("extensions.uninstall", "WP9")
-}
-
 use tauri::{AppHandle, Manager, Runtime};
 
 /// `agentrq:update:check`
@@ -338,12 +248,6 @@ pub fn side_panel_open_external() -> Result<(), String> {
     todo("sidePanel.openExternal", "WP7b")
 }
 
-/// `agentrq:side-panel:pages`
-#[tauri::command]
-pub fn side_panel_pages() -> Result<(), String> {
-    todo("sidePanel.pages", "WP7b")
-}
-
 /// `agentrq:side-panel:permission-answer`
 #[tauri::command]
 pub fn side_panel_permission_answer() -> Result<(), String> {
@@ -396,27 +300,27 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::chrome::clipboard_write,
         crate::chrome::emoji_show_panel,
         crate::chrome::dialog_choose_directory,
-        extensions_authorize,
-        extensions_choose_folder,
-        extensions_configure,
-        extensions_deauthorize,
-        extensions_drawer,
-        extensions_entries,
-        extensions_install_catalogue,
-        extensions_install_local,
-        extensions_invoke,
-        extensions_refresh,
-        extensions_set_enabled,
-        extensions_set_hook_consent,
-        extensions_state,
-        extensions_supervisor,
-        extensions_uninstall,
+        crate::extensions::extensions_authorize,
+        crate::extensions::extensions_choose_folder,
+        crate::extensions::extensions_configure,
+        crate::extensions::extensions_deauthorize,
+        crate::extensions::extensions_drawer,
+        crate::extensions::extensions_entries,
+        crate::extensions::extensions_install_catalogue,
+        crate::extensions::extensions_install_local,
+        crate::extensions::extensions_invoke,
+        crate::extensions::extensions_refresh,
+        crate::extensions::extensions_set_enabled,
+        crate::extensions::extensions_set_hook_consent,
+        crate::extensions::extensions_state,
+        crate::extensions::extensions_supervisor,
+        crate::extensions::extensions_uninstall,
         update_check,
         update_get,
         update_install,
         update_install_via_script,
         side_panel_open_external,
-        side_panel_pages,
+        crate::extensions::side_panel_pages,
         side_panel_permission_answer,
         side_panel_permission_remove,
         side_panel_permissions,
@@ -492,8 +396,9 @@ mod tests {
         ("panel_send", "panel.send"),
     ];
 
-    /// The commands WP2 and WP4 have replaced; every other one is still a stub.
-    const DONE: [&str; 12] = [
+    /// The commands WP2, WP4 and WP9 have replaced; every other one is still a
+    /// stub.
+    const DONE: [&str; 28] = [
         "attachments_forget_all",
         "attachments_forget_task",
         "attachments_forget_workspace",
@@ -506,6 +411,22 @@ mod tests {
         "profiles_remove",
         "profiles_rename",
         "profiles_switch",
+        "extensions_authorize",
+        "extensions_choose_folder",
+        "extensions_configure",
+        "extensions_deauthorize",
+        "extensions_drawer",
+        "extensions_entries",
+        "extensions_install_catalogue",
+        "extensions_install_local",
+        "extensions_invoke",
+        "extensions_refresh",
+        "extensions_set_enabled",
+        "extensions_set_hook_consent",
+        "extensions_state",
+        "extensions_supervisor",
+        "extensions_uninstall",
+        "side_panel_pages",
     ];
 
     struct Rig {

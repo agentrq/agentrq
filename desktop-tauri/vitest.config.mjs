@@ -12,7 +12,9 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.js'],
       // The renderer entry is two imports; what it loads is covered where it lives.
-      exclude: ['src/renderer/main.js'],
+      // The extension host's entry is wiring, run as a process by
+      // test/ext-host-examples.test.js and by the shell's tests.
+      exclude: ['src/renderer/main.js', 'src/ext-host/main.js'],
       reporter: ['text', 'lcov'],
       thresholds: {
         lines: 100,
