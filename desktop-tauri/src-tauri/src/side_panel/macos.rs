@@ -38,9 +38,12 @@ static ORIGINAL: OnceLock<Imp> = OnceLock::new();
 
 thread_local! {
     /// The decisions a guest's page is waiting on, until the broker answers.
-    static WAITING: RefCell<HashMap<u64, RcBlock<dyn Fn(isize)>>> = RefCell::new(HashMap::new());
+    static WAITING: RefCell<HashMap<u64, Decision>> = RefCell::new(HashMap::new());
     static NEXT_REQUEST: Cell<u64> = const { Cell::new(1) };
 }
+
+/// A held `decisionHandler`, called with a `WKPermissionDecision`.
+type Decision = RcBlock<dyn Fn(isize)>;
 
 /// `WKPermissionDecision`.
 const GRANT: isize = 1;

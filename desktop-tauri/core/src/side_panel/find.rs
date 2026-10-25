@@ -5,10 +5,12 @@
 //! Find in a side panel guest: Electron's `findInPage` and `found-in-page`
 //! for a native webview.
 //!
-//! WebKit (GTK and WKWebView) moves to a match and says how many there are,
-//! but never which one is active, so the ordinal is kept here: a new search
-//! starts at the first match, and a step wraps around at either end, as the
-//! webview's own wrap-around does. WebView2 reports both, from 0.
+//! WebKit (GTK and WKWebView) moves to a match but never says which one is
+//! active, so the ordinal is kept here: a new search starts at the first
+//! match, and a step wraps around at either end, as the webview's own
+//! wrap-around does. WebKitGTK counts every match only for a new search (a
+//! step's count is the one match it moved to), so a step keeps the search's
+//! total. WebView2 reports both, from 0.
 
 use std::collections::VecDeque;
 
@@ -36,6 +38,8 @@ pub enum FindStep {
 pub struct FindSession {
     text: String,
     active: u32,
+    /// The new search's count.
+    total: u32,
     /// The steps asked for and not yet counted, oldest first: the webview
     /// answers each in the order it was asked.
     asked: VecDeque<FindStep>,
@@ -57,11 +61,17 @@ impl FindSession {
         step
     }
 
-    /// The webview counted `total` matches for the oldest step asked. A
-    /// count nobody asked for (the page changed under a search) keeps the
-    /// active match where it is, within the new total.
-    pub fn counted(&mut self, total: u32) -> Found {
+    /// The webview counted `count` matches for the oldest step asked. A
+    /// step that found something keeps the search's total; a count nobody
+    /// asked for (the page changed under a search) is the new total, and
+    /// keeps the active match where it is, within it.
+    pub fn counted(&mut self, count: u32) -> Found {
         let step = self.asked.pop_front();
+        let stepped = matches!(step, Some(FindStep::Next | FindStep::Previous));
+        if !stepped || count == 0 || self.total == 0 {
+            self.total = count;
+        }
+        let total = self.total;
         self.active = match (step, total) {
             (_, 0) => 0,
             (Some(FindStep::Start), _) => 1,
@@ -194,10 +204,25 @@ mod tests {
         }
         assert_eq!(session.counted(2), found(2, 2), "nobody asked");
         session.begin("cat", false, false);
-        session.counted(5);
-        session.begin("cat", false, false);
-        assert_eq!(session.counted(1), found(1, 1));
+        assert_eq!(session.counted(1), found(1, 2));
         assert_eq!(session.counted(4), found(1, 4), "nobody asked");
+    }
+
+    #[test]
+    fn a_step_keeps_the_searchs_total_whatever_it_counted() {
+        let mut session = FindSession::default();
+        session.begin("cat", true, true);
+        assert_eq!(session.counted(3), found(1, 3));
+        session.begin("cat", true, false);
+        assert_eq!(session.counted(1), found(2, 3), "WebKitGTK's count of one");
+        session.begin("cat", false, false);
+        assert_eq!(session.counted(1), found(1, 3));
+        session.begin("cat", false, false);
+        assert_eq!(session.counted(1), found(3, 3), "wrapped");
+        session.begin("cat", true, false);
+        assert_eq!(session.counted(0), found(0, 0), "the page lost them");
+        session.begin("cat", true, false);
+        assert_eq!(session.counted(2), found(1, 2), "and found them again");
     }
 
     #[test]

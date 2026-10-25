@@ -401,6 +401,13 @@ pub fn watch<R: Runtime>(guest: &Webview<R>) {
     let label = guest.label().to_string();
     let _ = guest.with_webview(move |view| {
         hook_navigations();
+        // WebKitGTK ships without `getUserMedia` and WebRTC, so a page could
+        // never ask for the camera: the broker answers whether it may.
+        if let Some(settings) = WebViewExt::settings(&view.inner()) {
+            use webkit2gtk::SettingsExt;
+            settings.set_enable_media_stream(true);
+            settings.set_enable_webrtc(true);
+        }
         watch_find_key(&view.inner(), app.clone());
         watch_find(&view.inner(), app.clone(), label.clone());
         watch_permissions(&view.inner(), app.clone(), label.clone());

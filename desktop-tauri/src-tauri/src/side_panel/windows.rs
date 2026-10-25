@@ -315,7 +315,7 @@ pub fn watch<R: Runtime>(guest: &Webview<R>) {
             let pending = super::pending_keys(&keys_app);
             match menu_key(&args)? {
                 Some((key, _)) if super::key_down(&keys_app, &key.as_input()) => {
-                    unsafe { args.SetHandled(true)? };
+                    args.SetHandled(true)?;
                     pending.forget(&keys_label);
                 }
                 Some((key, repeat)) => {
