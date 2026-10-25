@@ -71,11 +71,10 @@ impl ProfileJar {
     /// Keep a cookie read from a sign-in webview, as if `server` had set it.
     /// Returns whether the jar took it (its domain must match the server's).
     ///
-    /// The webview's cookies are read with `cookies()` and [`domain_match`],
+    /// The webview's cookies are read with `cookies()` and core's `find_auth_cookie`,
     /// never `cookies_for_url`, which misses an IP host and a `Domain=` cookie
     /// on macOS. On Windows that read deadlocks inside a navigation or event
     /// handler (wry#583), so the caller reads on a task of its own.
-    #[allow(dead_code)] // WP4 signs in and out with it.
     pub fn adopt(&self, cookie: &RawCookie<'_>, server: &Url) -> bool {
         let mut store = self.lock();
         let kept = store.insert_raw(cookie, server).is_ok();
@@ -97,7 +96,6 @@ impl ProfileJar {
     }
 
     /// Every cookie, for signing out.
-    #[allow(dead_code)] // WP4 signs in and out with it.
     pub fn clear(&self) {
         let mut store = self.lock();
         store.clear();
@@ -131,26 +129,6 @@ impl reqwest::cookie::CookieStore for ProfileJar {
         }
         HeaderValue::from_str(&header).ok()
     }
-}
-
-/// RFC 6265 domain-match: `host` is the cookie's domain, or a name under it.
-/// An IP address matches only itself. The leading `.` a `Domain=` attribute may
-/// carry is ignored, as the `cookie` crate already drops it.
-#[allow(dead_code)] // WP4 picks the sign-in cookie with it.
-pub fn domain_match(cookie_domain: &str, host: &str) -> bool {
-    let domain = cookie_domain.trim_start_matches('.').to_ascii_lowercase();
-    let host = host.to_ascii_lowercase();
-    if domain.is_empty() {
-        return false;
-    }
-    if host == domain {
-        return true;
-    }
-    let is_ip = host.parse::<std::net::IpAddr>().is_ok() || host.starts_with('[');
-    !is_ip
-        && host
-            .strip_suffix(&domain)
-            .is_some_and(|rest| rest.ends_with('.'))
 }
 
 #[cfg(test)]
@@ -313,22 +291,5 @@ mod tests {
         .join();
         assert!(jar.store.is_poisoned());
         assert!(jar.has("at", &server()));
-    }
-
-    #[test]
-    fn matches_domains_as_rfc_6265_does() {
-        assert!(domain_match("agentrq.com", "agentrq.com"));
-        assert!(domain_match(".agentrq.com", "app.agentrq.com"));
-        assert!(domain_match("AgentRQ.com", "APP.agentrq.com"));
-        assert!(domain_match("127.0.0.1", "127.0.0.1"));
-        assert!(!domain_match("agentrq.com", "evilagentrq.com"));
-        assert!(!domain_match("app.agentrq.com", "agentrq.com"));
-        assert!(
-            !domain_match("0.0.1", "127.0.0.1"),
-            "an IP matches only itself"
-        );
-        assert!(!domain_match("1]", "[::1]"));
-        assert!(!domain_match("", "agentrq.com"));
-        assert!(!domain_match(".", "agentrq.com"));
     }
 }

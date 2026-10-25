@@ -20,6 +20,7 @@ use std::net::IpAddr;
 
 use url::Url;
 
+use crate::links::{classify_link, LinkOptions, LinkTarget};
 pub use crate::links::{is_auth_path, AUTH_PATH_PREFIX};
 
 /// Providers whose sign-in the shell has to take over.
@@ -72,6 +73,36 @@ pub fn oauth_start_url(server_url: &str, pathname: &str, search: &str) -> Option
     base.join(&format!("{pathname}{search}"))
         .ok()
         .map(Into::into)
+}
+
+/// Where the sign-in a main-window navigation to `url` starts, if it is one.
+///
+/// Two ways in. The login view's Google and GitHub buttons are plain links, so
+/// they resolve against the app's own origin (`app://…/api/v1/auth/github/login`)
+/// and only the provider logins count there. A link to the configured server's
+/// auth endpoints is the other, as [`classify_link`] keeps it in the app. Either
+/// way the flow runs on the real server. `None` for anything else, which the
+/// link rules handle.
+pub fn sign_in_start(url: &str, app_origin: &str, server_url: &str) -> Option<String> {
+    let parsed = Url::parse(url).ok()?;
+    match classify_link(
+        url,
+        LinkOptions {
+            app_origin,
+            server_url,
+        },
+    ) {
+        LinkTarget::App => match_oauth_login(parsed.path()).map(drop)?,
+        LinkTarget::SignIn => {}
+        _ => return None,
+    }
+    // `URL.search`: empty for no query and for a bare `?`.
+    let search = parsed
+        .query()
+        .filter(|query| !query.is_empty())
+        .map(|query| format!("?{query}"))
+        .unwrap_or_default();
+    oauth_start_url(server_url, parsed.path(), &search)
 }
 
 /// A cookie as the webview's jar reports it.
@@ -238,7 +269,6 @@ impl SignInFlow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::links::{classify_link, LinkOptions, LinkTarget};
     use std::cell::Cell;
 
     const SERVER: &str = "https://agentrq.example.com";
@@ -791,5 +821,88 @@ mod tests {
         let jar = [cookie("at", "agentrq.example.com")];
         assert_eq!(find_auth_cookie(&jar, "not a url"), None);
         assert_eq!(find_auth_cookie(&jar, "mailto:someone@example.com"), None);
+    }
+
+    // sign_in_start (Tauri only: Electron splits it between will-navigate and routeLink)
+
+    #[test]
+    fn starts_a_sign_in_from_the_login_buttons_on_the_real_server() {
+        const APP: &str = "app://localhost";
+        assert_eq!(
+            sign_in_start("app://localhost/api/v1/auth/github/login", APP, SERVER).as_deref(),
+            Some("https://agentrq.example.com/api/v1/auth/github/login")
+        );
+        assert_eq!(
+            sign_in_start(
+                "app://localhost/api/v1/auth/google/login/?next=%2Fx",
+                APP,
+                SERVER
+            )
+            .as_deref(),
+            Some("https://agentrq.example.com/api/v1/auth/google/login/?next=%2Fx")
+        );
+        assert_eq!(
+            sign_in_start("app://localhost/api/v1/auth/github/login?", APP, SERVER).as_deref(),
+            Some("https://agentrq.example.com/api/v1/auth/github/login"),
+            "a bare ? is no query, as in URL.search"
+        );
+        // WebView2 spells the app's origin over http.
+        assert_eq!(
+            sign_in_start(
+                "http://app.localhost/api/v1/auth/github/login",
+                "http://app.localhost",
+                SERVER
+            )
+            .as_deref(),
+            Some("https://agentrq.example.com/api/v1/auth/github/login")
+        );
+        // On macOS before 14, each profile has an origin of its own.
+        assert_eq!(
+            sign_in_start("app://work/api/v1/auth/github/login", "app://work", SERVER).as_deref(),
+            Some("https://agentrq.example.com/api/v1/auth/github/login")
+        );
+    }
+
+    #[test]
+    fn leaves_every_other_app_route_to_the_app() {
+        const APP: &str = "app://localhost";
+        for url in [
+            "app://localhost/",
+            "app://localhost/login",
+            "app://localhost/api/v1/auth/github/callback?code=x",
+            "app://localhost/api/v1/auth/root",
+            "app://localhost/api/v1/auth/gitlab/login",
+            "not a url",
+        ] {
+            assert_eq!(sign_in_start(url, APP, SERVER), None, "{url}");
+        }
+        assert_eq!(
+            sign_in_start("app://localhost/api/v1/auth/github/login", APP, ""),
+            None,
+            "no server, nowhere to sign in"
+        );
+    }
+
+    #[test]
+    fn keeps_a_link_to_the_servers_sign_in_in_the_app() {
+        const APP: &str = "app://localhost";
+        assert_eq!(
+            sign_in_start(
+                "https://agentrq.example.com/api/v1/auth/github/login?x=1",
+                APP,
+                SERVER
+            )
+            .as_deref(),
+            Some("https://agentrq.example.com/api/v1/auth/github/login?x=1")
+        );
+        for url in [
+            "https://agentrq.example.com/tasks",
+            "https://evil.example.com/api/v1/auth/github/login",
+            "http://agentrq.example.com/api/v1/auth/github/login",
+            "mailto:a@b.c",
+            "javascript:alert(1)",
+        ] {
+            assert_eq!(sign_in_start(url, APP, SERVER), None, "{url}");
+        }
     }
 }

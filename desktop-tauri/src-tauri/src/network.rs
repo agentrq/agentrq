@@ -9,9 +9,9 @@
 //! the server goes through the active profile's client, never a shared one, or
 //! two profiles would be one account.
 //!
-//! Which profile is active is WP4's to decide: it calls [`Network::switch`]
-//! after a profile switch, and [`ProfileNet::set_server_url`] after the
-//! connection screen. Until then the first profile is the one in the config.
+//! Which profile is active is `profiles.rs`'s to decide: it calls
+//! [`Network::switch`] after a profile switch, and
+//! [`ProfileNet::set_server_url`] after the connection screen.
 //!
 //! A profile is opened once and kept: two jars on one file would each write
 //! over the other's cookies. Opening the first one waits on the keychain, so
@@ -40,11 +40,10 @@ pub fn profile_dir(base: &Path, id: &str) -> PathBuf {
 }
 
 pub struct ProfileNet {
-    #[allow(dead_code)] // WP4 tells profiles apart by it.
+    #[allow(dead_code)] // Only tests ask which profile a network is.
     pub id: String,
     server_url: RwLock<String>,
     pub client: reqwest::Client,
-    #[allow(dead_code)] // WP4 signs in and out through it.
     pub jar: Arc<ProfileJar>,
     pub attachments: AttachmentStore<DiskFs>,
 }
@@ -82,7 +81,6 @@ impl ProfileNet {
             .clone()
     }
 
-    #[allow(dead_code)] // WP4, after the connection screen.
     pub fn set_server_url(&self, url: &str) {
         *self
             .server_url
@@ -189,9 +187,20 @@ impl Network {
             .clone()
     }
 
+    /// A profile's network, active or not: its identity is asked through its
+    /// own jar, and a sign-in lands there.
+    pub async fn profile(&self, id: &str, server_url: &str) -> Arc<ProfileNet> {
+        self.open(id, server_url).await
+    }
+
+    /// Let go of a removed profile's network, so it is never opened on its old
+    /// files again. Returns it, for a last clear of its jar.
+    pub fn forget(&self, id: &str) -> Option<Arc<ProfileNet>> {
+        lock(&self.opened).remove(id)
+    }
+
     /// Make another profile the active one. Requests already under way finish
     /// on the profile they started on.
-    #[allow(dead_code)] // WP4, after a profile switch.
     pub async fn switch(&self, id: &str, server_url: &str) -> Arc<ProfileNet> {
         let net = self.open(id, server_url).await;
         net.set_server_url(server_url);

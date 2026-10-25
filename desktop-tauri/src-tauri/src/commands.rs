@@ -16,8 +16,11 @@ use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::State;
 
+use serde_json::Value;
+
 use crate::event_source::{self, Frame, Sink, Streams};
 use crate::network::Network;
+use crate::profiles::{ConnectionState, Profiles, ProfilesView};
 
 /// The error a stub answers: the member, and the work package that owns it.
 pub fn todo(member: &str, owner: &str) -> Result<(), String> {
@@ -96,28 +99,77 @@ impl Sink for ChannelSink {
     }
 }
 
-/// `agentrq:connection:cancel`
-#[tauri::command]
-pub fn connection_cancel() -> Result<(), String> {
-    todo("connection.cancel", "WP4")
-}
-
 /// `agentrq:connection:get`
 #[tauri::command]
-pub fn connection_get() -> Result<(), String> {
-    todo("connection.get", "WP4")
-}
-
-/// `agentrq:connection:save`
-#[tauri::command]
-pub fn connection_save() -> Result<(), String> {
-    todo("connection.save", "WP4")
+pub fn connection_get(profiles: State<'_, Arc<Profiles>>) -> ConnectionState {
+    profiles.connection()
 }
 
 /// `agentrq:connection:validate`
 #[tauri::command]
-pub fn connection_validate() -> Result<(), String> {
-    todo("connection.validate", "WP4")
+pub async fn connection_validate(
+    profiles: State<'_, Arc<Profiles>>,
+    url: String,
+) -> Result<Value, String> {
+    Ok(profiles.validate(&url).await)
+}
+
+/// `agentrq:connection:save`: also reloads the window to `/`.
+#[tauri::command]
+pub async fn connection_save(
+    profiles: State<'_, Arc<Profiles>>,
+    url: String,
+) -> Result<Value, String> {
+    profiles.save(&url).await
+}
+
+/// `agentrq:connection:cancel`
+#[tauri::command]
+pub async fn connection_cancel(profiles: State<'_, Arc<Profiles>>) -> Result<bool, String> {
+    profiles.cancel().await
+}
+
+/// `agentrq:profiles:get`
+#[tauri::command]
+pub async fn profiles_get(profiles: State<'_, Arc<Profiles>>) -> Result<ProfilesView, String> {
+    profiles.get().await
+}
+
+/// `agentrq:profiles:switch`
+#[tauri::command]
+pub async fn profiles_switch(
+    profiles: State<'_, Arc<Profiles>>,
+    id: String,
+) -> Result<ProfilesView, String> {
+    profiles.switch(&id).await
+}
+
+/// `agentrq:profiles:add`: a label is optional, as `add()` with none numbers it.
+#[tauri::command]
+pub async fn profiles_add(
+    profiles: State<'_, Arc<Profiles>>,
+    label: Option<String>,
+) -> Result<ProfilesView, String> {
+    profiles.add(&label.unwrap_or_default()).await
+}
+
+/// `agentrq:profiles:rename`
+#[tauri::command]
+pub async fn profiles_rename(
+    profiles: State<'_, Arc<Profiles>>,
+    id: String,
+    label: String,
+) -> Result<ProfilesView, String> {
+    profiles.rename(&id, &label).await
+}
+
+/// `agentrq:profiles:remove`
+#[tauri::command]
+pub async fn profiles_remove(
+    profiles: State<'_, Arc<Profiles>>,
+    id: String,
+) -> Result<ProfilesView, String> {
+    profiles.remove(&id).await
 }
 
 /// `agentrq:notifications:get`
@@ -130,36 +182,6 @@ pub fn notifications_get() -> Result<(), String> {
 #[tauri::command]
 pub fn notifications_set_muted() -> Result<(), String> {
     todo("notifications.setMuted", "WP6")
-}
-
-/// `agentrq:profiles:add`
-#[tauri::command]
-pub fn profiles_add() -> Result<(), String> {
-    todo("profiles.add", "WP4")
-}
-
-/// `agentrq:profiles:get`
-#[tauri::command]
-pub fn profiles_get() -> Result<(), String> {
-    todo("profiles.get", "WP4")
-}
-
-/// `agentrq:profiles:remove`
-#[tauri::command]
-pub fn profiles_remove() -> Result<(), String> {
-    todo("profiles.remove", "WP4")
-}
-
-/// `agentrq:profiles:rename`
-#[tauri::command]
-pub fn profiles_rename() -> Result<(), String> {
-    todo("profiles.rename", "WP4")
-}
-
-/// `agentrq:profiles:switch`
-#[tauri::command]
-pub fn profiles_switch() -> Result<(), String> {
-    todo("profiles.switch", "WP4")
 }
 
 /// `agentrq:extensions:authorize`
@@ -463,27 +485,40 @@ mod tests {
         ("panel_send", "panel.send"),
     ];
 
-    /// The commands WP2 has replaced; every other one is still a stub.
-    const WP2: [&str; 3] = [
+    /// The commands WP2 and WP4 have replaced; every other one is still a stub.
+    const DONE: [&str; 12] = [
         "attachments_forget_all",
         "attachments_forget_task",
         "attachments_forget_workspace",
+        "connection_cancel",
+        "connection_get",
+        "connection_save",
+        "connection_validate",
+        "profiles_add",
+        "profiles_get",
+        "profiles_remove",
+        "profiles_rename",
+        "profiles_switch",
     ];
 
     struct Rig {
         _app: tauri::App<tauri::test::MockRuntime>,
         webview: tauri::WebviewWindow<tauri::test::MockRuntime>,
         dir: tempfile::TempDir,
+        calls: Arc<std::sync::Mutex<Vec<String>>>,
     }
 
     fn rig() -> Rig {
-        let dir = tempfile::tempdir().unwrap();
+        let profiles = crate::profiles::tests::rig_with(
+            Some(
+                serde_json::json!({"profiles": [{"id": "default", "serverUrl": "http://127.0.0.1:9"}]}),
+            ),
+            None,
+        );
         let app = mock_builder()
             .invoke_handler(super::handler())
-            .manage(Arc::new(crate::network::tests::network(
-                dir.path(),
-                "http://127.0.0.1:9",
-            )))
+            .manage(profiles.network.clone())
+            .manage(profiles.profiles.clone())
             .manage(Streams::default())
             .build(mock_context(noop_assets()))
             .expect("mock app");
@@ -493,7 +528,8 @@ mod tests {
         Rig {
             _app: app,
             webview,
-            dir,
+            dir: profiles.dir,
+            calls: profiles.calls,
         }
     }
 
@@ -521,7 +557,7 @@ mod tests {
     fn every_command_is_registered_and_the_stubs_answer_todo() {
         let rig = rig();
         assert_eq!(STUB_COMMANDS.len(), 35, "stub commands answering todo");
-        for (cmd, member) in STUB_COMMANDS.iter().filter(|(cmd, _)| !WP2.contains(cmd)) {
+        for (cmd, member) in STUB_COMMANDS.iter().filter(|(cmd, _)| !DONE.contains(cmd)) {
             let err = call(&rig, cmd, serde_json::json!({})).expect_err(cmd);
             let text = err.as_str().unwrap_or_default();
             assert!(
@@ -615,6 +651,11 @@ mod tests {
             "attachments_forget_workspace",
             "event_source_open",
             "event_source_close",
+            "connection_validate",
+            "connection_save",
+            "profiles_switch",
+            "profiles_rename",
+            "profiles_remove",
         ] {
             assert!(call(&rig, cmd, serde_json::json!({})).is_err(), "{cmd}");
         }
@@ -627,6 +668,8 @@ mod tests {
                 "event_source_open",
                 serde_json::json!({"url": "/api/v1/events"}),
             ),
+            ("profiles_rename", serde_json::json!({"id": "default"})),
+            ("profiles_add", serde_json::json!({"label": 5})),
         ] {
             assert!(call(&rig, cmd, args).is_err(), "{cmd}");
         }
@@ -637,6 +680,74 @@ mod tests {
             tauri::ipc::InvokeResponseBody::Json(s) => s,
             tauri::ipc::InvokeResponseBody::Raw(b) => String::from_utf8(b).unwrap(),
         }
+    }
+
+    #[test]
+    fn answers_for_the_connection_screen() {
+        let rig = rig();
+        assert_eq!(
+            call(&rig, "connection_get", serde_json::json!({})),
+            Ok(serde_json::json!({
+                "configured": true,
+                "serverUrl": "http://127.0.0.1:9",
+                "locked": false,
+                "canCancel": false,
+            }))
+        );
+        let refused = serde_json::json!({"ok": false, "reason": "Server URL is required"});
+        for cmd in ["connection_validate", "connection_save"] {
+            assert_eq!(
+                call(&rig, cmd, serde_json::json!({"url": ""})),
+                Ok(refused.clone()),
+                "{cmd}"
+            );
+        }
+        assert_eq!(
+            call(&rig, "connection_cancel", serde_json::json!({})),
+            Ok(false.into())
+        );
+        assert!(rig.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn adds_switches_renames_and_removes_profiles() {
+        let rig = rig();
+        let ids = |view: &serde_json::Value| -> Vec<String> {
+            view["profiles"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| p["id"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let added = call(&rig, "profiles_add", serde_json::json!({})).unwrap();
+        let new_id = added["activeProfileId"].as_str().unwrap().to_string();
+        assert_eq!(added["profiles"][1]["label"], "Profile 2");
+        let named = call(&rig, "profiles_add", serde_json::json!({"label": "Work"})).unwrap();
+        assert_eq!(named["profiles"][2]["label"], "Work");
+
+        let switched = call(
+            &rig,
+            "profiles_switch",
+            serde_json::json!({"id": "default"}),
+        )
+        .unwrap();
+        assert_eq!(switched["activeProfileId"], "default");
+        let renamed = call(
+            &rig,
+            "profiles_rename",
+            serde_json::json!({"id": "default", "label": "Home"}),
+        )
+        .unwrap();
+        assert_eq!(renamed["profiles"][0]["label"], "Home");
+        let removed = call(&rig, "profiles_remove", serde_json::json!({"id": new_id})).unwrap();
+        assert_eq!(ids(&removed).len(), 2);
+        assert!(!ids(&removed).contains(&new_id));
+
+        let got = call(&rig, "profiles_get", serde_json::json!({})).unwrap();
+        assert_eq!(ids(&got), ids(&removed));
+        assert_eq!(got["profiles"][0]["identity"], serde_json::Value::Null);
+        assert_eq!(got["profiles"][0]["duplicateOf"], "");
     }
 
     #[test]
@@ -652,8 +763,22 @@ mod tests {
             _app: app,
             webview,
             dir: tempfile::tempdir().unwrap(),
+            calls: Default::default(),
         };
         assert!(call(&rig, "attachments_forget_all", serde_json::json!({})).is_err());
+        for cmd in [
+            "connection_validate",
+            "connection_save",
+            "connection_cancel",
+            "profiles_get",
+            "profiles_switch",
+            "profiles_add",
+            "profiles_rename",
+            "profiles_remove",
+        ] {
+            let args = serde_json::json!({"url": "", "id": "x", "label": "y"});
+            assert!(call(&rig, cmd, args).is_err(), "{cmd}");
+        }
     }
 
     #[test]

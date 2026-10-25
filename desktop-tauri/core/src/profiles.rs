@@ -410,6 +410,39 @@ pub fn update_profile(state: &ProfilesState, id: &str, patch: &ProfilePatch) -> 
     next
 }
 
+/// The WKWebView data store a profile's webviews use on macOS 14 and later,
+/// derived from its id so a profile finds its own store again after a restart.
+///
+/// The store is named by a UUID: this is a 128-bit FNV-1a of the id, stamped as
+/// a version 8 (custom) UUID. Not a secret and not a boundary against the app
+/// itself, only a name that two profiles never share in practice.
+pub fn data_store_id(id: &str) -> [u8; 16] {
+    const OFFSET: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
+    const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b;
+    let hash = id
+        .bytes()
+        .fold(OFFSET, |hash, b| (hash ^ u128::from(b)).wrapping_mul(PRIME));
+    let mut uuid = hash.to_be_bytes();
+    uuid[6] = (uuid[6] & 0x0f) | 0x80;
+    uuid[8] = (uuid[8] & 0x3f) | 0x80;
+    uuid
+}
+
+/// The folders under the profiles directory that belong to no profile.
+///
+/// A removed profile's folder is deleted at once where the OS allows it, but a
+/// webview that was just closed can still hold its files open for a moment
+/// (WebView2 does), so whatever is left is swept on the next start. Only a name
+/// a profile could have had is returned: a folder put there by anything else is
+/// not this app's to delete.
+pub fn orphaned_profile_dirs<'a>(names: &'a [String], state: &ProfilesState) -> Vec<&'a str> {
+    names
+        .iter()
+        .map(String::as_str)
+        .filter(|name| is_valid_profile_id(name) && !state.profiles.iter().any(|p| p.id == *name))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1121,5 +1154,38 @@ mod tests {
         let both = remember_account(&nameless, "second", &json!({"name": "Sam"}));
 
         assert_eq!(duplicate_of(Some(&both), "second"), "");
+    }
+
+    // data_store_id, orphaned_profile_dirs (Tauri only: Electron has partitions)
+
+    #[test]
+    fn gives_each_profile_a_stable_store_of_its_own() {
+        let first = data_store_id(FIRST_PROFILE_ID);
+        assert_eq!(
+            first,
+            data_store_id("default"),
+            "the same store after a restart"
+        );
+        assert_ne!(first, data_store_id("defaulu"));
+        assert_ne!(
+            data_store_id("0123456789abcdef"),
+            data_store_id("0123456789abcdee")
+        );
+        assert_ne!(data_store_id(""), data_store_id("a"));
+        for uuid in [first, data_store_id("work")] {
+            assert_eq!(uuid[6] >> 4, 8, "a version 8 UUID");
+            assert_eq!(uuid[8] >> 6, 0b10, "the RFC variant");
+        }
+    }
+
+    #[test]
+    fn sweeps_only_the_folders_of_profiles_that_are_gone() {
+        let state = add(&base(), "work", "Work");
+        let names: Vec<String> = ["default", "work", "gone", "Notes", ".DS_Store", "-x"]
+            .iter()
+            .map(|name| name.to_string())
+            .collect();
+        assert_eq!(orphaned_profile_dirs(&names, &state), ["gone"]);
+        assert!(orphaned_profile_dirs(&[], &state).is_empty());
     }
 }
