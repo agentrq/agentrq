@@ -173,13 +173,6 @@ impl Network {
             .map_or_else(|| self.first.1.clone(), |net| net.server_url())
     }
 
-    /// The active profile's id, without opening the profile.
-    #[allow(dead_code)]
-    pub fn active_id(&self) -> String {
-        self.current()
-            .map_or_else(|| self.first.0.clone(), |net| net.id.clone())
-    }
-
     /// The protocol's rules, naming the active profile's server.
     pub fn protocol(self: &Arc<Self>, dev_server_url: &str) -> AppProtocol<impl Fn() -> String> {
         let this = self.clone();

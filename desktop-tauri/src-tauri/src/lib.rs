@@ -446,10 +446,7 @@ impl<R: Runtime> SignInWindow for SignInWebview<'_, R> {
         }
     }
     fn is_destroyed(&self) -> bool {
-        self.0
-            .app_handle()
-            .get_webview_window(self.0.label())
-            .is_none()
+        self.0.app_handle().get_webview(self.0.label()).is_none()
     }
     fn close(&mut self) {
         let _ = self.0.close();

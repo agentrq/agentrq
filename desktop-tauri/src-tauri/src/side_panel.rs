@@ -62,6 +62,12 @@ const WEBVIEW2: bool = true;
 #[cfg(not(windows))]
 const WEBVIEW2: bool = false;
 
+/// Only a debug build reads `AGENTRQ_E2E_EXTENSION`.
+#[cfg(debug_assertions)]
+const DEBUG_BUILD: bool = true;
+#[cfg(not(debug_assertions))]
+const DEBUG_BUILD: bool = false;
+
 /// `process.platform`'s spelling, which `core` speaks.
 #[cfg(target_os = "macos")]
 const PLATFORM: &str = "darwin";
@@ -150,16 +156,22 @@ struct Seen {
 }
 
 /// The menu key each guest was last seen pressing, until its page says it
-/// left that key unhandled (WebView2, which asks before the page does).
+/// left that key unhandled (WebView2, which asks before the page does). The
+/// next key down, the next report or [`KEY_WINDOW`] ends it, so a page cannot
+/// keep a key it swallowed and post its report later.
 #[derive(Default)]
 pub struct PendingKeys(Mutex<HashMap<String, Pressed>>);
 
-/// A key a guest pressed: the action it is bound to, and whether it was a
-/// repeat.
+/// How long a page has to say it left a key unhandled.
+const KEY_WINDOW: Duration = Duration::from_secs(1);
+
+/// A key a guest pressed: the action it is bound to, whether it was a
+/// repeat, and when.
 struct Pressed {
     key: String,
     action: Option<ActionId>,
     repeat: bool,
+    at: std::time::Instant,
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -169,20 +181,21 @@ impl PendingKeys {
             key,
             action,
             repeat,
+            at: std::time::Instant::now(),
         };
         lock(&self.0).insert(label.to_string(), pressed);
     }
 
-    /// The action and repeat of `key`, when it is the key `label` pressed.
+    /// The action and repeat of `key`, when it is the key `label` pressed
+    /// just now. Whatever it says, the pressed key is let go.
     fn take(&self, label: &str, key: &str) -> Option<(Option<ActionId>, bool)> {
-        let mut pending = lock(&self.0);
-        if pending.get(label)?.key != key {
-            return None;
-        }
-        pending.remove(label).map(|p| (p.action, p.repeat))
+        let pressed = lock(&self.0).remove(label)?;
+        (pressed.key == key && pressed.at.elapsed() < KEY_WINDOW)
+            .then_some((pressed.action, pressed.repeat))
     }
 
-    fn forget(&self, label: &str) {
+    /// Another key went down in `label`, or it went away.
+    pub fn forget(&self, label: &str) {
         lock(&self.0).remove(label);
     }
 }
@@ -229,7 +242,7 @@ fn installed<R: Runtime>(
     spec: Option<String>,
 ) -> crate::panel_scheme::Installed {
     use agentrq_desktop_core::side_panel::ext_scheme::{Installation, PanelEntry};
-    let spec = spec.filter(|_| cfg!(debug_assertions)).unwrap_or_default();
+    let spec = spec.filter(|_| DEBUG_BUILD).unwrap_or_default();
     let parts: Vec<&str> = spec.splitn(3, ':').collect();
     let [name, dir, entry] = parts[..] else {
         return Box::new(Vec::new);
@@ -642,15 +655,19 @@ pub fn side_panel_open_external<R: Runtime>(app: AppHandle<R>, url: String) {
 
 /// A menu key a guest's page left unhandled: claimed, and run unless it is
 /// a repeat of one that does not repeat. Run later, on the main thread,
-/// never inside the webview's own callback.
+/// never inside the webview's own callback: from the main thread,
+/// `run_on_main_thread` runs at once, so it is asked from the async runtime.
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 pub fn menu_key<R: Runtime>(app: &AppHandle<R>, action: Option<ActionId>, repeat: bool) -> bool {
     let Some(action) = action else {
         return false;
     };
     if !repeat || repeats(action) {
-        let run = app.clone();
-        let _ = app.run_on_main_thread(move || crate::app_menu::run(&run, action));
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let run = app.clone();
+            let _ = app.run_on_main_thread(move || crate::app_menu::run(&run, action));
+        });
     }
     true
 }
@@ -1066,6 +1083,46 @@ mod tests {
     }
 
     #[test]
+    fn the_main_page_load_closes_guests_beside_the_links_and_routes() {
+        use crate::shell::{dispatch_navigation, ShellState};
+        let rig = rig();
+        let app = rig.handle();
+        app.plugin(tauri_plugin_opener::init()).expect("the opener");
+        app.manage(ShellState::<MockRuntime>::default());
+        let routes = Arc::new(Mutex::new(Vec::new()));
+        let heard = Arc::clone(&routes);
+        app.listen_any("agentrq:navigate", move |event| {
+            lock(&heard).push(event.payload().to_string());
+        });
+        let shell = app.state::<ShellState<MockRuntime>>();
+        let guest = rig.open("https://a.example/");
+        // A reload of the app, with a route waiting for it.
+        chrome::main_page_load(app, &PageLoadEvent::Started);
+        shell.navigate(app, "/workspaces/1");
+        assert!(lock(&rig.state().guests).is_empty());
+        settle();
+        assert!(app.get_webview(&guest).is_none(), "the guest is gone");
+        chrome::main_page_load(app, &PageLoadEvent::Finished);
+        // The new page asks for it once it listens.
+        shell.on_subscribed(app);
+        assert_eq!(*lock(&routes), vec!["\"/workspaces/1\""]);
+        // A guest open again: the main webview still routes its links, WP4's
+        // sign-in first, the web to the opener, the app's own in place.
+        rig.open("https://b.example/");
+        let origin = crate::profiles::app_origin("default");
+        let own = Url::parse(&format!("{origin}/tasks")).unwrap();
+        assert!(dispatch_navigation(app, &own));
+        let web = Url::parse("https://agentrq.com/docs").unwrap();
+        assert!(!dispatch_navigation(app, &web));
+        let sign_in = Url::parse(&format!("{SERVER}/api/v1/auth/google/login")).unwrap();
+        assert!(!dispatch_navigation(app, &sign_in));
+        settle();
+        let sign_in = app.windows().into_keys().any(|l| l.starts_with("sign-in-"));
+        assert!(sign_in, "WP4's window");
+        assert!(chrome::main_webview(app).is_some());
+    }
+
+    #[test]
     fn a_page_load_is_recorded_in_order_and_hands_an_extension_page_a_new_token() {
         let rig = rig();
         let ext = rig.open(PAGE);
@@ -1363,6 +1420,7 @@ mod tests {
             "claimed, not run"
         );
         assert!(menu_key(app, Some(ActionId::ZoomIn), true));
+        settle();
     }
 
     #[test]
@@ -1372,14 +1430,38 @@ mod tests {
         let label = rig.open("https://a.example/");
         let keys = pending_keys(app);
         keys.press(&label, "r".into(), Some(ActionId::Reload), false);
-        // Something else entirely, or another key: nothing runs.
+        // Something else entirely: the key is still pressed.
         unhandled_key(app, &label, "{\"cmd\":\"x\"}");
-        unhandled_key(app, &label, "agentrq-panel-key:w");
-        assert!(keys.take(&label, "w").is_none());
         unhandled_key(app, &label, "agentrq-panel-key:r");
         assert!(keys.take(&label, "r").is_none(), "taken once");
         unhandled_key(app, "panel-guest-9", "agentrq-panel-key:r");
         keys.press(&label, "+".into(), Some(ActionId::ZoomIn), true);
         assert_eq!(keys.take(&label, "+"), Some((Some(ActionId::ZoomIn), true)));
+    }
+
+    #[test]
+    fn a_key_the_page_swallowed_cannot_be_reported_later() {
+        let rig = rig();
+        let app = rig.handle();
+        let label = rig.open("https://a.example/");
+        let keys = pending_keys(app);
+        // A report of another key lets the pressed one go.
+        keys.press(&label, "r".into(), Some(ActionId::Reload), false);
+        assert!(keys.take(&label, "w").is_none());
+        assert!(keys.take(&label, "r").is_none());
+        // So does the next key down.
+        keys.press(&label, "r".into(), Some(ActionId::Reload), false);
+        keys.forget(&label);
+        assert!(keys.take(&label, "r").is_none());
+        // And time: a report after the window runs nothing.
+        keys.press(&label, "r".into(), Some(ActionId::Reload), false);
+        let late = std::time::Instant::now().checked_sub(KEY_WINDOW);
+        lock(&keys.0).get_mut(&label).expect("pressed").at = late.expect("a past instant");
+        assert!(keys.take(&label, "r").is_none());
+        keys.press(&label, "r".into(), Some(ActionId::Reload), false);
+        assert_eq!(
+            keys.take(&label, "r"),
+            Some((Some(ActionId::Reload), false))
+        );
     }
 }

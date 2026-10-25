@@ -103,12 +103,19 @@ pub fn watch<R: Runtime>(guest: &Webview<R>) {
         let _ = view.controller().add_GotFocus(&focused, &mut token);
         // WebView2 asks before the page does, so the key is only noted here
         // and left for the page; its init script says when the page did not
-        // handle it.
+        // handle it. Any other key down lets the noted one go.
         let keys = AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
             let Some(args) = args else { return Ok(()) };
-            if let Some((key, repeat)) = menu_key(&args)? {
-                let action = crate::app_menu::key_action(&keys_app, key.as_pressed());
-                super::pending_keys(&keys_app).press(&keys_label, key.key, action, repeat);
+            if !key_down(&args)? {
+                return Ok(());
+            }
+            let pending = super::pending_keys(&keys_app);
+            match menu_key(&args)? {
+                Some((key, repeat)) => {
+                    let action = crate::app_menu::key_action(&keys_app, key.as_pressed());
+                    pending.press(&keys_label, key.key, action, repeat);
+                }
+                None => pending.forget(&keys_label),
             }
             Ok(())
         }));
@@ -154,25 +161,29 @@ impl Key {
     }
 }
 
-/// A key down in the guest that could be a menu key, and whether it is a
+/// Whether the event is a key going down.
+fn key_down(
+    args: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2AcceleratorKeyPressedEventArgs,
+) -> windows::core::Result<bool> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        COREWEBVIEW2_KEY_EVENT_KIND, COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN,
+        COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN,
+    };
+    let mut kind = COREWEBVIEW2_KEY_EVENT_KIND::default();
+    unsafe { args.KeyEventKind(&mut kind)? };
+    Ok(kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN
+        || kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN)
+}
+
+/// The menu key a key down in the guest could be, and whether it is a
 /// repeat of one already down.
 fn menu_key(
     args: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2AcceleratorKeyPressedEventArgs,
 ) -> windows::core::Result<Option<(Key, bool)>> {
-    use webview2_com::Microsoft::Web::WebView2::Win32::{
-        COREWEBVIEW2_KEY_EVENT_KIND, COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN,
-        COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN, COREWEBVIEW2_PHYSICAL_KEY_STATUS,
-    };
+    use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PHYSICAL_KEY_STATUS;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         GetKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
     };
-    let mut kind = COREWEBVIEW2_KEY_EVENT_KIND::default();
-    unsafe { args.KeyEventKind(&mut kind)? };
-    if kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN
-        && kind != COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN
-    {
-        return Ok(None);
-    }
     let down = |key: u16| unsafe { GetKeyState(i32::from(key)) } < 0;
     let shift = down(VK_SHIFT);
     let mut vk = 0u32;
