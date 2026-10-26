@@ -458,11 +458,25 @@ mod tests {
 
     #[tokio::test]
     async fn answers_504_rather_than_hanging_when_the_response_never_arrives() {
-        tokio::time::pause();
         let server = TestServer::start(|_| vec![Step::Wait(60_000)]).await;
         let rig = rig(&server.url, "");
-        let res = get(&rig, "/api/v1/slow").await;
-        assert_eq!(res.status(), 504);
+        let res = get(&rig, "/api/v1/slow");
+        tokio::pin!(res);
+        // Real time until the server has the request: a paused clock jumps
+        // ahead while the sockets are busy, and the deadline could pass first.
+        let started = std::time::Instant::now();
+        while server.requests().is_empty() {
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(10),
+                "the server never got the request"
+            );
+            tokio::select! {
+                res = &mut res => panic!("answered {} before the server had it", res.status()),
+                _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
+            }
+        }
+        tokio::time::pause();
+        assert_eq!(res.await.status(), 504);
     }
 
     #[tokio::test]
