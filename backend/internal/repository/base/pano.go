@@ -7,10 +7,13 @@ package base
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/mustafaturan/monoflake"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 )
@@ -290,3 +293,32 @@ func panoDocExists(tx *gorm.DB, userID, docID int64, now time.Time) error {
 	}
 	return nil
 }
+
+// movePanoAssignees gives a merged fork's Pano links to its parent, inside tx,
+// and turns every checklist item assigned to one of its tasks into the
+// parent's: named after it and linked under it. Otherwise the links go with
+// the fork row, and the items keep a deleted workspace's name and path, which
+// no longer match their tasks and so lose their assignee.
+func movePanoAssignees(tx *gorm.DB, fork model.Workspace, parentID int64) error {
+	if err := tx.Model(&model.PanoDocTask{}).Where("workspace_id = ?", fork.ID).
+		Update("workspace_id", parentID).Error; err != nil {
+		return err
+	}
+	var parent model.Workspace
+	if err := tx.Select("name").Where("id = ?", parentID).Take(&parent).Error; err != nil {
+		return err
+	}
+	from := "](/workspaces/" + monoflake.ID(fork.ID).String() + "/tasks/"
+	to := "](/workspaces/" + monoflake.ID(parentID).String() + "/tasks/"
+	// The stored text changes, so the version moves; updated_at does not, or
+	// the board would reorder.
+	return tx.Model(&model.PanoDoc{}).Where("user_id = ? AND markdown LIKE ?", fork.UserID, "%"+from+"%").
+		UpdateColumns(map[string]any{
+			"markdown": gorm.Expr("REPLACE(REPLACE(markdown, ?, ?), ?, ?)", "[@"+panoLabel(fork.Name)+from, "[@"+panoLabel(parent.Name)+to, from, to),
+			"version":  gorm.Expr("version + 1"),
+		}).Error
+}
+
+// panoLabel is a workspace's name as an assigned item's link text, the way the
+// board writes it.
+var panoLabel = strings.NewReplacer("[", "", "]", "", "\n", "").Replace

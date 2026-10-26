@@ -28,6 +28,9 @@
   has exactly one ongoing task, since a guess between two would mislink. The
   write's workspace is the agent's own, not the fork's parent. Every query on
   it is checked for full scans by `pano_doc_tasks_plan_test.go`.
+- **A fork merge moves the fork's links, and rewrites its items** to name and
+  link the parent (`movePanoAssignees`): the overlay matches an item by its
+  path, so one left on the deleted fork loses its assignee.
 - **Pings are spaced a second apart**: the server makes one task a second per
   account, so a comment mentioning two workspaces at once would 429 the second.
 - **`@workspace #task` in a comment posts on that task, and makes none**; a
