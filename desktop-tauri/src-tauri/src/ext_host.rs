@@ -15,7 +15,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use agentrq_desktop_core::ext_host::{
@@ -119,6 +119,37 @@ fn set_pdeathsig() -> std::io::Result<()> {
         libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
     }
     Ok(())
+}
+
+/// A fork the spawner thread makes: the command, the runtime its child
+/// belongs to, and where the child goes.
+type Fork = (
+    tokio::process::Command,
+    tokio::runtime::Handle,
+    std::sync::mpsc::Sender<std::io::Result<tokio::process::Child>>,
+);
+
+/// Every host is forked from one thread that lives as long as the app. On
+/// Linux `PR_SET_PDEATHSIG` fires when the thread that forked exits, not the
+/// process, and tokio retires an idle blocking thread after 10 s.
+fn fork(cmd: tokio::process::Command) -> std::io::Result<tokio::process::Child> {
+    static SPAWNER: OnceLock<std::sync::mpsc::Sender<Fork>> = OnceLock::new();
+    let spawner = SPAWNER.get_or_init(|| {
+        let (forks, queued) = std::sync::mpsc::channel::<Fork>();
+        std::thread::spawn(move || queued.into_iter().for_each(fork_one));
+        forks
+    });
+    let (child, forked) = std::sync::mpsc::channel();
+    let runtime = tokio::runtime::Handle::current();
+    spawner
+        .send((cmd, runtime, child))
+        .expect("the spawner lives");
+    forked.recv().expect("the spawner answers")
+}
+
+fn fork_one((mut cmd, runtime, child): Fork) {
+    let _runtime = runtime.enter();
+    let _ = child.send(cmd.spawn());
 }
 
 #[derive(Default)]
@@ -418,7 +449,7 @@ impl ExtHost {
             cmd.as_std_mut().pre_exec(set_pdeathsig);
         }
 
-        let mut child = cmd.spawn().map_err(|error| {
+        let mut child = fork(cmd).map_err(|error| {
             // Logged here: a restart has nobody to tell.
             let reason = format!("The extension host could not start: {error}");
             eprintln!("[ext-host] {reason}");
@@ -1126,6 +1157,49 @@ pub(crate) mod tests {
     #[cfg(target_os = "linux")]
     fn pdeathsig_can_be_set() {
         assert!(set_pdeathsig().is_ok());
+    }
+
+    /// Booted at launch from a blocking thread, the host must outlive that
+    /// thread: `PR_SET_PDEATHSIG` follows the thread that forked.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_host_outlives_the_blocking_thread_that_booted_it() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_keep_alive(Duration::from_millis(50))
+            .build()
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        install(dir.path(), r#"{"installations":[{"name":"a"}]}"#);
+        // Answers every request with its pid.
+        let script = r#"
+            const out = (m) => process.stdout.write(JSON.stringify({jsonrpc: '2.0', ...m}) + '\n');
+            require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+                const m = JSON.parse(line);
+                if (m.id !== undefined) out({ id: m.id, result: process.pid });
+            });
+            out({ method: 'running', params: { names: ['a'] } });
+        "#;
+        let host = host(script_launch(script), dir.path(), Arc::default());
+        let booted = Arc::clone(&host);
+        let (started, thread) = runtime
+            .block_on(runtime.spawn_blocking(move || (booted.boot(), unsafe { libc::gettid() })))
+            .unwrap();
+        assert!(started);
+        let thread = PathBuf::from(format!("/proc/self/task/{thread}"));
+        crate::side_panel::tests::wait_for("the blocking thread retires", &|| !thread.exists());
+        runtime.block_on(async {
+            let (generation, pid) = {
+                let state = lock(&host.state);
+                (state.generation, state.process.as_ref().unwrap().pid)
+            };
+            assert_eq!(host.call("pid", json!({})).await, Ok(json!(pid)));
+            let state = lock(&host.state);
+            assert_eq!(state.generation, generation, "never restarted");
+            assert_eq!(state.ledger.count("a"), 0, "never blamed");
+            drop(state);
+            host.stop();
+        });
     }
 
     #[tokio::test]
