@@ -106,8 +106,6 @@ const SKIPPED = [
   skip('Cmd/Ctrl-click on a link inside a page opens the system browser', 'needs a native click with a key held; WebDriver cannot reach a guest'),
   skip('Cmd/Ctrl+F typed into a page opens the panel\'s find bar', 'needs a native key press in the guest; WebDriver cannot reach it'),
   skip('a snapshot of the page in the panel', 'needs the OS to capture the guest\'s own surface'),
-  skip('a page asking for a permission shows the bar, and the answer is remembered', 'TODO(WP7c): permissions are not merged yet'),
-  skip('find in page counts and steps through the matches', 'TODO(WP7c): find is not merged yet'),
 ]
 
 await runVerify(
@@ -247,6 +245,68 @@ await runVerify(
       const call = await waitFor('the opener to be called', async () => (await shell.calls())[calls], { timeout: 5000 }).catch(() => undefined)
       record('Open in browser hands the page to the system', call === `${site.origin}/popup`, JSON.stringify(call))
     } else SKIPPED.push(skip('Open in browser hands the page to the system', 'only Linux has a stand-in opener'))
+
+    // ── find in page ────────────────────────────────────────────────────────
+    // Opened by the panel's own Cmd/Ctrl+F, in the main page: the same key
+    // typed into the guest needs a native key press (SKIPPED).
+    const findCount = () => page("document.querySelector('[data-side-panel-find-count]')?.textContent.trim()")
+    /** Whether the find bar's count comes to read `expected`, and what it read. */
+    const counts = async (expected) => {
+      await waitFor(`the find count to read ${expected}`, async () => (await findCount()) === expected, { timeout: 5000 }).catch(() => {})
+      const read = await findCount()
+      return [read === expected, read]
+    }
+    const finding = mark()
+    await type(`${site.origin}/find`)
+    await hello('the page to search to load', '/find', finding)
+    await addressIs(`${site.origin}/find`)
+    await page("document.querySelector('[data-side-panel-address]').dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }))")
+    await inPage('the find bar to take the focus', "document.activeElement?.matches('[data-side-panel-find-input]') === true")
+    record('the panel\'s Cmd/Ctrl+F opens its find bar, focused', true)
+    await page(`(() => {
+      const input = document.querySelector('[data-side-panel-find-input]');
+      input.value = 'needle';
+      input.dispatchEvent(new Event('input'));
+    })()`)
+    record('typing searches the page and counts its matches', ...(await counts('1/3')))
+    await page("document.querySelector('[data-side-panel-find-next]').click()")
+    record('next steps to the following match', ...(await counts('2/3')))
+    await page("document.querySelector('[data-side-panel-find-previous]').click()")
+    record('previous steps back', ...(await counts('1/3')))
+    await page("document.querySelector('[data-side-panel-find-close]').click()")
+    await inPage('the find bar to close', "!document.querySelector('[data-side-panel-find]')")
+    record('the find bar closes', true)
+
+    // ── a page asking for a permission ──────────────────────────────────────
+    // The location: WebKitGTK asks for it with no device behind it, where a
+    // camera under Xvfb is refused before anybody is asked. Notifications are
+    // the notification plugin's own in every webview, and never reach WebKit.
+    const asking = mark()
+    await type(`${site.origin}/ask`)
+    const asker = await hello('the page that asks for the location to load', '/ask', asking)
+    const bar = await inPage('the permission bar', "document.querySelector('[data-side-panel-permission]')?.textContent.trim()")
+    record('a page asking for the location shows the bar in the window, naming its site', bar.includes(`${new URL(site.origin).host} wants to know your location`), bar)
+    await page("document.querySelector('[data-side-panel-permission-allow]').click()")
+    /** What the page with `gid` was answered. */
+    const answered = (gid) => site.hit('the page to be answered', (h) => h.query.get('gid') === gid && h.query.has('permission'))
+      .then((h) => h.query.get('permission'))
+    const allowed = await answered(asker.gid)
+    record('Allow gives the page its permission', allowed === 'granted', allowed)
+    await inPage('the bar to go', "!document.querySelector('[data-side-panel-permission]')")
+    // The page asks again on every load: answered with no bar, it was remembered.
+    await inPage('the page to finish loading', "document.querySelector('[data-side-panel-reload]')?.title === 'Reload'")
+    const reloading = mark()
+    await page("document.querySelector('[data-side-panel-reload]').click()")
+    const reloaded = await hello('the page to load again', '/ask', reloading)
+    const remembered = await answered(reloaded.gid)
+    const barAgain = await page("!!document.querySelector('[data-side-panel-permission]')")
+    record('after a reload it asks again and is answered with no bar', remembered === 'granted' && !barAgain, `${remembered}, bar ${barAgain ? 'shown' : 'not shown'}`)
+    // The answer is the app's, not only WebKit's: the shield lists it.
+    await page("document.querySelector('[data-side-panel-permissions-toggle]').click()")
+    const listed = await inPage('the site permissions', "document.querySelector('[data-site-permissions] [data-site]')?.textContent.replace(/\\s+/g, ' ').trim()")
+    record('Site permissions lists the site\'s location as allowed', listed.includes('Location') && listed.includes('Allowed'), listed)
+    await page("document.querySelector('[data-site-permissions-close]').click()")
+    await inPage('the site permissions to close', "!document.querySelector('[data-site-permissions]')")
 
     // ── a link in a message ─────────────────────────────────────────────────
     const messageLink = `document.querySelector('.md-body a[href="${link}"]')`

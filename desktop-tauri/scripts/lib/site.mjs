@@ -53,6 +53,13 @@ export async function startSite() {
     ['/popup', PAGE('Asks for a window', '<a id="p" href="/second" target="_blank">x</a>',
       "tell('before=1'); window.open('/second'); document.getElementById('p').click()")],
     ['/file', PAGE('Going to a file', '', "tell('before=1'); location.href = 'file:///etc/passwd'")],
+    // Three matches for the find bar, and none in the title.
+    ['/find', PAGE('Finding', '<p>One needle here.</p><p>A second needle there.</p><p>And a third needle.</p>')],
+    // Asks for the location on every load, and says what it was answered:
+    // with no location service, an allowed page still gets no position.
+    ['/ask', PAGE('Asks where you are', '',
+      "navigator.geolocation.getCurrentPosition(() => tell('permission=granted'), " +
+      "(e) => tell('permission=' + (e.code === e.PERMISSION_DENIED ? 'denied' : 'granted') + '&error=' + e.code), { timeout: 5000 })")],
   ])
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost')
