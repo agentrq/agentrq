@@ -273,7 +273,7 @@ server.
 
 ---
 
-## Tauri preview
+## Preview: Tauri build
 
 There is a second build of the desktop app, on [Tauri](https://tauri.app)
 instead of Electron. It is the same application: the same views, built from the
@@ -285,7 +285,9 @@ memory.
 
 **Electron stays the default.** The install command, the downloads in the table
 above and the updates of an installed app are all Electron's. The Tauri build
-is a preview: try it if you are curious, and expect the gaps listed below.
+is a preview: try it if you are curious, and expect the differences listed below.
+The Tauri build updates from its own `latest-tauri.json` feed rather than
+Electron's `latest*.yml`.
 
 ### Installing the preview
 
@@ -295,16 +297,14 @@ On macOS and Linux, add `--tauri` to the install command:
 curl -fsSL https://agentrq.com/install.sh | sh -s -- --tauri
 ```
 
-Run it again to update. On Windows, or by hand, take the files whose names
-start with `AgentRQ-Tauri-` from the
-[latest release](https://github.com/agentrq/agentrq/releases/latest): `.dmg`
-for macOS (Apple silicon and Intel), `.exe` for Windows (x64), `.AppImage` or
-`.deb` for Linux (x64). There is no Linux arm64 build of the preview yet.
+Run it again to update (or set `AGENTRQ_TAURI=1`).
 
-> **Not released yet.** The release job that publishes the preview has not
-> landed, so no release carries it so far, and `--tauri` stops with *"release
-> has no downloadable Tauri assets"*. Until then,
-> [build it yourself](../desktop-tauri/README.md).
+On Windows, or by hand from the
+[latest release](https://github.com/agentrq/agentrq/releases/latest), download the
+assets named `AgentRQ-Tauri-<version>-<arch>.<ext>`:
+- **macOS**: `AgentRQ-Tauri-<version>-arm64.dmg` (Apple silicon) or `AgentRQ-Tauri-<version>-x64.dmg` (Intel)
+- **Windows**: `AgentRQ-Tauri-<version>-x64.exe` (NSIS setup installer)
+- **Linux**: `AgentRQ-Tauri-<version>-x64.AppImage` or `AgentRQ-Tauri-<version>-x64.deb`
 
 The preview installs beside the Electron app, not over it. It is called
 **AgentRQ Tauri**, it opens `agentrq-tauri://` links rather than `agentrq://`,
@@ -319,19 +319,19 @@ and it keeps its own data, so you connect and sign in again the first time:
 The first-launch security warning and the rest of this guide apply to it as
 they do to the Electron app.
 
-### Known gaps
+### Differences that remain
 
-- **The side panel cannot ask about site permissions, or find in its page,
-  yet.** No bar asks about the camera, microphone or location, and
-  `Cmd/Ctrl+F` does nothing there. This is in progress.
-- **Extensions are not there yet.** The extensions settings do not work in the
-  preview. This is in progress too.
-- **Check for Updates… is greyed out.** The app still checks at launch and every
-  fifteen minutes, and shows the banner when an update is ready.
-- **On macOS 13 and earlier, the side panel keeps no cookies**, so a site you
-  signed in to there asks you to sign in again next time.
-- **On macOS, a crashed page stays blank** until you reload it with
-  `Cmd+R`. On Windows and Linux it reloads by itself.
+Each of the following differences remains between the Tauri preview and the Electron app:
+
+- macOS has no WKWebView WebDriver, so its parity verify checks are manual rather than automated under `tauri-driver`.
+- WKWebView lacks public permission hooks for geolocation, notifications and screen capture, so side-panel guests cannot request them on macOS.
+- Extensions download a Node.js binary (about 40 MB) on first extension install rather than bundling Node in the app download.
+- No Linux arm64 preview build is published in release assets yet (Linux preview is x64 only).
+- On macOS 13 and earlier, WKWebView ignores `data_store_identifier`, so side-panel guests run incognito and do not retain cookies across restarts.
+- On macOS, WKWebView process crashes are not reported through wry, so a crashed webview stays blank until manually reloaded with `Cmd+R`.
+- During preview, deep links use the `agentrq-tauri://` scheme and bundle ID `com.agentrq.desktop.tauri` to avoid conflicting with Electron.
+- In the side panel, WebKit makes no new window of a Cmd/Ctrl-click, so user link clicks are routed to the system browser instead of an in-app window.
+- On Linux and Windows, native menu accelerators are disabled to prevent GTK/WebView2 from intercepting shortcuts before the webview; menu shortcuts are dispatched from a bubbling `keydown` when `!defaultPrevented`.
 
 ---
 

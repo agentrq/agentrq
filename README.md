@@ -231,7 +231,7 @@ Or **[download the latest release →](https://github.com/agentrq/agentrq/releas
 | macOS | `.dmg` — Apple silicon and Intel |
 | Windows | `.exe` installer — x64 and arm64 |
 | Linux | `.AppImage` or `.deb` — x64 and arm64 |
-| Tauri build (preview) | The same app on Tauri, far smaller, beside Electron: `install.sh --tauri`, or the `AgentRQ-Tauri-` files — see [Tauri preview](docs/DESKTOP.md#tauri-preview) |
+| Tauri build (preview) | `.dmg`, `.exe`, `.AppImage`, or `.deb` (`AgentRQ-Tauri-` assets, or `install.sh --tauri`) — see [Preview: Tauri build](docs/DESKTOP.md#preview-tauri-build) |
 
 Builds are currently **unsigned**, so a hand-downloaded build warns on first
 launch on macOS and Windows, and macOS cannot auto-update until signing
