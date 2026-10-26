@@ -79,15 +79,12 @@ impl Chrome {
 }
 
 /// `process.platform`'s spelling, which `core` speaks.
-const fn platform() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "darwin"
-    } else if cfg!(windows) {
-        "win32"
-    } else {
-        "linux"
-    }
-}
+#[cfg(target_os = "macos")]
+const PLATFORM: &str = "darwin";
+#[cfg(windows)]
+const PLATFORM: &str = "win32";
+#[cfg(not(any(target_os = "macos", windows)))]
+const PLATFORM: &str = "linux";
 
 /// The work areas of the attached displays, in logical pixels.
 fn work_areas<R: Runtime>(app: &AppHandle<R>) -> Vec<Rect> {
@@ -243,7 +240,7 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>, profile: &str) -> tauri:
             .hidden_title(true)
             .traffic_light_position(tauri::LogicalPosition::new(16.0, 18.0));
     }
-    if needs_window_icon(platform()) {
+    if needs_window_icon(PLATFORM) {
         builder = builder.icon(tauri::include_image!("icons/128x128@2x.png"))?;
     }
     let window = isolate(builder, &profiles, profile).build()?;
@@ -670,7 +667,7 @@ fn win_period() {
 /// `agentrq:emoji:show-panel`
 #[tauri::command]
 pub fn emoji_show_panel<R: Runtime>(app: AppHandle<R>) -> bool {
-    show_emoji_panel(platform(), &mut Emoji(app))
+    show_emoji_panel(PLATFORM, &mut Emoji(app))
 }
 
 /// What the loader above uses, so `lib.rs` need not name the plugins.

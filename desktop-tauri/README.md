@@ -1,7 +1,103 @@
 # AgentRQ desktop on Tauri (preview)
 
-Electron is still the default desktop app. This is the Tauri build beside it;
-see `docs/agents/desktop-tauri.md` for the rules of the code.
+Electron is still the default desktop app. This is the Tauri build beside it,
+with the same UI: its renderer is `desktop/src/renderer`, built from
+`frontend/src`, and a `window.agentrq` bridge of its own stands in for
+Electron's preload. The rules of the code are in
+[`docs/agents/desktop-tauri.md`](../docs/agents/desktop-tauri.md); what is
+checked on which OS is in
+[the parity checklist](../docs/agents/desktop-tauri-parity.md); the user's view
+is the "Tauri preview" section of [`docs/DESKTOP.md`](../docs/DESKTOP.md).
+
+## Layout
+
+| Folder | What it holds |
+| --- | --- |
+| `core/` | `agentrq-desktop-core`: the pure logic, ported from `desktop/src/main` with its tests. No Tauri dependency. |
+| `src-tauri/` | The app: commands, the `app` scheme and its proxy, profiles, the side panel, the menu and the shell. It depends on `core/` and does the wiring. |
+| `src/bridge/` | `window.agentrq` for the main webview, and the `fetch` and `EventSource` the `app` scheme needs. |
+| `src/guest/` | The side-panel guest's init script. |
+| `src/renderer/` | The renderer entry; everything else comes from `desktop/src/renderer` and `frontend/src`. |
+| `test/` | Vitest: the bridge, its parity with Electron's preload, the guest and the screenshot pixel check. |
+| `scripts/` | The verify scripts (below) and the icon generator. |
+
+## Setting up
+
+You need Node 26 and npm, a stable Rust (`rustup default stable`), and on
+Linux the webview packages:
+
+```sh
+sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+```
+
+macOS needs the Xcode command line tools; Windows needs the WebView2 runtime,
+which Windows 10 and 11 already have, and the MSVC build tools.
+
+```sh
+(cd frontend && npm ci)  # the renderer is built from frontend/src
+cd desktop-tauri
+npm ci
+```
+
+## Running it
+
+```sh
+make desktop-tauri-dev   # or, in desktop-tauri/: npm run dev
+```
+
+That starts the renderer's Vite on port 5175 and `tauri dev` with it. It does
+not start a server: run `make dev` in another terminal for one on
+`http://localhost:3000`, or pick any server on the connection screen.
+`AGENTRQ_SERVER_URL` locks the connection to one server, as in Electron.
+
+The auto-updater is off in dev. The app keeps its data in its own folder, named
+after its identifier `com.agentrq.desktop.tauri` (on Linux
+`~/.local/share/com.agentrq.desktop.tauri/`), never in Electron's, so the two
+can be installed and run side by side.
+
+## Building it
+
+```sh
+make desktop-tauri       # or: npm run build
+```
+
+`npm run build` builds the renderer and then the bundles for this OS: `.deb`
+and `.AppImage` on Linux, `.dmg` on macOS, an NSIS `-setup.exe` on Windows,
+under `src-tauri/target/release/bundle/`. `npm run build:debug` builds the
+debug app the verify scripts launch, with no bundle.
+
+## Tests and the coverage gates
+
+```sh
+npm test                 # vitest
+npm run test:coverage    # vitest with the 100% gate
+npm run test:rust        # cargo test, core/ then src-tauri/
+npm run coverage:rust    # cargo llvm-cov with the 100% line gate
+```
+
+`src-tauri` needs the built renderer (`npm run build:renderer`), because
+`tauri::generate_context!` reads it at compile time. `coverage:rust` needs
+`cargo-llvm-cov` (`cargo install cargo-llvm-cov`).
+
+The gates, all in CI (the `Desktop App (Tauri)` workflow, on Linux, macOS and
+Windows):
+
+- **JS: 100% of lines, functions, branches and statements** over `src/`, except
+  the renderer entry and the guest's init script (`vitest.config.mjs` says why;
+  the init script's text is run by `test/panel-init.test.js`).
+- **Rust: 100% of lines** over `core/`, and over `src-tauri/` except the wiring:
+  `lib.rs`, `main.rs`, `test_server.rs`, `chrome.rs`, `app_menu.rs`, and the
+  side panel's per-OS files and `handlers.rs`. The list is the
+  `--ignore-filename-regex` in `package.json`; a new rule goes in a gated file
+  with its test, never in that list.
+- **`cargo fmt --check` and `cargo clippy -D warnings`** on both crates, and on
+  `src-tauri` once more as a release build, the configuration that ships.
+- **Versions in lockstep**: `node desktop/scripts/check-versions.mjs` holds
+  `package.json`, both `Cargo.toml` files and `tauri.conf.json` to the rest of
+  the repo. `node desktop/scripts/copyright.mjs` checks every file's header.
+- **Screenshots**: CI starts the release build in light and dark on each OS and
+  checks the window's background colour (`test/e2e/pixel.mjs`). The pictures
+  are uploaded as `chrome-shots-<OS>`.
 
 ## Running the verify scripts
 
