@@ -64,6 +64,28 @@ export async function waitFor(what, probe, { timeout = 30000, interval = 150 } =
   }
 }
 
+// A detached driver leaves the terminal's process group, so a Ctrl+C reaches
+// only this process. Take every live driver group down with it.
+const groups = new Set()
+function killGroups(signal) {
+  for (const pid of groups) {
+    try { process.kill(-pid, 'SIGCONT') } catch {}
+    try { process.kill(-pid, signal) } catch {}
+  }
+}
+let watching = false
+function watchSignals() {
+  if (watching) return
+  watching = true
+  process.once('exit', () => killGroups('SIGKILL'))
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.once(signal, () => {
+      killGroups('SIGTERM')
+      process.exit(128 + ({ SIGHUP: 1, SIGINT: 2, SIGTERM: 15 })[signal])
+    })
+  }
+}
+
 /**
  * Start `tauri-driver` and wait until it answers `/status`.
  *
@@ -82,8 +104,13 @@ export async function startDriver({ port, env, nativeDriver } = {}) {
     stdio: ['ignore', 'inherit', 'inherit'],
     detached: process.platform !== 'win32',
   })
+  if (process.platform !== 'win32' && child.pid) {
+    groups.add(child.pid)
+    watchSignals()
+  }
   let exited = null
   const gone = new Promise((resolveGone) => {
+    child.once('exit', () => groups.delete(child.pid))
     child.once('exit', resolveGone)
     child.once('error', resolveGone)
   })
