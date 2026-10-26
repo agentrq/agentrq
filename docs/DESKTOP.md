@@ -297,7 +297,7 @@ On macOS and Linux, add `--tauri` to the install command:
 curl -fsSL https://agentrq.com/install.sh | sh -s -- --tauri
 ```
 
-Run it again to update (or set `AGENTRQ_TAURI=1`).
+Run it again to update. Setting `AGENTRQ_TAURI=1` does the same as `--tauri`.
 
 On Windows, or by hand from the
 [latest release](https://github.com/agentrq/agentrq/releases/latest), download the
@@ -330,7 +330,6 @@ they do to the Electron app.
 Each of the following differences remains between the Tauri preview and the Electron app:
 
 - **Extensions are not there yet.** The extensions settings do not work in the preview. This is in progress.
-- macOS has no WKWebView WebDriver, so its parity verify checks are manual rather than automated under `tauri-driver`.
 - WKWebView lacks public permission hooks for geolocation, notifications and screen capture, so side-panel guests cannot request them on macOS.
 - No Linux arm64 preview build is published in release assets yet (Linux preview is x64 only).
 - On macOS 13 and earlier, WKWebView ignores `data_store_identifier`, so side-panel guests run incognito and do not retain cookies across restarts.
