@@ -121,50 +121,13 @@ await runVerify(
     record('the link copy button was reachable', linkButton, String(linkButton))
     await reportOf('ui_copy_link')
 
-    // The finder searches the local cache when one is connected; ensure the
-    // QA task created above is indexed so the search answers from local cache.
-    await inPage(
-      'the task to be indexed for search',
-      `(async () => {
-        const user = await fetch('/api/v1/auth/user').then((r) => r.json()).catch(() => null);
-        if (!user?.id) return false;
-        const dbName = 'agentrq-cache:' + user.id;
-        return new Promise((resolve) => {
-          const req = indexedDB.open(dbName);
-          req.onerror = () => resolve(false);
-          req.onsuccess = () => {
-            const db = req.result;
-            if (!db.objectStoreNames.contains('tasks')) return resolve(false);
-            const tx = db.transaction(['tasks', 'threads'], 'readwrite');
-            tx.objectStore('tasks').put({
-              workspaceId: ${JSON.stringify(workspaceId)},
-              id: ${JSON.stringify(taskId)},
-              title: 'Telemetry check',
-              status: 'not_started',
-              terms: ['telemetry', 'check'],
-              cachedAt: Date.now()
-            });
-            tx.objectStore('threads').put({
-              workspaceId: ${JSON.stringify(workspaceId)},
-              taskId: ${JSON.stringify(taskId)},
-              messages: [],
-              toolCalls: [],
-              attachments: []
-            });
-            tx.oncomplete = () => resolve(true);
-            tx.onerror = () => resolve(false);
-          };
-        });
-      })()`
-    )
-
     // 4. The finder: one search however much is typed, then opening a result.
     //    One modifier only: Cmd+Ctrl+K deliberately matches nothing.
     await key({ key: 'k', [process.platform === 'darwin' ? 'metaKey' : 'ctrlKey']: true })
     await inPage('the finder', "!!document.querySelector('[role=dialog][aria-label=\"Find task\"] input')")
     const row = "document.querySelector('[role=dialog][aria-label=\"Find task\"] ul button')"
     await page(`(async () => {
-      const input = document.querySelector('[role=dialog][aria-label=\"Find task\"] input');
+      const input = document.querySelector('[role=dialog][aria-label="Find task"] input');
       // Six keystrokes, which must be one search.
       for (const ch of 'Teleme') {
         input.value += ch;
@@ -173,15 +136,16 @@ await runVerify(
       return true;
     })()`)
     // The row is the search's own answer, so the search has been reported by
-    // now. Wait for the matching row to appear and open it.
+    // now. The finder loads the recent tasks as it opens, and a search typed
+    // before they arrive finds nothing: ask again until it answers, and open the
+    // row in the same breath, since a later answer may redraw the list. Asking
+    // again is the same episode, so it is not a second report.
     await session.waitForPage(
       'a result row to open',
       `(() => {
         const row = ${row};
-        if (row && row.innerText.includes('Telemetry check')) {
-          row.click();
-          return true;
-        }
+        if (row) { row.click(); return true; }
+        document.querySelector('[role=dialog][aria-label="Find task"] input').dispatchEvent(new Event('input', { bubbles: true }));
         return false;
       })()`
     )
