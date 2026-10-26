@@ -58,6 +58,7 @@ use ext_host::ExtHost;
 use extensions::{HostDrawers, PickedFolder, Picker, ShellServices};
 use network::Network;
 use notify::{Desk, Feed, Notifier};
+use oauth_window::SignIn;
 use profiles::{app_origin, Profiles, Shell};
 use scheme::{Assets, Scheme, MAIN_WEBVIEW};
 use sign_in::CookieWebview;
@@ -519,21 +520,13 @@ impl<R: Runtime> SignInWindow for SignInWebview<'_, R> {
 
 /// Sign the active profile in, in a window on the real server and on that
 /// profile's webview storage. Never the system browser: the cookie would land
-/// in a jar the app cannot read. An authorisation window open on that store
-/// is ended first, its session taken back (`OAuthWindows::close_for`).
+/// in a jar the app cannot read. It waits for an authorisation window on that
+/// store, and holds others off while it is open (`oauth_window::open_sign_in`).
 pub(crate) fn open_sign_in<R: Runtime>(app: &AppHandle<R>, start_url: String) {
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let profiles = app.state::<Arc<Profiles>>().inner().clone();
-        profiles
-            .auth_windows()
-            .close_for(&profiles.active_id())
-            .await;
-        open_sign_in_window(&app, start_url);
-    });
+    oauth_window::open_sign_in(app, start_url, Box::new(open_sign_in_window));
 }
 
-fn open_sign_in_window<R: Runtime>(app: &AppHandle<R>, start_url: String) {
+fn open_sign_in_window<R: Runtime>(app: &AppHandle<R>, start_url: String, held: SignIn) {
     let profiles = app.state::<Arc<Profiles>>().inner().clone();
     let id = profiles.active_id();
     let server = profiles.server_url();
@@ -571,8 +564,10 @@ fn open_sign_in_window<R: Runtime>(app: &AppHandle<R>, start_url: String) {
     };
     // Closing it before it is done is giving up.
     let on_close = flow.clone();
+    let held = Mutex::new(Some(held));
     window.on_window_event(move |event| {
         if let WindowEvent::Destroyed = event {
+            held.lock().unwrap_or_else(|p| p.into_inner()).take();
             if let Some(flow) = lock_flow(&on_close).as_mut() {
                 flow.on_closed();
             }

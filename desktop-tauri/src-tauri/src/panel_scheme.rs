@@ -18,19 +18,20 @@ use std::pin::Pin;
 
 use agentrq_desktop_core::side_panel::bridge::Refusal;
 use agentrq_desktop_core::side_panel::child::{
-    bridge_call, bridge_message, bridge_reply, is_guest_label, sender_url, BridgeCall, TOKEN_HEADER,
+    bridge_call, bridge_message, bridge_reply, is_guest_label, not_plain_data, sender_url,
+    BridgeCall, TOKEN_HEADER,
 };
 use agentrq_desktop_core::side_panel::ext_scheme::{serve_ext_request, Installation, PanelFs};
 use http::{header, Request, Response};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 /// What is installed right now: `extensions-installed.json`.
 pub type Installed = Box<dyn Fn() -> Vec<Installation> + Send + Sync>;
 
 /// `bridge.js`'s `handleSend(senderUrl, message)`: what the page's `send`
-/// reads back, `{ ok, reply }` or `{ ok, reason }`.
+/// reads back, `{ ok, reply }` or `{ ok, reason }`. `None` sends no message.
 pub type HandleSend =
-    Box<dyn Fn(String, Value) -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync>;
+    Box<dyn Fn(String, Option<Value>) -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync>;
 
 pub struct PanelScheme {
     send: HandleSend,
@@ -124,9 +125,21 @@ impl PanelScheme {
                     _ if !is_main_frame => bridge_reply(Err(Refusal {
                         reason: "Only an extension’s own pages can send to it.".to_string(),
                     })),
-                    Err(refusal) => bridge_reply(Err(refusal)),
+                    // Electron says first that the Extension does not listen.
+                    // Asked with no message, the host says so, or, when it
+                    // listens, that there is nothing to send: then this stands.
+                    // The message itself never reaches the host.
+                    Err(refusal) => {
+                        let answer = (self.send)(sender_url(&owner), None).await;
+                        let listens = json!({"ok": false, "reason": not_plain_data(&owner).reason});
+                        if answer == listens {
+                            bridge_reply(Err(refusal))
+                        } else {
+                            answer.to_string().into_bytes()
+                        }
+                    }
                     Ok(message) => {
-                        let answer = (self.send)(sender_url(&owner), message).await;
+                        let answer = (self.send)(sender_url(&owner), Some(message)).await;
                         answer.to_string().into_bytes()
                     }
                 };
@@ -161,10 +174,13 @@ mod tests {
         token: Some(TOKEN),
     };
 
+    /// A sender's address, and the message it sent, if any.
+    type Sent = (String, Option<Value>);
+
     struct Rig {
         scheme: PanelScheme,
         /// What the host was asked: the sender's address and the message.
-        sent: Arc<Mutex<Vec<(String, Value)>>>,
+        sent: Arc<Mutex<Vec<Sent>>>,
         _dir: tempfile::TempDir,
     }
 
@@ -195,9 +211,19 @@ mod tests {
         let sent = Arc::new(Mutex::new(Vec::new()));
         let to = Arc::clone(&sent);
         let scheme = PanelScheme::new(
+            // As `bridge.js` answers, for notes, which listens.
             Box::new(move |sender, message| {
-                to.lock().unwrap().push((sender, message.clone()));
-                Box::pin(async move { json!({"ok": true, "reply": {"echo": message}}) })
+                to.lock().unwrap().push((sender.clone(), message.clone()));
+                let answer = match message {
+                    _ if sender != "agentrq-ext://notes/" => {
+                        json!({"ok": false, "reason": "other does not listen to its page."})
+                    }
+                    Some(message) => json!({"ok": true, "reply": {"echo": message}}),
+                    None => {
+                        json!({"ok": false, "reason": "notes: that message is not plain data."})
+                    }
+                };
+                Box::pin(async move { answer })
             }),
             Box::new(move || vec![notes.clone()]),
             Box::new(StdFs),
@@ -279,7 +305,7 @@ mod tests {
         // The sender is the guest's page, whatever the message says.
         assert_eq!(
             *rig.sent.lock().unwrap(),
-            vec![("agentrq-ext://notes/".to_string(), json!([1]))]
+            vec![("agentrq-ext://notes/".to_string(), Some(json!([1])))]
         );
     }
 
@@ -310,7 +336,31 @@ mod tests {
             assert_eq!(res.status(), 200, "{reason}");
             assert_eq!(json_of(&res), json!({"ok": false, "reason": reason}));
         }
-        assert!(rig.sent.lock().unwrap().is_empty());
+        // Whether it listens was asked; what it would have heard never was.
+        assert!(rig.sent.lock().unwrap().iter().all(|(_, m)| m.is_none()));
+    }
+
+    #[test]
+    fn an_extension_that_does_not_listen_is_said_so_first_as_electron_does() {
+        let rig = rig();
+        let send = "agentrq-ext://other/.agentrq/panel-send";
+        let page = Page {
+            top_url: Some("agentrq-ext://other/panel/index.html"),
+            token: Some(TOKEN),
+        };
+        let big = format!("\"{}\"", "x".repeat(1024 * 1024));
+        for body in ["{", big.as_str()] {
+            let res = rig.handle(
+                "panel-guest-1",
+                page,
+                &post(send, "agentrq-ext://other", body),
+            );
+            assert_eq!(
+                json_of(&res),
+                json!({"ok": false, "reason": "other does not listen to its page."})
+            );
+        }
+        assert!(rig.sent.lock().unwrap().iter().all(|(_, m)| m.is_none()));
     }
 
     #[test]

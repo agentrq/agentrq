@@ -17,6 +17,7 @@
 
 mod handlers;
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -33,6 +34,7 @@ use url::Url;
 
 use crate::cookie_jar::ProfileJar;
 use crate::network::{Network, ProfileNet};
+use crate::profiles::Profiles;
 use crate::sign_in::{self, CookieWebview, COOKIE_DEADLINE};
 
 /// Windows are numbered, like sign-in windows, so a closing one never frees a
@@ -57,20 +59,47 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 pub struct OAuthWindows {
     open: Arc<Mutex<Option<Slot>>>,
     freed: Arc<Notify>,
+    /// How many sign-in windows each profile's store has open.
+    signing_in: Arc<Mutex<HashMap<String, usize>>>,
 }
 
 /// The window's label, the profile whose store it shows, and its flow.
 type Slot = (String, String, Arc<Pending>);
 
 impl OAuthWindows {
-    /// Takes the slot for `label`, or names the window that has it.
-    fn begin(&self, label: &str, profile: &str, pending: Arc<Pending>) -> Result<(), String> {
+    /// Takes the slot for `label`, or says why not: another window has it,
+    /// named, or a sign-in window is open on `profile`'s store.
+    fn begin(
+        &self,
+        label: &str,
+        profile: &str,
+        pending: Arc<Pending>,
+    ) -> Result<(), Option<String>> {
         let mut open = lock(&self.open);
         if let Some((other, _, _)) = &*open {
-            return Err(other.clone());
+            return Err(Some(other.clone()));
+        }
+        if lock(&self.signing_in).contains_key(profile) {
+            return Err(None);
         }
         *open = Some((label.to_string(), profile.to_string(), pending));
         Ok(())
+    }
+
+    /// Readies `profile`'s store for a sign-in window: ends the authorisation
+    /// window open on it, if one is, and keeps any new one from opening
+    /// there until the [`SignIn`] is dropped. Held first, so that none opens
+    /// in between.
+    pub async fn sign_in(&self, profile: &str) -> SignIn {
+        *lock(&self.signing_in)
+            .entry(profile.to_string())
+            .or_default() += 1;
+        let held = SignIn {
+            windows: self.clone(),
+            profile: profile.to_string(),
+        };
+        self.close_for(profile).await;
+        held
     }
 
     fn finish(&self) {
@@ -107,6 +136,42 @@ impl OAuthWindows {
     fn current(&self) -> Option<Slot> {
         lock(&self.open).clone()
     }
+}
+
+/// A sign-in window open on a profile's store, held for as long as it is:
+/// no authorisation window opens on that store meanwhile.
+pub struct SignIn {
+    windows: OAuthWindows,
+    profile: String,
+}
+
+impl Drop for SignIn {
+    fn drop(&mut self) {
+        let mut signing_in = lock(&self.windows.signing_in);
+        let count = signing_in.entry(self.profile.clone()).or_default();
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            signing_in.remove(&self.profile);
+        }
+    }
+}
+
+/// What opens a sign-in window, handed the start URL and the [`SignIn`] to
+/// hold until that window is gone.
+pub type SignInOpener<R> = Box<dyn FnOnce(&AppHandle<R>, String, SignIn) + Send>;
+
+/// Opens a sign-in window on the active profile's store with `open`, once the
+/// authorisation window open there, if any, has taken its session back and
+/// gone. Otherwise the sign-in would read the lent `at` as its own, and the
+/// take-back would delete the session the sign-in set; for the same reason
+/// no authorisation opens on that store until the sign-in window is gone.
+pub fn open_sign_in<R: Runtime>(app: &AppHandle<R>, start_url: String, open: SignInOpener<R>) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let profiles = app.state::<Arc<Profiles>>().inner().clone();
+        let held = profiles.auth_windows().sign_in(&profiles.active_id()).await;
+        open(&app, start_url, held);
+    });
 }
 
 /// One window's flow, and where its ending goes.
@@ -271,12 +336,16 @@ async fn authorize_within<R: Runtime>(
     let run = Run::new(auth_url, redirect_uri, deadline)?;
     let label = format!("oauth-{}", WINDOWS.fetch_add(1, Ordering::Relaxed));
     let windows = app.state::<OAuthWindows>().inner().clone();
-    if let Err(open) = windows.begin(&label, &profile.id, run.pending.clone()) {
-        // As a second sign-in would: the person is shown the one they have.
-        if let Some(window) = app.get_webview_window(&open) {
-            let _ = window.set_focus();
+    match windows.begin(&label, &profile.id, run.pending.clone()) {
+        Ok(()) => {}
+        Err(None) => return Err(OAuthError::SigningIn),
+        Err(Some(open)) => {
+            // As a second sign-in would: the person is shown the one they have.
+            if let Some(window) = app.get_webview_window(&open) {
+                let _ = window.set_focus();
+            }
+            return Err(OAuthError::Busy);
         }
-        return Err(OAuthError::Busy);
     }
     let lease = Lease::new(windows, &run);
     let pending = run.pending.clone();
@@ -847,6 +916,63 @@ mod tests {
         assert_eq!(block_on(run).unwrap(), Err(OAuthError::Closed));
         // Nothing open: nothing to wait for.
         block_on(rig.windows().close_for("default"));
+    }
+
+    #[test]
+    fn a_sign_in_opens_once_the_window_on_its_store_is_gone_and_holds_off_another() {
+        let rig = rig();
+        let run = rig.start(DEADLINE);
+        let (opened, sign_ins) = std::sync::mpsc::channel();
+        let windows = rig.windows().inner().clone();
+        let open: SignInOpener<MockRuntime> = Box::new(move |_, start, held| {
+            // The window on this store has given its session back and gone.
+            opened.send((start, windows.current(), held)).unwrap();
+        });
+        open_sign_in(
+            rig.app.handle(),
+            "https://app.agentrq.example/login".into(),
+            open,
+        );
+        let (start, open_then, held) = sign_ins
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the sign-in opens");
+        assert_eq!(start, "https://app.agentrq.example/login");
+        assert!(open_then.is_none());
+        assert_eq!(block_on(run).unwrap(), Err(OAuthError::Closed));
+        // While it is open, no authorisation shares its store; another
+        // profile's still opens.
+        let refused = block_on(authorize_within(
+            rig.app.handle(),
+            &rig.net,
+            PAGE,
+            REDIRECT,
+            DEADLINE,
+        ));
+        assert_eq!(refused, Err(OAuthError::SigningIn));
+        assert!(rig.windows().current().is_none());
+        let second = block_on(rig.windows().sign_in("default"));
+        drop(held);
+        let still = block_on(open_authorization_window(
+            rig.app.handle(),
+            &rig.net,
+            PAGE,
+            REDIRECT,
+        ));
+        assert_eq!(still, Err(OAuthError::SigningIn), "one sign-in is open yet");
+        let (app, network) = (rig.app.handle().clone(), rig._profiles.network.clone());
+        let work = spawn(async move {
+            let work = network.profile("work", SERVER).await;
+            authorize_within(&app, &work, PAGE, REDIRECT, DEADLINE).await
+        });
+        wait_for("the window is built", &|| rig.windows().current().is_some());
+        rig.pending().end(OAuthError::Closed);
+        assert_eq!(block_on(work).unwrap(), Err(OAuthError::Closed));
+        rig.wait_done();
+        // Once the sign-in windows are gone, it opens again.
+        drop(second);
+        let again = rig.start(DEADLINE);
+        rig.pending().end(OAuthError::Closed);
+        assert_eq!(block_on(again).unwrap(), Err(OAuthError::Closed));
     }
 
     #[test]

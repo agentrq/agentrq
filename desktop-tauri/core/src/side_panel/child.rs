@@ -240,8 +240,16 @@ pub fn token_script(token: &str) -> String {
 
 /// What hands `message` to the page holding `token`: its Extension's
 /// `post`. JSON is a JavaScript expression, so the message goes in as it is.
-pub fn message_script(token: &str, message: &Value) -> String {
-    format!("window.__agentrqPanelMessage && window.__agentrqPanelMessage(\"{token}\", {message})")
+///
+/// The guest may have left for a website since its token was read, so the
+/// script first checks that it still shows `page`, the Extension's own
+/// address as the webview sees it (`webview_url`): `location` is the one
+/// thing a page cannot fake, while it can define the function itself.
+pub fn message_script(token: &str, message: &Value, page: &str) -> String {
+    let page = Value::from(page);
+    format!(
+        "location.protocol + \"//\" + location.host + \"/\" === {page} && window.__agentrqPanelMessage && window.__agentrqPanelMessage(\"{token}\", {message})"
+    )
 }
 
 /// `scheme://host:port`, after the WebView2 form is undone, or `None` for
@@ -309,9 +317,15 @@ pub fn bridge_message(body: &[u8], owner: &str) -> Result<Value, Refusal> {
             reason: format!("{owner}: that message is larger than 1 MB."),
         });
     }
-    serde_json::from_slice(body).map_err(|_| Refusal {
+    serde_json::from_slice(body).map_err(|_| not_plain_data(owner))
+}
+
+/// `bridge.js`'s refusal of a message that is not JSON, which it also answers
+/// when asked with no message at all by an Extension that listens.
+pub fn not_plain_data(owner: &str) -> Refusal {
+    Refusal {
         reason: format!("{owner}: that message is not plain data."),
-    })
+    }
 }
 
 /// The address a call from `owner`'s page is said to come from: the page's
@@ -721,10 +735,10 @@ mod tests {
     #[test]
     fn a_post_reaches_the_page_holding_the_token() {
         let message = json!({"type": "changed", "text": "a \"b\"\n</script>\u{2028}"});
-        let script = message_script("t0k3n", &message);
+        let script = message_script("t0k3n", &message, "agentrq-ext://notes/");
         assert_eq!(
             script,
-            format!("window.__agentrqPanelMessage && window.__agentrqPanelMessage(\"t0k3n\", {message})")
+            format!("location.protocol + \"//\" + location.host + \"/\" === \"agentrq-ext://notes/\" && window.__agentrqPanelMessage && window.__agentrqPanelMessage(\"t0k3n\", {message})")
         );
         // The message reads back from the script as it was.
         let arg = script

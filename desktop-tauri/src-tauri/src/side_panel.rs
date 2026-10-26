@@ -27,8 +27,8 @@ use agentrq_desktop_core::menu_keys::repeats;
 use agentrq_desktop_core::side_panel::bridge::extension_of;
 use agentrq_desktop_core::side_panel::child::{
     disposition, guest_init_script, guest_label, guest_number, is_app_internal, is_guest_label,
-    is_srcdoc, message_script, opens_elsewhere, place, reported_key, reported_url, token_of,
-    token_script, webview_url, GuestEvent, HostRect, Modifiers,
+    is_srcdoc, message_script, opens_elsewhere, place, reported_key, reported_url, sender_url,
+    token_of, token_script, webview_url, GuestEvent, HostRect, Modifiers,
 };
 use agentrq_desktop_core::side_panel::ext_scheme::StdFs;
 use agentrq_desktop_core::side_panel::find::{clears_selection, FindSession, Found};
@@ -228,7 +228,10 @@ pub fn scheme(host: Arc<ExtHost>) -> PanelScheme {
         Box::new(move |sender, message| {
             let host = Arc::clone(&host);
             Box::pin(async move {
-                let asked = json!({ "senderUrl": sender, "message": message });
+                let mut asked = json!({ "senderUrl": sender });
+                if let Some(message) = message {
+                    asked["message"] = message;
+                }
                 let answer = host.call("panelSend", asked).await;
                 answer.unwrap_or_else(|reason| json!({ "ok": false, "reason": reason }))
             })
@@ -274,9 +277,10 @@ fn deliver<R: Runtime>(app: &AppHandle<R>, owner: &str, message: &Value) -> usiz
             .filter_map(|(label, seen)| Some((label.clone(), seen.token.clone()?)))
             .collect()
     };
+    let page = webview_url(&sender_url(owner), WEBVIEW2);
     held.iter()
         .filter_map(|(label, token)| Some((app.get_webview(label)?, token)))
-        .filter(|(webview, token)| webview.eval(message_script(token, message)).is_ok())
+        .filter(|(webview, token)| webview.eval(message_script(token, message, &page)).is_ok())
         .count()
 }
 
@@ -1743,14 +1747,15 @@ pub(crate) mod tests {
         })"#;
         let (host, dir) = manage_host(&rig, script);
         let scheme = scheme(Arc::clone(&host));
-        let send = || {
+        let send_body = |body: &[u8]| {
             http::Request::builder()
                 .method("POST")
                 .uri("agentrq-ext://notes/.agentrq/panel-send")
                 .header(agentrq_desktop_core::side_panel::child::TOKEN_HEADER, "t")
-                .body(b"1".to_vec())
+                .body(body.to_vec())
                 .unwrap()
         };
+        let send = || send_body(b"1");
         let page = crate::panel_scheme::Page {
             top_url: Some(PAGE),
             token: Some("t"),
@@ -1760,11 +1765,14 @@ pub(crate) mod tests {
                 tauri::async_runtime::block_on(scheme.handle("panel-guest-1", page, &request));
             serde_json::from_slice(res.body()).unwrap()
         };
-        // Nothing installed: no host is started to say so.
-        assert_eq!(
-            answer(send()),
-            json!({"ok": false, "reason": "notes does not listen to its page."})
-        );
+        // Nothing installed: no host is started to say so, before anything
+        // is said of the message.
+        for request in [send(), send_body(b"{")] {
+            assert_eq!(
+                answer(request),
+                json!({"ok": false, "reason": "notes does not listen to its page."})
+            );
+        }
         let installed = r#"{"installations":[{"name":"notes","dir":"/nowhere","manifest":{"provides":{"panels":[{"entry":"panel/index.html"}]}}}]}"#;
         std::fs::write(
             dir.path()
@@ -1773,6 +1781,10 @@ pub(crate) mod tests {
         )
         .unwrap();
         assert_eq!(answer(send()), json!({"ok": false, "reason": "it broke"}));
+        assert_eq!(
+            answer(send_body(b"{")),
+            json!({"ok": false, "reason": "it broke"})
+        );
         // Its files are the installed Extension's: not there, so not found.
         let res = tauri::async_runtime::block_on(scheme.handle(
             "panel-guest-1",

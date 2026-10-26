@@ -84,7 +84,8 @@ npm run test:sidecar -- <node>   # the examples on the app's Node.js, through th
 ```
 
 `test:sidecar` takes the `node` the app downloaded (`<data dir>/bin/node`) and
-needs `npm run build:ext-host` first.
+needs `npm run build:ext-host` first, and `npm ci` in `frontend/`: Electron's
+examples import a frontend composable, which imports `vue`.
 
 `src-tauri` needs the built renderer (`npm run build:renderer`), because
 `tauri::generate_context!` reads it at compile time. `coverage:rust` needs

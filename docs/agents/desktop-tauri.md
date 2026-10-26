@@ -111,7 +111,9 @@
 - **A sign-in, or removing a profile, first ends that profile's authorisation
   window and waits for its take-back** (`OAuthWindows::close_for`). They share the
   store: a sign-in would move the lent `at` into the jar, and a removal would
-  delete a store still in use.
+  delete a store still in use. While a sign-in window is open, an authorisation on
+  its store is refused (`OAuthWindows::sign_in`): its take-back would delete the
+  session the sign-in set.
 
 ## Profiles and the main window
 
@@ -271,10 +273,17 @@
   crash does; a hang with nothing loading blames none.
 - **Tool-call reviews are asked in order and awaited apart** (`ask_running`, 32 at
   most). `call` awaits the Node check first, so concurrent calls lose their order.
+  Only events with a pending tool call are sent (`awaits_review`), so others never
+  fill the 32; past them a tool call skips the guardrails and the person answers it.
 - **The panel bridge is Electron's `bridge.js`, run in the host; Rust only routes.**
   A page's send goes to `panelSend` with the address Rust read off the guest, never
   one the request names. `post` must count pages at once, so Rust keeps the host
   told which Extensions have a page open (`panelOpen`, re-sent to every new host).
+  A post's script checks the page's `location` first, and a website gets fixed
+  no-op receivers: the guest may have left for a site since its token was read.
+- **The 1 MB message cap does not bound memory.** Tauri's scheme handler is
+  handed the whole body, already read, so any page can make the shell buffer a
+  large POST before it is refused; the protocol API offers no way to stop sooner.
 
 ## Releases, bundles and updater
 

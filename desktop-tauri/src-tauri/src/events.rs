@@ -13,9 +13,11 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+use agentrq_desktop_core::ext_host::awaits_review;
 use agentrq_desktop_core::sse::{
     EventStreamClient, Handler, ResponseHead, StreamRequest, Ticket, TimerKind, Timers, Transport,
     IDLE_TIMEOUT,
@@ -37,7 +39,7 @@ pub trait Events: Send + Sync {
 }
 
 /// How many tool-call reviews may wait on the extension host at once. Past
-/// it an event goes unreviewed, and the person answers its tool call.
+/// it a tool call goes unreviewed, and the person answers it.
 const MAX_REVIEWS: usize = 32;
 
 /// Forwards events to the extension host for tool-call review when running,
@@ -49,6 +51,8 @@ pub struct ToolReviewEvents {
     notifier: Arc<dyn Events>,
     host: Arc<ExtHost>,
     reviewing: Arc<Semaphore>,
+    /// Whether the last tool call found every review taken: said once.
+    full: AtomicBool,
 }
 
 impl ToolReviewEvents {
@@ -57,6 +61,7 @@ impl ToolReviewEvents {
             notifier,
             host,
             reviewing: Arc::new(Semaphore::new(MAX_REVIEWS)),
+            full: AtomicBool::new(false),
         }
     }
 }
@@ -64,10 +69,16 @@ impl ToolReviewEvents {
 impl Events for ToolReviewEvents {
     fn on_event(&self, event: &Value) {
         self.notifier.on_event(event);
+        if !awaits_review(event) {
+            return;
+        }
         let Ok(permit) = Arc::clone(&self.reviewing).try_acquire_owned() else {
-            eprintln!("[extensions] too many tool-call reviews wait; this event goes unreviewed");
+            if !self.full.swap(true, Ordering::Relaxed) {
+                eprintln!("[extensions] {MAX_REVIEWS} tool-call reviews wait; more go unreviewed until one ends");
+            }
             return;
         };
+        self.full.store(false, Ordering::Relaxed);
         let params = serde_json::json!({ "event": event });
         if let Some(review) = self.host.ask_running("reviewToolCalls", params) {
             tauri::async_runtime::spawn(async move {
@@ -470,6 +481,13 @@ pub(crate) mod tests {
         drive(EventStreamClient::new(transport, timers, handler), rx).await;
     }
 
+    /// A stream event of `kind` that carries a tool call waiting on somebody.
+    fn tool_call(kind: &str) -> Value {
+        json!({ "type": kind, "payload": { "messages": [
+            { "metadata": { "type": "permission_request", "status": "pending" } }
+        ] } })
+    }
+
     #[tokio::test]
     async fn tool_review_forwards_events_in_order_only_while_host_is_running() {
         use crate::ext_host::tests::{until, FakeServices};
@@ -501,20 +519,22 @@ pub(crate) mod tests {
 
         // While not running: notifier receives event, host is never started
         assert!(!host.is_running());
-        review.on_event(&json!({"type": "first"}));
-        assert_eq!(seen(&notifier), [json!({"type": "first"})]);
+        review.on_event(&tool_call("first"));
+        assert_eq!(seen(&notifier), [tool_call("first")]);
         assert!(!host.is_running());
 
         // Now start the host with a dummy call
         assert_eq!(host.call("state", json!({})).await.unwrap()["ok"], true);
         assert!(host.is_running());
 
-        // While running: both get each event, the host in the stream's order.
+        // While running: both get each tool call, the host in the stream's
+        // order; an event with none is the notifier's alone.
         let types = ["a", "b", "c", "d", "e", "f", "g", "h"];
         for kind in types {
-            review.on_event(&json!({ "type": kind }));
+            review.on_event(&tool_call(kind));
+            review.on_event(&json!({ "type": "plain" }));
         }
-        assert_eq!(seen(&notifier).len(), 1 + types.len());
+        assert_eq!(seen(&notifier).len(), 1 + 2 * types.len());
         let read = || std::fs::read_to_string(&reviewed).unwrap_or_default();
         let wanted: String = types.iter().map(|kind| format!("{kind}\n")).collect();
         until(|| read().len() >= wanted.len()).await;
@@ -559,17 +579,26 @@ pub(crate) mod tests {
         // The slow one is never answered; the two after it are reviewed at
         // once, not when it runs out of time a minute later.
         for kind in ["slow", "a", "b"] {
-            review.on_event(&json!({ "type": kind }));
+            review.on_event(&tool_call(kind));
         }
         until(|| read() == "slow\na\nb\n").await;
         until(|| review.reviewing.available_permits() == MAX_REVIEWS - 1).await;
 
-        // With every review waiting, the next event is not sent at all.
+        // Events with no tool call take no review's place, however many.
+        for _ in 0..2 * MAX_REVIEWS {
+            review.on_event(&json!({ "type": "plain" }));
+        }
+        assert_eq!(review.reviewing.available_permits(), MAX_REVIEWS - 1);
+
+        // With every review waiting, the next tool call is not sent at all.
         for _ in 1..MAX_REVIEWS {
-            review.on_event(&json!({ "type": "slow" }));
+            review.on_event(&tool_call("slow"));
         }
         assert_eq!(review.reviewing.available_permits(), 0);
-        review.on_event(&json!({ "type": "late" }));
+        assert!(!review.full.load(Ordering::Relaxed));
+        review.on_event(&tool_call("late"));
+        review.on_event(&tool_call("late"));
+        assert!(review.full.load(Ordering::Relaxed), "said once");
         // Answered after everything sent before it has been read.
         host.call("state", json!({})).await.unwrap();
         assert_eq!(read().lines().count(), MAX_REVIEWS + 2);

@@ -193,9 +193,43 @@ pub fn fetch_allowed(url: &str, server_url: &str) -> bool {
     matches!(url.scheme(), "http" | "https") && url.origin() == server.origin()
 }
 
+/// Whether a stream event carries a tool call waiting on somebody, which is
+/// all the host's `reviewToolCalls` acts on (Electron's `pendingRequests`):
+/// a task message whose metadata is a pending `permission_request`. Others
+/// are not sent, so they never take a review's place.
+pub fn awaits_review(event: &Value) -> bool {
+    event["payload"]["messages"]
+        .as_array()
+        .is_some_and(|messages| {
+            messages.iter().any(|message| {
+                let meta = &message["metadata"];
+                meta["type"] == "permission_request" && meta["status"] == "pending"
+            })
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_event_with_a_pending_tool_call_awaits_review() {
+        let with = |meta: Value| json!({"type": "reply.received", "payload": {"id": "t", "workspaceId": "w", "messages": [{"metadata": {}}, {"metadata": meta}]}});
+        assert!(awaits_review(&with(
+            json!({"type": "permission_request", "status": "pending", "requestId": "r"})
+        )));
+        for meta in [
+            json!({"type": "permission_request", "status": "allowed"}),
+            json!({"type": "text", "status": "pending"}),
+            json!(null),
+        ] {
+            assert!(!awaits_review(&with(meta.clone())), "{meta}");
+        }
+        assert!(!awaits_review(
+            &json!({"type": "task.updated", "payload": {"messages": "x"}})
+        ));
+        assert!(!awaits_review(&json!(null)));
+    }
 
     #[test]
     fn enabled_means_anything_but_false() {

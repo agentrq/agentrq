@@ -32,6 +32,9 @@ pub enum OAuthError {
     BadUrl,
     /// Another authorisation window is already open; it is brought forward.
     Busy,
+    /// A sign-in window is open on the profile's store, which an
+    /// authorisation window would share.
+    SigningIn,
     /// The person closed the window, which is declining (Electron's `null`).
     Closed,
     /// Nothing came back within [`DEADLINE`].
@@ -45,6 +48,9 @@ impl fmt::Display for OAuthError {
         match self {
             Self::BadUrl => f.write_str("That is not an address the authorisation window opens."),
             Self::Busy => f.write_str("An authorisation window is already open."),
+            Self::SigningIn => {
+                f.write_str("Finish signing in to AgentRQ first, then authorise again.")
+            }
             // `supervisor-auth.js`'s own words for a window closed.
             Self::Closed => f.write_str("The authorisation window was closed."),
             Self::TimedOut => {
@@ -384,6 +390,10 @@ mod tests {
                 "That is not an address the authorisation window opens.",
             ),
             (OAuthError::Busy, "An authorisation window is already open."),
+            (
+                OAuthError::SigningIn,
+                "Finish signing in to AgentRQ first, then authorise again.",
+            ),
             (OAuthError::Closed, "The authorisation window was closed."),
             (
                 OAuthError::TimedOut,

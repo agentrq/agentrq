@@ -201,6 +201,9 @@ describe('the wiring Electron did in its main process', () => {
       'Only an extension’s own pages can send to it.',
     )
     expect((await h.call('panelSend', { message: {} })).reason).toBe('Only an extension’s own pages can send to it.')
+    // What the shell asks, with no message, when it refused one: the answer
+    // says the Extension listens.
+    expect(await h.call('panelSend', { senderUrl: from })).toEqual({ ok: false, reason: 'panel-notes: that message is not plain data.' })
 
     // Its menu entry posts the notes and opens its page: no page is open, so
     // the post reaches none and the shell is not asked to hand it over.
@@ -223,6 +226,7 @@ describe('the wiring Electron did in its main process', () => {
     // Unloaded, its pages are no longer answered.
     expect((await h.call('setEnabled', { name: 'panel-notes', enabled: false })).ok).toBe(true)
     expect((await h.call('panelSend', { senderUrl: from, message: {} })).reason).toBe('panel-notes does not listen to its page.')
+    expect((await h.call('panelSend', { senderUrl: from })).reason).toBe('panel-notes does not listen to its page.')
   })
 
   it('fetches through the shell, bodies as base64', async () => {

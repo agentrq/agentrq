@@ -17,7 +17,7 @@ function run(href, { webview2 = false, frame = false, answer, token = 'tk', chro
   const url = new URL(href)
   const listeners = []
   const window = {
-    location: { protocol: url.protocol, hostname: url.hostname },
+    location: { protocol: url.protocol, host: url.host, hostname: url.hostname },
     fetch: vi.fn(async () => answer ?? { json: async () => ({ ok: true, reply: 'pong' }) }),
     addEventListener: vi.fn((type, listener, capture) => listeners.push({ type, listener, capture })),
     setTimeout,
@@ -90,8 +90,13 @@ describe('the side panel guest init script', () => {
       'use strict'
       window.__agentrqPanelToken = () => {}
     }).toThrow()
-    // A website has no receiver at all.
-    expect(run('https://a.example/').__agentrqPanelToken).toBeUndefined()
+    // A website's receiver does nothing, and stays so.
+    const site = run('https://a.example/')
+    expect(site.__agentrqPanelToken('third')).toBeUndefined()
+    expect(() => {
+      'use strict'
+      site.__agentrqPanelToken = () => {}
+    }).toThrow()
   })
 
   it('tells WebView2 which keys the page left unhandled, from the top frame only', () => {
@@ -145,6 +150,40 @@ describe('the side panel guest init script', () => {
     early.__agentrqPanelMessage(null, 3)
     early.__agentrqPanelMessage('null', 3)
     expect(none).not.toHaveBeenCalled()
+  })
+
+  it('never hands a post to a website, even one that defines the receiver itself', () => {
+    // What `core::side_panel::child::message_script` evaluates for notes' page.
+    const post = (window, message) =>
+      new Function(
+        'window',
+        'location',
+        `location.protocol + "//" + location.host + "/" === "agentrq-ext://notes/" && window.__agentrqPanelMessage && window.__agentrqPanelMessage("tk", ${JSON.stringify(message)})`
+      )(window, window.location)
+    const notes = run('agentrq-ext://notes/panel/index.html')
+    const heard = vi.fn()
+    notes.agentrq.panel.onMessage(heard)
+    post(notes, { n: 1 })
+    expect(heard).toHaveBeenCalledWith({ n: 1 })
+
+    // The guest moved to a site before the post arrived: the site cannot
+    // take the receiver over, however it tries.
+    const site = run('https://a.example/')
+    const stolen = vi.fn()
+    expect(() => {
+      site.__agentrqPanelMessage = stolen
+    }).toThrow()
+    expect(() => Object.defineProperty(site, '__agentrqPanelMessage', { value: stolen })).toThrow()
+    post(site, { n: 2 })
+    expect(site.__agentrqPanelMessage('tk', 3)).toBeUndefined()
+    // Nor would it with no init script at all, as the address is checked first.
+    const bare = { location: { protocol: 'https:', host: 'a.example' }, __agentrqPanelMessage: stolen }
+    post(bare, { n: 4 })
+    // Nor another Extension's page.
+    const other = run('agentrq-ext://other/')
+    other.agentrq.panel.onMessage(stolen)
+    post(other, { n: 5 })
+    expect(stolen).not.toHaveBeenCalled()
   })
 
   it('lets a page listen, and stop', () => {
