@@ -97,7 +97,7 @@ export async function startBackend({ env = process.env } = {}) {
     'the backend to answer',
     async () => {
       if (exited) throw exited
-      return (await fetch(`${url}/api/v1/auth/user`)).status === 401
+      return (await fetch(`${url}/api/v1/auth/user`, { signal: AbortSignal.timeout(5000) })).status === 401
     },
     { timeout: 60000 }
   ).catch(async (err) => {

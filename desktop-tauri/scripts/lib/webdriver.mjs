@@ -37,7 +37,9 @@ export const pending = { what: 'nothing' }
 
 /** Poll `probe` until it returns something truthy, or throw once `timeout` passes. */
 export async function waitFor(what, probe, { timeout = 30000, interval = 150 } = {}) {
-  const deadline = Date.now() + timeout
+  const started = Date.now()
+  const deadline = started + timeout
+  const callError = new Error()
   let last
   pending.what = what
   for (;;) {
@@ -49,7 +51,14 @@ export async function waitFor(what, probe, { timeout = 30000, interval = 150 } =
       last = err
     }
     if (Date.now() > deadline) {
-      throw new Error(`timed out after ${timeout}ms waiting for ${what}${last ? `: ${last.message}` : ''}`)
+      const elapsed = Date.now() - started
+      const err = new Error(
+        `timed out after ${elapsed}ms (timeout: ${timeout}ms) waiting for ${what}${last ? `: ${last.message}` : ''}`
+      )
+      if (callError.stack) {
+        err.stack = `${err.name}: ${err.message}\n` + callError.stack.split('\n').slice(2).join('\n')
+      }
+      throw err
     }
     await sleep(interval)
   }
@@ -68,7 +77,11 @@ export async function startDriver({ port, env, nativeDriver } = {}) {
   port ??= await freePort()
   const args = ['--port', String(port), '--native-port', String(await freePort())]
   if (nativeDriver) args.push('--native-driver', nativeDriver)
-  const child = spawn('tauri-driver', args, { env: { ...process.env, ...env }, stdio: ['ignore', 'inherit', 'inherit'] })
+  const child = spawn('tauri-driver', args, {
+    env: { ...process.env, ...env },
+    stdio: ['ignore', 'inherit', 'inherit'],
+    detached: process.platform !== 'win32',
+  })
   let exited = null
   const gone = new Promise((resolveGone) => {
     child.once('exit', resolveGone)
@@ -85,18 +98,31 @@ export async function startDriver({ port, env, nativeDriver } = {}) {
     'tauri-driver to answer /status',
     async () => {
       if (exited) throw exited
-      return (await fetch(`${base}/status`)).ok
+      return (await fetch(`${base}/status`, { signal: AbortSignal.timeout(5000) })).ok
     },
-    { timeout: 20000 }
+    { timeout: 30000 }
   ).catch((err) => {
-    child.kill()
+    if (process.platform !== 'win32' && child.pid) {
+      try { process.kill(-child.pid, 'SIGCONT') } catch {}
+      try { process.kill(-child.pid, 'SIGKILL') } catch {}
+    } else {
+      child.kill()
+    }
     throw err
   })
   return {
     base,
     // Resolves once the driver, and so the port, is really gone.
-    stop: () => {
-      if (child.exitCode === null && child.signalCode === null) child.kill()
+    stop: async () => {
+      if (process.platform !== 'win32' && child.pid) {
+        try { process.kill(-child.pid, 'SIGCONT') } catch {}
+        try { process.kill(-child.pid, 'SIGTERM') } catch {}
+        setTimeout(() => {
+          try { process.kill(-child.pid, 'SIGKILL') } catch {}
+        }, 2000).unref()
+      } else {
+        try { child.kill() } catch {}
+      }
       return gone
     },
   }
@@ -108,33 +134,68 @@ export class Session {
     this.id = id
   }
 
+  static async request(method, url, payload, timeout = COMMAND_TIMEOUT) {
+    const started = Date.now()
+    const callError = new Error()
+    let body
+    let ok = false
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: payload === undefined ? undefined : JSON.stringify(payload),
+        signal: AbortSignal.timeout(timeout),
+      })
+      ok = res.ok
+      body = await res.json().catch(() => null)
+    } catch (err) {
+      const elapsed = Date.now() - started
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        const target = `${method} ${url}`
+        const timeoutErr = new Error(
+          `WebDriver command timed out after ${elapsed}ms (timeout: ${timeout}ms) for ${target}`,
+          { cause: err }
+        )
+        if (callError.stack) {
+          timeoutErr.stack = `${timeoutErr.name}: ${timeoutErr.message}\n` +
+            callError.stack.split('\n').slice(2).join('\n')
+        }
+        throw timeoutErr
+      }
+      throw err
+    }
+    if (!ok) {
+      const detail = body?.value?.message || body?.value?.error || JSON.stringify(body) || 'unknown error'
+      const err = new Error(`${method} ${url}: ${detail}`)
+      if (callError.stack) {
+        err.stack = `${err.name}: ${err.message}\n` + callError.stack.split('\n').slice(2).join('\n')
+      }
+      throw err
+    }
+    return body?.value
+  }
+
   /** Open a session that launches `application`. */
   static async create(base, application) {
     pending.what = 'the app to start (POST /session)'
-    const res = await fetch(`${base}/session`, {
-      signal: AbortSignal.timeout(COMMAND_TIMEOUT),
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        capabilities: { alwaysMatch: { browserName: 'wry', 'tauri:options': { application } } },
-      }),
-    })
-    const body = await res.json()
-    if (!res.ok) throw new Error(`cannot start a session: ${JSON.stringify(body.value)}`)
-    return new Session(base, body.value.sessionId)
+    // App startup outer bound (120s) accounts for cold cache and stalls.
+    const value = await Session.request('POST', `${base}/session`, {
+      capabilities: { alwaysMatch: { browserName: 'wry', 'tauri:options': { application } } },
+    }, 120000)
+    const session = new Session(base, value.sessionId)
+    // Align WebDriver's own timeouts: 60s for script evaluation, 300s for page load.
+    await session.command('POST', '/timeouts', { script: 60000, pageLoad: 300000, implicit: 0 })
+    return session
   }
 
-  async command(method, path, payload) {
+  async command(method, path, payload, timeout) {
     pending.what = `${method} ${path}`
-    const res = await fetch(`${this.base}/session/${this.id}${path}`, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: payload === undefined ? undefined : JSON.stringify(payload),
-      signal: AbortSignal.timeout(COMMAND_TIMEOUT),
-    })
-    const body = await res.json()
-    if (!res.ok) throw new Error(`${method} ${path}: ${body.value?.error}: ${body.value?.message}`)
-    return body.value
+    if (timeout === undefined) {
+      if (path === '/execute/async') timeout = 90000
+      else if (path === '/url' && method === 'POST') timeout = 330000
+      else timeout = 60000
+    }
+    return Session.request(method, `${this.base}/session/${this.id}${path}`, payload, timeout)
   }
 
   windowHandles() {
@@ -190,7 +251,10 @@ export class Session {
     const outcome = await this.command('POST', '/execute/async', {
       script: `const done = arguments[arguments.length - 1];
         Promise.resolve().then(() => (${expression}))
-          .then((value) => done({ value }), (err) => done({ error: String((err && err.stack) || err) }));`,
+          .then((value) => done({ value }), (err) => {
+            const msg = err && (err.message && !String(err.stack || '').includes(err.message) ? String(err) + '\\n' + err.stack : (err.stack || String(err)));
+            done({ error: String(msg || err) });
+          });`,
       args: [],
     })
     if (outcome.error) throw new Error(`in the page: ${outcome.error}`)
@@ -203,6 +267,6 @@ export class Session {
   }
 
   async quit() {
-    await this.command('DELETE', '').catch(() => {})
+    await this.command('DELETE', '', undefined, 10000).catch(() => {})
   }
 }

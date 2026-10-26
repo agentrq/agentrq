@@ -48,7 +48,7 @@ export async function runVerify(main, cleanup, { timeout = 300000 } = {}) {
   try {
     code = await main()
   } catch (err) {
-    console.error('✗ verification threw:', err)
+    console.error('✗ verification threw:', (err && err.stack) || err)
   }
   clearTimeout(timer)
   await cleanup().catch(() => {})

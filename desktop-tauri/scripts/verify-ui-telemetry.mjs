@@ -80,14 +80,36 @@ await runVerify(
 
     await inPage('the login screen', "location.pathname === '/login'")
     const { workspaceId, taskId } = await page(`(async () => {
-      const call = async (path, body) => (await fetch('/api/v1' + path, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json()
+      const call = async (path, body) => {
+        const res = await fetch('/api/v1' + path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error('POST ' + path + ' failed with ' + res.status + ': ' + text);
+        }
+        return res.json();
+      };
       const login = await fetch('/api/v1/auth/root/login', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rootToken: ${JSON.stringify(backend.rootToken)} }) })
-      const { workspace } = await call('/workspaces', { workspace: { name: 'Telemetry' } })
-      const { task } = await call('/workspaces/' + workspace.id + '/tasks', { task: {
-        title: 'Telemetry check', body: 'Some **markdown** with [a link](https://example.com/page).', createdBy: 'human', assignee: 'human' } })
-      return { workspaceId: workspace.id, taskId: task.id, signedIn: login.status }
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rootToken: ${JSON.stringify(backend.rootToken)} }),
+      });
+      if (!login.ok) {
+        throw new Error('login failed with status ' + login.status);
+      }
+      const wsData = await call('/workspaces', { workspace: { name: 'Telemetry' } });
+      if (!wsData?.workspace?.id) {
+        throw new Error('create workspace failed: ' + JSON.stringify(wsData));
+      }
+      const taskData = await call('/workspaces/' + wsData.workspace.id + '/tasks', { task: {
+        title: 'Telemetry check', body: 'Some **markdown** with [a link](https://example.com/page).', createdBy: 'human', assignee: 'human' } });
+      if (!taskData?.task?.id) {
+        throw new Error('create task failed: ' + JSON.stringify(taskData));
+      }
+      return { workspaceId: wsData.workspace.id, taskId: taskData.task.id, signedIn: login.status };
     })()`)
     record('the QA session is signed in', (await page("fetch('/api/v1/auth/user').then((r) => r.status)")) === 200, 'GET /auth/user')
 
