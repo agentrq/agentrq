@@ -86,10 +86,10 @@ Windows):
   the renderer entry and the guest's init script (`vitest.config.mjs` says why;
   the init script's text is run by `test/panel-init.test.js`).
 - **Rust: 100% of lines** over `core/`, and over `src-tauri/` except the wiring:
-  `lib.rs`, `main.rs`, `test_server.rs`, `chrome.rs`, `app_menu.rs`, and the
-  side panel's per-OS files and `handlers.rs`. The list is the
-  `--ignore-filename-regex` in `package.json`; a new rule goes in a gated file
-  with its test, never in that list.
+  `lib.rs`, `main.rs`, `test_server.rs`, `chrome.rs`, `app_menu.rs`, the side
+  panel's per-OS files and `handlers.rs`, and the authorisation window's
+  `handlers.rs`. The list is the `--ignore-filename-regex` in `package.json`; a
+  new rule goes in a gated file with its test, never in that list.
 - **`cargo fmt --check` and `cargo clippy -D warnings`** on both crates, and on
   `src-tauri` once more as a release build, the configuration that ships.
 - **Versions in lockstep**: `node desktop/scripts/check-versions.mjs` holds

@@ -9,7 +9,7 @@
 
 - **Pure logic goes in `core/`**, which has no Tauri dependency and a 100% line
   gate. `src-tauri/src/lib.rs` is wiring only and is outside the gate.
-- **`chrome.rs`, `app_menu.rs`, and `side_panel/`'s platform files and `handlers.rs`
+- **`chrome.rs`, `app_menu.rs`, `side_panel/`'s platform files and `handlers.rs`, and `oauth_window/handlers.rs`
   are wiring and outside the coverage gate too**; a rule goes in `core/` or a
   gated file with its test. `side_panel.rs` is gated: llvm-cov counts a closure
   per generic instance, so keep closures out of its commands. An async command whose
@@ -93,6 +93,11 @@
   passing back what `cookies()` gave deletes nothing.
 - **Windows' `delete_cookie` is asynchronous.** Check the deletion after the next
   navigation, never straight after the call.
+- **The supervisor's authorisation window is lent the jar's cookies for its page**
+  (the authorise page reads `at`), and every cookie for that host is taken back
+  before the window is destroyed. Its redirect is matched exactly and cancelled in
+  `on_navigation`, and every other non-http(s) navigation is refused, so the code
+  never reaches the OS or the deep-link handler.
 
 ## Profiles and the main window
 

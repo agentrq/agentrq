@@ -84,6 +84,14 @@ impl ProfileJar {
         kept
     }
 
+    /// The names and values of the cookies that would be sent to `url`.
+    pub fn sent_to(&self, url: &Url) -> Vec<(String, String)> {
+        self.lock()
+            .get_request_values(url)
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect()
+    }
+
     /// Whether a cookie by this name would be sent to `url`.
     #[cfg(test)]
     pub fn has(&self, name: &str, url: &Url) -> bool {
