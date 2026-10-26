@@ -60,9 +60,9 @@ pub fn js_string(value: Option<&Value>) -> String {
     }
 }
 
-/// Matches the backend's truncation lengths so titles read identically.
-///
-/// Lengths are in UTF-16 code units, as JS counts them.
+/// The backend's truncation lengths, counted in UTF-16 code units as JS
+/// counts them. push.go counts bytes, so the two agree on ASCII only. A cut
+/// through a surrogate pair gives `\u{FFFD}` where JS keeps half the emoji.
 pub fn truncate(text: &str, max: usize) -> String {
     let units: Vec<u16> = text.encode_utf16().collect();
     if units.len() > max {
@@ -1385,13 +1385,14 @@ mod tests {
     }
 
     #[test]
-    fn counts_title_length_in_utf16_code_units_like_the_backend() {
+    fn counts_title_length_in_utf16_code_units_like_js() {
         // One emoji is two code units, so 31 of them are 62 against a limit of 60.
         assert_eq!(truncate(&"😀".repeat(30), 60), "😀".repeat(30));
         assert_eq!(
             truncate(&"😀".repeat(31), 60),
             format!("{}…", "😀".repeat(30))
         );
+        assert_eq!(truncate("a😀", 2), "a\u{FFFD}…");
     }
 
     #[test]

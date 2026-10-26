@@ -13,13 +13,17 @@ mod chrome_state;
 mod commands;
 mod cookie_jar;
 mod event_source;
+mod events;
 mod ext_host;
 mod extensions;
 mod network;
+mod notify;
+mod panel_scheme;
 mod panic_log;
 mod profiles;
 mod scheme;
 mod shell;
+mod side_panel;
 mod sign_in;
 #[cfg(test)]
 mod test_server;
@@ -31,21 +35,26 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use agentrq_desktop_core::auth::{SignInFlow, SignInWindow};
+use agentrq_desktop_core::links::LinkTarget;
 use agentrq_desktop_core::server_config::connection_lock;
 use agentrq_desktop_core::updater::{
     AutoUpdater, PublishedStatus, StdInstallerSpawner, Updater, UpdaterDeps, UpdaterEvent,
 };
 use tauri::webview::{Cookie, PageLoadEvent};
 use tauri::{
-    AppHandle, Emitter, Manager, RunEvent, Runtime, Url, WebviewUrl, WebviewWindow,
+    AppHandle, Emitter, Manager, RunEvent, Runtime, Url, Webview, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::UpdaterExt;
 
+use agentrq_desktop_core::notifications::Notification;
 use event_source::Streams;
+use events::EventStream;
 use ext_host::{ExtHost, Launch};
 use extensions::{HostDrawers, PickedFolder, Picker, ShellServices};
 use network::Network;
+use notify::{Desk, Feed, Notifier};
 use profiles::{app_origin, Profiles, Shell};
 use scheme::{Assets, Scheme, MAIN_WEBVIEW};
 use sign_in::CookieWebview;
@@ -333,6 +342,8 @@ struct Reopening(AtomicBool);
 
 /// The old main window is gone: the new one, on the active profile.
 fn rebuild_main<R: Runtime>(app: &AppHandle<R>) {
+    // Again: the old page may have finished a load since `reopen`.
+    shell::page_leaving(app);
     app.state::<Arc<Profiles>>().main_window_closed();
     if let Err(error) = chrome::open_active_main_window(app) {
         eprintln!("[profiles] could not reopen the window: {error}");
@@ -340,11 +351,14 @@ fn rebuild_main<R: Runtime>(app: &AppHandle<R>) {
 }
 
 /// A webview's cookie store, for `sign_in`.
-struct TauriCookies<R: Runtime>(WebviewWindow<R>);
+struct TauriCookies<R: Runtime>(Webview<R>);
 
 impl<R: Runtime> CookieWebview for TauriCookies<R> {
     fn cookies(&self) -> Vec<Cookie<'static>> {
-        self.0.cookies().unwrap_or_default()
+        self.0.cookies().unwrap_or_else(|error| {
+            eprintln!("[cookies] could not read the webview's cookies: {error}");
+            Vec::new()
+        })
     }
     fn delete_cookie(&self, cookie: Cookie<'static>) {
         // WebView2 deletes later, which is fine: nothing on the app's origin
@@ -363,14 +377,15 @@ impl<R: Runtime> Shell for Windows<R> {
     /// the windows that are left, so building it there means the count never
     /// reaches zero and Linux and Windows do not quit mid-switch.
     fn reopen(&self) {
+        shell::page_leaving(&self.0);
         let app = self.0.clone();
         let _ = self.0.run_on_main_thread(move || {
-            let Some(window) = app.get_webview_window(MAIN_WEBVIEW) else {
+            let Some(webview) = chrome::main_webview(&app) else {
                 return rebuild_main(&app);
             };
             chrome::save_main(&app);
             app.state::<Reopening>().0.store(true, Ordering::SeqCst);
-            if window.destroy().is_err() {
+            if webview.window().destroy().is_err() {
                 app.state::<Reopening>().0.store(false, Ordering::SeqCst);
                 rebuild_main(&app);
             }
@@ -378,10 +393,11 @@ impl<R: Runtime> Shell for Windows<R> {
     }
 
     fn reload(&self) {
-        if let Some(window) = self.0.get_webview_window(MAIN_WEBVIEW) {
+        if let Some(webview) = chrome::main_webview(&self.0) {
             let origin = app_origin(&self.0.state::<Arc<Profiles>>().active_id());
             if let Ok(url) = Url::parse(&format!("{origin}/")) {
-                let _ = window.navigate(url);
+                shell::page_leaving(&self.0);
+                let _ = webview.navigate(url);
             }
         }
     }
@@ -389,17 +405,61 @@ impl<R: Runtime> Shell for Windows<R> {
     fn forget_store(&self, _id: &str) {
         #[cfg(target_os = "macos")]
         {
+            // Its own store, and its side panel guests'.
             let app = self.0.clone();
-            let store = agentrq_desktop_core::profiles::data_store_id(_id);
+            let stores = agentrq_desktop_core::profiles::profile_stores(_id);
             tauri::async_runtime::spawn(async move {
-                let _ = app.remove_data_store(store).await;
+                for store in stores {
+                    let _ = app.remove_data_store(store).await;
+                }
             });
         }
     }
 
     fn main_webview(&self) -> Option<Arc<dyn CookieWebview>> {
-        let window = self.0.get_webview_window(MAIN_WEBVIEW)?;
-        Some(Arc::new(TauriCookies(window)))
+        let webview = chrome::main_webview(&self.0)?;
+        Some(Arc::new(TauriCookies(webview)))
+    }
+}
+
+/// What notify.rs asks of the app. The Notifier owns the unread count; the
+/// shell shows it, and holds a route until the main webview can take it.
+struct TauriDesk<R: Runtime>(AppHandle<R>);
+
+impl<R: Runtime> TauriDesk<R> {
+    fn shell(&self) -> Option<tauri::State<'_, shell::ShellState<R>>> {
+        self.0.try_state::<shell::ShellState<R>>()
+    }
+}
+
+impl<R: Runtime> Desk for TauriDesk<R> {
+    fn show(&self, notification: &Notification) -> bool {
+        self.0
+            .notification()
+            .builder()
+            .title(&notification.title)
+            .body(&notification.body)
+            .extra(notify::ROUTE_KEY, &notification.route)
+            .show()
+            .is_ok()
+    }
+
+    fn navigate(&self, route: &str) {
+        if let Some(shell) = self.shell() {
+            shell.navigate(&self.0, route);
+        }
+    }
+
+    fn set_unread(&self, count: u32, generation: u64) {
+        if let Some(shell) = self.shell() {
+            shell.set_unread_count(&self.0, count.into(), generation);
+        }
+    }
+
+    fn touch_workspace(&self, id: &str, name: &str) {
+        if let Some(shell) = self.shell() {
+            shell.touch_recent_workspace(&self.0, id, Some(name));
+        }
     }
 }
 
@@ -415,6 +475,17 @@ fn sweep_data_stores<R: Runtime>(app: &AppHandle<R>) {
             let _ = app.remove_data_store(store).await;
         }
     });
+}
+
+/// Where a link the side panel does not keep goes: the system browser for
+/// the web, and the app's own sign-in window for AgentRQ's.
+fn open_link<R: Runtime>(app: &AppHandle<R>, target: LinkTarget, url: &str) {
+    match target {
+        LinkTarget::SignIn => open_sign_in(app, url.to_string()),
+        _ => {
+            let _ = tauri_plugin_opener::open_url(url, None::<&str>);
+        }
+    }
 }
 
 /// Sign-in windows are numbered: one closing must never free a label another
@@ -436,10 +507,7 @@ impl<R: Runtime> SignInWindow for SignInWebview<'_, R> {
         }
     }
     fn is_destroyed(&self) -> bool {
-        self.0
-            .app_handle()
-            .get_webview_window(self.0.label())
-            .is_none()
+        self.0.app_handle().get_webview(self.0.label()).is_none()
     }
     fn close(&mut self) {
         let _ = self.0.close();
@@ -503,7 +571,7 @@ pub(crate) fn open_sign_in<R: Runtime>(app: &AppHandle<R>, start_url: String) {
 
 async fn finish_sign_in<R: Runtime>(window: WebviewWindow<R>, flow: Flow, id: String) {
     let profiles = window.state::<Arc<Profiles>>().inner().clone();
-    let cookies = Arc::new(TauriCookies(window.clone()));
+    let cookies = Arc::new(TauriCookies(window.as_ref().clone()));
     let signed_in = profiles.finish_sign_in(&id, cookies).await;
     if let Some(flow) = lock_flow(&flow).as_mut() {
         flow.finish(signed_in, &mut SignInWebview(&window));
@@ -572,6 +640,7 @@ fn pick_folder<R: Runtime>(window: WebviewWindow<R>) -> PickedFolder {
 pub fn run() {
     let app = chrome::plugins(tauri::Builder::default())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .register_asynchronous_uri_scheme_protocol("app", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let webview = ctx.webview_label().to_string();
@@ -580,6 +649,29 @@ pub fn run() {
                 responder.respond(scheme.handle(&webview, request).await);
             });
         })
+        // An Extension's pages in the side panel, and their bridge. Only a
+        // panel guest is answered (`panel_scheme.rs`).
+        .register_asynchronous_uri_scheme_protocol("agentrq-ext", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            let label = ctx.webview_label().to_string();
+            tauri::async_runtime::spawn(async move {
+                let top = app
+                    .get_webview(&label)
+                    .and_then(|webview| webview.url().ok())
+                    .map(|url| url.to_string());
+                let token = side_panel::token(&app, &label);
+                let scheme = app.state::<panel_scheme::PanelScheme>();
+                let page = panel_scheme::Page {
+                    top_url: top.as_deref(),
+                    token: token.as_deref(),
+                };
+                responder.respond(scheme.handle(&label, page, &request));
+            });
+        })
+        // Tauri would serve its own assets on every webview, a guest's too:
+        // the app's window loads its page through `app` instead, so nothing
+        // is served here.
+        .register_uri_scheme_protocol("tauri", |_, _| panel_scheme::app_internal())
         .invoke_handler(commands::handler())
         .setup(|app| {
             if let Ok(dir) = app.path().app_log_dir() {
@@ -593,14 +685,32 @@ pub fn run() {
                 profiles::first_profile(&data_dir, lock.as_deref()),
             ));
             let handle = app.handle().clone();
+            let notifier = Arc::new(Notifier::new(
+                network.clone(),
+                Arc::new(TauriDesk(handle.clone())),
+            ));
+            let feed = Arc::new(Feed {
+                stream: EventStream::spawn(network.clone(), notifier.clone()),
+                notifier: notifier.clone(),
+            });
             let profiles = Arc::new(Profiles::new(
                 data_dir.clone(),
                 lock,
                 network.clone(),
                 Box::new(Windows(handle.clone())),
+                feed,
             ));
             profiles.sweep();
+            profiles.watch();
             app.manage(profiles.clone());
+            let clicked = notifier.clone();
+            handle.notification().on_action(move |action| {
+                let extra = action.notification().map(|n| n.extra());
+                if let Some(route) = notify::tapped(action.action_id(), extra) {
+                    clicked.clicked(&route);
+                }
+            })?;
+            app.manage(notifier.clone());
             app.manage(Reopening::default());
             #[cfg(target_os = "macos")]
             sweep_data_stores(&handle);
@@ -621,8 +731,14 @@ pub fn run() {
                 host: host.clone(),
                 origin: Box::new(move || app_origin(&profiles.active_id())),
             };
-            app.manage(Scheme::new(network, assets, &dev_url(&handle)).drawers(Box::new(drawers)));
+            let scheme = Scheme::new(network, assets, &dev_url(&handle))
+                .drawers(Box::new(drawers))
+                .on_proxied(Box::new(move |method, path| notifier.proxied(method, path)));
+            app.manage(scheme);
             init_updater(&handle);
+            let side_panel = side_panel::SidePanelState::new(&handle, Box::new(open_link));
+            app.manage(side_panel.scheme());
+            app.manage(side_panel);
             app.manage(chrome::Chrome::new(data_dir));
             shell::init(&handle)?;
             chrome::open_active_main_window(&handle)?;

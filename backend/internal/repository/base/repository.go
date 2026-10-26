@@ -445,6 +445,9 @@ func (r *repository) MergeForkIntoParent(ctx context.Context, forkID, parentID i
 				return err
 			}
 		}
+		if err := movePanoAssignees(tx, fork, parentID); err != nil {
+			return err
+		}
 		// Its statistics too, or the stats page shows them under a deleted
 		// workspace.
 		if err := moveTelemetry(tx, forkID, parentID); err != nil {

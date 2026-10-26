@@ -13,6 +13,7 @@
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -26,6 +27,7 @@ use agentrq_desktop_core::server_config::{
     normalize_server_url, validate_server_url, ConfigFile, ConfigProbe, ProbeResponse, SaveError,
     ServerConfig, ServerConfigStore, CONFIG_FILENAME, CONFIG_PROBE_PATH, CONNECTION_LOCKED_REASON,
 };
+use agentrq_desktop_core::side_panel::child::panel_data_dir;
 use agentrq_desktop_core::side_panel::permission_store::PermissionStore;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -73,6 +75,12 @@ pub fn webview_dir(base: &Path, id: &str) -> PathBuf {
     profile_dir(base, id).join("webview")
 }
 
+/// The storage a profile's side panel guests share, never the profile's own
+/// webview's, in its folder so that it goes with the profile.
+pub fn panel_dir(base: &Path, id: &str) -> PathBuf {
+    profile_dir(base, id).join(panel_data_dir(id))
+}
+
 /// The renderer's origin for a profile. macOS gives each profile its own,
 /// because WKWebView before macOS 14 has no per-profile store and an origin
 /// is what separates localStorage there (WP0 S5); WebView2 spells the scheme
@@ -107,6 +115,33 @@ pub trait Shell: Send + Sync {
     /// The main window's cookie store, which is its profile's; `None` with no
     /// window.
     fn main_webview(&self) -> Option<Arc<dyn CookieWebview>>;
+}
+
+/// The shell's event stream, which follows the active profile: what
+/// Electron's `startEventStream` and `eventStream.stop()` are called for.
+/// `start` and `switching` are called with `busy` held, so they must not
+/// reach the Desk; the others never are.
+pub trait Watcher: Send + Sync {
+    /// Read the active profile's stream afresh.
+    fn start(&self);
+    /// Stop reading it: signed out, or no server.
+    fn stop(&self);
+    /// Another profile is about to be active: the old account's stream stops
+    /// before its window is gone, or it notifies into the new one.
+    fn switching(&self);
+    /// Another profile is active, muting these workspaces.
+    fn switched(&self, muted: Muted);
+    /// The active profile's mutes changed.
+    fn muted(&self, muted: Muted);
+}
+
+/// The active profile's muted workspaces, numbered as they were read: they
+/// reach the [`Watcher`] after `busy` is dropped, so in any order, and a
+/// higher number is a list at least as new.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Muted {
+    pub workspaces: Vec<String>,
+    pub generation: u64,
 }
 
 /// What waits for the old main window to be gone.
@@ -160,7 +195,10 @@ pub struct Profiles {
     lock: Option<String>,
     network: Arc<Network>,
     shell: Box<dyn Shell>,
+    watcher: Arc<dyn Watcher>,
     config: Mutex<ServerConfig>,
+    /// How many times the mutes were read for the Watcher.
+    mute_reads: AtomicU64,
     /// The live answer per profile, kept between openings of the switcher.
     identities: Mutex<HashMap<String, Option<Account>>>,
     /// The profile an added one came from, to go back to if it is abandoned.
@@ -188,6 +226,7 @@ impl Profiles {
         lock: Option<String>,
         network: Arc<Network>,
         shell: Box<dyn Shell>,
+        watcher: Arc<dyn Watcher>,
     ) -> Self {
         let config = store(&base).load();
         Self {
@@ -195,7 +234,9 @@ impl Profiles {
             lock,
             network,
             shell,
+            watcher,
             config: Mutex::new(config),
+            mute_reads: AtomicU64::new(0),
             identities: Mutex::new(HashMap::new()),
             return_to: Mutex::new(None),
             busy: tokio::sync::Mutex::new(()),
@@ -225,10 +266,47 @@ impl Profiles {
         server_of(self.config().active(), self.lock.as_deref())
     }
 
+    /// The active profile's muted workspaces.
+    pub fn muted(&self) -> Vec<String> {
+        self.config().active().muted_workspaces.clone()
+    }
+
+    /// `notifications.setMuted`: mute or unmute a workspace on the active
+    /// profile. Returns what is muted now.
+    pub async fn set_muted(&self, workspace_id: &str, muted: bool) -> Result<Vec<String>, String> {
+        let busy = self.busy.lock().await;
+        let kept = self
+            .store()
+            .set_workspace_muted(workspace_id, muted)
+            .map_err(io_error)?;
+        self.keep(self.store().load());
+        drop(busy);
+        self.watcher.muted(self.muted_now());
+        Ok(kept)
+    }
+
+    /// The mutes for the Watcher, numbered under the lock they are read with.
+    fn muted_now(&self) -> Muted {
+        let config = lock(&self.config);
+        Muted {
+            workspaces: config.active().muted_workspaces.clone(),
+            generation: self.mute_reads.fetch_add(1, Ordering::SeqCst) + 1,
+        }
+    }
+
+    /// Start following the active profile, at launch.
+    pub fn watch(&self) {
+        self.watcher.switched(self.muted_now());
+    }
+
     /// The folder for a profile's webview storage; macOS has a data store instead.
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn webview_dir(&self, id: &str) -> PathBuf {
         webview_dir(&self.base, id)
+    }
+
+    pub fn panel_dir(&self, id: &str) -> PathBuf {
+        panel_dir(&self.base, id)
     }
 
     /// Delete what removed profiles left behind: a webview that was just
@@ -286,6 +364,7 @@ impl Profiles {
         let url = self.store().save(&valid.url).map_err(save_error)?;
         self.keep(self.store().load());
         self.network.active().await.set_server_url(&url);
+        self.watcher.start();
         self.shell.reload();
         Ok(json!({"ok": true, "url": url}))
     }
@@ -367,6 +446,7 @@ impl Profiles {
     /// which can wait on the keychain, and made active once the old window is
     /// gone.
     async fn reopen(&self) -> ProfilesView {
+        self.watcher.switching();
         let config = self.config();
         let active = config.active();
         let server = server_of(active, self.lock.as_deref());
@@ -384,6 +464,7 @@ impl Profiles {
         let closing = std::mem::take(&mut *lock(&self.closing));
         if let Some(net) = closing.net {
             self.network.activate(net);
+            self.watcher.switched(self.muted_now());
         }
         for id in closing.forget {
             self.forget_storage(&id);
@@ -493,6 +574,7 @@ impl Profiles {
     /// meanwhile.
     fn signed_in(&self, id: &str) {
         if id == self.active_id() {
+            self.watcher.start();
             self.shell.reload();
         }
     }
@@ -501,6 +583,7 @@ impl Profiles {
     /// webview's go too, the provider's among them, as Electron clears the
     /// partition's.
     pub async fn log_out(&self) {
+        self.watcher.stop();
         self.network.active().await.jar.clear();
         if let Some(webview) = self.shell.main_webview() {
             sign_in::clear(webview, COOKIE_DEADLINE).await;
@@ -514,10 +597,12 @@ impl Profiles {
         if self.lock.is_some() {
             return Ok(());
         }
-        let _busy = self.busy.lock().await;
+        let busy = self.busy.lock().await;
         self.store().clear().map_err(io_error)?;
         self.keep(self.store().load());
         self.network.active().await.set_server_url("");
+        drop(busy);
+        self.watcher.stop();
         self.shell.reload();
         Ok(())
     }
@@ -650,16 +735,58 @@ pub(crate) mod tests {
         }
     }
 
+    /// What the event stream was told, marked "(busy)" when it was told with
+    /// the profiles' `busy` lock held.
+    #[derive(Default)]
+    pub struct FakeWatcher {
+        pub told: Mutex<Vec<String>>,
+        pub mutes: Mutex<Vec<Muted>>,
+        profiles: std::sync::OnceLock<std::sync::Weak<Profiles>>,
+    }
+
+    impl FakeWatcher {
+        fn tell(&self, what: String) {
+            let profiles = self.profiles.get().and_then(std::sync::Weak::upgrade);
+            let busy = profiles.is_some_and(|p| p.busy.try_lock().is_err());
+            let mark = if busy { " (busy)" } else { "" };
+            lock(&self.told).push(format!("{what}{mark}"));
+        }
+    }
+
+    impl Watcher for FakeWatcher {
+        fn start(&self) {
+            self.tell("start".into());
+        }
+        fn stop(&self) {
+            self.tell("stop".into());
+        }
+        fn switching(&self) {
+            self.tell("switching".into());
+        }
+        fn switched(&self, muted: Muted) {
+            self.tell(format!("switched {:?}", muted.workspaces));
+            lock(&self.mutes).push(muted);
+        }
+        fn muted(&self, muted: Muted) {
+            self.tell(format!("muted {:?}", muted.workspaces));
+            lock(&self.mutes).push(muted);
+        }
+    }
+
     pub struct Rig {
         pub dir: tempfile::TempDir,
         pub profiles: Arc<Profiles>,
         pub network: Arc<Network>,
         pub calls: Arc<Mutex<Vec<String>>>,
+        pub watcher: Arc<FakeWatcher>,
     }
 
     impl Rig {
         pub fn calls(&self) -> Vec<String> {
             std::mem::take(&mut *lock(&self.calls))
+        }
+        pub fn watched(&self) -> Vec<String> {
+            std::mem::take(&mut *lock(&self.watcher.told))
         }
         fn file(&self) -> Value {
             serde_json::from_str(
@@ -687,17 +814,21 @@ pub(crate) mod tests {
             first,
         ));
         let calls = shell.calls.clone();
+        let watcher = Arc::new(FakeWatcher::default());
         let profiles = Arc::new(Profiles::new(
             dir.path().to_path_buf(),
             lock.map(str::to_string),
             network.clone(),
             Box::new(shell),
+            watcher.clone(),
         ));
+        let _ = watcher.profiles.set(Arc::downgrade(&profiles));
         Rig {
             dir,
             profiles,
             network,
             calls,
+            watcher,
         }
     }
 
@@ -833,6 +964,11 @@ pub(crate) mod tests {
         assert_eq!(rig.network.active().await.server_url(), srv.url);
         assert_eq!(rig.file()["profiles"][0]["serverUrl"], srv.url);
         assert_eq!(rig.calls(), ["reload"]);
+        assert_eq!(
+            rig.watched(),
+            ["start (busy)"],
+            "the stream reads the new server"
+        );
 
         let bad = rig.profiles.save("ftp://x").await.unwrap();
         assert_eq!(
@@ -944,6 +1080,11 @@ pub(crate) mod tests {
         );
         assert_eq!(rig.calls(), ["reopen"]);
         assert_eq!(rig.file()["activeProfileId"], "work");
+        assert_eq!(
+            rig.watched(),
+            ["switching (busy)", "switched []"],
+            "the old stream stops first, and the new one follows the window"
+        );
     }
 
     #[tokio::test]
@@ -963,6 +1104,9 @@ pub(crate) mod tests {
         assert!(work.jar.adopt(&cookie, &server));
         let dir = profile_dir(rig.dir.path(), "work");
         std::fs::create_dir_all(dir.join("webview")).unwrap();
+        let panel = rig.profiles.panel_dir("work");
+        assert_eq!(panel, dir.join("panel-work"));
+        std::fs::create_dir_all(&panel).unwrap();
         let permissions = PermissionStore::new(rig.dir.path(), "work");
         permissions.set("https://a.example", "media", "allow");
         assert!(permissions.file().exists());
@@ -970,6 +1114,7 @@ pub(crate) mod tests {
         let view = rig.profiles.remove("work").await.unwrap();
         assert_eq!(view.profiles.len(), 1);
         assert!(!dir.exists(), "jar, attachments and webview storage");
+        assert!(!panel.exists(), "the side panel's storage too");
         assert!(!permissions.file().exists());
         assert!(
             !work.jar.has("at", &server),
@@ -1120,6 +1265,7 @@ pub(crate) mod tests {
             "the server stays"
         );
         assert_eq!(rig.calls(), ["reload"]);
+        assert_eq!(rig.watched(), ["stop"]);
     }
 
     #[test]
@@ -1208,6 +1354,7 @@ pub(crate) mod tests {
         assert!(work.jar.has("at", &server));
         assert!(window.names().is_empty(), "nothing left in the webview");
         assert!(rig.calls().is_empty(), "not the profile on screen");
+        assert!(rig.watched().is_empty());
 
         assert!(
             rig.profiles
@@ -1215,6 +1362,11 @@ pub(crate) mod tests {
                 .await
         );
         assert_eq!(rig.calls(), ["reload"]);
+        assert_eq!(
+            rig.watched(),
+            ["start (busy)"],
+            "a 401 stop ends at a sign-in"
+        );
 
         // A window closed with no session in it.
         let empty = Arc::new(FakeWebview::default());
@@ -1251,6 +1403,48 @@ pub(crate) mod tests {
         assert_eq!(rig.file()["profiles"][0]["serverUrl"], "");
         assert_eq!(rig.file()["profiles"][1]["serverUrl"], "http://127.0.0.1:8");
         assert_eq!(rig.calls(), ["reload"]);
+        assert_eq!(rig.watched(), ["stop"]);
+    }
+
+    #[tokio::test]
+    async fn mutes_a_workspace_on_the_active_profile_only() {
+        let rig = rig_with(Some(two_profiles("http://127.0.0.1:8")), None);
+        assert_eq!(
+            rig.profiles.set_muted("w1", true).await,
+            Ok(vec!["w1".into()])
+        );
+        assert_eq!(
+            rig.profiles.set_muted("w2", true).await,
+            Ok(vec!["w1".into(), "w2".into()])
+        );
+        assert_eq!(
+            rig.profiles.set_muted("w1", false).await,
+            Ok(vec!["w2".into()])
+        );
+        assert_eq!(rig.profiles.muted(), ["w2"]);
+        assert_eq!(rig.file()["profiles"][0]["mutedWorkspaces"], json!(["w2"]));
+        assert_eq!(
+            rig.watched(),
+            [
+                r#"muted ["w1"]"#,
+                r#"muted ["w1", "w2"]"#,
+                r#"muted ["w2"]"#
+            ]
+        );
+
+        rig.profiles.watch();
+        assert_eq!(rig.watched(), [r#"switched ["w2"]"#]);
+        rig.profiles.switch("work").await.unwrap();
+        rig.profiles.main_window_closed();
+        assert!(rig.profiles.muted().is_empty(), "work mutes nothing");
+        assert_eq!(rig.watched(), ["switching (busy)", "switched []"]);
+
+        // A folder where the file should be: the write fails.
+        let file = rig.dir.path().join(CONFIG_FILENAME);
+        std::fs::remove_file(&file).unwrap();
+        std::fs::create_dir(&file).unwrap();
+        assert!(rig.profiles.set_muted("w3", true).await.is_err());
+        assert!(rig.watched().is_empty());
     }
 
     #[test]

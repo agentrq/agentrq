@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::event_source::{self, Frame, Sink, Streams};
 use crate::network::Network;
@@ -172,16 +172,24 @@ pub async fn profiles_remove(
     profiles.remove(&id).await
 }
 
-/// `agentrq:notifications:get`
+/// `agentrq:notifications:get`. Every desktop this is built for shows
+/// native notifications. Electron's `isSupported()` only asks whether it
+/// could load libnotify on Linux, so a session with no notification server
+/// reports support there too, and shows nothing.
 #[tauri::command]
-pub fn notifications_get() -> Result<(), String> {
-    todo("notifications.get", "WP6")
+pub fn notifications_get(profiles: State<'_, Arc<Profiles>>) -> Value {
+    json!({"supported": true, "mutedWorkspaces": profiles.muted()})
 }
 
 /// `agentrq:notifications:setMuted`
 #[tauri::command]
-pub fn notifications_set_muted() -> Result<(), String> {
-    todo("notifications.setMuted", "WP6")
+pub async fn notifications_set_muted(
+    profiles: State<'_, Arc<Profiles>>,
+    workspace_id: String,
+    muted: bool,
+) -> Result<Value, String> {
+    let muted = profiles.set_muted(&workspace_id, muted).await?;
+    Ok(json!({"mutedWorkspaces": muted}))
 }
 
 use tauri::{AppHandle, Manager, Runtime};
@@ -242,12 +250,6 @@ pub fn update_install_via_script<R: Runtime>(
     }
 }
 
-/// `agentrq:side-panel:open-external`
-#[tauri::command]
-pub fn side_panel_open_external() -> Result<(), String> {
-    todo("sidePanel.openExternal", "WP7b")
-}
-
 /// `agentrq:side-panel:permission-answer`
 #[tauri::command]
 pub fn side_panel_permission_answer() -> Result<(), String> {
@@ -264,12 +266,6 @@ pub fn side_panel_permission_remove() -> Result<(), String> {
 #[tauri::command]
 pub fn side_panel_permissions() -> Result<(), String> {
     todo("sidePanel.permissions", "WP7c")
-}
-
-/// `agentrq:panel:send`
-#[tauri::command]
-pub fn panel_send() -> Result<(), String> {
-    todo("panel.send", "WP7b / WP9")
 }
 
 /// `agentrq:navigation:ready`
@@ -319,12 +315,17 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         update_get,
         update_install,
         update_install_via_script,
-        side_panel_open_external,
+        crate::side_panel::side_panel_open_external,
         crate::extensions::side_panel_pages,
         side_panel_permission_answer,
         side_panel_permission_remove,
         side_panel_permissions,
-        panel_send,
+        crate::side_panel::side_panel_guest_open,
+        crate::side_panel::side_panel_guest_place,
+        crate::side_panel::side_panel_guest_navigate,
+        crate::side_panel::side_panel_guest_focus,
+        crate::side_panel::side_panel_guest_snapshot,
+        crate::side_panel::side_panel_guest_close,
         navigation_ready,
         crate::chrome::view_fullscreen,
         crate::chrome::view_get,
@@ -388,17 +389,14 @@ mod tests {
         ("extensions_state", "extensions.state"),
         ("extensions_supervisor", "extensions.supervisor"),
         ("extensions_uninstall", "extensions.uninstall"),
-        ("side_panel_open_external", "sidePanel.openExternal"),
-        ("side_panel_pages", "sidePanel.pages"),
         ("side_panel_permission_answer", "sidePanel.answerPermission"),
         ("side_panel_permission_remove", "sidePanel.removePermission"),
         ("side_panel_permissions", "sidePanel.permissions"),
-        ("panel_send", "panel.send"),
     ];
 
-    /// The commands WP2, WP4 and WP9 have replaced; every other one is still a
+    /// The commands WP2, WP4, WP6 and WP9 have replaced; every other one is still a
     /// stub.
-    const DONE: [&str; 28] = [
+    const DONE: [&str; 30] = [
         "attachments_forget_all",
         "attachments_forget_task",
         "attachments_forget_workspace",
@@ -406,6 +404,8 @@ mod tests {
         "connection_get",
         "connection_save",
         "connection_validate",
+        "notifications_get",
+        "notifications_set_muted",
         "profiles_add",
         "profiles_get",
         "profiles_remove",
@@ -443,11 +443,20 @@ mod tests {
             ),
             None,
         );
+        let host = crate::ext_host::ExtHost::new(
+            crate::ext_host::Launch {
+                program: "node".into(),
+                args: vec![],
+            },
+            profiles.dir.path().into(),
+            Arc::new(crate::ext_host::tests::FakeServices::default()),
+        );
         let app = mock_builder()
             .invoke_handler(super::handler())
             .manage(profiles.network.clone())
             .manage(profiles.profiles.clone())
             .manage(Streams::default())
+            .manage(host)
             .build(mock_context(noop_assets()))
             .expect("mock app");
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
@@ -484,7 +493,7 @@ mod tests {
     #[test]
     fn every_command_is_registered_and_the_stubs_answer_todo() {
         let rig = rig();
-        assert_eq!(STUB_COMMANDS.len(), 35, "stub commands answering todo");
+        assert_eq!(STUB_COMMANDS.len(), 32, "stub commands answering todo");
         for (cmd, member) in STUB_COMMANDS.iter().filter(|(cmd, _)| !DONE.contains(cmd)) {
             let err = call(&rig, cmd, serde_json::json!({})).expect_err(cmd);
             let text = err.as_str().unwrap_or_default();
@@ -504,6 +513,13 @@ mod tests {
             call(&rig, "navigation_ready", serde_json::json!({})),
             Ok(serde_json::Value::Null)
         );
+    }
+
+    #[test]
+    fn lists_no_panel_pages_until_extensions_arrive() {
+        let rig = rig();
+        let pages = call(&rig, "side_panel_pages", serde_json::json!({})).unwrap();
+        assert_eq!(pages, serde_json::json!([]));
     }
 
     #[test]
@@ -593,6 +609,7 @@ mod tests {
             "profiles_switch",
             "profiles_rename",
             "profiles_remove",
+            "notifications_set_muted",
         ] {
             assert!(call(&rig, cmd, serde_json::json!({})).is_err(), "{cmd}");
         }
@@ -607,6 +624,10 @@ mod tests {
             ),
             ("profiles_rename", serde_json::json!({"id": "default"})),
             ("profiles_add", serde_json::json!({"label": 5})),
+            (
+                "notifications_set_muted",
+                serde_json::json!({"workspaceId": "w"}),
+            ),
         ] {
             assert!(call(&rig, cmd, args).is_err(), "{cmd}");
         }
@@ -688,6 +709,38 @@ mod tests {
     }
 
     #[test]
+    fn mutes_and_unmutes_a_workspace() {
+        let rig = rig();
+        let set = |id: &str, muted: bool| {
+            call(
+                &rig,
+                "notifications_set_muted",
+                serde_json::json!({"workspaceId": id, "muted": muted}),
+            )
+        };
+        assert_eq!(
+            call(&rig, "notifications_get", serde_json::json!({})),
+            Ok(serde_json::json!({"supported": true, "mutedWorkspaces": []}))
+        );
+        assert_eq!(
+            set("w1", true),
+            Ok(serde_json::json!({"mutedWorkspaces": ["w1"]}))
+        );
+        assert_eq!(
+            set("w2", true),
+            Ok(serde_json::json!({"mutedWorkspaces": ["w1", "w2"]}))
+        );
+        assert_eq!(
+            set("w1", false),
+            Ok(serde_json::json!({"mutedWorkspaces": ["w2"]}))
+        );
+        assert_eq!(
+            call(&rig, "notifications_get", serde_json::json!({})).unwrap()["mutedWorkspaces"],
+            serde_json::json!(["w2"])
+        );
+    }
+
+    #[test]
     fn answers_an_error_before_the_network_is_managed() {
         let app = mock_builder()
             .invoke_handler(super::handler())
@@ -712,8 +765,10 @@ mod tests {
             "profiles_add",
             "profiles_rename",
             "profiles_remove",
+            "notifications_get",
+            "notifications_set_muted",
         ] {
-            let args = serde_json::json!({"url": "", "id": "x", "label": "y"});
+            let args = serde_json::json!({"url": "", "id": "x", "label": "y", "workspaceId": "w", "muted": true});
             assert!(call(&rig, cmd, args).is_err(), "{cmd}");
         }
     }

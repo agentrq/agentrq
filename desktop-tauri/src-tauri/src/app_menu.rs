@@ -29,15 +29,17 @@ use std::sync::Arc;
 use crate::chrome::{self, Chrome};
 use crate::profiles::Profiles;
 
-const fn platform() -> Platform {
-    if cfg!(target_os = "macos") {
-        Platform::MacOs
-    } else if cfg!(windows) {
-        Platform::Windows
-    } else {
-        Platform::Linux
-    }
-}
+#[cfg(target_os = "macos")]
+const PLATFORM: Platform = Platform::MacOs;
+#[cfg(windows)]
+const PLATFORM: Platform = Platform::Windows;
+#[cfg(not(any(target_os = "macos", windows)))]
+const PLATFORM: Platform = Platform::Linux;
+
+#[cfg(debug_assertions)]
+const DEBUG_BUILD: bool = true;
+#[cfg(not(debug_assertions))]
+const DEBUG_BUILD: bool = false;
 
 fn app_name<R: Runtime>(app: &AppHandle<R>) -> String {
     app.config()
@@ -48,9 +50,9 @@ fn app_name<R: Runtime>(app: &AppHandle<R>) -> String {
 
 fn options(name: &str) -> MenuOptions<'_> {
     MenuOptions {
-        platform: platform(),
+        platform: PLATFORM,
         app_name: name,
-        debug_build: cfg!(debug_assertions),
+        debug_build: DEBUG_BUILD,
         // The updater is WP6/WP8's: until it is wired the item is disabled.
         can_check_for_updates: false,
         // The panel listens for `agentrq:side-panel:toggle` (WP7b).
@@ -84,6 +86,17 @@ pub fn menu_key_bindings<R: Runtime>(app: AppHandle<R>) -> serde_json::Value {
         .collect()
 }
 
+/// The menu action of a key a side panel guest pressed, as the app's page
+/// would match it (`side_panel::menu_key` runs it).
+#[cfg(not(target_os = "macos"))]
+pub fn key_action<R: Runtime>(
+    app: &AppHandle<R>,
+    pressed: agentrq_desktop_core::menu_keys::Pressed<'_>,
+) -> Option<ActionId> {
+    let name = app_name(app);
+    agentrq_desktop_core::menu_keys::action_for(&key_bindings(options(&name)), pressed)
+}
+
 /// An action the bridge dispatched from a key the page left unhandled.
 #[tauri::command]
 pub fn menu_run<R: Runtime>(app: AppHandle<R>, id: String) -> bool {
@@ -106,7 +119,7 @@ fn native_submenu<R: Runtime>(app: &AppHandle<R>, model: &Submenu) -> tauri::Res
             MenuItem::Action(action) => {
                 // Off macOS the keys are the page's, not GTK's or Windows':
                 // see `core::menu_keys`.
-                let (label, accelerator) = item_parts(platform(), action);
+                let (label, accelerator) = item_parts(PLATFORM, action);
                 submenu.append(&NativeItem::with_id(
                     app,
                     action.id.as_str(),
@@ -160,12 +173,13 @@ fn add_role<R: Runtime>(
 }
 
 /// A click, or a key, carried out.
-fn run<R: Runtime>(app: &AppHandle<R>, action: ActionId) {
-    let Some(window) = app.get_webview_window(chrome::MAIN) else {
+pub(crate) fn run<R: Runtime>(app: &AppHandle<R>, action: ActionId) {
+    let Some(webview) = chrome::main_webview(app) else {
         return;
     };
+    let window = webview.window();
     let state = app.state::<Chrome>();
-    let view = chrome::view_of(&window, &state);
+    let view = chrome::view_of(&webview, &state);
     if let Some(direction) = action.zoom_direction() {
         zoom_window(&view, direction);
         return;
@@ -182,18 +196,18 @@ fn run<R: Runtime>(app: &AppHandle<R>, action: ActionId) {
             let _ = app.emit_to(chrome::MAIN, "agentrq:navigate", "/");
         }
         ActionId::Reload | ActionId::ForceReload => {
-            let _ = window.eval("location.reload()");
+            let _ = webview.eval("location.reload()");
         }
         #[cfg(debug_assertions)]
-        ActionId::ToggleDevTools => window.open_devtools(),
+        ActionId::ToggleDevTools => webview.open_devtools(),
         ActionId::Undo => {
-            let _ = window.eval("document.execCommand('undo')");
+            let _ = webview.eval("document.execCommand('undo')");
         }
         ActionId::Redo => {
-            let _ = window.eval("document.execCommand('redo')");
+            let _ = webview.eval("document.execCommand('redo')");
         }
         ActionId::Delete => {
-            let _ = window.eval("document.execCommand('delete')");
+            let _ = webview.eval("document.execCommand('delete')");
         }
         ActionId::Minimize => {
             let _ = window.minimize();
@@ -214,6 +228,15 @@ fn run<R: Runtime>(app: &AppHandle<R>, action: ActionId) {
         // Check for Updates is WP6's: disabled until then.
         _ => {}
     }
+}
+
+/// The tray's Quit. Here, outside the coverage gate, because the line that
+/// exits is compiled out of the tests, which must not end the runner.
+pub fn quit<R: Runtime>(app: &AppHandle<R>) {
+    #[cfg(not(test))]
+    app.exit(0);
+    #[cfg(test)]
+    let _ = app;
 }
 
 /// Install the system tray icon and initial menu.

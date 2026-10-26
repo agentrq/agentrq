@@ -25,6 +25,7 @@
 //! non-string argument folds into the empty string.
 
 use crate::identity::{describe_identity, Account};
+use crate::side_panel::child::panel_data_dir;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -445,7 +446,8 @@ pub fn orphaned_profile_dirs<'a>(names: &'a [String], state: &ProfilesState) -> 
 
 /// The macOS data stores that belong to no profile: a removed profile's store
 /// is deleted once its window is gone, and whatever a quit cut short is swept
-/// on the next start. Every store the app has is one of its profiles'.
+/// on the next start. Every store the app has is one of its profiles' own, or
+/// the one its side panel's guests share ([`profile_stores`]).
 pub fn orphaned_data_stores(stores: &[[u8; 16]], state: &ProfilesState) -> Vec<[u8; 16]> {
     stores
         .iter()
@@ -453,10 +455,15 @@ pub fn orphaned_data_stores(stores: &[[u8; 16]], state: &ProfilesState) -> Vec<[
             !state
                 .profiles
                 .iter()
-                .any(|p| data_store_id(&p.id) == **store)
+                .any(|p| profile_stores(&p.id).contains(store))
         })
         .copied()
         .collect()
+}
+
+/// A profile's macOS data stores: its own, and its side panel guests'.
+pub fn profile_stores(id: &str) -> [[u8; 16]; 2] {
+    [data_store_id(id), data_store_id(&panel_data_dir(id))]
 }
 
 #[cfg(test)]
@@ -1209,8 +1216,17 @@ mod tests {
     fn sweeps_only_the_stores_of_profiles_that_are_gone() {
         let state = add(&base(), "work", "Work");
         let gone = data_store_id("gone");
-        let stores = [data_store_id("work"), gone, data_store_id(FIRST_PROFILE_ID)];
-        assert_eq!(orphaned_data_stores(&stores, &state), [gone]);
+        let [panel, gone_panel] =
+            [panel_data_dir("work"), panel_data_dir("gone")].map(|name| data_store_id(&name));
+        let stores = [
+            data_store_id("work"),
+            gone,
+            data_store_id(FIRST_PROFILE_ID),
+            panel,
+            gone_panel,
+        ];
+        assert_eq!(orphaned_data_stores(&stores, &state), [gone, gone_panel]);
         assert!(orphaned_data_stores(&[], &state).is_empty());
+        assert_eq!(profile_stores("work"), [data_store_id("work"), panel]);
     }
 }

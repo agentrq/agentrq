@@ -160,7 +160,9 @@ describe('an on* listener', () => {
     const agentrq = bridge.createBridge('Linux')
     const off = agentrq.navigation.onNavigate(() => {})
 
-    // listen has not resolved yet -> invoke must not have happened
+    // listen has not resolved yet -> invoke must not have happened, even once
+    // every queued microtask has run
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(tauri.invoke).not.toHaveBeenCalledWith('navigation_ready')
 
     // resolve listen

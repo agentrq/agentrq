@@ -12,6 +12,7 @@ on:
       # The extension host runs these unchanged, and its tests run the examples.
       - 'desktop/src/main/extensions/**'
       - 'examples/extensions/**'
+      - 'backend/**'
       - '.github/workflows/desktop-tauri.yml'
   # The renderer is desktop's renderer, built from frontend/src, so a change
   # there can break this build without touching desktop-tauri/.
@@ -24,6 +25,7 @@ on:
       # The extension host runs these unchanged, and its tests run the examples.
       - 'desktop/src/main/extensions/**'
       - 'examples/extensions/**'
+      - 'backend/**'
       - '.github/workflows/desktop-tauri.yml'
   workflow_dispatch:
 
@@ -239,3 +241,67 @@ jobs:
           name: chrome-shots-${{ runner.os }}
           path: desktop-tauri/shots
           if-no-files-found: ignore
+
+  # The headless parity checks (desktop-tauri/scripts/verify-*.mjs): the real
+  # debug app, driven by tauri-driver, against a scratch backend built from
+  # backend/. Linux only: macOS has no WKWebView driver, so it stays a manual
+  # row, and on Windows msedgedriver cannot start the app ("DevToolsActivePort
+  # file doesn't exist"), so that row is manual too.
+  verify:
+    name: Verify scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - name: Use npm 12.2.0
+        run: npm install -g npm@12.2.0
+
+      # WebKitGTK to build against; WebKitWebDriver for tauri-driver; Xvfb and a
+      # session bus to run the app on; xclip to read the clipboard it writes.
+      - name: Install the Linux packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb xclip dbus-x11 python3-gi
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-tauri/src-tauri -> target
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked --version 2.1.0
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install dependencies
+        working-directory: desktop-tauri
+        run: npm ci
+
+      - name: Build the debug app
+        working-directory: desktop-tauri
+        run: npm run build:debug
+
+      - name: Verify scripts
+        working-directory: desktop-tauri
+        run: xvfb-run -a -s "-screen 0 1400x900x24" dbus-run-session -- npm run verify

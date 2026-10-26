@@ -43,7 +43,7 @@ pub fn panel_partition_for(profile_id: &str) -> String {
 /// Extension is). Any other address is returned as it came.
 ///
 /// Only when `webview2_ext_urls` is true, and the shell sets that to
-/// `cfg!(windows)`: only wry's WebView2 workaround rewrites `agentrq-ext://` to
+/// True on Windows: only wry's WebView2 workaround rewrites `agentrq-ext://` to
 /// `http(s)://agentrq-ext.` and intercepts those requests, so they never reach
 /// the network. Elsewhere the scheme is native and that `http://` form is a
 /// real web page, which anyone on the LAN can serve; it must stay a web page.
@@ -183,7 +183,7 @@ pub struct NavigationOptions<'a> {
     /// The configured server. Empty means none is chosen yet.
     pub server_url: &'a str,
     /// Read `http(s)://agentrq-ext.<name>` as an Extension page. See
-    /// [`normalize_ext_url`]; the shell sets it to `cfg!(windows)`.
+    /// [`normalize_ext_url`]; the shell sets it to its `WEBVIEW2` const, true on Windows.
     pub webview2_ext_urls: bool,
 }
 

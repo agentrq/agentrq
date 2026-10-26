@@ -1,0 +1,25 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.agentrq/agentrq",
+  "title": "AgentRQ",
+  "description": "Task manager for AI agents. Orchestrate agents to achieve large goals in unified control plane.",
+  "websiteUrl": "https://agentrq.com",
+  "repository": {
+    "url": "https://github.com/agentrq/agentrq",
+    "source": "github"
+  },
+  "icons": [
+    {
+      "src": "https://agentrq.com/favicon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
+  "version": "0.13.4",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.agentrq.com/mcp"
+    }
+  ]
+}
