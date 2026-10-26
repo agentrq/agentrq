@@ -72,8 +72,21 @@ jobs:
       - name: Install the Linux webview packages
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+          # A trickling mirror once ate 27 minutes of a job. apt drops a connection
+          # silent for 30 s and retries that file; the cap only ends a try that is
+          # still stuck, and the next resumes from the packages already fetched.
+          for try in 1 2 3; do
+            timeout -k 30 300 sudo apt-get update -q -o Acquire::http::Timeout=30 -o Acquire::Retries=5 &&
+              timeout -k 30 900 sudo apt-get install -y -q -o Dpkg::Use-Pty=0 -o DPkg::Lock::Timeout=60 -o Acquire::http::Timeout=30 -o Acquire::Retries=5 libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev && break
+            rc=$?
+            [ "$try" = 3 ] && exit 1
+            echo "::warning::apt try $try failed or stalled (exit $rc); retrying"
+            # -k kills sudo, not its child: end what is left before recovering.
+            sudo pkill -9 -x apt-get || true
+            sudo pkill -9 -x dpkg || true
+            timeout -k 10 120 sudo dpkg --configure -a || true
+            sleep 10
+          done
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -151,7 +164,22 @@ jobs:
       # window's own background, which pixel.mjs holds to the theme's colour.
       - name: Install the screenshot tools
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y -qq xvfb imagemagick
+        run: |
+          # A trickling mirror once ate 27 minutes of a job. apt drops a connection
+          # silent for 30 s and retries that file; the cap only ends a try that is
+          # still stuck, and the next resumes from the packages already fetched.
+          for try in 1 2 3; do
+            timeout -k 30 300 sudo apt-get update -q -o Acquire::http::Timeout=30 -o Acquire::Retries=5 &&
+              timeout -k 30 900 sudo apt-get install -y -q -o Dpkg::Use-Pty=0 -o DPkg::Lock::Timeout=60 -o Acquire::http::Timeout=30 -o Acquire::Retries=5 xvfb imagemagick && break
+            rc=$?
+            [ "$try" = 3 ] && exit 1
+            echo "::warning::apt try $try failed or stalled (exit $rc); retrying"
+            # -k kills sudo, not its child: end what is left before recovering.
+            sudo pkill -9 -x apt-get || true
+            sudo pkill -9 -x dpkg || true
+            timeout -k 10 120 sudo dpkg --configure -a || true
+            sleep 10
+          done
 
       - name: Screenshots and window background (Linux)
         if: runner.os == 'Linux'
@@ -290,11 +318,25 @@ jobs:
         run: npm install -g npm@12.2.0
 
       # WebKitGTK to build against; WebKitWebDriver for tauri-driver; Xvfb and a
-      # session bus to run the app on; xclip to read the clipboard it writes.
+      # session bus to run the app on; xclip to read the clipboard it writes;
+      # xdotool to click in a panel site, which WebKitGTK needs before it asks to notify.
       - name: Install the Linux packages
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb xclip xdotool dbus-x11 python3-gi
+          # A trickling mirror once ate 27 minutes of a job. apt drops a connection
+          # silent for 30 s and retries that file; the cap only ends a try that is
+          # still stuck, and the next resumes from the packages already fetched.
+          for try in 1 2 3; do
+            timeout -k 30 300 sudo apt-get update -q -o Acquire::http::Timeout=30 -o Acquire::Retries=5 &&
+              timeout -k 30 900 sudo apt-get install -y -q -o Dpkg::Use-Pty=0 -o DPkg::Lock::Timeout=60 -o Acquire::http::Timeout=30 -o Acquire::Retries=5 libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb xclip xdotool dbus-x11 python3-gi && break
+            rc=$?
+            [ "$try" = 3 ] && exit 1
+            echo "::warning::apt try $try failed or stalled (exit $rc); retrying"
+            # -k kills sudo, not its child: end what is left before recovering.
+            sudo pkill -9 -x apt-get || true
+            sudo pkill -9 -x dpkg || true
+            timeout -k 10 120 sudo dpkg --configure -a || true
+            sleep 10
+          done
 
       - name: Set up Go
         uses: actions/setup-go@v5
