@@ -14,7 +14,7 @@
 export const METHOD_NOT_FOUND = -32601
 export const FAILED = -32000
 
-/** As `ext_rpc.rs`'s `MAX_LINE_BYTES`, counted in characters here. */
+/** As `ext_rpc.rs`'s `MAX_LINE_BYTES`, in UTF-8 bytes as there. */
 export const MAX_LINE = 40 * 1024 * 1024
 
 /**
@@ -45,6 +45,7 @@ export function createPeer({
   let nextId = 0
   const pending = new Map()
   let held = ''
+  let heldBytes = 0
   let skipping = false
   let closed = null
 
@@ -97,29 +98,37 @@ export function createPeer({
   }
 
   return {
-    /** Takes text read off the wire, in chunks of any size. */
+    /**
+     * Takes text read off the wire, in chunks of any size. Only the new
+     * chunk is searched and measured, so a long line costs its length once.
+     */
     receive(chunk) {
-      held += chunk
+      let start = 0
       let end
-      while ((end = held.indexOf('\n')) !== -1) {
-        const line = held.slice(0, end)
-        held = held.slice(end + 1)
+      while ((end = chunk.indexOf('\n', start)) !== -1) {
+        const piece = chunk.slice(start, end)
+        start = end + 1
+        const line = held + piece
+        const bytes = heldBytes + Buffer.byteLength(piece, 'utf8')
+        held = ''
+        heldBytes = 0
         if (skipping) {
           skipping = false
           continue
         }
-        if (Buffer.byteLength(line, 'utf8') > MAX_LINE) {
+        if (bytes > MAX_LINE) {
           onStray('(a line longer than the limit was dropped)')
           continue
         }
         if (line.trim()) dispatch(line)
       }
-      if (skipping) {
+      if (skipping) return
+      const rest = chunk.slice(start)
+      held += rest
+      heldBytes += Buffer.byteLength(rest, 'utf8')
+      if (heldBytes > MAX_LINE) {
         held = ''
-        return
-      }
-      if (Buffer.byteLength(held, 'utf8') > MAX_LINE) {
-        held = ''
+        heldBytes = 0
         skipping = true
         onStray('(a line longer than the limit was dropped)')
       }
