@@ -793,7 +793,7 @@ async fn within(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::chrome::Chrome;
     use tauri::ipc::{CallbackFn, InvokeBody};
@@ -928,9 +928,19 @@ mod tests {
         .map(|body| body.deserialize().unwrap())
     }
 
-    /// Long enough for what was spawned to have run.
+    /// Long enough for what was spawned to have run, where nothing tells.
     fn settle() {
         std::thread::sleep(Duration::from_millis(100));
+    }
+
+    /// Waits until what was spawned has `done` it, failing with `what` after
+    /// ten seconds: a busy runner can take longer than any fixed pause.
+    #[track_caller]
+    pub(crate) fn wait_for(what: &str, done: &dyn Fn() -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        std::iter::repeat_with(|| std::thread::sleep(Duration::from_millis(5)))
+            .find(|()| done() || std::time::Instant::now() > deadline);
+        assert!(done(), "{what}");
     }
 
     #[test]
@@ -1193,8 +1203,7 @@ mod tests {
         chrome::main_page_load(app, &PageLoadEvent::Started);
         shell.navigate(app, "/workspaces/1");
         assert!(lock(&rig.state().guests).is_empty());
-        settle();
-        assert!(app.get_webview(&guest).is_none(), "the guest is gone");
+        wait_for("the guest is gone", &|| app.get_webview(&guest).is_none());
         chrome::main_page_load(app, &PageLoadEvent::Finished);
         // The new page asks for it once it listens.
         shell.on_subscribed(app);
@@ -1209,9 +1218,9 @@ mod tests {
         assert!(!dispatch_navigation(app, &web));
         let sign_in = Url::parse(&format!("{SERVER}/api/v1/auth/google/login")).unwrap();
         assert!(!dispatch_navigation(app, &sign_in));
-        settle();
-        let sign_in = app.windows().into_keys().any(|l| l.starts_with("sign-in-"));
-        assert!(sign_in, "WP4's window");
+        wait_for("WP4's window", &|| {
+            app.windows().into_keys().any(|l| l.starts_with("sign-in-"))
+        });
         assert!(chrome::main_webview(app).is_some());
     }
 
@@ -1231,7 +1240,12 @@ mod tests {
         let first = first.expect("a token once loaded");
         assert_eq!(first.len(), 64);
         assert_eq!(token(rig.handle(), &ext), Some(first.clone()));
-        settle();
+        wait_for("the load reported", &|| {
+            let events = lock(&rig.events);
+            events
+                .last()
+                .is_some_and(|e| e["kind"] == "loading" && e["loading"] == false)
+        });
         assert_eq!(rig.seen(&ext).unwrap().0, PAGE, "reported");
         let kinds: Vec<Value> = rig.events().iter().map(|e| e["kind"].clone()).collect();
         assert!(
@@ -1319,7 +1333,7 @@ mod tests {
         assert!(!guest.allows("javascript:alert(1)", None));
         // A person's link-key click: the browser.
         assert!(!guest.allows("https://b.example/", Some(LINK_KEY)));
-        settle();
+        wait_for("the browser asked", &|| !lock(&rig.opened).is_empty());
         assert_eq!(
             rig.opened(),
             [(LinkTarget::System, "https://b.example/".to_string())]
@@ -1329,7 +1343,7 @@ mod tests {
             guest.new_window("https://c.example/", LINK_KEY),
             NewWindowResponse::Deny
         ));
-        settle();
+        wait_for("the browser asked", &|| !lock(&rig.opened).is_empty());
         assert_eq!(
             rig.opened(),
             [(LinkTarget::System, "https://c.example/".to_string())]
@@ -1362,7 +1376,7 @@ mod tests {
             ),
             Ok(Value::Null)
         );
-        settle();
+        wait_for("the browser asked", &|| !lock(&rig.opened).is_empty());
         assert_eq!(
             rig.opened(),
             [(LinkTarget::System, "https://x.example/".to_string())]
@@ -1382,7 +1396,10 @@ mod tests {
         rules.load_url(1, "https://b.example/");
         rules.load_url(9, "https://c.example/");
         rules.route_link("https://d.example/");
-        settle();
+        wait_for("the load and the browser", &|| {
+            let loaded = rig.webview(&label).url().unwrap().as_str() == "https://b.example/";
+            loaded && !lock(&rig.opened).is_empty()
+        });
         assert_eq!(
             rig.webview(&label).url().unwrap().as_str(),
             "https://b.example/"

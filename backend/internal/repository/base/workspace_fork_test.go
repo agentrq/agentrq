@@ -15,6 +15,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/tasklatency"
 	"github.com/glebarez/sqlite"
+	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -36,7 +37,7 @@ func forkDB(t *testing.T) (*gorm.DB, Repository) {
 	}
 	if err := db.AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{},
 		&model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{},
-		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.PanoDocTask{}, &model.TaskPlan{},
+		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.PanoDoc{}, &model.PanoDocTask{}, &model.TaskPlan{},
 		&model.Telemetry{}, &model.HourlyTelemetry{}, &model.DailyTelemetry{}, &model.MonthlyTelemetry{},
 		&model.HourlyTaskLatency{}, &model.DailyTaskLatency{}, &model.MonthlyTaskLatency{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -192,6 +193,59 @@ func TestMergeForkIntoParent_EmptyForkIsJustDeleted(t *testing.T) {
 	}
 }
 
+// A merge gives the parent the fork's Pano links, and every item assigned to
+// one of the fork's tasks names and links the parent instead: the board
+// matches an item to its task by that path, so with the fork's it would lose
+// its assignee.
+func TestMergeForkIntoParent_GivesTheParentTheForksPanoAssignees(t *testing.T) {
+	db, repo := forkDB(t)
+	seedForkTask(t, db, wfParent, 100, "ongoing")
+	seedForkTask(t, db, wfFork, 200, "completed")
+	path := func(ws, task int64) string {
+		return "/workspaces/" + monoflake.ID(ws).String() + "/tasks/" + monoflake.ID(task).String()
+	}
+	stamped := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	markdown := "- [x] ship it → [@parent fork](" + path(wfFork, 200) + ` "completed")` + "\n" +
+		"- [x] renamed by hand → [@someone](" + path(wfFork, 200) + ` "completed")` + "\n" +
+		"- [ ] the parent's own → [@parent](" + path(wfParent, 100) + ` "ongoing")`
+	want := "- [x] ship it → [@parent](" + path(wfParent, 200) + ` "completed")` + "\n" +
+		"- [x] renamed by hand → [@someone](" + path(wfParent, 200) + ` "completed")` + "\n" +
+		"- [ ] the parent's own → [@parent](" + path(wfParent, 100) + ` "ongoing")`
+	untouched := "- [ ] untouched → [@parent](" + path(wfParent, 100) + ` "ongoing")`
+	for _, r := range []any{
+		&model.PanoDoc{ID: 1, UserID: wfUser, Markdown: markdown, UpdatedAt: stamped, Version: 3},
+		&model.PanoDoc{ID: 2, UserID: wfUser, Markdown: untouched, UpdatedAt: stamped, Version: 3},
+		&model.PanoDoc{ID: 3, UserID: wfUser + 1, Markdown: markdown, UpdatedAt: stamped, Version: 3},
+		&model.PanoDocTask{ID: 11, UserID: wfUser, DocID: 1, TaskID: 200, WorkspaceID: wfFork},
+		&model.PanoDocTask{ID: 12, UserID: wfUser, DocID: 1, TaskID: 100, WorkspaceID: wfParent},
+	} {
+		if err := db.Create(r).Error; err != nil {
+			t.Fatalf("seed %T: %v", r, err)
+		}
+	}
+
+	if _, err := repo.MergeForkIntoParent(context.Background(), wfFork, wfParent); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if n := countIn(t, db, &model.PanoDocTask{}, wfParent); n != 2 {
+		t.Errorf("the parent has %d Pano links, want 2: the fork's task keeps its doc", n)
+	}
+	var docs []model.PanoDoc
+	db.Order("id").Find(&docs)
+	if docs[0].Markdown != want {
+		t.Errorf("the fork's items read\n%s\nwant\n%s", docs[0].Markdown, want)
+	}
+	if docs[0].Version != 4 || !docs[0].UpdatedAt.Equal(stamped) {
+		t.Errorf("the rewritten doc has version %d and updated_at %v, want 4 and %v: a new version, in the same place on the board", docs[0].Version, docs[0].UpdatedAt, stamped)
+	}
+	if docs[1].Markdown != untouched || docs[1].Version != 3 {
+		t.Errorf("a doc with no item of the fork changed: version %d, %q", docs[1].Version, docs[1].Markdown)
+	}
+	if docs[2].Markdown != markdown || docs[2].Version != 3 {
+		t.Errorf("another account's doc changed: version %d, %q", docs[2].Version, docs[2].Markdown)
+	}
+}
+
 // statsHour and statsLater are two hours of statistics: both workspaces have
 // rows in the first, only the fork in the second.
 const (
@@ -327,7 +381,7 @@ func TestMergeForkIntoParent_ErrorsRollBack(t *testing.T) {
 // Failing the Nth statement of the merge reaches every error return in turn.
 func TestMergeForkIntoParent_EachStatementCanFail(t *testing.T) {
 	errStatement := errors.New("statement failed")
-	for n := 1; n <= 27; n++ {
+	for n := 1; n <= 30; n++ {
 		db, repo := forkDB(t)
 		seedForkTask(t, db, wfFork, 200, "completed")
 		seedForkStats(t, db, wfFork, 1, 60, statsHour)

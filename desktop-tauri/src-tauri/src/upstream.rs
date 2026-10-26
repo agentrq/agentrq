@@ -148,6 +148,10 @@ mod tests {
     use super::*;
     use crate::test_server::{closed_port, reply, send as step, Step, TestServer};
 
+    /// How long a server stays silent: a deadline must cut in before it ends,
+    /// however slow the runner is.
+    const SILENCE_MS: u64 = 5_000;
+
     fn get(url: String, timeout_ms: u64) -> Outgoing {
         Outgoing {
             method: http::Method::GET,
@@ -231,7 +235,7 @@ mod tests {
 
     #[tokio::test]
     async fn aborts_the_request_it_gave_up_on() {
-        let server = TestServer::start(|_| vec![Step::Wait(5_000)]).await;
+        let server = TestServer::start(|_| vec![Step::Wait(SILENCE_MS)]).await;
         let started = std::time::Instant::now();
         let failed = send(
             &reqwest::Client::new(),
@@ -239,26 +243,36 @@ mod tests {
         )
         .await;
         assert_eq!(failed.unwrap_err(), ProxyError::Timeout);
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(started.elapsed() < Duration::from_millis(SILENCE_MS));
     }
 
     #[tokio::test]
     async fn does_not_cut_off_a_body_that_arrives_over_longer_than_the_headers_budget() {
-        let server = TestServer::start(|_| {
+        // The headers must beat the budget for the body to be tested at all,
+        // and a runner that stalls misses any fixed one: a budget they missed
+        // is doubled and tried again. A body held to it fails every try.
+        let tries = futures_util::stream::iter([150, 300, 600, 1_200, 2_400]).then(late_body);
+        let missed = |answer: &Result<Incoming, ProxyError>| {
+            std::future::ready(answer.as_ref().err() == Some(&ProxyError::Timeout))
+        };
+        let answer = std::pin::pin!(tries.skip_while(missed)).next().await;
+        let answer = answer.expect("the answer within one of the budgets");
+        assert_eq!(answer.unwrap().body.unwrap(), b"abcd");
+    }
+
+    /// A body whose second half comes twice `budget` after its headers, which
+    /// get `budget`.
+    async fn late_body(budget: u64) -> Result<Incoming, ProxyError> {
+        let server = TestServer::start(move |_| {
             vec![
                 step("HTTP/1.1 200 OK\r\ncontent-length: 4\r\nconnection: close\r\n\r\nab"),
-                Step::Wait(400),
+                Step::Wait(budget * 2),
                 step("cd"),
             ]
         })
         .await;
-        let answer = send(
-            &reqwest::Client::new(),
-            get(format!("{}/api/v1/big", server.url), 150),
-        )
-        .await
-        .unwrap();
-        assert_eq!(answer.body.unwrap(), b"abcd");
+        let out = get(format!("{}/api/v1/big", server.url), budget);
+        send(&reqwest::Client::new(), out).await
     }
 
     #[tokio::test]
@@ -296,7 +310,7 @@ mod tests {
         let server = TestServer::start(|_| {
             vec![
                 step("HTTP/1.1 200 OK\r\ncontent-length: 4\r\nconnection: close\r\n\r\nab"),
-                Step::Wait(5_000),
+                Step::Wait(SILENCE_MS),
             ]
         })
         .await;
@@ -305,7 +319,7 @@ mod tests {
         let started = std::time::Instant::now();
         let answer = send(&reqwest::Client::new(), out).await.unwrap();
         assert_eq!(answer.body.unwrap_err(), ProxyError::Stalled);
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(started.elapsed() < Duration::from_millis(SILENCE_MS));
     }
 
     #[tokio::test]

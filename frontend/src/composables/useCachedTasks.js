@@ -64,6 +64,32 @@ export function isCacheEnabled(workspaceId, storage = globalThis.localStorage) {
 }
 
 /**
+ * The one open connection, and who it belongs to.
+ *
+ * Module scope because there is one database per signed-in user and no reason
+ * for two views to hold separate handles to it. Keyed by user because signing
+ * in as someone else must not keep talking to the previous person's database —
+ * on the web that is a real sequence, and on the desktop a single profile can
+ * change account too.
+ */
+let current = { userId: null, db: null, pending: null };
+
+/**
+ * Resolves the database to write to.
+ *
+ * If a handle was supplied or one is already open, uses that. If the cache is
+ * currently connecting, awaits the pending connection so writes made during
+ * a cold load land once it is ready. If there is no cache and none pending,
+ * or if the connection fails, resolves to null so the write can be safely dropped.
+ */
+async function resolveDb(db) {
+  if (db) return db;
+  if (current.db) return current.db;
+  if (current.pending) return (await current.pending) ?? null;
+  return null;
+}
+
+/**
  * Cache one task, if its workspace is cached at all.
  *
  * Terms are computed here rather than by the caller: a write is the only moment
@@ -73,10 +99,11 @@ export function isCacheEnabled(workspaceId, storage = globalThis.localStorage) {
  * @returns {Promise<boolean>} whether it was written
  */
 export async function cacheTask(db, task, { storage } = {}) {
-  if (!db || !task?.workspaceId) return false;
+  const targetDb = await resolveDb(db);
+  if (!targetDb || !task?.workspaceId) return false;
   if (!isCacheEnabled(task.workspaceId, storage)) return false;
 
-  return putTask(db, task, taskTerms(task));
+  return putTask(targetDb, task, taskTerms(task));
 }
 
 /**
@@ -90,10 +117,11 @@ export async function cacheTask(db, task, { storage } = {}) {
  * @returns {Promise<number>} how many were written
  */
 export async function cacheTasks(db, tasks, options = {}) {
+  const targetDb = await resolveDb(db);
   const list = Array.isArray(tasks) ? tasks : [];
   let written = 0;
   for (const task of list) {
-    if (await cacheTask(db, task, options)) written += 1;
+    if (await cacheTask(targetDb, task, options)) written += 1;
   }
   return written;
 }
@@ -133,11 +161,12 @@ export function cacheTaskUpdate(db, current, incoming, options = {}) {
  * nothing to lose, and is written as it arrived.
  */
 export async function cacheTaskEvent(db, incoming, options = {}) {
-  if (!db || !incoming?.id || !incoming?.workspaceId) return false;
+  const targetDb = await resolveDb(db);
+  if (!targetDb || !incoming?.id || !incoming?.workspaceId) return false;
   if (!isCacheEnabled(incoming.workspaceId, options.storage)) return false;
 
-  const held = await getCachedTask(db, incoming.workspaceId, incoming.id);
-  return cacheTask(db, mergeTaskUpdate(held, incoming), options);
+  const held = await getCachedTask(targetDb, incoming.workspaceId, incoming.id);
+  return cacheTask(targetDb, mergeTaskUpdate(held, incoming), options);
 }
 
 /**
@@ -147,26 +176,16 @@ export async function cacheTaskEvent(db, incoming, options = {}) {
  * loads whole from the server when it is opened.
  */
 export async function cacheToolCallEvent(db, event, options = {}) {
+  const targetDb = await resolveDb(db);
   const workspaceId = event?.workspaceId;
   const call = event?.toolCall;
-  if (!db || !workspaceId || !call?.taskId) return false;
+  if (!targetDb || !workspaceId || !call?.taskId) return false;
   if (!isCacheEnabled(workspaceId, options.storage)) return false;
 
-  const held = await getCachedTask(db, workspaceId, call.taskId);
+  const held = await getCachedTask(targetDb, workspaceId, call.taskId);
   if (!held) return false;
-  return cacheTask(db, upsertToolCall(held, call), options);
+  return cacheTask(targetDb, upsertToolCall(held, call), options);
 }
-
-/**
- * The one open connection, and who it belongs to.
- *
- * Module scope because there is one database per signed-in user and no reason
- * for two views to hold separate handles to it. Keyed by user because signing
- * in as someone else must not keep talking to the previous person's database —
- * on the web that is a real sequence, and on the desktop a single profile can
- * change account too.
- */
-let current = { userId: null, db: null, pending: null };
 
 /** Test seam, and what signing out calls. */
 export function resetSharedCache() {
