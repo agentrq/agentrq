@@ -116,10 +116,11 @@
   store still in use.
 - **A profile's webview storage lives under `profiles/<id>/`** (or its macOS
   data store), and start-up sweeps any profile folder or store that no profile owns.
-- **Once the main window has a child webview, `get_webview_window("main")` returns None; use `get_webview("main")` plus `.window()`**
-  (and a `Webview` command argument): Tauri sees a webview window only while
-  every webview shares the window's label. Use `chrome::main_webview` when looking
-  up the main webview.
+- **Once a window has a child webview, `get_webview_window` finds nothing**
+  (`get_webview_window("main")` returns `None`), and a `WebviewWindow` command
+  argument fails: Tauri sees a webview window only while every webview shares the
+  window's label. Use `chrome::main_webview` (or `get_webview("main")` plus
+  `.window()`) and a `Webview` argument.
 - **Never write localStorage and quit in the same tick.** One such write was lost
   on macOS 14.
 
@@ -195,10 +196,10 @@
 - **Platform and build checks are `#[cfg]` consts, not `cfg!()`** (`PLATFORM`,
   `DEBUG_BUILD` in `chrome.rs` and `app_menu.rs`), so the code for another OS is
   never compiled in.
-- **Linux muda/GTK accelerators fire before the webview; dispatch menu shortcuts from a bubbling keydown when `!defaultPrevented`.**
-  Off macOS the menu has no native accelerators. GTK runs a window's accelerators before
-  the page, so Ctrl+W closed the app under a terminal that wanted it, and Ctrl+R, Z, Q, M, 0
-  and - went the same way. The label keeps a hint, and the bridge runs the key instead:
+- **Off macOS the menu has no native accelerators.** Linux muda/GTK runs a window's
+  accelerators before the page, so Ctrl+W closed the app under a terminal that
+  wanted it, and Ctrl+R, Z, Q, M, 0 and - went the same way. The label keeps a
+  hint, and the bridge runs the key instead:
   - from a bubbling `keydown` that is not `defaultPrevented`, checked a task later
     so a page listener on `window` can cancel it, against the table in
     `core::menu_keys` (Electron's rule);

@@ -306,6 +306,12 @@ assets named `AgentRQ-Tauri-<version>-<arch>.<ext>`:
 - **Windows**: `AgentRQ-Tauri-<version>-x64.exe` (NSIS setup installer)
 - **Linux**: `AgentRQ-Tauri-<version>-x64.AppImage` or `AgentRQ-Tauri-<version>-x64.deb`
 
+> **Not released yet.** The release job has landed (#1035), but no release
+> carries the Tauri assets yet (the latest release, v0.13.4, predates it). The
+> first release after v0.13.4 is the first to carry them; until then
+> `install.sh --tauri` stops with *"release has no downloadable Tauri assets"*,
+> so [build it yourself](../desktop-tauri/README.md).
+
 The preview installs beside the Electron app, not over it. It is called
 **AgentRQ Tauri**, it opens `agentrq-tauri://` links rather than `agentrq://`,
 and it keeps its own data, so you connect and sign in again the first time:
@@ -323,15 +329,14 @@ they do to the Electron app.
 
 Each of the following differences remains between the Tauri preview and the Electron app:
 
+- **Extensions are not there yet.** The extensions settings do not work in the preview. This is in progress.
 - macOS has no WKWebView WebDriver, so its parity verify checks are manual rather than automated under `tauri-driver`.
 - WKWebView lacks public permission hooks for geolocation, notifications and screen capture, so side-panel guests cannot request them on macOS.
-- Extensions download a Node.js binary (about 40 MB) on first extension install rather than bundling Node in the app download.
 - No Linux arm64 preview build is published in release assets yet (Linux preview is x64 only).
 - On macOS 13 and earlier, WKWebView ignores `data_store_identifier`, so side-panel guests run incognito and do not retain cookies across restarts.
 - On macOS, WKWebView process crashes are not reported through wry, so a crashed webview stays blank until manually reloaded with `Cmd+R`.
 - During preview, deep links use the `agentrq-tauri://` scheme and bundle ID `com.agentrq.desktop.tauri` to avoid conflicting with Electron.
 - In the side panel, WebKit makes no new window of a Cmd/Ctrl-click, so user link clicks are routed to the system browser instead of an in-app window.
-- On Linux and Windows, native menu accelerators are disabled to prevent GTK/WebView2 from intercepting shortcuts before the webview; menu shortcuts are dispatched from a bubbling `keydown` when `!defaultPrevented`.
 
 ---
 
