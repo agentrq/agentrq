@@ -19,6 +19,9 @@ mod ext_node;
 mod extensions;
 mod network;
 mod notify;
+// The extension host's `authorize` reaches it in WP9 part 2.
+#[cfg_attr(not(test), allow(dead_code))]
+mod oauth_window;
 mod panel_permissions;
 mod panel_scheme;
 mod panic_log;

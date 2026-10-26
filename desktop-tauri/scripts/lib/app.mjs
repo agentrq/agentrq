@@ -61,6 +61,7 @@ export async function launchApp({ serverUrl, env: extra } = {}) {
     session = await Session.create(driver.base, BINARY)
   } catch (err) {
     await driver.stop()
+    await rm(home, { recursive: true, force: true }).catch(() => {})
     throw err
   }
   return {

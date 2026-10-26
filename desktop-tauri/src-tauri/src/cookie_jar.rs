@@ -84,6 +84,15 @@ impl ProfileJar {
         kept
     }
 
+    /// The cookies that would be sent to `url`, as the server set them.
+    pub fn sent_to(&self, url: &Url) -> Vec<RawCookie<'static>> {
+        self.lock()
+            .matches(url)
+            .into_iter()
+            .map(|cookie| RawCookie::clone(cookie).into_owned())
+            .collect()
+    }
+
     /// Whether a cookie by this name would be sent to `url`.
     #[cfg(test)]
     pub fn has(&self, name: &str, url: &Url) -> bool {

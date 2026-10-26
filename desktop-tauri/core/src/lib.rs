@@ -24,6 +24,7 @@ pub mod menu;
 pub mod menu_keys;
 pub mod normal_bounds;
 pub mod notifications;
+pub mod oauth_window;
 pub mod profiles;
 pub mod protocol;
 pub mod server_config;
