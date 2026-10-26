@@ -253,13 +253,15 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           # A stalled mirror or dpkg lock once ate 27 minutes of a job: cap each
-          # try and retry, rather than wait for the job's timeout.
+          # try and retry. `timeout` stays outside `sudo`, so apt runs in the
+          # foreground of sudo's pty: inside it, dpkg is stopped on the terminal.
           for try in 1 2 3; do
-            sudo timeout 300 apt-get update -qq -o Acquire::Retries=3 &&
-              sudo timeout 600 apt-get install -y -qq -o Acquire::Retries=3 -o DPkg::Lock::Timeout=120 libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev && break
+            timeout -k 30 120 sudo apt-get update -q &&
+              timeout -k 30 300 sudo apt-get install -y -q -o Dpkg::Use-Pty=0 -o DPkg::Lock::Timeout=60 libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev && break
+            rc=$?
             [ "$try" = 3 ] && exit 1
-            echo "::warning::apt try $try failed or stalled; retrying"
-            sudo dpkg --configure -a || true
+            echo "::warning::apt try $try failed or stalled (exit $rc); retrying"
+            timeout -k 10 120 sudo dpkg --configure -a || true
             sleep 10
           done
 
