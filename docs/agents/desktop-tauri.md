@@ -36,6 +36,11 @@
   instead of fixed sleeps; a wait must assert. For microsecond-long spawned work the
   rig can't open a gap, so prove a fix with an injected delay.
 - **A log line that only runs on slow runs flakes the 100% line-coverage gate.**
+- **A Rust `listen_any` can miss an event two threads emit at once.** Tauri's
+  `emit_filter` queues an emit that loses `try_lock` to another, and only the next
+  emit that runs a listener delivers it. A rig that counts events from concurrent
+  work emits a no-op event before each read (`panel_permissions`' `Rig::told`).
+  The window's JS listeners take a blocking lock and never miss one.
 
 ## The bridge and its commands
 
