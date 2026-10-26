@@ -129,8 +129,7 @@ pub fn keychain_only_key(keychain: &dyn Keychain) -> Option<[u8; KEY_LEN]> {
             Ok(key) => Some(key),
             Err(_) => {
                 eprintln!(
-                    "[vault] The extension secrets key in the keychain is malformed ({} bytes, expected {KEY_LEN}); refusing it to avoid overwriting secrets.",
-                    found.len()
+                    "[vault] The extension secrets key in the keychain is malformed; refusing it to avoid overwriting secrets."
                 );
                 None
             }
