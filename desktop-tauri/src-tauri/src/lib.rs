@@ -689,8 +689,13 @@ pub fn run() {
                 network.clone(),
                 Arc::new(TauriDesk(handle.clone())),
             ));
+            let host = extension_host(&handle, network.clone(), data_dir.clone())?;
+            let events = Arc::new(events::ToolReviewEvents::new(
+                notifier.clone(),
+                host.clone(),
+            ));
             let feed = Arc::new(Feed {
-                stream: EventStream::spawn(network.clone(), notifier.clone()),
+                stream: EventStream::spawn(network.clone(), events),
                 notifier: notifier.clone(),
             });
             let profiles = Arc::new(Profiles::new(
@@ -725,7 +730,6 @@ pub fn run() {
             });
             app.manage(network.clone());
             app.manage(Streams::default());
-            let host = extension_host(&handle, network.clone(), data_dir.clone())?;
             app.manage(Picker::<tauri::Wry>(Box::new(pick_folder)));
             let drawers = HostDrawers {
                 host: host.clone(),
@@ -765,9 +769,8 @@ pub fn run() {
                 rebuild_main(app);
             }
             RunEvent::Exit => {
-                // Its stdin closes, and it leaves with the app.
                 let host = app.state::<Arc<ExtHost>>().inner().clone();
-                tauri::async_runtime::block_on(async move { host.stop() });
+                host.kill_sync();
                 if let Some(installer) = app.try_state::<ExitInstaller>() {
                     (installer.0)();
                 }

@@ -99,12 +99,22 @@ describe('the extension host wire', () => {
     expect(strays).toEqual(['hello', '{"id":1}', '{"jsonrpc":"2.0","id":99,"result":1}', 'null'])
   })
 
-  it('drops a line longer than the limit', () => {
+  it('drops a line longer than the limit, skips its tail, and handles the next message', async () => {
     const { peer, strays } = rig()
+    const answer = peer.request('vault')
     peer.receive('x'.repeat(MAX_LINE + 1))
     expect(strays).toEqual(['(a line longer than the limit was dropped)'])
-    peer.receive('tail\n')
-    expect(strays.at(-1)).toBe('tail')
+    peer.receive('middle_chunk_without_newline')
+    peer.receive('tail_of_long_line\n{"jsonrpc":"2.0","id":1,"result":"ok"}\n')
+    expect(strays).toEqual(['(a line longer than the limit was dropped)'])
+    await expect(answer).resolves.toBe('ok')
+  })
+
+  it('drops a line whose UTF-8 byte length exceeds MAX_LINE in a single line', () => {
+    const { peer, strays } = rig()
+    const chars = '€'.repeat(Math.ceil(MAX_LINE / 3) + 1)
+    peer.receive(`${chars}\n`)
+    expect(strays).toEqual(['(a line longer than the limit was dropped)'])
   })
 
   it('asks the shell and resolves with its answer', async () => {

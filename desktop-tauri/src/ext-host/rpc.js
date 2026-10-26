@@ -39,6 +39,7 @@ export function createPeer({
   let nextId = 0
   const pending = new Map()
   let held = ''
+  let skipping = false
   let closed = null
 
   const send = (message) => write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`)
@@ -93,10 +94,23 @@ export function createPeer({
       while ((end = held.indexOf('\n')) !== -1) {
         const line = held.slice(0, end)
         held = held.slice(end + 1)
+        if (skipping) {
+          skipping = false
+          continue
+        }
+        if (Buffer.byteLength(line, 'utf8') > MAX_LINE) {
+          onStray('(a line longer than the limit was dropped)')
+          continue
+        }
         if (line.trim()) dispatch(line)
       }
-      if (held.length > MAX_LINE) {
+      if (skipping) {
         held = ''
+        return
+      }
+      if (Buffer.byteLength(held, 'utf8') > MAX_LINE) {
+        held = ''
+        skipping = true
         onStray('(a line longer than the limit was dropped)')
       }
     },

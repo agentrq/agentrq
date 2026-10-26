@@ -25,15 +25,42 @@ use serde_json::Value;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::task::AbortHandle;
 
+use crate::ext_host::ExtHost;
 use crate::network::Network;
 
 pub const STREAM_PATH: &str = "/api/v1/events/stream";
 
-/// Where the stream's events go. Electron also hands each one to
-/// `extensions.reviewToolCalls`; that is another `Events` once WP9 ports
-/// extensions.
+/// Where the stream's events go.
 pub trait Events: Send + Sync {
     fn on_event(&self, event: &Value);
+}
+
+/// Forwards events to the extension host for tool-call review when running,
+/// while passing every event to the inner [`Events`] handler.
+pub struct ToolReviewEvents {
+    pub notifier: Arc<dyn Events>,
+    pub host: Arc<ExtHost>,
+}
+
+impl ToolReviewEvents {
+    pub fn new(notifier: Arc<dyn Events>, host: Arc<ExtHost>) -> Self {
+        Self { notifier, host }
+    }
+}
+
+impl Events for ToolReviewEvents {
+    fn on_event(&self, event: &Value) {
+        self.notifier.on_event(event);
+        if self.host.is_running() {
+            let host = self.host.clone();
+            let event = event.clone();
+            tokio::spawn(async move {
+                let _ = host
+                    .call("reviewToolCalls", serde_json::json!({ "event": event }))
+                    .await;
+            });
+        }
+    }
 }
 
 /// What the task owning the client is told: a command, or an answer to one
@@ -426,5 +453,48 @@ pub(crate) mod tests {
         tx.send(Message::Stop).unwrap();
         drop(tx);
         drive(EventStreamClient::new(transport, timers, handler), rx).await;
+    }
+
+    #[tokio::test]
+    async fn tool_review_forwards_events_only_while_host_is_running() {
+        use crate::ext_host::tests::FakeServices;
+        use crate::ext_host::Launch;
+        let dir = tempfile::tempdir().unwrap();
+        let notifier = Arc::new(Recorded::default());
+        let echo_script = r#"require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+  const m = JSON.parse(line)
+  if (m.id === undefined) return
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: { ok: true } }) + '\n')
+})"#;
+        let launch = Launch {
+            program: "node".into(),
+            args: vec!["-e".into(), echo_script.into()],
+        };
+        std::fs::write(
+            dir.path().join("extensions-installed.json"),
+            r#"{"installations":[{"name":"x","enabled":true}]}"#,
+        )
+        .unwrap();
+        let host = ExtHost::new(launch, dir.path().into(), Arc::new(FakeServices::default()));
+        let review = ToolReviewEvents::new(notifier.clone(), host.clone());
+
+        // While not running: notifier receives event, host is never started
+        assert!(!host.is_running());
+        review.on_event(&json!({"type": "first"}));
+        assert_eq!(seen(&notifier), [json!({"type": "first"})]);
+        assert!(!host.is_running());
+
+        // Now start the host with a dummy call
+        assert_eq!(host.call("state", json!({})).await.unwrap()["ok"], true);
+        assert!(host.is_running());
+
+        // While running: both notifier and host get the event
+        review.on_event(&json!({"type": "second"}));
+        assert_eq!(
+            seen(&notifier),
+            [json!({"type": "first"}), json!({"type": "second"})]
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        host.stop();
     }
 }

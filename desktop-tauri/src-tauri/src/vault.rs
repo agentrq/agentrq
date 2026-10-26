@@ -124,14 +124,23 @@ fn no_keychain(error: KeychainError, fallback: &Path) -> io::Result<[u8; KEY_LEN
 /// Electron's `safeStorage` refuses them on a Linux box with no keyring, and
 /// so does this, rather than keep their key in a file beside them.
 pub fn keychain_only_key(keychain: &dyn Keychain) -> Option<[u8; KEY_LEN]> {
-    if let Some(found) = keychain.get().ok()? {
-        if let Ok(key) = <[u8; KEY_LEN]>::try_from(found.as_slice()) {
-            return Some(key);
+    match keychain.get().ok()? {
+        Some(found) => match <[u8; KEY_LEN]>::try_from(found.as_slice()) {
+            Ok(key) => Some(key),
+            Err(_) => {
+                eprintln!(
+                    "[vault] The extension secrets key in the keychain is malformed ({} bytes, expected {KEY_LEN}); refusing it to avoid overwriting secrets.",
+                    found.len()
+                );
+                None
+            }
+        },
+        None => {
+            let key = random();
+            keychain.set(&key).ok()?;
+            Some(key)
         }
     }
-    let key = random();
-    keychain.set(&key).ok()?;
-    Some(key)
 }
 
 /// Writes a file only this user can read, whole or not at all: a sibling is
@@ -207,8 +216,8 @@ mod tests {
         assert_eq!(keychain_only_key(&keychain), Some(first));
 
         *keychain.secret.borrow_mut() = Some(b"short".to_vec());
-        let replaced = keychain_only_key(&keychain).unwrap();
-        assert_eq!(keychain.secret.borrow().as_deref(), Some(&replaced[..]));
+        assert_eq!(keychain_only_key(&keychain), None);
+        assert_eq!(keychain.secret.borrow().as_deref(), Some(&b"short"[..]));
 
         for error in [KeychainError::Missing, KeychainError::Refused] {
             let missing = Fake {

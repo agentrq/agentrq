@@ -22,7 +22,6 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Value};
 use tauri::{Runtime, State, WebviewWindow};
-use tokio::sync::OnceCell;
 
 use crate::ext_host::{Answer, ExtHost, Services};
 use crate::network::{Network, KEYCHAIN_DEADLINE};
@@ -33,17 +32,25 @@ use crate::vault::{keychain_only_key, Keychain, Vault};
 /// What a value the shell sealed for the host starts with (`vault.js`).
 pub const SEALED_PREFIX: &str = "arqv1:";
 
+pub const KEYCHAIN_COOLDOWN: Duration = Duration::from_millis(1000);
+
 /// The extension secrets' keychain, separate from the cookie jars' key.
 pub type SecretsKeychain = Arc<dyn Keychain + Send + Sync>;
 
 /// What the host is answered with, and where its news goes.
 pub struct ShellServices(Arc<Shell>);
 
+struct VaultCache {
+    vault: Option<Vault>,
+    failed_at: Option<std::time::Instant>,
+}
+
 struct Shell {
     network: Arc<Network>,
     keychain: SecretsKeychain,
     keychain_deadline: Duration,
-    vault: OnceCell<Option<Vault>>,
+    keychain_cooldown: Duration,
+    vault: tokio::sync::Mutex<VaultCache>,
     on_changed: Box<dyn Fn(Value) + Send + Sync>,
 }
 
@@ -53,7 +60,13 @@ impl ShellServices {
         keychain: SecretsKeychain,
         on_changed: Box<dyn Fn(Value) + Send + Sync>,
     ) -> Self {
-        Self::tuned(network, keychain, on_changed, KEYCHAIN_DEADLINE)
+        Self::tuned(
+            network,
+            keychain,
+            on_changed,
+            KEYCHAIN_DEADLINE,
+            KEYCHAIN_COOLDOWN,
+        )
     }
 
     fn tuned(
@@ -61,32 +74,49 @@ impl ShellServices {
         keychain: SecretsKeychain,
         on_changed: Box<dyn Fn(Value) + Send + Sync>,
         keychain_deadline: Duration,
+        keychain_cooldown: Duration,
     ) -> Self {
         Self(Arc::new(Shell {
             network,
             keychain,
             keychain_deadline,
-            vault: OnceCell::new(),
+            keychain_cooldown,
+            vault: tokio::sync::Mutex::new(VaultCache {
+                vault: None,
+                failed_at: None,
+            }),
             on_changed,
         }))
     }
 }
 
 impl Shell {
-    /// The secrets' vault, asked of the keychain once; `None` with no keychain,
-    /// one that refused, or one too slow to answer.
+    /// The secrets' vault, cached when available; re-queries after cooldown
+    /// when the last attempt failed.
     async fn vault(&self) -> Option<Vault> {
-        self.vault
-            .get_or_init(|| async {
-                let keychain = self.keychain.clone();
-                let read = tokio::task::spawn_blocking(move || keychain_only_key(&*keychain));
-                match tokio::time::timeout(self.keychain_deadline, read).await {
-                    Ok(Ok(Some(key))) => Some(Vault::new(&key)),
-                    _ => None,
-                }
-            })
-            .await
-            .clone()
+        let mut cache = self.vault.lock().await;
+        if let Some(vault) = &cache.vault {
+            return Some(vault.clone());
+        }
+        if let Some(failed_at) = cache.failed_at {
+            if failed_at.elapsed() < self.keychain_cooldown {
+                return None;
+            }
+        }
+        let keychain = self.keychain.clone();
+        let read = tokio::task::spawn_blocking(move || keychain_only_key(&*keychain));
+        match tokio::time::timeout(self.keychain_deadline, read).await {
+            Ok(Ok(Some(key))) => {
+                let vault = Vault::new(&key);
+                cache.vault = Some(vault.clone());
+                cache.failed_at = None;
+                Some(vault)
+            }
+            _ => {
+                cache.failed_at = Some(std::time::Instant::now());
+                None
+            }
+        }
     }
 
     async fn seal(&self, params: Value) -> Result<Value, String> {
@@ -446,14 +476,14 @@ mod tests {
     #[derive(Default)]
     struct MemKeychain {
         held: Mutex<Option<Vec<u8>>>,
-        refuses: bool,
+        refuses: Mutex<bool>,
         delay_ms: u64,
     }
 
     impl Keychain for MemKeychain {
         fn get(&self) -> Result<Option<Vec<u8>>, KeychainError> {
             std::thread::sleep(Duration::from_millis(self.delay_ms));
-            if self.refuses {
+            if *self.refuses.lock().unwrap() {
                 return Err(KeychainError::Refused);
             }
             Ok(self.held.lock().unwrap().clone())
@@ -471,14 +501,29 @@ mod tests {
     }
 
     fn services(server_url: &str, keychain: MemKeychain) -> Rig {
+        services_tuned(
+            server_url,
+            Arc::new(keychain),
+            Duration::from_millis(300),
+            KEYCHAIN_COOLDOWN,
+        )
+    }
+
+    fn services_tuned(
+        server_url: &str,
+        keychain: Arc<dyn Keychain + Send + Sync>,
+        keychain_deadline: Duration,
+        keychain_cooldown: Duration,
+    ) -> Rig {
         let dir = tempfile::tempdir().unwrap();
         let told = Arc::new(Mutex::new(Vec::new()));
         let log = told.clone();
         let services = ShellServices::tuned(
             Arc::new(network(dir.path(), server_url)),
-            Arc::new(keychain),
+            keychain,
             Box::new(move |detail| log.lock().unwrap().push(detail)),
-            Duration::from_millis(300),
+            keychain_deadline,
+            keychain_cooldown,
         );
         Rig {
             services,
@@ -526,7 +571,7 @@ mod tests {
     async fn refuses_a_secret_without_a_keychain_and_opens_nothing() {
         for keychain in [
             MemKeychain {
-                refuses: true,
+                refuses: Mutex::new(true),
                 ..Default::default()
             },
             MemKeychain {
@@ -546,6 +591,44 @@ mod tests {
             let opened = ask(&rig, "open", json!({"blobs": ["arqv1:AAAA"]})).await;
             assert_eq!(opened, Ok(json!({"opened": [null]})));
         }
+    }
+
+    #[tokio::test]
+    async fn asking_again_after_a_keychain_failure_recovers_once_unlocked() {
+        let key = [7u8; 32];
+        let keychain = Arc::new(MemKeychain {
+            refuses: Mutex::new(true),
+            ..Default::default()
+        });
+        let rig = services_tuned(
+            "http://127.0.0.1:9",
+            keychain.clone(),
+            Duration::from_millis(50),
+            Duration::from_millis(50),
+        );
+        let res = ask(&rig, "seal", json!({"texts": ["secret"]}))
+            .await
+            .unwrap();
+        assert_eq!(res["ok"], false);
+
+        // Before cooldown expires: still fails
+        let res_fast = ask(&rig, "seal", json!({"texts": ["secret"]}))
+            .await
+            .unwrap();
+        assert_eq!(res_fast["ok"], false);
+
+        // Wait past cooldown
+        tokio::time::sleep(Duration::from_millis(60)).await;
+
+        // Keychain is now unlocked and returns key
+        *keychain.refuses.lock().unwrap() = false;
+        *keychain.held.lock().unwrap() = Some(key.to_vec());
+
+        // Second attempt asks again and succeeds!
+        let res2 = ask(&rig, "seal", json!({"texts": ["secret"]}))
+            .await
+            .unwrap();
+        assert_eq!(res2["ok"], true);
     }
 
     #[tokio::test]

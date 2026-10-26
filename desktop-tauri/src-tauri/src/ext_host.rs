@@ -26,7 +26,9 @@ use agentrq_desktop_core::ext_rpc::{
     self, deadline_ms, timed_out, Ids, Line, Lines, Message, HOST_GONE, METHOD_NOT_FOUND,
 };
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+#[cfg(target_os = "linux")]
+use std::os::unix::process::CommandExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, oneshot};
 
 /// An answer the shell gives the host, later.
@@ -63,15 +65,58 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+fn is_allowed_env(key: &str) -> bool {
+    let upper = key.to_uppercase();
+    if upper.starts_with("NODE_") {
+        return false;
+    }
+    matches!(
+        upper.as_str(),
+        "PATH"
+            | "HOME"
+            | "USERPROFILE"
+            | "APPDATA"
+            | "LOCALAPPDATA"
+            | "TMP"
+            | "TEMP"
+            | "TMPDIR"
+            | "LANG"
+            | "HTTP_PROXY"
+            | "HTTPS_PROXY"
+            | "ALL_PROXY"
+            | "NO_PROXY"
+            | "SYSTEMROOT"
+            | "COMSPEC"
+            | "PATHEXT"
+            | "WINDIR"
+    ) || upper.starts_with("LC_")
+}
+
+fn truncate_str(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
+}
+
 /// The running process, as the shell holds it.
 struct Process {
     generation: u64,
+    pid: Option<u32>,
     out: mpsc::UnboundedSender<Vec<u8>>,
     pending: Pending,
     ids: Ids,
     /// The server last told to the host.
     context: Option<String>,
-    kill: oneshot::Sender<()>,
+    kill: mpsc::Sender<()>,
+}
+
+#[cfg(target_os = "linux")]
+fn set_pdeathsig() -> std::io::Result<()> {
+    unsafe {
+        libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+    }
+    Ok(())
 }
 
 #[derive(Default)]
@@ -91,6 +136,8 @@ struct State {
     disable: Vec<Value>,
     /// Bumped on every call, so an idle stop knows nobody asked since.
     activity: u64,
+    /// Number of consecutive startup failures before ready.
+    startup_failures: u32,
 }
 
 pub struct ExtHost {
@@ -161,7 +208,6 @@ impl ExtHost {
         state.process.is_some() || self.spawn(&mut state).is_ok()
     }
 
-    #[cfg(test)]
     pub fn is_running(&self) -> bool {
         lock(&self.state).process.is_some()
     }
@@ -169,7 +215,7 @@ impl ExtHost {
     /// Ask the host `method`. A call a page makes on every render never starts
     /// it: with nothing enabled it is answered here.
     pub async fn call(self: &Arc<Self>, method: &str, params: Value) -> Result<Value, String> {
-        let (answer, activity) = {
+        let (answer, activity, pending, id, generation) = {
             let mut state = lock(&self.state);
             state.activity += 1;
             if state.process.is_none() {
@@ -196,16 +242,57 @@ impl ExtHost {
             let (tx, rx) = oneshot::channel();
             lock(&process.pending).insert(id, tx);
             let _ = process.out.send(ext_rpc::request(id, method, params));
-            (rx, state.activity)
+            let pending = Arc::clone(&process.pending);
+            let generation = state.generation;
+            (rx, state.activity, pending, id, generation)
         };
         let deadline = Duration::from_millis(deadline_ms(method));
         let result = match tokio::time::timeout(deadline, answer).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err(HOST_GONE.to_string()),
-            Err(_) => Err(timed_out(method)),
+            Err(_) => {
+                lock(&pending).remove(&id);
+                self.kill_generation(generation);
+                Err(timed_out(method))
+            }
         };
         self.stop_when_idle(activity);
         result
+    }
+
+    fn kill_generation(&self, generation: u64) {
+        let state = lock(&self.state);
+        if state.generation == generation && state.stopping != Some(generation) {
+            if let Some(process) = &state.process {
+                let _ = process.kill.try_send(());
+            }
+        }
+    }
+
+    /// Synchronously kill any running child so it never outlives the app.
+    pub fn kill_sync(&self) {
+        let mut state = lock(&self.state);
+        if let Some(process) = state.process.take() {
+            state.stopping = Some(process.generation);
+            fail_all(&process.pending);
+            if let Some(pid) = process.pid {
+                #[cfg(unix)]
+                unsafe {
+                    libc::kill(pid as i32, libc::SIGKILL);
+                }
+                #[cfg(windows)]
+                unsafe {
+                    use windows_sys::Win32::System::Threading::{
+                        OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+                    };
+                    let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
+                    if !handle.is_null() {
+                        TerminateProcess(handle, 1);
+                        windows_sys::Win32::Foundation::CloseHandle(handle);
+                    }
+                }
+            }
+        }
     }
 
     /// Turned back on by the person: its crashes are forgiven.
@@ -219,12 +306,10 @@ impl ExtHost {
         if let Some(process) = state.process.take() {
             state.stopping = Some(process.generation);
             fail_all(&process.pending);
-            // Its stdin closes when `out` drops, and it leaves by itself; the
-            // kill is for one that does not.
-            let Process { kill, .. } = process;
+            let kill = process.kill;
             tokio::spawn(async move {
                 tokio::time::sleep(STOP_GRACE).await;
-                let _ = kill.send(());
+                let _ = kill.send(()).await;
             });
         }
     }
@@ -243,20 +328,33 @@ impl ExtHost {
 
     fn spawn(self: &Arc<Self>, state: &mut State) -> Result<(), String> {
         let disable = Value::Array(state.disable.clone()).to_string();
-        let mut child = tokio::process::Command::new(&self.launch.program)
-            .args(&self.launch.args)
+        let mut cmd = tokio::process::Command::new(&self.launch.program);
+        cmd.args(&self.launch.args)
             .arg(disable)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|error| {
-                // Logged here: a restart has nobody to tell.
-                let reason = format!("The extension host could not start: {error}");
-                eprintln!("[ext-host] {reason}");
-                reason
-            })?;
+            .kill_on_drop(true);
+
+        cmd.env_clear();
+        for (k, v) in std::env::vars() {
+            if is_allowed_env(&k) {
+                cmd.env(k, v);
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        unsafe {
+            cmd.as_std_mut().pre_exec(set_pdeathsig);
+        }
+
+        let mut child = cmd.spawn().map_err(|error| {
+            // Logged here: a restart has nobody to tell.
+            let reason = format!("The extension host could not start: {error}");
+            eprintln!("[ext-host] {reason}");
+            reason
+        })?;
+        let pid = child.id();
         state.disable.clear();
         state.generation += 1;
         state.loading = None;
@@ -265,31 +363,43 @@ impl ExtHost {
         let generation = state.generation;
         let (out, mut outgoing) = mpsc::unbounded_channel::<Vec<u8>>();
         let pending = Pending::default();
-        let (kill, killed) = oneshot::channel();
+        let (kill, killed) = mpsc::channel::<()>(1);
 
         let mut stdin = child.stdin.take().expect("piped");
         tokio::spawn(async move {
-            // A host that stopped reading is written nothing more.
             while let Some(bytes) = outgoing.recv().await {
-                stdin.write_all(&bytes).await.ok()?;
+                if stdin.write_all(&bytes).await.is_err() {
+                    break;
+                }
             }
-            Some(())
         });
 
-        let stderr = child.stderr.take().expect("piped");
+        let mut stderr = child.stderr.take().expect("piped");
         tokio::spawn(async move {
-            let mut lines = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                eprintln!("[ext-host] {line}");
+            let mut lines = Lines::with_max(64 * 1024);
+            let mut buffer = vec![0; 64 * 1024];
+            while let Ok(read @ 1..) = stderr.read(&mut buffer).await {
+                for line in lines.push(&buffer[..read]) {
+                    match line {
+                        Line::Whole(line) => {
+                            let text = String::from_utf8_lossy(&line);
+                            eprintln!("[ext-host] {text}");
+                        }
+                        Line::TooLong => {
+                            eprintln!("[ext-host] [stderr line over 64 KiB truncated]");
+                        }
+                    }
+                }
             }
         });
 
         let stdout = child.stdout.take().expect("piped");
-        tokio::spawn(Arc::clone(self).read(stdout, generation, out.clone(), pending.clone()));
+        tokio::spawn(Arc::clone(self).read(stdout, generation, out.downgrade(), pending.clone()));
         tokio::spawn(Arc::clone(self).wait(child, generation, killed));
 
         state.process = Some(Process {
             generation,
+            pid,
             out,
             pending,
             ids: Ids::default(),
@@ -303,7 +413,7 @@ impl ExtHost {
         self: Arc<Self>,
         mut stdout: tokio::process::ChildStdout,
         generation: u64,
-        out: mpsc::UnboundedSender<Vec<u8>>,
+        out: mpsc::WeakUnboundedSender<Vec<u8>>,
         pending: Pending,
     ) {
         let mut lines = Lines::default();
@@ -322,7 +432,7 @@ impl ExtHost {
         &self,
         line: &[u8],
         generation: u64,
-        out: &mpsc::UnboundedSender<Vec<u8>>,
+        out: &mpsc::WeakUnboundedSender<Vec<u8>>,
         pending: &Pending,
     ) {
         match ext_rpc::parse(line) {
@@ -334,7 +444,9 @@ impl ExtHost {
             Message::Request { id, method, params } => {
                 let Some(answer) = self.services.serve(&method, params) else {
                     let refused = format!("The app does not answer \"{method}\".");
-                    let _ = out.send(ext_rpc::error_response(id, METHOD_NOT_FOUND, &refused));
+                    if let Some(out) = out.upgrade() {
+                        let _ = out.send(ext_rpc::error_response(id, METHOD_NOT_FOUND, &refused));
+                    }
                     return;
                 };
                 let out = out.clone();
@@ -343,11 +455,15 @@ impl ExtHost {
                     let result = tokio::time::timeout(deadline, answer)
                         .await
                         .unwrap_or_else(|_| Err(timed_out(&method)));
-                    let _ = out.send(ext_rpc::response(id, result));
+                    if let Some(out) = out.upgrade() {
+                        let _ = out.send(ext_rpc::response(id, result));
+                    }
                 });
             }
             Message::Notification { method, params } => self.told(&method, &params, generation),
-            Message::Stray(text) => eprintln!("[ext-host] not a message: {text}"),
+            Message::Stray(text) => {
+                eprintln!("[ext-host] not a message: {}", truncate_str(&text, 200))
+            }
         }
     }
 
@@ -370,6 +486,7 @@ impl ExtHost {
                 if state.generation != generation {
                     return;
                 }
+                state.startup_failures = 0;
                 if method == "loading" {
                     state.loading = params["name"].as_str().map(str::to_string);
                 } else {
@@ -384,11 +501,11 @@ impl ExtHost {
         self: Arc<Self>,
         mut child: tokio::process::Child,
         generation: u64,
-        killed: oneshot::Receiver<()>,
+        mut killed: mpsc::Receiver<()>,
     ) {
         let code = tokio::select! {
             status = child.wait() => status.ok().and_then(|status| status.code()),
-            _ = killed => {
+            _ = killed.recv() => {
                 let _ = child.kill().await;
                 None
             }
@@ -403,6 +520,18 @@ impl ExtHost {
                 return;
             }
             let blamed = blame(state.loading.as_deref(), &state.running);
+            if blamed.is_empty() {
+                state.startup_failures += 1;
+                if state.startup_failures >= 3 {
+                    eprintln!(
+                        "[ext-host] The extension host failed to start {} times in a row; giving up.",
+                        state.startup_failures
+                    );
+                    return;
+                }
+            } else {
+                state.startup_failures = 0;
+            }
             for name in state.ledger.record(&blamed) {
                 let reason = crash_reason(code);
                 state
@@ -602,6 +731,7 @@ pub(crate) mod tests {
             out({ method: 'running', params: { names: ['a', 7] } });
             process.stdout.write('stray line\n' + 'x'.repeat(41 * 1024 * 1024) + '\n');
             process.stderr.write('a log line\n');
+            process.stderr.write('e'.repeat(70 * 1024) + '\n');
         "#;
         let host = host(script_launch(script), dir.path(), services.clone());
         let handle = Arc::clone(&host);
@@ -805,6 +935,186 @@ pub(crate) mod tests {
             host.call("state", json!({})).await,
             Err(HOST_GONE.to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn stop_closes_stdin_cleanly() {
+        let dir = tempfile::tempdir().unwrap();
+        install(dir.path(), r#"{"installations":[{"name":"a"}]}"#);
+        let marker = dir.path().join("stdin-closed");
+        let script = format!(
+            r#"
+            const fs = require('fs');
+            process.stdin.resume();
+            process.stdin.on('end', () => {{
+                fs.writeFileSync({marker:?}, 'closed');
+                process.exit(0);
+            }});
+            "#,
+            marker = marker.to_string_lossy()
+        );
+        let host = host(script_launch(&script), dir.path(), Arc::default());
+        assert!(host.boot());
+        until(|| host.is_running()).await;
+        host.stop();
+        until(|| marker.exists()).await;
+        assert_eq!(std::fs::read_to_string(&marker).unwrap(), "closed");
+    }
+
+    #[tokio::test]
+    async fn timed_out_call_leaves_pending_and_kills_hung_generation() {
+        let dir = tempfile::tempdir().unwrap();
+        install(dir.path(), r#"{"installations":[{"name":"hung"}]}"#);
+        let script = r#"
+            const out = (m) => process.stdout.write(JSON.stringify({jsonrpc: '2.0', ...m}) + '\n');
+            out({ method: 'running', params: { names: ['hung'] } });
+            process.stdin.resume();
+        "#;
+        let host = host(script_launch(script), dir.path(), Arc::default());
+        assert!(host.boot());
+        until(|| lock(&host.state).running == vec!["hung".to_string()]).await;
+
+        let pending = {
+            let state = lock(&host.state);
+            Arc::clone(&state.process.as_ref().unwrap().pending)
+        };
+        let res = host.call("state", json!({})).await;
+        assert_eq!(
+            res,
+            Err("The extension host did not answer \"state\" in time.".into())
+        );
+
+        assert!(
+            lock(&pending).is_empty(),
+            "pending must be cleaned up on timeout"
+        );
+
+        until(|| lock(&host.state).ledger.count("hung") >= 1).await;
+        host.kill_generation(999);
+        host.stop();
+    }
+
+    #[tokio::test]
+    async fn kill_sync_terminates_child_synchronously() {
+        let dir = tempfile::tempdir().unwrap();
+        install(dir.path(), r#"{"installations":[{"name":"a"}]}"#);
+        let host = host(
+            script_launch("const out = (m) => process.stdout.write(JSON.stringify({jsonrpc: '2.0', ...m}) + '\\n'); out({ method: 'running', params: { names: ['a'] } }); setInterval(() => {}, 1000)"),
+            dir.path(),
+            Arc::default(),
+        );
+        assert!(host.boot());
+        until(|| host.is_running()).await;
+        host.kill_sync();
+        assert!(!host.is_running());
+        let state = lock(&host.state);
+        assert!(state.process.is_none());
+        drop(state);
+        host.kill_sync();
+    }
+
+    #[tokio::test]
+    async fn stdin_writer_stops_on_broken_pipe() {
+        let dir = tempfile::tempdir().unwrap();
+        install(dir.path(), r#"{"installations":[{"name":"a"}]}"#);
+        let host = host(
+            script_launch("require('fs').closeSync(0); setInterval(() => {}, 1000)"),
+            dir.path(),
+            Arc::default(),
+        );
+        assert!(host.boot());
+        until(|| host.is_running()).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let _ = host.call("state", json!({})).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        host.stop();
+    }
+
+    #[test]
+    fn kill_sync_with_none_pid() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = host(script_launch(""), dir.path(), Arc::default());
+        {
+            let mut state = lock(&host.state);
+            state.process = Some(Process {
+                generation: 1,
+                pid: None,
+                out: mpsc::unbounded_channel().0,
+                pending: Pending::default(),
+                ids: Ids::default(),
+                context: None,
+                kill: mpsc::channel(1).0,
+            });
+        }
+        host.kill_sync();
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn pdeathsig_can_be_set() {
+        assert!(set_pdeathsig().is_ok());
+    }
+
+    #[tokio::test]
+    async fn host_environment_is_clean_of_node_options() {
+        let dir = tempfile::tempdir().unwrap();
+        install(dir.path(), r#"{"installations":[{"name":"a"}]}"#);
+        let script = r#"
+            const out = (m) => process.stdout.write(JSON.stringify({jsonrpc: '2.0', ...m}) + '\n');
+            let buf = '';
+            process.stdin.on('data', (c) => {
+                buf += c;
+                let i;
+                while ((i = buf.indexOf('\n')) >= 0) {
+                    const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
+                    if (m.method === 'checkEnv') {
+                        out({ id: m.id, result: { hasNodeOptions: 'NODE_OPTIONS' in process.env } });
+                    }
+                }
+            });
+            out({ method: 'running', params: { names: ['a'] } });
+        "#;
+        std::env::set_var("NODE_OPTIONS", "--max-old-space-size=4096");
+        let host = host(script_launch(script), dir.path(), Arc::default());
+        assert!(host.boot());
+        until(|| lock(&host.state).running == vec!["a".to_string()]).await;
+        let res = host.call("checkEnv", json!({})).await.unwrap();
+        assert_eq!(res["hasNodeOptions"], false);
+        std::env::remove_var("NODE_OPTIONS");
+        host.stop();
+    }
+
+    #[tokio::test]
+    async fn host_stops_retrying_after_three_startup_failures() {
+        let dir = tempfile::tempdir().unwrap();
+        install(dir.path(), r#"{"installations":[{"name":"a"}]}"#);
+        let host = host(script_launch("process.exit(1)"), dir.path(), Arc::default());
+        assert!(host.boot());
+        until(|| lock(&host.state).startup_failures >= 3).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let state = lock(&host.state);
+        assert_eq!(state.startup_failures, 3);
+        assert!(state.process.is_none());
+        assert!(!state.restarting);
+    }
+
+    #[test]
+    fn truncate_str_limits_length() {
+        assert_eq!(truncate_str("hello", 10), "hello");
+        assert_eq!(truncate_str("hello world", 5), "hello");
+        assert_eq!(truncate_str(&"a".repeat(300), 200), "a".repeat(200));
+    }
+
+    #[test]
+    fn is_allowed_env_filters_correctly() {
+        assert!(is_allowed_env("PATH"));
+        assert!(is_allowed_env("HOME"));
+        assert!(is_allowed_env("TMPDIR"));
+        assert!(is_allowed_env("LANG"));
+        assert!(is_allowed_env("HTTP_PROXY"));
+        assert!(!is_allowed_env("NODE_OPTIONS"));
+        assert!(!is_allowed_env("NODE_PATH"));
+        assert!(!is_allowed_env("SECRET_KEY"));
     }
 
     #[tokio::test]
