@@ -16,7 +16,7 @@
  *   guest is swapped for a picture of itself in the host and hidden (WP0 S6,
  *   mitigation a). The picture is in the page, so the overlay draws over it.
  *
- * Find in page is WP7c, so `findInPage` does nothing and `found` never fires.
+ * Find in page is the native webview's own; Rust says what it found.
  */
 
 /** What Rust tells the window about a guest. */
@@ -146,6 +146,7 @@ export function createTauriGuest({ invoke, listen, win = globalThis.window }) {
     if (payload.kind === 'loading') events.emit('loading', payload.loading)
     else if (payload.kind === 'navigate') events.emit('navigate', { url: payload.url, inPage: payload.inPage })
     else if (payload.kind === 'fail') events.emit('fail', { code: payload.code, description: payload.description })
+    else if (payload.kind === 'found') events.emit('found', { active: payload.active, total: payload.total })
     // Electron moves focus to the `<webview>`; here the page would still think
     // its address field has it, and keep that field from following the guest.
     else if (payload.kind === 'focus') win.document.activeElement?.blur?.()
@@ -278,8 +279,10 @@ export function createTauriGuest({ invoke, listen, win = globalThis.window }) {
     canGoBack: () => nav.canGoBack,
     canGoForward: () => nav.canGoForward,
     focus: () => send('side_panel_guest_focus'),
-    findInPage() {},
-    stopFindInPage() {},
+    // Electron's defaults: forward, and a step within the session.
+    findInPage: (text, { forward = true, findNext = false } = {}) =>
+      send('side_panel_guest_find', { text, forward, findNext }),
+    stopFindInPage: (action) => send('side_panel_guest_stop_find', { action }),
 
     setVisible(visible) {
       state.visible = visible

@@ -25,8 +25,7 @@ macOS and Windows (the `Desktop App (Tauri)` workflow's test job): `core::x` is
 macOS has no WKWebView driver, and on Windows msedgedriver does not start the
 app.
 
-Open gaps that hold several rows: **WP7c** (#1050, side-panel permissions and
-find), **WP9** (#1048, extensions), **WP8 release job** (#1035, no release
+Open gaps that hold several rows: **WP9** (#1048, extensions), **WP8 release job** (#1035, no release
 carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 (the `verify-side-panel`, `verify-webmcp` and `verify-ui-telemetry` ports).
 
@@ -99,8 +98,8 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 | Focus moves between the app and the panel | `panel-guest.test.js` (focus) | M22 | M22 | M22 |
 | A page that fails to load | — | M23 | M23 | M23 |
 | Guest requests refused by the app's schemes | `src-tauri::scheme`, `src-tauri::panel_scheme`, `panel-init.test.js` | M25 | M25 | M25 |
-| Find in page | `core::side_panel::wire` | G WP7c, then M29 | G WP7c, then M29 | G WP7c, then M29 |
-| Site permissions bar, list, timeout | `core::side_panel::permissions`, `core::side_panel::permission_store` | G WP7c, then M26 | G WP7c, then M26, M27 | G WP7c, then M26, M28 |
+| Find in page | `core::side_panel::wire`, `core::side_panel::find`, `src-tauri::side_panel` | M29 | M29 | M29 |
+| Site permissions bar, list, timeout | `core::side_panel::permissions`, `core::side_panel::permission_store`, `core::side_panel::platform_permissions`, `src-tauri::panel_permissions` | M26 | M26, M27 | M26, M28 |
 | `agentrq-ext://` extension pages and their bridge | `core::side_panel::ext_scheme`, `core::side_panel::bridge`, `panel-init.test.js` | G WP9 | G WP9 | G WP9 |
 
 ### Files, clipboard and native helpers
@@ -175,11 +174,11 @@ command takes them. `verify-e2e` checks on Linux that the whole bridge is there.
 | `sidePanel.guest` | — (`'tauri'`) | `parity.test.js` | A (unit) | A (unit) | A (unit) |
 | `sidePanel.onToggle` | `agentrq:side-panel:toggle` | `core::menu` | M17 | M17 | M17 |
 | `sidePanel.onOpen` | `agentrq:side-panel:open` | `src-tauri::side_panel` | M16 | M16 | M16 |
-| `sidePanel.onFind` | `agentrq:side-panel:find` | `core::side_panel::wire` | G WP7c, then M29 | G WP7c, then M29 | G WP7c, then M29 |
+| `sidePanel.onFind` | `agentrq:side-panel:find` | `core::side_panel::wire` | M29 | M29 | M29 |
 | `sidePanel.pages` | `side_panel_pages` | `src-tauri::commands` (empty list) | G WP9 | G WP9 | G WP9 |
 | `sidePanel.openExternal` | `side_panel_open_external` | `src-tauri::side_panel` | M17 | M17 | M17 |
-| `sidePanel.onPermissionRequest`, `onPermissionSettled` | `agentrq:side-panel:permission-*` | `core::side_panel::permissions` | G WP7c, then M26 | G WP7c, then M26, M27 | G WP7c, then M26, M28 |
-| `sidePanel.answerPermission`, `permissions`, `removePermission` | `side_panel_permission*` (stubs answering `todo`) | `core::side_panel::permission_store` | G WP7c, then M26 | G WP7c, then M26, M27 | G WP7c, then M26, M28 |
+| `sidePanel.onPermissionRequest`, `onPermissionSettled` | `agentrq:side-panel:permission-*` | `core::side_panel::permissions`, `src-tauri::panel_permissions` | M26 | M26, M27 | M26, M28 |
+| `sidePanel.answerPermission`, `permissions`, `removePermission` | `side_panel_permission_answer`, `side_panel_permissions`, `side_panel_permission_remove` | `core::side_panel::permission_store`, `src-tauri::panel_permissions` | M26 | M26, M27 | M26, M28 |
 | `view.get`, `zoom`, `toggleFullScreen` | `view_get`, `view_zoom`, `view_fullscreen` | `core::window_view` | M36 | M36, M37 | M36 |
 | `theme.set` | `theme_set` | `core::theme` | A CI screenshots; M36 | A CI screenshots; M36 | A CI screenshots; M36 |
 | `panel.send`, `panel.onMessage` (guest) | `POST /.agentrq/panel-send` on `agentrq-ext` | `panel-init.test.js`, `src-tauri::panel_scheme`, `core::side_panel::bridge` | G WP9 (answers "extensions unavailable"); M25 | G WP9; M25 | G WP9; M25 |
@@ -192,6 +191,7 @@ The bridge's own commands, which Electron has no channel for:
 | `fetch` with flattened bodies | — | `net.test.js` | M9 | M9 | M9 |
 | Menu keys | `menu_key_bindings`, `menu_run` | `bridge.test.js`, `core::menu_keys` | M40 | — (native menu) | M39 |
 | Side-panel guest | `side_panel_guest_open`, `_place`, `_navigate`, `_snapshot`, `_focus`, `_close` | `panel-guest.test.js`, `src-tauri::side_panel` | M17–M23 | M17–M24 | M17–M23 |
+| Side-panel find | `side_panel_guest_find`, `side_panel_guest_stop_find` | `core::side_panel::find`, `src-tauri::side_panel` | M29 | M29 | M29 |
 
 ## Manual steps
 
@@ -322,23 +322,27 @@ screenshots, in the PR or task that ran the checklist.
     `tauri://localhost` and `http://tauri.localhost` answer 403. Note the
     `Origin` each request carried: WebKit sends none on a same-origin
     custom-scheme request, which is why the guest's token is required.
-26. Once WP7c lands. Open webcamtests.com in the panel:
+26. Open webcamtests.com in the panel:
     - A camera request shows the bar once. **Allow** is remembered after a
       restart (`side-panel-permissions/<profileId>.json`).
     - **Site permissions** lists the site and removes it, and the next visit
       asks again.
     - With no answer for 60 s the page gets a Block; leaving the page answers
       Block and takes the bar down.
-27. **[macOS]** Once WP7c lands:
+27. **[macOS]**
     - A guest no longer gets the camera without a question. wry grants it when
-      no handler is set; WP7c replaces wry's `requestMediaCapturePermission…`
+      no handler is set; the app replaces wry's `requestMediaCapturePermission…`
       for guests only, and the app's own window keeps wry's answer.
     - There is no request before macOS 12. Geolocation, notifications and
-      screen capture have no public WKWebView hook (documented).
-28. **[Windows]** Once WP7c lands: the request is held by a deferral with
+      screen capture have no public WKWebView hook (documented); only the
+      camera and microphone are asked about.
+28. **[Windows]** The request is held by a deferral with
     `SavesInProfile(false)`. WebView2 shows no prompt of its own, and a
     removed answer really asks again. Autoplay is granted without asking.
-29. Find, once WP7c lands:
+    One `getUserMedia({video, audio})` asks one camera and microphone question
+    (WebView2 raises two requests; halves within 250 ms are merged), and its
+    answer gives both tracks.
+29. Find:
     - `Cmd/Ctrl+F` in the panel's page opens the panel's find bar, and the page
       never sees the key. Matches are highlighted and counted; `Enter` and
       `Shift+Enter` step both ways and wrap around; `Esc` closes the bar.
@@ -349,7 +353,9 @@ screenshots, in the PR or task that ran the checklist.
     - **[Windows]** Find uses `ICoreWebView2Find` (runtime 1.0.3240+): check
       that `ActiveMatchIndex` is 0-based, or the bar shows one too low, and that
       the `window.find` fallback works on an older runtime. `Ctrl+F` is
-      `Handled` in `AcceleratorKeyPressed`: the page's own keydown never fires.
+      `Handled` in `AcceleratorKeyPressed`: the page's own keydown never fires,
+      and only the app's find bar shows, never WebView2's own
+      (`SuppressDefaultFindDialog`).
 
 ### Files, clipboard and native helpers
 

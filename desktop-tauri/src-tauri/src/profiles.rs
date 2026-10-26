@@ -266,6 +266,11 @@ impl Profiles {
         server_of(self.config().active(), self.lock.as_deref())
     }
 
+    /// Where a profile's side panel keeps what was answered for each site.
+    pub fn permission_store(&self, id: &str) -> PermissionStore {
+        PermissionStore::new(&self.base, id)
+    }
+
     /// The active profile's muted workspaces.
     pub fn muted(&self) -> Vec<String> {
         self.config().active().muted_workspaces.clone()
@@ -526,7 +531,7 @@ impl Profiles {
         if let Some(net) = self.network.forget(id) {
             net.jar.clear();
         }
-        PermissionStore::new(&self.base, id).forget();
+        self.permission_store(id).forget();
         if !was_active {
             self.forget_storage(id);
             return Ok(self.view());

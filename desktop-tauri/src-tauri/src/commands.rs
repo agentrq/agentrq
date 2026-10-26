@@ -347,24 +347,6 @@ pub fn side_panel_pages() -> Vec<serde_json::Value> {
     Vec::new()
 }
 
-/// `agentrq:side-panel:permission-answer`
-#[tauri::command]
-pub fn side_panel_permission_answer() -> Result<(), String> {
-    todo("sidePanel.answerPermission", "WP7c")
-}
-
-/// `agentrq:side-panel:permission-remove`
-#[tauri::command]
-pub fn side_panel_permission_remove() -> Result<(), String> {
-    todo("sidePanel.removePermission", "WP7c")
-}
-
-/// `agentrq:side-panel:permissions`
-#[tauri::command]
-pub fn side_panel_permissions() -> Result<(), String> {
-    todo("sidePanel.permissions", "WP7c")
-}
-
 /// `agentrq:navigation:ready`
 #[tauri::command]
 pub fn navigation_ready<R: Runtime>(app: AppHandle<R>) {
@@ -414,14 +396,16 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         update_install_via_script,
         crate::side_panel::side_panel_open_external,
         side_panel_pages,
-        side_panel_permission_answer,
-        side_panel_permission_remove,
-        side_panel_permissions,
+        crate::panel_permissions::side_panel_permission_answer,
+        crate::panel_permissions::side_panel_permission_remove,
+        crate::panel_permissions::side_panel_permissions,
         crate::side_panel::side_panel_guest_open,
         crate::side_panel::side_panel_guest_place,
         crate::side_panel::side_panel_guest_navigate,
         crate::side_panel::side_panel_guest_focus,
         crate::side_panel::side_panel_guest_snapshot,
+        crate::side_panel::side_panel_guest_find,
+        crate::side_panel::side_panel_guest_stop_find,
         crate::side_panel::side_panel_guest_close,
         navigation_ready,
         crate::chrome::view_fullscreen,
@@ -486,9 +470,6 @@ mod tests {
         ("extensions_state", "extensions.state"),
         ("extensions_supervisor", "extensions.supervisor"),
         ("extensions_uninstall", "extensions.uninstall"),
-        ("side_panel_permission_answer", "sidePanel.answerPermission"),
-        ("side_panel_permission_remove", "sidePanel.removePermission"),
-        ("side_panel_permissions", "sidePanel.permissions"),
     ];
 
     /// The commands WP2, WP4 and WP6 have replaced; every other one is still a
@@ -565,7 +546,7 @@ mod tests {
     #[test]
     fn every_command_is_registered_and_the_stubs_answer_todo() {
         let rig = rig();
-        assert_eq!(STUB_COMMANDS.len(), 32, "stub commands answering todo");
+        assert_eq!(STUB_COMMANDS.len(), 29, "stub commands answering todo");
         for (cmd, member) in STUB_COMMANDS.iter().filter(|(cmd, _)| !DONE.contains(cmd)) {
             let err = call(&rig, cmd, serde_json::json!({})).expect_err(cmd);
             let text = err.as_str().unwrap_or_default();

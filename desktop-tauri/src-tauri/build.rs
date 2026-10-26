@@ -55,6 +55,8 @@ const COMMANDS: &[&str] = &[
     "side_panel_guest_navigate",
     "side_panel_guest_focus",
     "side_panel_guest_snapshot",
+    "side_panel_guest_find",
+    "side_panel_guest_stop_find",
     "side_panel_guest_close",
     "navigation_ready",
     "view_fullscreen",
