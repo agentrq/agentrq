@@ -29,7 +29,7 @@ use crate::ext_node::{Failure, Health};
 use crate::network::{Network, KEYCHAIN_DEADLINE};
 use crate::scheme::Drawers;
 use crate::upstream::{self, pairs, BodyLimits, Outgoing};
-use crate::vault::{keychain_only_key, Keychain, Vault};
+use crate::vault::{keychain_only_key, Keychain, Vault, KEY_LEN};
 
 /// What a value the shell sealed for the host starts with (`vault.js`).
 pub const SEALED_PREFIX: &str = "arqv1:";
@@ -45,6 +45,9 @@ pub struct ShellServices(Arc<Shell>);
 struct VaultCache {
     vault: Option<Vault>,
     failed_at: Option<std::time::Instant>,
+    /// The keychain read under way, which may create the key. Waited on
+    /// rather than started again: two at once could each create a key.
+    reading: Option<tokio::task::JoinHandle<Option<[u8; KEY_LEN]>>>,
 }
 
 struct Shell {
@@ -86,6 +89,7 @@ impl ShellServices {
             vault: tokio::sync::Mutex::new(VaultCache {
                 vault: None,
                 failed_at: None,
+                reading: None,
             }),
             on_changed,
         }))
@@ -106,8 +110,14 @@ impl Shell {
             }
         }
         let keychain = self.keychain.clone();
-        let read = tokio::task::spawn_blocking(move || keychain_only_key(&*keychain));
-        match tokio::time::timeout(self.keychain_deadline, read).await {
+        let reading = cache.reading.get_or_insert_with(|| {
+            tokio::task::spawn_blocking(move || keychain_only_key(&*keychain))
+        });
+        let read = tokio::time::timeout(self.keychain_deadline, reading).await;
+        if read.is_ok() {
+            cache.reading = None;
+        }
+        match read {
             Ok(Ok(Some(key))) => {
                 let vault = Vault::new(&key);
                 cache.vault = Some(vault.clone());
@@ -531,6 +541,7 @@ mod tests {
     use crate::network::tests::network;
     use crate::test_server::{closed_port, reply, send, Step, TestServer};
     use crate::vault::KeychainError;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
     use tauri::ipc::{CallbackFn, InvokeBody};
     use tauri::test::{
@@ -701,6 +712,64 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res2["ok"], true);
+    }
+
+    /// A keychain whose reads wait until it is unlocked, counting each read
+    /// and write.
+    #[derive(Default)]
+    struct LockedKeychain {
+        unlocked: Mutex<bool>,
+        unlocking: std::sync::Condvar,
+        held: Mutex<Option<Vec<u8>>>,
+        gets: AtomicUsize,
+        sets: AtomicUsize,
+    }
+
+    impl Keychain for LockedKeychain {
+        fn get(&self) -> Result<Option<Vec<u8>>, KeychainError> {
+            self.gets.fetch_add(1, Ordering::SeqCst);
+            let unlocked = self.unlocked.lock().unwrap();
+            drop(self.unlocking.wait_while(unlocked, |open| !*open).unwrap());
+            Ok(self.held.lock().unwrap().clone())
+        }
+        fn set(&self, secret: &[u8]) -> Result<(), KeychainError> {
+            self.sets.fetch_add(1, Ordering::SeqCst);
+            *self.held.lock().unwrap() = Some(secret.to_vec());
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_slow_unlock_creates_one_key_however_often_it_is_asked() {
+        let keychain = Arc::new(LockedKeychain::default());
+        let tuned = |keychain: Arc<LockedKeychain>| {
+            services_tuned("", keychain, Duration::from_millis(100), Duration::ZERO)
+        };
+        let rig = tuned(keychain.clone());
+        // Locked: each ask runs out of time waiting on the one read.
+        for _ in 0..3 {
+            let asked = ask(&rig, "vault", json!({})).await;
+            assert_eq!(asked, Ok(json!({"available": false})));
+        }
+        assert_eq!(keychain.gets.load(Ordering::SeqCst), 1);
+
+        // Unlocked: that read creates the key, and nothing else does.
+        *keychain.unlocked.lock().unwrap() = true;
+        keychain.unlocking.notify_all();
+        crate::side_panel::tests::wait_for("the read finishes", &|| {
+            let cache = rig.services.0.vault.try_lock();
+            cache.is_ok_and(|cache| cache.reading.as_ref().is_some_and(|r| r.is_finished()))
+        });
+        let sealed = ask(&rig, "seal", json!({"texts": ["s"]})).await.unwrap();
+        assert_eq!(sealed["ok"], true);
+        assert_eq!(keychain.gets.load(Ordering::SeqCst), 1);
+        assert_eq!(keychain.sets.load(Ordering::SeqCst), 1);
+
+        // The key it sealed with is the one the keychain kept.
+        let blobs = json!({"blobs": sealed["sealed"]});
+        let next_launch = tuned(keychain.clone());
+        let opened = ask(&next_launch, "open", blobs).await;
+        assert_eq!(opened, Ok(json!({"opened": ["s"]})));
     }
 
     #[tokio::test]
