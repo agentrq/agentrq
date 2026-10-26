@@ -689,7 +689,8 @@ pub fn plugins<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
         })
 }
 
-/// Wire desktop shell hooks for shortcuts and deep links.
+/// Wire desktop shell hooks for shortcuts and deep links. A macOS link
+/// arrives as a run event (`shell::on_run_event`), never through a listener.
 pub fn install_hooks<R: Runtime>(app: &AppHandle<R>) {
     use tauri_plugin_deep_link::DeepLinkExt;
     #[cfg(not(test))]
@@ -714,9 +715,4 @@ pub fn install_hooks<R: Runtime>(app: &AppHandle<R>) {
             .deep_link()
             .register(agentrq_desktop_core::deep_link::DEEP_LINK_SCHEME_TAURI);
     }
-
-    let app_open = app.clone();
-    app.deep_link().on_open_url(move |event| {
-        crate::shell::handle_open_urls(&app_open, &event.urls());
-    });
 }

@@ -362,9 +362,13 @@ pub(crate) fn handle_shortcut_event<R: Runtime>(app: &AppHandle<R>, state: Short
     }
 }
 
-/// Handle deep link open URLs.
-pub(crate) fn handle_open_urls<R: Runtime>(app: &AppHandle<R>, urls: &[Url]) {
-    if let Some(state) = app.try_state::<ShellState<R>>() {
+/// A link macOS asks the app to open, at a cold start too: setup has run by
+/// the first `Opened`. Never through the plugin's `on_open_url`, a Rust
+/// listener: Tauri queues an emit that meets another thread's.
+#[cfg(target_os = "macos")]
+pub(crate) fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &tauri::RunEvent) {
+    let state = app.try_state::<ShellState<R>>();
+    if let (tauri::RunEvent::Opened { urls }, Some(state)) = (event, state) {
         for url in urls {
             state.open_deep_link(app, url.as_str());
         }
@@ -530,6 +534,39 @@ mod tests {
         assert!(delivered.lock().unwrap().is_empty());
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_link_macos_opens_arrives_as_a_run_event() {
+        let (_app, handle) = test_app();
+        init(&handle).unwrap();
+        let state = handle.state::<ShellState<tauri::test::MockRuntime>>();
+
+        let delivered = Arc::new(Mutex::new(Vec::new()));
+        let delivered_clone = delivered.clone();
+        handle.listen("agentrq:navigate", move |event| {
+            delivered_clone
+                .lock()
+                .unwrap()
+                .push(event.payload().to_string());
+        });
+        let opened = |url: &str| tauri::RunEvent::Opened {
+            urls: vec![Url::parse(url).unwrap()],
+        };
+
+        // At a cold start the link comes before the page: it is held.
+        on_run_event(&handle, &opened("agentrq-tauri://workspaces/cold"));
+        on_run_event(&handle, &tauri::RunEvent::Ready);
+        assert!(delivered.lock().unwrap().is_empty());
+        on_page_load(&handle, &PageLoadEvent::Finished);
+        state.on_subscribed(&handle);
+        assert_eq!(*delivered.lock().unwrap(), vec!["\"/workspaces/cold\""]);
+
+        // While the app runs, it goes to the page at once.
+        delivered.lock().unwrap().clear();
+        on_run_event(&handle, &opened("agentrq-tauri://workspaces/warm"));
+        assert_eq!(*delivered.lock().unwrap(), vec!["\"/workspaces/warm\""]);
+    }
+
     #[test]
     fn mock_app_tray_menu_dispatch() {
         let (_app, handle) = test_app();
@@ -638,14 +675,6 @@ mod tests {
         // Readiness signal via navigation_ready
         navigation_ready(&handle);
 
-        // Open deep link URLs callback
-        delivered.lock().unwrap().clear();
-        handle_open_urls(
-            &handle,
-            &[Url::parse("agentrq-tauri://workspaces/ws_open").unwrap()],
-        );
-        assert_eq!(*delivered.lock().unwrap(), vec!["\"/workspaces/ws_open\""]);
-
         // First launch argv / current URLs check
         check_first_launch_route(
             &handle,
@@ -676,9 +705,12 @@ mod tests {
         let (_app, handle) = test_app();
         handle_second_instance(&handle, &["app".into()]);
         handle_shortcut_event(&handle, ShortcutState::Pressed);
-        handle_open_urls(
+        #[cfg(target_os = "macos")]
+        on_run_event(
             &handle,
-            &[Url::parse("agentrq-tauri://workspaces/1").unwrap()],
+            &tauri::RunEvent::Opened {
+                urls: vec![Url::parse("agentrq-tauri://workspaces/1").unwrap()],
+            },
         );
         check_first_launch_route(&handle, &["app".into()], None);
         handle_tray_menu_event(&handle, "open");

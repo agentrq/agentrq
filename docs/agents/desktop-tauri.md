@@ -36,6 +36,11 @@
   instead of fixed sleeps; a wait must assert. For microsecond-long spawned work the
   rig can't open a gap, so prove a fix with an injected delay.
 - **A log line that only runs on slow runs flakes the 100% line-coverage gate.**
+- **Never consume an app event through a Rust listener in production** (`listen`,
+  `once`, the deep-link plugin's `on_open_url`): Tauri queues a registration or emit
+  that meets another thread's emit until the next one that runs a Rust handler, so it
+  can come late or never. Handle the run event or call the function (a `lib.rs` test
+  checks); a test's listener reads through `side_panel::tests::Heard`, which flushes.
 
 ## The bridge and its commands
 

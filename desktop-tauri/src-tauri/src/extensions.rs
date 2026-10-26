@@ -563,7 +563,7 @@ pub(crate) mod tests {
         get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime, INVOKE_KEY,
     };
     use tauri::webview::InvokeRequest;
-    use tauri::{Listener, Manager};
+    use tauri::Manager;
 
     #[cfg(windows)]
     const LOCAL: &str = "http://tauri.localhost";
@@ -1384,17 +1384,15 @@ pub(crate) mod tests {
         use crate::ext_node::tests::{archive_of, serving, BINARY};
         let server = tauri::async_runtime::block_on(serving(archive_of(BINARY)));
         let (app, node) = on_node(&server.url);
-        let heard = Arc::new(Mutex::new(Vec::new()));
-        let log = heard.clone();
-        app.webview.listen(NODE_PROGRESS, move |event| {
-            let detail: Value = serde_json::from_str(event.payload()).unwrap();
-            log.lock().unwrap().push(detail["percent"].clone());
-        });
+        let heard = crate::side_panel::tests::Heard::new(app.webview.app_handle(), NODE_PROGRESS);
         assert_eq!(
             call(&app, "extensions_download_node", json!({})),
             Ok(json!({"ok": true}))
         );
-        assert_eq!(heard.lock().unwrap().last(), Some(&json!(100)));
+        assert_eq!(
+            heard.all().last().map(|detail| &detail["percent"]),
+            Some(&json!(100))
+        );
         assert_eq!(node.check(), crate::ext_node::Health::Ready(node.binary()));
         // The installed extension is wanted, so its host started.
         assert!(app.webview.state::<Arc<ExtHost>>().is_running());
@@ -1439,15 +1437,11 @@ pub(crate) mod tests {
             call(&app, "extensions_cancel_node_download", json!({})),
             Ok(json!(false))
         );
-        let started = Arc::new(Mutex::new(false));
-        let seen = started.clone();
-        app.webview.listen(NODE_PROGRESS, move |_| {
-            *seen.lock().unwrap() = true;
-        });
+        let heard = crate::side_panel::tests::Heard::new(app.webview.app_handle(), NODE_PROGRESS);
         let webview = app.webview.clone();
         let download =
             std::thread::spawn(move || call_on(&webview, "extensions_download_node", json!({})));
-        crate::side_panel::tests::wait_for("the download to start", &|| *started.lock().unwrap());
+        crate::side_panel::tests::wait_for("the download to start", &|| !heard.all().is_empty());
         assert_eq!(
             call(&app, "extensions_cancel_node_download", json!({})),
             Ok(json!(true))
