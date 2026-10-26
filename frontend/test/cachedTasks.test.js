@@ -142,6 +142,53 @@ describe('cacheTask', () => {
     expect(await cacheTask(null, makeTask(), { storage: allOn })).toBe(false)
   })
 
+  it('writes a task cached while the connection is pending once it connects', async () => {
+    const pending = connectCache('u1', { factory })
+    const writing = cacheTask(sharedCache(), makeTask(), { storage: allOn })
+
+    expect(sharedCache()).toBeNull()
+    expect(await writing).toBe(true)
+    expect(sharedCache()).not.toBeNull()
+
+    const [row] = await listCachedTasks(sharedCache(), 'ws1', IDBKeyRange)
+    expect(row.terms).toContain('billing')
+  })
+
+  it('drops the write without an error when the cache fails to connect', async () => {
+    const pending = connectCache('u1', { factory: null })
+    const writing = cacheTask(sharedCache(), makeTask(), { storage: allOn })
+
+    await expect(writing).resolves.toBe(false)
+    expect(await pending).toBeNull()
+    expect(sharedCache()).toBeNull()
+  })
+
+  it('drops the write without an error when the cache connection rejects', async () => {
+    const throwingFactory = {
+      open() {
+        const req = {}
+        setTimeout(() => {
+          req.error = new Error('disk failure')
+          req.onerror?.()
+        }, 0)
+        return req
+      },
+    }
+    const pending = connectCache('u1', { factory: throwingFactory })
+    const writing = cacheTask(sharedCache(), makeTask(), { storage: allOn })
+
+    await expect(writing).resolves.toBe(false)
+    expect(await pending).toBeNull()
+    expect(sharedCache()).toBeNull()
+  })
+
+  it('writes to the shared cache when already connected even if null is passed', async () => {
+    await connectCache('u1', { factory })
+    expect(await cacheTask(null, makeTask(), { storage: allOn })).toBe(true)
+    const [row] = await listCachedTasks(sharedCache(), 'ws1', IDBKeyRange)
+    expect(row.terms).toContain('billing')
+  })
+
   it('writes nothing for something that is not a task', async () => {
     const db = await openCache({ userId: 'u1', factory })
 
