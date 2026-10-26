@@ -31,7 +31,10 @@ use agentrq_desktop_core::side_panel::child::{
     webview_url, GuestEvent, HostRect, Modifiers,
 };
 use agentrq_desktop_core::side_panel::ext_scheme::StdFs;
-use agentrq_desktop_core::side_panel::wire::{NavigationAction, SidePanel, SidePanelHost};
+use agentrq_desktop_core::side_panel::find::{clears_selection, FindSession, Found};
+use agentrq_desktop_core::side_panel::wire::{
+    KeyAction, KeyInput, NavigationAction, SidePanel, SidePanelHost,
+};
 use serde_json::{json, Map, Value};
 use tauri::webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder};
 use tauri::{
@@ -121,8 +124,20 @@ impl<R: Runtime> SidePanelHost for Rules<R> {
             }
         });
     }
+    /// The window takes the keyboard back first: its find bar is in the
+    /// page, which a focused guest is not. Not from inside the guest's own
+    /// key callback, which on Windows must not touch a webview.
     fn send_find(&self) {
-        let _ = self.0.emit_to(MAIN, "agentrq:side-panel:find", ());
+        let app = self.0.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Some(main) = chrome::main_webview(&app) {
+                let _ = main.set_focus();
+            }
+            let _ = app.emit_to(MAIN, "agentrq:side-panel:find", ());
+        });
+    }
+    fn cancel_permissions(&self, guest: u32) {
+        crate::panel_permissions::cancel(&self.0, guest);
     }
 }
 
@@ -206,6 +221,8 @@ pub struct SidePanelState<R: Runtime> {
     next: AtomicU32,
     guests: Mutex<HashMap<String, Seen>>,
     keys: PendingKeys,
+    /// Each guest's find session, while its find bar is open.
+    finds: Mutex<HashMap<String, FindSession>>,
     open: OpenLink<R>,
 }
 
@@ -217,6 +234,7 @@ impl<R: Runtime> SidePanelState<R> {
             next: AtomicU32::new(1),
             guests: Mutex::new(HashMap::new()),
             keys: PendingKeys::default(),
+            finds: Mutex::new(HashMap::new()),
             open,
         }
     }
@@ -503,6 +521,7 @@ pub async fn side_panel_guest_open<R: Runtime>(
 
     let main = chrome::main_webview(&app).ok_or("The app's window has gone.")?;
     lock(&state.guests).insert(label.clone(), Seen::default());
+    crate::panel_permissions::opened(&app, number, &profile);
     let added = main.window().add_child(
         builder,
         LogicalPosition::new(placement.x, placement.y),
@@ -597,14 +616,88 @@ pub async fn side_panel_guest_snapshot<R: Runtime>(
         .map(tauri::ipc::Response::new)
 }
 
+/// `findInPage(text, { forward, findNext })`: the guest moves to a match,
+/// and says how many there are with a `found` event.
+#[tauri::command]
+pub async fn side_panel_guest_find<R: Runtime>(
+    app: AppHandle<R>,
+    label: String,
+    text: String,
+    forward: bool,
+    find_next: bool,
+) -> Result<(), String> {
+    let guest = guest(&app, &label)?;
+    if text.is_empty() {
+        return Err("There is nothing to find.".to_string());
+    }
+    let step = {
+        let state = app.state::<SidePanelState<R>>();
+        let mut finds = lock(&state.finds);
+        finds
+            .entry(label)
+            .or_default()
+            .begin(&text, forward, find_next)
+    };
+    platform::find(&guest, &text, step);
+    Ok(())
+}
+
+/// `stopFindInPage(action)`: the matches lose their highlight, and with
+/// `clearSelection` the active one its selection too.
+#[tauri::command]
+pub async fn side_panel_guest_stop_find<R: Runtime>(
+    app: AppHandle<R>,
+    label: String,
+    action: String,
+) -> Result<(), String> {
+    let guest = guest(&app, &label)?;
+    lock(&app.state::<SidePanelState<R>>().finds).remove(&label);
+    platform::stop_find(&guest, clears_selection(&action));
+    Ok(())
+}
+
+/// A guest's webview counted `total` matches for the step it was asked:
+/// the window hears which is active. Nothing once its find bar has closed.
+pub fn counted<R: Runtime>(app: &AppHandle<R>, label: &str, total: u32) {
+    let found = {
+        let state = app.state::<SidePanelState<R>>();
+        let mut finds = lock(&state.finds);
+        finds.get_mut(label).map(|session| session.counted(total))
+    };
+    if let Some(found) = found {
+        report_found(app, label, found);
+    }
+}
+
+/// A webview that counts the active match itself (WebView2).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn report_found<R: Runtime>(app: &AppHandle<R>, label: &str, found: Found) {
+    emit(
+        app,
+        GuestEvent::Found {
+            label: label.to_string(),
+            active: found.active,
+            total: found.total,
+        },
+    );
+}
+
+/// A key a guest is about to get, before its page sees it: `true` when the
+/// page must not (Cmd/Ctrl+F, which opens the window's find bar instead).
+pub fn key_down<R: Runtime>(app: &AppHandle<R>, input: &KeyInput) -> bool {
+    app.state::<SidePanelState<R>>().rules.before_input(input) == KeyAction::Prevent
+}
+
 /// What the shell keeps for a guest, let go: its entry, its permission
 /// prompts, its pending key and its place.
 fn forget<R: Runtime>(app: &AppHandle<R>, label: &str) {
     let state = app.state::<SidePanelState<R>>();
     lock(&state.guests).remove(label);
+    lock(&state.finds).remove(label);
     state.keys.forget(label);
     if let Some(number) = guest_number(label) {
         state.rules.guest_destroyed(number);
+        crate::panel_permissions::closed(app, number);
     }
     platform::forget(label);
 }
@@ -700,7 +793,7 @@ async fn within(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::chrome::Chrome;
     use tauri::ipc::{CallbackFn, InvokeBody};
@@ -835,9 +928,19 @@ mod tests {
         .map(|body| body.deserialize().unwrap())
     }
 
-    /// Long enough for what was spawned to have run.
+    /// Long enough for what was spawned to have run, where nothing tells.
     fn settle() {
         std::thread::sleep(Duration::from_millis(100));
+    }
+
+    /// Waits until what was spawned has `done` it, failing with `what` after
+    /// ten seconds: a busy runner can take longer than any fixed pause.
+    #[track_caller]
+    pub(crate) fn wait_for(what: &str, done: &dyn Fn() -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        std::iter::repeat_with(|| std::thread::sleep(Duration::from_millis(5)))
+            .find(|()| done() || std::time::Instant::now() > deadline);
+        assert!(done(), "{what}");
     }
 
     #[test]
@@ -1100,8 +1203,7 @@ mod tests {
         chrome::main_page_load(app, &PageLoadEvent::Started);
         shell.navigate(app, "/workspaces/1");
         assert!(lock(&rig.state().guests).is_empty());
-        settle();
-        assert!(app.get_webview(&guest).is_none(), "the guest is gone");
+        wait_for("the guest is gone", &|| app.get_webview(&guest).is_none());
         chrome::main_page_load(app, &PageLoadEvent::Finished);
         // The new page asks for it once it listens.
         shell.on_subscribed(app);
@@ -1116,9 +1218,9 @@ mod tests {
         assert!(!dispatch_navigation(app, &web));
         let sign_in = Url::parse(&format!("{SERVER}/api/v1/auth/google/login")).unwrap();
         assert!(!dispatch_navigation(app, &sign_in));
-        settle();
-        let sign_in = app.windows().into_keys().any(|l| l.starts_with("sign-in-"));
-        assert!(sign_in, "WP4's window");
+        wait_for("WP4's window", &|| {
+            app.windows().into_keys().any(|l| l.starts_with("sign-in-"))
+        });
         assert!(chrome::main_webview(app).is_some());
     }
 
@@ -1138,7 +1240,12 @@ mod tests {
         let first = first.expect("a token once loaded");
         assert_eq!(first.len(), 64);
         assert_eq!(token(rig.handle(), &ext), Some(first.clone()));
-        settle();
+        wait_for("the load reported", &|| {
+            let events = lock(&rig.events);
+            events
+                .last()
+                .is_some_and(|e| e["kind"] == "loading" && e["loading"] == false)
+        });
         assert_eq!(rig.seen(&ext).unwrap().0, PAGE, "reported");
         let kinds: Vec<Value> = rig.events().iter().map(|e| e["kind"].clone()).collect();
         assert!(
@@ -1226,7 +1333,7 @@ mod tests {
         assert!(!guest.allows("javascript:alert(1)", None));
         // A person's link-key click: the browser.
         assert!(!guest.allows("https://b.example/", Some(LINK_KEY)));
-        settle();
+        wait_for("the browser asked", &|| !lock(&rig.opened).is_empty());
         assert_eq!(
             rig.opened(),
             [(LinkTarget::System, "https://b.example/".to_string())]
@@ -1236,7 +1343,7 @@ mod tests {
             guest.new_window("https://c.example/", LINK_KEY),
             NewWindowResponse::Deny
         ));
-        settle();
+        wait_for("the browser asked", &|| !lock(&rig.opened).is_empty());
         assert_eq!(
             rig.opened(),
             [(LinkTarget::System, "https://c.example/".to_string())]
@@ -1269,7 +1376,7 @@ mod tests {
             ),
             Ok(Value::Null)
         );
-        settle();
+        wait_for("the browser asked", &|| !lock(&rig.opened).is_empty());
         assert_eq!(
             rig.opened(),
             [(LinkTarget::System, "https://x.example/".to_string())]
@@ -1289,7 +1396,10 @@ mod tests {
         rules.load_url(1, "https://b.example/");
         rules.load_url(9, "https://c.example/");
         rules.route_link("https://d.example/");
-        settle();
+        wait_for("the load and the browser", &|| {
+            let loaded = rig.webview(&label).url().unwrap().as_str() == "https://b.example/";
+            loaded && !lock(&rig.opened).is_empty()
+        });
         assert_eq!(
             rig.webview(&label).url().unwrap().as_str(),
             "https://b.example/"
@@ -1332,6 +1442,12 @@ mod tests {
             "side_panel_guest_navigate" => {
                 json!({"label": "panel-guest-1", "action": "back", "url": null})
             }
+            "side_panel_guest_find" => {
+                json!({"label": "panel-guest-1", "text": "x", "forward": true, "findNext": true})
+            }
+            "side_panel_guest_stop_find" => {
+                json!({"label": "panel-guest-1", "action": "keepSelection"})
+            }
             _ => json!({"label": "panel-guest-1"}),
         };
         for cmd in [
@@ -1340,6 +1456,8 @@ mod tests {
             "side_panel_guest_navigate",
             "side_panel_guest_focus",
             "side_panel_guest_snapshot",
+            "side_panel_guest_find",
+            "side_panel_guest_stop_find",
             "side_panel_guest_close",
         ] {
             let args = good(cmd);
@@ -1353,6 +1471,151 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn find_steps_through_the_matches_and_tells_the_window() {
+        let rig = rig();
+        let label = rig.open("https://a.example/");
+        rig.events();
+        let find = |text: &str, forward: bool, find_next: bool| {
+            call(
+                &rig.main,
+                "side_panel_guest_find",
+                json!({"label": label, "text": text, "forward": forward, "findNext": find_next}),
+            )
+        };
+        assert_eq!(find("cat", true, true), Ok(Value::Null));
+        counted(rig.handle(), &label, 3);
+        assert_eq!(find("cat", true, false), Ok(Value::Null));
+        counted(rig.handle(), &label, 3);
+        assert_eq!(find("cat", false, false), Ok(Value::Null));
+        assert_eq!(find("cat", false, false), Ok(Value::Null));
+        counted(rig.handle(), &label, 3);
+        counted(rig.handle(), &label, 3);
+        let found: Vec<(Value, Value)> = rig
+            .events()
+            .into_iter()
+            .filter(|e| e["kind"] == "found" && e["label"] == label.as_str())
+            .map(|e| (e["active"].clone(), e["total"].clone()))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                (json!(1), json!(3)),
+                (json!(2), json!(3)),
+                (json!(1), json!(3)),
+                (json!(3), json!(3))
+            ]
+        );
+        assert_eq!(
+            find("", true, true),
+            Err(json!("There is nothing to find."))
+        );
+        assert_eq!(
+            find("cat", true, true),
+            Ok(Value::Null),
+            "a new search once more"
+        );
+        let stop = |action: &str| {
+            call(
+                &rig.main,
+                "side_panel_guest_stop_find",
+                json!({"label": label, "action": action}),
+            )
+        };
+        assert_eq!(stop("clearSelection"), Ok(Value::Null));
+        assert_eq!(stop("keepSelection"), Ok(Value::Null));
+        // The bar has closed: a late count is nobody's.
+        counted(rig.handle(), &label, 3);
+        assert!(rig.events().is_empty());
+        assert_eq!(
+            call(
+                &rig.main,
+                "side_panel_guest_find",
+                json!({"label": "main", "text": "x", "forward": true, "findNext": true})
+            ),
+            Err(json!("Not a side panel page."))
+        );
+        assert_eq!(
+            call(
+                &rig.main,
+                "side_panel_guest_stop_find",
+                json!({"label": "panel-guest-9", "action": "keepSelection"})
+            ),
+            Err(json!("That side panel page has gone."))
+        );
+    }
+
+    #[test]
+    fn a_closed_guest_leaves_no_find_session() {
+        let rig = rig();
+        let label = rig.open("https://a.example/");
+        call(
+            &rig.main,
+            "side_panel_guest_find",
+            json!({"label": label, "text": "x", "forward": true, "findNext": true}),
+        )
+        .unwrap();
+        assert!(lock(&rig.state().finds).contains_key(&label));
+        call(&rig.main, "side_panel_guest_close", json!({"label": label})).unwrap();
+        assert!(lock(&rig.state().finds).is_empty());
+    }
+
+    #[test]
+    fn webview2s_own_count_reaches_the_window_as_it_is() {
+        let rig = rig();
+        rig.events();
+        report_found(
+            rig.handle(),
+            "panel-guest-4",
+            Found {
+                active: 2,
+                total: 7,
+            },
+        );
+        assert_eq!(
+            rig.events(),
+            [json!({"kind": "found", "label": "panel-guest-4", "active": 2, "total": 7})]
+        );
+    }
+
+    /// Cmd+F on macOS, Ctrl+F elsewhere: (control, meta).
+    #[cfg(target_os = "macos")]
+    const FIND_KEY: (bool, bool) = (false, true);
+    #[cfg(not(target_os = "macos"))]
+    const FIND_KEY: (bool, bool) = (true, false);
+
+    #[test]
+    fn the_find_key_in_a_guest_opens_the_windows_find_bar_and_the_page_never_sees_it() {
+        let rig = rig();
+        let heard = Arc::new(Mutex::new(0));
+        let count = Arc::clone(&heard);
+        rig.app
+            .listen_any("agentrq:side-panel:find", move |_| *lock(&count) += 1);
+        let key = |key: &str, control: bool, meta: bool, shift: bool| KeyInput {
+            kind: "keyDown".to_string(),
+            key: key.to_string(),
+            shift,
+            alt: false,
+            control,
+            meta,
+        };
+        let (control, meta) = FIND_KEY;
+        let (find, link) = (
+            key("F", control, meta, false),
+            key("f", meta, control, false),
+        );
+        assert!(key_down(rig.handle(), &find));
+        for other in [
+            link,
+            key("g", true, true, false),
+            key("f", true, true, true),
+        ] {
+            assert!(!key_down(rig.handle(), &other), "{other:?}");
+        }
+        wait_for("the find bar's event", &|| *lock(&heard) >= 1);
+        assert_eq!(*lock(&heard), 1);
     }
 
     /// A guest runs any page on the web: no capability may grant a remote

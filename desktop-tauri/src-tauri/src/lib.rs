@@ -19,6 +19,7 @@ pub mod ext_node;
 mod extensions;
 mod network;
 mod notify;
+mod panel_permissions;
 mod panel_scheme;
 mod panic_log;
 mod profiles;
@@ -737,6 +738,7 @@ pub fn run() {
             let side_panel = side_panel::SidePanelState::new(&handle, Box::new(open_link));
             app.manage(side_panel.scheme());
             app.manage(side_panel);
+            app.manage(panel_permissions::PanelPermissions::default());
             app.manage(chrome::Chrome::new(data_dir));
             shell::init(&handle)?;
             chrome::open_active_main_window(&handle)?;

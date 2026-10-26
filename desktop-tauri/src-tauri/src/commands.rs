@@ -4,9 +4,7 @@
 
 //! Every command behind `window.agentrq`, one per Electron IPC channel.
 //!
-//! Each starts as a stub that answers a `todo` error, so the work package that
-//! owns it replaces its own stub and nothing else, and the packages merge
-//! independently. A command is named after its channel: drop `agentrq:`, turn
+//! A command is named after its channel: drop `agentrq:`, turn
 //! `:` and `-` into `_`, and camelCase into snake_case
 //! (`agentrq:side-panel:permission-answer` is `side_panel_permission_answer`).
 //! The `on*` listeners are events, not commands, so they are not here.
@@ -21,13 +19,6 @@ use serde_json::{json, Value};
 use crate::event_source::{self, Frame, Sink, Streams};
 use crate::network::Network;
 use crate::profiles::{ConnectionState, Profiles, ProfilesView};
-
-/// The error a stub answers: the member, and the work package that owns it.
-pub fn todo(member: &str, owner: &str) -> Result<(), String> {
-    Err(format!(
-        "window.agentrq.{member} is not implemented yet ({owner})"
-    ))
-}
 
 /// `agentrq:attachments:forgetAll`: signing out.
 #[tauri::command]
@@ -250,24 +241,6 @@ pub fn update_install_via_script<R: Runtime>(
     }
 }
 
-/// `agentrq:side-panel:permission-answer`
-#[tauri::command]
-pub fn side_panel_permission_answer() -> Result<(), String> {
-    todo("sidePanel.answerPermission", "WP7c")
-}
-
-/// `agentrq:side-panel:permission-remove`
-#[tauri::command]
-pub fn side_panel_permission_remove() -> Result<(), String> {
-    todo("sidePanel.removePermission", "WP7c")
-}
-
-/// `agentrq:side-panel:permissions`
-#[tauri::command]
-pub fn side_panel_permissions() -> Result<(), String> {
-    todo("sidePanel.permissions", "WP7c")
-}
-
 /// `agentrq:navigation:ready`
 #[tauri::command]
 pub fn navigation_ready<R: Runtime>(app: AppHandle<R>) {
@@ -317,14 +290,16 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         update_install_via_script,
         crate::side_panel::side_panel_open_external,
         crate::extensions::side_panel_pages,
-        side_panel_permission_answer,
-        side_panel_permission_remove,
-        side_panel_permissions,
+        crate::panel_permissions::side_panel_permission_answer,
+        crate::panel_permissions::side_panel_permission_remove,
+        crate::panel_permissions::side_panel_permissions,
         crate::side_panel::side_panel_guest_open,
         crate::side_panel::side_panel_guest_place,
         crate::side_panel::side_panel_guest_navigate,
         crate::side_panel::side_panel_guest_focus,
         crate::side_panel::side_panel_guest_snapshot,
+        crate::side_panel::side_panel_guest_find,
+        crate::side_panel::side_panel_guest_stop_find,
         crate::side_panel::side_panel_guest_close,
         navigation_ready,
         crate::chrome::view_fullscreen,
@@ -351,83 +326,6 @@ mod tests {
     const LOCAL: &str = "http://tauri.localhost";
     #[cfg(not(windows))]
     const LOCAL: &str = "tauri://localhost";
-
-    /// The remaining stub commands answering `todo`.
-    const STUB_COMMANDS: &[(&str, &str)] = &[
-        ("attachments_forget_all", "attachments.forgetAll"),
-        ("attachments_forget_task", "attachments.forgetTask"),
-        (
-            "attachments_forget_workspace",
-            "attachments.forgetWorkspace",
-        ),
-        ("connection_cancel", "connection.cancel"),
-        ("connection_get", "connection.get"),
-        ("connection_save", "connection.save"),
-        ("connection_validate", "connection.validate"),
-        ("notifications_get", "notifications.get"),
-        ("notifications_set_muted", "notifications.setMuted"),
-        ("profiles_add", "profiles.add"),
-        ("profiles_get", "profiles.get"),
-        ("profiles_remove", "profiles.remove"),
-        ("profiles_rename", "profiles.rename"),
-        ("profiles_switch", "profiles.switch"),
-        ("extensions_authorize", "extensions.authorize"),
-        ("extensions_choose_folder", "extensions.chooseFolder"),
-        ("extensions_configure", "extensions.configure"),
-        ("extensions_deauthorize", "extensions.deauthorize"),
-        ("extensions_drawer", "extensions.drawer"),
-        ("extensions_entries", "extensions.entries"),
-        (
-            "extensions_install_catalogue",
-            "extensions.installFromCatalogue",
-        ),
-        ("extensions_install_local", "extensions.installLocal"),
-        ("extensions_invoke", "extensions.invoke"),
-        ("extensions_refresh", "extensions.refresh"),
-        ("extensions_set_enabled", "extensions.setEnabled"),
-        ("extensions_set_hook_consent", "extensions.setHookConsent"),
-        ("extensions_state", "extensions.state"),
-        ("extensions_supervisor", "extensions.supervisor"),
-        ("extensions_uninstall", "extensions.uninstall"),
-        ("side_panel_permission_answer", "sidePanel.answerPermission"),
-        ("side_panel_permission_remove", "sidePanel.removePermission"),
-        ("side_panel_permissions", "sidePanel.permissions"),
-    ];
-
-    /// The commands WP2, WP4, WP6 and WP9 have replaced; every other one is still a
-    /// stub.
-    const DONE: [&str; 30] = [
-        "attachments_forget_all",
-        "attachments_forget_task",
-        "attachments_forget_workspace",
-        "connection_cancel",
-        "connection_get",
-        "connection_save",
-        "connection_validate",
-        "notifications_get",
-        "notifications_set_muted",
-        "profiles_add",
-        "profiles_get",
-        "profiles_remove",
-        "profiles_rename",
-        "profiles_switch",
-        "extensions_authorize",
-        "extensions_choose_folder",
-        "extensions_configure",
-        "extensions_deauthorize",
-        "extensions_drawer",
-        "extensions_entries",
-        "extensions_install_catalogue",
-        "extensions_install_local",
-        "extensions_invoke",
-        "extensions_refresh",
-        "extensions_set_enabled",
-        "extensions_set_hook_consent",
-        "extensions_state",
-        "extensions_supervisor",
-        "extensions_uninstall",
-        "side_panel_pages",
-    ];
 
     struct Rig {
         _app: tauri::App<tauri::test::MockRuntime>,
@@ -488,22 +386,6 @@ mod tests {
             },
         )
         .map(|body| body.deserialize().unwrap())
-    }
-
-    #[test]
-    fn every_command_is_registered_and_the_stubs_answer_todo() {
-        let rig = rig();
-        assert_eq!(STUB_COMMANDS.len(), 32, "stub commands answering todo");
-        for (cmd, member) in STUB_COMMANDS.iter().filter(|(cmd, _)| !DONE.contains(cmd)) {
-            let err = call(&rig, cmd, serde_json::json!({})).expect_err(cmd);
-            let text = err.as_str().unwrap_or_default();
-            assert!(
-                text.starts_with(&format!(
-                    "window.agentrq.{member} is not implemented yet (WP"
-                )),
-                "{cmd}: {err}"
-            );
-        }
     }
 
     #[test]

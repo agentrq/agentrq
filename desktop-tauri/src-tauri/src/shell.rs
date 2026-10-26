@@ -745,8 +745,12 @@ mod tests {
         handle.manage(rig.profiles.clone());
         let signin_url = Url::parse("https://server.example.com/api/v1/auth/google/login").unwrap();
         assert!(!dispatch_navigation(&handle, &signin_url));
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        assert!(handle.get_window("sign-in-1").is_some());
+        crate::side_panel::tests::wait_for("WP4's window", &|| {
+            handle
+                .windows()
+                .into_keys()
+                .any(|l| l.starts_with("sign-in-"))
+        });
     }
 
     #[test]

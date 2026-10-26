@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use agentrq_desktop_core::side_panel::child::{
     is_guest_label, link_click, Modifiers, NavigationKind, Placement,
 };
+use agentrq_desktop_core::side_panel::platform_permissions::{CommittedPages, WebKitLoad};
 use gtk::prelude::*;
 use tauri::webview::WebviewBuilder;
 use tauri::{Runtime, Webview};
@@ -29,6 +30,12 @@ thread_local! {
     /// The keys held down in a guest, to tell a repeat from a press.
     static DOWN: RefCell<HashSet<u16>> = RefCell::new(HashSet::new());
     static REPEAT: Cell<bool> = const { Cell::new(false) };
+    /// The permission requests a guest's page is waiting on, until the
+    /// broker answers them.
+    static WAITING: RefCell<HashMap<u64, webkit2gtk::PermissionRequest>> = RefCell::new(HashMap::new());
+    static NEXT_REQUEST: Cell<u64> = const { Cell::new(1) };
+    /// Each guest's committed address, which its requests come from.
+    static COMMITTED: RefCell<CommittedPages> = RefCell::new(CommittedPages::default());
 }
 
 pub fn isolate<R: Runtime>(
@@ -187,6 +194,7 @@ pub fn forget(label: &str) {
     gtk::glib::MainContext::default().invoke(move || {
         BOXES.with(|boxes| boxes.borrow_mut().remove(&label));
         NAVIGATIONS.with(|navigations| navigations.borrow_mut().remove(&label));
+        COMMITTED.with(|committed| committed.borrow_mut().forget(&label));
     });
 }
 
@@ -266,7 +274,146 @@ pub fn click(number: u32) -> Option<Modifiers> {
     link_click(kind)
 }
 
-/// A load that failed, for the panel's own error view.
+/// Cmd/Ctrl+F, before the page sees it: the window's find bar opens instead.
+fn watch_find_key<R: Runtime>(view: &webkit2gtk::WebView, app: tauri::AppHandle<R>) {
+    use agentrq_desktop_core::menu_keys::gtk_key;
+    use agentrq_desktop_core::side_panel::wire::KeyInput;
+    use gtk::gdk::ModifierType;
+    view.connect_key_press_event(move |_, event| {
+        let keyval = event.keyval();
+        let name = keyval.name().map(|n| n.to_string()).unwrap_or_default();
+        let state = event.state();
+        let input = KeyInput {
+            kind: "keyDown".to_string(),
+            key: gtk_key(keyval.to_unicode(), &name),
+            shift: state.contains(ModifierType::SHIFT_MASK),
+            alt: state.contains(ModifierType::MOD1_MASK),
+            control: state.contains(ModifierType::CONTROL_MASK),
+            meta: state.contains(ModifierType::META_MASK),
+        };
+        if super::key_down(&app, &input) {
+            gtk::glib::Propagation::Stop
+        } else {
+            gtk::glib::Propagation::Proceed
+        }
+    });
+}
+
+/// What WebKit's find controller counts, for the window's find bar.
+fn watch_find<R: Runtime>(view: &webkit2gtk::WebView, app: tauri::AppHandle<R>, label: String) {
+    use webkit2gtk::FindControllerExt;
+    let Some(finder) = view.find_controller() else {
+        return;
+    };
+    let (failed_app, failed_label) = (app.clone(), label.clone());
+    finder.connect_found_text(move |_, count| super::counted(&app, &label, count));
+    finder.connect_failed_to_find_text(move |_| super::counted(&failed_app, &failed_label, 0));
+}
+
+/// The address a guest's document has committed to: its own `uri()` is the
+/// next one's as soon as a load starts.
+fn watch_commits(view: &webkit2gtk::WebView, label: String) {
+    use webkit2gtk::LoadEvent;
+    view.connect_load_changed(move |view, event| {
+        let step = match event {
+            LoadEvent::Started => WebKitLoad::Started,
+            LoadEvent::Redirected => WebKitLoad::Redirected,
+            LoadEvent::Committed => WebKitLoad::Committed,
+            _ => WebKitLoad::Finished,
+        };
+        let uri = view.uri().map(|u| u.to_string()).unwrap_or_default();
+        COMMITTED.with(|committed| committed.borrow_mut().load_changed(&label, step, &uri));
+    });
+}
+
+/// A page's permission request, held until the broker answers it on the
+/// main thread. The page never answers its own: only the window does.
+fn watch_permissions<R: Runtime>(
+    view: &webkit2gtk::WebView,
+    app: tauri::AppHandle<R>,
+    label: String,
+) {
+    use agentrq_desktop_core::side_panel::platform_permissions::webkit_ask;
+    use gtk::glib::object::Cast;
+    use webkit2gtk::{UserMediaPermissionRequest, UserMediaPermissionRequestExt};
+    view.connect_permission_request(move |_, request| {
+        let media = request.downcast_ref::<UserMediaPermissionRequest>();
+        let audio = media.is_some_and(|m| m.is_for_audio_device());
+        let video = media.is_some_and(|m| m.is_for_video_device());
+        // A screen is neither, which is all WebKit before 2.42 says of it.
+        let display = media.is_some() && !audio && !video;
+        let url = COMMITTED.with(|committed| committed.borrow().requesting_url(&label));
+        let native = webkit_ask(request.type_().name(), audio, video, display, &url);
+        let id = NEXT_REQUEST.get();
+        NEXT_REQUEST.set(id + 1);
+        WAITING.with(|waiting| waiting.borrow_mut().insert(id, request.clone()));
+        let main = app.clone();
+        crate::panel_permissions::request(
+            &app,
+            &label,
+            &url,
+            native,
+            crate::panel_permissions::Answer::new(move |granted| {
+                let _ = main.run_on_main_thread(move || settle(id, granted));
+            }),
+        );
+        true
+    });
+}
+
+fn settle(id: u64, granted: bool) {
+    use webkit2gtk::PermissionRequestExt;
+    let Some(request) = WAITING.with(|waiting| waiting.borrow_mut().remove(&id)) else {
+        return;
+    };
+    if granted {
+        request.allow();
+    } else {
+        request.deny();
+    }
+}
+
+pub fn find<R: Runtime>(
+    guest: &Webview<R>,
+    text: &str,
+    step: agentrq_desktop_core::side_panel::find::FindStep,
+) {
+    use agentrq_desktop_core::side_panel::find::FindStep;
+    use webkit2gtk::{FindControllerExt, FindOptions};
+    let text = text.to_string();
+    let _ = guest.with_webview(move |view| {
+        let Some(finder) = view.inner().find_controller() else {
+            return;
+        };
+        match step {
+            FindStep::Start => finder.search(
+                &text,
+                (FindOptions::CASE_INSENSITIVE | FindOptions::WRAP_AROUND).bits(),
+                MAX_MATCHES,
+            ),
+            FindStep::Next => finder.search_next(),
+            FindStep::Previous => finder.search_previous(),
+        }
+    });
+}
+
+/// More than anybody steps through; WebKit stops counting there.
+const MAX_MATCHES: u32 = 10_000;
+
+pub fn stop_find<R: Runtime>(guest: &Webview<R>, clear: bool) {
+    use webkit2gtk::FindControllerExt;
+    let _ = guest.with_webview(move |view| {
+        if let Some(finder) = view.inner().find_controller() {
+            finder.search_finish();
+        }
+    });
+    if clear {
+        let _ = guest.eval(agentrq_desktop_core::side_panel::find::CLEAR_SELECTION_SCRIPT);
+    }
+}
+
+/// A load that failed, for the panel's own error view; the guest taking the
+/// keyboard; its find key, find counts and permission requests.
 pub fn watch<R: Runtime>(guest: &Webview<R>) {
     use agentrq_desktop_core::side_panel::child::GuestEvent;
     use tauri::{Emitter, Manager};
@@ -274,6 +421,18 @@ pub fn watch<R: Runtime>(guest: &Webview<R>) {
     let label = guest.label().to_string();
     let _ = guest.with_webview(move |view| {
         hook_navigations();
+        // WebKitGTK ships without `getUserMedia` and WebRTC, which Electron's
+        // guest has: the broker answers whether a page may use the camera.
+        // A screen is refused (`webkit_ask`), as Electron's guest has none.
+        if let Some(settings) = WebViewExt::settings(&view.inner()) {
+            use webkit2gtk::SettingsExt;
+            settings.set_enable_media_stream(true);
+            settings.set_enable_webrtc(true);
+        }
+        watch_find_key(&view.inner(), app.clone());
+        watch_find(&view.inner(), app.clone(), label.clone());
+        watch_commits(&view.inner(), label.clone());
+        watch_permissions(&view.inner(), app.clone(), label.clone());
         let (focus_app, focus_label) = (app.clone(), label.clone());
         view.inner().connect_focus_in_event(move |_, _| {
             let _ = focus_app.emit_to(

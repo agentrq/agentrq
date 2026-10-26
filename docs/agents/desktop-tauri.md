@@ -12,7 +12,9 @@
 - **`chrome.rs`, `app_menu.rs`, and `side_panel/`'s platform files and `handlers.rs`
   are wiring and outside the coverage gate too**; a rule goes in `core/` or a
   gated file with its test. `side_panel.rs` is gated: llvm-cov counts a closure
-  per generic instance, so keep closures out of its commands.
+  per generic instance, so keep closures out of its commands. An async command whose
+  arguments cannot fail (`AppHandle`, `Webview`) leaves its attribute line uncovered:
+  take a `State`, which fails when unmanaged, and test that.
 - **`make stop` must leave the Tauri dev app alone**: it skips any vite under
   `desktop-tauri/`, and `tauri dev` exits with its Vite (port 5175).
 - **`AGENTRQ_E2E_INIT_SCRIPT` is CI's**: a script the main webview runs first, which seeds
@@ -23,6 +25,11 @@
   or switch rebuilds `main` under the *same* handle, so `replaceWindow` tells old from new
   by a marker. A check that follows a rebuild must wait for the new page's own state
   (`/login`), or its first fetch goes out before the network has moved.
+- **WebDriver cannot reach a side panel guest**, so a verify script reads one from a
+  stand-in site's log (`scripts/lib/site.mjs`): its requests, and a beat its page sends
+  every 100 ms. A closed guest is a beat that never comes again after a page known to
+  have started later. Take the log's position *before* the action that makes the page
+  load, or its hello can land first and the wait never sees it.
 
 ## The bridge and its commands
 
@@ -131,6 +138,34 @@
 - **The page keeps its `activeElement` while a guest has the keyboard**, so the
   guest reports its focus-in and the page blurs. Without it the address bar never
   follows the guest.
+- **A guest's permission request waits for the window, never for wry.** With no
+  handler wry *grants* a WKWebView the camera and microphone, and Tauri's own
+  handler must answer at once; so each platform holds the request (a WebKitGTK
+  request kept, a WebView2 deferral with `SavesInProfile(false)`, a copied
+  WKWebView decision block) and core's broker answers it later, on the main
+  thread. The broker reads its file: never call it on the main thread, and only
+  `main` may answer, list or remove (`panel_permissions.rs`).
+- **A WebKitGTK request is keyed by the guest's *committed* URI, never `uri()`**,
+  which is already the next site's once a load starts while the old page can still
+  ask: it would get that site's stored Allow. WebKitGTK names no frame, so a frame
+  asks as its page (Permissions Policy limits that to delegated frames), and
+  storage access, always a third party's, is refused. So is a screen, which
+  Electron's guest cannot share.
+- **An `Answer` dropped unanswered is a Block**, and a request is decided only
+  for the guest's own profile and the document that made it. WebView2 raises one
+  `getUserMedia` as two requests: halves within 250 ms are one question.
+- **What a platform cannot ask about:** WKWebView has no public hook for
+  geolocation, notifications or screen capture (none reaches the broker), and no
+  media request at all before macOS 12; WebKitGTK before 2.42 says a screen request
+  is neither audio nor video, which is how it is told apart. WebView2 autoplay is
+  granted, as Electron's guest plays sound without asking.
+- **The find key is caught natively, before the page:** a GTK `key-press-event` on
+  the guest, `AcceleratorKeyPressed` with `Handled`, and an `NSEvent` local monitor
+  scoped to guest views. A page cannot reach the guest bridge (no token, a
+  cross-origin custom scheme, and its own CSP), so the init script cannot send it.
+- **WebKit counts matches but never says which is active**, so core's
+  `FindSession` keeps the ordinal; WKWebView does not even count, so a script does,
+  in a content world of its own so the page never reads the text.
 
 ## Window, menu and keys
 

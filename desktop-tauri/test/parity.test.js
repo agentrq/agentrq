@@ -208,7 +208,7 @@ describe('the command pattern', () => {
 
 describe('the Rust side serves what the bridge calls', () => {
   // The handler lives in commands.rs; the commands of a work package beside it.
-  const SOURCES = ['commands', 'chrome', 'app_menu', 'side_panel', 'extensions']
+  const SOURCES = ['commands', 'chrome', 'app_menu', 'side_panel', 'panel_permissions', 'extensions']
   const sources = SOURCES.map((name) => read(`../src-tauri/src/${name}.rs`))
   const rust = sources[0]
   const defined = sources.flatMap((source) => [...source.matchAll(COMMAND_PATTERN)].map((m) => m[1])).sort()
@@ -231,11 +231,13 @@ describe('the Rust side serves what the bridge calls', () => {
   // command at all: `agentrq:panel:send` is a POST on its own scheme.
   const GUEST_ONLY = [
     'side_panel_guest_close',
+    'side_panel_guest_find',
     'side_panel_guest_focus',
     'side_panel_guest_navigate',
     'side_panel_guest_open',
     'side_panel_guest_place',
     'side_panel_guest_snapshot',
+    'side_panel_guest_stop_find',
   ]
   // The bridge's own: the key listener's menu commands (Electron's menu runs in
   // the main process), `EventSource` (net.js), and `navigation_ready`; Electron has no channel for either.
@@ -311,14 +313,11 @@ describe('the Rust side serves what the bridge calls', () => {
         params.set(m[1], list)
       }
     }
-    // A work package's stub takes no arguments until the package replaces it.
-    const stubs = new Set([...rust.matchAll(/pub fn (\w+)\(\)[^{]*\{\s*todo\(/g)].map((m) => m[1]))
     tauri.invoke.mockReset().mockResolvedValue(undefined)
     for (const [path] of members(agentrq).filter(([p]) => !/\.on[A-Z]/.test(p))) {
       await at(agentrq, path)(...argsFor(path))
     }
-    const bridge = tauri.invoke.mock.calls.filter(([n]) => !stubs.has(n))
-    expect(stubs.size).toBeGreaterThan(0)
+    const bridge = tauri.invoke.mock.calls
     expect(bridge.length).toBeGreaterThan(0)
     for (const [command, payload] of bridge) {
       const taken = params.get(command)
