@@ -19,8 +19,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use agentrq_desktop_core::ext_host::{
-    answer_without_host, blame, crash_reason, enabled_names, retry_delay_ms, CrashLedger,
-    IDLE_STOP_MS, INSTALLED_FILE, STABLE_MS,
+    answer_without_host, blame, crash_reason, enabled_names, retry_delay_ms, state_from_disk,
+    CrashLedger, CATALOGUE_FILE, IDLE_STOP_MS, INSTALLED_FILE, STABLE_MS,
 };
 use agentrq_desktop_core::ext_rpc::{
     self, deadline_ms, timed_out, Ids, Line, Lines, Message, HOST_GONE, METHOD_NOT_FOUND,
@@ -30,6 +30,8 @@ use serde_json::{json, Value};
 use std::os::unix::process::CommandExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, oneshot};
+
+use crate::ext_node::Node;
 
 /// An answer the shell gives the host, later.
 pub type Answer = Pin<Box<dyn Future<Output = Result<Value, String>> + Send>>;
@@ -142,6 +144,9 @@ struct State {
 
 pub struct ExtHost {
     launch: Launch,
+    /// The Node it runs on, checked before each start. `None` for a host a
+    /// test runs on the `node` on PATH.
+    node: Option<Arc<Node>>,
     data_dir: PathBuf,
     services: Arc<dyn Services>,
     state: Mutex<State>,
@@ -174,18 +179,57 @@ impl Default for Timing {
 }
 
 impl ExtHost {
+    /// A host run as `launch`, with no Node to check: a test's.
+    #[cfg(test)]
     pub fn new(launch: Launch, data_dir: PathBuf, services: Arc<dyn Services>) -> Arc<Self> {
         Self::tuned(launch, data_dir, services, Timing::default())
     }
 
+    /// The host run by `node`, with `args`.
+    pub fn on_node(
+        node: Arc<Node>,
+        args: Vec<OsString>,
+        data_dir: PathBuf,
+        services: Arc<dyn Services>,
+    ) -> Arc<Self> {
+        let launch = Launch {
+            program: node.binary(),
+            args,
+        };
+        Self::built(launch, Some(node), data_dir, services, Timing::default())
+    }
+
+    /// A host checked against `node` but run as `launch`: a test's script.
+    #[cfg(test)]
+    pub fn checked_by(
+        launch: Launch,
+        node: Arc<Node>,
+        data_dir: PathBuf,
+        services: Arc<dyn Services>,
+    ) -> Arc<Self> {
+        Self::built(launch, Some(node), data_dir, services, Timing::default())
+    }
+
+    #[cfg(test)]
     fn tuned(
         launch: Launch,
         data_dir: PathBuf,
         services: Arc<dyn Services>,
         timing: Timing,
     ) -> Arc<Self> {
+        Self::built(launch, None, data_dir, services, timing)
+    }
+
+    fn built(
+        launch: Launch,
+        node: Option<Arc<Node>>,
+        data_dir: PathBuf,
+        services: Arc<dyn Services>,
+        timing: Timing,
+    ) -> Arc<Self> {
         Arc::new(Self {
             launch,
+            node,
             data_dir,
             services,
             state: Mutex::default(),
@@ -199,9 +243,16 @@ impl ExtHost {
         enabled_names(&installed.unwrap_or_default())
     }
 
-    /// At launch: start the host only if an extension wants it.
+    /// Whether the Node it runs on is the pinned build. Hashes it the first
+    /// time, which is why it is asked before the state is locked.
+    fn node_ready(&self) -> bool {
+        self.node.as_ref().is_none_or(|node| node.verify().is_ok())
+    }
+
+    /// At launch, or once Node is installed: start the host only if an
+    /// extension wants it and its Node is there.
     pub fn boot(self: &Arc<Self>) -> bool {
-        if self.wanted().is_empty() {
+        if self.wanted().is_empty() || !self.node_ready() {
             return false;
         }
         let mut state = lock(&self.state);
@@ -212,17 +263,25 @@ impl ExtHost {
         lock(&self.state).process.is_some()
     }
 
-    pub fn data_dir(&self) -> &std::path::Path {
-        &self.data_dir
+    pub fn node(&self) -> Option<&Arc<Node>> {
+        self.node.as_ref()
     }
 
-    pub fn is_production_node(&self) -> bool {
-        self.launch.program == crate::ext_node::node_binary_path(&self.data_dir)
+    /// The Extensions page's state from what is on disk, for while Node is
+    /// not there to run the host.
+    pub fn state_from_disk(&self) -> Value {
+        let read = |file| std::fs::read_to_string(self.data_dir.join(file)).unwrap_or_default();
+        state_from_disk(&read(INSTALLED_FILE), &read(CATALOGUE_FILE))
     }
 
     /// Ask the host `method`. A call a page makes on every render never starts
     /// it: with nothing enabled it is answered here.
     pub async fn call(self: &Arc<Self>, method: &str, params: Value) -> Result<Value, String> {
+        // Checked here, off the runtime and outside the lock, so a start
+        // below finds the check cached rather than hashing under the lock.
+        if let Some(node) = &self.node {
+            node.checked().await;
+        }
         let (answer, activity, pending, id, generation) = {
             let mut state = lock(&self.state);
             state.activity += 1;
@@ -335,8 +394,8 @@ impl ExtHost {
     }
 
     fn spawn(self: &Arc<Self>, state: &mut State) -> Result<(), String> {
-        if self.is_production_node() {
-            crate::ext_node::verify_node(&self.data_dir)?;
+        if let Some(node) = &self.node {
+            node.verify()?;
         }
         let disable = Value::Array(state.disable.clone()).to_string();
         let mut cmd = tokio::process::Command::new(&self.launch.program);
@@ -1203,23 +1262,41 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn production_node_checks_binary_verification() {
+    async fn starts_only_on_the_pinned_node() {
+        use crate::ext_node::tests::{node_from, pin_of, BINARY};
         let dir = tempfile::tempdir().unwrap();
-        let prod_path = crate::ext_node::node_binary_path(dir.path());
-        let host = ExtHost::new(
-            Launch {
-                program: prod_path,
-                args: vec![],
-            },
+        std::fs::write(
+            dir.path().join(INSTALLED_FILE),
+            r#"{"installations":[{"name":"x"}]}"#,
+        )
+        .unwrap();
+        let node = node_from(dir.path(), "", pin_of(BINARY));
+        let host = ExtHost::on_node(
+            node.clone(),
+            vec!["entry.mjs".into()],
             dir.path().into(),
             Arc::new(FakeServices::default()),
         );
-        assert!(host.is_production_node());
-        assert_eq!(host.data_dir(), dir.path());
+        assert_eq!(host.launch.program, node.binary());
+        assert_eq!(host.launch.args, vec![OsString::from("entry.mjs")]);
+        assert!(Arc::ptr_eq(host.node().unwrap(), &node));
 
-        // Spawn fails because Node binary is not installed/verified
-        let mut state = lock(&host.state);
-        let err = host.spawn(&mut state).unwrap_err();
-        assert!(err.contains("Node.js runtime is not installed"));
+        // Not downloaded yet: nothing starts, and a call says why.
+        assert!(!host.boot());
+        assert_eq!(
+            host.call("state", json!({})).await,
+            Err(agentrq_desktop_core::ext_node::needs_node())
+        );
+        assert!(!host.is_running());
+
+        // Its page still reads from disk.
+        assert_eq!(host.state_from_disk()["installed"][0]["name"], json!("x"));
+        let bare = ExtHost::new(
+            script_launch(""),
+            dir.path().join("none"),
+            Arc::new(FakeServices::default()),
+        );
+        assert!(bare.node().is_none());
+        assert_eq!(bare.state_from_disk()["installed"], json!([]));
     }
 }

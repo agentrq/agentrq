@@ -49,6 +49,24 @@
         {{ notice }}
       </div>
 
+      <!-- Tauri only: Electron bundles Node. Said up front with its size,
+           because nothing downloads it on the way to something else. -->
+      <div v-if="!nodeInstalled" data-test="node-banner"
+           class="mb-6 px-3 py-2.5 rounded-sm border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900 flex items-start justify-between gap-4">
+        <p class="text-[11px] text-gray-700 dark:text-zinc-300 leading-snug">
+          <template v-if="node?.update">
+            Your extensions need a Node.js update before they can run: {{ node.version }}, a {{ nodeSize }} download.
+          </template>
+          <template v-else>
+            Extensions run on Node.js {{ node?.version }}, which AgentRQ downloads once from nodejs.org ({{ nodeSize }}).
+          </template>
+        </p>
+        <button type="button" @click="askForNode()" :disabled="busy"
+                class="shrink-0 px-4 py-2 rounded-sm bg-black dark:bg-white text-white dark:text-black text-[10px] font-black uppercase tracking-widest hover:opacity-80 disabled:opacity-40 transition-all">
+          {{ node?.update ? 'Update' : 'Download' }}
+        </button>
+      </div>
+
       <!-- Only when something installed actually wants it. An app asking for a
            credential that reaches every workspace, unprompted and before
            anything needs it, is asking for more than it can justify. -->
@@ -187,33 +205,41 @@
 
     </div>
 
-    <div v-if="promptDownloadNode" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" @click.self="cancelDownloadNode">
+    <!-- A click outside puts the question away, but never a download under
+         way: only Cancel stops that. -->
+    <div v-if="promptDownloadNode" data-test="node-prompt" role="dialog" aria-modal="true" aria-labelledby="node-prompt-title"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+         @click.self="downloadingNode || cancelDownloadNode()">
       <div class="w-full max-w-md bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-sm p-5">
-        <h2 class="text-lg font-black text-gray-900 dark:text-white">
-          Download Node.js Runtime?
+        <h2 id="node-prompt-title" class="text-lg font-black text-gray-900 dark:text-white">
+          {{ node?.update ? 'Update Node.js?' : 'Download Node.js?' }}
         </h2>
         <p class="mt-2 text-[11px] leading-relaxed text-gray-700 dark:text-zinc-300">
-          Extensions require the Node.js v24.22.1 runtime (about 40 MB) to execute.
-          AgentRQ will download and verify the official build into its own application data directory.
+          Extensions run on Node.js {{ node?.version }}. AgentRQ downloads it once from nodejs.org
+          ({{ nodeSize }}), checks it against a pinned SHA-256, and keeps it in its own data folder.
         </p>
-        <div v-if="nodeProgress" class="mt-4">
+        <div v-if="downloadingNode" class="mt-4">
           <div class="flex justify-between text-[10px] font-mono text-gray-600 dark:text-zinc-400 mb-1">
-            <span>Downloading Node.js…</span>
-            <span>{{ nodeProgress.percent }}%</span>
+            <span>Downloading…</span>
+            <span>{{ nodePercent }}%</span>
           </div>
           <div class="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-1.5 overflow-hidden">
             <div class="bg-black dark:bg-white h-1.5 rounded-full transition-all duration-150"
-                 :style="{ width: `${nodeProgress.percent}%` }"></div>
+                 :style="{ width: `${nodePercent}%` }"></div>
           </div>
         </div>
+        <p v-if="nodeError" data-test="node-error"
+           class="mt-4 px-3 py-2 rounded-sm border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 text-[11px] text-amber-800 dark:text-amber-300">
+          {{ nodeError }}
+        </p>
         <div class="mt-5 flex items-center justify-end gap-2">
-          <button type="button" @click="cancelDownloadNode" :disabled="step === 'working'"
-                  class="px-4 py-2 rounded-lg border border-gray-200 dark:border-zinc-800 text-[11px] font-black uppercase tracking-widest text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40">
+          <button type="button" data-test="node-cancel" @click="cancelDownloadNode()"
+                  class="px-4 py-2 rounded-lg border border-gray-200 dark:border-zinc-800 text-[11px] font-black uppercase tracking-widest text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
             Cancel
           </button>
-          <button type="button" @click="confirmDownloadNode" :disabled="step === 'working'"
+          <button type="button" data-test="node-download" @click="downloadNode()" :disabled="downloadingNode"
                   class="px-4 py-2 rounded-lg bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest hover:opacity-80 disabled:opacity-40 transition-all">
-            {{ step === 'working' ? (nodeProgress ? `Downloading… ${nodeProgress.percent}%` : 'Downloading…') : 'Download & Continue' }}
+            {{ downloadingNode ? 'Downloading…' : nodeError ? 'Try again' : 'Download' }}
           </button>
         </div>
       </div>
@@ -222,9 +248,6 @@
     <ExtensionGrantDialog v-if="candidate"
                           :candidate="candidate"
                           :workspaces="workspaceStore.workspaces ?? []"
-                          :node-installed="nodeInstalled"
-                          :node-progress="nodeProgress"
-                          :step="step"
                           @cancel="cancelInstall"
                           @confirm="install" />
   </div>
@@ -246,7 +269,7 @@
  */
 import { computed, onMounted } from 'vue';
 
-import { useExtensionCatalogue } from '../composables/useExtensionCatalogue';
+import { megabytes, useExtensionCatalogue } from '../composables/useExtensionCatalogue';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import ExtensionGrantDialog from './ExtensionGrantDialog.vue';
 
@@ -275,10 +298,14 @@ const workspaceStore = useWorkspaceStore();
 const {
   authorized,
   needsAuthorization,
+  node,
   nodeInstalled,
   nodeProgress,
+  downloadingNode,
   promptDownloadNode,
-  confirmDownloadNode,
+  nodeError,
+  askForNode,
+  downloadNode,
   cancelDownloadNode,
   authorize,
   deauthorize,
@@ -302,7 +329,10 @@ const {
 
 // One flag for every control, so nothing can be pressed twice while a folder is
 // being read or an install is being written.
-const busy = computed(() => loading.value || step.value !== 'idle');
+const busy = computed(() => loading.value || step.value !== 'idle' || downloadingNode.value);
+
+const nodeSize = computed(() => megabytes(node.value?.size));
+const nodePercent = computed(() => nodeProgress.value?.percent ?? 0);
 
 // Reads the cache. Deliberately not a search: GitHub answers ten of those a
 // minute, and spending that on somebody opening a screen would leave nothing

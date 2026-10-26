@@ -15,7 +15,7 @@ mod cookie_jar;
 mod event_source;
 mod events;
 mod ext_host;
-pub mod ext_node;
+mod ext_node;
 mod extensions;
 mod network;
 mod notify;
@@ -53,7 +53,7 @@ use tauri_plugin_updater::UpdaterExt;
 use agentrq_desktop_core::notifications::Notification;
 use event_source::Streams;
 use events::EventStream;
-use ext_host::{ExtHost, Launch};
+use ext_host::ExtHost;
 use extensions::{HostDrawers, PickedFolder, Picker, ShellServices};
 use network::Network;
 use notify::{Desk, Feed, Notifier};
@@ -580,25 +580,25 @@ async fn finish_sign_in<R: Runtime>(window: WebviewWindow<R>, flow: Flow, id: St
     }
 }
 
-/// The extension host: the Node binary installed under the app data dir, running the
-/// bundled entry. It starts only once an installed extension is enabled.
+/// The extension host: the bundled entry, run by the Node the Extensions page
+/// downloads into the app data dir. It starts only once an installed
+/// extension is enabled and that Node is there.
 fn extension_host<R: Runtime>(
     app: &AppHandle<R>,
     network: Arc<Network>,
     data_dir: std::path::PathBuf,
 ) -> tauri::Result<Arc<ExtHost>> {
-    let program = ext_node::node_binary_path(&data_dir);
+    let node = ext_node::Node::new(&data_dir);
+    // What a quit mid-download left behind.
+    node.sweep();
     let entry = app
         .path()
         .resolve("ext-host/agentrq-ext-host.mjs", BaseDirectory::Resource)?;
-    let launch = Launch {
-        program,
-        args: vec![
-            entry.into(),
-            data_dir.clone().into(),
-            app.package_info().version.to_string().into(),
-        ],
-    };
+    let args = vec![
+        entry.into(),
+        data_dir.clone().into(),
+        app.package_info().version.to_string().into(),
+    ];
     let emitter = app.clone();
     let services = ShellServices::new(
         network,
@@ -607,7 +607,7 @@ fn extension_host<R: Runtime>(
             let _ = emitter.emit("agentrq:extensions:changed", detail);
         }),
     );
-    let host = ExtHost::new(launch, data_dir, Arc::new(services));
+    let host = ExtHost::on_node(node, args, data_dir, Arc::new(services));
     app.manage(host.clone());
     Ok(host)
 }
@@ -745,9 +745,8 @@ pub fn run() {
             app_menu::install(&handle)?;
             let _ = app_menu::install_tray(&handle);
             chrome::install_hooks(&handle);
-            tauri::async_runtime::spawn(async move {
-                host.boot();
-            });
+            // Off the async runtime: the first check of Node hashes it.
+            tauri::async_runtime::spawn_blocking(move || host.boot());
             Ok(())
         })
         .build(tauri::generate_context!())

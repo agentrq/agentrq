@@ -31,6 +31,7 @@ impl Seen {
 }
 
 /// What the server does, in order.
+#[derive(Clone)]
 pub enum Step {
     Send(Vec<u8>),
     Wait(u64),

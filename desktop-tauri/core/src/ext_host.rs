@@ -32,6 +32,9 @@ const LONGEST_RETRY_MS: u64 = 30_000;
 /// The file `install.js` keeps installations in, under the app's data dir.
 pub const INSTALLED_FILE: &str = "extensions-installed.json";
 
+/// The file `runtime.js` keeps the catalogue's last search in.
+pub const CATALOGUE_FILE: &str = "extensions-catalogue.json";
+
 /// The extensions that are installed and enabled, from [`INSTALLED_FILE`]'s
 /// contents. `install.js` treats anything but `enabled: false` as on.
 pub fn enabled_names(installed: &str) -> Vec<String> {
@@ -124,6 +127,55 @@ pub fn answer_without_host(method: &str, params: &Value) -> Option<Value> {
     }
 }
 
+/// The Extensions page's state from disk, for while the host cannot run
+/// because Node is not there: the catalogue as last searched, and the
+/// installations as `install.js` recorded them, none of them running. The
+/// rows are `runtime.js`'s `state()`; what only the host knows (grants,
+/// consents, contributions) is empty.
+pub fn state_from_disk(installed: &str, catalogue: &str) -> Value {
+    let mut index = json!({ "entries": [], "fetchedAt": null, "truncated": false });
+    if let Ok(Value::Object(cached)) = serde_json::from_str::<Value>(catalogue) {
+        if cached.get("entries").is_some_and(Value::is_array) {
+            index.as_object_mut().expect("an object").extend(cached);
+        }
+    }
+    let installed: Value = serde_json::from_str(installed).unwrap_or(Value::Null);
+    let rows: Vec<Value> = installed["installations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|installation| installation["name"].is_string())
+        .map(installed_row)
+        .collect();
+    json!({ "index": index, "installed": rows })
+}
+
+fn installed_row(installation: &Value) -> Value {
+    let manifest = &installation["manifest"];
+    let or = |value: &Value, otherwise: Value| match value {
+        Value::Null => otherwise,
+        value => value.clone(),
+    };
+    json!({
+        "name": installation["name"],
+        "version": installation["version"],
+        "displayName": or(&manifest["displayName"], installation["name"].clone()),
+        "description": or(&manifest["description"], json!("")),
+        "license": or(&manifest["license"], json!("")),
+        "enabled": installation["enabled"] != json!(false),
+        "loaded": false,
+        "failures": or(&installation["failures"], json!(0)),
+        "source": or(&installation["sourceLabel"], json!("")),
+        "linked": or(
+            &installation["linked"],
+            json!(installation["source"]["kind"] == "local"),
+        ),
+        "grant": null,
+        "consents": [],
+        "contributes": {},
+    })
+}
+
 /// Whether the host may fetch `url` through the profile's jar: only on the
 /// profile's own server. The jar holds that server's session, and nothing the
 /// host does needs it anywhere else.
@@ -160,6 +212,43 @@ mod tests {
     fn a_missing_or_broken_file_enables_nothing() {
         for installed in ["", "{", "[]", "{}", r#"{"installations":{}}"#] {
             assert!(enabled_names(installed).is_empty(), "{installed}");
+        }
+    }
+
+    #[test]
+    fn reads_the_page_from_disk_while_the_host_cannot_run() {
+        let installed = r#"{"installations":[
+            {"name":"a","version":"1.0.0","enabled":false,"failures":2,"sourceLabel":"me/a",
+             "linked":false,"source":{"kind":"local"},
+             "manifest":{"displayName":"A","description":"Does a.","license":"MIT"}},
+            {"name":"b","source":{"kind":"local"}},
+            {"name":"c","source":{"kind":"github"}},
+            {"version":"9"}
+        ]}"#;
+        let catalogue = r#"{"entries":[{"ok":true,"fullName":"x/y"}],"fetchedAt":5}"#;
+        assert_eq!(
+            state_from_disk(installed, catalogue),
+            json!({
+                "index": {"entries": [{"ok": true, "fullName": "x/y"}], "fetchedAt": 5, "truncated": false},
+                "installed": [
+                    {"name": "a", "version": "1.0.0", "displayName": "A", "description": "Does a.",
+                     "license": "MIT", "enabled": false, "loaded": false, "failures": 2, "source": "me/a",
+                     "linked": false, "grant": null, "consents": [], "contributes": {}},
+                    {"name": "b", "version": null, "displayName": "b", "description": "",
+                     "license": "", "enabled": true, "loaded": false, "failures": 0, "source": "",
+                     "linked": true, "grant": null, "consents": [], "contributes": {}},
+                    {"name": "c", "version": null, "displayName": "c", "description": "",
+                     "license": "", "enabled": true, "loaded": false, "failures": 0, "source": "",
+                     "linked": false, "grant": null, "consents": [], "contributes": {}},
+                ],
+            })
+        );
+        let empty = json!({
+            "index": {"entries": [], "fetchedAt": null, "truncated": false},
+            "installed": [],
+        });
+        for broken in ["", "{", "[]", "{}", r#"{"entries":{}}"#] {
+            assert_eq!(state_from_disk(broken, broken), empty, "{broken}");
         }
     }
 

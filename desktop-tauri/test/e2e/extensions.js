@@ -3,10 +3,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // WP9's acceptance, run in the main webview through AGENTRQ_E2E_INIT_SCRIPT
-// with __EXAMPLES__ filled in: the five examples installed, listed,
-// configured, turned off and on, and uninstalled through window.agentrq, as
-// the Extensions page does. Each step goes to the server, which is
-// extensions-server.mjs, through the app's own proxy.
+// with __EXAMPLES__ filled in: an install refused for want of Node.js, Node
+// downloaded from nodejs.org as the page's prompt does, then the five examples
+// installed, listed, configured, turned off and on, and uninstalled through
+// window.agentrq, as the Extensions page does. Each step goes to the server,
+// which is extensions-server.mjs, through the app's own proxy.
 const EXAMPLES = '__EXAMPLES__'
 const NAMES = ['task-stats', 'standup', 'digest', 'guardrail', 'panel-notes']
 const GRANTS = {
@@ -33,6 +34,12 @@ const ok = (answer) => answer?.ok === true
 
 async function run() {
   const ext = window.agentrq.extensions
+  await step('node missing', (await ext.state()).node, (node) => node?.installed === false && node.size > 0)
+  await step('install before node', await ext.installLocal(`${EXAMPLES}/${NAMES[0]}`, { grant: null }), (answer) =>
+    answer?.needsNode === true,
+  )
+  await step('download node', await ext.downloadNode(), ok)
+  await step('node there', (await ext.state()).node, (node) => node?.installed === true)
   for (const name of NAMES) {
     await step(`install ${name}`, await ext.installLocal(`${EXAMPLES}/${name}`, { grant: GRANTS[name] ?? null }), ok)
   }

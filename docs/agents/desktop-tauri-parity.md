@@ -133,6 +133,7 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 | Feature | Tests | Linux | macOS | Windows |
 |---|---|---|---|---|
 | Install, run, uninstall; settings; supervisor sign-in; drawers; tool-call review | — | G WP9, then M43 | G WP9, then M43 | G WP9, then M43 |
+| Node.js downloaded on first use, checked against its pin, offered again when the pin moves | `core::ext_node`, `src-tauri::ext_node`, `extensionCatalogue.test.js`, `extensionsViewNode.test.js` (frontend) | A `test/e2e/extensions.js` | M45 | M45 |
 
 ### Whole-app checks
 
@@ -165,7 +166,8 @@ command takes them. `verify-e2e` checks on Linux that the whole bridge is there.
 | `emoji.showPanel` | `emoji_show_panel` | `core::emoji_panel` | A (unit) | M32 | M32 |
 | `dialog.chooseDirectory` | `dialog_choose_directory` | — | M31 | M31 | M31 |
 | `navigation.onNavigate` | `agentrq:navigate`, `navigation_ready` | `bridge.test.js` | M11, M14, M15 | M11, M14, M15 | M11, M14, M15 |
-| `extensions.state`, `refresh`, `chooseFolder`, `installLocal`, `installFromCatalogue`, `uninstall`, `setEnabled`, `configure`, `setHookConsent`, `supervisor`, `authorize`, `deauthorize`, `entries`, `drawer`, `invoke` | `extensions_*` (stubs answering `todo`) | `src-tauri::commands` (the stubs) | G WP9 | G WP9 | G WP9 |
+| `extensions.state`, `refresh`, `chooseFolder`, `installLocal`, `installFromCatalogue`, `uninstall`, `setEnabled`, `configure`, `setHookConsent`, `supervisor`, `authorize`, `deauthorize`, `entries`, `drawer`, `invoke` | `extensions_*` | `src-tauri::extensions`, `core::ext_host` | A `test/e2e/extensions.js` | M43 | M43 |
+| `extensions.downloadNode`, `cancelNodeDownload`, `onNodeProgress` (Tauri only: Electron bundles Node) | `extensions_download_node`, `extensions_cancel_node_download`, `agentrq:extensions:node-progress` | `src-tauri::ext_node`, `src-tauri::extensions`, `core::ext_node`, `parity.test.js` | A `test/e2e/extensions.js` | M45 | M45 |
 | `extensions.onChanged` | `agentrq:extensions:changed` | `parity.test.js` | G WP9 | G WP9 | G WP9 |
 | `updates.get`, `onStatus` | `update_get`, `agentrq:update:status` | `core::updater`, `src-tauri::commands`, `bridge.test.js` | A `verify-e2e` (no banner); M3 | M3 | M3 |
 | `updates.check` | `update_check` | `core::updater`, `src-tauri::commands` | G follow-up: menu item disabled | G same | G same |
@@ -407,3 +409,8 @@ screenshots, in the PR or task that ran the checklist.
     `document.modelContext`, run, and go on sign-out; a keypress, a copy, a
     search and a view switch each send a UI telemetry report for their
     workspace.
+45. **[macOS, Windows]** On a fresh profile, the Extensions page offers Node.js
+    with its size; Download fills the bar, Cancel stops it, and once it is
+    in place an example installs and runs. macOS: the downloaded `node` runs
+    as a child of the signed, hardened app. Windows: the rename succeeds with
+    an antivirus scanning `node.exe`.

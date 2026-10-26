@@ -125,41 +125,18 @@
             </label>
           </div>
         </section>
-        <section v-if="!nodeInstalled" class="border border-blue-200 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-950/30 rounded-sm px-3 py-3">
-          <h3 class="text-[10px] font-black uppercase tracking-widest text-blue-800 dark:text-blue-300 mb-1">
-            Node.js runtime download required
-          </h3>
-          <p class="text-[11px] leading-relaxed text-blue-900 dark:text-blue-200">
-            First-time extension installation requires downloading the Node.js v24.22.1 runtime (about 40 MB).
-            It will be verified against a pinned SHA-256 checksum and stored in AgentRQ's data directory.
-          </p>
-          <div v-if="nodeProgress" class="mt-2.5">
-            <div class="flex justify-between text-[10px] font-mono text-blue-800 dark:text-blue-300 mb-1">
-              <span>Downloading Node.js…</span>
-              <span>{{ nodeProgress.percent }}%</span>
-            </div>
-            <div class="w-full bg-blue-200 dark:bg-blue-900 rounded-full h-1.5 overflow-hidden">
-              <div class="bg-blue-600 dark:bg-blue-400 h-1.5 rounded-full transition-all duration-150"
-                   :style="{ width: `${nodeProgress.percent}%` }"></div>
-            </div>
-          </div>
-        </section>
       </div>
 
       <div class="px-5 py-4 border-t border-gray-100 dark:border-zinc-800 flex items-center justify-between gap-3">
         <p class="text-[11px] text-amber-700 dark:text-amber-400">{{ problem }}</p>
         <div class="flex items-center gap-2 shrink-0">
-          <button type="button" @click="$emit('cancel')" :disabled="step === 'working'"
-                  class="px-4 py-2 rounded-lg border border-gray-200 dark:border-zinc-800 text-[11px] font-black uppercase tracking-widest text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40">
+          <button type="button" @click="$emit('cancel')"
+                  class="px-4 py-2 rounded-lg border border-gray-200 dark:border-zinc-800 text-[11px] font-black uppercase tracking-widest text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
             Cancel
           </button>
-          <button type="button" @click="confirm" :disabled="!valid || step === 'working'"
+          <button type="button" @click="confirm" :disabled="!valid"
                   class="px-4 py-2 rounded-lg bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest hover:opacity-80 disabled:opacity-40 transition-all">
-            {{
-              step === 'working'
-                ? (nodeProgress ? `Downloading… ${nodeProgress.percent}%` : 'Installing…')
-                : (!nodeInstalled ? 'Download Node & Install' : 'Install')
-            }}
+            Install
           </button>
         </div>
       </div>
@@ -207,9 +184,6 @@ const props = defineProps({
   candidate: { type: Object, required: true },
   workspaces: { type: Array, default: () => [] },
   workspaceId: { type: String, default: '' },
-  nodeInstalled: { type: Boolean, default: true },
-  nodeProgress: { type: Object, default: null },
-  step: { type: String, default: 'asking' },
 });
 
 const emit = defineEmits(['cancel', 'confirm']);

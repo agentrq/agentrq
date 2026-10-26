@@ -2,761 +2,824 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! On-demand downloading, verification, and installation of Node.js for the extension host.
+//! The Node.js the extension host runs on: downloaded once when the person
+//! asks, and checked against its pin before the host starts.
+//!
+//! Outside tests the only constructor is [`Node::new`], which downloads the
+//! pinned archive from nodejs.org over https only, redirects included.
+//! Neither the address nor the pin can be changed from outside. A check is
+//! cached on the binary's size and modified time, so the binary is hashed
+//! once per launch, not on every page load.
 
+use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, SystemTime};
 
 use agentrq_desktop_core::ext_node::{
-    compute_sha256, current_pin, download_url, format_stamp, node_relative_path, parse_stamp,
-    validate_stamp, NODE_DISPLAY_SIZE, NODE_VERSION,
+    current_pin, download_url, extract, is_leftover, is_pinned_binary, needs_node, sha256_of,
+    Hasher, NodePin, Steps, BINARY_NAME, NODE_VERSION,
 };
 use futures_util::StreamExt;
-use sha2::{Digest, Sha256};
+use serde_json::{json, Value};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::Mutex;
+use tokio::sync::oneshot;
 
-static DOWNLOAD_LOCK: Mutex<()> = Mutex::const_new(());
+/// The longest a connection may take to open, and a download may go
+/// without a byte. A slow line still finishes; a stalled one does not hang.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub(crate) fn err_str<E: std::fmt::Display>(e: E) -> String {
-    e.to_string()
+/// The waits between tries at renaming the binary into place, about 5 s in
+/// all: on Windows, antivirus may hold a new executable open for a while.
+const RENAME_BACKOFF: [Duration; 7] = [
+    Duration::from_millis(50),
+    Duration::from_millis(100),
+    Duration::from_millis(200),
+    Duration::from_millis(400),
+    Duration::from_millis(800),
+    Duration::from_millis(1600),
+    Duration::from_millis(2000),
+];
+
+/// Where a download comes from.
+struct Source {
+    url: String,
+    pin: &'static NodePin,
+    client: reqwest::Client,
 }
 
-pub(crate) fn unsupported_platform() -> String {
-    "Unsupported platform for Node.js.".to_string()
+/// What the binary on disk is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Health {
+    /// The pinned build, ready to run.
+    Ready(PathBuf),
+    Missing,
+    /// There, but not the pinned build: an older pin, or a damaged file.
+    Outdated,
 }
 
-/// The expected path of the installed Node binary under `data_dir``.
-pub fn node_binary_path(data_dir: &Path) -> PathBuf {
-    data_dir.join(node_relative_path(std::env::consts::OS))
+/// Why a download installed nothing.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Failure {
+    Cancelled,
+    Failed(String),
 }
 
-/// The verification stamp file recording the binary hash, size, and archive hash.
-pub fn stamp_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("bin").join("node.sha256")
+/// The binary's size and modified time when it last checked out.
+type Print = (u64, Option<SystemTime>);
+
+pub struct Node {
+    bin: PathBuf,
+    source: Option<Source>,
+    rename_backoff: Vec<Duration>,
+    checked: Mutex<Option<Print>>,
+    downloading: tokio::sync::Mutex<()>,
+    cancel: Mutex<Option<oneshot::Sender<()>>>,
 }
 
-/// Check whether the installed Node binary exists and matches its verification stamp against a specific pin.
-pub fn verify_node_with_pin(
-    data_dir: &Path,
-    pin: &agentrq_desktop_core::ext_node::NodePin,
-) -> Result<PathBuf, String> {
-    let binary = node_binary_path(data_dir);
-    let stamp_file = stamp_path(data_dir);
-    if !binary.exists() {
-        return Err("Node.js runtime is not installed.".to_string());
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The client every download uses: https only, redirects included, with a
+/// deadline on connecting and on each read.
+fn client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .https_only(true)
+        // The pinned size and hash are of the bytes nodejs.org stores.
+        .no_gzip()
+        .no_brotli()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(IDLE_TIMEOUT)
+        .build()
+        .expect("a TLS backend")
+}
+
+impl Node {
+    /// Node under `data_dir/bin`, from nodejs.org.
+    pub fn new(data_dir: &Path) -> Arc<Self> {
+        let source = current_pin().map(|pin| Source {
+            url: download_url(pin),
+            pin,
+            client: client(),
+        });
+        Self::from_source(data_dir, source, RENAME_BACKOFF.to_vec())
     }
-    if !stamp_file.exists() {
-        return Err("Node.js runtime verification stamp is missing.".to_string());
+
+    fn from_source(data_dir: &Path, source: Option<Source>, backoff: Vec<Duration>) -> Arc<Self> {
+        Arc::new(Self {
+            bin: data_dir.join("bin"),
+            source,
+            rename_backoff: backoff,
+            checked: Mutex::default(),
+            downloading: tokio::sync::Mutex::const_new(()),
+            cancel: Mutex::default(),
+        })
     }
-    let content = std::fs::read_to_string(&stamp_file).map_err(err_str)?;
-    let stamp =
-        parse_stamp(&content).ok_or_else(|| "Corrupted Node.js verification stamp.".to_string())?;
 
-    let meta = std::fs::metadata(&binary).map_err(err_str)?;
-    let actual_size = meta.len();
+    /// Where the binary is, whether or not it is there.
+    pub fn binary(&self) -> PathBuf {
+        self.bin.join(BINARY_NAME)
+    }
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = meta.permissions().mode();
-        // Check that write permissions are not present (stored read-only)
-        if mode & 0o222 != 0 {
-            return Err("Node.js binary permissions are not read-only.".to_string());
+    /// What the binary on disk is. Blocks while it hashes, once per launch.
+    pub fn check(&self) -> Health {
+        let binary = self.binary();
+        let (Some(source), Ok(meta)) = (&self.source, std::fs::metadata(&binary)) else {
+            return Health::Missing;
+        };
+        let print = (meta.len(), meta.modified().ok());
+        // Held while hashing, so two checks at once hash only once.
+        let mut checked = lock(&self.checked);
+        if *checked == Some(print) {
+            return Health::Ready(binary);
+        }
+        let pin = source.pin;
+        let pinned = meta.len() == pin.binary_size
+            && std::fs::File::open(&binary)
+                .and_then(|mut file| sha256_of(&mut file))
+                .is_ok_and(|(size, sha256)| is_pinned_binary(pin, size, &sha256));
+        if !pinned {
+            return Health::Outdated;
+        }
+        *checked = Some(print);
+        Health::Ready(binary)
+    }
+
+    /// [`Node::check`], off the async runtime.
+    pub async fn checked(self: &Arc<Self>) -> Health {
+        let this = Arc::clone(self);
+        tokio::task::spawn_blocking(move || this.check())
+            .await
+            .expect("a check does not panic")
+    }
+
+    /// The binary, when it is the pinned build.
+    pub fn verify(&self) -> Result<PathBuf, String> {
+        match self.check() {
+            Health::Ready(binary) => Ok(binary),
+            _ => Err(needs_node()),
         }
     }
 
-    let bytes = std::fs::read(&binary).map_err(err_str)?;
-    let actual_sha256 = compute_sha256(&bytes);
-
-    validate_stamp(&stamp, pin.sha256, actual_size, &actual_sha256).map_err(err_str)?;
-
-    Ok(binary)
-}
-
-/// Check whether the installed Node binary exists and matches its verification stamp.
-pub fn verify_node(data_dir: &Path) -> Result<PathBuf, String> {
-    let pin = current_pin().ok_or_else(unsupported_platform)?;
-    verify_node_with_pin(data_dir, &pin)
-}
-
-/// Download, verify, and install Node.js under `data_dir/bin`.
-pub async fn download_and_install_node(
-    data_dir: &Path,
-    client: Option<&reqwest::Client>,
-    base_url: Option<&str>,
-    on_progress: Option<Arc<dyn Fn(u64, u64) + Send + Sync>>,
-    pin_override: Option<&agentrq_desktop_core::ext_node::NodePin>,
-) -> Result<PathBuf, String> {
-    let _guard = DOWNLOAD_LOCK.lock().await;
-
-    // If already verified, return without downloading again.
-    if let Ok(bin) = verify_node(data_dir) {
-        return Ok(bin);
+    /// What the Extensions page says about Node.
+    pub fn status(&self, health: &Health) -> Value {
+        json!({
+            "installed": matches!(health, Health::Ready(_)),
+            "update": *health == Health::Outdated,
+            "version": NODE_VERSION,
+            "size": self.source.as_ref().map(|source| source.pin.archive_size),
+        })
     }
 
-    let detected_pin;
-    let pin = match pin_override {
-        Some(p) => p,
-        None => {
-            detected_pin = current_pin().ok_or_else(unsupported_platform)?;
-            &detected_pin
+    /// Download, check and install the pinned build, unless it is already
+    /// there. One download at a time: a second caller waits, then finds it
+    /// installed. `progress` hears the bytes so far, the total and the
+    /// percent, at most once per whole percent.
+    pub async fn download(
+        self: &Arc<Self>,
+        progress: &(dyn Fn(u64, u64, u32) + Send + Sync),
+    ) -> Result<PathBuf, Failure> {
+        let source = self.source.as_ref().ok_or_else(|| {
+            Failure::Failed("There is no Node.js build for this computer.".into())
+        })?;
+        let _one = self.downloading.lock().await;
+        if let Health::Ready(binary) = self.checked().await {
+            return Ok(binary);
         }
-    };
-    let url = match base_url {
-        Some(base) => format!("{base}/{}", pin.file),
-        None => download_url(pin.file),
-    };
-
-    let bin_dir = data_dir.join("bin");
-    tokio::fs::create_dir_all(&bin_dir).await.map_err(err_str)?;
-
-    let random_id = unique_temp_id();
-    let temp_archive = bin_dir.join(format!(".node-download-{random_id}.tmp"));
-    let temp_extract_dir = bin_dir.join(format!(".node-extract-{random_id}.tmp"));
-    let temp_binary = bin_dir.join(format!(".node-bin-{random_id}.tmp"));
-
-    let result = download_extract_verify(
-        &url,
-        pin,
-        &temp_archive,
-        &temp_extract_dir,
-        &temp_binary,
-        client,
-        on_progress,
-    )
-    .await;
-
-    // Clean up archive and extraction temp files regardless of outcome.
-    let _ = tokio::fs::remove_file(&temp_archive).await;
-    let _ = tokio::fs::remove_dir_all(&temp_extract_dir).await;
-
-    match result {
-        Ok((bin_size, bin_sha256)) => {
-            let final_bin = node_binary_path(data_dir);
-            let final_stamp = stamp_path(data_dir);
-
-            // Atomically rename temp binary to destination.
-            if let Err(e) = tokio::fs::rename(&temp_binary, &final_bin).await {
-                let _ = tokio::fs::remove_file(&temp_binary).await;
-                return Err(format!("Could not install Node.js binary: {e}"));
+        let (cancel, cancelled) = oneshot::channel();
+        *lock(&self.cancel) = Some(cancel);
+        self.sweep();
+        let id = unique_temp_id();
+        let archive = self.bin.join(format!(".node-download-{id}.tmp"));
+        let unpacked = self.bin.join(format!(".node-bin-{id}.tmp"));
+        let installed = tokio::select! {
+            installed = self.install(source, &archive, &unpacked, progress) => {
+                installed.map_err(Failure::Failed)
             }
+            _ = cancelled => Err(Failure::Cancelled),
+        };
+        lock(&self.cancel).take();
+        let _ = std::fs::remove_file(&archive);
+        let _ = std::fs::remove_file(&unpacked);
+        installed
+    }
 
-            let stamp_data = format_stamp(&bin_sha256, bin_size, pin.sha256);
-            if let Err(e) = tokio::fs::write(&final_stamp, stamp_data).await {
-                let _ = tokio::fs::remove_file(&final_bin).await;
-                return Err(format!("Could not write Node.js verification stamp: {e}"));
+    /// Stop the download under way; false when there is none.
+    pub fn cancel(&self) -> bool {
+        lock(&self.cancel)
+            .take()
+            .is_some_and(|cancel| cancel.send(()).is_ok())
+    }
+
+    /// Remove what a download that never finished left in `bin`: a quit
+    /// mid-download leaves its temporary files behind.
+    pub fn sweep(&self) {
+        for entry in std::fs::read_dir(&self.bin).into_iter().flatten().flatten() {
+            if is_leftover(&entry.file_name().to_string_lossy()) {
+                let _ = std::fs::remove_file(entry.path());
             }
+        }
+    }
 
-            Ok(final_bin)
-        }
-        Err(err) => {
-            let _ = tokio::fs::remove_file(&temp_binary).await;
-            Err(err)
-        }
+    async fn install(
+        &self,
+        source: &Source,
+        archive: &Path,
+        unpacked: &Path,
+        progress: &(dyn Fn(u64, u64, u32) + Send + Sync),
+    ) -> Result<PathBuf, String> {
+        tokio::fs::create_dir_all(&self.bin).await.map_err(failed)?;
+        fetch(source, archive, progress).await?;
+        let pin = source.pin;
+        let (archive, unpacked) = (archive.to_path_buf(), unpacked.to_path_buf());
+        let (binary, backoff) = (self.binary(), self.rename_backoff.clone());
+        let placed = binary.clone();
+        let meta = tokio::task::spawn_blocking(move || {
+            unpack(pin, &archive, &unpacked)?;
+            rename_with_retry(&mut || std::fs::rename(&unpacked, &placed), &backoff)
+                .map_err(|error| format!("Could not put Node.js in place: {error}"))?;
+            std::fs::metadata(&placed).map_err(failed)
+        })
+        .await
+        .expect("unpacking does not panic")?;
+        // Checked as it was unpacked: there is no need to hash it again.
+        *lock(&self.checked) = Some((meta.len(), meta.modified().ok()));
+        Ok(binary)
     }
 }
 
-async fn download_extract_verify(
-    url: &str,
-    pin: &agentrq_desktop_core::ext_node::NodePin,
-    temp_archive: &Path,
-    temp_extract_dir: &Path,
-    temp_binary: &Path,
-    client: Option<&reqwest::Client>,
-    on_progress: Option<Arc<dyn Fn(u64, u64) + Send + Sync>>,
-) -> Result<(u64, String), String> {
-    let local_client;
-    let req_client = match client {
-        Some(c) => c,
-        None => {
-            local_client = reqwest::Client::new();
-            &local_client
-        }
-    };
-
-    let response = req_client
-        .get(url)
+/// Fetch the pinned archive into `archive`, refusing anything that is not
+/// its size, and check its SHA-256.
+async fn fetch(
+    source: &Source,
+    archive: &Path,
+    progress: &(dyn Fn(u64, u64, u32) + Send + Sync),
+) -> Result<(), String> {
+    let pin = source.pin;
+    let response = source
+        .client
+        .get(&source.url)
         .send()
         .await
-        .map_err(|e| format!("Failed to download Node.js: {e}"))?;
-
+        .map_err(stalled_or_failed)?;
     if !response.status().is_success() {
-        return Err(format!(
-            "Failed to download Node.js: HTTP {}",
-            response.status()
-        ));
+        return Err(format!("nodejs.org answered {}.", response.status()));
     }
-
-    let total_size = response.content_length().unwrap_or(0);
-    let mut file = tokio::fs::File::create(temp_archive)
-        .await
-        .map_err(err_str)?;
-
-    let mut stream = response.bytes_stream();
-    let mut downloaded = 0u64;
-    let mut archive_hasher = Sha256::new();
-
-    while let Some(chunk_res) = stream.next().await {
-        let chunk = chunk_res.map_err(|e| format!("Download stream interrupted: {e}"))?;
-        archive_hasher.update(&chunk);
-        file.write_all(&chunk).await.map_err(err_str)?;
-        downloaded += chunk.len() as u64;
-        if let Some(ref cb) = on_progress {
-            cb(downloaded, total_size);
+    if response
+        .content_length()
+        .is_some_and(|size| size != pin.archive_size)
+    {
+        return Err(not_pinned());
+    }
+    let mut file = tokio::fs::File::create(archive).await.map_err(failed)?;
+    let mut hasher = Hasher::default();
+    let mut steps = Steps::default();
+    let mut done = 0u64;
+    let mut body = response.bytes_stream();
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk.map_err(stalled_or_failed)?;
+        done += chunk.len() as u64;
+        if done > pin.archive_size {
+            return Err(not_pinned());
+        }
+        hasher.update(&chunk);
+        file.write_all(&chunk).await.map_err(failed)?;
+        if let Some(percent) = steps.advance(done, pin.archive_size) {
+            progress(done, pin.archive_size, percent);
         }
     }
-
-    file.flush().await.map_err(err_str)?;
-    drop(file);
-
-    let actual_archive_hash = format!("{:x}", archive_hasher.finalize());
-    if actual_archive_hash != pin.sha256 {
-        return Err(format!(
-            "SHA-256 mismatch: expected {}, got {}",
-            pin.sha256, actual_archive_hash
-        ));
+    file.flush().await.map_err(failed)?;
+    if hasher.finish() != pin.archive_sha256 {
+        return Err(not_pinned());
     }
-
-    // Extract binary from archive or direct binary
-    extract_artifact(temp_archive, temp_extract_dir, temp_binary, pin.file).await?;
-
-    // Set read-only permissions
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o555);
-        tokio::fs::set_permissions(temp_binary, perms)
-            .await
-            .map_err(err_str)?;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        // Strip quarantine attribute if present so Gatekeeper permits execution.
-        let _ = tokio::process::Command::new("xattr")
-            .args(["-d", "com.apple.quarantine"])
-            .arg(temp_binary)
-            .status()
-            .await;
-    }
-
-    let bin_meta = tokio::fs::metadata(temp_binary).await.map_err(err_str)?;
-    let bin_bytes = tokio::fs::read(temp_binary).await.map_err(err_str)?;
-    let bin_sha256 = compute_sha256(&bin_bytes);
-
-    Ok((bin_meta.len(), bin_sha256))
+    Ok(())
 }
 
-async fn extract_artifact(
-    temp_archive: &Path,
-    temp_extract_dir: &Path,
-    temp_binary: &Path,
-    _filename: &str,
-) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        let _ = temp_extract_dir;
-        tokio::fs::copy(temp_archive, temp_binary)
-            .await
-            .map_err(err_str)?;
-        return Ok(());
-    }
+/// Take the binary out of `archive` into `unpacked`, read-only.
+fn unpack(pin: &NodePin, archive: &Path, unpacked: &Path) -> Result<(), String> {
+    let mut input = io::BufReader::new(std::fs::File::open(archive).map_err(failed)?);
+    let mut output = std::fs::File::create(unpacked).map_err(failed)?;
+    extract(pin, &mut input, &mut output)?;
+    drop(output);
+    read_only(unpacked)
+}
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        // Unix archive (.tar.gz or .tar.xz)
-        tokio::fs::create_dir_all(temp_extract_dir)
-            .await
-            .map_err(err_str)?;
+#[cfg(unix)]
+fn read_only(binary: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(binary, std::fs::Permissions::from_mode(0o555)).map_err(failed)
+}
 
-        let status = tokio::process::Command::new("tar")
-            .arg("-xf")
-            .arg(temp_archive)
-            .arg("-C")
-            .arg(temp_extract_dir)
-            .status()
-            .await
-            .map_err(err_str)?;
+/// Windows keeps it writable: a read-only file cannot be renamed over when
+/// the pin moves.
+#[cfg(not(unix))]
+fn read_only(_: &Path) -> Result<(), String> {
+    Ok(())
+}
 
-        if !status.success() {
-            return Err(format!(
-                "tar extraction failed with exit code: {:?}",
-                status.code()
-            ));
+/// Try `rename`, then again after each wait in `backoff` until it works.
+fn rename_with_retry(
+    rename: &mut dyn FnMut() -> io::Result<()>,
+    backoff: &[Duration],
+) -> io::Result<()> {
+    let mut renamed = rename();
+    for wait in backoff {
+        if renamed.is_ok() {
+            break;
         }
-
-        // Locate the extracted node binary: either in <extract_dir>/bin/node or <extract_dir>/*/bin/node
-        let direct = temp_extract_dir.join("bin").join("node");
-        let mut found_node = if direct.exists() { Some(direct) } else { None };
-
-        if found_node.is_none() {
-            let mut entries = tokio::fs::read_dir(temp_extract_dir)
-                .await
-                .map_err(err_str)?;
-
-            while let Some(entry) = entries.next_entry().await.map_err(err_str)? {
-                let candidate = entry.path().join("bin").join("node");
-                if candidate.exists() {
-                    found_node = Some(candidate);
-                    break;
-                }
-            }
-        }
-
-        let source_node =
-            found_node.ok_or_else(|| "Could not find node binary inside archive.".to_string())?;
-        tokio::fs::copy(&source_node, temp_binary)
-            .await
-            .map_err(err_str)?;
-
-        Ok(())
+        std::thread::sleep(*wait);
+        renamed = rename();
     }
+    renamed
+}
+
+fn stalled_or_failed(error: reqwest::Error) -> String {
+    if error.is_timeout() {
+        return "The Node.js download stalled. Try again.".into();
+    }
+    failed(error)
+}
+
+fn failed(error: impl std::fmt::Display) -> String {
+    format!("The Node.js download failed: {error}")
+}
+
+fn not_pinned() -> String {
+    "The download is not the pinned Node.js build.".into()
 }
 
 static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn unique_temp_id() -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let nanos = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let count = TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     format!("{}-{}-{}", std::process::id(), nanos, count)
 }
 
-/// Describe the current Node status for IPC.
-pub fn node_status_info(data_dir: &Path) -> serde_json::Value {
-    serde_json::json!({
-        "installed": verify_node(data_dir).is_ok(),
-        "version": NODE_VERSION,
-        "size": NODE_DISPLAY_SIZE,
-    })
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::test_server::{closed_port, reply, send, Step, TestServer};
+    use agentrq_desktop_core::ext_node::Packing;
+    use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    #[test]
-    fn helpers_behave_as_expected() {
-        assert_eq!(err_str("disk error"), "disk error");
-        assert_eq!(unsupported_platform(), "Unsupported platform for Node.js.");
-    }
+    /// What a test binary holds.
+    pub const BINARY: &[u8] = b"#!/bin/sh\nexit 0\n";
 
-    #[test]
-    fn node_paths_are_under_data_dir() {
-        let dir = Path::new("/test/appdata");
-        let bin = node_binary_path(dir);
-        assert!(bin.starts_with(dir));
-        let stamp = stamp_path(dir);
-        assert!(stamp.starts_with(dir));
-        assert!(stamp.ends_with("node.sha256"));
-    }
-
-    #[test]
-    fn node_status_info_reports_uninstalled_when_missing() {
-        let temp = tempfile::tempdir().unwrap();
-        let status = node_status_info(temp.path());
-        assert_eq!(status["installed"], false);
-        assert_eq!(status["version"], NODE_VERSION);
-        assert_eq!(status["size"], NODE_DISPLAY_SIZE);
-    }
-
-    #[test]
-    fn verify_node_detects_missing_binary() {
-        let temp = tempfile::tempdir().unwrap();
-        assert!(verify_node(temp.path()).is_err());
-    }
-
-    #[test]
-    fn verify_node_detects_missing_stamp() {
-        let temp = tempfile::tempdir().unwrap();
-        let bin = node_binary_path(temp.path());
-        std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
-        std::fs::write(&bin, b"fake node binary").unwrap();
-        let err = verify_node(temp.path()).unwrap_err();
-        assert!(err.contains("verification stamp is missing"));
-    }
-
-    #[test]
-    fn verify_node_detects_corrupt_stamp() {
-        let temp = tempfile::tempdir().unwrap();
-        let bin = node_binary_path(temp.path());
-        std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
-        std::fs::write(&bin, b"fake node binary").unwrap();
-        let stamp = stamp_path(temp.path());
-        std::fs::write(&stamp, b"bad stamp").unwrap();
-        let err = verify_node(temp.path()).unwrap_err();
-        assert!(err.contains("Corrupted Node.js verification stamp"));
-    }
-
-    #[test]
-    fn verify_node_succeeds_with_valid_stamp_and_readonly_binary() {
-        let temp = tempfile::tempdir().unwrap();
-        let bin = node_binary_path(temp.path());
-        std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
-        let bytes = b"valid node content";
-        std::fs::write(&bin, bytes).unwrap();
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o555)).unwrap();
+    impl Failure {
+        /// Why, in words.
+        pub fn reason(self) -> String {
+            match self {
+                Failure::Cancelled => "cancelled".into(),
+                Failure::Failed(reason) => reason,
+            }
         }
-
-        let pin = current_pin().unwrap();
-        let bin_hash = compute_sha256(bytes);
-        let stamp_content = format_stamp(&bin_hash, bytes.len() as u64, pin.sha256);
-        std::fs::write(stamp_path(temp.path()), stamp_content).unwrap();
-
-        assert_eq!(verify_node(temp.path()).unwrap(), bin);
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn verify_node_refuses_writable_binary() {
-        let temp = tempfile::tempdir().unwrap();
-        let bin = node_binary_path(temp.path());
-        std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
-        let bytes = b"writable node";
-        std::fs::write(&bin, bytes).unwrap();
-
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-        let pin = current_pin().unwrap();
-        let bin_hash = compute_sha256(bytes);
-        let stamp_content = format_stamp(&bin_hash, bytes.len() as u64, pin.sha256);
-        std::fs::write(stamp_path(temp.path()), stamp_content).unwrap();
-
-        let err = verify_node(temp.path()).unwrap_err();
-        assert!(err.contains("permissions are not read-only"));
-    }
-
-    #[tokio::test]
-    async fn download_returns_existing_when_already_verified() {
-        let temp = tempfile::tempdir().unwrap();
-        let bin = node_binary_path(temp.path());
-        std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
-        let bytes = b"valid node content";
-        std::fs::write(&bin, bytes).unwrap();
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o555)).unwrap();
-        }
-
-        let pin = current_pin().unwrap();
-        let bin_hash = compute_sha256(bytes);
-        let stamp_content = format_stamp(&bin_hash, bytes.len() as u64, pin.sha256);
-        std::fs::write(stamp_path(temp.path()), stamp_content).unwrap();
-
-        // No network called when already verified
-        let res =
-            download_and_install_node(temp.path(), None, Some("http://invalid.test"), None, None)
-                .await;
-        assert_eq!(res.unwrap(), bin);
-    }
-
-    #[tokio::test]
-    async fn download_handles_no_network() {
-        let temp = tempfile::tempdir().unwrap();
-        let res =
-            download_and_install_node(temp.path(), None, Some("http://127.0.0.1:1"), None, None)
-                .await;
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert!(err.contains("Failed to download Node.js"));
-        // Nothing installed
-        assert!(!node_binary_path(temp.path()).exists());
-        assert!(!stamp_path(temp.path()).exists());
-    }
-
-    use crate::test_server::{reply, send, Step, TestServer};
-
-    pub(crate) fn make_mock_tarball(node_content: &[u8]) -> (Vec<u8>, String) {
-        let work = tempfile::tempdir().unwrap();
-        let pin = current_pin().unwrap();
-        let root_dir = "node-v24.22.1-test".to_string();
-        let sub = work.path().join(&root_dir).join("bin");
-        std::fs::create_dir_all(&sub).unwrap();
-        let node_mock = sub.join("node");
-        std::fs::write(&node_mock, node_content).unwrap();
-
-        let archive_path = work.path().join(pin.file);
-        let status = std::process::Command::new("tar")
-            .arg("-cf")
-            .arg(&archive_path)
-            .arg("-C")
-            .arg(work.path())
-            .arg(&root_dir)
-            .status()
+    /// A tar.xz with `binary` at `node-test/bin/node`, packed as nodejs.org's are.
+    pub fn archive_of(binary: &[u8]) -> Vec<u8> {
+        let mut tar = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_size(binary.len() as u64);
+        header.set_mode(0o755);
+        tar.append_data(&mut header, "node-test/bin/node", binary)
             .unwrap();
-        assert!(status.success());
-        let archive_bytes = std::fs::read(&archive_path).unwrap();
-        let archive_hash = compute_sha256(&archive_bytes);
-        (archive_bytes, archive_hash)
+        let mut xz =
+            lzma_rust2::XzWriter::new(Vec::new(), lzma_rust2::XzOptions::default()).unwrap();
+        xz.write_all(&tar.into_inner().unwrap()).unwrap();
+        xz.finish().unwrap()
     }
 
-    #[tokio::test]
-    async fn download_handles_http_error() {
-        let server = TestServer::start(|_seen| reply("500 Internal Server Error", &[], "")).await;
-        let temp = tempfile::tempdir().unwrap();
-        let res = download_and_install_node(temp.path(), None, Some(&server.url), None, None).await;
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert!(err.contains("HTTP 500"));
+    fn sha256(bytes: &[u8]) -> &'static str {
+        let mut hasher = Hasher::default();
+        hasher.update(bytes);
+        Box::leak(hasher.finish().into_boxed_str())
     }
 
-    #[tokio::test]
-    async fn download_detects_hash_mismatch() {
-        let server =
-            TestServer::start(|_seen| reply("200 OK", &[], "corrupted archive with bad hash"))
-                .await;
-        let temp = tempfile::tempdir().unwrap();
-        let res = download_and_install_node(temp.path(), None, Some(&server.url), None, None).await;
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert!(err.contains("SHA-256 mismatch"));
-        // Temp files cleaned up, nothing installed
-        assert!(!node_binary_path(temp.path()).exists());
-        assert!(!stamp_path(temp.path()).exists());
+    /// The pin of `archive_of(binary)`.
+    pub fn pin_of(binary: &[u8]) -> &'static NodePin {
+        let archive = archive_of(binary);
+        Box::leak(Box::new(NodePin {
+            archive: "node-test.tar.xz",
+            archive_sha256: sha256(&archive),
+            archive_size: archive.len() as u64,
+            packing: Packing::TarXz,
+            member: "node-test/bin/node",
+            binary_sha256: sha256(binary),
+            binary_size: binary.len() as u64,
+        }))
     }
 
-    #[tokio::test]
-    async fn download_handles_interrupted_stream() {
-        let server = TestServer::start(|_seen| {
-            vec![send(
-                "HTTP/1.1 200 OK\r\nContent-Length: 10000\r\nConnection: close\r\n\r\n1234567890",
-            )]
-        })
-        .await;
-        let temp = tempfile::tempdir().unwrap();
-        let res = download_and_install_node(temp.path(), None, Some(&server.url), None, None).await;
-        assert!(res.is_err());
-        assert!(!node_binary_path(temp.path()).exists());
-        assert!(!stamp_path(temp.path()).exists());
+    /// Node in `dir`, downloading `pin` from `url`.
+    pub fn node_from(dir: &Path, url: &str, pin: &'static NodePin) -> Arc<Node> {
+        node_with(dir, url, pin, Duration::from_secs(10))
     }
 
-    #[tokio::test]
-    async fn download_with_custom_client_and_default_url() {
-        let temp = tempfile::tempdir().unwrap();
+    /// The same, giving up on a download that goes `idle` without a byte.
+    fn node_with(dir: &Path, url: &str, pin: &'static NodePin, idle: Duration) -> Arc<Node> {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_millis(1))
+            .read_timeout(idle)
             .build()
             .unwrap();
-        let res = download_and_install_node(temp.path(), Some(&client), None, None, None).await;
-        assert!(res.is_err());
+        let source = Source {
+            url: url.into(),
+            pin,
+            client,
+        };
+        Node::from_source(dir, Some(source), vec![Duration::from_millis(1); 3])
     }
 
-    #[tokio::test]
-    async fn download_handles_rename_failure() {
-        let temp = tempfile::tempdir().unwrap();
-        let final_bin = node_binary_path(temp.path());
-        std::fs::create_dir_all(final_bin.join("blocker")).unwrap();
-
-        let (archive_bytes, archive_hash) = make_mock_tarball(b"mock node script");
-        let server = TestServer::start(move |_seen| {
-            let mut head = format!(
+    /// A server answering every request with `body`.
+    pub async fn serving(body: Vec<u8>) -> TestServer {
+        TestServer::start(move |_| {
+            let mut answer = format!(
                 "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                archive_bytes.len()
+                body.len()
             )
             .into_bytes();
-            head.extend_from_slice(&archive_bytes);
-            vec![Step::Send(head)]
+            answer.extend_from_slice(&body);
+            vec![Step::Send(answer)]
         })
-        .await;
-
-        let pin = current_pin().unwrap();
-        let mock_pin = agentrq_desktop_core::ext_node::NodePin {
-            file: pin.file,
-            sha256: Box::leak(archive_hash.into_boxed_str()),
-        };
-
-        let res =
-            download_and_install_node(temp.path(), None, Some(&server.url), None, Some(&mock_pin))
-                .await;
-        assert!(res.is_err());
-        assert!(res
-            .unwrap_err()
-            .contains("Could not install Node.js binary"));
-    }
-
-    #[tokio::test]
-    async fn download_handles_stamp_write_failure() {
-        let temp = tempfile::tempdir().unwrap();
-        let final_stamp = stamp_path(temp.path());
-        std::fs::create_dir_all(&final_stamp).unwrap();
-
-        let (archive_bytes, archive_hash) = make_mock_tarball(b"mock node script");
-        let server = TestServer::start(move |_seen| {
-            let mut head = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                archive_bytes.len()
-            )
-            .into_bytes();
-            head.extend_from_slice(&archive_bytes);
-            vec![Step::Send(head)]
-        })
-        .await;
-
-        let pin = current_pin().unwrap();
-        let mock_pin = agentrq_desktop_core::ext_node::NodePin {
-            file: pin.file,
-            sha256: Box::leak(archive_hash.into_boxed_str()),
-        };
-
-        let res =
-            download_and_install_node(temp.path(), None, Some(&server.url), None, Some(&mock_pin))
-                .await;
-        assert!(res.is_err());
-        assert!(res
-            .unwrap_err()
-            .contains("Could not write Node.js verification stamp"));
-        assert!(!node_binary_path(temp.path()).exists());
-    }
-
-    #[tokio::test]
-    async fn download_handles_archive_missing_node_binary() {
-        let temp = tempfile::tempdir().unwrap();
-        let work = tempfile::tempdir().unwrap();
-        let sub = work.path().join("other");
-        std::fs::create_dir_all(&sub).unwrap();
-        std::fs::write(sub.join("file.txt"), b"other content").unwrap();
-
-        let pin = current_pin().unwrap();
-        let archive_path = work.path().join(pin.file);
-        let status = std::process::Command::new("tar")
-            .arg("-cf")
-            .arg(&archive_path)
-            .arg("-C")
-            .arg(work.path())
-            .arg("other")
-            .status()
-            .unwrap();
-        assert!(status.success());
-        let archive_bytes = std::fs::read(&archive_path).unwrap();
-        let archive_hash = compute_sha256(&archive_bytes);
-
-        let server = TestServer::start(move |_seen| {
-            let mut head = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                archive_bytes.len()
-            )
-            .into_bytes();
-            head.extend_from_slice(&archive_bytes);
-            vec![Step::Send(head)]
-        })
-        .await;
-
-        let mock_pin = agentrq_desktop_core::ext_node::NodePin {
-            file: pin.file,
-            sha256: Box::leak(archive_hash.into_boxed_str()),
-        };
-
-        let res =
-            download_and_install_node(temp.path(), None, Some(&server.url), None, Some(&mock_pin))
-                .await;
-        assert!(res.is_err());
-        assert!(res.unwrap_err().contains("Could not find node binary"));
-    }
-
-    #[tokio::test]
-    async fn extract_handles_invalid_tar() {
-        let temp = tempfile::tempdir().unwrap();
-        let corrupt_tar = temp.path().join("corrupt.tar");
-        std::fs::write(&corrupt_tar, b"not a tar file").unwrap();
-        let extract_dir = temp.path().join("extract");
-        let bin = temp.path().join("node");
-        let res = extract_artifact(&corrupt_tar, &extract_dir, &bin, "node.tar.xz").await;
-        assert!(res.is_err());
-        assert!(res.unwrap_err().contains("tar extraction failed"));
-    }
-
-    #[tokio::test]
-    async fn extract_finds_direct_bin_node() {
-        let temp = tempfile::tempdir().unwrap();
-        let work = tempfile::tempdir().unwrap();
-        let sub = work.path().join("bin");
-        std::fs::create_dir_all(&sub).unwrap();
-        let node_mock = sub.join("node");
-        std::fs::write(&node_mock, b"mock node script").unwrap();
-
-        let archive_path = temp.path().join("direct.tar");
-        let status = std::process::Command::new("tar")
-            .arg("-cf")
-            .arg(&archive_path)
-            .arg("-C")
-            .arg(work.path())
-            .arg("bin")
-            .status()
-            .unwrap();
-        assert!(status.success());
-
-        let extract_dir = temp.path().join("extract");
-        let bin = temp.path().join("node_out");
-        extract_artifact(&archive_path, &extract_dir, &bin, "node.tar.gz")
-            .await
-            .unwrap();
-        assert!(bin.exists());
-    }
-
-    #[tokio::test]
-    async fn download_extracts_and_installs_successfully() {
-        let temp = tempfile::tempdir().unwrap();
-        let (archive_bytes, archive_hash) = make_mock_tarball(b"mock node script");
-
-        let server = TestServer::start(move |_seen| {
-            let mut head = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                archive_bytes.len()
-            )
-            .into_bytes();
-            head.extend_from_slice(&archive_bytes);
-            vec![Step::Send(head)]
-        })
-        .await;
-
-        let pin = current_pin().unwrap();
-        let mock_pin = agentrq_desktop_core::ext_node::NodePin {
-            file: pin.file,
-            sha256: Box::leak(archive_hash.into_boxed_str()),
-        };
-
-        let progress_recorded = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let p_rec = progress_recorded.clone();
-        let on_progress: Arc<dyn Fn(u64, u64) + Send + Sync> = Arc::new(move |_d, _t| {
-            p_rec.store(true, std::sync::atomic::Ordering::Relaxed);
-        });
-
-        let bin = download_and_install_node(
-            temp.path(),
-            None,
-            Some(&server.url),
-            Some(on_progress),
-            Some(&mock_pin),
-        )
         .await
-        .unwrap();
+    }
 
-        assert!(progress_recorded.load(std::sync::atomic::Ordering::Relaxed));
-        assert!(bin.exists());
-        assert!(stamp_path(temp.path()).exists());
-        let content = std::fs::read_to_string(stamp_path(temp.path())).unwrap();
-        let stamp = parse_stamp(&content).unwrap();
-        let meta = std::fs::metadata(&bin).unwrap();
-        let bytes = std::fs::read(&bin).unwrap();
-        assert!(
-            validate_stamp(&stamp, mock_pin.sha256, meta.len(), &compute_sha256(&bytes)).is_ok()
+    pub fn quiet(_: u64, _: u64, _: u32) {}
+
+    /// What is in `bin`, by name.
+    fn listing(node: &Node) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(&node.bin)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[tokio::test]
+    async fn downloads_checks_and_installs_the_pinned_build() {
+        let dir = tempfile::tempdir().unwrap();
+        let pin = pin_of(BINARY);
+        let server = serving(archive_of(BINARY)).await;
+        let node = node_from(dir.path(), &server.url, pin);
+        assert_eq!(node.check(), Health::Missing);
+        let heard = Mutex::new(Vec::new());
+        let progress = |done, total, percent| lock(&heard).push((done, total, percent));
+        let binary = node.download(&progress).await.unwrap();
+        assert_eq!(binary, dir.path().join("bin").join(BINARY_NAME));
+        assert_eq!(std::fs::read(&binary).unwrap(), BINARY);
+        assert_eq!(listing(&node), vec![BINARY_NAME.to_string()]);
+        let heard = lock(&heard).clone();
+        assert_eq!(
+            heard.last(),
+            Some(&(pin.archive_size, pin.archive_size, 100))
         );
-
+        // Once per whole percent, and only forwards.
+        let percents: Vec<u32> = heard.iter().map(|step| step.2).collect();
+        let mut rising = percents.clone();
+        rising.sort_unstable();
+        rising.dedup();
+        assert_eq!(percents, rising);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(&bin).unwrap().permissions().mode();
-            assert_eq!(mode & 0o222, 0); // read only
+            let mode = std::fs::metadata(&binary).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o555);
         }
+        assert_eq!(node.check(), Health::Ready(binary.clone()));
+        assert_eq!(node.verify(), Ok(binary.clone()));
+
+        // Already there: nothing is fetched again.
+        assert_eq!(node.download(&quiet).await, Ok(binary));
+        assert_eq!(server.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn two_installs_at_once_download_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = serving(archive_of(BINARY)).await;
+        let node = node_from(dir.path(), &server.url, pin_of(BINARY));
+        let (first, second) = tokio::join!(node.download(&quiet), node.download(&quiet));
+        assert_eq!(first, second);
+        assert_eq!(first, Ok(node.binary()));
+        assert_eq!(server.requests().len(), 1);
+    }
+
+    #[test]
+    fn checks_the_binary_against_its_pin_and_hashes_it_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let pin = pin_of(BINARY);
+        let node = node_from(dir.path(), "", pin);
+        std::fs::create_dir_all(&node.bin).unwrap();
+        let binary = node.binary();
+
+        // The pinned build, put there by hand.
+        std::fs::write(&binary, BINARY).unwrap();
+        assert_eq!(node.check(), Health::Ready(binary.clone()));
+        assert!(lock(&node.checked).is_some(), "cached");
+
+        // Tampered, at the same size: a new modified time misses the cache.
+        let tampered: Vec<u8> = BINARY.iter().rev().copied().collect();
+        std::fs::write(&binary, &tampered).unwrap();
+        let file = std::fs::File::options().write(true).open(&binary).unwrap();
+        file.set_modified(SystemTime::UNIX_EPOCH).unwrap();
+        drop(file);
+        assert_eq!(node.check(), Health::Outdated);
+        assert_eq!(node.verify(), Err(needs_node()));
+
+        // Another size, which is not even hashed.
+        std::fs::write(&binary, b"node").unwrap();
+        assert_eq!(node.check(), Health::Outdated);
+
+        // What an older pin installed: the pin has moved on.
+        let older = node_from(dir.path(), "", pin_of(b"#!/bin/sh\nexit 1\n"));
+        std::fs::write(&binary, BINARY).unwrap();
+        assert_eq!(older.check(), Health::Outdated);
+        assert_eq!(node.check(), Health::Ready(binary.clone()));
+
+        // Something that cannot be read as a file.
+        std::fs::remove_file(&binary).unwrap();
+        std::fs::create_dir_all(binary.join("x")).unwrap();
+        let size = std::fs::metadata(&binary).unwrap().len();
+        let folder = node_from(
+            dir.path(),
+            "",
+            Box::leak(Box::new(NodePin {
+                binary_size: size,
+                ..*pin
+            })),
+        );
+        assert_eq!(folder.check(), Health::Outdated);
+    }
+
+    #[tokio::test]
+    async fn an_update_replaces_the_binary_of_an_older_pin() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = b"#!/bin/sh\nexit 1\n";
+        let server = serving(archive_of(old)).await;
+        let before = node_from(dir.path(), &server.url, pin_of(old));
+        before.download(&quiet).await.unwrap();
+
+        // The app updates, and its pin with it.
+        let server = serving(archive_of(BINARY)).await;
+        let pin = pin_of(BINARY);
+        let after = node_from(dir.path(), &server.url, pin);
+        let health = after.checked().await;
+        assert_eq!(health, Health::Outdated);
+        assert_eq!(
+            after.status(&health),
+            json!({"installed": false, "update": true, "version": NODE_VERSION,
+                   "size": pin.archive_size})
+        );
+        let binary = after.download(&quiet).await.unwrap();
+        assert_eq!(std::fs::read(&binary).unwrap(), BINARY);
+        assert_eq!(after.check(), Health::Ready(binary));
+        assert_eq!(listing(&after), vec![BINARY_NAME.to_string()]);
+    }
+
+    #[test]
+    fn downloads_from_nodejs_org_and_says_what_the_page_shows() {
+        let dir = tempfile::tempdir().unwrap();
+        let node = Node::new(dir.path());
+        let pin = current_pin().unwrap();
+        assert_eq!(
+            node.status(&Health::Missing),
+            json!({"installed": false, "update": false, "version": NODE_VERSION,
+                   "size": pin.archive_size})
+        );
+        assert_eq!(
+            node.status(&Health::Ready(node.binary()))["installed"],
+            true
+        );
+        assert_eq!(node.source.as_ref().unwrap().url, download_url(pin));
+        assert_eq!(node.rename_backoff, RENAME_BACKOFF);
+        let unsupported = Node::from_source(dir.path(), None, vec![]);
+        assert_eq!(unsupported.status(&Health::Missing)["size"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn refuses_anything_but_https() {
+        let gone = closed_port().await;
+        let error = client().get(&gone).send().await.unwrap_err();
+        let why = std::error::Error::source(&error).map(ToString::to_string);
+        assert_eq!(why.as_deref(), Some("URL scheme is not allowed"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn has_nothing_to_download_where_nothing_is_pinned() {
+        let dir = tempfile::tempdir().unwrap();
+        let node = Node::from_source(dir.path(), None, vec![]);
+        std::fs::create_dir_all(&node.bin).unwrap();
+        std::fs::write(node.binary(), BINARY).unwrap();
+        assert_eq!(node.check(), Health::Missing);
+        assert_eq!(
+            node.download(&quiet).await.unwrap_err().reason(),
+            "There is no Node.js build for this computer."
+        );
+    }
+
+    /// Download from a server that answers with `steps`: why it failed, and
+    /// what it left in `bin`.
+    async fn failure(steps: Vec<Step>, pin: &'static NodePin) -> (String, Vec<String>) {
+        let server = TestServer::start(move |_| steps.clone()).await;
+        let dir = tempfile::tempdir().unwrap();
+        let node = node_with(dir.path(), &server.url, pin, Duration::from_millis(300));
+        let reason = node.download(&quiet).await.unwrap_err().reason();
+        (reason, listing(&node))
+    }
+
+    #[tokio::test]
+    async fn says_why_a_download_failed_and_leaves_nothing_behind() {
+        let pin = pin_of(BINARY);
+        let archive = archive_of(BINARY);
+        let head = |length: usize| {
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n")
+        };
+        let other_binary = Box::leak(Box::new(NodePin {
+            binary_sha256: sha256(b"another"),
+            ..*pin
+        }));
+        let cases: Vec<(Vec<Step>, &NodePin, &str)> = vec![
+            (
+                reply("500 Internal Server Error", &[], ""),
+                pin,
+                "nodejs.org answered 500 Internal Server Error.",
+            ),
+            // A Content-Length that is not the pin's.
+            (
+                vec![send(&head(archive.len() + 1))],
+                pin,
+                "The download is not the pinned Node.js build.",
+            ),
+            // No Content-Length, and more bytes than the pin's.
+            (
+                vec![
+                    send("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n"),
+                    Step::Send([archive.clone(), b"!".to_vec()].concat()),
+                ],
+                pin,
+                "The download is not the pinned Node.js build.",
+            ),
+            // The right size, the wrong bytes.
+            (
+                vec![
+                    send(&head(archive.len())),
+                    Step::Send(vec![b'x'; archive.len()]),
+                ],
+                pin,
+                "The download is not the pinned Node.js build.",
+            ),
+            // The pinned archive, with another binary pinned.
+            (
+                vec![send(&head(archive.len())), Step::Send(archive.clone())],
+                other_binary,
+                "The Node.js binary in the download is not the pinned build.",
+            ),
+            // Cut off part way.
+            (
+                vec![
+                    send(&head(archive.len())),
+                    Step::Send(archive[..10].to_vec()),
+                ],
+                pin,
+                "The Node.js download failed: ",
+            ),
+            // Stalled part way: the idle limit ends it.
+            (
+                vec![
+                    send(&head(archive.len())),
+                    Step::Send(archive[..10].to_vec()),
+                    Step::Wait(600_000),
+                ],
+                pin,
+                "The Node.js download stalled. Try again.",
+            ),
+        ];
+        for (index, (steps, pin, reason)) in cases.into_iter().enumerate() {
+            let (said, left) = failure(steps, pin).await;
+            assert!(said.starts_with(reason), "{index}: {said}");
+            assert!(left.is_empty(), "{index}: left {left:?}");
+        }
+        let gone = closed_port().await;
+        let dir = tempfile::tempdir().unwrap();
+        let reason = node_from(dir.path(), &gone, pin)
+            .download(&quiet)
+            .await
+            .unwrap_err()
+            .reason();
+        assert!(
+            reason.starts_with("The Node.js download failed: "),
+            "{reason}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_cancel_stops_the_download_and_leaves_nothing_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = archive_of(BINARY);
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            archive.len()
+        );
+        let first = archive[..10].to_vec();
+        let server = TestServer::start(move |_| {
+            vec![send(&head), Step::Send(first.clone()), Step::Wait(600_000)]
+        })
+        .await;
+        let node = node_from(dir.path(), &server.url, pin_of(BINARY));
+        assert!(!node.cancel(), "nothing to cancel yet");
+        let started = tokio::sync::Notify::new();
+        let progress = |_, _, _| started.notify_one();
+        let cancel = async {
+            tokio::time::timeout(Duration::from_secs(10), started.notified())
+                .await
+                .expect("the first bytes arrive");
+            assert!(node.cancel());
+        };
+        let (cancelled, ()) = tokio::join!(node.download(&progress), cancel);
+        assert_eq!(cancelled.unwrap_err().reason(), "cancelled");
+        assert!(listing(&node).is_empty(), "{:?}", listing(&node));
+        assert!(!node.cancel(), "nothing left to cancel");
+    }
+
+    #[tokio::test]
+    async fn sweeps_what_a_quit_mid_download_left() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = serving(archive_of(BINARY)).await;
+        let node = node_from(dir.path(), &server.url, pin_of(BINARY));
+        node.sweep();
+        std::fs::create_dir_all(&node.bin).unwrap();
+        for name in [".node-download-1-2-3.tmp", ".node-bin-1-2-3.tmp", "keep"] {
+            std::fs::write(node.bin.join(name), b"x").unwrap();
+        }
+        node.download(&quiet).await.unwrap();
+        assert_eq!(listing(&node), vec!["keep".to_string(), BINARY_NAME.into()]);
+    }
+
+    #[tokio::test]
+    async fn says_when_it_cannot_put_the_binary_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = serving(archive_of(BINARY)).await;
+        let node = node_from(dir.path(), &server.url, pin_of(BINARY));
+        std::fs::create_dir_all(node.binary().join("in the way")).unwrap();
+        let reason = node.download(&quiet).await.unwrap_err().reason();
+        assert!(
+            reason.starts_with("Could not put Node.js in place: "),
+            "{reason}"
+        );
+        assert_eq!(listing(&node), vec![BINARY_NAME.to_string()]);
+
+        // Nowhere to write the download.
+        let blocked = tempfile::tempdir().unwrap();
+        std::fs::write(blocked.path().join("bin"), b"a file").unwrap();
+        let node = node_from(blocked.path(), &server.url, pin_of(BINARY));
+        let reason = node.download(&quiet).await.unwrap_err().reason();
+        assert!(
+            reason.starts_with("The Node.js download failed: "),
+            "{reason}"
+        );
+    }
+
+    #[test]
+    fn unpacking_says_why_it_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("a.tar.xz");
+        std::fs::write(&archive, archive_of(BINARY)).unwrap();
+        let pin = pin_of(BINARY);
+        let gone = dir.path().join("gone");
+        assert!(unpack(pin, &gone, &dir.path().join("out")).is_err());
+        assert!(unpack(pin, &archive, &gone.join("out")).is_err());
+        assert_eq!(unpack(pin, &archive, &dir.path().join("out")), Ok(()));
+        #[cfg(unix)]
+        assert!(read_only(&gone).is_err());
+    }
+
+    #[test]
+    fn retries_a_rename_until_it_works_or_the_waits_run_out() {
+        let tries = AtomicUsize::new(0);
+        let mut busy_twice = || match tries.fetch_add(1, Ordering::SeqCst) {
+            0 | 1 => Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+            _ => Ok(()),
+        };
+        let waits = [Duration::from_millis(1); 5];
+        assert!(rename_with_retry(&mut busy_twice, &waits).is_ok());
+        assert_eq!(tries.load(Ordering::SeqCst), 3);
+
+        let tries = AtomicUsize::new(0);
+        let mut always_busy = || {
+            tries.fetch_add(1, Ordering::SeqCst);
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        };
+        assert!(rename_with_retry(&mut always_busy, &waits).is_err());
+        assert_eq!(tries.load(Ordering::SeqCst), 6);
+        assert_eq!(
+            RENAME_BACKOFF.iter().sum::<Duration>(),
+            Duration::from_millis(5150)
+        );
     }
 }

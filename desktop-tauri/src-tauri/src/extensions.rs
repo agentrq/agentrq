@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use agentrq_desktop_core::ext_host::{fetch_allowed, unavailable};
+use agentrq_desktop_core::ext_node::needs_node as needs_node_reason;
 use agentrq_desktop_core::protocol::{
     drawer_lookup, filter_request_headers, filter_response_headers, proxy_error_reply, sends_body,
     DrawerLookup, ProxyError,
@@ -21,9 +22,10 @@ use agentrq_desktop_core::protocol::{
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager, Runtime, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Runtime, State, WebviewWindow};
 
 use crate::ext_host::{Answer, ExtHost, Services};
+use crate::ext_node::{Failure, Health};
 use crate::network::{Network, KEYCHAIN_DEADLINE};
 use crate::scheme::Drawers;
 use crate::upstream::{self, pairs, BodyLimits, Outgoing};
@@ -289,82 +291,76 @@ impl Drawers for HostDrawers {
 /// What arrives as an object: a grant, settings, a context or a target.
 type Object = serde_json::Map<String, Value>;
 
-/// `agentrq:extensions:state`
+/// Where the Node download's progress goes: an event of its own, since
+/// `agentrq:extensions:changed` makes the page reload everything.
+pub const NODE_PROGRESS: &str = "agentrq:extensions:node-progress";
+
+/// `agentrq:extensions:state`, with what the page says about Node. Without
+/// the pinned Node the host cannot run, so the page is read from disk.
 #[tauri::command]
 pub async fn extensions_state(host: State<'_, Arc<ExtHost>>) -> Result<Value, String> {
-    if host.is_production_node() && crate::ext_node::verify_node(host.data_dir()).is_err() {
-        return Ok(json!({
-            "index": { "entries": [] },
-            "installed": [],
-            "nodeInstalled": false,
-            "nodeDownloadSize": "about 40 MB",
-        }));
-    }
-    let mut state = host.call("state", json!({})).await?;
-    if let Value::Object(ref mut map) = state {
-        map.insert("nodeInstalled".to_string(), json!(true));
+    let Some(node) = host.node().cloned() else {
+        return host.call("state", json!({})).await;
+    };
+    let health = node.checked().await;
+    let mut state = match health {
+        Health::Ready(_) => host.call("state", json!({})).await?,
+        _ => host.state_from_disk(),
+    };
+    if let Value::Object(map) = &mut state {
+        map.insert("node".into(), node.status(&health));
     }
     Ok(state)
+}
+
+/// Why a call that needs the host cannot be made yet, if it cannot: Node is
+/// downloaded only from `extensions_download_node`, never on the way.
+async fn needs_node(host: &ExtHost) -> Option<Value> {
+    let node = host.node()?;
+    match node.checked().await {
+        Health::Ready(_) => None,
+        _ => Some(json!({ "ok": false, "needsNode": true, "reason": needs_node_reason() })),
+    }
 }
 
 /// `agentrq:extensions:refresh`
 #[tauri::command]
 pub async fn extensions_refresh(host: State<'_, Arc<ExtHost>>) -> Result<Value, String> {
-    if host.is_production_node() && crate::ext_node::verify_node(host.data_dir()).is_err() {
-        return Ok(json!({ "entries": [] }));
+    if let Some(refusal) = needs_node(&host).await {
+        return Ok(refusal);
     }
     host.call("refresh", json!({})).await
 }
 
-async fn ensure_node_available_internal<R: Runtime>(
-    app: &AppHandle<R>,
-    host: &ExtHost,
-    base_url: Option<&str>,
-    pin_override: Option<&agentrq_desktop_core::ext_node::NodePin>,
-) -> Result<(), String> {
-    let check = match pin_override {
-        Some(pin) => crate::ext_node::verify_node_with_pin(host.data_dir(), pin),
-        None => crate::ext_node::verify_node(host.data_dir()),
+/// `extensions.downloadNode()`, Tauri's own: the one place Node is
+/// downloaded, from the page's own button. Once it is there, the enabled
+/// extensions start.
+#[tauri::command]
+pub async fn extensions_download_node<R: Runtime>(
+    app: AppHandle<R>,
+    host: State<'_, Arc<ExtHost>>,
+) -> Result<Value, String> {
+    let Some(node) = host.node().cloned() else {
+        return Ok(json!({ "ok": true }));
     };
-    if host.is_production_node() && check.is_err() {
-        let emitter = app.clone();
-        let progress_emitter = emitter.clone();
-        let on_progress: Arc<dyn Fn(u64, u64) + Send + Sync> =
-            Arc::new(move |downloaded, total| {
-                let percent = ((downloaded as f64 / (total.max(1)) as f64) * 100.0).round() as u32;
-                let _ = progress_emitter.emit(
-                    "agentrq:extensions:changed",
-                    json!({
-                        "reason": "node-download-progress",
-                        "downloaded": downloaded,
-                        "total": total,
-                        "percent": percent,
-                    }),
-                );
-            });
-        crate::ext_node::download_and_install_node(
-            host.data_dir(),
-            None,
-            base_url,
-            Some(on_progress),
-            pin_override,
-        )
-        .await?;
-        let _ = emitter.emit(
-            "agentrq:extensions:changed",
-            json!({
-                "reason": "node-download-complete",
-            }),
-        );
-    }
-    Ok(())
+    let progress = move |downloaded, total, percent| {
+        let detail = json!({ "downloaded": downloaded, "total": total, "percent": percent });
+        let _ = app.emit(NODE_PROGRESS, detail);
+    };
+    Ok(match node.download(&progress).await {
+        Ok(_) => {
+            host.boot();
+            json!({ "ok": true })
+        }
+        Err(Failure::Cancelled) => json!({ "ok": false, "cancelled": true }),
+        Err(Failure::Failed(reason)) => json!({ "ok": false, "reason": reason }),
+    })
 }
 
-async fn ensure_node_available<R: Runtime>(
-    app: &AppHandle<R>,
-    host: &ExtHost,
-) -> Result<(), String> {
-    ensure_node_available_internal(app, host, None, None).await
+/// `extensions.cancelNodeDownload()`, Tauri's own: whether one was stopped.
+#[tauri::command]
+pub fn extensions_cancel_node_download(host: State<'_, Arc<ExtHost>>) -> bool {
+    host.node().is_some_and(|node| node.cancel())
 }
 
 /// `agentrq:extensions:choose-folder`: the dialog here, the reading in the
@@ -375,28 +371,26 @@ pub async fn extensions_choose_folder<R: Runtime>(
     host: State<'_, Arc<ExtHost>>,
     picker: State<'_, Picker<R>>,
 ) -> Result<Value, String> {
-    match (picker.0)(window.clone()).await {
-        Some(path) => {
-            ensure_node_available(window.app_handle(), &host).await?;
-            host.call("inspect", json!({ "path": path })).await
-        }
+    if let Some(refusal) = needs_node(&host).await {
+        return Ok(refusal);
+    }
+    match (picker.0)(window).await {
+        Some(path) => host.call("inspect", json!({ "path": path })).await,
         None => Ok(json!({ "ok": false, "cancelled": true })),
     }
 }
 
 /// `agentrq:extensions:install-local`
 #[tauri::command]
-pub async fn extensions_install_local<R: Runtime>(
-    app: AppHandle<R>,
+pub async fn extensions_install_local(
     host: State<'_, Arc<ExtHost>>,
     path: Option<String>,
     grant: Option<Object>,
     config: Option<Object>,
 ) -> Result<Value, String> {
-    ensure_node_available(&app, &host).await?;
-    let Some(path) = path else {
-        return Ok(json!({ "ok": true }));
-    };
+    if let Some(refusal) = needs_node(&host).await {
+        return Ok(refusal);
+    }
     let params = json!({ "path": path, "grant": grant, "config": config });
     host.call("installLocal", params).await
 }
@@ -404,17 +398,15 @@ pub async fn extensions_install_local<R: Runtime>(
 /// `agentrq:extensions:install-catalogue`: only the name crosses; the host
 /// looks the entry up in its own index.
 #[tauri::command]
-pub async fn extensions_install_catalogue<R: Runtime>(
-    app: AppHandle<R>,
+pub async fn extensions_install_catalogue(
     host: State<'_, Arc<ExtHost>>,
     full_name: Option<String>,
     grant: Option<Object>,
     config: Option<Object>,
 ) -> Result<Value, String> {
-    ensure_node_available(&app, &host).await?;
-    let Some(full_name) = full_name else {
-        return Ok(json!({ "ok": true }));
-    };
+    if let Some(refusal) = needs_node(&host).await {
+        return Ok(refusal);
+    }
     let params = json!({ "fullName": full_name, "grant": grant, "config": config });
     host.call("installFromCatalogue", params).await
 }
@@ -545,6 +537,7 @@ mod tests {
         get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime, INVOKE_KEY,
     };
     use tauri::webview::InvokeRequest;
+    use tauri::{Listener, Manager};
 
     #[cfg(windows)]
     const LOCAL: &str = "http://tauri.localhost";
@@ -887,8 +880,17 @@ mod tests {
     }
 
     fn call(app: &App, cmd: &str, args: Value) -> Result<Value, Value> {
+        call_on(&app.webview, cmd, args)
+    }
+
+    /// [`call`], from any thread.
+    fn call_on(
+        webview: &tauri::WebviewWindow<MockRuntime>,
+        cmd: &str,
+        args: Value,
+    ) -> Result<Value, Value> {
         get_ipc_response(
-            &app.webview,
+            webview,
             InvokeRequest {
                 cmd: cmd.into(),
                 callback: CallbackFn(0),
@@ -902,8 +904,10 @@ mod tests {
         .map(|body| body.deserialize().unwrap())
     }
 
-    const COMMANDS: [&str; 16] = [
+    const COMMANDS: [&str; 18] = [
         "extensions_state",
+        "extensions_download_node",
+        "extensions_cancel_node_download",
         "extensions_refresh",
         "extensions_choose_folder",
         "extensions_install_local",
@@ -1195,15 +1199,25 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn extensions_state_and_install_with_production_node() {
+    /// An app whose host is checked against a Node from `url`, and run as
+    /// the echo, with one extension installed and a catalogue cached.
+    fn on_node(url: &str) -> (App, Arc<crate::ext_node::Node>) {
+        use crate::ext_node::tests::{node_from, pin_of, BINARY};
         let dir = tempfile::tempdir().unwrap();
-        let prod_bin = crate::ext_node::node_binary_path(dir.path());
-        let host = ExtHost::new(
-            crate::ext_host::Launch {
-                program: prod_bin,
-                args: vec![],
-            },
+        std::fs::write(
+            dir.path().join("extensions-installed.json"),
+            r#"{"installations":[{"name":"x","version":"1.0.0"}]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("extensions-catalogue.json"),
+            r#"{"entries":[{"ok":true,"fullName":"a/b"}],"fetchedAt":1}"#,
+        )
+        .unwrap();
+        let node = node_from(dir.path(), url, pin_of(BINARY));
+        let host = ExtHost::checked_by(
+            script_launch(ECHO),
+            node.clone(),
             dir.path().into(),
             Arc::new(FakeServices::default()),
         );
@@ -1217,93 +1231,145 @@ mod tests {
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .expect("mock window");
-        let app_rig = App {
+        let app = App {
             _app: app,
             webview,
             _dir: dir,
         };
+        (app, node)
+    }
 
-        // Node is missing: state returns uninstalled cleanly without starting Node
-        let state = call(&app_rig, "extensions_state", json!({})).unwrap();
-        assert_eq!(state["nodeInstalled"], false);
-        assert_eq!(state["nodeDownloadSize"], "about 40 MB");
+    #[test]
+    fn without_node_the_page_reads_from_disk_and_nothing_downloads_on_the_way() {
+        let (app, node) = on_node("");
+        let state = call(&app, "extensions_state", json!({})).unwrap();
+        assert_eq!(state["index"]["entries"][0]["fullName"], "a/b");
+        assert_eq!(state["installed"][0]["name"], "x");
+        assert_eq!(state["installed"][0]["loaded"], false);
+        assert_eq!(state["node"]["installed"], false);
+        assert_eq!(state["node"]["update"], false);
+        assert_eq!(
+            state["node"]["version"],
+            agentrq_desktop_core::ext_node::NODE_VERSION
+        );
 
-        // refresh returns empty entries when node missing without crashing
-        let refreshed = call(&app_rig, "extensions_refresh", json!({})).unwrap();
-        assert_eq!(refreshed["entries"], json!([]));
+        let refused = json!({
+            "ok": false,
+            "needsNode": true,
+            "reason": needs_node_reason(),
+        });
+        for (cmd, args) in [
+            ("extensions_refresh", json!({})),
+            ("extensions_choose_folder", json!({})),
+            ("extensions_install_local", json!({"path": "/p"})),
+            ("extensions_install_catalogue", json!({"fullName": "a/b"})),
+        ] {
+            assert_eq!(call(&app, cmd, args), Ok(refused.clone()), "{cmd}");
+        }
+        // Nothing was fetched, and the host never started.
+        assert!(!node.binary().exists());
+        assert!(!app.webview.state::<Arc<ExtHost>>().is_running());
+        // A call that needs the host says why it cannot have it.
+        assert_eq!(
+            call(&app, "extensions_uninstall", json!({"name": "x"})),
+            Err(json!(needs_node_reason()))
+        );
+    }
 
-        // Choose folder cancelled when picker returns None
-        let chosen = call(&app_rig, "extensions_choose_folder", json!({})).unwrap();
-        assert_eq!(chosen["cancelled"], true);
+    #[test]
+    fn downloads_node_only_when_asked_then_starts_what_is_enabled() {
+        use crate::ext_node::tests::{archive_of, serving, BINARY};
+        let server = tauri::async_runtime::block_on(serving(archive_of(BINARY)));
+        let (app, node) = on_node(&server.url);
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let log = heard.clone();
+        app.webview.listen(NODE_PROGRESS, move |event| {
+            let detail: Value = serde_json::from_str(event.payload()).unwrap();
+            log.lock().unwrap().push(detail["percent"].clone());
+        });
+        assert_eq!(
+            call(&app, "extensions_download_node", json!({})),
+            Ok(json!({"ok": true}))
+        );
+        assert_eq!(heard.lock().unwrap().last(), Some(&json!(100)));
+        assert_eq!(node.check(), crate::ext_node::Health::Ready(node.binary()));
+        // The installed extension is wanted, so its host started.
+        assert!(app.webview.state::<Arc<ExtHost>>().is_running());
 
-        // Download mock verified node via ensure_node_available_internal
-        let (archive_bytes, archive_hash) =
-            crate::ext_node::tests::make_mock_tarball(b"#!/bin/sh\nexit 0\n");
-        let server = TestServer::start(move |_seen| {
-            let mut head = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                archive_bytes.len()
-            )
-            .into_bytes();
-            head.extend_from_slice(&archive_bytes);
-            vec![Step::Send(head)]
-        })
-        .await;
+        let state = call(&app, "extensions_state", json!({})).unwrap();
+        assert_eq!(state["method"], "state");
+        assert_eq!(state["node"]["installed"], true);
+        assert_eq!(
+            call(&app, "extensions_refresh", json!({})).unwrap()["method"],
+            "refresh"
+        );
+        assert_eq!(
+            call(&app, "extensions_choose_folder", json!({})),
+            Ok(json!({"ok": false, "cancelled": true}))
+        );
+        assert_eq!(server.requests().len(), 1);
+        let host = app.webview.state::<Arc<ExtHost>>().inner().clone();
+        tauri::async_runtime::block_on(async move { host.stop() });
+    }
 
-        let pin = agentrq_desktop_core::ext_node::current_pin().unwrap();
-        let mock_pin = agentrq_desktop_core::ext_node::NodePin {
-            file: pin.file,
-            sha256: Box::leak(archive_hash.into_boxed_str()),
-        };
+    #[test]
+    fn a_download_says_why_it_failed_or_that_it_was_cancelled() {
+        let (app, _) = on_node(&closed_port_blocking());
+        let failed = call(&app, "extensions_download_node", json!({})).unwrap();
+        assert_eq!(failed["ok"], false);
+        assert!(
+            failed["reason"]
+                .as_str()
+                .unwrap()
+                .starts_with("The Node.js download failed: "),
+            "{failed}"
+        );
 
-        ensure_node_available_internal(
-            app_rig.webview.app_handle(),
-            &app_rig.webview.state::<Arc<ExtHost>>(),
-            Some(&server.url),
-            Some(&mock_pin),
-        )
-        .await
-        .unwrap();
+        // The pinned length, then ten bytes, then nothing.
+        let length = crate::ext_node::tests::archive_of(crate::ext_node::tests::BINARY).len();
+        let server = tauri::async_runtime::block_on(TestServer::start(move |_| {
+            let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\n\r\n");
+            vec![send(&head), send("0123456789"), Step::Wait(600_000)]
+        }));
+        let (app, _) = on_node(&server.url);
+        assert_eq!(
+            call(&app, "extensions_cancel_node_download", json!({})),
+            Ok(json!(false))
+        );
+        let started = Arc::new(Mutex::new(false));
+        let seen = started.clone();
+        app.webview.listen(NODE_PROGRESS, move |_| {
+            *seen.lock().unwrap() = true;
+        });
+        let webview = app.webview.clone();
+        let download =
+            std::thread::spawn(move || call_on(&webview, "extensions_download_node", json!({})));
+        crate::side_panel::tests::wait_for("the download to start", &|| *started.lock().unwrap());
+        assert_eq!(
+            call(&app, "extensions_cancel_node_download", json!({})),
+            Ok(json!(true))
+        );
+        assert_eq!(
+            download.join().unwrap(),
+            Ok(json!({"ok": false, "cancelled": true}))
+        );
+    }
 
-        assert!(crate::ext_node::verify_node_with_pin(app_rig._dir.path(), &mock_pin).is_ok());
+    #[test]
+    fn a_host_on_the_path_s_node_needs_no_download() {
+        let app = app(Some(script_launch(ECHO)), None);
+        assert_eq!(
+            call(&app, "extensions_download_node", json!({})),
+            Ok(json!({"ok": true}))
+        );
+        assert_eq!(
+            call(&app, "extensions_cancel_node_download", json!({})),
+            Ok(json!(false))
+        );
+    }
 
-        // Second call is noop because node is already verified
-        ensure_node_available_internal(
-            app_rig.webview.app_handle(),
-            &app_rig.webview.state::<Arc<ExtHost>>(),
-            Some(&server.url),
-            Some(&mock_pin),
-        )
-        .await
-        .unwrap();
-
-        // Update stamp to match current_pin for install_local and install_catalogue
-        let bytes = b"#!/bin/sh\nexit 0\n";
-        let bin_hash = agentrq_desktop_core::ext_node::compute_sha256(bytes);
-        let stamp_content =
-            agentrq_desktop_core::ext_node::format_stamp(&bin_hash, bytes.len() as u64, pin.sha256);
-        std::fs::write(
-            crate::ext_node::stamp_path(app_rig._dir.path()),
-            stamp_content,
-        )
-        .unwrap();
-
-        // Node is verified now: install_local with None succeeds
-        let res_local = call(
-            &app_rig,
-            "extensions_install_local",
-            json!({ "path": null }),
-        )
-        .unwrap();
-        assert_eq!(res_local["ok"], true);
-
-        // install_catalogue with None succeeds
-        let res_cat = call(
-            &app_rig,
-            "extensions_install_catalogue",
-            json!({ "fullName": null }),
-        )
-        .unwrap();
-        assert_eq!(res_cat["ok"], true);
+    /// An address nothing listens on, from a test with no runtime of its own.
+    fn closed_port_blocking() -> String {
+        tauri::async_runtime::block_on(closed_port())
     }
 }

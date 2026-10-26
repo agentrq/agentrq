@@ -202,6 +202,10 @@ export function createBridge(userAgent) {
       entries: (surface, context = {}) => invoke('extensions_entries', { surface, context }),
       drawer: (format) => invoke('extensions_drawer', { format }),
       invoke: (target, context = {}) => invoke('extensions_invoke', { target, context }),
+      // Tauri's own: Electron bundles Node, so its preload has none of these.
+      downloadNode: () => invoke('extensions_download_node'),
+      cancelNodeDownload: () => invoke('extensions_cancel_node_download'),
+      onNodeProgress: (callback) => subscribe('agentrq:extensions:node-progress', (detail) => callback(detail)),
     },
 
     updates: {

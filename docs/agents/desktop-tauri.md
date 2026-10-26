@@ -220,11 +220,16 @@
 
 ## Extensions
 
-- **Extensions run in a Node sidecar, `agentrq-ext-host`**, which imports
-  `desktop/src/main/extensions/*` unchanged; never fork them here. The Node is
-  pinned with SHA-256s in `scripts/fetch-node.mjs` (about 120 MB unpacked, 30 to
-  95 MB a download), and `tauri-build` refuses to build until it and
-  `dist/ext-host/` exist: run `npm run fetch:node && npm run build:ext-host` first.
+- **Extensions run in a Node process, `agentrq-ext-host`**, which imports
+  `desktop/src/main/extensions/*` unchanged; never fork them here. `tauri-build`
+  refuses to build until `dist/ext-host/` exists: run `npm run build:ext-host`.
+- **Node is never bundled; only `extensions_download_node` downloads it**, on the
+  person's click, and every other command answers `needsNode`. The pins live only
+  in `core::ext_node`; take a bump's hashes and sizes from the real archives.
+- **The binary is checked against its pin, never a file beside it**, which whoever
+  can write the binary can rewrite. The cache on size and mtime is a same-user gap,
+  moot since that user can edit the extensions. A sandboxed (App Store) build could
+  not run a downloaded Node at all.
 - **The host starts only when an installed extension is enabled.** A call a page
   makes on every render (`entries`, `panelPages`, `drawerFor`) never starts it
   (`core::ext_host::answer_without_host`), or every page load would spawn Node.

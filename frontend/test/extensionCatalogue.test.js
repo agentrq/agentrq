@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { effectScope } from 'vue';
 
 import {
   GROUPS,
@@ -10,7 +11,9 @@ import {
   blockedReason,
   groupFor,
   asksFor,
+  clampPercent,
   installedRow,
+  megabytes,
   statusOf,
   summarise,
   toRows,
@@ -1026,106 +1029,243 @@ describe('useExtensionCatalogue', () => {
     });
   });
 
-  describe('on-demand Node runtime download (Tauri option b)', () => {
-    it('reads nodeInstalled from bridge state', async () => {
-      const bridge = fakeBridge({
-        state: vi.fn(async () => ({ index: { entries: [] }, installed: [], nodeInstalled: false })),
+  describe('the Node.js extensions run on (Tauri, which does not bundle it)', () => {
+    const missing = (over = {}) => ({ installed: false, update: false, version: 'v24.22.1', size: 30978868, ...over });
+    const withoutNode = (over = {}) =>
+      fakeBridge({
+        state: vi.fn(async () => ({ index: { entries: [entry()] }, installed: [], node: missing() })),
+        downloadNode: vi.fn(async () => ({ ok: true })),
+        cancelNodeDownload: vi.fn(async () => true),
+        ...over,
       });
-      const catalogue = useExtensionCatalogue({ bridge });
-      expect(catalogue.nodeInstalled.value).toBe(true);
+    /** After the download, the next state says Node is there. */
+    const installsNode = (bridge) => {
+      bridge.downloadNode.mockImplementation(async () => {
+        bridge.state.mockImplementation(async () => ({
+          index: { entries: [entry()] },
+          installed: [],
+          node: missing({ installed: true }),
+        }));
+        return { ok: true };
+      });
+      return bridge;
+    };
 
+    it('reads as installed where nothing is said, as in Electron', async () => {
+      const catalogue = useExtensionCatalogue({ bridge: fakeBridge() });
+      await catalogue.load();
+      expect(catalogue.node.value).toBeNull();
+      expect(catalogue.nodeInstalled.value).toBe(true);
+      const empty = useExtensionCatalogue({ bridge: fakeBridge({ state: vi.fn(async () => null) }) });
+      await empty.load();
+      expect(empty.nodeInstalled.value).toBe(true);
+    });
+
+    it('asks before downloading anything, then picks the folder it was asked for', async () => {
+      const bridge = installsNode(withoutNode());
+      const catalogue = useExtensionCatalogue({ bridge });
       await catalogue.load();
       expect(catalogue.nodeInstalled.value).toBe(false);
-    });
-
-    it('listens to node download progress and completion events', async () => {
-      let listener;
-      const bridge = fakeBridge({
-        onChanged: vi.fn((fn) => {
-          listener = fn;
-        }),
-      });
-      const catalogue = useExtensionCatalogue({ bridge });
-
-      listener({ reason: 'node-download-progress', downloaded: 20000000, total: 40000000, percent: 50 });
-      expect(catalogue.nodeProgress.value).toEqual({ downloaded: 20000000, total: 40000000, percent: 50 });
-
-      listener({ reason: 'node-download-complete' });
-      expect(catalogue.nodeProgress.value).toBeNull();
-      expect(catalogue.nodeInstalled.value).toBe(true);
-    });
-
-    it('prompts before download when chooseFolder is called and Node is missing', async () => {
-      const bridge = fakeBridge({
-        state: vi.fn(async () => ({ index: { entries: [] }, installed: [], nodeInstalled: false })),
-      });
-      const catalogue = useExtensionCatalogue({ bridge });
-      await catalogue.load();
 
       await catalogue.chooseFolder();
       expect(catalogue.promptDownloadNode.value).toBe(true);
       expect(bridge.chooseFolder).not.toHaveBeenCalled();
+      expect(bridge.downloadNode).not.toHaveBeenCalled();
+
+      await catalogue.downloadNode();
+      expect(bridge.downloadNode).toHaveBeenCalledTimes(1);
+      expect(catalogue.promptDownloadNode.value).toBe(false);
+      expect(catalogue.nodeInstalled.value).toBe(true);
+      expect(bridge.chooseFolder).toHaveBeenCalledTimes(1);
+      expect(catalogue.candidate.value?.kind).toBe('folder');
+    });
+
+    it('checks GitHub once Node is there, when that is what needed it', async () => {
+      const bridge = installsNode(withoutNode());
+      const catalogue = useExtensionCatalogue({ bridge });
+      await catalogue.load();
+      await catalogue.refresh();
+      expect(bridge.refresh).not.toHaveBeenCalled();
+      await catalogue.downloadNode();
+      expect(bridge.refresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('installs a catalogue row once Node is there, finding the row again', async () => {
+      const bridge = installsNode(withoutNode());
+      const catalogue = useExtensionCatalogue({ bridge });
+      await catalogue.load();
+      const row = catalogue.sections.value.flatMap((section) => section.rows).find((r) => !r.installed);
+
+      await catalogue.beginInstall(row);
+      expect(catalogue.candidate.value).toBeNull();
+      expect(catalogue.promptDownloadNode.value).toBe(true);
+
+      await catalogue.downloadNode();
+      expect(catalogue.candidate.value?.fullName).toBe(row.fullName);
+      expect(catalogue.step.value).toBe(INSTALL_STEP.asking);
+    });
+
+    it('says so when the row is gone once Node is there', async () => {
+      const bridge = withoutNode();
+      bridge.downloadNode.mockImplementation(async () => {
+        bridge.state.mockImplementation(async () => ({ index: { entries: [] }, installed: [], node: missing({ installed: true }) }));
+        return { ok: true };
+      });
+      const catalogue = useExtensionCatalogue({ bridge });
+      await catalogue.load();
+      const row = catalogue.sections.value.flatMap((section) => section.rows).find((r) => !r.installed);
+      await catalogue.beginInstall(row);
+      await catalogue.downloadNode();
+      expect(catalogue.error.value).toBe('That extension is no longer in the catalogue.');
+      expect(catalogue.candidate.value).toBeNull();
+    });
+
+    it('asks from the banner with nothing waiting, and puts the question away', async () => {
+      const bridge = installsNode(withoutNode());
+      const catalogue = useExtensionCatalogue({ bridge });
+      await catalogue.load();
+      catalogue.askForNode();
+      expect(catalogue.promptDownloadNode.value).toBe(true);
+      catalogue.cancelDownloadNode();
+      expect(catalogue.promptDownloadNode.value).toBe(false);
+      expect(bridge.downloadNode).not.toHaveBeenCalled();
+
+      catalogue.askForNode();
+      await catalogue.downloadNode();
+      expect(catalogue.nodeInstalled.value).toBe(true);
+      expect(bridge.chooseFolder).not.toHaveBeenCalled();
+      expect(bridge.refresh).not.toHaveBeenCalled();
+    });
+
+    it('says inside the prompt why a download failed, and keeps it open', async () => {
+      for (const [downloadNode, reason] of [
+        [vi.fn(async () => ({ ok: false, reason: 'The Node.js download stalled. Try again.' })), 'The Node.js download stalled. Try again.'],
+        [vi.fn(async () => ({ ok: false })), 'Node.js could not be downloaded.'],
+        [vi.fn(async () => null), 'Node.js could not be downloaded.'],
+        [vi.fn(async () => { throw 'window.agentrq is gone'; }), 'window.agentrq is gone'],
+        [vi.fn(async () => { throw new Error(''); }), 'Node.js could not be downloaded.'],
+      ]) {
+        const catalogue = useExtensionCatalogue({ bridge: withoutNode({ downloadNode }) });
+        await catalogue.load();
+        await catalogue.chooseFolder();
+        await catalogue.downloadNode();
+        expect(catalogue.nodeError.value).toBe(reason);
+        expect(catalogue.error.value).toBe('');
+        expect(catalogue.promptDownloadNode.value).toBe(true);
+        expect(catalogue.downloadingNode.value).toBe(false);
+      }
+    });
+
+    it('cancels a download under way rather than closing over it', async () => {
+      let finish;
+      const bridge = withoutNode({ downloadNode: vi.fn(() => new Promise((resolve) => (finish = resolve))) });
+      const catalogue = useExtensionCatalogue({ bridge });
+      await catalogue.load();
+      await catalogue.chooseFolder();
+      const downloading = catalogue.downloadNode();
+      expect(catalogue.downloadingNode.value).toBe(true);
+      // A second press while one runs starts nothing.
+      await catalogue.downloadNode();
+      expect(bridge.downloadNode).toHaveBeenCalledTimes(1);
+
+      catalogue.cancelDownloadNode();
+      expect(bridge.cancelNodeDownload).toHaveBeenCalledTimes(1);
+      expect(catalogue.promptDownloadNode.value).toBe(true);
+      finish({ ok: false, cancelled: true });
+      await downloading;
+      expect(catalogue.nodeError.value).toBe('');
+      expect(catalogue.downloadingNode.value).toBe(false);
+      expect(bridge.chooseFolder).not.toHaveBeenCalled();
 
       catalogue.cancelDownloadNode();
       expect(catalogue.promptDownloadNode.value).toBe(false);
+
+      // A bridge with no cancel has nothing to call.
+      const bare = useExtensionCatalogue({
+        bridge: withoutNode({ downloadNode: vi.fn(() => new Promise(() => {})), cancelNodeDownload: undefined }),
+      });
+      await bare.load();
+      bare.downloadNode();
+      bare.cancelDownloadNode();
+      expect(bare.downloadingNode.value).toBe(true);
     });
 
-    it('downloads Node on confirmDownloadNode and opens chooseFolder', async () => {
-      const bridge = fakeBridge({
-        state: vi.fn(async () => ({ index: { entries: [] }, installed: [], nodeInstalled: false })),
-      });
+    it('does nothing to download where the bridge cannot', async () => {
+      const bridge = withoutNode({ downloadNode: undefined });
       const catalogue = useExtensionCatalogue({ bridge });
       await catalogue.load();
-      await catalogue.chooseFolder();
-
-      await catalogue.confirmDownloadNode();
-      expect(bridge.installLocal).toHaveBeenCalledWith(null);
-      expect(catalogue.nodeInstalled.value).toBe(true);
-      expect(catalogue.promptDownloadNode.value).toBe(false);
-      expect(bridge.chooseFolder).toHaveBeenCalled();
+      await catalogue.downloadNode();
+      expect(catalogue.downloadingNode.value).toBe(false);
     });
 
-    it('reports failure during confirmDownloadNode', async () => {
+    it('asks when the app refuses for want of Node the page did not know about', async () => {
+      const refusal = { ok: false, needsNode: true, reason: 'Extensions need Node.js v24.22.1.' };
       const bridge = fakeBridge({
-        state: vi.fn(async () => ({ index: { entries: [] }, installed: [], nodeInstalled: false })),
-        installLocal: vi.fn(async () => ({ ok: false, reason: 'Network timeout' })),
+        chooseFolder: vi.fn(async () => refusal),
+        refresh: vi.fn(async () => refusal),
       });
       const catalogue = useExtensionCatalogue({ bridge });
-      await catalogue.load();
+      // Pressed before the page has loaded.
       await catalogue.chooseFolder();
-
-      await catalogue.confirmDownloadNode();
-      expect(catalogue.error.value).toBe('Network timeout');
       expect(catalogue.nodeInstalled.value).toBe(false);
+      expect(catalogue.promptDownloadNode.value).toBe(true);
+      expect(catalogue.error.value).toBe('');
+
+      catalogue.cancelDownloadNode();
+      catalogue.node.value = null;
+      await catalogue.refresh();
+      expect(catalogue.promptDownloadNode.value).toBe(true);
+      expect(catalogue.error.value).toBe('');
+      expect(catalogue.loading.value).toBe(false);
     });
 
-    it('reports thrown exception during confirmDownloadNode', async () => {
-      const bridge = fakeBridge({
-        state: vi.fn(async () => ({ index: { entries: [] }, installed: [], nodeInstalled: false })),
-        installLocal: vi.fn(async () => {
-          throw new Error('Connection refused');
+    it('shows progress as a whole percent, and stops hearing it when the page goes', () => {
+      let deliver;
+      const off = vi.fn();
+      const bridge = withoutNode({
+        onNodeProgress: vi.fn((callback) => {
+          deliver = callback;
+          return off;
         }),
       });
-      const catalogue = useExtensionCatalogue({ bridge });
-      await catalogue.load();
-      await catalogue.chooseFolder();
+      const scope = effectScope();
+      const catalogue = scope.run(() => useExtensionCatalogue({ bridge }));
+      deliver({ downloaded: 10, total: 20, percent: 50.4 });
+      expect(catalogue.nodeProgress.value).toEqual({ downloaded: 10, total: 20, percent: 50 });
+      deliver({ percent: 250 });
+      expect(catalogue.nodeProgress.value).toEqual({ downloaded: 0, total: 0, percent: 100 });
+      deliver(undefined);
+      expect(catalogue.nodeProgress.value.percent).toBe(0);
+      expect(off).not.toHaveBeenCalled();
+      scope.stop();
+      expect(off).toHaveBeenCalledTimes(1);
 
-      await catalogue.confirmDownloadNode();
-      expect(catalogue.error.value).toBe('Connection refused');
+      // Outside a component there is nothing to stop it with.
+      useExtensionCatalogue({ bridge });
+      expect(bridge.onNodeProgress).toHaveBeenCalledTimes(2);
     });
 
-    it('marks nodeInstalled as true and clears nodeProgress after catalogue install', async () => {
-      const bridge = fakeBridge();
-      const catalogue = useExtensionCatalogue({ bridge });
-      await catalogue.load();
-      catalogue.nodeProgress.value = { percent: 99 };
+    it('says what a rejected call said, which Tauri gives as words', async () => {
+      const catalogue = useExtensionCatalogue({
+        bridge: fakeBridge({ uninstall: vi.fn(async () => { throw 'Extensions need Node.js v24.22.1.'; }) }),
+      });
+      await catalogue.uninstall('standup');
+      expect(catalogue.error.value).toBe('Extensions need Node.js v24.22.1.');
+    });
+  });
 
-      const row = catalogue.sections.value.flatMap((s) => s.rows).find((r) => !r.installed);
-      await catalogue.beginInstall(row);
-      await catalogue.install();
+  describe('sizes and percents', () => {
+    it('says a size in whole megabytes', () => {
+      expect(megabytes(30978868)).toBe('31 MB');
+      expect(megabytes(37748064)).toBe('38 MB');
+      expect(megabytes(undefined)).toBe('0 MB');
+    });
 
-      expect(catalogue.nodeInstalled.value).toBe(true);
-      expect(catalogue.nodeProgress.value).toBeNull();
+    it('keeps a percent between 0 and 100', () => {
+      expect(clampPercent(42.6)).toBe(43);
+      expect(clampPercent(140)).toBe(100);
+      expect(clampPercent(-3)).toBe(0);
+      expect(clampPercent('x')).toBe(0);
     });
   });
 });

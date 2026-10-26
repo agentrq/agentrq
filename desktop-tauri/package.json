@@ -11,7 +11,6 @@
     "build": "tauri build",
     "build:renderer": "vite build --config vite.renderer.config.mjs",
     "build:ext-host": "vite build --config vite.ext-host.config.mjs",
-    "fetch:node": "node scripts/fetch-node.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:rust": "cargo test --manifest-path core/Cargo.toml && cargo test --manifest-path src-tauri/Cargo.toml",
