@@ -250,29 +250,36 @@ await runVerify(
     // Opened by the panel's own Cmd/Ctrl+F, in the main page: the same key
     // typed into the guest needs a native key press (SKIPPED).
     const findCount = () => page("document.querySelector('[data-side-panel-find-count]')?.textContent.trim()")
-    /** Whether the find bar's count comes to read `expected`, and what it read. */
-    const counts = async (expected) => {
-      await waitFor(`the find count to read ${expected}`, async () => (await findCount()) === expected, { timeout: 5000 }).catch(() => {})
-      const read = await findCount()
-      return [read === expected, read]
+    /**
+     * Run `script` in the main page, then whether the find bar's count comes
+     * to read `count` and the page's selection to be in paragraph `paragraph`,
+     * and what they read. The selection is WebKit's own step: the count's
+     * index is the app's bookkeeping of which step was asked.
+     */
+    const finds = async (script, count, paragraph) => {
+      const since = mark()
+      await page(script)
+      const selection = () => site.beacons(finder.gid).filter((h) => h.at > since && h.query.has('sel')).at(-1)?.query.get('sel')
+      await waitFor(`the find count to read ${count}, in paragraph ${paragraph}`,
+        async () => (await findCount()) === count && selection() === String(paragraph)).catch(() => {})
+      const [read, sel] = [await findCount(), selection()]
+      return [read === count && sel === String(paragraph), `${read}, selection in paragraph ${sel}`]
     }
+    const findButton = (button) => `document.querySelector('[data-side-panel-find-${button}]').click()`
     const finding = mark()
     await type(`${site.origin}/find`)
-    await hello('the page to search to load', '/find', finding)
+    const finder = await hello('the page to search to load', '/find', finding)
     await addressIs(`${site.origin}/find`)
     await page("document.querySelector('[data-side-panel-address]').dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }))")
     await inPage('the find bar to take the focus', "document.activeElement?.matches('[data-side-panel-find-input]') === true")
     record('the panel\'s Cmd/Ctrl+F opens its find bar, focused', true)
-    await page(`(() => {
+    record('typing searches the page, counts its matches and selects the first', ...(await finds(`(() => {
       const input = document.querySelector('[data-side-panel-find-input]');
       input.value = 'needle';
       input.dispatchEvent(new Event('input'));
-    })()`)
-    record('typing searches the page and counts its matches', ...(await counts('1/3')))
-    await page("document.querySelector('[data-side-panel-find-next]').click()")
-    record('next steps to the following match', ...(await counts('2/3')))
-    await page("document.querySelector('[data-side-panel-find-previous]').click()")
-    record('previous steps back', ...(await counts('1/3')))
+    })()`, '1/3', 0)))
+    record('next steps to the following match', ...(await finds(findButton('next'), '2/3', 1)))
+    record('previous steps back', ...(await finds(findButton('previous'), '1/3', 0)))
     await page("document.querySelector('[data-side-panel-find-close]').click()")
     await inPage('the find bar to close', "!document.querySelector('[data-side-panel-find]')")
     record('the find bar closes', true)
@@ -287,24 +294,28 @@ await runVerify(
     const bar = await inPage('the permission bar', "document.querySelector('[data-side-panel-permission]')?.textContent.trim()")
     record('a page asking for the location shows the bar in the window, naming its site', bar.includes(`${new URL(site.origin).host} wants to know your location`), bar)
     await page("document.querySelector('[data-side-panel-permission-allow]').click()")
-    /** What the page with `gid` was answered. */
+    /**
+     * What the page with `gid` was answered, and the error it got. Granted is
+     * "not PERMISSION_DENIED": with no location service an allowed page gets
+     * POSITION_UNAVAILABLE (2).
+     */
     const answered = (gid) => site.hit('the page to be answered', (h) => h.query.get('gid') === gid && h.query.has('permission'))
-      .then((h) => h.query.get('permission'))
-    const allowed = await answered(asker.gid)
-    record('Allow gives the page its permission', allowed === 'granted', allowed)
+      .then((h) => [h.query.get('permission'), `error ${h.query.get('error') ?? 'none'}`])
+    const [allowed, error] = await answered(asker.gid)
+    record('Allow gives the page its permission', allowed === 'granted', `${allowed}, ${error}`)
     await inPage('the bar to go', "!document.querySelector('[data-side-panel-permission]')")
     // The page asks again on every load: answered with no bar, it was remembered.
     await inPage('the page to finish loading', "document.querySelector('[data-side-panel-reload]')?.title === 'Reload'")
     const reloading = mark()
     await page("document.querySelector('[data-side-panel-reload]').click()")
     const reloaded = await hello('the page to load again', '/ask', reloading)
-    const remembered = await answered(reloaded.gid)
+    const [remembered] = await answered(reloaded.gid)
     const barAgain = await page("!!document.querySelector('[data-side-panel-permission]')")
     record('after a reload it asks again and is answered with no bar', remembered === 'granted' && !barAgain, `${remembered}, bar ${barAgain ? 'shown' : 'not shown'}`)
     // The answer is the app's, not only WebKit's: the shield lists it.
     await page("document.querySelector('[data-side-panel-permissions-toggle]').click()")
     const listed = await inPage('the site permissions', "document.querySelector('[data-site-permissions] [data-site]')?.textContent.replace(/\\s+/g, ' ').trim()")
-    record('Site permissions lists the site\'s location as allowed', listed.includes('Location') && listed.includes('Allowed'), listed)
+    record('Site permissions lists the site\'s location as allowed', listed.includes(new URL(site.origin).host) && listed.includes('Location') && listed.includes('Allowed'), listed)
     await page("document.querySelector('[data-site-permissions-close]').click()")
     await inPage('the site permissions to close', "!document.querySelector('[data-site-permissions]')")
 

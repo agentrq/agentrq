@@ -53,8 +53,10 @@ export async function startSite() {
     ['/popup', PAGE('Asks for a window', '<a id="p" href="/second" target="_blank">x</a>',
       "tell('before=1'); window.open('/second'); document.getElementById('p').click()")],
     ['/file', PAGE('Going to a file', '', "tell('before=1'); location.href = 'file:///etc/passwd'")],
-    // Three matches for the find bar, and none in the title.
-    ['/find', PAGE('Finding', '<p>One needle here.</p><p>A second needle there.</p><p>And a third needle.</p>')],
+    // Three matches for the find bar, and none in the title. A find selects
+    // its match: the page says which paragraph holds it.
+    ['/find', PAGE('Finding', '<p>One needle here.</p><p>A second needle there.</p><p>And a third needle.</p>',
+      "document.addEventListener('selectionchange', () => tell('sel=' + [...document.querySelectorAll('p')].indexOf(getSelection().anchorNode?.parentElement)))")],
     // Asks for the location on every load, and says what it was answered:
     // with no location service, an allowed page still gets no position.
     ['/ask', PAGE('Asks where you are', '',
