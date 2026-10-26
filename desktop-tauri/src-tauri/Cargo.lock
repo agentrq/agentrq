@@ -35,6 +35,7 @@ version = "0.13.4"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "url",
 ]
 
@@ -62,6 +63,7 @@ dependencies = [
  "rust-ini",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",

@@ -1025,4 +1025,107 @@ describe('useExtensionCatalogue', () => {
       expect(catalogue.error.value).toBe('That did not work.');
     });
   });
+
+  describe('on-demand Node runtime download (Tauri option b)', () => {
+    it('reads nodeInstalled from bridge state', async () => {
+      const bridge = fakeBridge({
+        state: vi.fn(async () => ({ index: { entries: [] }, installed: [], nodeInstalled: false })),
+      });
+      const catalogue = useExtensionCatalogue({ bridge });
+      expect(catalogue.nodeInstalled.value).toBe(true);
+
+      await catalogue.load();
+      expect(catalogue.nodeInstalled.value).toBe(false);
+    });
+
+    it('listens to node download progress and completion events', async () => {
+      let listener;
+      const bridge = fakeBridge({
+        onChanged: vi.fn((fn) => {
+          listener = fn;
+        }),
+      });
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      listener({ reason: 'node-download-progress', downloaded: 20000000, total: 40000000, percent: 50 });
+      expect(catalogue.nodeProgress.value).toEqual({ downloaded: 20000000, total: 40000000, percent: 50 });
+
+      listener({ reason: 'node-download-complete' });
+      expect(catalogue.nodeProgress.value).toBeNull();
+      expect(catalogue.nodeInstalled.value).toBe(true);
+    });
+
+    it('prompts before download when chooseFolder is called and Node is missing', async () => {
+      const bridge = fakeBridge({
+        state: vi.fn(async () => ({ index: { entries: [] }, installed: [], nodeInstalled: false })),
+      });
+      const catalogue = useExtensionCatalogue({ bridge });
+      await catalogue.load();
+
+      await catalogue.chooseFolder();
+      expect(catalogue.promptDownloadNode.value).toBe(true);
+      expect(bridge.chooseFolder).not.toHaveBeenCalled();
+
+      catalogue.cancelDownloadNode();
+      expect(catalogue.promptDownloadNode.value).toBe(false);
+    });
+
+    it('downloads Node on confirmDownloadNode and opens chooseFolder', async () => {
+      const bridge = fakeBridge({
+        state: vi.fn(async () => ({ index: { entries: [] }, installed: [], nodeInstalled: false })),
+      });
+      const catalogue = useExtensionCatalogue({ bridge });
+      await catalogue.load();
+      await catalogue.chooseFolder();
+
+      await catalogue.confirmDownloadNode();
+      expect(bridge.installLocal).toHaveBeenCalledWith(null);
+      expect(catalogue.nodeInstalled.value).toBe(true);
+      expect(catalogue.promptDownloadNode.value).toBe(false);
+      expect(bridge.chooseFolder).toHaveBeenCalled();
+    });
+
+    it('reports failure during confirmDownloadNode', async () => {
+      const bridge = fakeBridge({
+        state: vi.fn(async () => ({ index: { entries: [] }, installed: [], nodeInstalled: false })),
+        installLocal: vi.fn(async () => ({ ok: false, reason: 'Network timeout' })),
+      });
+      const catalogue = useExtensionCatalogue({ bridge });
+      await catalogue.load();
+      await catalogue.chooseFolder();
+
+      await catalogue.confirmDownloadNode();
+      expect(catalogue.error.value).toBe('Network timeout');
+      expect(catalogue.nodeInstalled.value).toBe(false);
+    });
+
+    it('reports thrown exception during confirmDownloadNode', async () => {
+      const bridge = fakeBridge({
+        state: vi.fn(async () => ({ index: { entries: [] }, installed: [], nodeInstalled: false })),
+        installLocal: vi.fn(async () => {
+          throw new Error('Connection refused');
+        }),
+      });
+      const catalogue = useExtensionCatalogue({ bridge });
+      await catalogue.load();
+      await catalogue.chooseFolder();
+
+      await catalogue.confirmDownloadNode();
+      expect(catalogue.error.value).toBe('Connection refused');
+    });
+
+    it('marks nodeInstalled as true and clears nodeProgress after catalogue install', async () => {
+      const bridge = fakeBridge();
+      const catalogue = useExtensionCatalogue({ bridge });
+      await catalogue.load();
+      catalogue.nodeProgress.value = { percent: 99 };
+
+      const row = catalogue.sections.value.flatMap((s) => s.rows).find((r) => !r.installed);
+      await catalogue.beginInstall(row);
+      await catalogue.install();
+
+      expect(catalogue.nodeInstalled.value).toBe(true);
+      expect(catalogue.nodeProgress.value).toBeNull();
+    });
+  });
 });

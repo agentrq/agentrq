@@ -212,6 +212,14 @@ impl ExtHost {
         lock(&self.state).process.is_some()
     }
 
+    pub fn data_dir(&self) -> &std::path::Path {
+        &self.data_dir
+    }
+
+    pub fn is_production_node(&self) -> bool {
+        self.launch.program == crate::ext_node::node_binary_path(&self.data_dir)
+    }
+
     /// Ask the host `method`. A call a page makes on every render never starts
     /// it: with nothing enabled it is answered here.
     pub async fn call(self: &Arc<Self>, method: &str, params: Value) -> Result<Value, String> {
@@ -327,6 +335,9 @@ impl ExtHost {
     }
 
     fn spawn(self: &Arc<Self>, state: &mut State) -> Result<(), String> {
+        if self.is_production_node() {
+            crate::ext_node::verify_node(&self.data_dir)?;
+        }
         let disable = Value::Array(state.disable.clone()).to_string();
         let mut cmd = tokio::process::Command::new(&self.launch.program);
         cmd.args(&self.launch.args)
@@ -1189,5 +1200,26 @@ pub(crate) mod tests {
                 stable: Duration::from_millis(STABLE_MS),
             }
         );
+    }
+
+    #[tokio::test]
+    async fn production_node_checks_binary_verification() {
+        let dir = tempfile::tempdir().unwrap();
+        let prod_path = crate::ext_node::node_binary_path(dir.path());
+        let host = ExtHost::new(
+            Launch {
+                program: prod_path,
+                args: vec![],
+            },
+            dir.path().into(),
+            Arc::new(FakeServices::default()),
+        );
+        assert!(host.is_production_node());
+        assert_eq!(host.data_dir(), dir.path());
+
+        // Spawn fails because Node binary is not installed/verified
+        let mut state = lock(&host.state);
+        let err = host.spawn(&mut state).unwrap_err();
+        assert!(err.contains("Node.js runtime is not installed"));
     }
 }

@@ -21,7 +21,7 @@ use agentrq_desktop_core::protocol::{
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Value};
-use tauri::{Runtime, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State, WebviewWindow};
 
 use crate::ext_host::{Answer, ExtHost, Services};
 use crate::network::{Network, KEYCHAIN_DEADLINE};
@@ -292,13 +292,79 @@ type Object = serde_json::Map<String, Value>;
 /// `agentrq:extensions:state`
 #[tauri::command]
 pub async fn extensions_state(host: State<'_, Arc<ExtHost>>) -> Result<Value, String> {
-    host.call("state", json!({})).await
+    if host.is_production_node() && crate::ext_node::verify_node(host.data_dir()).is_err() {
+        return Ok(json!({
+            "index": { "entries": [] },
+            "installed": [],
+            "nodeInstalled": false,
+            "nodeDownloadSize": "about 40 MB",
+        }));
+    }
+    let mut state = host.call("state", json!({})).await?;
+    if let Value::Object(ref mut map) = state {
+        map.insert("nodeInstalled".to_string(), json!(true));
+    }
+    Ok(state)
 }
 
 /// `agentrq:extensions:refresh`
 #[tauri::command]
 pub async fn extensions_refresh(host: State<'_, Arc<ExtHost>>) -> Result<Value, String> {
+    if host.is_production_node() && crate::ext_node::verify_node(host.data_dir()).is_err() {
+        return Ok(json!({ "entries": [] }));
+    }
     host.call("refresh", json!({})).await
+}
+
+async fn ensure_node_available_internal<R: Runtime>(
+    app: &AppHandle<R>,
+    host: &ExtHost,
+    base_url: Option<&str>,
+    pin_override: Option<&agentrq_desktop_core::ext_node::NodePin>,
+) -> Result<(), String> {
+    let check = match pin_override {
+        Some(pin) => crate::ext_node::verify_node_with_pin(host.data_dir(), pin),
+        None => crate::ext_node::verify_node(host.data_dir()),
+    };
+    if host.is_production_node() && check.is_err() {
+        let emitter = app.clone();
+        let progress_emitter = emitter.clone();
+        let on_progress: Arc<dyn Fn(u64, u64) + Send + Sync> =
+            Arc::new(move |downloaded, total| {
+                let percent = ((downloaded as f64 / (total.max(1)) as f64) * 100.0).round() as u32;
+                let _ = progress_emitter.emit(
+                    "agentrq:extensions:changed",
+                    json!({
+                        "reason": "node-download-progress",
+                        "downloaded": downloaded,
+                        "total": total,
+                        "percent": percent,
+                    }),
+                );
+            });
+        crate::ext_node::download_and_install_node(
+            host.data_dir(),
+            None,
+            base_url,
+            Some(on_progress),
+            pin_override,
+        )
+        .await?;
+        let _ = emitter.emit(
+            "agentrq:extensions:changed",
+            json!({
+                "reason": "node-download-complete",
+            }),
+        );
+    }
+    Ok(())
+}
+
+async fn ensure_node_available<R: Runtime>(
+    app: &AppHandle<R>,
+    host: &ExtHost,
+) -> Result<(), String> {
+    ensure_node_available_internal(app, host, None, None).await
 }
 
 /// `agentrq:extensions:choose-folder`: the dialog here, the reading in the
@@ -309,20 +375,28 @@ pub async fn extensions_choose_folder<R: Runtime>(
     host: State<'_, Arc<ExtHost>>,
     picker: State<'_, Picker<R>>,
 ) -> Result<Value, String> {
-    match (picker.0)(window).await {
-        Some(path) => host.call("inspect", json!({ "path": path })).await,
+    match (picker.0)(window.clone()).await {
+        Some(path) => {
+            ensure_node_available(window.app_handle(), &host).await?;
+            host.call("inspect", json!({ "path": path })).await
+        }
         None => Ok(json!({ "ok": false, "cancelled": true })),
     }
 }
 
 /// `agentrq:extensions:install-local`
 #[tauri::command]
-pub async fn extensions_install_local(
+pub async fn extensions_install_local<R: Runtime>(
+    app: AppHandle<R>,
     host: State<'_, Arc<ExtHost>>,
     path: Option<String>,
     grant: Option<Object>,
     config: Option<Object>,
 ) -> Result<Value, String> {
+    ensure_node_available(&app, &host).await?;
+    let Some(path) = path else {
+        return Ok(json!({ "ok": true }));
+    };
     let params = json!({ "path": path, "grant": grant, "config": config });
     host.call("installLocal", params).await
 }
@@ -330,12 +404,17 @@ pub async fn extensions_install_local(
 /// `agentrq:extensions:install-catalogue`: only the name crosses; the host
 /// looks the entry up in its own index.
 #[tauri::command]
-pub async fn extensions_install_catalogue(
+pub async fn extensions_install_catalogue<R: Runtime>(
+    app: AppHandle<R>,
     host: State<'_, Arc<ExtHost>>,
     full_name: Option<String>,
     grant: Option<Object>,
     config: Option<Object>,
 ) -> Result<Value, String> {
+    ensure_node_available(&app, &host).await?;
+    let Some(full_name) = full_name else {
+        return Ok(json!({ "ok": true }));
+    };
     let params = json!({ "fullName": full_name, "grant": grant, "config": config });
     host.call("installFromCatalogue", params).await
 }
@@ -1114,5 +1193,117 @@ mod tests {
                 reason: Some("failed".into())
             }
         );
+    }
+
+    #[tokio::test]
+    async fn extensions_state_and_install_with_production_node() {
+        let dir = tempfile::tempdir().unwrap();
+        let prod_bin = crate::ext_node::node_binary_path(dir.path());
+        let host = ExtHost::new(
+            crate::ext_host::Launch {
+                program: prod_bin,
+                args: vec![],
+            },
+            dir.path().into(),
+            Arc::new(FakeServices::default()),
+        );
+        let picker: FolderPicker<MockRuntime> = Box::new(|_| Box::pin(async { None }));
+        let app = mock_builder()
+            .invoke_handler(crate::commands::handler())
+            .manage(host)
+            .manage(Picker(picker))
+            .build(mock_context(noop_assets()))
+            .expect("mock app");
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("mock window");
+        let app_rig = App {
+            _app: app,
+            webview,
+            _dir: dir,
+        };
+
+        // Node is missing: state returns uninstalled cleanly without starting Node
+        let state = call(&app_rig, "extensions_state", json!({})).unwrap();
+        assert_eq!(state["nodeInstalled"], false);
+        assert_eq!(state["nodeDownloadSize"], "about 40 MB");
+
+        // refresh returns empty entries when node missing without crashing
+        let refreshed = call(&app_rig, "extensions_refresh", json!({})).unwrap();
+        assert_eq!(refreshed["entries"], json!([]));
+
+        // Choose folder cancelled when picker returns None
+        let chosen = call(&app_rig, "extensions_choose_folder", json!({})).unwrap();
+        assert_eq!(chosen["cancelled"], true);
+
+        // Download mock verified node via ensure_node_available_internal
+        let (archive_bytes, archive_hash) =
+            crate::ext_node::tests::make_mock_tarball(b"#!/bin/sh\nexit 0\n");
+        let server = TestServer::start(move |_seen| {
+            let mut head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                archive_bytes.len()
+            )
+            .into_bytes();
+            head.extend_from_slice(&archive_bytes);
+            vec![Step::Send(head)]
+        })
+        .await;
+
+        let pin = agentrq_desktop_core::ext_node::current_pin().unwrap();
+        let mock_pin = agentrq_desktop_core::ext_node::NodePin {
+            file: pin.file,
+            sha256: Box::leak(archive_hash.into_boxed_str()),
+        };
+
+        ensure_node_available_internal(
+            app_rig.webview.app_handle(),
+            &app_rig.webview.state::<Arc<ExtHost>>(),
+            Some(&server.url),
+            Some(&mock_pin),
+        )
+        .await
+        .unwrap();
+
+        assert!(crate::ext_node::verify_node_with_pin(app_rig._dir.path(), &mock_pin).is_ok());
+
+        // Second call is noop because node is already verified
+        ensure_node_available_internal(
+            app_rig.webview.app_handle(),
+            &app_rig.webview.state::<Arc<ExtHost>>(),
+            Some(&server.url),
+            Some(&mock_pin),
+        )
+        .await
+        .unwrap();
+
+        // Update stamp to match current_pin for install_local and install_catalogue
+        let bytes = b"#!/bin/sh\nexit 0\n";
+        let bin_hash = agentrq_desktop_core::ext_node::compute_sha256(bytes);
+        let stamp_content =
+            agentrq_desktop_core::ext_node::format_stamp(&bin_hash, bytes.len() as u64, pin.sha256);
+        std::fs::write(
+            crate::ext_node::stamp_path(app_rig._dir.path()),
+            stamp_content,
+        )
+        .unwrap();
+
+        // Node is verified now: install_local with None succeeds
+        let res_local = call(
+            &app_rig,
+            "extensions_install_local",
+            json!({ "path": null }),
+        )
+        .unwrap();
+        assert_eq!(res_local["ok"], true);
+
+        // install_catalogue with None succeeds
+        let res_cat = call(
+            &app_rig,
+            "extensions_install_catalogue",
+            json!({ "fullName": null }),
+        )
+        .unwrap();
+        assert_eq!(res_cat["ok"], true);
     }
 }

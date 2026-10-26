@@ -187,9 +187,44 @@
 
     </div>
 
+    <div v-if="promptDownloadNode" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" @click.self="cancelDownloadNode">
+      <div class="w-full max-w-md bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-sm p-5">
+        <h2 class="text-lg font-black text-gray-900 dark:text-white">
+          Download Node.js Runtime?
+        </h2>
+        <p class="mt-2 text-[11px] leading-relaxed text-gray-700 dark:text-zinc-300">
+          Extensions require the Node.js v24.22.1 runtime (about 40 MB) to execute.
+          AgentRQ will download and verify the official build into its own application data directory.
+        </p>
+        <div v-if="nodeProgress" class="mt-4">
+          <div class="flex justify-between text-[10px] font-mono text-gray-600 dark:text-zinc-400 mb-1">
+            <span>Downloading Node.js…</span>
+            <span>{{ nodeProgress.percent }}%</span>
+          </div>
+          <div class="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-1.5 overflow-hidden">
+            <div class="bg-black dark:bg-white h-1.5 rounded-full transition-all duration-150"
+                 :style="{ width: `${nodeProgress.percent}%` }"></div>
+          </div>
+        </div>
+        <div class="mt-5 flex items-center justify-end gap-2">
+          <button type="button" @click="cancelDownloadNode" :disabled="step === 'working'"
+                  class="px-4 py-2 rounded-lg border border-gray-200 dark:border-zinc-800 text-[11px] font-black uppercase tracking-widest text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40">
+            Cancel
+          </button>
+          <button type="button" @click="confirmDownloadNode" :disabled="step === 'working'"
+                  class="px-4 py-2 rounded-lg bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest hover:opacity-80 disabled:opacity-40 transition-all">
+            {{ step === 'working' ? (nodeProgress ? `Downloading… ${nodeProgress.percent}%` : 'Downloading…') : 'Download & Continue' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <ExtensionGrantDialog v-if="candidate"
                           :candidate="candidate"
                           :workspaces="workspaceStore.workspaces ?? []"
+                          :node-installed="nodeInstalled"
+                          :node-progress="nodeProgress"
+                          :step="step"
                           @cancel="cancelInstall"
                           @confirm="install" />
   </div>
@@ -240,6 +275,11 @@ const workspaceStore = useWorkspaceStore();
 const {
   authorized,
   needsAuthorization,
+  nodeInstalled,
+  nodeProgress,
+  promptDownloadNode,
+  confirmDownloadNode,
+  cancelDownloadNode,
   authorize,
   deauthorize,
   sections,

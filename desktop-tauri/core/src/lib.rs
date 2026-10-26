@@ -14,6 +14,7 @@ pub mod deep_link;
 pub mod drawer_frame;
 pub mod emoji_panel;
 pub mod ext_host;
+pub mod ext_node;
 pub mod ext_rpc;
 pub mod files;
 pub mod identity;

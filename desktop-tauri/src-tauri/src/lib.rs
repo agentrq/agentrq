@@ -15,6 +15,7 @@ mod cookie_jar;
 mod event_source;
 mod events;
 mod ext_host;
+pub mod ext_node;
 mod extensions;
 mod network;
 mod notify;
@@ -578,21 +579,14 @@ async fn finish_sign_in<R: Runtime>(window: WebviewWindow<R>, flow: Flow, id: St
     }
 }
 
-/// The extension host: the Node binary bundled beside the app, running the
+/// The extension host: the Node binary installed under the app data dir, running the
 /// bundled entry. It starts only once an installed extension is enabled.
 fn extension_host<R: Runtime>(
     app: &AppHandle<R>,
     network: Arc<Network>,
     data_dir: std::path::PathBuf,
 ) -> tauri::Result<Arc<ExtHost>> {
-    #[cfg(windows)]
-    const NODE: &str = "agentrq-ext-host.exe";
-    #[cfg(not(windows))]
-    const NODE: &str = "agentrq-ext-host";
-    let program = std::env::current_exe()?
-        .parent()
-        .map(|dir| dir.join(NODE))
-        .unwrap_or_else(|| NODE.into());
+    let program = ext_node::node_binary_path(&data_dir);
     let entry = app
         .path()
         .resolve("ext-host/agentrq-ext-host.mjs", BaseDirectory::Resource)?;

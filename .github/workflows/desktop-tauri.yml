@@ -96,13 +96,10 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      # tauri-build checks the externalBin and resources exist: the pinned Node
-      # (checked against its SHA-256) and the extension host's bundle.
-      - name: Fetch Node and bundle the extension host
+      # tauri-build checks resources exist: the extension host's bundle.
+      - name: Bundle the extension host
         working-directory: desktop-tauri
-        run: |
-          npm run fetch:node
-          npm run build:ext-host
+        run: npm run build:ext-host
 
       # tauri::generate_context! reads frontendDist, so it must exist.
       - name: Build the renderer

@@ -1,0 +1,30 @@
+{
+  "version": "v24.22.1",
+  "displaySize": "about 40 MB",
+  "artifacts": {
+    "aarch64-apple-darwin": {
+      "file": "node-v24.22.1-darwin-arm64.tar.gz",
+      "sha256": "89c682593d76cd44233fa53b1563264e7de9cbb189cad169135c5b4fadfbc0a7"
+    },
+    "x86_64-apple-darwin": {
+      "file": "node-v24.22.1-darwin-x64.tar.gz",
+      "sha256": "d132557e7ee2b85af08b0c8c34338e65c6430f2238d01f727728ef42dc83b035"
+    },
+    "aarch64-unknown-linux-gnu": {
+      "file": "node-v24.22.1-linux-arm64.tar.xz",
+      "sha256": "dbabf7a1cbf947e6059ffad2c27b80041db97dea1e553b62afdee7f13fca336e"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "file": "node-v24.22.1-linux-x64.tar.xz",
+      "sha256": "6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6"
+    },
+    "x86_64-pc-windows-msvc": {
+      "file": "win-x64/node.exe",
+      "sha256": "d702daa815eabbff763c7d3808e235cf031cf2ca70211b56847bc72f51e240e5"
+    },
+    "aarch64-pc-windows-msvc": {
+      "file": "win-arm64/node.exe",
+      "sha256": "8bea91dc437fe01e7d92ef0efc6c9eaf654369aaba9b2d3e9841552ea7b95a00"
+    }
+  }
+}

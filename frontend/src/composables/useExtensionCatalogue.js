@@ -248,6 +248,28 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
   /** Whether account-wide tools can be used at all yet. */
   const authorized = ref(false);
 
+  /** Whether Node.js runtime is installed for extensions (Tauri option b). */
+  const nodeInstalled = ref(true);
+  /** Node download progress { downloaded, total, percent } while downloading. */
+  const nodeProgress = ref(null);
+  /** Whether to prompt before downloading Node. */
+  const promptDownloadNode = ref(false);
+
+  if (typeof bridge?.onChanged === 'function') {
+    bridge.onChanged((payload) => {
+      if (payload?.reason === 'node-download-progress') {
+        nodeProgress.value = {
+          downloaded: payload.downloaded,
+          total: payload.total,
+          percent: payload.percent,
+        };
+      } else if (payload?.reason === 'node-download-complete') {
+        nodeProgress.value = null;
+        nodeInstalled.value = true;
+      }
+    });
+  }
+
   /** Whether any installed extension actually wants them. */
   const needsAuthorization = computed(() =>
     !authorized.value && installed.value.some((entry) => entry.grant?.scope === SCOPE_SUPERVISOR),
@@ -271,6 +293,9 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
       const state = await bridge.state();
       index.value = state?.index ?? index.value;
       installed.value = state?.installed ?? [];
+      if (state && typeof state.nodeInstalled === 'boolean') {
+        nodeInstalled.value = state.nodeInstalled;
+      }
       authorized.value = (await bridge.supervisor?.())?.authorized ?? false;
     } catch (err) {
       error.value = err?.message || 'Could not read the extension catalogue.';
@@ -301,6 +326,33 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
     }
   }
 
+  /** Confirm download of Node.js and proceed with chooseFolder. */
+  async function confirmDownloadNode() {
+    if (!bridge) return;
+    error.value = '';
+    step.value = INSTALL_STEP.working;
+    try {
+      const res = await bridge.installLocal(null);
+      if (res && res.ok === false) {
+        error.value = res.reason || 'Could not download Node.js runtime.';
+        return;
+      }
+      nodeInstalled.value = true;
+      promptDownloadNode.value = false;
+      await chooseFolder();
+    } catch (err) {
+      error.value = err?.message || 'Could not download Node.js runtime.';
+    } finally {
+      step.value = INSTALL_STEP.idle;
+      nodeProgress.value = null;
+    }
+  }
+
+  /** Abandon the Node download prompt. */
+  function cancelDownloadNode() {
+    promptDownloadNode.value = false;
+  }
+
   /**
    * Ask for a folder, and stop to ask about permissions if there are any.
    *
@@ -312,6 +364,11 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
     if (!bridge) return;
     error.value = '';
     notice.value = '';
+
+    if (nodeInstalled.value === false) {
+      promptDownloadNode.value = true;
+      return;
+    }
 
     const found = await bridge.chooseFolder();
     // Cancelling a file dialog is not an error and must not read as one.
@@ -387,6 +444,7 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
         error.value = result?.reason || 'That extension could not be installed.';
         return;
       }
+      nodeInstalled.value = true;
       // Installed but not running is a real outcome, and it is not an error —
       // the row exists, and this is the sentence that explains why it is idle.
       notice.value = result.loadFailure
@@ -398,6 +456,7 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
     } finally {
       step.value = INSTALL_STEP.idle;
       candidate.value = null;
+      nodeProgress.value = null;
     }
   }
 
@@ -476,6 +535,11 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
     installed,
     authorized,
     needsAuthorization,
+    nodeInstalled,
+    nodeProgress,
+    promptDownloadNode,
+    confirmDownloadNode,
+    cancelDownloadNode,
     authorize,
     deauthorize,
     sections,
