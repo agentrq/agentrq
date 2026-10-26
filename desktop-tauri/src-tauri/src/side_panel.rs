@@ -7,10 +7,12 @@
 //! and the guest half of `index.js` for Electron.
 //!
 //! What a guest is created with is the boundary, as `will-attach-webview` is
-//! in Electron: a label no capability names (so no command at all), its own
-//! storage, never the profile's (so never the `at` cookie), the panel init
-//! script, and handlers that let only `http`, `https`, `agentrq-ext` and
-//! `about:blank` load and never open a window.
+//! in Electron: a label no capability names, its own storage, never the
+//! profile's (so never the `at` cookie), the panel init script, and handlers
+//! that let only `http`, `https`, `agentrq-ext` and `about:blank` load and
+//! never open a window. Tauri still gives a guest's page its IPC object
+//! (`__TAURI_INTERNALS__`), as it does every webview's, and the ACL refuses
+//! every call it makes: no capability may reach a guest (`parity.test.js`).
 //!
 //! What each platform's webview is asked directly is in `side_panel/`, one
 //! file per OS, outside the coverage gate.
@@ -33,6 +35,7 @@ use agentrq_desktop_core::side_panel::child::{
 use agentrq_desktop_core::side_panel::ext_scheme::StdFs;
 use agentrq_desktop_core::side_panel::find::{clears_selection, FindSession, Found};
 use agentrq_desktop_core::side_panel::guest::EXT_SCHEME;
+use agentrq_desktop_core::side_panel::platform_permissions::NotificationSeeds;
 use agentrq_desktop_core::side_panel::wire::{
     KeyAction, KeyInput, NavigationAction, SidePanel, SidePanelHost,
 };
@@ -66,6 +69,12 @@ const GUEST_EVENT: &str = "agentrq:side-panel:guest";
 const WEBVIEW2: bool = true;
 #[cfg(not(windows))]
 const WEBVIEW2: bool = false;
+
+/// WKWebView can never show a site's notification (`panel.js`).
+#[cfg(target_os = "macos")]
+const NO_NOTIFICATIONS: bool = true;
+#[cfg(not(target_os = "macos"))]
+const NO_NOTIFICATIONS: bool = false;
 
 /// `process.platform`'s spelling, which `core` speaks.
 #[cfg(target_os = "macos")]
@@ -456,6 +465,19 @@ fn panel_dir<R: Runtime>(app: &AppHandle<R>, profile: &str) -> PathBuf {
     app.state::<Arc<Profiles>>().panel_dir(profile)
 }
 
+/// Which sites `profile`'s guests may show notifications for, for a webview
+/// that is told before any page asks (WebKitGTK).
+pub fn seed_notifications<R: Runtime>(app: &AppHandle<R>, profile: &str, seeds: NotificationSeeds) {
+    platform::seed_notifications(panel_dir(app, profile), seeds);
+}
+
+/// A site's notification was clicked: the window comes forward, and the page
+/// that showed it hears the click, as a browser's would.
+pub fn site_notification_clicked<R: Runtime>(app: &AppHandle<R>, label: &str, id: u64) {
+    crate::shell::focus_main_window(app);
+    platform::notification_clicked(app, label, id);
+}
+
 /// One guest, as its handlers know it.
 struct Guest<R: Runtime> {
     app: AppHandle<R>,
@@ -535,7 +557,7 @@ pub async fn side_panel_guest_open<R: Runtime>(
         number,
     };
     let builder = WebviewBuilder::new(&label, start)
-        .initialization_script(guest_init_script(PANEL_JS, WEBVIEW2))
+        .initialization_script(guest_init_script(PANEL_JS, WEBVIEW2, NO_NOTIFICATIONS))
         // White, as a browser's canvas is.
         .background_color(tauri::window::Color(255, 255, 255, 255));
     let builder = handlers::attach(builder, guest);
@@ -543,6 +565,8 @@ pub async fn side_panel_guest_open<R: Runtime>(
     let builder = platform::isolate(builder, panel_dir(&app, &profile), &profile);
 
     let main = chrome::main_webview(&app).ok_or("The app's window has gone.")?;
+    // Before its first page's web process starts.
+    crate::panel_permissions::seed_notifications(&app).await;
     lock(&state.guests).insert(label.clone(), Seen::default());
     crate::panel_permissions::opened(&app, number, &profile);
     let added = main.window().add_child(
@@ -914,6 +938,7 @@ pub(crate) mod tests {
             .manage(profiles.network.clone())
             .manage(profiles.profiles.clone())
             .manage(Chrome::new(profiles.dir.path().to_path_buf()))
+            .manage(crate::panel_permissions::PanelPermissions::default())
             .build(mock_context(noop_assets()))
             .expect("mock app");
         let opened = Opened::default();
@@ -968,6 +993,17 @@ pub(crate) mod tests {
         std::iter::repeat_with(|| std::thread::sleep(Duration::from_millis(5)))
             .find(|()| done() || std::time::Instant::now() > deadline);
         assert!(done(), "{what}");
+    }
+
+    #[test]
+    fn a_sites_notification_click_goes_to_the_window_and_its_page() {
+        let rig = rig();
+        let label = rig.open("https://example.com/");
+        // Nothing to hear it in a mock: the click's route ends in the
+        // platform's webview, which tells the page.
+        site_notification_clicked(rig.app.handle(), &label, 7);
+        site_notification_clicked(rig.app.handle(), "panel-guest-99", 7);
+        assert!(rig.app.get_webview(&label).is_some());
     }
 
     #[test]

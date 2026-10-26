@@ -114,7 +114,7 @@
            here: its `src` has to be set before it is attached, and a
            `<webview>` is not an element the template compiler knows. -->
       <div class="relative flex-1 min-h-0">
-        <div ref="hostRef" :class="['absolute inset-0', shown ? '' : 'invisible', dragging ? 'pointer-events-none' : '']"></div>
+        <div ref="hostRef" data-side-panel-host :class="['absolute inset-0', shown ? '' : 'invisible', dragging ? 'pointer-events-none' : '']"></div>
 
         <SidePanelPermissions v-if="showPermissions" :sites="sites" @remove="removeDecision" @close="showPermissions = false" />
 

@@ -45,6 +45,16 @@ pub fn set_bounds<R: Runtime>(guest: &Webview<R>, placement: Placement) {
 
 pub fn forget(_label: &str) {}
 
+/// WebView2 asks each time (`watch_permissions`) and shows a site's
+/// notification itself, so there is nothing to seed or click.
+pub fn seed_notifications(
+    _dir: PathBuf,
+    _seeds: agentrq_desktop_core::side_panel::platform_permissions::NotificationSeeds,
+) {
+}
+
+pub fn notification_clicked<R: Runtime>(_app: &tauri::AppHandle<R>, _label: &str, _id: u64) {}
+
 /// WebView2 asks for a window on a Ctrl-click, so no navigation is one.
 pub fn click(_number: u32) -> Option<Modifiers> {
     None

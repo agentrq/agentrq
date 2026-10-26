@@ -8,12 +8,15 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 use agentrq_desktop_core::side_panel::child::{
     is_guest_label, link_click, Modifiers, NavigationKind, Placement,
 };
-use agentrq_desktop_core::side_panel::platform_permissions::{CommittedPages, WebKitLoad};
+use agentrq_desktop_core::side_panel::platform_permissions::{
+    CommittedPages, NotificationSeeds, WebKitLoad,
+};
 use gtk::prelude::*;
 use tauri::webview::WebviewBuilder;
 use tauri::{Runtime, Webview};
@@ -36,6 +39,24 @@ thread_local! {
     static NEXT_REQUEST: Cell<u64> = const { Cell::new(1) };
     /// Each guest's committed address, which its requests come from.
     static COMMITTED: RefCell<CommittedPages> = RefCell::new(CommittedPages::default());
+    /// The notifications guests' pages are showing, by guest and WebKit's
+    /// id, until the page closes one or its guest goes: a click is the page's.
+    static SHOWN: RefCell<HashMap<(String, u64), webkit2gtk::Notification>> = RefCell::new(HashMap::new());
+}
+
+/// The guests' storage folder and its profile's notification answers, which
+/// every new web process of that folder's context is told. Written off the
+/// main thread, before a guest is made and whenever an answer changes.
+static SEEDS: Mutex<Option<(PathBuf, NotificationSeeds)>> = Mutex::new(None);
+
+/// The answers kept for `dir`, or for whichever folder was seeded last: the
+/// active profile's, the only one with guests.
+fn seeds_for(dir: Option<&Path>) -> Option<NotificationSeeds> {
+    let seeds = SEEDS.lock().unwrap_or_else(PoisonError::into_inner);
+    seeds
+        .as_ref()
+        .filter(|(kept, _)| dir.is_none_or(|dir| kept == dir))
+        .map(|(_, seeds)| seeds.clone())
 }
 
 pub fn isolate<R: Runtime>(
@@ -195,6 +216,121 @@ pub fn forget(label: &str) {
         BOXES.with(|boxes| boxes.borrow_mut().remove(&label));
         NAVIGATIONS.with(|navigations| navigations.borrow_mut().remove(&label));
         COMMITTED.with(|committed| committed.borrow_mut().forget(&label));
+        SHOWN.with(|shown| shown.borrow_mut().retain(|(guest, _), _| *guest != label));
+    });
+}
+
+pub fn seed_notifications(dir: PathBuf, seeds: NotificationSeeds) {
+    hook_notification_seeds();
+    *SEEDS.lock().unwrap_or_else(PoisonError::into_inner) = Some((dir, seeds));
+}
+
+/// `initialize-notification-permissions`, which a context raises as each new
+/// web process starts: the guests' context answers it from [`SEEDS`], so a
+/// page reads `Notification.permission` as its site was answered. A hook
+/// rather than a handler, because the first process can start before the
+/// guest is handed to us.
+unsafe extern "C" fn seed_process(
+    _hint: *mut gtk::glib::gobject_ffi::GSignalInvocationHint,
+    count: u32,
+    params: *const gtk::glib::gobject_ffi::GValue,
+    _data: gtk::glib::ffi::gpointer,
+) -> gtk::glib::ffi::gboolean {
+    use webkit2gtk::{SecurityOrigin, WebContextExt, WebsiteDataManagerExt};
+    if count < 1 {
+        return gtk::glib::ffi::GTRUE;
+    }
+    let values = std::slice::from_raw_parts(params.cast::<gtk::glib::Value>(), count as usize);
+    let Ok(context) = values[0].get::<webkit2gtk::WebContext>() else {
+        return gtk::glib::ffi::GTRUE;
+    };
+    let dir = context
+        .website_data_manager()
+        .and_then(|manager| manager.base_data_directory());
+    let Some(seeds) = dir.and_then(|dir| seeds_for(Some(Path::new(dir.as_str())))) else {
+        return gtk::glib::ffi::GTRUE;
+    };
+    let origins = |sites: &[String]| -> Vec<SecurityOrigin> {
+        sites
+            .iter()
+            .map(|site| SecurityOrigin::for_uri(site))
+            .collect()
+    };
+    let (allowed, blocked) = (origins(&seeds.allowed), origins(&seeds.blocked));
+    context.initialize_notification_permissions(
+        &allowed.iter().collect::<Vec<_>>(),
+        &blocked.iter().collect::<Vec<_>>(),
+    );
+    gtk::glib::ffi::GTRUE
+}
+
+fn hook_notification_seeds() {
+    use gtk::glib::translate::IntoGlib;
+    use gtk::glib::StaticType;
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| unsafe {
+        let signal = gtk::glib::gobject_ffi::g_signal_lookup(
+            c"initialize-notification-permissions".as_ptr(),
+            webkit2gtk::WebContext::static_type().into_glib(),
+        );
+        if signal != 0 {
+            gtk::glib::gobject_ffi::g_signal_add_emission_hook(
+                signal,
+                0,
+                Some(seed_process),
+                std::ptr::null_mut(),
+                None,
+            );
+        }
+    });
+}
+
+/// A page's notification, shown through the app's own notifier while its
+/// site is allowed: a page told "granted" keeps showing them after the
+/// person removed the site's Allow, until its web process is replaced.
+fn watch_notifications<R: Runtime>(
+    view: &webkit2gtk::WebView,
+    app: tauri::AppHandle<R>,
+    label: String,
+) {
+    use tauri_plugin_notification::NotificationExt;
+    use webkit2gtk::NotificationExt as _;
+    view.connect_show_notification(move |_, notification| {
+        let url = COMMITTED.with(|committed| committed.borrow().requesting_url(&label));
+        if !seeds_for(None).is_some_and(|seeds| seeds.allows(&url)) {
+            return true;
+        }
+        let id = notification.id();
+        let key = (label.clone(), id);
+        notification.connect_closed({
+            let key = key.clone();
+            move |_| {
+                SHOWN.with(|shown| shown.borrow_mut().remove(&key));
+            }
+        });
+        SHOWN.with(|shown| shown.borrow_mut().insert(key, notification.clone()));
+        let _ = app
+            .notification()
+            .builder()
+            .title(notification.title().unwrap_or_default())
+            .body(notification.body().unwrap_or_default())
+            .extra(
+                crate::notify::SITE_KEY,
+                serde_json::json!({"guest": label, "id": id}),
+            )
+            .show();
+        true
+    });
+}
+
+pub fn notification_clicked<R: Runtime>(app: &tauri::AppHandle<R>, label: &str, id: u64) {
+    use webkit2gtk::NotificationExt;
+    let key = (label.to_string(), id);
+    let _ = app.run_on_main_thread(move || {
+        let shown = SHOWN.with(|shown| shown.borrow().get(&key).cloned());
+        if let Some(notification) = shown {
+            notification.clicked();
+        }
     });
 }
 
@@ -433,6 +569,7 @@ pub fn watch<R: Runtime>(guest: &Webview<R>) {
         watch_find(&view.inner(), app.clone(), label.clone());
         watch_commits(&view.inner(), label.clone());
         watch_permissions(&view.inner(), app.clone(), label.clone());
+        watch_notifications(&view.inner(), app.clone(), label.clone());
         let (focus_app, focus_label) = (app.clone(), label.clone());
         view.inner().connect_focus_in_event(move |_, _| {
             let _ = focus_app.emit_to(

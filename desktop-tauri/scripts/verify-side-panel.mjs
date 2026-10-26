@@ -28,6 +28,7 @@
  *
  *   npm run verify:side-panel
  */
+import { spawnSync } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -202,6 +203,21 @@ await runVerify(
     await addressIs(link)
     record('the address field follows the page', true, link)
 
+    // Tauri gives every webview its IPC object, a guest's too: the ACL is what
+    // refuses it, so no capability may name a guest (parity.test.js).
+    site.page('/ipc', `<!doctype html><html><body><script>
+      const tell = (what) => { new Image().src = '/beacon?' + what + '&_=' + Math.random(); };
+      // Not \`ipc\`: wry's own \`window.ipc\` cannot be shadowed.
+      const internals = window.__TAURI_INTERNALS__;
+      (internals ? internals.invoke('connection_get') : Promise.reject(new Error('no IPC object')))
+        .then(() => tell('ipc=allowed'), (e) => tell('ipc=refused&ipcObject=' + typeof internals + '&why=' + encodeURIComponent(String(e).slice(0, 120))));
+    </script></body></html>`)
+    const probing = mark()
+    await type(`${site.origin}/ipc`)
+    const ipc = await site.hit('the page to call an app command', (h) => h.query.has('ipc'), { since: probing })
+    record('a web page in the panel can call no app command', ipc.query.get('ipc') === 'refused',
+      `Tauri's IPC object: ${ipc.query.get('ipcObject')}; ${ipc.query.get('why')}`)
+
     // A page's own script moves it, and that is a navigation like any other.
     await type(`${site.origin}/redirect`)
     const redirected = await hello('the redirecting page to load', '/redirect')
@@ -293,6 +309,68 @@ await runVerify(
     const after = await onlyThe(again.gid, again.at)
     record('a reload of the app closes its guests, and the new page knows none', again.gid !== opened.gid && after.length === 1 && after[0] === again.gid,
       JSON.stringify(after))
+
+    // ── a site's notifications ──────────────────────────────────────────────
+    // The page asks on a person's click when its address says so (WebKit asks
+    // for nobody else), and shows one once allowed.
+    site.page('/notify', `<!doctype html><html><head><title>Notifies</title></head><body><script>
+      const gid = Math.random().toString(36).slice(2);
+      const tell = (what) => { new Image().src = '/beacon?gid=' + gid + '&' + what + '&_=' + Math.random(); };
+      const N = window.Notification;
+      tell('hello=1&page=/notify&notification=' + (/\\[native code\\]/.test(String(N)) ? 'native' : typeof N) + '/' + N?.permission);
+      if (location.search === '?ask') document.addEventListener('click', () => N.requestPermission().then((answer) => {
+        tell('asked=' + answer);
+        if (answer !== 'granted') return;
+        window.shown = new N('Build passed', { body: 'Checked in the side panel' });
+        window.shown.onclick = () => tell('clicked=1');
+      }), { once: true });
+      setInterval(() => tell('beat=1'), 100);
+    </script></body></html>`)
+    /**
+     * A person's click in the middle of the guest, through the X server: no
+     * script can make one. The app's page starts below the window's menu
+     * bar, which is the window's height less the page's.
+     */
+    const clickGuest = async () => {
+      const box = await page(`(() => {
+        const r = document.querySelector('[data-side-panel-host]').getBoundingClientRect();
+        return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), height: innerHeight };
+      })()`)
+      const xdotool = (...args) => spawnSync('xdotool', args, { encoding: 'utf-8' }).stdout.trim()
+      const window = xdotool('search', '--onlyvisible', '--name', '^AgentRQ Tauri$').split('\n')[0]
+      const height = Number(/Geometry: \d+x(\d+)/.exec(xdotool('getwindowgeometry', window))?.[1] ?? box.height)
+      xdotool('mousemove', '--window', window, String(box.x), String(box.y + height - box.height), 'click', '1')
+    }
+    const xdotool = spawnSync('xdotool', ['version']).status === 0
+    if (shell?.notifications && xdotool) {
+      const notifying = mark()
+      await type(`${site.origin}/notify?ask`)
+      const notifier = await hello('the page that asks to notify to load', '/notify', notifying)
+      record('a site in the panel has the webview\'s own Notification, not yet answered', notifier.said.notification === 'native/default',
+        notifier.said.notification)
+      await clickGuest()
+      const bar = await inPage('the permission bar', "document.querySelector('[data-side-panel-permission]')?.textContent.trim()")
+      record('asking to notify shows the bar in the window, naming its site', bar.includes(new URL(site.origin).host), bar)
+      await page("document.querySelector('[data-side-panel-permission-allow]').click()")
+      const asked = await site.hit('the page to be answered', (h) => h.query.get('gid') === notifier.gid && h.query.has('asked'))
+      record('Allow gives the page its permission', asked.query.get('asked') === 'granted', asked.query.get('asked'))
+      const notification = await waitFor('the notification to be shown',
+        async () => (await shell.notifications()).find((n) => n.summary === 'Build passed'))
+      record('the page\'s notification is shown through the app\'s notifier', notification.body === 'Checked in the side panel',
+        JSON.stringify(notification))
+      await shell.click(notification.id)
+      await site.hit('the page to hear the click', (h) => h.query.get('gid') === notifier.gid && h.query.get('clicked') === '1')
+      record('clicking it reaches the page', true)
+      // A new guest's page of the site knows it may notify before it asks.
+      await closePanel()
+      const returning = mark()
+      await page("document.querySelector('[data-side-panel-toggle]').click()")
+      await inPage('the panel', "!!document.querySelector('[data-side-panel]')")
+      await type(`${site.origin}/notify`)
+      const returned = await hello('the site\'s page to load in a new guest', '/notify', returning)
+      record('a new page of an allowed site reads "granted" before asking', returned.said.notification === 'native/granted',
+        returned.said.notification)
+    } else SKIPPED.push(skip('a site\'s notification in the panel is asked for, shown and clicked', 'needs Linux\'s stand-in notification server and xdotool'))
 
     // ── an Extension's page ─────────────────────────────────────────────────
     since = mark()

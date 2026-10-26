@@ -292,6 +292,16 @@ pub fn forget(label: &str) {
     guests(|guests| guests.retain(|_, (kept, _)| kept != label));
 }
 
+/// WKWebView has no public notification hook: a guest's site is told it may
+/// never notify (`panel.js`), so there is nothing to seed or click.
+pub fn seed_notifications(
+    _dir: PathBuf,
+    _seeds: agentrq_desktop_core::side_panel::platform_permissions::NotificationSeeds,
+) {
+}
+
+pub fn notification_clicked<R: Runtime>(_app: &tauri::AppHandle<R>, _label: &str, _id: u64) {}
+
 /// WKWebView reports a failed load to wry's own navigation delegate, which
 /// it does not expose: the page shows WebKit's empty view instead. Its
 /// camera and microphone requests and Cmd+F are the guest's to watch.

@@ -345,12 +345,14 @@ pub fn bridge_reply(result: Result<Value, Refusal>) -> Vec<u8> {
 }
 
 /// The guest's init script, from `src/guest/panel.js`: `__WEBVIEW2__` is
-/// whether an Extension's page arrives as `http://agentrq-ext.<name>/`.
-pub fn guest_init_script(source: &str, webview2_ext_urls: bool) -> String {
-    source.replace(
-        "__WEBVIEW2__",
-        if webview2_ext_urls { "true" } else { "false" },
-    )
+/// whether an Extension's page arrives as `http://agentrq-ext.<name>/`, and
+/// `__NO_NOTIFICATIONS__` whether the webview can never show a site's
+/// notification (WKWebView).
+pub fn guest_init_script(source: &str, webview2_ext_urls: bool, no_notifications: bool) -> String {
+    let literal = |value: bool| if value { "true" } else { "false" };
+    source
+        .replace("__WEBVIEW2__", literal(webview2_ext_urls))
+        .replace("__NO_NOTIFICATIONS__", literal(no_notifications))
 }
 
 /// What a guest's init script tells WebView2's shell when its page left a
@@ -797,13 +799,14 @@ mod tests {
 
     #[test]
     fn the_init_script_learns_the_platforms_form() {
+        let source = "const W = __WEBVIEW2__, N = __NO_NOTIFICATIONS__";
         assert_eq!(
-            guest_init_script("const W = __WEBVIEW2__", true),
-            "const W = true"
+            guest_init_script(source, true, false),
+            "const W = true, N = false"
         );
         assert_eq!(
-            guest_init_script("const W = __WEBVIEW2__", false),
-            "const W = false"
+            guest_init_script(source, false, true),
+            "const W = false, N = true"
         );
     }
 

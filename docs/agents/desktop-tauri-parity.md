@@ -91,7 +91,7 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 | Task view in its phone layout beside the panel | (frontend tests) | M17 | M17 | M17 |
 | Child webview placed over the host | `core::side_panel::child`, `panel-guest.test.js` | M17 | M17 | M17 |
 | App menus, dialogs and toasts above the panel (snapshot) | `panel-guest.test.js` | M19 | M19 | M19 |
-| Isolation: own store, never `at`, no capability | `core::side_panel::guest`, `parity.test.js` (capabilities), `src-tauri::panel_scheme` | M18; G WP10 part 2 | M18 | M18 |
+| Isolation: own store, never `at`, no capability (every command refused) | `core::side_panel::guest`, `parity.test.js` (every capability file), `src-tauri::panel_scheme` | M18; A `verify-side-panel` (a command is refused) | M18 | M18 |
 | Popups and `target=_blank` | `core::side_panel::guest` | M17 | M17 | M17 |
 | Cmd/Ctrl-click to the browser | `core::side_panel::guest` | M17 | M17, M24 | M17 |
 | Menu keys with the focus in the panel | `panel-init.test.js` (WebView2 keys) | M21 | M21 | M21 |
@@ -100,6 +100,7 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 | Guest requests refused by the app's schemes | `src-tauri::scheme`, `src-tauri::panel_scheme`, `panel-init.test.js` | M25 | M25 | M25 |
 | Find in page | `core::side_panel::wire`, `core::side_panel::find`, `src-tauri::side_panel` | M29 | M29 | M29 |
 | Site permissions bar, list, timeout | `core::side_panel::permissions`, `core::side_panel::permission_store`, `core::side_panel::platform_permissions`, `src-tauri::panel_permissions` | M26 | M26, M27 | M26, M28 |
+| A site's notifications: asked, shown, clicked | `core::side_panel::platform_permissions`, `src-tauri::notify`, `panel-init.test.js` | A `verify-side-panel` | M47 (G: WKWebView cannot show one; the site reads "denied") | M47 |
 | `agentrq-ext://` extension pages and their bridge | `core::side_panel::ext_scheme`, `core::side_panel::child`, `src-tauri::panel_scheme`, `src-tauri::side_panel`, `panel-init.test.js`, `ext-host-runtime.test.js` | A `verify-side-panel` | M25, M46 | M25, M46 |
 
 ### Files, clipboard and native helpers
@@ -422,3 +423,14 @@ screenshots, in the PR or task that ran the checklist.
     menu (**Add to notes**): the panel opens at it, typed notes are saved and
     come back after a reload, and adding another task updates the open page.
     Windows: the page's address is `http://agentrq-ext.panel-notes/…`.
+47. **[macOS, Windows]** A site's notifications in the panel. Use a page that
+    asks on a click (`Notification.requestPermission()`), then shows
+    `new Notification(...)` with an `onclick`. Re-run 10 and 11 too: the app's
+    own notifications go through the same plugin, now registered without its
+    page script.
+    - **[Windows]** The click shows the bar, and **Allow** gives `granted`.
+      The notification shows as WebView2's own toast (runtime 128+), and
+      clicking it runs the page's `onclick`. The app's own page never raises
+      WebView2's permission prompt.
+    - **[macOS]** `Notification.permission` reads `denied`,
+      `requestPermission()` resolves `denied` with no bar, and nothing shows.

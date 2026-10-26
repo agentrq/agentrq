@@ -10,7 +10,8 @@
 
 use std::collections::HashMap;
 
-use super::permissions::PermissionDetails;
+use super::permission_store::{PermissionDecision, SitePermissions};
+use super::permissions::{origin_of, PermissionDetails};
 
 /// One request, as Electron's `session.setPermissionRequestHandler` sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,6 +173,41 @@ impl CommittedPages {
 
     pub fn forget(&mut self, label: &str) {
         self.0.remove(label);
+    }
+}
+
+/// The sites a WebKitGTK guest's new web process is told may, or may never,
+/// show notifications, before any page asks
+/// (`webkit_web_context_initialize_notification_permissions`): a site that
+/// checks `Notification.permission` without asking sees its answer. A site in
+/// neither asks.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NotificationSeeds {
+    pub allowed: Vec<String>,
+    pub blocked: Vec<String>,
+}
+
+impl NotificationSeeds {
+    pub fn from_sites(sites: &[SitePermissions]) -> Self {
+        let mut seeds = Self::default();
+        for site in sites {
+            let entries = site.permissions.iter();
+            for entry in entries.filter(|e| e.permission == "notifications") {
+                let list = match entry.decision {
+                    PermissionDecision::Allow => &mut seeds.allowed,
+                    PermissionDecision::Block => &mut seeds.blocked,
+                };
+                list.push(site.origin.clone());
+            }
+        }
+        seeds
+    }
+
+    /// Whether the page at `url` may show a notification now: a page told
+    /// "granted" keeps showing them after its site's Allow is removed.
+    pub fn allows(&self, url: &str) -> bool {
+        let origin = origin_of(url);
+        self.allowed.contains(&origin)
     }
 }
 
@@ -348,5 +384,66 @@ mod tests {
             security_origin_url("http", "localhost", 8080),
             "http://localhost:8080/"
         );
+    }
+
+    fn site(origin: &str, entries: &[(&str, PermissionDecision)]) -> SitePermissions {
+        use crate::side_panel::permission_store::PermissionEntry;
+        let permissions = entries
+            .iter()
+            .map(|(permission, decision)| PermissionEntry {
+                permission: permission.to_string(),
+                decision: *decision,
+            });
+        SitePermissions {
+            origin: origin.to_string(),
+            permissions: permissions.collect(),
+        }
+    }
+
+    #[test]
+    fn notification_seeds_are_the_sites_answers_to_notifications_alone() {
+        use PermissionDecision::{Allow, Block};
+        let sites = [
+            site(
+                "https://chat.example",
+                &[("camera", Block), ("notifications", Allow)],
+            ),
+            site("https://ads.example", &[("notifications", Block)]),
+            site("https://maps.example", &[("geolocation", Allow)]),
+            site("http://127.0.0.1:8080", &[("notifications", Allow)]),
+        ];
+        let seeds = NotificationSeeds::from_sites(&sites);
+        assert_eq!(
+            seeds,
+            NotificationSeeds {
+                allowed: vec![
+                    "https://chat.example".into(),
+                    "http://127.0.0.1:8080".into()
+                ],
+                blocked: vec!["https://ads.example".into()],
+            }
+        );
+        assert_eq!(
+            NotificationSeeds::from_sites(&[]),
+            NotificationSeeds::default()
+        );
+    }
+
+    #[test]
+    fn a_page_may_notify_only_while_its_site_is_allowed() {
+        let seeds = NotificationSeeds {
+            allowed: vec![
+                "https://chat.example".into(),
+                "http://127.0.0.1:8080".into(),
+            ],
+            blocked: vec!["https://ads.example".into()],
+        };
+        assert!(seeds.allows("https://chat.example/room/1?x#y"));
+        assert!(seeds.allows("http://127.0.0.1:8080/notify"));
+        assert!(!seeds.allows("http://127.0.0.1:8081/notify"));
+        assert!(!seeds.allows("https://ads.example/"));
+        assert!(!seeds.allows("https://maps.example/"));
+        assert!(!seeds.allows(""));
+        assert!(!NotificationSeeds::default().allows("https://chat.example/"));
     }
 }

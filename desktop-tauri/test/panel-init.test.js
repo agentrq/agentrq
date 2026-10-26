@@ -14,7 +14,7 @@ const POSTS = JSON.parse(readFileSync(new URL('./fixtures/message-scripts.json',
  * Run the init script in a page at `href`, as a frame of `top` or the top,
  * and hand an Extension's page `token` as the shell does once it loads.
  */
-function run(href, { webview2 = false, frame = false, answer, token = 'tk', chrome, setTimeout = (fn) => fn() } = {}) {
+function run(href, { webview2 = false, noNotifications = false, Notification, frame = false, answer, token = 'tk', chrome, setTimeout = (fn) => fn() } = {}) {
   const url = new URL(href)
   const listeners = []
   const window = {
@@ -24,9 +24,10 @@ function run(href, { webview2 = false, frame = false, answer, token = 'tk', chro
     setTimeout,
     chrome,
     listeners,
+    Notification,
   }
   window.top = frame ? {} : window
-  const script = SOURCE.replaceAll('__WEBVIEW2__', String(webview2))
+  const script = SOURCE.replaceAll('__WEBVIEW2__', String(webview2)).replaceAll('__NO_NOTIFICATIONS__', String(noNotifications))
   new Function('window', 'location', script)(window, window.location)
   if (token !== null) window.__agentrqPanelToken?.(token)
   return window
@@ -42,6 +43,35 @@ describe('the side panel guest init script', () => {
     expect(run('https://agentrq-ext.notes/', { webview2: true }).agentrq).toBeDefined()
     expect(run('ftp://agentrq-ext.notes/', { webview2: true }).agentrq).toBeUndefined()
     expect(run('https://notes.example/', { webview2: true }).agentrq).toBeUndefined()
+  })
+
+  it('tells a site on macOS it may never notify, and leaves it alone elsewhere', async () => {
+    /** WebKit's own: a static getter and method a page can read, as WKWebView has them. */
+    const native = () => {
+      function Notification() {}
+      Object.defineProperty(Notification, 'permission', { get: () => 'default', configurable: true })
+      Notification.requestPermission = async () => 'default'
+      return Notification
+    }
+    const mac = run('https://chat.example/', { noNotifications: true, Notification: native() })
+    expect(mac.Notification.permission).toBe('denied')
+    const told = vi.fn()
+    await expect(mac.Notification.requestPermission(told)).resolves.toBe('denied')
+    expect(told).toHaveBeenCalledWith('denied')
+    await expect(mac.Notification.requestPermission()).resolves.toBe('denied')
+    // The page cannot put back the "default" nobody would ever answer.
+    expect(() => Object.defineProperty(mac.Notification, 'permission', { get: () => 'default' })).toThrow()
+    expect(() => {
+      'use strict'
+      mac.Notification.requestPermission = async () => 'granted'
+    }).toThrow()
+
+    // Elsewhere the webview answers, through the window's bar.
+    const linux = run('https://chat.example/', { Notification: native() })
+    expect(linux.Notification.permission).toBe('default')
+    await expect(linux.Notification.requestPermission()).resolves.toBe('default')
+    // And a webview with no notifications at all keeps having none.
+    expect(run('https://chat.example/', { noNotifications: true }).Notification).toBeUndefined()
   })
 
   it('gives a frame nothing, even of an extension', () => {

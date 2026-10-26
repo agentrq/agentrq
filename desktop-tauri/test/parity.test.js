@@ -6,7 +6,7 @@
 // Both are loaded for real, with Electron's and Tauri's sides stubbed, so a
 // change to either fails here until the other follows.
 
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
@@ -262,8 +262,8 @@ describe('the Rust side serves what the bridge calls', () => {
     .sort()
 
   // The Tauri side panel guest's (bridge/panel-guest.js): Electron's guest is a
-  // `<webview>` element, which needs no channel. The guest itself has no
-  // command at all: `agentrq:panel:send` is a POST on its own scheme.
+  // `<webview>` element, which needs no channel. The guest itself may call no
+  // command: `agentrq:panel:send` is a POST on its own scheme.
   const GUEST_ONLY = [
     'side_panel_guest_close',
     'side_panel_guest_find',
@@ -406,5 +406,52 @@ describe('the Rust side serves what the bridge calls', () => {
     expect(capability.webviews).toEqual(['main'])
     expect(capability.windows).toBeUndefined()
     expect(capability.remote).toBeUndefined()
+  })
+})
+
+/**
+ * Why a capability would reach a side panel guest, or `null`. Guests have
+ * Tauri's IPC object like every webview, so the ACL is all that refuses them:
+ * a `windows` grant covers the window's child webviews (guests are `main`'s),
+ * a `remote` URL any page on it, and a webview pattern their labels.
+ */
+function reachesGuests(capability) {
+  if (capability.windows !== undefined) return 'is scoped to windows, which covers their child webviews'
+  if (capability.remote !== undefined) return 'grants remote URLs'
+  if (!Array.isArray(capability.webviews) || capability.webviews.length === 0) return 'names no webview'
+  // Tauri matches labels as globs.
+  const glob = (pattern) => new RegExp(`^${pattern.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`)
+  const guest = capability.webviews.find((pattern) => ['panel-guest-1', 'panel-guest-42'].some((label) => glob(pattern).test(label)))
+  return guest === undefined ? null : `names the guests' labels (${guest})`
+}
+
+describe('no capability reaches a side panel guest', () => {
+  it('holds for every capability file', () => {
+    const dir = here('../src-tauri/capabilities/')
+    const files = readdirSync(dir)
+    expect(files).toContain('main.json')
+    for (const file of files) {
+      // Tauri reads TOML too, which this check would not.
+      expect(file, 'a capability file').toMatch(/\.json$/)
+      expect(reachesGuests(JSON.parse(readFileSync(`${dir}${file}`, 'utf8'))), file).toBeNull()
+    }
+  })
+
+  it('and no Tauri config adds one inline', () => {
+    for (const config of ['../src-tauri/tauri.conf.json', '../scripts/verify.tauri.conf.json']) {
+      expect(JSON.parse(read(config)).app?.security?.capabilities, config).toBeUndefined()
+    }
+  })
+
+  it('tells each way a capability would reach one', () => {
+    expect(reachesGuests({ webviews: ['main'] })).toBeNull()
+    expect(reachesGuests({ webviews: ['main', 'sign-in-*'] })).toBeNull()
+    expect(reachesGuests({ windows: ['main'] })).toMatch(/windows/)
+    expect(reachesGuests({ webviews: ['main'], remote: { urls: ['https://*'] } })).toMatch(/remote/)
+    expect(reachesGuests({})).toMatch(/no webview/)
+    expect(reachesGuests({ webviews: [] })).toMatch(/no webview/)
+    expect(reachesGuests({ webviews: ['*'] })).toMatch(/\(\*\)/)
+    expect(reachesGuests({ webviews: ['panel-guest-*'] })).toMatch(/panel-guest-\*/)
+    expect(reachesGuests({ webviews: ['panel-guest-4?'] })).toMatch(/panel-guest-4\?/)
   })
 })

@@ -55,6 +55,10 @@
 - **Scope the capability with `webviews`, never `windows`.** A window grant also covers
   every child webview in it, so side-panel guests and `agentrq-ext:` pages would
   inherit all our commands. Guests get no capability; a test reads every capability file.
+- **A guest still has Tauri's IPC object** (`__TAURI_INTERNALS__`, `isTauri`), and the
+  ACL is all that refuses its calls. Nothing can take the object out. Tauri prepends it
+  to every webview with no per-webview switch, and defines it non-configurable. On
+  Windows, wry discards the WebView2 script ids, so it cannot be removed natively either.
 - **`window.agentrq` is deep-frozen and non-writable** (`versions` stays mutable until the
   Tauri version resolves), as Electron's contextBridge leaves it. Page code must not be
   able to replace a member.
@@ -239,6 +243,15 @@
   older one is dropped.
 - **Call `shell::page_leaving` before `main` is replaced or sent elsewhere**; its
   `Started` comes too late, and a click in between is lost.
+- **Register the notification plugin as `notify::ShellOnly`, never bare.** Its
+  init script replaces `window.Notification` in every webview, a guest's too,
+  with one that calls commands no capability grants. A site could then never
+  ask to notify.
+- **A site's notification:** WebKitGTK's `show-notification` goes through the
+  plugin while the site's Allow stands. An emission hook seeds each new web
+  process with the answers. WebKitGTK refuses `requestPermission()` without a
+  person's click, which Chromium does not. WebView2 shows its own (runtime 128+).
+  WKWebView cannot, so `panel.js` tells a site `denied`.
 
 ## Extensions
 

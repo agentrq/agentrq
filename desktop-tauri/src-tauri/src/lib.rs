@@ -654,7 +654,7 @@ fn pick_folder<R: Runtime>(window: WebviewWindow<R>) -> PickedFolder {
 pub fn run() {
     let app = chrome::plugins(tauri::Builder::default())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_notification::init())
+        .plugin(notify::ShellOnly(tauri_plugin_notification::init()))
         .register_asynchronous_uri_scheme_protocol("app", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let webview = ctx.webview_label().to_string();
@@ -724,10 +724,13 @@ pub fn run() {
             app.manage(profiles.auth_windows());
             app.manage(profiles.clone());
             let clicked = notifier.clone();
+            let site = handle.clone();
             handle.notification().on_action(move |action| {
                 let extra = action.notification().map(|n| n.extra());
                 if let Some(route) = notify::tapped(action.action_id(), extra) {
                     clicked.clicked(&route);
+                } else if let Some((label, id)) = notify::site_tapped(action.action_id(), extra) {
+                    side_panel::site_notification_clicked(&site, &label, id);
                 }
             })?;
             app.manage(notifier.clone());

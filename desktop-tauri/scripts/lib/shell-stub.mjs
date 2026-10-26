@@ -14,9 +14,11 @@
  *
  * - a stand-in `xdg-open` first on PATH, which records its argument;
  * - a private session bus, with a stand-in `org.freedesktop.FileManager1` on it
- *   that records what `ShowItems` is asked to show. The app is pointed at that
- *   bus alone, so the person's own file manager and bus are never reached, and
- *   neither is their running AgentRQ (single-instance is keyed on the bus).
+ *   that records what `ShowItems` is asked to show, and a stand-in
+ *   `org.freedesktop.Notifications` that records each notification and clicks
+ *   one when asked. The app is pointed at that bus alone, so the person's own
+ *   file manager, notifications and bus are never reached, and neither is
+ *   their running AgentRQ (single-instance is keyed on the bus).
  *
  * Everything on either side of the stand-ins is the real shell.
  *
@@ -24,7 +26,7 @@
  * back as it was.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 
@@ -55,6 +57,63 @@ Gio.bus_own_name(Gio.BusType.SESSION, 'org.freedesktop.FileManager1', Gio.BusNam
 GLib.MainLoop().run()
 `
 
+// The notification server's side: each Notify is a JSON line in argv[1], and
+// an id written to argv[2] is clicked, as a person's click on its body is.
+const NOTIFICATIONS = `
+import json, sys
+import gi
+gi.require_version('Gio', '2.0')
+from gi.repository import Gio, GLib
+
+XML = """<node><interface name="org.freedesktop.Notifications">
+  <method name="GetCapabilities"><arg type="as" direction="out"/></method>
+  <method name="Notify"><arg type="s" direction="in"/><arg type="u" direction="in"/><arg type="s" direction="in"/>
+    <arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="as" direction="in"/>
+    <arg type="a{sv}" direction="in"/><arg type="i" direction="in"/><arg type="u" direction="out"/></method>
+  <method name="CloseNotification"><arg type="u" direction="in"/></method>
+  <method name="GetServerInformation"><arg type="s" direction="out"/><arg type="s" direction="out"/>
+    <arg type="s" direction="out"/><arg type="s" direction="out"/></method>
+  <signal name="ActionInvoked"><arg type="u"/><arg type="s"/></signal>
+  <signal name="NotificationClosed"><arg type="u"/><arg type="u"/></signal>
+</interface></node>"""
+state = {'next': 1, 'clicked': 0, 'conn': None}
+
+def on_call(conn, sender, path, iface, method, params, invocation):
+    if method == 'GetCapabilities':
+        invocation.return_value(GLib.Variant('(as)', (['actions', 'body'],)))
+    elif method == 'GetServerInformation':
+        invocation.return_value(GLib.Variant('(ssss)', ('stand-in', 'agentrq', '1', '1.2')))
+    elif method == 'Notify':
+        app, _, _, summary, body, actions, _, _ = params.unpack()
+        nid = state['next']
+        state['next'] += 1
+        with open(sys.argv[1], 'a') as log:
+            log.write(json.dumps({'id': nid, 'app': app, 'summary': summary, 'body': body, 'actions': list(actions)}) + '\\n')
+        invocation.return_value(GLib.Variant('(u)', (nid,)))
+    else:
+        invocation.return_value(None)
+
+def clicks():
+    with open(sys.argv[2]) as asked:
+        ids = [int(line) for line in asked.read().split()]
+    for nid in ids[state['clicked']:]:
+        state['conn'].emit_signal(None, '/org/freedesktop/Notifications', 'org.freedesktop.Notifications',
+                                  'ActionInvoked', GLib.Variant('(us)', (nid, 'default')))
+    state['clicked'] = len(ids)
+    return True
+
+def on_bus(conn, name):
+    state['conn'] = conn
+    conn.register_object('/org/freedesktop/Notifications', Gio.DBusNodeInfo.new_for_xml(XML).interfaces[0], on_call, None, None)
+
+def on_name(conn, name):
+    GLib.timeout_add(50, clicks)
+    print('ready', flush=True)
+
+Gio.bus_own_name(Gio.BusType.SESSION, 'org.freedesktop.Notifications', Gio.BusNameOwnerFlags.NONE, on_bus, on_name, None)
+GLib.MainLoop().run()
+`
+
 /** The first line a child prints, or null if it exits (or the wait runs out) first. */
 function firstLine(child) {
   return new Promise((resolve) => {
@@ -79,6 +138,8 @@ function firstLine(child) {
  *   calls: () => Promise<string[]>,
  *   reveals: (() => Promise<string[]>) | null,
  *   whyNoReveals: string | null,
+ *   notifications: (() => Promise<{ id: number, app: string, summary: string, body: string, actions: string[] }[]>) | null,
+ *   click: (id: number) => Promise<void>,
  *   stop: () => Promise<void>,
  * }>}
  */
@@ -86,8 +147,9 @@ export async function stubShell() {
   const dir = await mkdtemp(join(tmpdir(), 'agentrq-verify-opener-'))
   const log = join(dir, 'calls.log')
   const revealLog = join(dir, 'reveals.log')
-  await writeFile(log, '')
-  await writeFile(revealLog, '')
+  const notifyLog = join(dir, 'notifications.log')
+  const clickLog = join(dir, 'clicks.log')
+  for (const file of [log, revealLog, notifyLog, clickLog]) await writeFile(file, '')
   const script = join(dir, 'xdg-open')
   await writeFile(script, `#!/bin/sh\nprintf '%s\\n' "$1" >> '${log}'\n`)
   await chmod(script, 0o755)
@@ -97,6 +159,7 @@ export async function stubShell() {
   const env = { PATH: `${dir}${delimiter}${process.env.PATH}` }
   let reveals = null
   let whyNoReveals = null
+  let notifications = null
 
   const bus = spawn('dbus-daemon', ['--session', '--nofork', '--print-address=1'], { stdio: ['ignore', 'pipe', 'ignore'] })
   bus.once('error', () => {})
@@ -113,6 +176,13 @@ export async function stubShell() {
     if ((await firstLine(manager)) === 'ready') {
       env.DBUS_SESSION_BUS_ADDRESS = address
       reveals = () => read(revealLog)
+      const server = spawn('python3', ['-c', NOTIFICATIONS, notifyLog, clickLog], {
+        env: { ...process.env, DBUS_SESSION_BUS_ADDRESS: address },
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+      server.once('error', () => {})
+      children.push(server)
+      if ((await firstLine(server)) === 'ready') notifications = async () => (await read(notifyLog)).map((line) => JSON.parse(line))
     } else whyNoReveals = 'no python3 with GLib bindings (python3-gi) for the stand-in file manager'
   }
 
@@ -121,6 +191,8 @@ export async function stubShell() {
     calls: () => read(log),
     reveals,
     whyNoReveals,
+    notifications,
+    click: (id) => appendFile(clickLog, `${id}\n`),
     stop: async () => {
       for (const child of children) child.kill()
       await rm(dir, { recursive: true, force: true }).catch(() => {})

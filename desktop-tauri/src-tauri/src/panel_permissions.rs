@@ -9,8 +9,8 @@
 //! `side-panel-permissions/<profileId>.json`. Each platform's webview hands
 //! its request to [`request`] (`side_panel/`'s platform files); the question
 //! goes to the app's window, and only that window may answer it, list the
-//! answers or remove one. A guest has no command at all, and these refuse any
-//! webview but `main` besides.
+//! answers or remove one. The ACL refuses every command a guest calls, and
+//! these refuse any webview but `main` besides.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -21,7 +21,7 @@ use agentrq_desktop_core::side_panel::permission_store::{PermissionStore, SitePe
 use agentrq_desktop_core::side_panel::permissions::{
     origin_of, GuestPage, PermissionBroker, PermissionQuestion,
 };
-use agentrq_desktop_core::side_panel::platform_permissions::{Ask, NativeAsk};
+use agentrq_desktop_core::side_panel::platform_permissions::{Ask, NativeAsk, NotificationSeeds};
 use tauri::async_runtime::{spawn, spawn_blocking};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State, Webview};
 
@@ -134,6 +134,24 @@ fn current_in<R: Runtime>(app: &AppHandle<R>, state: &PanelPermissions) -> Arc<C
     drop(kept);
     drop(earlier);
     current
+}
+
+/// Tell the guests' webviews which sites may notify: before a guest is
+/// made, and whenever an answer changes.
+fn seed<R: Runtime>(app: &AppHandle<R>, profile: &str, sites: &[SitePermissions]) {
+    let seeds = NotificationSeeds::from_sites(sites);
+    crate::side_panel::seed_notifications(app, profile, seeds);
+}
+
+/// The active profile's notification answers, read from its file.
+pub async fn seed_notifications<R: Runtime>(app: &AppHandle<R>) {
+    let app = app.clone();
+    let _ = spawn_blocking(move || {
+        let current = current(&app);
+        current.store.load();
+        seed(&app, &current.profile, &current.store.list());
+    })
+    .await;
 }
 
 /// A guest was made for `profile`.
@@ -303,9 +321,14 @@ pub async fn side_panel_permission_answer<R: Runtime>(
     } else {
         "block"
     };
-    spawn_blocking(move || current(&app).broker.answer(id, decision))
-        .await
-        .unwrap_or(false)
+    spawn_blocking(move || {
+        let current = current(&app);
+        let answered = current.broker.answer(id, decision);
+        seed(&app, &current.profile, &current.store.list());
+        answered
+    })
+    .await
+    .unwrap_or(false)
 }
 
 /// `agentrq:side-panel:permissions`: every answer, by site. Never an error,
@@ -344,7 +367,9 @@ pub async fn side_panel_permission_remove<R: Runtime>(
         let current = current(&app);
         current.store.load();
         current.store.remove(&origin, permission.as_deref());
-        current.store.list()
+        let sites = current.store.list();
+        seed(&app, &current.profile, &sites);
+        sites
     })
     .await
     .unwrap_or_default()
@@ -654,6 +679,17 @@ mod tests {
             assert_eq!(answer, refused, "{cmd} {args}");
         }
         assert_eq!(*lock(&answered), None, "still waiting on the person");
+    }
+
+    #[test]
+    fn a_shell_without_the_broker_lets_a_guest_come_and_go() {
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("mock app");
+        opened(app.handle(), 1, "work");
+        cancel(app.handle(), 1);
+        closed(app.handle(), 1);
+        assert!(app.try_state::<PanelPermissions>().is_none());
     }
 
     #[test]
