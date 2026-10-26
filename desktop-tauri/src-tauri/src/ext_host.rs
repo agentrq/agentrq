@@ -1091,13 +1091,15 @@ pub(crate) mod tests {
     async fn a_stopped_host_is_no_crash_and_a_stubborn_one_is_killed() {
         let dir = tempfile::tempdir().unwrap();
         install(dir.path(), r#"{"installations":[{"name":"a"}]}"#);
-        // Ignores its stdin closing.
-        let host = host(
-            script_launch("setInterval(() => {}, 1000)"),
-            dir.path(),
-            Arc::default(),
-        );
+        // Ignores its stdin closing, and holds a connection that closes
+        // only when it dies.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let script = format!("require('net').connect({port}); setInterval(() => {{}}, 1000)");
+        let host = host(script_launch(&script), dir.path(), Arc::default());
         assert!(host.boot());
+        let accepted = tokio::time::timeout(Duration::from_secs(10), listener.accept()).await;
+        let (mut connection, _) = accepted.expect("the host connects").unwrap();
         let waiting = {
             let mut state = lock(&host.state);
             let process = state.process.as_mut().unwrap();
@@ -1105,9 +1107,14 @@ pub(crate) mod tests {
             lock(&process.pending).insert(99, tx);
             rx
         };
+        let stopped = Instant::now();
         host.stop();
         assert_eq!(waiting.await.unwrap(), Err(HOST_GONE.to_string()));
-        tokio::time::sleep(STOP_GRACE + Duration::from_millis(500)).await;
+        let mut rest = Vec::new();
+        let gone = STOP_GRACE + Duration::from_secs(10);
+        let closed = tokio::time::timeout(gone, connection.read_to_end(&mut rest)).await;
+        assert!(closed.is_ok(), "the stubborn host was killed");
+        assert!(stopped.elapsed() >= STOP_GRACE, "once its grace was up");
         let state = lock(&host.state);
         assert!(state.process.is_none());
         assert_eq!(state.ledger.count("a"), 0, "a stop is no crash");
@@ -1337,31 +1344,27 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn host_environment_is_clean_of_node_options() {
+    async fn the_host_inherits_only_the_allowed_environment() {
         let dir = tempfile::tempdir().unwrap();
-        install(dir.path(), r#"{"installations":[{"name":"a"}]}"#);
+        // Answers with the names in its environment.
         let script = r#"
-            const out = (m) => process.stdout.write(JSON.stringify({jsonrpc: '2.0', ...m}) + '\n');
-            let buf = '';
-            process.stdin.on('data', (c) => {
-                buf += c;
-                let i;
-                while ((i = buf.indexOf('\n')) >= 0) {
-                    const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
-                    if (m.method === 'checkEnv') {
-                        out({ id: m.id, result: { hasNodeOptions: 'NODE_OPTIONS' in process.env } });
-                    }
-                }
+            require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+                const m = JSON.parse(line);
+                if (m.id !== undefined) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: Object.keys(process.env) }) + '\n');
             });
-            out({ method: 'running', params: { names: ['a'] } });
         "#;
-        std::env::set_var("NODE_OPTIONS", "--max-old-space-size=4096");
         let host = host(script_launch(script), dir.path(), Arc::default());
-        assert!(host.boot());
-        until(|| lock(&host.state).running == vec!["a".to_string()]).await;
-        let res = host.call("checkEnv", json!({})).await.unwrap();
-        assert_eq!(res["hasNodeOptions"], false);
-        std::env::remove_var("NODE_OPTIONS");
+        let names = host.call("env", json!({})).await.unwrap();
+        let names: Vec<String> = serde_json::from_value(names).unwrap();
+        let has = |name: &str| names.iter().any(|n| n.eq_ignore_ascii_case(name));
+        assert!(has("PATH"), "{names:?}");
+        // Cargo sets these for the test; none is allowed through.
+        let refused: Vec<String> = std::env::vars()
+            .map(|(name, _)| name)
+            .filter(|name| name.starts_with("CARGO"))
+            .collect();
+        assert!(!refused.is_empty());
+        assert!(refused.iter().all(|name| !has(name)), "{names:?}");
         host.stop();
     }
 
@@ -1371,8 +1374,8 @@ pub(crate) mod tests {
         install(dir.path(), r#"{"installations":[{"name":"a"}]}"#);
         let host = host(script_launch("process.exit(1)"), dir.path(), Arc::default());
         assert!(host.boot());
+        // The third failure gives up under the same lock that counts it.
         until(|| lock(&host.state).startup_failures >= 3).await;
-        tokio::time::sleep(Duration::from_millis(150)).await;
         let state = lock(&host.state);
         assert_eq!(state.startup_failures, 3);
         assert!(state.process.is_none());

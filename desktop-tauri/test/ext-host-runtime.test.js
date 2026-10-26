@@ -666,8 +666,9 @@ describe('tool-call review', () => {
     const h = host()
     expect((await h.call('installLocal', { path: dir, grant: { ...guardrailGrant } })).ok).toBe(true)
     for (const id of ['a', 'b', 'c']) await h.call('reviewToolCalls', { event: pending(id) })
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(h.shell.notes).toContainEqual({ method: 'changed', params: { name: 'thrower', reason: 'review broke' } })
+    await vi.waitFor(() =>
+      expect(h.shell.notes).toContainEqual({ method: 'changed', params: { name: 'thrower', reason: 'review broke' } }),
+    )
 
     // Disabling it can fail too, inside the stream handler: never unhandled.
     const failing = host(fakeShell())
@@ -678,8 +679,9 @@ describe('tool-call review', () => {
     }
     await failing.call('installLocal', { path: dir, grant: { ...guardrailGrant } })
     for (const id of ['d', 'e', 'f']) await failing.call('reviewToolCalls', { event: pending(id) })
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect((await failing.call('state')).installed.find((i) => i.name === 'thrower').enabled).toBe(false)
+    await vi.waitFor(async () =>
+      expect((await failing.call('state')).installed.find((i) => i.name === 'thrower').enabled).toBe(false),
+    )
   })
 
   it('logs a review that throws rather than failing the call', async () => {

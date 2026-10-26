@@ -40,9 +40,8 @@
 ## The bridge and its commands
 
 - **A bridge command is named after its Electron channel** (`agentrq:side-panel:permission-answer`
-  is `side_panel_permission_answer`). `commands.rs` holds one per channel, as a
-  `todo` stub until its work package replaces it, sometimes with one in a module of
-  its own (`extensions.rs`), which the parity test then reads too.
+  is `side_panel_permission_answer`). `commands.rs` holds one per channel, sometimes
+  with one in a module of its own (`extensions.rs`), which the parity test then reads too.
 - **`bridge/index.js` mirrors `desktop/src/preload/index.js` member for member**, and
   `test/parity.test.js` loads both. Change the preload and the bridge follows, or CI
   fails. A call's arguments cross as one object keyed by the preload's parameter names.
@@ -245,9 +244,16 @@
 - **The sidecar's stdout is the wire.** `main.js` sends `console.log` and stdout
   to stderr before anything loads; an extension's print would otherwise end the
   host.
+- **Every host is forked on `ext_host::fork`'s one thread, which never exits.** On
+  Linux `PR_SET_PDEATHSIG` fires when the forking *thread* exits: forked on a tokio
+  blocking thread, the host was killed 10 s after launch.
+- **A call past its deadline fails alone.** Only a missed `ping`, which `rpc.js`
+  answers ahead of every handler, kills the host, and that kill blames no
+  extension: three slow renders must not disable everything running.
 - **Extension secrets use a keychain-only key** (`vault::keychain_only_key`),
   never a file beside them: with no keychain they are refused, as Electron's
-  `safeStorage` refuses them.
+  `safeStorage` refuses them. One read of it at a time (`VaultCache::reading`): a
+  second, started while an unlock prompt holds the first, can create a second key.
 - **A host call waits for `start`.** One that arrives while it runs and installs
   what it is loading would load that extension twice.
 
