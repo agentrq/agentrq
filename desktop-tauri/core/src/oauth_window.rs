@@ -7,8 +7,9 @@
 //! instead of following.
 //!
 //! The redirect, `agentrq://extensions/authorized` for `supervisor-auth.js`, is
-//! a scheme the app registers: followed, it would reach the deep-link handler
-//! with the code in it. So it is cancelled, and the flow ends with its URL.
+//! Electron's scheme, not this app's (`agentrq-tauri`): followed, it would hand
+//! the code to the Electron app, or to whatever else claims `agentrq`. So it is
+//! cancelled, and the flow ends with its URL.
 //! Electron matched it as a prefix; here scheme, userinfo, host, port and path
 //! must all be equal, and only the query and fragment may differ.
 
@@ -27,7 +28,7 @@ pub const DEADLINE: Duration = Duration::from_secs(10 * 60);
 /// Why there is no redirect to hand back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OAuthError {
-    /// The authorisation page is not http(s), or a URL does not parse.
+    /// The authorisation page is not on the web, or a URL does not parse.
     BadUrl,
     /// Another authorisation window is already open; it is brought forward.
     Busy,
@@ -66,10 +67,23 @@ pub fn is_redirect(url: &Url, redirect: &Url) -> bool {
         && url.path() == redirect.path()
 }
 
+/// A web page, and not one of WebView2's own `*.localhost` origins, which are
+/// the app's.
+fn is_web(url: &Url) -> bool {
+    matches!(url.scheme(), "http" | "https")
+        && !url
+            .host_str()
+            .is_some_and(|host| host.trim_end_matches('.').ends_with(".localhost"))
+}
+
 /// What the window may load besides the redirect: the web, and the blank page
 /// it is built on. Any other scheme would go to the OS.
+///
+/// Subframes are asked too, on every OS, so an iframe on `data:`, `blob:` or
+/// `about:srcdoc` is refused like any other scheme: a provider's widget that
+/// needs one does not show.
 fn is_loadable(url: &Url) -> bool {
-    matches!(url.scheme(), "http" | "https") || url.as_str() == "about:blank"
+    is_web(url) || url.as_str() == "about:blank"
 }
 
 /// What a navigation does.
@@ -94,7 +108,7 @@ impl Flow {
     pub fn new(auth_url: &str, redirect_uri: &str) -> Result<Self, OAuthError> {
         let page = Url::parse(auth_url).map_err(|_| OAuthError::BadUrl)?;
         let redirect = Url::parse(redirect_uri).map_err(|_| OAuthError::BadUrl)?;
-        if !matches!(page.scheme(), "http" | "https") {
+        if !is_web(&page) {
             return Err(OAuthError::BadUrl);
         }
         Ok(Self {
@@ -242,6 +256,12 @@ mod tests {
             Flow::new(PAGE, "not a url").unwrap_err(),
             OAuthError::BadUrl
         );
+        assert_eq!(
+            Flow::new("http://tauri.localhost/", REDIRECT).unwrap_err(),
+            OAuthError::BadUrl
+        );
+        let dev = Flow::new("http://localhost:3000/authorize", REDIRECT).unwrap();
+        assert_eq!(dev.host(), "localhost");
         let local = Flow::new("http://127.0.0.1:3000/authorize", REDIRECT).unwrap();
         assert_eq!(local.page().as_str(), "http://127.0.0.1:3000/authorize");
         assert_eq!(local.host(), "127.0.0.1");
@@ -280,6 +300,7 @@ mod tests {
             PAGE,
             "http://agentrq.example/login",
             "https://github.com/login",
+            "http://localhost:3000/login",
             "about:blank",
         ] {
             assert_eq!(
@@ -299,6 +320,10 @@ mod tests {
             "data:text/html,x",
             "about:srcdoc",
             "mailto:a@b.example",
+            // WebView2's origins for the app's own pages.
+            "http://tauri.localhost/",
+            "https://app.localhost/",
+            "http://TAURI.LOCALHOST./x",
         ] {
             assert_eq!(
                 loads(&mut flow, other),

@@ -17,7 +17,7 @@
 
 mod handlers;
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -25,6 +25,7 @@ use agentrq_desktop_core::auth::cookie_domain_matches;
 pub use agentrq_desktop_core::oauth_window::OAuthError;
 use agentrq_desktop_core::oauth_window::{Flow, DEADLINE};
 use cookie_store::RawCookie;
+use tauri::webview::cookie::SameSite;
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
 use tokio::sync::oneshot;
 use url::Url;
@@ -43,11 +44,15 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The authorisation under way, if any: one at a time.
-#[derive(Default)]
+/// The authorisation under way, if any: one at a time. A run's [`Lease`]
+/// holds a handle to it, to free it however the run stops.
+#[derive(Default, Clone)]
 pub struct OAuthWindows {
-    open: Mutex<Option<(String, Arc<Pending>)>>,
+    open: Arc<Mutex<Option<Slot>>>,
 }
+
+/// The window's label, and its flow.
+type Slot = (String, Arc<Pending>);
 
 impl OAuthWindows {
     /// Takes the slot for `label`, or names the window that has it.
@@ -65,10 +70,8 @@ impl OAuthWindows {
     }
 
     #[cfg(test)]
-    fn current(&self) -> Option<Arc<Pending>> {
-        lock(&self.open)
-            .as_ref()
-            .map(|(_, pending)| pending.clone())
+    fn current(&self) -> Option<Slot> {
+        lock(&self.open).clone()
     }
 }
 
@@ -76,6 +79,9 @@ impl OAuthWindows {
 pub struct Pending {
     flow: Mutex<Flow>,
     done: Mutex<Option<oneshot::Sender<Ended>>>,
+    /// Set just before the run destroys the window. Until then a close waits,
+    /// so the window's session is always taken back first.
+    destroying: AtomicBool,
 }
 
 impl Pending {
@@ -88,10 +94,25 @@ impl Pending {
         step.load
     }
 
+    /// [`Pending::navigate`] for a subframe, which WebView2 reports as text:
+    /// one that does not parse is refused.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub fn navigate_frame(&self, uri: &str) -> bool {
+        Url::parse(uri).is_ok_and(|url| self.navigate(&url))
+    }
+
     /// Ends the flow for `why`; whether this was what ended it.
     pub fn end(&self, why: OAuthError) -> bool {
         let ended = lock(&self.flow).end(why);
         ended.map(|ended| self.send(ended)).is_some()
+    }
+
+    /// The person closing the window, which is declining. Whether to keep it
+    /// open: always, until the run has taken its session back and destroys
+    /// it, which no close may skip.
+    pub fn close_requested(&self) -> bool {
+        self.end(OAuthError::Closed);
+        !self.destroying.load(Ordering::SeqCst)
     }
 
     fn send(&self, ended: Ended) {
@@ -106,6 +127,13 @@ impl Pending {
 /// they are made on a blocking thread (wry#583).
 pub trait SessionWebview: CookieWebview {
     fn set_cookie(&self, cookie: RawCookie<'static>);
+}
+
+/// The window as a run drives it: lent its session, shown the page, then
+/// destroyed once the session is back.
+trait AuthWindow: SessionWebview {
+    fn navigate(&self, url: Url) -> Result<(), OAuthError>;
+    fn destroy(&self);
 }
 
 struct TauriWindow<R: Runtime>(WebviewWindow<R>);
@@ -125,18 +153,31 @@ impl<R: Runtime> SessionWebview for TauriWindow<R> {
     }
 }
 
+impl<R: Runtime> AuthWindow for TauriWindow<R> {
+    fn navigate(&self, url: Url) -> Result<(), OAuthError> {
+        self.0.navigate(url).map_err(window_error)
+    }
+    fn destroy(&self) {
+        // Not `close()`: that asks the window again.
+        let _ = self.0.destroy();
+    }
+}
+
 /// The jar's cookies for `page`, as the window keeps them: for `host` only,
-/// and for this session, so a store never writes them to disk.
+/// and for this session, so a store never writes them to disk. `SameSite` is
+/// the server's, Lax when it set none: WebKit reads none as `None`, which
+/// would let any page in the window post to the server as the person.
 fn lent(jar: &ProfileJar, page: &Url, host: &str) -> Vec<RawCookie<'static>> {
     let secure = page.scheme() == "https";
     jar.sent_to(page)
         .into_iter()
-        .map(|(name, value)| {
-            let mut cookie = RawCookie::new(name, value);
+        .map(|sent| {
+            let mut cookie = RawCookie::new(sent.name().to_string(), sent.value().to_string());
             cookie.set_domain(host.to_string());
             cookie.set_path("/");
             cookie.set_http_only(true);
             cookie.set_secure(secure);
+            cookie.set_same_site(sent.same_site().unwrap_or(SameSite::Lax));
             cookie
         })
         .collect()
@@ -190,33 +231,36 @@ async fn authorize_within<R: Runtime>(
     redirect_uri: &str,
     deadline: Duration,
 ) -> Result<Url, OAuthError> {
-    let flow = Flow::new(auth_url, redirect_uri)?;
-    let (page, host) = (flow.page().clone(), flow.host().to_string());
-    let (done, ended) = oneshot::channel();
-    let pending = Arc::new(Pending {
-        flow: Mutex::new(flow),
-        done: Mutex::new(Some(done)),
-    });
+    let run = Run::new(auth_url, redirect_uri, deadline)?;
     let label = format!("oauth-{}", WINDOWS.fetch_add(1, Ordering::Relaxed));
-    let windows = app.state::<OAuthWindows>();
-    if let Err(open) = windows.begin(&label, pending.clone()) {
+    let windows = app.state::<OAuthWindows>().inner().clone();
+    if let Err(open) = windows.begin(&label, run.pending.clone()) {
         // As a second sign-in would: the person is shown the one they have.
         if let Some(window) = app.get_webview_window(&open) {
             let _ = window.set_focus();
         }
         return Err(OAuthError::Busy);
     }
-    let run = Run {
-        page,
-        host,
-        pending,
-        ended,
-        deadline,
-    };
-    let result = run.window(app, profile, &label).await;
-    windows.finish();
-    result
+    let lease = Lease::new(windows, &run);
+    let pending = run.pending.clone();
+    run.drive(lease, &profile.jar, &|| {
+        open(app, &label, &profile.id, pending.clone())
+    })
+    .await
 }
+
+fn open<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+    profile: &str,
+    pending: Arc<Pending>,
+) -> Result<Arc<dyn AuthWindow>, OAuthError> {
+    let window = handlers::build(app, label, profile, pending).map_err(window_error)?;
+    Ok(Arc::new(TauriWindow(window)))
+}
+
+/// What opens a run's window: Tauri's, or a test's.
+type Open<'a> = &'a (dyn Fn() -> Result<Arc<dyn AuthWindow>, OAuthError> + Sync);
 
 struct Run {
     page: Url,
@@ -227,18 +271,35 @@ struct Run {
 }
 
 impl Run {
-    async fn window<R: Runtime>(
-        mut self,
-        app: &AppHandle<R>,
-        profile: &ProfileNet,
-        label: &str,
-    ) -> Result<Url, OAuthError> {
-        let window =
-            handlers::build(app, label, &profile.id, self.pending.clone()).map_err(window_error)?;
-        let webview: Arc<dyn SessionWebview> = Arc::new(TauriWindow(window.clone()));
-        let lent = lent(&profile.jar, &self.page, &self.host);
-        lend(webview.clone(), lent.clone()).await;
-        let _ = window.navigate(self.page.clone());
+    fn new(auth_url: &str, redirect_uri: &str, deadline: Duration) -> Result<Self, OAuthError> {
+        let flow = Flow::new(auth_url, redirect_uri)?;
+        let (page, host) = (flow.page().clone(), flow.host().to_string());
+        let (done, ended) = oneshot::channel();
+        let pending = Arc::new(Pending {
+            flow: Mutex::new(flow),
+            done: Mutex::new(Some(done)),
+            destroying: AtomicBool::new(false),
+        });
+        Ok(Self {
+            page,
+            host,
+            pending,
+            ended,
+            deadline,
+        })
+    }
+
+    /// Lends the window its session, shows the page and waits for the
+    /// ending; then `lease` takes the session back and destroys the window.
+    async fn drive(mut self, mut lease: Lease, jar: &ProfileJar, open: Open<'_>) -> Ended {
+        let window = open()?;
+        let lent = lent(jar, &self.page, &self.host);
+        lease.window = Some((window.clone(), lent.clone()));
+        lend(window.clone(), lent.clone()).await;
+        // A page that cannot load ends the run now, not at the deadline.
+        if let Err(error) = window.navigate(self.page.clone()) {
+            self.pending.end(error);
+        }
         let ended = match tokio::time::timeout(self.deadline, &mut self.ended).await {
             Ok(ended) => ended,
             Err(_) => {
@@ -246,12 +307,64 @@ impl Run {
                 self.ended.await
             }
         };
-        take_back(webview, lent, &self.host).await;
-        // Not `close()`: that asks the window again, and its answer is to
-        // end the flow, which has ended.
-        let _ = window.destroy();
+        lease.release(window, lent).await;
         ended.unwrap_or(Err(OAuthError::Closed))
     }
+}
+
+/// A run's hold on the slot and, once it has one, its window and what the
+/// window was lent. However the run stops, at its end, dropped with the
+/// request that awaited it, or in a panic, the session is taken back and the
+/// window destroyed before the slot is free: a slot never freed would answer
+/// every later request Busy, with the session still lent.
+struct Lease {
+    windows: OAuthWindows,
+    pending: Arc<Pending>,
+    host: String,
+    window: Option<(Arc<dyn AuthWindow>, Vec<RawCookie<'static>>)>,
+}
+
+impl Lease {
+    fn new(windows: OAuthWindows, run: &Run) -> Self {
+        Self {
+            windows,
+            pending: run.pending.clone(),
+            host: run.host.clone(),
+            window: None,
+        }
+    }
+
+    /// Closes the window it holds. Dropped part way, the drop does it again.
+    async fn release(mut self, window: Arc<dyn AuthWindow>, lent: Vec<RawCookie<'static>>) {
+        close(window, lent, &self.pending, &self.host).await;
+        self.window = None;
+    }
+}
+
+impl Drop for Lease {
+    fn drop(&mut self) {
+        let windows = self.windows.clone();
+        let Some((window, lent)) = self.window.take() else {
+            windows.finish();
+            return;
+        };
+        let (pending, host) = (self.pending.clone(), self.host.clone());
+        tauri::async_runtime::spawn(async move {
+            close(window, lent, &pending, &host).await;
+            windows.finish();
+        });
+    }
+}
+
+async fn close(
+    window: Arc<dyn AuthWindow>,
+    lent: Vec<RawCookie<'static>>,
+    pending: &Pending,
+    host: &str,
+) {
+    take_back(window.clone(), lent, host).await;
+    pending.destroying.store(true, Ordering::SeqCst);
+    window.destroy();
 }
 
 #[cfg(test)]
@@ -261,6 +374,7 @@ mod tests {
     use crate::side_panel::tests::wait_for;
     use crate::sign_in::tests::FakeWebview;
     use serde_json::json;
+    use tauri::async_runtime::{block_on, spawn, JoinHandle};
     use tauri::test::{mock_builder, mock_context, noop_assets, MockRuntime};
     use tauri::App;
 
@@ -279,13 +393,16 @@ mod tests {
             self.app.state::<OAuthWindows>()
         }
 
-        /// Starts an authorisation, and waits until its window is up.
-        fn start(&self, deadline: Duration) -> tauri::async_runtime::JoinHandle<Ended> {
+        /// Starts an authorisation, and waits until its window is built.
+        fn start(&self, deadline: Duration) -> JoinHandle<Ended> {
             let (app, net) = (self.app.handle().clone(), self.net.clone());
-            let run = tauri::async_runtime::spawn(async move {
-                authorize_within(&app, &net, PAGE, REDIRECT, deadline).await
+            let run =
+                spawn(async move { authorize_within(&app, &net, PAGE, REDIRECT, deadline).await });
+            wait_for("the window is built", &|| {
+                self.windows()
+                    .current()
+                    .is_some_and(|(label, _)| self.app.get_webview_window(&label).is_some())
             });
-            wait_for("the window is up", &|| self.windows().current().is_some());
             run
         }
 
@@ -293,6 +410,7 @@ mod tests {
             self.windows()
                 .current()
                 .expect("an authorisation under way")
+                .1
         }
 
         fn wait_done(&self) {
@@ -312,7 +430,7 @@ mod tests {
             .manage(OAuthWindows::default())
             .build(mock_context(noop_assets()))
             .expect("mock app");
-        let net = tauri::async_runtime::block_on(profiles.network.profile("default", SERVER));
+        let net = block_on(profiles.network.profile("default", SERVER));
         // Signed in, so the window is lent a session.
         assert!(net
             .jar
@@ -345,7 +463,7 @@ mod tests {
         assert!(!pending.navigate(&url("agentrq://extensions/authorizedX?code=c")));
         let landed = url("agentrq://extensions/authorized?code=c&state=s");
         assert!(!pending.navigate(&landed));
-        assert_eq!(tauri::async_runtime::block_on(run).unwrap(), Ok(landed));
+        assert_eq!(block_on(run).unwrap(), Ok(landed));
         rig.wait_done();
         // What the window does while it closes goes nowhere.
         assert!(!pending.navigate(&url(PAGE)));
@@ -356,18 +474,15 @@ mod tests {
     fn closing_the_window_is_declining() {
         let rig = rig();
         let run = rig.start(DEADLINE);
-        assert!(rig.pending().end(OAuthError::Closed));
-        assert_eq!(
-            tauri::async_runtime::block_on(run).unwrap(),
-            Err(OAuthError::Closed)
-        );
+        assert!(rig.pending().close_requested(), "held for the take-back");
+        assert_eq!(block_on(run).unwrap(), Err(OAuthError::Closed));
         rig.wait_done();
     }
 
     #[test]
     fn gives_up_at_the_deadline() {
         let rig = rig();
-        let ended = tauri::async_runtime::block_on(authorize_within(
+        let ended = block_on(authorize_within(
             rig.app.handle(),
             &rig.net,
             PAGE,
@@ -382,7 +497,7 @@ mod tests {
     fn a_second_request_is_refused_while_one_is_open() {
         let rig = rig();
         let first = rig.start(DEADLINE);
-        let second = tauri::async_runtime::block_on(open_authorization_window(
+        let second = block_on(open_authorization_window(
             rig.app.handle(),
             &rig.net,
             PAGE,
@@ -392,21 +507,18 @@ mod tests {
         // The first is unaffected, and the slot is free once it ends.
         let landed = url("agentrq://extensions/authorized?code=c");
         assert!(!rig.pending().navigate(&landed));
-        assert_eq!(tauri::async_runtime::block_on(first).unwrap(), Ok(landed));
+        assert_eq!(block_on(first).unwrap(), Ok(landed));
         rig.wait_done();
         let third = rig.start(DEADLINE);
         rig.pending().end(OAuthError::Closed);
-        assert_eq!(
-            tauri::async_runtime::block_on(third).unwrap(),
-            Err(OAuthError::Closed)
-        );
+        assert_eq!(block_on(third).unwrap(), Err(OAuthError::Closed));
     }
 
     #[test]
     fn opens_only_a_web_page() {
         let rig = rig();
         for (page, redirect) in [("javascript:alert(1)", REDIRECT), (PAGE, "not a url")] {
-            let ended = tauri::async_runtime::block_on(authorize_within(
+            let ended = block_on(authorize_within(
                 rig.app.handle(),
                 &rig.net,
                 page,
@@ -424,6 +536,198 @@ mod tests {
         assert!(matches!(error, OAuthError::Window(why) if why.contains("oauth-1")));
     }
 
+    #[test]
+    fn a_subframe_is_asked_as_the_page_is() {
+        let run = Run::new(PAGE, REDIRECT, DEADLINE).unwrap();
+        let pending = &run.pending;
+        assert!(pending.navigate_frame("https://github.com/login"));
+        for refused in ["agentrq://open?route=/x", "data:text/html,x", "not a url"] {
+            assert!(!pending.navigate_frame(refused), "{refused}");
+        }
+    }
+
+    /// A window whose store is a [`FakeWebview`], and which says what it was
+    /// asked to do, in order.
+    #[derive(Default)]
+    struct FakeWindow {
+        store: FakeWebview,
+        did: Mutex<Vec<String>>,
+        fails: Option<OAuthError>,
+        /// When set, a read of its cookies waits until the test sends.
+        held: Option<Mutex<std::sync::mpsc::Receiver<()>>>,
+    }
+
+    impl FakeWindow {
+        fn did(&self, what: String) {
+            self.did.lock().unwrap().push(what);
+        }
+
+        /// What it did, a step done twice in a row counted once.
+        fn steps(&self) -> Vec<String> {
+            let mut steps = self.did.lock().unwrap().clone();
+            steps.dedup();
+            steps
+        }
+
+        fn has_done(&self, step: &str) -> bool {
+            self.steps().iter().any(|done| done == step)
+        }
+    }
+
+    impl CookieWebview for FakeWindow {
+        fn cookies(&self) -> Vec<RawCookie<'static>> {
+            self.did("read".into());
+            if let Some(held) = &self.held {
+                let _ = held.lock().unwrap().recv();
+            }
+            self.store.cookies()
+        }
+        fn delete_cookie(&self, cookie: RawCookie<'static>) {
+            self.did(format!("delete {}", cookie.name()));
+            self.store.delete_cookie(cookie);
+        }
+    }
+
+    impl SessionWebview for FakeWindow {
+        fn set_cookie(&self, cookie: RawCookie<'static>) {
+            self.did(format!("lend {}", cookie.name()));
+            self.store.set_cookie(cookie);
+        }
+    }
+
+    impl AuthWindow for FakeWindow {
+        fn navigate(&self, url: Url) -> Result<(), OAuthError> {
+            self.did(format!("navigate {url}"));
+            self.fails.clone().map_or(Ok(()), Err)
+        }
+        fn destroy(&self) {
+            self.did("destroy".into());
+        }
+    }
+
+    /// A run on `window`, or on none that will open, started as
+    /// `authorize_within` starts one.
+    struct Driven {
+        windows: OAuthWindows,
+        pending: Arc<Pending>,
+        run: JoinHandle<Ended>,
+    }
+
+    fn drive(window: Option<Arc<FakeWindow>>) -> Driven {
+        let jar = ProfileJar::open("unused".into(), None);
+        assert!(jar.adopt(
+            &cookie("at=a1; Path=/; HttpOnly; Secure; SameSite=Lax"),
+            &url(SERVER)
+        ));
+        let run = Run::new(PAGE, REDIRECT, DEADLINE).unwrap();
+        let windows = OAuthWindows::default();
+        windows.begin("oauth-fake", run.pending.clone()).unwrap();
+        let (lease, pending) = (Lease::new(windows.clone(), &run), run.pending.clone());
+        let run = spawn(async move {
+            let open = || -> Result<Arc<dyn AuthWindow>, OAuthError> {
+                let window = window.clone();
+                window
+                    .map(|window| window as Arc<dyn AuthWindow>)
+                    .ok_or_else(|| OAuthError::Window("no display".into()))
+            };
+            run.drive(lease, &jar, &open).await
+        });
+        Driven {
+            windows,
+            pending,
+            run,
+        }
+    }
+
+    fn wait_shown(window: &FakeWindow) {
+        wait_for("the page is shown", &|| {
+            window.has_done(&format!("navigate {PAGE}"))
+        });
+    }
+
+    fn wait_free(windows: &OAuthWindows) {
+        wait_for("the slot is free", &|| windows.current().is_none());
+    }
+
+    #[test]
+    fn lends_shows_takes_back_and_destroys_in_that_order() {
+        let window = Arc::new(FakeWindow::default());
+        let driven = drive(Some(window.clone()));
+        wait_shown(&window);
+        let landed = url("agentrq://extensions/authorized?code=c");
+        assert!(!driven.pending.navigate(&landed));
+        assert_eq!(block_on(driven.run).unwrap(), Ok(landed));
+        assert_eq!(
+            window.steps(),
+            [
+                "lend at".to_string(),
+                format!("navigate {PAGE}"),
+                "read".into(),
+                "delete at".into(),
+                "destroy".into(),
+            ]
+        );
+        assert!(window.store.names().is_empty());
+        wait_free(&driven.windows);
+    }
+
+    #[test]
+    fn a_page_that_cannot_load_ends_the_run_at_once() {
+        let window = Arc::new(FakeWindow {
+            fails: Some(OAuthError::Window("no network".into())),
+            ..FakeWindow::default()
+        });
+        let driven = drive(Some(window.clone()));
+        assert_eq!(
+            block_on(driven.run).unwrap(),
+            Err(OAuthError::Window("no network".into()))
+        );
+        assert_eq!(window.steps().last().map(String::as_str), Some("destroy"));
+        assert!(window.store.names().is_empty());
+        wait_free(&driven.windows);
+    }
+
+    #[test]
+    fn a_window_that_does_not_open_frees_the_slot() {
+        let driven = drive(None);
+        assert_eq!(
+            block_on(driven.run).unwrap(),
+            Err(OAuthError::Window("no display".into()))
+        );
+        wait_free(&driven.windows);
+    }
+
+    #[test]
+    fn a_run_dropped_part_way_still_takes_the_session_back() {
+        let window = Arc::new(FakeWindow::default());
+        let driven = drive(Some(window.clone()));
+        wait_shown(&window);
+        driven.run.abort();
+        wait_free(&driven.windows);
+        assert_eq!(window.steps().last().map(String::as_str), Some("destroy"));
+        assert!(window.store.names().is_empty(), "the session is back");
+    }
+
+    #[test]
+    fn a_close_while_the_session_is_taken_back_waits_for_it() {
+        let (go_on, held) = std::sync::mpsc::channel();
+        let window = Arc::new(FakeWindow {
+            held: Some(Mutex::new(held)),
+            ..FakeWindow::default()
+        });
+        let driven = drive(Some(window.clone()));
+        wait_shown(&window);
+        assert!(!driven.pending.navigate(&url(REDIRECT)));
+        wait_for("the take-back has begun", &|| window.has_done("read"));
+        assert!(driven.pending.close_requested(), "the close waits");
+        go_on.send(()).unwrap();
+        assert_eq!(block_on(driven.run).unwrap(), Ok(url(REDIRECT)));
+        assert!(window.store.names().is_empty());
+        // Destroyed: a close now would go.
+        assert!(!driven.pending.close_requested());
+        wait_free(&driven.windows);
+    }
+
     impl SessionWebview for FakeWebview {
         fn set_cookie(&self, cookie: RawCookie<'static>) {
             let domain = cookie.domain().unwrap_or_default().to_string();
@@ -437,25 +741,32 @@ mod tests {
         let jar = ProfileJar::open(dir.path().join("jar"), None);
         let server = url(SERVER);
         for text in [
-            "at=a1; Path=/; HttpOnly; Secure; Max-Age=3600",
+            "at=a1; Path=/; HttpOnly; Secure; Max-Age=3600; SameSite=Lax",
+            "pref=p1; Path=/; Secure; SameSite=Strict",
             "rt=r1; Path=/api/v1/auth/refresh; HttpOnly; Secure; Max-Age=3600",
         ] {
             assert!(jar.adopt(&cookie(text), &server));
         }
         let page = url(PAGE);
-        let lent = lent(&jar, &page, "app.agentrq.example");
-        assert_eq!(lent.len(), 1, "the refresh cookie is not for this page");
+        let mut lent = lent(&jar, &page, "app.agentrq.example");
+        lent.sort_by(|a, b| a.name().cmp(b.name()));
+        assert_eq!(lent.len(), 2, "the refresh cookie is not for this page");
         let at = &lent[0];
         assert_eq!((at.name(), at.value()), ("at", "a1"));
         assert_eq!(at.domain(), Some("app.agentrq.example"));
         assert_eq!(at.path(), Some("/"));
         assert_eq!((at.http_only(), at.secure()), (Some(true), Some(true)));
         assert_eq!(at.expires(), None);
-        // A local server without TLS: no secure cookie is sent, or lent.
+        // As the server set it.
+        assert_eq!(at.same_site(), Some(SameSite::Lax));
+        assert_eq!(lent[1].same_site(), Some(SameSite::Strict));
+        // A local server without TLS: no secure cookie is sent, or lent, and
+        // one set with no SameSite is lent as Lax, never as None.
         let local = url("http://127.0.0.1:3000/");
         assert!(jar.adopt(&cookie("at=a2; Path=/; HttpOnly"), &local));
         let plain = super::lent(&jar, &local, "127.0.0.1");
         assert_eq!((plain[0].value(), plain[0].secure()), ("a2", Some(false)));
+        assert_eq!(plain[0].same_site(), Some(SameSite::Lax));
     }
 
     #[test]
@@ -469,7 +780,7 @@ mod tests {
         let mut at = RawCookie::new("at", "a1");
         at.set_domain(host);
         at.set_path("/");
-        tauri::async_runtime::block_on(async {
+        block_on(async {
             lend(webview.clone(), vec![at.clone()]).await;
             assert_eq!(webview.names(), ["gh", "rt", "other", "at"]);
             take_back(webview.clone(), vec![at], host).await;

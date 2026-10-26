@@ -94,10 +94,10 @@
 - **Windows' `delete_cookie` is asynchronous.** Check the deletion after the next
   navigation, never straight after the call.
 - **The supervisor's authorisation window is lent the jar's cookies for its page**
-  (the authorise page reads `at`), and every cookie for that host is taken back
-  before the window is destroyed. Its redirect is matched exactly and cancelled in
-  `on_navigation`, and every other non-http(s) navigation is refused, so the code
-  never reaches the OS or the deep-link handler.
+  (SameSite kept), and its `Lease` takes them back before the window is destroyed,
+  even when the run is dropped; every close waits for that. The redirect is matched
+  exactly and cancelled; on Windows wry never asks about subframes, so `handlers.rs`
+  guards them and external launches.
 
 ## Profiles and the main window
 

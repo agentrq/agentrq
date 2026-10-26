@@ -25,25 +25,63 @@ pub fn build<R: Runtime>(
     pending: Arc<Pending>,
 ) -> tauri::Result<WebviewWindow<R>> {
     let blank = Url::parse("about:blank").expect("static url");
+    #[cfg(windows)]
+    let pending_frames = pending.clone();
     let (nav, closing) = (pending.clone(), pending);
     let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::External(blank))
         .title("Authorise AgentRQ")
         .inner_size(520.0, 720.0)
+        // tauri-runtime-wry lets a URL that does not parse load without asking
+        // this. On Windows `guard_frames` cancels any external launch it makes.
         .on_navigation(move |url| nav.navigate(url))
         .on_new_window(|_, _| NewWindowResponse::Deny);
     let window = isolate(builder, app, profile).build()?;
-    // Closing it is declining. The flow takes its cookies back and then
-    // destroys it, so the close waits for that.
+    #[cfg(windows)]
+    guard_frames(&window, pending_frames);
+    // Closing it is declining. The run takes its cookies back and then
+    // destroys it, so every close waits for that.
     window.on_window_event(move |event| match event {
-        WindowEvent::CloseRequested { api, .. } if closing.end(OAuthError::Closed) => {
-            api.prevent_close()
-        }
+        WindowEvent::CloseRequested { api, .. } if closing.close_requested() => api.prevent_close(),
         WindowEvent::Destroyed => {
             closing.end(OAuthError::Closed);
         }
         _ => {}
     });
     Ok(window)
+}
+
+/// wry asks `on_navigation` for WebView2's top frame only. So a subframe's
+/// navigation is asked here, and WebView2 never hands a URL to another app,
+/// whichever frame asks: the redirect would reach the app that claims it.
+#[cfg(windows)]
+fn guard_frames<R: Runtime>(window: &WebviewWindow<R>, pending: Arc<Pending>) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_18;
+    use webview2_com::{LaunchingExternalUriSchemeEventHandler, NavigationStartingEventHandler};
+    let _ = window.with_webview(move |view| unsafe {
+        let Ok(core) = view.controller().CoreWebView2() else {
+            return;
+        };
+        let mut token = Default::default();
+        let frames = NavigationStartingEventHandler::create(Box::new(move |_, args| {
+            let Some(args) = args else { return Ok(()) };
+            let mut uri = windows::core::PWSTR::null();
+            args.Uri(&mut uri)?;
+            if !pending.navigate_frame(&webview2_com::take_pwstr(uri)) {
+                args.SetCancel(true)?;
+            }
+            Ok(())
+        }));
+        let _ = core.add_FrameNavigationStarting(&frames, &mut token);
+        if let Ok(core) = windows::core::Interface::cast::<ICoreWebView2_18>(&core) {
+            let launch = LaunchingExternalUriSchemeEventHandler::create(Box::new(|_, args| {
+                if let Some(args) = args {
+                    args.SetCancel(true)?;
+                }
+                Ok(())
+            }));
+            let _ = core.add_LaunchingExternalUriScheme(&launch, &mut token);
+        }
+    });
 }
 
 /// The profile's own storage, as its sign-in window has: a folder on Linux and

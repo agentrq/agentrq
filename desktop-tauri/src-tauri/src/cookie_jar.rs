@@ -84,11 +84,12 @@ impl ProfileJar {
         kept
     }
 
-    /// The names and values of the cookies that would be sent to `url`.
-    pub fn sent_to(&self, url: &Url) -> Vec<(String, String)> {
+    /// The cookies that would be sent to `url`, as the server set them.
+    pub fn sent_to(&self, url: &Url) -> Vec<RawCookie<'static>> {
         self.lock()
-            .get_request_values(url)
-            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .matches(url)
+            .into_iter()
+            .map(|cookie| RawCookie::clone(cookie).into_owned())
             .collect()
     }
 
