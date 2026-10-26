@@ -4,7 +4,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { DEADLINE_MS, FAILED, MAX_LINE, METHOD_NOT_FOUND, createPeer } from '../src/ext-host/rpc.js'
+import { DEADLINE_MS, FAILED, MAX_LINE, METHOD_NOT_FOUND, PING, createPeer } from '../src/ext-host/rpc.js'
 
 function rig(options = {}) {
   const sent = []
@@ -85,12 +85,19 @@ describe('the extension host wire', () => {
   })
 
   it('reads lines split anywhere, and skips blank ones', async () => {
-    const { peer, messages, settle } = rig({ handlers: { ping: () => 'pong' } })
+    const { peer, messages, settle } = rig({ handlers: { echo: () => 'echo' } })
     peer.receive('{"jsonrpc":"2.0",')
-    peer.receive('"id":1,"method":"ping"}\n\n   \n{"jsonrpc":"2.0","id":2,')
-    peer.receive('"method":"ping"}\n')
+    peer.receive('"id":1,"method":"echo"}\n\n   \n{"jsonrpc":"2.0","id":2,')
+    peer.receive('"method":"echo"}\n')
     await settle()
     expect(messages().map((m) => m.id)).toEqual([1, 2])
+  })
+
+  it('answers a ping itself, at once, whatever the handlers are doing', () => {
+    const { peer, messages } = rig({ handlers: { ping: () => 'never asked', slow: () => new Promise(() => {}) } })
+    peer.receive('{"jsonrpc":"2.0","id":1,"method":"slow"}\n{"jsonrpc":"2.0","id":2,"method":"ping"}\n')
+    expect(PING).toBe('ping')
+    expect(messages()).toEqual([{ jsonrpc: '2.0', id: 2, result: true }])
   })
 
   it('reports what is not a message', () => {

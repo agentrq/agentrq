@@ -23,7 +23,7 @@ use agentrq_desktop_core::ext_host::{
     CrashLedger, CATALOGUE_FILE, IDLE_STOP_MS, INSTALLED_FILE, STABLE_MS,
 };
 use agentrq_desktop_core::ext_rpc::{
-    self, deadline_ms, timed_out, Ids, Line, Lines, Message, HOST_GONE, METHOD_NOT_FOUND,
+    self, deadline_ms, timed_out, Ids, Line, Lines, Message, HOST_GONE, METHOD_NOT_FOUND, PING,
 };
 use serde_json::{json, Value};
 #[cfg(target_os = "linux")]
@@ -58,6 +58,8 @@ pub struct Launch {
 /// The longest the shell waits on its own answer to the host, as the host
 /// waits on the shell (`rpc.js`'s `DEADLINE_MS`).
 const SERVE_DEADLINE: Duration = Duration::from_secs(120);
+/// How long a host that let a call run out of time has to answer a ping.
+const PING_DEADLINE: Duration = Duration::from_secs(10);
 /// How long a host asked to stop gets before it is killed.
 const STOP_GRACE: Duration = Duration::from_secs(5);
 
@@ -111,6 +113,29 @@ struct Process {
     /// The server last told to the host.
     context: Option<String>,
     kill: mpsc::Sender<()>,
+}
+
+/// A request sent to the host, its answer still to come.
+struct Asked {
+    answer: oneshot::Receiver<Result<Value, String>>,
+    pending: Pending,
+    id: u64,
+    generation: u64,
+}
+
+impl Process {
+    fn ask(&mut self, method: &str, params: Value) -> Asked {
+        let id = self.ids.allocate();
+        let (tx, answer) = oneshot::channel();
+        lock(&self.pending).insert(id, tx);
+        let _ = self.out.send(ext_rpc::request(id, method, params));
+        Asked {
+            answer,
+            pending: Arc::clone(&self.pending),
+            id,
+            generation: self.generation,
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -196,6 +221,10 @@ struct Timing {
     /// How long a host must have run for its next crash to start the backoff
     /// again.
     stable: Duration,
+    /// Each method's deadline is divided by this.
+    deadline_divisor: u64,
+    /// How long a host has to answer a ping.
+    ping: Duration,
 }
 
 impl Default for Timing {
@@ -205,6 +234,8 @@ impl Default for Timing {
             retry_divisor: 1,
             serve: SERVE_DEADLINE,
             stable: Duration::from_millis(STABLE_MS),
+            deadline_divisor: 1,
+            ping: PING_DEADLINE,
         }
     }
 }
@@ -313,7 +344,7 @@ impl ExtHost {
         if let Some(node) = &self.node {
             node.checked().await;
         }
-        let (answer, activity, pending, id, generation) = {
+        let (asked, activity) = {
             let mut state = lock(&self.state);
             state.activity += 1;
             if state.process.is_none() {
@@ -336,26 +367,52 @@ impl ExtHost {
                 ));
                 process.context = Some(server);
             }
-            let id = process.ids.allocate();
-            let (tx, rx) = oneshot::channel();
-            lock(&process.pending).insert(id, tx);
-            let _ = process.out.send(ext_rpc::request(id, method, params));
-            let pending = Arc::clone(&process.pending);
-            let generation = state.generation;
-            (rx, state.activity, pending, id, generation)
+            (process.ask(method, params), state.activity)
         };
-        let deadline = Duration::from_millis(deadline_ms(method));
-        let result = match tokio::time::timeout(deadline, answer).await {
+        let result = self.answered(asked, method).await;
+        self.stop_when_idle(activity);
+        result
+    }
+
+    /// The answer to `asked`, or why there is none. A call that runs out of
+    /// time fails alone, since a busy extension can be why; a host that then
+    /// misses a ping is hung, and is killed.
+    async fn answered(self: &Arc<Self>, asked: Asked, method: &str) -> Result<Value, String> {
+        let deadline = if method == PING {
+            self.timing.ping
+        } else {
+            Duration::from_millis(deadline_ms(method) / self.timing.deadline_divisor)
+        };
+        match tokio::time::timeout(deadline, asked.answer).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err(HOST_GONE.to_string()),
             Err(_) => {
-                lock(&pending).remove(&id);
-                self.kill_generation(generation);
+                lock(&asked.pending).remove(&asked.id);
+                if method == PING {
+                    self.kill_generation(asked.generation);
+                } else {
+                    self.probe(asked.generation);
+                }
                 Err(timed_out(method))
             }
+        }
+    }
+
+    /// Ping `generation`, if it still runs.
+    fn probe(self: &Arc<Self>, generation: u64) {
+        let asked = {
+            let mut state = lock(&self.state);
+            let running = state
+                .process
+                .as_mut()
+                .filter(|p| p.generation == generation);
+            let Some(process) = running else {
+                return;
+            };
+            process.ask(PING, json!({}))
         };
-        self.stop_when_idle(activity);
-        result
+        let this = Arc::clone(self);
+        tokio::spawn(async move { this.answered(asked, PING).await });
     }
 
     fn kill_generation(&self, generation: u64) {
@@ -604,11 +661,13 @@ impl ExtHost {
         generation: u64,
         mut killed: mpsc::Receiver<()>,
     ) {
-        let code = tokio::select! {
-            status = child.wait() => status.ok().and_then(|status| status.code()),
+        // Killed by the shell for missing a ping: restarted, but neither a
+        // crash an extension is blamed for nor a failed start.
+        let (code, hung) = tokio::select! {
+            status = child.wait() => (status.ok().and_then(|status| status.code()), false),
             _ = killed.recv() => {
                 let _ = child.kill().await;
-                None
+                (None, true)
             }
         };
         let delay = {
@@ -620,8 +679,12 @@ impl ExtHost {
             if state.stopping == Some(generation) || state.generation != generation {
                 return;
             }
-            let blamed = blame(state.loading.as_deref(), &state.running);
-            if blamed.is_empty() {
+            let blamed = if hung {
+                Vec::new()
+            } else {
+                blame(state.loading.as_deref(), &state.running)
+            };
+            if blamed.is_empty() && !hung {
                 state.startup_failures += 1;
                 if state.startup_failures >= 3 {
                     eprintln!(
@@ -651,6 +714,10 @@ impl ExtHost {
             delay
         };
         tokio::time::sleep(Duration::from_millis(delay)).await;
+        // As in `call`: hashed here, not under the lock in `spawn`.
+        if let Some(node) = &self.node {
+            node.checked().await;
+        }
         let mut state = lock(&self.state);
         state.restarting = false;
         let to_disable = !state.disable.is_empty();
@@ -669,6 +736,7 @@ fn fail_all(pending: &Pending) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::ext_node::tests::{pin_of, BINARY};
     use std::path::Path;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -722,6 +790,15 @@ pub(crate) mod tests {
         retry_divisor: 100,
         serve: Duration::from_millis(200),
         stable: Duration::from_secs(60),
+        deadline_divisor: 1,
+        ping: PING_DEADLINE,
+    };
+
+    /// Deadlines a test can wait out: `state` in 600 ms, `supervisor` in 50.
+    const HURRIED: Timing = Timing {
+        deadline_divisor: 100,
+        ping: Duration::from_millis(300),
+        ..FAST
     };
 
     fn host(launch: Launch, dir: &Path, services: Arc<FakeServices>) -> Arc<ExtHost> {
@@ -861,10 +938,11 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn gives_up_on_an_answer_that_does_not_come() {
         let dir = tempfile::tempdir().unwrap();
-        let host = host(
+        let host = ExtHost::tuned(
             script_launch("process.stdin.resume()"),
-            dir.path(),
-            Arc::default(),
+            dir.path().into(),
+            Arc::new(FakeServices::default()),
+            HURRIED,
         );
         assert_eq!(
             host.call("supervisor", json!({})).await,
@@ -946,7 +1024,18 @@ pub(crate) mod tests {
             "#,
             marker = marker.to_string_lossy()
         );
-        let host = host(script_launch(&script), dir.path(), Arc::default());
+        // On a pinned Node, which the restart checks before it locks.
+        let node = crate::ext_node::tests::node_from(dir.path(), "", pin_of(BINARY));
+        std::fs::create_dir_all(dir.path().join("bin")).unwrap();
+        std::fs::write(node.binary(), BINARY).unwrap();
+        let services = Arc::new(FakeServices::default());
+        let host = ExtHost::built(
+            script_launch(&script),
+            Some(node),
+            dir.path().into(),
+            services,
+            FAST,
+        );
         assert!(host.boot());
         until(|| lock(&host.state).ledger.count("a") == 1 && host.is_running()).await;
         // Restarted and running again.
@@ -1063,7 +1152,48 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn timed_out_call_leaves_pending_and_kills_hung_generation() {
+    async fn a_slow_answer_fails_that_call_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        install(dir.path(), r#"{"installations":[{"name":"a"}]}"#);
+        // Answers pings, and `state` with how many came; never `supervisor`.
+        let script = r#"
+            const out = (m) => process.stdout.write(JSON.stringify({jsonrpc: '2.0', ...m}) + '\n');
+            let pings = 0;
+            require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+                const m = JSON.parse(line);
+                if (m.method === 'ping') out({ id: m.id, result: ++pings });
+                if (m.method === 'state') out({ id: m.id, result: pings });
+            });
+            out({ method: 'running', params: { names: ['a'] } });
+        "#;
+        let timing = Timing {
+            deadline_divisor: 10,
+            ..FAST
+        };
+        let host = ExtHost::tuned(
+            script_launch(script),
+            dir.path().into(),
+            Arc::new(FakeServices::default()),
+            timing,
+        );
+        assert!(host.boot());
+        until(|| lock(&host.state).running == vec!["a".to_string()]).await;
+        let generation = lock(&host.state).generation;
+        assert_eq!(
+            host.call("supervisor", json!({})).await,
+            Err(timed_out("supervisor"))
+        );
+        // The ping went first, on the same pipe.
+        assert_eq!(host.call("state", json!({})).await, Ok(json!(1)));
+        let state = lock(&host.state);
+        assert_eq!(state.generation, generation, "still the same host");
+        assert_eq!(state.ledger.count("a"), 0);
+        drop(state);
+        host.stop();
+    }
+
+    #[tokio::test]
+    async fn a_host_that_misses_a_ping_too_is_restarted_and_nothing_is_blamed() {
         let dir = tempfile::tempdir().unwrap();
         install(dir.path(), r#"{"installations":[{"name":"hung"}]}"#);
         let script = r#"
@@ -1071,27 +1201,30 @@ pub(crate) mod tests {
             out({ method: 'running', params: { names: ['hung'] } });
             process.stdin.resume();
         "#;
-        let host = host(script_launch(script), dir.path(), Arc::default());
+        let host = ExtHost::tuned(
+            script_launch(script),
+            dir.path().into(),
+            Arc::new(FakeServices::default()),
+            HURRIED,
+        );
         assert!(host.boot());
         until(|| lock(&host.state).running == vec!["hung".to_string()]).await;
-
-        let pending = {
+        let (generation, pending) = {
             let state = lock(&host.state);
-            Arc::clone(&state.process.as_ref().unwrap().pending)
+            let process = state.process.as_ref().unwrap();
+            (state.generation, Arc::clone(&process.pending))
         };
-        let res = host.call("state", json!({})).await;
-        assert_eq!(
-            res,
-            Err("The extension host did not answer \"state\" in time.".into())
-        );
-
-        assert!(
-            lock(&pending).is_empty(),
-            "pending must be cleaned up on timeout"
-        );
-
-        until(|| lock(&host.state).ledger.count("hung") >= 1).await;
-        host.kill_generation(999);
+        assert_eq!(host.call("state", json!({})).await, Err(timed_out("state")));
+        until(|| lock(&host.state).generation > generation && host.is_running()).await;
+        assert!(lock(&pending).is_empty(), "the ping failed with its host");
+        let state = lock(&host.state);
+        assert_eq!(state.ledger.count("hung"), 0, "a hang is no crash");
+        assert_eq!(state.startup_failures, 0, "nor a failed start");
+        drop(state);
+        // Nothing to ping or kill once that host is gone.
+        host.probe(generation);
+        host.kill_generation(generation);
+        assert!(host.is_running());
         host.stop();
     }
 
@@ -1331,13 +1464,15 @@ pub(crate) mod tests {
                 retry_divisor: 1,
                 serve: SERVE_DEADLINE,
                 stable: Duration::from_millis(STABLE_MS),
+                deadline_divisor: 1,
+                ping: PING_DEADLINE,
             }
         );
     }
 
     #[tokio::test]
     async fn starts_only_on_the_pinned_node() {
-        use crate::ext_node::tests::{node_from, pin_of, BINARY};
+        use crate::ext_node::tests::node_from;
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join(INSTALLED_FILE),

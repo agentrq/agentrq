@@ -194,20 +194,31 @@ impl Lines {
     }
 }
 
-/// How long the shell waits for the host to answer `method`, in ms. Installs
-/// download and copy; authorising waits for a person; everything else is a
-/// lookup in memory or a call to the server.
+/// How long the shell waits for the host to answer `method`, in ms: by what
+/// the method does. A call past its deadline fails alone; the host is
+/// restarted only when it then misses a [`PING`] too.
 pub fn deadline_ms(method: &str) -> u64 {
     match method {
+        // Waits for a person.
         "authorize" => 10 * 60_000,
+        // Downloads from GitHub.
         "installFromCatalogue" | "refresh" => 5 * 60_000,
-        "installLocal" | "inspect" | "configure" | "setEnabled" | "uninstall" | "startAll" => {
-            2 * 60_000
-        }
-        "entries" | "panelPages" | "supervisor" => 5_000,
+        // Copies, loads or unloads extensions, or runs one's action.
+        "installLocal" | "inspect" | "configure" | "setEnabled" | "uninstall" | "startAll"
+        | "invoke" => 2 * 60_000,
+        // May read the catalogue from GitHub, or ask the server.
+        "state" | "reviewToolCalls" => 60_000,
+        // Extensions' own code, asked on every render.
+        "entries" | "panelPages" | "panelPagesFor" | "hasDrawer" => 15_000,
+        // In memory.
+        "supervisor" => 5_000,
         _ => 30_000,
     }
 }
+
+/// What the shell asks a host that let a call run out of time. The wire
+/// answers it, not an extension, so a host that misses it is hung.
+pub const PING: &str = "ping";
 
 /// What the shell says when the host did not answer in time.
 pub fn timed_out(method: &str) -> String {
@@ -387,13 +398,18 @@ mod tests {
             "setEnabled",
             "uninstall",
             "startAll",
+            "invoke",
         ] {
             assert_eq!(deadline_ms(method), 120_000, "{method}");
         }
-        for method in ["entries", "panelPages", "supervisor"] {
-            assert_eq!(deadline_ms(method), 5_000, "{method}");
+        for method in ["state", "reviewToolCalls"] {
+            assert_eq!(deadline_ms(method), 60_000, "{method}");
         }
-        assert_eq!(deadline_ms("state"), 30_000);
+        for method in ["entries", "panelPages", "panelPagesFor", "hasDrawer"] {
+            assert_eq!(deadline_ms(method), 15_000, "{method}");
+        }
+        assert_eq!(deadline_ms("supervisor"), 5_000);
+        assert_eq!(deadline_ms("drawerFor"), 30_000);
         assert_eq!(
             timed_out("state"),
             "The extension host did not answer \"state\" in time."

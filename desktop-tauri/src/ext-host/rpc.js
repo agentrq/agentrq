@@ -17,6 +17,12 @@ export const FAILED = -32000
 /** As `ext_rpc.rs`'s `MAX_LINE_BYTES`, counted in characters here. */
 export const MAX_LINE = 40 * 1024 * 1024
 
+/**
+ * What the shell asks when a call ran out of time (`ext_rpc.rs`'s `PING`).
+ * Answered here, ahead of every handler, so only a hung host misses it.
+ */
+export const PING = 'ping'
+
 /** How long this side waits for the shell, by default. */
 export const DEADLINE_MS = 120_000
 
@@ -45,6 +51,10 @@ export function createPeer({
   const send = (message) => write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`)
 
   async function answer(id, method, params) {
+    if (method === PING) {
+      send({ id, result: true })
+      return
+    }
     const handler = Object.hasOwn(handlers, method) ? handlers[method] : null
     if (!handler) {
       send({ id, error: { code: METHOD_NOT_FOUND, message: `No such method: ${method}` } })
