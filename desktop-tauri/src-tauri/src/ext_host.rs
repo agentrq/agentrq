@@ -809,7 +809,8 @@ pub(crate) mod tests {
         std::fs::write(dir.join(INSTALLED_FILE), json).unwrap();
     }
 
-    async fn until(what: impl Fn() -> bool) {
+    /// Waits up to 10 s for `what`, and fails the test if it never comes.
+    pub async fn until(what: impl Fn() -> bool) {
         let waited = tokio::time::timeout(Duration::from_secs(10), async {
             while !what() {
                 tokio::time::sleep(Duration::from_millis(25)).await;
