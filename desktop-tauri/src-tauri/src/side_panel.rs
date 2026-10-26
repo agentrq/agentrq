@@ -845,12 +845,8 @@ pub(crate) mod tests {
     #[track_caller]
     pub(crate) fn wait_for(what: &str, done: &dyn Fn() -> bool) {
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
-        loop {
-            std::thread::sleep(Duration::from_millis(5));
-            if done() || std::time::Instant::now() > deadline {
-                break;
-            }
-        }
+        std::iter::repeat_with(|| std::thread::sleep(Duration::from_millis(5)))
+            .find(|()| done() || std::time::Instant::now() > deadline);
         assert!(done(), "{what}");
     }
 

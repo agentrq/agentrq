@@ -251,14 +251,13 @@ mod tests {
         // The headers must beat the budget for the body to be tested at all,
         // and a runner that stalls misses any fixed one: a budget they missed
         // is doubled and tried again. A body held to it fails every try.
-        let mut budget = 150;
-        let answer = loop {
-            match late_body(budget).await {
-                Err(ProxyError::Timeout) if budget < 2_400 => budget *= 2,
-                answer => break answer.unwrap(),
-            }
+        let tries = futures_util::stream::iter([150, 300, 600, 1_200, 2_400]).then(late_body);
+        let missed = |answer: &Result<Incoming, ProxyError>| {
+            std::future::ready(answer.as_ref().err() == Some(&ProxyError::Timeout))
         };
-        assert_eq!(answer.body.unwrap(), b"abcd");
+        let answer = std::pin::pin!(tries.skip_while(missed)).next().await;
+        let answer = answer.expect("the answer within one of the budgets");
+        assert_eq!(answer.unwrap().body.unwrap(), b"abcd");
     }
 
     /// A body whose second half comes twice `budget` after its headers, which
