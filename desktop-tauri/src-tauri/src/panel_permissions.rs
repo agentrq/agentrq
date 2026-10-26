@@ -371,6 +371,8 @@ mod tests {
 
     const PAGE: &str = "https://webcamtests.example/check";
     const SITE: &str = "https://webcamtests.example";
+    /// Emitted only to deliver what Tauri queued; see [`Rig::told`].
+    const FLUSH: &str = "agentrq:test:flush";
 
     struct Rig {
         app: tauri::App<MockRuntime>,
@@ -383,8 +385,17 @@ mod tests {
         fn handle(&self) -> &AppHandle<MockRuntime> {
             self.app.handle()
         }
+        /// What the window was told so far. Tauri queues an emit that finds
+        /// its Rust listeners busy with another thread's emit, and only the
+        /// next emit that runs a listener delivers it: two guests asking at
+        /// once could leave a question in that queue for good. So this emits
+        /// first, every time (the window's own listeners are not queued).
+        fn told(&self) -> MutexGuard<'_, Vec<(String, Value)>> {
+            self.app.emit(FLUSH, ()).unwrap();
+            lock(&self.heard)
+        }
         fn heard(&self) -> Vec<(String, Value)> {
-            std::mem::take(&mut *lock(&self.heard))
+            std::mem::take(&mut *self.told())
         }
         /// A guest's request, and where its answer went.
         fn request(&self, label: &str, native: NativeAsk) -> Arc<Mutex<Option<bool>>> {
@@ -428,6 +439,7 @@ mod tests {
                 lock(&heard).push((event.to_string(), payload));
             });
         }
+        app.listen_any(FLUSH, |_| {});
         let main = WebviewWindowBuilder::new(&app, MAIN, Default::default())
             .build()
             .expect("mock window");
@@ -490,7 +502,7 @@ mod tests {
     fn asks_the_window_once_and_remembers_the_answer_on_disk() {
         let rig = rig();
         let answered = rig.request("panel-guest-1", camera());
-        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !rig.told().is_empty());
         assert_eq!(*lock(&answered), None, "waiting on the person");
         assert_eq!(
             rig.heard(),
@@ -545,7 +557,7 @@ mod tests {
     fn anything_but_allow_is_a_block() {
         let rig = rig();
         rig.request("panel-guest-1", camera());
-        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !rig.told().is_empty());
         let answered = call(
             &rig.main,
             "side_panel_permission_answer",
@@ -596,7 +608,7 @@ mod tests {
         );
         // Removed for good: the camera is asked about again.
         let answered = rig.request("panel-guest-1", camera());
-        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !rig.told().is_empty());
         assert_eq!(*lock(&answered), None);
     }
 
@@ -604,7 +616,7 @@ mod tests {
     fn only_the_apps_window_may_answer_list_or_remove() {
         let rig = rig();
         let answered = rig.request("panel-guest-1", camera());
-        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !rig.told().is_empty());
         let other = WebviewWindowBuilder::new(&rig.app, "panel-guest-1", Default::default())
             .build()
             .unwrap();
@@ -661,7 +673,7 @@ mod tests {
         let rig = rig();
         cancel(rig.handle(), 1);
         let answered = rig.request("panel-guest-1", camera());
-        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !rig.told().is_empty());
         rig.heard();
         cancel(rig.handle(), 2);
         assert_eq!(*lock(&answered), None, "another page's");
@@ -696,7 +708,7 @@ mod tests {
         let rig = rig();
         let microphone = rig.request("panel-guest-1", webview2_ask(1, PAGE));
         let camera = rig.request("panel-guest-1", webview2_ask(2, PAGE));
-        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !rig.told().is_empty());
         assert_eq!(
             rig.heard(),
             [(
@@ -722,7 +734,7 @@ mod tests {
         let microphone = rig.request("panel-guest-1", webview2_ask(1, PAGE));
         // Another guest's half is another request.
         let other = rig.request("panel-guest-2", webview2_ask(2, PAGE));
-        wait_for("both questions", &|| lock(&rig.heard).len() == 2);
+        wait_for("both questions", &|| rig.told().len() == 2);
         let mut asked: Vec<Value> = rig.heard().into_iter().map(|(_, q)| q).collect();
         assert_eq!(asked.len(), 2, "{asked:?}");
         asked.sort_by_key(|q| q["guestId"].as_u64());
@@ -744,7 +756,7 @@ mod tests {
     fn a_profile_switch_blocks_what_the_last_profile_was_asking() {
         let rig = two_profiles();
         let answered = rig.request("panel-guest-1", camera());
-        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !rig.told().is_empty());
         assert_eq!(*lock(&answered), None);
         switch_to_home(&rig);
         assert_eq!(current(rig.handle()).profile, "home");
