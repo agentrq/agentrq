@@ -82,18 +82,24 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The client every download uses: https only, redirects included, with a
+/// How every download is made: https only, redirects included, with a
 /// deadline on connecting and on each read.
-fn client() -> reqwest::Client {
+fn client_builder() -> reqwest::ClientBuilder {
+    use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_ENCODING};
+    // The pinned size and hash are of the bytes nodejs.org stores.
+    let identity = HeaderMap::from_iter([(ACCEPT_ENCODING, HeaderValue::from_static("identity"))]);
     reqwest::Client::builder()
         .https_only(true)
-        // The pinned size and hash are of the bytes nodejs.org stores.
         .no_gzip()
         .no_brotli()
+        .default_headers(identity)
         .connect_timeout(CONNECT_TIMEOUT)
         .read_timeout(IDLE_TIMEOUT)
-        .build()
-        .expect("a TLS backend")
+}
+
+/// The client every download uses.
+fn client() -> reqwest::Client {
+    client_builder().build().expect("a TLS backend")
 }
 
 impl Node {
@@ -194,12 +200,9 @@ impl Node {
         let id = unique_temp_id();
         let archive = self.bin.join(format!(".node-download-{id}.tmp"));
         let unpacked = self.bin.join(format!(".node-bin-{id}.tmp"));
-        let installed = tokio::select! {
-            installed = self.install(source, &archive, &unpacked, progress) => {
-                installed.map_err(Failure::Failed)
-            }
-            _ = cancelled => Err(Failure::Cancelled),
-        };
+        let installed = self
+            .install(source, &archive, &unpacked, progress, cancelled)
+            .await;
         lock(&self.cancel).take();
         let _ = std::fs::remove_file(&archive);
         let _ = std::fs::remove_file(&unpacked);
@@ -223,16 +226,37 @@ impl Node {
         }
     }
 
+    /// Fetch, then unpack and place. A cancel stops the fetch; once the
+    /// archive is in, it is too late, and the install runs to its end.
     async fn install(
         &self,
         source: &Source,
         archive: &Path,
         unpacked: &Path,
         progress: &(dyn Fn(u64, u64, u32) + Send + Sync),
+        cancelled: oneshot::Receiver<()>,
+    ) -> Result<PathBuf, Failure> {
+        let fetched = async {
+            tokio::fs::create_dir_all(&self.bin).await.map_err(failed)?;
+            fetch(source, archive, progress).await
+        };
+        tokio::select! {
+            fetched = fetched => fetched.map_err(Failure::Failed)?,
+            _ = cancelled => return Err(Failure::Cancelled),
+        }
+        // From here a cancel finds nothing to stop, unless it came first.
+        lock(&self.cancel).take().ok_or(Failure::Cancelled)?;
+        self.place(source.pin, archive, unpacked)
+            .await
+            .map_err(Failure::Failed)
+    }
+
+    async fn place(
+        &self,
+        pin: &'static NodePin,
+        archive: &Path,
+        unpacked: &Path,
     ) -> Result<PathBuf, String> {
-        tokio::fs::create_dir_all(&self.bin).await.map_err(failed)?;
-        fetch(source, archive, progress).await?;
-        let pin = source.pin;
         let (archive, unpacked) = (archive.to_path_buf(), unpacked.to_path_buf());
         let (binary, backoff) = (self.binary(), self.rename_backoff.clone());
         let placed = binary.clone();
@@ -364,6 +388,7 @@ fn unique_temp_id() -> String {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::ext_host::tests::until;
     use crate::test_server::{closed_port, reply, send, Step, TestServer};
     use agentrq_desktop_core::ext_node::Packing;
     use std::io::Write;
@@ -611,6 +636,28 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn asks_for_the_bytes_as_stored_with_a_deadline_on_each_wait() {
+        // What the production client is built with; `https_only` is
+        // `refuses_anything_but_https`.
+        let settings = format!("{:?} {:?}", client_builder(), client());
+        for setting in [
+            "accepts: Accepts { gzip: false, brotli: false }",
+            "\"accept-encoding\": \"identity\"",
+            "connect_timeout: 30s",
+            "read_timeout: 30s",
+        ] {
+            assert!(settings.contains(setting), "{setting} in {settings}");
+        }
+        // Served over http here, which is all a test can serve.
+        let server = serving(b"bytes".to_vec()).await;
+        let plain = client_builder().https_only(false).build().unwrap();
+        let body = plain.get(&server.url).send().await.unwrap().bytes().await;
+        assert_eq!(body.unwrap(), "bytes");
+        let asked = server.requests().remove(0);
+        assert_eq!(asked.header("accept-encoding"), Some("identity"));
+    }
+
+    #[tokio::test]
     async fn has_nothing_to_download_where_nothing_is_pinned() {
         let dir = tempfile::tempdir().unwrap();
         let node = Node::from_source(dir.path(), None, vec![]);
@@ -745,6 +792,35 @@ pub(crate) mod tests {
         assert_eq!(cancelled.unwrap_err().reason(), "cancelled");
         assert!(listing(&node).is_empty(), "{:?}", listing(&node));
         assert!(!node.cancel(), "nothing left to cancel");
+    }
+
+    #[tokio::test]
+    async fn too_late_to_cancel_once_fetched_and_the_install_finishes() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = serving(archive_of(BINARY)).await;
+        let source = Source {
+            url: server.url.clone(),
+            pin: pin_of(BINARY),
+            client: reqwest::Client::new(),
+        };
+        let backoff = vec![Duration::from_millis(20); 500];
+        let node = Node::from_source(dir.path(), Some(source), backoff);
+        // Something in the way holds the install at its rename.
+        std::fs::create_dir_all(node.binary().join("in the way")).unwrap();
+        let unpacked = || {
+            listing(&node)
+                .iter()
+                .any(|name| name.starts_with(".node-bin-"))
+        };
+        let cancel = async {
+            until(unpacked).await;
+            assert!(!node.cancel(), "too late to cancel");
+            std::fs::remove_dir_all(node.binary()).unwrap();
+        };
+        let (installed, ()) = tokio::join!(node.download(&quiet), cancel);
+        assert_eq!(installed, Ok(node.binary()));
+        assert_eq!(std::fs::read(node.binary()).unwrap(), BINARY);
+        assert_eq!(listing(&node), vec![BINARY_NAME.to_string()]);
     }
 
     #[tokio::test]
