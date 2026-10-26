@@ -580,7 +580,8 @@ impl Profiles {
         signed_in
     }
 
-    fn server_of_profile(&self, id: &str) -> Option<String> {
+    /// `id`'s server, or `None` once that profile is gone.
+    pub(crate) fn server_of_profile(&self, id: &str) -> Option<String> {
         let config = self.config();
         let profile = config.profiles.iter().find(|p| p.id == id)?;
         Some(server_of(profile, self.lock.as_deref()))

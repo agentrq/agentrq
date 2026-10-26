@@ -529,7 +529,11 @@ pub(crate) fn open_sign_in<R: Runtime>(app: &AppHandle<R>, start_url: String) {
 fn open_sign_in_window<R: Runtime>(app: &AppHandle<R>, start_url: String, held: SignIn) {
     let profiles = app.state::<Arc<Profiles>>().inner().clone();
     let id = held.profile().to_string();
-    let server = profiles.server_url();
+    // The held profile's own server, not the active one's: a switch may
+    // land between the check and here.
+    let Some(server) = profiles.server_of_profile(&id) else {
+        return;
+    };
     let label = format!("sign-in-{}", SIGN_INS.fetch_add(1, Ordering::Relaxed));
     let flow: Flow = Arc::default();
     let on_load = flow.clone();
