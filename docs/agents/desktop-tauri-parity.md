@@ -98,8 +98,8 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 | Focus moves between the app and the panel | `panel-guest.test.js` (focus) | M22 | M22 | M22 |
 | A page that fails to load | — | M23 | M23 | M23 |
 | Guest requests refused by the app's schemes | `src-tauri::scheme`, `src-tauri::panel_scheme`, `panel-init.test.js` | M25 | M25 | M25 |
-| Find in page | `core::side_panel::wire`, `core::side_panel::find`, `src-tauri::side_panel` | M29 | M29 | M29 |
-| Site permissions bar, list, timeout | `core::side_panel::permissions`, `core::side_panel::permission_store`, `core::side_panel::platform_permissions`, `src-tauri::panel_permissions` | M26 | M26, M27 | M26, M28 |
+| Find in page | `core::side_panel::wire`, `core::side_panel::find`, `src-tauri::side_panel` | A `verify-side-panel` (the bar's count, and each step by the page's own selection); M29 (the key in the page) | M29 | M29 |
+| Site permissions bar, list, timeout | `core::side_panel::permissions`, `core::side_panel::permission_store`, `core::side_panel::platform_permissions`, `src-tauri::panel_permissions` | A `verify-side-panel` (location: the bar, Allow, remembered, listed); M26 | M26, M27 | M26, M28 |
 | A site's notifications: asked, shown, clicked | `core::side_panel::platform_permissions`, `src-tauri::notify`, `panel-init.test.js` | A `verify-side-panel` | M47 (G: WKWebView cannot show one; the site reads "denied") | M47 |
 | `agentrq-ext://` extension pages and their bridge | `core::side_panel::ext_scheme`, `core::side_panel::child`, `src-tauri::panel_scheme`, `src-tauri::side_panel`, `panel-init.test.js`, `ext-host-runtime.test.js` | A `verify-side-panel` | M25, M46 | M25, M46 |
 
