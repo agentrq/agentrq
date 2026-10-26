@@ -125,7 +125,6 @@ await runVerify(
     //    One modifier only: Cmd+Ctrl+K deliberately matches nothing.
     await key({ key: 'k', [process.platform === 'darwin' ? 'metaKey' : 'ctrlKey']: true })
     await inPage('the finder', "!!document.querySelector('[role=dialog][aria-label=\"Find task\"] input')")
-    const row = "document.querySelector('[role=dialog][aria-label=\"Find task\"] ul button')"
     await page(`(async () => {
       const input = document.querySelector('[role=dialog][aria-label="Find task"] input');
       // Six keystrokes, which must be one search.
@@ -137,15 +136,26 @@ await runVerify(
     })()`)
     // The row is the search's own answer, so the search has been reported by
     // now. The finder loads the recent tasks as it opens, and a search typed
-    // before they arrive finds nothing: ask again until it answers, and open the
-    // row in the same breath, since a later answer may redraw the list. Asking
-    // again is the same episode, so it is not a second report.
+    // before they arrive finds nothing: re-trigger by changing the value (Vue
+    // deduplicates same-value input events) until the search result matching
+    // 'Telemetry check' arrives, and open it.
     await session.waitForPage(
       'a result row to open',
       `(() => {
-        const row = ${row};
-        if (row) { row.click(); return true; }
-        document.querySelector('[role=dialog][aria-label="Find task"] input').dispatchEvent(new Event('input', { bubbles: true }));
+        const row = Array.from(document.querySelectorAll('[role=dialog][aria-label="Find task"] ul button')).find(
+          (b) => b.innerText.includes('Telemetry check')
+        );
+        if (row) {
+          row.click();
+          return true;
+        }
+        const input = document.querySelector('[role=dialog][aria-label="Find task"] input');
+        if (input) {
+          input.value = 'Telem';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.value = 'Teleme';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
         return false;
       })()`
     )
