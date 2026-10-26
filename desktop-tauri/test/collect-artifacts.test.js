@@ -2,7 +2,7 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -27,14 +27,31 @@ afterEach(() => {
 // Lays out a bundle tree from a fixture: every file a real v2 build in CI left
 // under bundle/, each holding its own path so a copy can be traced to its source.
 // Split on \r too: a Windows checkout gives the fixtures CRLF endings.
-function bundleTree(leg, { drop = [], add = [] } = {}) {
-  const dir = path.join(tmp, leg, 'bundle')
+function layOut(root, leg, { drop = [], add = [] } = {}) {
+  const dir = path.join(root, leg, 'bundle')
   const files = fs.readFileSync(path.join(FIXTURES, `${leg}.txt`), 'utf8').split(/\r?\n/).filter(Boolean)
   for (const rel of [...files.filter((f) => !drop.includes(f)), ...add]) {
     fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true })
     fs.writeFileSync(path.join(dir, rel), rel)
   }
   return dir
+}
+
+// The linux tree is 400-odd files, which a Windows runner can take over 5 s to
+// write, so each unchanged tree is laid out once, outside any test's budget.
+// collectArtifacts only reads a bundle dir, so the tests can share them.
+let trees
+const pristine = {}
+beforeAll(() => {
+  trees = fs.mkdtempSync(path.join(os.tmpdir(), 'tauri-trees-'))
+  for (const leg of ['linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64']) pristine[leg] = layOut(trees, leg)
+}, 120_000)
+afterAll(() => {
+  fs.rmSync(trees, { recursive: true, force: true })
+})
+
+function bundleTree(leg, changes) {
+  return changes ? layOut(tmp, leg, changes) : pristine[leg]
 }
 
 function collected(outDir) {
