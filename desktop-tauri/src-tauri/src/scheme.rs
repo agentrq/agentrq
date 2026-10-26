@@ -842,10 +842,25 @@ mod tests {
 
     #[tokio::test]
     async fn answers_502_rather_than_hanging_when_the_dev_server_never_replies() {
-        tokio::time::pause();
         let vite = TestServer::start(|_| vec![Step::Wait(60_000)]).await;
         let rig = rig("", &vite.url);
-        let res = get(&rig, "/").await;
+        let res = get(&rig, "/");
+        tokio::pin!(res);
+        // Real time until Vite has the request, as in the 504 test above: a
+        // clock paused sooner can pass the deadline before Vite reads it.
+        let started = std::time::Instant::now();
+        while vite.requests().is_empty() {
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(10),
+                "Vite never got the request"
+            );
+            tokio::select! {
+                res = &mut res => panic!("answered {} before Vite had it", res.status()),
+                _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
+            }
+        }
+        tokio::time::pause();
+        let res = res.await;
         assert_eq!(res.status(), 502);
         assert_eq!(
             body(&res),
