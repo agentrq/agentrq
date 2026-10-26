@@ -7,7 +7,7 @@ Electron's preload. The rules of the code are in
 [`docs/agents/desktop-tauri.md`](../docs/agents/desktop-tauri.md); what is
 checked on which OS is in
 [the parity checklist](../docs/agents/desktop-tauri-parity.md); the user's view
-is the "Tauri preview" section of [`docs/DESKTOP.md`](../docs/DESKTOP.md).
+is the "Preview: Tauri build" section of [`docs/DESKTOP.md`](../docs/DESKTOP.md#preview-tauri-build).
 
 ## Layout
 
@@ -23,15 +23,22 @@ is the "Tauri preview" section of [`docs/DESKTOP.md`](../docs/DESKTOP.md).
 
 ## Setting up
 
-You need Node 26 and npm, a stable Rust (`rustup default stable`), and on
-Linux the webview packages:
+### Prerequisites per OS
 
-```sh
-sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
-```
+- **Linux**: install the webview and build packages matching `.github/workflows/desktop-tauri.yml`:
+  ```sh
+  sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb xclip dbus-x11 python3-gi
+  ```
+  The first four (`libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev`) are required to build and run the app. `webkit2gtk-driver` (`WebKitWebDriver`), `xvfb`, `xclip`, `dbus-x11`, and `python3-gi` are required to run the headless verify scripts under `tauri-driver`.
+- **macOS**: Xcode Command Line Tools (`xcode-select --install`).
+- **Windows**: WebView2 runtime (pre-installed on Windows 10 and 11) and MSVC C++ Build Tools.
+- **Node.js and Rust**: Node 26 and npm; stable Rust (`rustup default stable`) with components `rustfmt, clippy, llvm-tools-preview`.
+- **Tools**:
+  - `cargo install cargo-llvm-cov` (for `npm run coverage:rust`)
+  - `cargo install tauri-driver --locked --version 2.1.0` (for `npm run verify`)
+  - Go toolchain (for `npm run verify`, which builds a temporary scratch backend from `backend/`)
 
-macOS needs the Xcode command line tools; Windows needs the WebView2 runtime,
-which Windows 10 and 11 already have, and the MSVC build tools.
+### Installing dependencies
 
 ```sh
 (cd frontend && npm ci)  # the renderer is built from frontend/src
@@ -101,7 +108,8 @@ Windows):
 
 ## Running the verify scripts
 
-`scripts/verify-e2e.mjs`, `verify-connection.mjs` and `verify-markdown-links.mjs`
+`scripts/verify-e2e.mjs`, `verify-connection.mjs`, `verify-markdown-links.mjs`,
+`verify-side-panel.mjs`, `verify-webmcp.mjs`, and `verify-ui-telemetry.mjs`
 are the Tauri twins of the Electron scripts of the same names in
 `desktop/scripts/`, with the same checks. They run the real **debug build**
 under `tauri-driver` (WebDriver), so nothing in the shell is stood in for,
@@ -122,7 +130,7 @@ native WebDriver:
 cd desktop-tauri
 npm ci
 npm run build:debug      # the app the scripts launch; rebuild after a change
-npm run verify           # all three, or: verify:e2e, verify:connection, verify:markdown-links
+npm run verify           # all verify scripts, or individual: npm run verify:e2e, etc.
 
 # Linux, headless:
 xvfb-run -a -s "-screen 0 1400x900x24" dbus-run-session -- npm run verify
@@ -133,8 +141,8 @@ xvfb-run -a -s "-screen 0 1400x900x24" dbus-run-session -- npm run verify
 contacts GitHub and never finds an update. The release config is untouched.
 
 Each run starts the app on a data folder of its own, so it never touches your
-profiles, and exits non-zero if a check fails. `npm run verify` runs all three
-and fails if any did.
+profiles, and exits non-zero if a check fails. `npm run verify` runs every
+script and fails if any did.
 
 **Close your own AgentRQ (Tauri) first.** The app is single-instance, keyed on
 the session bus: a launch while yours is open hands over to it and exits, and

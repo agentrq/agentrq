@@ -53,8 +53,9 @@ fn options(name: &str) -> MenuOptions<'_> {
         platform: PLATFORM,
         app_name: name,
         debug_build: DEBUG_BUILD,
-        // The updater is WP6/WP8's: until it is wired the item is disabled.
-        can_check_for_updates: false,
+        // Always offered, as in Electron: a build that cannot update says why
+        // when asked (`Updater::check_now` publishes the disabled reason).
+        can_check_for_updates: true,
         // The panel listens for `agentrq:side-panel:toggle` (WP7b).
         can_toggle_side_panel: true,
     }
@@ -225,7 +226,13 @@ pub(crate) fn run<R: Runtime>(app: &AppHandle<R>, action: ActionId) {
             let profiles = app.state::<Arc<Profiles>>().inner().clone();
             tauri::async_runtime::spawn(async move { profiles.switch_server().await });
         }
-        // Check for Updates is WP6's: disabled until then.
+        // The answer reaches the page as `agentrq:update:status`, which shows
+        // the banner, or "up to date" for a check that was asked for.
+        ActionId::CheckForUpdates => {
+            if let Some(updater) = app.try_state::<agentrq_desktop_core::updater::Updater>() {
+                let _ = updater.check_now();
+            }
+        }
         _ => {}
     }
 }

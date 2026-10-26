@@ -30,6 +30,12 @@
   every 100 ms. A closed guest is a beat that never comes again after a page known to
   have started later. Take the log's position *before* the action that makes the page
   load, or its hello can land first and the wait never sees it.
+- **Flaky Tauri Rust tests come from runner stalls (>1 s), not CPU load.** Reproduce
+  by SIGSTOP/SIGCONT-ing the test process for 160–300 ms at random; stress-ng alone
+  never fails them. Use `side_panel::tests::wait_for(what, cond)` (10 s deadline, asserts)
+  instead of fixed sleeps; a wait must assert. For microsecond-long spawned work the
+  rig can't open a gap, so prove a fix with an injected delay.
+- **A log line that only runs on slow runs flakes the 100% line-coverage gate.**
 
 ## The bridge and its commands
 
@@ -70,6 +76,8 @@
 - **Every proxied or cached response carries `nosniff` and `sandbox` (core's
   `PROXIED_RESPONSE_GUARDS`).** It is served on the app's own origin, so a framed
   HTML attachment would otherwise run as the app and reach `__TAURI_INTERNALS__`.
+- **A Chromium-style `sandbox` CSP blocks the PDF viewer; only exactly `application/pdf`
+  is exempt, with nosniff kept.**
 - **The app registers its own `tauri` scheme, a 403**, so no guest reaches the
   built-in asset server (`tauri://localhost`, `http://tauri.localhost`).
 - **A cookie jar with no vault never writes its file.** A slow or refused
@@ -109,10 +117,11 @@
   store still in use.
 - **A profile's webview storage lives under `profiles/<id>/`** (or its macOS
   data store), and start-up sweeps any profile folder or store that no profile owns.
-- **Once a window has a child webview, `get_webview_window` finds nothing**, and a
-  `WebviewWindow` command argument fails: Tauri sees a webview window only while
-  every webview shares the window's label. Use `chrome::main_webview` and a
-  `Webview` argument.
+- **Once a window has a child webview, `get_webview_window` finds nothing**
+  (`get_webview_window("main")` returns `None`), and a `WebviewWindow` command
+  argument fails: Tauri sees a webview window only while every webview shares the
+  window's label. Use `chrome::main_webview` (or `get_webview("main")` plus
+  `.window()`) and a `Webview` argument.
 - **Never write localStorage and quit in the same tick.** One such write was lost
   on macOS 14.
 
@@ -188,7 +197,7 @@
 - **Platform and build checks are `#[cfg]` consts, not `cfg!()`** (`PLATFORM`,
   `DEBUG_BUILD` in `chrome.rs` and `app_menu.rs`), so the code for another OS is
   never compiled in.
-- **Off macOS the menu has no native accelerators.** GTK runs a window's
+- **Off macOS the menu has no native accelerators.** Linux muda/GTK runs a window's
   accelerators before the page, so Ctrl+W closed the app under a terminal that
   wanted it, and Ctrl+R, Z, Q, M, 0 and - went the same way. The label keeps a
   hint, and the bridge runs the key instead:
@@ -241,3 +250,9 @@
   `safeStorage` refuses them.
 - **A host call waits for `start`.** One that arrives while it runs and installs
   what it is loading would load that extension twice.
+
+## Releases, bundles and updater
+
+- **Install-on-quit hooks `RunEvent::Exit`, never the cancellable `ExitRequested`.**
+- **Tauri's default bundle names (`_amd64.AppImage`, `_aarch64`, `_x64.dmg`, spaces turned into dots by GitHub) are renamed in CI**
+  to `AgentRQ-Tauri-<version>-<arch>.<ext>` (`collect-artifacts.mjs`).
