@@ -1023,9 +1023,14 @@ pub(crate) mod tests {
             host.spawn(&mut state).unwrap();
             state.process.as_ref().unwrap().out.clone()
         };
-        tokio::time::sleep(Duration::from_millis(150)).await;
-        let _ = out.send(vec![b'\n']);
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        for _ in 0..100 {
+            if out.is_closed() {
+                break;
+            }
+            let _ = out.send(vec![b'x'; 65536]);
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(out.is_closed());
     }
 
     #[test]

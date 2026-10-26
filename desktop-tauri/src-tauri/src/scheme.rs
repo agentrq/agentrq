@@ -614,6 +614,7 @@ mod tests {
     async fn defaults_to_a_no_op_hook() {
         let dir = tempfile::tempdir().unwrap();
         let scheme = Scheme::new(Arc::new(network(dir.path(), "")), renderer(), "");
+        (scheme.on_proxied)("GET", "/api/v1/x");
         assert_eq!(
             scheme
                 .handle(MAIN_WEBVIEW, request("GET", "/api/v1/x", b""))
