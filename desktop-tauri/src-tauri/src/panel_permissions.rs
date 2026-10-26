@@ -353,10 +353,10 @@ pub async fn side_panel_permission_remove<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::side_panel::tests::wait_for;
     use agentrq_desktop_core::side_panel::permissions::PermissionDetails;
     use agentrq_desktop_core::side_panel::platform_permissions::{webkit_ask, webview2_ask};
     use serde_json::{json, Value};
-    use std::time::Duration;
     use tauri::ipc::{CallbackFn, InvokeBody};
     use tauri::test::{
         get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime, INVOKE_KEY,
@@ -463,17 +463,6 @@ mod tests {
         .map(|body| body.deserialize().unwrap())
     }
 
-    /// Until what was spawned has run, for at most ten seconds: a loaded CI
-    /// runner can take more than two to sleep out the media pair window.
-    fn wait_for(done: impl Fn() -> bool) {
-        for _ in 0..1000 {
-            if done() {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-
     fn camera() -> NativeAsk {
         webkit_ask("WebKitUserMediaPermissionRequest", false, true, false, PAGE)
     }
@@ -501,7 +490,7 @@ mod tests {
     fn asks_the_window_once_and_remembers_the_answer_on_disk() {
         let rig = rig();
         let answered = rig.request("panel-guest-1", camera());
-        wait_for(|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
         assert_eq!(*lock(&answered), None, "waiting on the person");
         assert_eq!(
             rig.heard(),
@@ -532,7 +521,7 @@ mod tests {
 
         // The next request is answered from memory, without asking.
         let again = rig.request("panel-guest-2", camera());
-        wait_for(|| lock(&again).is_some());
+        wait_for("the remembered answer", &|| lock(&again).is_some());
         assert_eq!(*lock(&again), Some(true));
         assert!(rig.heard().is_empty());
     }
@@ -547,7 +536,7 @@ mod tests {
         )
         .unwrap();
         let answered = rig.request("panel-guest-1", camera());
-        wait_for(|| lock(&answered).is_some());
+        wait_for("the answer", &|| lock(&answered).is_some());
         assert_eq!(*lock(&answered), Some(false));
         assert!(rig.heard().is_empty());
     }
@@ -556,7 +545,7 @@ mod tests {
     fn anything_but_allow_is_a_block() {
         let rig = rig();
         rig.request("panel-guest-1", camera());
-        wait_for(|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
         let answered = call(
             &rig.main,
             "side_panel_permission_answer",
@@ -607,7 +596,7 @@ mod tests {
         );
         // Removed for good: the camera is asked about again.
         let answered = rig.request("panel-guest-1", camera());
-        wait_for(|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
         assert_eq!(*lock(&answered), None);
     }
 
@@ -615,7 +604,7 @@ mod tests {
     fn only_the_apps_window_may_answer_list_or_remove() {
         let rig = rig();
         let answered = rig.request("panel-guest-1", camera());
-        wait_for(|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
         let other = WebviewWindowBuilder::new(&rig.app, "panel-guest-1", Default::default())
             .build()
             .unwrap();
@@ -672,7 +661,7 @@ mod tests {
         let rig = rig();
         cancel(rig.handle(), 1);
         let answered = rig.request("panel-guest-1", camera());
-        wait_for(|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
         rig.heard();
         cancel(rig.handle(), 2);
         assert_eq!(*lock(&answered), None, "another page's");
@@ -693,7 +682,7 @@ mod tests {
         let granted = rig.request("panel-guest-1", webview2_ask(9, PAGE));
         assert_eq!(*lock(&granted), Some(true));
         let refused = rig.request("panel-guest-1", webview2_ask(7, PAGE));
-        wait_for(|| lock(&refused).is_some());
+        wait_for("the refusal", &|| lock(&refused).is_some());
         assert_eq!(*lock(&refused), Some(false));
         let screen = rig.request("panel-guest-1", NativeAsk::Refused);
         assert_eq!(*lock(&screen), Some(false));
@@ -707,7 +696,7 @@ mod tests {
         let rig = rig();
         let microphone = rig.request("panel-guest-1", webview2_ask(1, PAGE));
         let camera = rig.request("panel-guest-1", webview2_ask(2, PAGE));
-        wait_for(|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
         assert_eq!(
             rig.heard(),
             [(
@@ -733,7 +722,7 @@ mod tests {
         let microphone = rig.request("panel-guest-1", webview2_ask(1, PAGE));
         // Another guest's half is another request.
         let other = rig.request("panel-guest-2", webview2_ask(2, PAGE));
-        wait_for(|| lock(&rig.heard).len() == 2);
+        wait_for("both questions", &|| lock(&rig.heard).len() == 2);
         let mut asked: Vec<Value> = rig.heard().into_iter().map(|(_, q)| q).collect();
         assert_eq!(asked.len(), 2, "{asked:?}");
         asked.sort_by_key(|q| q["guestId"].as_u64());
@@ -755,7 +744,7 @@ mod tests {
     fn a_profile_switch_blocks_what_the_last_profile_was_asking() {
         let rig = two_profiles();
         let answered = rig.request("panel-guest-1", camera());
-        wait_for(|| !lock(&rig.heard).is_empty());
+        wait_for("the window asked", &|| !lock(&rig.heard).is_empty());
         assert_eq!(*lock(&answered), None);
         switch_to_home(&rig);
         assert_eq!(current(rig.handle()).profile, "home");
@@ -785,7 +774,9 @@ mod tests {
                 PAGE,
             ),
         );
-        wait_for(|| lock(&camera).is_some() && lock(&labels).is_some());
+        wait_for("both answers", &|| {
+            lock(&camera).is_some() && lock(&labels).is_some()
+        });
         assert_eq!((*lock(&camera), *lock(&labels)), (Some(false), Some(false)));
         assert!(rig.heard().is_empty());
     }
@@ -839,7 +830,7 @@ mod tests {
                     PAGE,
                 ),
             );
-            wait_for(|| lock(&answered).is_some());
+            wait_for("the answer", &|| lock(&answered).is_some());
             let answer = *lock(&answered);
             answer
         };

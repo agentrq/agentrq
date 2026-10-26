@@ -1614,7 +1614,7 @@ pub(crate) mod tests {
         ] {
             assert!(!key_down(rig.handle(), &other), "{other:?}");
         }
-        settle();
+        wait_for("the find bar's event", &|| *lock(&heard) >= 1);
         assert_eq!(*lock(&heard), 1);
     }
 
