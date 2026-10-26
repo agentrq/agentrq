@@ -113,7 +113,8 @@
   store: a sign-in would move the lent `at` into the jar, and a removal would
   delete a store still in use. While a sign-in window is open, an authorisation on
   its store is refused (`OAuthWindows::sign_in`): its take-back would delete the
-  session the sign-in set.
+  session the sign-in set. The window shows the held profile's store, never the
+  active one read again; a profile switch during the take-back drops the sign-in.
 
 ## Profiles and the main window
 

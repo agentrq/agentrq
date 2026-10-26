@@ -58,7 +58,7 @@ use ext_host::ExtHost;
 use extensions::{HostDrawers, PickedFolder, Picker, ShellServices};
 use network::Network;
 use notify::{Desk, Feed, Notifier};
-use oauth_window::SignIn;
+use oauth_window::{HeldSignIn, SignIn};
 use profiles::{app_origin, Profiles, Shell};
 use scheme::{Assets, Scheme, MAIN_WEBVIEW};
 use sign_in::CookieWebview;
@@ -528,7 +528,7 @@ pub(crate) fn open_sign_in<R: Runtime>(app: &AppHandle<R>, start_url: String) {
 
 fn open_sign_in_window<R: Runtime>(app: &AppHandle<R>, start_url: String, held: SignIn) {
     let profiles = app.state::<Arc<Profiles>>().inner().clone();
-    let id = profiles.active_id();
+    let id = held.profile().to_string();
     let server = profiles.server_url();
     let label = format!("sign-in-{}", SIGN_INS.fetch_add(1, Ordering::Relaxed));
     let flow: Flow = Arc::default();
@@ -564,10 +564,10 @@ fn open_sign_in_window<R: Runtime>(app: &AppHandle<R>, start_url: String, held: 
     };
     // Closing it before it is done is giving up.
     let on_close = flow.clone();
-    let held = Mutex::new(Some(held));
+    let held = HeldSignIn::new(held);
     window.on_window_event(move |event| {
+        held.on_window_event(event);
         if let WindowEvent::Destroyed = event {
-            held.lock().unwrap_or_else(|p| p.into_inner()).take();
             if let Some(flow) = lock_flow(&on_close).as_mut() {
                 flow.on_closed();
             }

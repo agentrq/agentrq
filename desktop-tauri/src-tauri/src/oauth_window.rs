@@ -28,7 +28,7 @@ use agentrq_desktop_core::oauth_window::{Flow, DEADLINE};
 use cookie_store::RawCookie;
 use serde_json::Value;
 use tauri::webview::cookie::SameSite;
-use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
+use tauri::{AppHandle, Manager, Runtime, WebviewWindow, WindowEvent};
 use tokio::sync::{oneshot, Notify};
 use url::Url;
 
@@ -145,6 +145,13 @@ pub struct SignIn {
     profile: String,
 }
 
+impl SignIn {
+    /// The profile whose store it holds: the one its window must show.
+    pub fn profile(&self) -> &str {
+        &self.profile
+    }
+}
+
 impl Drop for SignIn {
     fn drop(&mut self) {
         let mut signing_in = lock(&self.windows.signing_in);
@@ -156,8 +163,25 @@ impl Drop for SignIn {
     }
 }
 
+/// A [`SignIn`] its window keeps, until that window is destroyed.
+pub struct HeldSignIn(Mutex<Option<SignIn>>);
+
+impl HeldSignIn {
+    pub fn new(held: SignIn) -> Self {
+        Self(Mutex::new(Some(held)))
+    }
+
+    /// Each of the window's events: once it is destroyed, the hold ends.
+    pub fn on_window_event(&self, event: &WindowEvent) {
+        if let WindowEvent::Destroyed = event {
+            lock(&self.0).take();
+        }
+    }
+}
+
 /// What opens a sign-in window, handed the start URL and the [`SignIn`] to
-/// hold until that window is gone.
+/// hold until that window is gone. The window shows the store of
+/// [`SignIn::profile`], and no other.
 pub type SignInOpener<R> = Box<dyn FnOnce(&AppHandle<R>, String, SignIn) + Send>;
 
 /// Opens a sign-in window on the active profile's store with `open`, once the
@@ -169,7 +193,14 @@ pub fn open_sign_in<R: Runtime>(app: &AppHandle<R>, start_url: String, open: Sig
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let profiles = app.state::<Arc<Profiles>>().inner().clone();
-        let held = profiles.auth_windows().sign_in(&profiles.active_id()).await;
+        let profile = profiles.active_id();
+        let held = profiles.auth_windows().sign_in(&profile).await;
+        // Another profile was switched to during the take-back. The sign-in
+        // was asked for the one shown then, which the window no longer shows.
+        if profiles.active_id() != profile {
+            eprintln!("[sign-in] another profile was opened meanwhile; this sign-in is dropped");
+            return;
+        }
         open(&app, start_url, held);
     });
 }
@@ -973,6 +1004,52 @@ mod tests {
         let again = rig.start(DEADLINE);
         rig.pending().end(OAuthError::Closed);
         assert_eq!(block_on(again).unwrap(), Err(OAuthError::Closed));
+    }
+
+    /// An opener that says which profile its window would show.
+    fn says_profile(opened: std::sync::mpsc::Sender<String>) -> SignInOpener<MockRuntime> {
+        Box::new(move |_, _, held| opened.send(held.profile().to_string()).unwrap())
+    }
+
+    #[test]
+    fn a_sign_in_is_dropped_when_another_profile_is_opened_during_the_take_back() {
+        let rig = rig();
+        let windows = rig.windows().inner().clone();
+        // A window on this store whose take-back lasts until the test says.
+        let run = Run::new(PAGE, REDIRECT, DEADLINE).unwrap();
+        windows
+            .begin("oauth-x", "default", run.pending.clone())
+            .unwrap();
+        let (opened, sign_ins) = std::sync::mpsc::channel();
+        open_sign_in(rig.app.handle(), SERVER.into(), says_profile(opened));
+        // Held, on the profile shown when it was asked for.
+        wait_for("the sign-in holds its store", &|| {
+            lock(&windows.signing_in).contains_key("default")
+        });
+        block_on(rig._profiles.profiles.switch("work")).unwrap();
+        windows.finish();
+        wait_for("the hold is let go", &|| {
+            lock(&windows.signing_in).is_empty()
+        });
+        assert!(sign_ins.try_recv().is_err(), "no window opens");
+
+        // With no switch, the window is handed the profile it holds.
+        let (opened, sign_ins) = std::sync::mpsc::channel();
+        open_sign_in(rig.app.handle(), SERVER.into(), says_profile(opened));
+        let profile = sign_ins.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(profile, "work");
+    }
+
+    #[test]
+    fn a_window_keeps_its_hold_until_it_is_destroyed() {
+        let windows = OAuthWindows::default();
+        let held = HeldSignIn::new(block_on(windows.sign_in("default")));
+        held.on_window_event(&WindowEvent::Focused(true));
+        assert!(lock(&windows.signing_in).contains_key("default"));
+        held.on_window_event(&WindowEvent::Destroyed);
+        assert!(lock(&windows.signing_in).is_empty());
+        // Gone once: the next event finds nothing to let go.
+        held.on_window_event(&WindowEvent::Destroyed);
     }
 
     #[test]

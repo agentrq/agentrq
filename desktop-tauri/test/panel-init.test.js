@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 // What `core::side_panel::child::guest_init_script` sends: the text, with the
 // placeholder filled.
 const SOURCE = readFileSync(new URL('../src/guest/panel.js', import.meta.url), 'utf8')
+const POSTS = JSON.parse(readFileSync(new URL('./fixtures/message-scripts.json', import.meta.url), 'utf8'))
 
 /**
  * Run the init script in a page at `href`, as a frame of `top` or the top,
@@ -152,39 +153,40 @@ describe('the side panel guest init script', () => {
     expect(none).not.toHaveBeenCalled()
   })
 
-  it('never hands a post to a website, even one that defines the receiver itself', () => {
-    // What `core::side_panel::child::message_script` evaluates for notes' page.
-    const post = (window, message) =>
-      new Function(
-        'window',
-        'location',
-        `location.protocol + "//" + location.host + "/" === "agentrq-ext://notes/" && window.__agentrqPanelMessage && window.__agentrqPanelMessage("tk", ${JSON.stringify(message)})`
-      )(window, window.location)
-    const notes = run('agentrq-ext://notes/panel/index.html')
-    const heard = vi.fn()
-    notes.agentrq.panel.onMessage(heard)
-    post(notes, { n: 1 })
-    expect(heard).toHaveBeenCalledWith({ n: 1 })
+  // Built by `core::side_panel::child::message_script`, whose test keeps
+  // this file current, for the page's address on WebKit and on WebView2.
+  for (const form of ['webkit', 'webview2']) {
+    it(`never hands a post to a website, even one that defines the receiver itself (${form})`, () => {
+      const { token, message, [form]: built } = POSTS
+      const webview2 = form === 'webview2'
+      const post = (window) => new Function('window', 'location', built.script)(window, window.location)
+      const page = run(built.href, { webview2, token })
+      const heard = vi.fn()
+      page.agentrq.panel.onMessage(heard)
+      post(page)
+      expect(heard).toHaveBeenCalledWith(message)
 
-    // The guest moved to a site before the post arrived: the site cannot
-    // take the receiver over, however it tries.
-    const site = run('https://a.example/')
-    const stolen = vi.fn()
-    expect(() => {
-      site.__agentrqPanelMessage = stolen
-    }).toThrow()
-    expect(() => Object.defineProperty(site, '__agentrqPanelMessage', { value: stolen })).toThrow()
-    post(site, { n: 2 })
-    expect(site.__agentrqPanelMessage('tk', 3)).toBeUndefined()
-    // Nor would it with no init script at all, as the address is checked first.
-    const bare = { location: { protocol: 'https:', host: 'a.example' }, __agentrqPanelMessage: stolen }
-    post(bare, { n: 4 })
-    // Nor another Extension's page.
-    const other = run('agentrq-ext://other/')
-    other.agentrq.panel.onMessage(stolen)
-    post(other, { n: 5 })
-    expect(stolen).not.toHaveBeenCalled()
-  })
+      // The guest moved to a site before the post arrived: the site cannot
+      // take the receiver over, however it tries.
+      const site = run('https://a.example/', { webview2, token })
+      const stolen = vi.fn()
+      expect(() => {
+        site.__agentrqPanelMessage = stolen
+      }).toThrow()
+      expect(() => Object.defineProperty(site, '__agentrqPanelMessage', { value: stolen })).toThrow()
+      post(site)
+      expect(site.__agentrqPanelMessage(token, 3)).toBeUndefined()
+      // Nor would it with no init script at all, as the address is checked first.
+      post({ location: { protocol: 'https:', host: 'a.example' }, __agentrqPanelMessage: stolen })
+      // Nor another Extension's page, nor the other platform's form of this one.
+      const other = run(built.href.replace('notes', 'other'), { webview2, token })
+      other.agentrq.panel.onMessage(stolen)
+      post(other)
+      const elsewhere = POSTS[webview2 ? 'webkit' : 'webview2'].href
+      post({ location: { protocol: new URL(elsewhere).protocol, host: new URL(elsewhere).host }, __agentrqPanelMessage: stolen })
+      expect(stolen).not.toHaveBeenCalled()
+    })
+  }
 
   it('lets a page listen, and stop', () => {
     const { agentrq } = run('agentrq-ext://notes/')

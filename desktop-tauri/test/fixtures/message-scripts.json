@@ -1,0 +1,14 @@
+{
+  "message": {
+    "n": 1
+  },
+  "token": "tk",
+  "webkit": {
+    "href": "agentrq-ext://notes/panel/index.html",
+    "script": "location.protocol + \"//\" + location.host + \"/\" === \"agentrq-ext://notes/\" && window.__agentrqPanelMessage && window.__agentrqPanelMessage(\"tk\", {\"n\":1})"
+  },
+  "webview2": {
+    "href": "http://agentrq-ext.notes/panel/index.html",
+    "script": "location.protocol + \"//\" + location.host + \"/\" === \"http://agentrq-ext.notes/\" && window.__agentrqPanelMessage && window.__agentrqPanelMessage(\"tk\", {\"n\":1})"
+  }
+}

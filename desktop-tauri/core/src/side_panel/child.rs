@@ -749,6 +749,41 @@ mod tests {
         assert_eq!(serde_json::from_str::<Value>(arg).unwrap(), message);
     }
 
+    /// `test/panel-init.test.js` runs these very scripts in a page, on each
+    /// platform's form of the Extension's address.
+    #[test]
+    fn the_guest_test_runs_the_post_scripts_built_here() {
+        assert_eq!(
+            webview_url(&sender_url("notes"), true),
+            "http://agentrq-ext.notes/"
+        );
+        let (token, message) = ("tk", json!({"n": 1}));
+        let form = |webview2| {
+            json!({
+                "href": webview_url("agentrq-ext://notes/panel/index.html", webview2),
+                "script": message_script(token, &message, &webview_url(&sender_url("notes"), webview2)),
+            })
+        };
+        let fixture = json!({
+            "token": token,
+            "message": message,
+            "webkit": form(false),
+            "webview2": form(true),
+        });
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../test/fixtures/message-scripts.json"
+        );
+        let want = serde_json::to_string_pretty(&fixture).unwrap() + "\n";
+        let have = std::fs::read_to_string(path)
+            .unwrap_or_default()
+            .replace("\r\n", "\n");
+        assert_eq!(
+            have, want,
+            "test/fixtures/message-scripts.json is stale: write it as the right side"
+        );
+    }
+
     #[test]
     fn the_reply_is_what_electrons_preload_reads() {
         let ok: Value = serde_json::from_slice(&bridge_reply(Ok(json!([1])))).unwrap();
