@@ -53,13 +53,19 @@ pub fn build<R: Runtime>(
 /// wry asks `on_navigation` for WebView2's top frame only. So a subframe's
 /// navigation is asked here, and WebView2 never hands a URL to another app,
 /// whichever frame asks: the redirect would reach the app that claims it.
+///
+/// Either guard can fail to attach, on a runtime too old for
+/// `ICoreWebView2_18` among others: the window still opens, and the log says
+/// what it runs without. Neither handler is ever removed. Each holds only an
+/// `Arc<Pending>`, which holds nothing of the webview, so both go with it.
 #[cfg(windows)]
 fn guard_frames<R: Runtime>(window: &WebviewWindow<R>, pending: Arc<Pending>) {
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_18;
     use webview2_com::{LaunchingExternalUriSchemeEventHandler, NavigationStartingEventHandler};
-    let _ = window.with_webview(move |view| unsafe {
-        let Ok(core) = view.controller().CoreWebView2() else {
-            return;
+    let attached = window.with_webview(move |view| unsafe {
+        let core = match view.controller().CoreWebView2() {
+            Ok(core) => core,
+            Err(error) => return eprintln!("[oauth] no frame guard: {error}"),
         };
         let mut token = Default::default();
         let frames = NavigationStartingEventHandler::create(Box::new(move |_, args| {
@@ -71,17 +77,26 @@ fn guard_frames<R: Runtime>(window: &WebviewWindow<R>, pending: Arc<Pending>) {
             }
             Ok(())
         }));
-        let _ = core.add_FrameNavigationStarting(&frames, &mut token);
-        if let Ok(core) = windows::core::Interface::cast::<ICoreWebView2_18>(&core) {
-            let launch = LaunchingExternalUriSchemeEventHandler::create(Box::new(|_, args| {
-                if let Some(args) = args {
-                    args.SetCancel(true)?;
-                }
-                Ok(())
-            }));
-            let _ = core.add_LaunchingExternalUriScheme(&launch, &mut token);
+        if let Err(error) = core.add_FrameNavigationStarting(&frames, &mut token) {
+            eprintln!("[oauth] no subframe guard: {error}");
+        }
+        let core = match windows::core::Interface::cast::<ICoreWebView2_18>(&core) {
+            Ok(core) => core,
+            Err(error) => return eprintln!("[oauth] no external launch guard: {error}"),
+        };
+        let launch = LaunchingExternalUriSchemeEventHandler::create(Box::new(|_, args| {
+            if let Some(args) = args {
+                args.SetCancel(true)?;
+            }
+            Ok(())
+        }));
+        if let Err(error) = core.add_LaunchingExternalUriScheme(&launch, &mut token) {
+            eprintln!("[oauth] no external launch guard: {error}");
         }
     });
+    if let Err(error) = attached {
+        eprintln!("[oauth] no frame guard: {error}");
+    }
 }
 
 /// The profile's own storage, as its sign-in window has: a folder on Linux and

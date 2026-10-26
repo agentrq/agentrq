@@ -13,7 +13,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use agentrq_desktop_core::ext_host::{fetch_allowed, unavailable};
+use agentrq_desktop_core::ext_host::fetch_allowed;
 use agentrq_desktop_core::ext_node::needs_node as needs_node_reason;
 use agentrq_desktop_core::protocol::{
     drawer_lookup, filter_request_headers, filter_response_headers, proxy_error_reply, sends_body,
@@ -39,6 +39,13 @@ pub const KEYCHAIN_COOLDOWN: Duration = Duration::from_millis(1000);
 /// The extension secrets' keychain, separate from the cookie jars' key.
 pub type SecretsKeychain = Arc<dyn Keychain + Send + Sync>;
 
+/// The supervisor's authorisation window, given its page and the redirect
+/// it ends at (`oauth_window::for_host`).
+pub type AuthWindow = Box<dyn Fn(String, String) -> Answer + Send + Sync>;
+
+/// Where the host's news goes: its notification and what it carries.
+pub type Told = Box<dyn Fn(&str, &Value) + Send + Sync>;
+
 /// What the host is answered with, and where its news goes.
 pub struct ShellServices(Arc<Shell>);
 
@@ -56,30 +63,33 @@ struct Shell {
     keychain_deadline: Duration,
     keychain_cooldown: Duration,
     vault: tokio::sync::Mutex<VaultCache>,
-    on_changed: Box<dyn Fn(Value) + Send + Sync>,
+    on_told: Told,
+    auth_window: AuthWindow,
 }
 
 impl ShellServices {
     pub fn new(
         network: Arc<Network>,
         keychain: SecretsKeychain,
-        on_changed: Box<dyn Fn(Value) + Send + Sync>,
+        on_told: Told,
+        auth_window: AuthWindow,
     ) -> Self {
         Self::tuned(
             network,
             keychain,
-            on_changed,
-            KEYCHAIN_DEADLINE,
-            KEYCHAIN_COOLDOWN,
+            on_told,
+            auth_window,
+            (KEYCHAIN_DEADLINE, KEYCHAIN_COOLDOWN),
         )
     }
 
+    /// `keychain` is its deadline and its cooldown.
     fn tuned(
         network: Arc<Network>,
         keychain: SecretsKeychain,
-        on_changed: Box<dyn Fn(Value) + Send + Sync>,
-        keychain_deadline: Duration,
-        keychain_cooldown: Duration,
+        on_told: Told,
+        auth_window: AuthWindow,
+        (keychain_deadline, keychain_cooldown): (Duration, Duration),
     ) -> Self {
         Self(Arc::new(Shell {
             network,
@@ -91,7 +101,8 @@ impl ShellServices {
                 failed_at: None,
                 reading: None,
             }),
-            on_changed,
+            on_told,
+            auth_window,
         }))
     }
 }
@@ -242,20 +253,24 @@ impl Services for ShellServices {
             }
             "seal" => Box::pin(async move { this.seal(params).await }),
             "open" => Box::pin(async move { this.open(params).await }),
-            // WP9 part 2: the supervisor's OAuth window.
             "authWindow" => {
-                Box::pin(async { Err(unavailable("The authorisation window", "WP9 part 2")) })
+                let text = |key: &str| params[key].as_str().unwrap_or_default().to_string();
+                (this.auth_window)(text("url"), text("redirectUri"))
             }
             _ => return None,
         })
     }
 
     fn changed(&self, name: &str, reason: &str) {
-        (self.0.on_changed)(json!({ "name": name, "reason": reason }));
+        (self.0.on_told)("changed", &json!({ "name": name, "reason": reason }));
     }
 
     fn server_url(&self) -> String {
         self.0.network.server_url()
+    }
+
+    fn told(&self, method: &str, params: &Value) {
+        (self.0.on_told)(method, params);
     }
 }
 
@@ -534,7 +549,7 @@ fn answer_or_refusal(answer: Result<Value, String>) -> Value {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::ext_host::tests::{script_launch, FakeServices};
     use crate::ext_host::Launch;
@@ -604,9 +619,9 @@ mod tests {
         let services = ShellServices::tuned(
             Arc::new(network(dir.path(), server_url)),
             keychain,
-            Box::new(move |detail| log.lock().unwrap().push(detail)),
-            keychain_deadline,
-            keychain_cooldown,
+            Box::new(move |method, detail| log.lock().unwrap().push(json!([method, detail]))),
+            Box::new(|url, redirect| Box::pin(async move { Ok(json!([url, redirect])) })),
+            (keychain_deadline, keychain_cooldown),
         );
         Rig {
             services,
@@ -884,23 +899,42 @@ mod tests {
     #[tokio::test]
     async fn serves_only_its_own_methods_and_passes_on_the_news() {
         let rig = services("http://127.0.0.1:9", MemKeychain::default());
+        let asked = json!({"url": "https://a.example/authorize", "redirectUri": "agentrq://x"});
+        assert_eq!(
+            ask(&rig, "authWindow", asked).await,
+            Ok(json!(["https://a.example/authorize", "agentrq://x"]))
+        );
         assert_eq!(
             ask(&rig, "authWindow", json!({})).await,
-            Err("The authorisation window is unavailable in this preview until WP9 part 2.".into())
+            Ok(json!(["", ""]))
         );
         assert!(rig.services.serve("state", json!({})).is_none());
         assert_eq!(rig.services.server_url(), "http://127.0.0.1:9");
         rig.services.changed("digest", "It crashed three times.");
+        rig.services
+            .told("panelShow", &json!({"url": "https://a.example/"}));
         assert_eq!(
             *rig.told.lock().unwrap(),
-            [json!({"name": "digest", "reason": "It crashed three times."})]
+            [
+                json!(["changed", {"name": "digest", "reason": "It crashed three times."}]),
+                json!(["panelShow", {"url": "https://a.example/"}])
+            ]
         );
         let real = ShellServices::new(
             Arc::new(network(rig._dir.path(), "")),
             Arc::new(MemKeychain::default()),
-            Box::new(drop),
+            untold(),
+            Box::new(|_, _| Box::pin(async { Ok(Value::Null) })),
         );
         assert_eq!(real.0.keychain_deadline, KEYCHAIN_DEADLINE);
+        let asked = real.serve("authWindow", json!({})).expect("served").await;
+        assert_eq!(asked, Ok(Value::Null));
+        real.told("panelShow", &json!({}));
+    }
+
+    /// Where a test sends what the host tells: nowhere.
+    pub(crate) fn untold() -> Told {
+        Box::new(|_, _| {})
     }
 
     // the commands

@@ -17,6 +17,8 @@ use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
+use crate::side_panel::bridge::extension_of;
+
 /// Failures before an extension is turned off: `host.js`'s `FAILURE_LIMIT`.
 pub const FAILURE_LIMIT: u32 = 3;
 
@@ -123,6 +125,11 @@ pub fn answer_without_host(method: &str, params: &Value) -> Option<Value> {
             })
         }
         "invoke" => Some(json!({ "ok": false, "reason": "No extension is enabled." })),
+        // A page of an Extension that is not running: `bridge.js`'s words.
+        "panelSend" => {
+            let owner = extension_of(params["senderUrl"].as_str().unwrap_or_default(), false);
+            Some(json!({ "ok": false, "reason": format!("{owner} does not listen to its page.") }))
+        }
         _ => None,
     }
 }
@@ -184,12 +191,6 @@ pub fn fetch_allowed(url: &str, server_url: &str) -> bool {
         return false;
     };
     matches!(url.scheme(), "http" | "https") && url.origin() == server.origin()
-}
-
-/// The error for a piece of the extension host that a later work package
-/// wires up.
-pub fn unavailable(what: &str, until: &str) -> String {
-    format!("{what} is unavailable in this preview until {until}.")
 }
 
 #[cfg(test)]
@@ -318,6 +319,10 @@ mod tests {
             Some(json!({"ok": false, "reason": "No extension is enabled."}))
         );
         assert_eq!(answer_without_host("state", &none), None);
+        assert_eq!(
+            answer_without_host("panelSend", &json!({"senderUrl": "agentrq-ext://notes/"})),
+            Some(json!({"ok": false, "reason": "notes does not listen to its page."}))
+        );
     }
 
     #[test]
@@ -342,13 +347,5 @@ mod tests {
         }
         assert!(!fetch_allowed("https://agentrq.example.com/x", ""));
         assert!(!fetch_allowed("file:///etc/passwd", "file:///etc"));
-    }
-
-    #[test]
-    fn names_what_is_not_there_yet() {
-        assert_eq!(
-            unavailable("The side panel", "WP7b"),
-            "The side panel is unavailable in this preview until WP7b."
-        );
     }
 }

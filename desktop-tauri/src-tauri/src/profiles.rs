@@ -33,6 +33,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::network::{profile_dir, Network, ProfileNet};
+use crate::oauth_window::OAuthWindows;
 use crate::sign_in::{self, CookieWebview, COOKIE_DEADLINE};
 use crate::vault;
 
@@ -207,6 +208,8 @@ pub struct Profiles {
     /// One change at a time: each reads the file, changes it and acts on it.
     busy: tokio::sync::Mutex<()>,
     closing: Mutex<Closing>,
+    /// The supervisor's authorisation window, which shows a profile's store.
+    auth_windows: OAuthWindows,
 }
 
 /// A poisoned lock still answers: what it guards is replaced whole, never
@@ -241,7 +244,13 @@ impl Profiles {
             return_to: Mutex::new(None),
             busy: tokio::sync::Mutex::new(()),
             closing: Mutex::new(Closing::default()),
+            auth_windows: OAuthWindows::default(),
         }
+    }
+
+    /// The authorisation window's slot, which the app manages as its state.
+    pub fn auth_windows(&self) -> OAuthWindows {
+        self.auth_windows.clone()
     }
 
     fn store(&self) -> ServerConfigStore<ConfigOnDisk> {
@@ -527,6 +536,8 @@ impl Profiles {
             return Ok(self.view());
         }
         self.keep(after);
+        // Its authorisation window has its store open, and its session lent.
+        self.auth_windows.close_for(id).await;
         lock(&self.identities).remove(id);
         if let Some(net) = self.network.forget(id) {
             net.jar.clear();

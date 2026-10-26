@@ -95,6 +95,37 @@ pub struct Installation {
     pub panels: Vec<PanelEntry>,
 }
 
+/// The installations `install.js` recorded (`extensions-installed.json`'s
+/// contents): what Electron's scheme is handed by `installations()`. Only
+/// what the scheme reads is kept; a record with no name or folder is none.
+pub fn installations(installed: &str) -> Vec<Installation> {
+    let parsed: serde_json::Value = serde_json::from_str(installed).unwrap_or_default();
+    let entries = |record: &serde_json::Value| -> Vec<PanelEntry> {
+        let panels = record["manifest"]["provides"]["panels"].as_array();
+        panels
+            .into_iter()
+            .flatten()
+            .filter_map(|panel| panel["entry"].as_str())
+            .map(|entry| PanelEntry {
+                entry: entry.to_string(),
+            })
+            .collect()
+    };
+    parsed["installations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|record| {
+            Some(Installation {
+                name: record["name"].as_str()?.to_string(),
+                dir: record["dir"].as_str()?.into(),
+                enabled: record["enabled"].as_bool(),
+                panels: entries(record),
+            })
+        })
+        .collect()
+}
+
 /// Why a file was not served.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadFailure {
@@ -775,5 +806,40 @@ mod tests {
         assert_eq!(mime_type_for("panel/data.bin"), "application/octet-stream");
         assert_eq!(mime_type_for("panel/noext"), "application/octet-stream");
         assert_eq!(mime_type_for("a.b/noext"), "application/octet-stream");
+    }
+
+    #[test]
+    fn reads_what_install_js_recorded() {
+        let installed = r#"{"installations":[
+            {"name":"notes","dir":"/x/notes","manifest":{"provides":{"panels":[
+                {"id":"n","entry":"panel/index.html"},{"id":"bad"}]}}},
+            {"name":"off","dir":"/x/off","enabled":false},
+            {"name":"on","dir":"/x/on","enabled":true,"manifest":{}},
+            {"name":"nodir"},
+            {"dir":"/x/noname"}
+        ]}"#;
+        let read = installations(installed);
+        let seen: Vec<_> = read
+            .iter()
+            .map(|i| (i.name.as_str(), i.dir.clone(), i.enabled, i.panels.clone()))
+            .collect();
+        assert_eq!(
+            seen,
+            vec![
+                (
+                    "notes",
+                    PathBuf::from("/x/notes"),
+                    None,
+                    vec![PanelEntry {
+                        entry: "panel/index.html".into()
+                    }]
+                ),
+                ("off", PathBuf::from("/x/off"), Some(false), vec![]),
+                ("on", PathBuf::from("/x/on"), Some(true), vec![]),
+            ]
+        );
+        for broken in ["", "{", "[]", r#"{"installations":{}}"#] {
+            assert!(installations(broken).is_empty(), "{broken}");
+        }
     }
 }

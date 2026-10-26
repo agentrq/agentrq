@@ -35,11 +35,9 @@ import { serverTools } from '../../../desktop/src/main/extensions/servers.js'
 import { createMcpClient } from '../../../desktop/src/main/extensions/mcp-client.js'
 import { createSupervisorAuth } from '../../../desktop/src/main/extensions/supervisor-auth.js'
 import { createToolCallReview } from '../../../desktop/src/main/extensions/tool-calls.js'
+import { createPanelHub } from '../../../desktop/src/main/side-panel/bridge.js'
 
 import { createVault } from './vault.js'
-
-/** As `core::ext_host::unavailable`, for what a later work package wires up. */
-export const unavailable = (what, until) => `${what} is unavailable in this preview until ${until}.`
 
 const fail = (reason) => ({ ok: false, reason })
 
@@ -73,25 +71,8 @@ export function createProfileFetch(rpc) {
   }
 }
 
-/**
- * The `panel` an extension may inject. Opening the side panel and posting to
- * its pages is the shell's, and it is not wired yet; the handler an extension
- * registers is kept for when it is.
- */
-export function panelSeam(owner) {
-  const reason = unavailable('The side panel', 'WP7b')
-  return {
-    async open() {
-      return fail(reason)
-    },
-    onMessage(handler) {
-      if (typeof handler !== 'function') throw new Error(`${owner}: onMessage needs a function.`)
-    },
-    post() {
-      return fail(reason)
-    },
-  }
-}
+/** How long the shell's authorisation window may stay open: `core::ext_rpc::AUTH_WINDOW_MS`. */
+export const AUTH_WINDOW_MS = 11 * 60_000
 
 /**
  * @param {object} deps
@@ -185,7 +166,8 @@ export function createExtensionHost({
     serverUrl: () => serverUrl,
     fetchImpl: profileFetch,
     // The shell's window, which answers with the redirect or with nothing.
-    openWindow: async (url, redirectUri) => (await rpc.request('authWindow', { url, redirectUri })) ?? null,
+    openWindow: async (url, redirectUri) =>
+      (await rpc.request('authWindow', { url, redirectUri }, { timeoutMs: AUTH_WINDOW_MS })) ?? null,
   })
 
   /** Sealed by the shell, never written in the clear; not kept at all without a keychain. */
@@ -252,6 +234,22 @@ export function createExtensionHost({
     logger,
   })
 
+  /**
+   * Electron's panel hub, unchanged. The pages are the shell's: it opens the
+   * panel, hands a post to each page that has loaded, and keeps `openPages`
+   * told of which Extensions have one, so a post says how many it reached.
+   */
+  let openPages = []
+  const panelHub = createPanelHub({
+    show: (url) => rpc.notify('panelShow', { url }),
+    deliver(owner, message) {
+      const reached = openPages.filter((open) => open === owner).length
+      if (reached > 0) rpc.notify('panelPost', { owner, message })
+      return reached
+    },
+    pagesFor: (name) => runtime.panelPagesFor(name),
+  })
+
   const host = createHost({
     // The shell is told which extension is loading, so a crash while it loads
     // is held against that one and not every extension running.
@@ -266,7 +264,8 @@ export function createExtensionHost({
     readConfig: (name) => configStore.resolve(name),
     clientFor: (name) => broker.clientFor(name),
     storageFor: (name) => storageStore.for(name),
-    capabilities: { panel: panelSeam },
+    capabilities: { panel: (name) => panelHub.capabilityFor(name) },
+    onRetract: (name) => panelHub.retract(name),
     onDisabled: async (name, reason) => {
       await installer.setEnabled(name, false)
       rpc.notify('changed', { name, reason })
@@ -401,6 +400,8 @@ export function createExtensionHost({
     invoke: ({ target, context }) => runtime.invoke(target ?? {}, context ?? {}),
     panelPages: () => runtime.panelPages(),
     panelPagesFor: ({ name }) => runtime.panelPagesFor(name),
+    /** A page's `send`, from the address the shell read off its webview. */
+    panelSend: ({ senderUrl, message }) => panelHub.handleSend(senderUrl ?? '', message),
     /** Asked about anything pending in an event from the server's stream. */
     async reviewToolCalls({ event }) {
       try {
@@ -445,6 +446,10 @@ export function createExtensionHost({
           workspaceClients.clear()
           supervisorClient.reset()
         }
+      },
+      /** The Extensions with a page in the panel now, one entry a page. */
+      panelOpen(params) {
+        openPages = Array.isArray(params?.owners) ? params.owners : []
       },
     },
 

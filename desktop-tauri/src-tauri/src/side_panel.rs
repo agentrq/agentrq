@@ -24,14 +24,15 @@ use std::time::Duration;
 use agentrq_desktop_core::links::{classify_link, LinkOptions, LinkTarget};
 use agentrq_desktop_core::menu::ActionId;
 use agentrq_desktop_core::menu_keys::repeats;
-use agentrq_desktop_core::side_panel::bridge::{extension_of, PanelHost, PanelHub, PanelPage};
+use agentrq_desktop_core::side_panel::bridge::extension_of;
 use agentrq_desktop_core::side_panel::child::{
     disposition, guest_init_script, guest_label, guest_number, is_app_internal, is_guest_label,
-    is_srcdoc, opens_elsewhere, place, reported_key, reported_url, token_of, token_script,
-    webview_url, GuestEvent, HostRect, Modifiers,
+    is_srcdoc, message_script, opens_elsewhere, place, reported_key, reported_url, token_of,
+    token_script, webview_url, GuestEvent, HostRect, Modifiers,
 };
 use agentrq_desktop_core::side_panel::ext_scheme::StdFs;
 use agentrq_desktop_core::side_panel::find::{clears_selection, FindSession, Found};
+use agentrq_desktop_core::side_panel::guest::EXT_SCHEME;
 use agentrq_desktop_core::side_panel::wire::{
     KeyAction, KeyInput, NavigationAction, SidePanel, SidePanelHost,
 };
@@ -42,6 +43,7 @@ use tauri::{
 };
 
 use crate::chrome::{self, MAIN};
+use crate::ext_host::ExtHost;
 use crate::network::Network;
 use crate::panel_scheme::PanelScheme;
 use crate::profiles::Profiles;
@@ -64,12 +66,6 @@ const GUEST_EVENT: &str = "agentrq:side-panel:guest";
 const WEBVIEW2: bool = true;
 #[cfg(not(windows))]
 const WEBVIEW2: bool = false;
-
-/// Only a debug build reads `AGENTRQ_E2E_EXTENSION`.
-#[cfg(debug_assertions)]
-const DEBUG_BUILD: bool = true;
-#[cfg(not(debug_assertions))]
-const DEBUG_BUILD: bool = false;
 
 /// `process.platform`'s spelling, which `core` speaks.
 #[cfg(target_os = "macos")]
@@ -141,22 +137,6 @@ impl<R: Runtime> SidePanelHost for Rules<R> {
     }
 }
 
-/// The hub an Extension's `ctx.panel` is closed over. Extensions are WP9:
-/// until then no page is listened to and nothing is posted.
-struct Hub<R: Runtime>(AppHandle<R>);
-
-impl<R: Runtime> PanelHost for Hub<R> {
-    fn show(&self, url: &str) {
-        let _ = self.0.emit_to(MAIN, "agentrq:side-panel:open", url);
-    }
-    fn deliver(&self, _owner: &str, _message: &Value) -> usize {
-        0
-    }
-    fn pages_for(&self, _owner: &str) -> Vec<PanelPage> {
-        Vec::new()
-    }
-}
-
 /// What one guest last told the window, and the token its page sends with.
 #[derive(Default)]
 struct Seen {
@@ -168,6 +148,8 @@ struct Seen {
     /// `None` from the moment a document starts loading until an
     /// Extension's page has loaded and been handed a new one.
     token: Option<String>,
+    /// The Extension whose page holds `token`.
+    owner: String,
 }
 
 /// The menu key each guest was last seen pressing, until its page says it
@@ -217,7 +199,6 @@ impl PendingKeys {
 
 pub struct SidePanelState<R: Runtime> {
     rules: SidePanel<Rules<R>>,
-    hub: Arc<PanelHub<Hub<R>>>,
     next: AtomicU32,
     guests: Mutex<HashMap<String, Seen>>,
     keys: PendingKeys,
@@ -230,7 +211,6 @@ impl<R: Runtime> SidePanelState<R> {
     pub fn new(app: &AppHandle<R>, open: OpenLink<R>) -> Self {
         Self {
             rules: SidePanel::new(Rules(app.clone()), PLATFORM, WEBVIEW2),
-            hub: Arc::new(PanelHub::new(Hub(app.clone()), WEBVIEW2)),
             next: AtomicU32::new(1),
             guests: Mutex::new(HashMap::new()),
             keys: PendingKeys::default(),
@@ -238,44 +218,80 @@ impl<R: Runtime> SidePanelState<R> {
             open,
         }
     }
+}
 
-    /// The `agentrq-ext` scheme's handler, over this hub.
-    pub fn scheme(&self) -> PanelScheme {
-        let hub = Arc::clone(&self.hub);
-        PanelScheme::new(
-            Box::new(move |sender, message| hub.handle_send(sender, message)),
-            // WP9 lists the installed Extensions.
-            installed(&self.hub, std::env::var("AGENTRQ_E2E_EXTENSION").ok()),
-            Box::new(StdFs),
-            WEBVIEW2,
-        )
+/// The `agentrq-ext` scheme's handler: the installed Extensions' pages, and
+/// their messages, which the extension host's `bridge.js` answers.
+pub fn scheme(host: Arc<ExtHost>) -> PanelScheme {
+    let installed = Arc::clone(&host);
+    PanelScheme::new(
+        Box::new(move |sender, message| {
+            let host = Arc::clone(&host);
+            Box::pin(async move {
+                let asked = json!({ "senderUrl": sender, "message": message });
+                let answer = host.call("panelSend", asked).await;
+                answer.unwrap_or_else(|reason| json!({ "ok": false, "reason": reason }))
+            })
+        }),
+        Box::new(move || installed.installations()),
+        Box::new(StdFs),
+        WEBVIEW2,
+    )
+}
+
+/// What the extension host tells the shell for an Extension's `ctx.panel`:
+/// open the panel at an address, or post to its pages.
+pub fn host_told<R: Runtime>(app: &AppHandle<R>, method: &str, params: &Value) {
+    match method {
+        "panelShow" => show(app, params["url"].as_str().unwrap_or_default()),
+        "panelPost" => {
+            let owner = params["owner"].as_str().unwrap_or_default();
+            deliver(app, owner, &params["message"]);
+        }
+        _ => {}
     }
 }
 
-/// Until WP9 installs Extensions, a debug build can be handed one to check
-/// the scheme and the bridge by hand:
-/// `AGENTRQ_E2E_EXTENSION=<name>:<dir>:<panel entry>`, answered by an echo.
-fn installed<R: Runtime>(
-    hub: &PanelHub<Hub<R>>,
-    spec: Option<String>,
-) -> crate::panel_scheme::Installed {
-    use agentrq_desktop_core::side_panel::ext_scheme::{Installation, PanelEntry};
-    let spec = spec.filter(|_| DEBUG_BUILD).unwrap_or_default();
-    let parts: Vec<&str> = spec.splitn(3, ':').collect();
-    let [name, dir, entry] = parts[..] else {
-        return Box::new(Vec::new);
+/// The window opens its panel at `url`: an Extension's page or the web,
+/// which is all `bridge.js` asks for.
+fn show<R: Runtime>(app: &AppHandle<R>, url: &str) {
+    let opens = Url::parse(url)
+        .is_ok_and(|url| matches!(url.scheme(), "http" | "https") || url.scheme() == EXT_SCHEME);
+    if opens {
+        let _ = app.emit_to(MAIN, "agentrq:side-panel:open", url);
+    }
+}
+
+/// Hands `message` to every page of `owner` that holds a token now: one
+/// that has loaded, as no other is listening yet. How many it reached.
+fn deliver<R: Runtime>(app: &AppHandle<R>, owner: &str, message: &Value) -> usize {
+    let held: Vec<(String, String)> = {
+        let state = app.state::<SidePanelState<R>>();
+        let guests = lock(&state.guests);
+        guests
+            .iter()
+            .filter(|(_, seen)| !owner.is_empty() && seen.owner == owner)
+            .filter_map(|(label, seen)| Some((label.clone(), seen.token.clone()?)))
+            .collect()
     };
-    let installation = Installation {
-        name: name.to_string(),
-        dir: dir.into(),
-        enabled: None,
-        panels: vec![PanelEntry {
-            entry: entry.to_string(),
-        }],
-    };
-    hub.capability_for(name)
-        .on_message(Arc::new(|message| Ok(Some(json!({ "echo": message })))));
-    Box::new(move || vec![installation.clone()])
+    held.iter()
+        .filter_map(|(label, token)| Some((app.get_webview(label)?, token)))
+        .filter(|(webview, token)| webview.eval(message_script(token, message)).is_ok())
+        .count()
+}
+
+/// The extension host keeps a list of the Extension pages open, so that a
+/// `post` can say how many it reached at once, as Electron's does.
+fn tell_open<R: Runtime>(app: &AppHandle<R>, guests: &HashMap<String, Seen>) {
+    let mut owners: Vec<&str> = guests
+        .values()
+        .filter(|seen| seen.token.is_some())
+        .map(|seen| seen.owner.as_str())
+        .collect();
+    owners.sort_unstable();
+    if let Some(host) = app.try_state::<Arc<ExtHost>>() {
+        host.tell("panelOpen", json!({ "owners": owners }));
+    }
 }
 
 /// The main window's own link rule: the browser for the web, the app's
@@ -373,7 +389,7 @@ fn page_load<R: Runtime>(webview: Webview<R>, event: PageLoadEvent) {
     }
     // A new document: the old one's token goes with it, and an Extension's
     // page that has loaded gets one of its own.
-    let extension_page = !extension_of(&address(&webview), false).is_empty();
+    let owner = extension_of(&address(&webview), false);
     let (load, token) = {
         let mut guests = lock(&state.guests);
         let Some(seen) = guests.get_mut(&label) else {
@@ -381,8 +397,11 @@ fn page_load<R: Runtime>(webview: Webview<R>, event: PageLoadEvent) {
         };
         seen.load += 1;
         seen.loading = loading;
-        seen.token = (!loading && extension_page).then(new_token);
-        (seen.load, seen.token.clone())
+        seen.token = (!loading && !owner.is_empty()).then(new_token);
+        seen.owner = owner;
+        let told = (seen.load, seen.token.clone());
+        tell_open(&app, &guests);
+        told
     };
     tauri::async_runtime::spawn(report(webview, false, Some(load), token));
 }
@@ -692,7 +711,11 @@ pub fn key_down<R: Runtime>(app: &AppHandle<R>, input: &KeyInput) -> bool {
 /// prompts, its pending key and its place.
 fn forget<R: Runtime>(app: &AppHandle<R>, label: &str) {
     let state = app.state::<SidePanelState<R>>();
-    lock(&state.guests).remove(label);
+    {
+        let mut guests = lock(&state.guests);
+        guests.remove(label);
+        tell_open(app, &guests);
+    }
     lock(&state.finds).remove(label);
     state.keys.forget(label);
     if let Some(number) = guest_number(label) {
@@ -1408,25 +1431,82 @@ pub(crate) mod tests {
             rig.opened(),
             [(LinkTarget::System, "https://d.example/".to_string())]
         );
-        let hub = Hub(rig.handle().clone());
-        hub.show(PAGE);
-        assert_eq!(hub.deliver("notes", &json!(1)), 0);
-        assert!(hub.pages_for("notes").is_empty());
+    }
+
+    /// An extension host for the panel to tell, over `data_dir`.
+    fn manage_host(rig: &Rig, launch: &str) -> (Arc<ExtHost>, tempfile::TempDir) {
+        use crate::ext_host::tests::{script_launch, FakeServices};
+        let dir = tempfile::tempdir().unwrap();
+        let services = Arc::new(FakeServices::default());
+        let host = ExtHost::new(script_launch(launch), dir.path().into(), services);
+        rig.app.manage(Arc::clone(&host));
+        (host, dir)
     }
 
     #[test]
-    fn a_debug_build_can_be_handed_one_extension() {
+    fn the_host_opens_the_panel_only_at_what_a_panel_may_show() {
         let rig = rig();
-        let hub = &rig.state().hub;
-        assert!(installed(hub, None)().is_empty());
-        assert!(installed(hub, Some("notes".into()))().is_empty());
-        let one = installed(hub, Some("notes:/tmp/notes:panel/index.html".into()))();
-        assert_eq!(one.len(), 1);
-        assert_eq!(one[0].name, "notes");
-        assert_eq!(one[0].panels[0].entry, "panel/index.html");
-        let sender = agentrq_desktop_core::side_panel::child::sender_of(PAGE, true);
-        assert_eq!(hub.handle_send(sender, &json!(1)), Ok(json!({"echo": 1})));
-        let _scheme = rig.state().scheme();
+        let shown = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&shown);
+        rig.app.listen_any("agentrq:side-panel:open", move |event| {
+            lock(&log).push(event.payload().to_string());
+        });
+        for url in [
+            json!("javascript:alert(1)"),
+            json!("file:///etc/passwd"),
+            json!("not a url"),
+            Value::Null,
+            json!("https://a.example/"),
+            json!(PAGE),
+        ] {
+            host_told(rig.handle(), "panelShow", &json!({ "url": url }));
+        }
+        host_told(
+            rig.handle(),
+            "unknown",
+            &json!({"url": "https://b.example/"}),
+        );
+        wait_for("both shown", &|| lock(&shown).len() == 2);
+        assert_eq!(
+            *lock(&shown),
+            [
+                json!("https://a.example/").to_string(),
+                json!(PAGE).to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn a_post_reaches_its_extensions_loaded_pages_and_the_host_knows_them() {
+        let rig = rig();
+        let (host, _dir) = manage_host(&rig, "");
+        let notes = rig.open(PAGE);
+        let other = rig.open("agentrq-ext://other/panel/index.html");
+        let web = rig.open("https://a.example/");
+        assert_eq!(deliver(rig.handle(), "notes", &json!(1)), 0, "none loaded");
+        for label in [&notes, &other, &web] {
+            page_load(rig.webview(label), PageLoadEvent::Finished);
+        }
+        assert_eq!(
+            host.told_now("panelOpen"),
+            Some(json!({"owners": ["notes", "other"]}))
+        );
+        assert_eq!(deliver(rig.handle(), "notes", &json!({"a": 1})), 1);
+        assert_eq!(deliver(rig.handle(), "", &json!(1)), 0);
+        host_told(
+            rig.handle(),
+            "panelPost",
+            &json!({"owner": "other", "message": [1]}),
+        );
+        // A page loading anew holds no token, and hears nothing.
+        page_load(rig.webview(&notes), PageLoadEvent::Started);
+        assert_eq!(deliver(rig.handle(), "notes", &json!(1)), 0);
+        assert_eq!(
+            host.told_now("panelOpen"),
+            Some(json!({"owners": ["other"]}))
+        );
+        forget(rig.handle(), &other);
+        assert_eq!(host.told_now("panelOpen"), Some(json!({"owners": []})));
     }
 
     #[test]
@@ -1654,22 +1734,53 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_scheme_answers_from_this_panels_hub() {
+    fn the_scheme_asks_the_extension_host() {
         let rig = rig();
-        let scheme = rig.state().scheme();
-        let request = http::Request::builder()
-            .method("POST")
-            .uri("agentrq-ext://notes/.agentrq/panel-send")
-            .header(agentrq_desktop_core::side_panel::child::TOKEN_HEADER, "t")
-            .body(b"1".to_vec())
-            .unwrap();
+        // A host that fails every request it is asked.
+        let script = r#"require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+            const m = JSON.parse(line)
+            if (m.id !== undefined) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, error: { code: -32000, message: 'it broke' } }) + '\n')
+        })"#;
+        let (host, dir) = manage_host(&rig, script);
+        let scheme = scheme(Arc::clone(&host));
+        let send = || {
+            http::Request::builder()
+                .method("POST")
+                .uri("agentrq-ext://notes/.agentrq/panel-send")
+                .header(agentrq_desktop_core::side_panel::child::TOKEN_HEADER, "t")
+                .body(b"1".to_vec())
+                .unwrap()
+        };
         let page = crate::panel_scheme::Page {
             top_url: Some(PAGE),
             token: Some("t"),
         };
-        let res = scheme.handle("panel-guest-1", page, &request);
-        let answer: Value = serde_json::from_slice(res.body()).unwrap();
-        assert_eq!(answer["ok"], false, "notes does not listen: {answer}");
+        let answer = |request: http::Request<Vec<u8>>| -> Value {
+            let res =
+                tauri::async_runtime::block_on(scheme.handle("panel-guest-1", page, &request));
+            serde_json::from_slice(res.body()).unwrap()
+        };
+        // Nothing installed: no host is started to say so.
+        assert_eq!(
+            answer(send()),
+            json!({"ok": false, "reason": "notes does not listen to its page."})
+        );
+        let installed = r#"{"installations":[{"name":"notes","dir":"/nowhere","manifest":{"provides":{"panels":[{"entry":"panel/index.html"}]}}}]}"#;
+        std::fs::write(
+            dir.path()
+                .join(agentrq_desktop_core::ext_host::INSTALLED_FILE),
+            installed,
+        )
+        .unwrap();
+        assert_eq!(answer(send()), json!({"ok": false, "reason": "it broke"}));
+        // Its files are the installed Extension's: not there, so not found.
+        let res = tauri::async_runtime::block_on(scheme.handle(
+            "panel-guest-1",
+            page,
+            &http::Request::builder().uri(PAGE).body(Vec::new()).unwrap(),
+        ));
+        assert_eq!(res.status(), 404);
+        tauri::async_runtime::block_on(async { host.stop() });
     }
 
     #[test]

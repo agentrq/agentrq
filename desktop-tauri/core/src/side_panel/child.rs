@@ -15,7 +15,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use url::Url;
 
-use super::bridge::{extension_of, Refusal, Sender, MAX_MESSAGE_BYTES};
+use super::bridge::{extension_of, Refusal, MAX_MESSAGE_BYTES};
 use super::guest::{host_of, normalize_ext_url, EXT_SCHEME};
 use crate::profiles::data_store_id;
 
@@ -202,11 +202,8 @@ pub enum BridgeCall {
     File,
     /// For the bridge, and refused before any Extension hears of it.
     Refused(String),
-    /// For the bridge, from the Extension page at `top_url`.
-    Send {
-        top_url: String,
-        is_main_frame: bool,
-    },
+    /// For the bridge, from a page of the Extension `owner`.
+    Send { owner: String, is_main_frame: bool },
 }
 
 /// The header an Extension page's `send` carries its token in.
@@ -239,6 +236,12 @@ pub fn same_token(sent: Option<&str>, expected: Option<&str>) -> bool {
 /// the page's own scripts ran, and nothing can replace it.
 pub fn token_script(token: &str) -> String {
     format!("window.__agentrqPanelToken && window.__agentrqPanelToken(\"{token}\")")
+}
+
+/// What hands `message` to the page holding `token`: its Extension's
+/// `post`. JSON is a JavaScript expression, so the message goes in as it is.
+pub fn message_script(token: &str, message: &Value) -> String {
+    format!("window.__agentrqPanelMessage && window.__agentrqPanelMessage(\"{token}\", {message})")
 }
 
 /// `scheme://host:port`, after the WebView2 form is undone, or `None` for
@@ -293,29 +296,28 @@ pub fn bridge_call(
         Some(origin) => origin_of(origin, webview2_ext_urls),
     };
     BridgeCall::Send {
-        top_url: format!("{EXT_SCHEME}://{owner}/"),
+        owner,
         is_main_frame: page.is_some() && sender == page,
     }
 }
 
-/// The message a bridge request carries, or why it carries none.
-pub fn bridge_message(body: &[u8]) -> Result<Value, Refusal> {
+/// The message a bridge request carries, or why it carries none, in
+/// `bridge.js`'s words for the Extension `owner`.
+pub fn bridge_message(body: &[u8], owner: &str) -> Result<Value, Refusal> {
     if body.len() > MAX_MESSAGE_BYTES {
         return Err(Refusal {
-            reason: "That message is larger than 1 MB.".to_string(),
+            reason: format!("{owner}: that message is larger than 1 MB."),
         });
     }
     serde_json::from_slice(body).map_err(|_| Refusal {
-        reason: "That message is not plain data.".to_string(),
+        reason: format!("{owner}: that message is not plain data."),
     })
 }
 
-/// [`Sender`] for a classified call.
-pub fn sender_of(top_url: &str, is_main_frame: bool) -> Sender<'_> {
-    Sender {
-        url: top_url,
-        is_main_frame,
-    }
+/// The address a call from `owner`'s page is said to come from: the page's
+/// own, as Electron's `senderFrame.url` is, and never anything it sent.
+pub fn sender_url(owner: &str) -> String {
+    format!("{EXT_SCHEME}://{owner}/")
 }
 
 /// What the page's `send` reads back: `{ ok, reply }` or `{ ok, reason }`, as
@@ -514,7 +516,7 @@ mod tests {
 
     fn send(main: bool) -> BridgeCall {
         BridgeCall::Send {
-            top_url: "agentrq-ext://notes/".to_string(),
+            owner: "notes".to_string(),
             is_main_frame: main,
         }
     }
@@ -694,29 +696,43 @@ mod tests {
 
     #[test]
     fn a_message_is_json_of_at_most_a_megabyte() {
-        assert_eq!(bridge_message(br#"{"a":1}"#), Ok(json!({"a": 1})));
+        assert_eq!(bridge_message(br#"{"a":1}"#, "notes"), Ok(json!({"a": 1})));
         assert_eq!(
-            bridge_message(b"{"),
+            bridge_message(b"{", "notes"),
             Err(Refusal {
-                reason: "That message is not plain data.".to_string()
+                reason: "notes: that message is not plain data.".to_string()
             })
         );
         let big = format!("\"{}\"", "x".repeat(MAX_MESSAGE_BYTES));
         assert_eq!(
-            bridge_message(big.as_bytes()),
+            bridge_message(big.as_bytes(), "notes"),
             Err(Refusal {
-                reason: "That message is larger than 1 MB.".to_string()
+                reason: "notes: that message is larger than 1 MB.".to_string()
             })
         );
     }
 
     #[test]
-    fn the_sender_is_what_was_classified() {
-        let sender = sender_of("agentrq-ext://notes/", false);
+    fn the_sender_is_the_owners_page() {
+        assert_eq!(sender_url("notes"), "agentrq-ext://notes/");
+        assert_eq!(extension_of(&sender_url("notes"), false), "notes");
+    }
+
+    #[test]
+    fn a_post_reaches_the_page_holding_the_token() {
+        let message = json!({"type": "changed", "text": "a \"b\"\n</script>\u{2028}"});
+        let script = message_script("t0k3n", &message);
         assert_eq!(
-            (sender.url, sender.is_main_frame),
-            ("agentrq-ext://notes/", false)
+            script,
+            format!("window.__agentrqPanelMessage && window.__agentrqPanelMessage(\"t0k3n\", {message})")
         );
+        // The message reads back from the script as it was.
+        let arg = script
+            .split_once("\"t0k3n\", ")
+            .unwrap()
+            .1
+            .trim_end_matches(')');
+        assert_eq!(serde_json::from_str::<Value>(arg).unwrap(), message);
     }
 
     #[test]

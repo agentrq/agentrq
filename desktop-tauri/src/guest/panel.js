@@ -48,6 +48,7 @@
 
   // Taken now, before the page can replace them.
   const post = window.fetch.bind(window)
+  const defer = window.setTimeout.bind(window)
   const stringify = JSON.stringify
   const listeners = new Set()
   let token = null
@@ -59,6 +60,24 @@
     value: (value) => {
       token = String(value)
       tokenArrived()
+    },
+    writable: false,
+    configurable: false,
+  })
+  // What the Extension posts, handed over by the shell with the token: a
+  // listener that throws is reported, and the others still hear it.
+  Object.defineProperty(window, '__agentrqPanelMessage', {
+    value: (value, message) => {
+      if (token === null || String(value) !== token) return
+      for (const listener of [...listeners]) {
+        try {
+          listener(message)
+        } catch (error) {
+          defer(() => {
+            throw error
+          }, 0)
+        }
+      }
     },
     writable: false,
     configurable: false,
@@ -83,8 +102,7 @@
       return result.reply
     },
     /**
-     * Called with whatever the Extension `post`s to its pages. Extensions
-     * arrive with WP9; until then nothing is posted.
+     * Called with whatever the Extension `post`s to its pages.
      *
      * @returns {() => void} unsubscribe
      */

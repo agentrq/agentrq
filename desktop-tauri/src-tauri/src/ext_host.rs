@@ -23,8 +23,10 @@ use agentrq_desktop_core::ext_host::{
     CrashLedger, CATALOGUE_FILE, IDLE_STOP_MS, INSTALLED_FILE, STABLE_MS,
 };
 use agentrq_desktop_core::ext_rpc::{
-    self, deadline_ms, timed_out, Ids, Line, Lines, Message, HOST_GONE, METHOD_NOT_FOUND, PING,
+    self, deadline_ms, serve_deadline_ms, timed_out, Ids, Line, Lines, Message, HOST_GONE,
+    METHOD_NOT_FOUND, PING,
 };
+use agentrq_desktop_core::side_panel::ext_scheme::{installations, Installation};
 use serde_json::{json, Value};
 #[cfg(target_os = "linux")]
 use std::os::unix::process::CommandExt;
@@ -45,6 +47,9 @@ pub trait Services: Send + Sync {
     fn changed(&self, name: &str, reason: &str);
     /// The active profile's server, which the host's clients address.
     fn server_url(&self) -> String;
+    /// Anything else the host tells the shell: an Extension's `ctx.panel`
+    /// opening the side panel or posting to its pages.
+    fn told(&self, method: &str, params: &Value);
 }
 
 /// How the host is started: the Node binary, then its arguments. The shell
@@ -146,10 +151,13 @@ fn set_pdeathsig() -> std::io::Result<()> {
     Ok(())
 }
 
-/// A fork the spawner thread makes: the command, the runtime its child
+/// What forks a child.
+type Spawn = Box<dyn FnOnce() -> std::io::Result<tokio::process::Child> + Send>;
+
+/// A fork the spawner thread makes: what spawns the child, the runtime it
 /// belongs to, and where the child goes.
 type Fork = (
-    tokio::process::Command,
+    Spawn,
     tokio::runtime::Handle,
     std::sync::mpsc::Sender<std::io::Result<tokio::process::Child>>,
 );
@@ -157,7 +165,11 @@ type Fork = (
 /// Every host is forked from one thread that lives as long as the app. On
 /// Linux `PR_SET_PDEATHSIG` fires when the thread that forked exits, not the
 /// process, and tokio retires an idle blocking thread after 10 s.
-fn fork(cmd: tokio::process::Command) -> std::io::Result<tokio::process::Child> {
+fn fork(mut cmd: tokio::process::Command) -> std::io::Result<tokio::process::Child> {
+    fork_with(Box::new(move || cmd.spawn()))
+}
+
+fn fork_with(spawn: Spawn) -> std::io::Result<tokio::process::Child> {
     static SPAWNER: OnceLock<std::sync::mpsc::Sender<Fork>> = OnceLock::new();
     let spawner = SPAWNER.get_or_init(|| {
         let (forks, queued) = std::sync::mpsc::channel::<Fork>();
@@ -167,14 +179,17 @@ fn fork(cmd: tokio::process::Command) -> std::io::Result<tokio::process::Child> 
     let (child, forked) = std::sync::mpsc::channel();
     let runtime = tokio::runtime::Handle::current();
     spawner
-        .send((cmd, runtime, child))
+        .send((spawn, runtime, child))
         .expect("the spawner lives");
     forked.recv().expect("the spawner answers")
 }
 
-fn fork_one((mut cmd, runtime, child): Fork) {
+/// A fork that panics fails alone: the thread must outlive it, or every
+/// host it forked dies with it and no host starts again.
+fn fork_one((spawn, runtime, child): Fork) {
     let _runtime = runtime.enter();
-    let _ = child.send(cmd.spawn());
+    let spawned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(spawn));
+    let _ = child.send(spawned.unwrap_or_else(|_| Err(std::io::Error::other("forking panicked"))));
 }
 
 #[derive(Default)]
@@ -192,6 +207,9 @@ struct State {
     started: Option<Instant>,
     /// Turned off for crashing, to tell the next host before it loads anything.
     disable: Vec<Value>,
+    /// What the host was last told of each thing the shell keeps it up to
+    /// date on, told again to every new host.
+    told: Vec<(String, Value)>,
     /// Bumped on every call, so an idle stop knows nobody asked since.
     activity: u64,
     /// Number of consecutive startup failures before ready.
@@ -305,6 +323,12 @@ impl ExtHost {
         enabled_names(&installed.unwrap_or_default())
     }
 
+    /// What `install.js` recorded, for the `agentrq-ext` scheme.
+    pub fn installations(&self) -> Vec<Installation> {
+        let installed = std::fs::read_to_string(self.data_dir.join(INSTALLED_FILE));
+        installations(&installed.unwrap_or_default())
+    }
+
     /// Whether the Node it runs on is the pinned build. Hashes it the first
     /// time, which is why it is asked before the state is locked.
     fn node_ready(&self) -> bool {
@@ -321,6 +345,7 @@ impl ExtHost {
         state.process.is_some() || self.spawn(&mut state).is_ok()
     }
 
+    #[cfg(test)]
     pub fn is_running(&self) -> bool {
         lock(&self.state).process.is_some()
     }
@@ -358,20 +383,68 @@ impl ExtHost {
                 }
                 self.spawn(&mut state)?;
             }
-            let server = self.services.server_url();
-            let process = state.process.as_mut().expect("spawned above");
-            if process.context.as_deref() != Some(server.as_str()) {
-                let _ = process.out.send(ext_rpc::notification(
-                    "context",
-                    json!({ "serverUrl": server }),
-                ));
-                process.context = Some(server);
-            }
-            (process.ask(method, params), state.activity)
+            (self.ask(&mut state, method, params), state.activity)
         };
         let result = self.answered(asked, method).await;
         self.stop_when_idle(activity);
         result
+    }
+
+    /// Ask the running host `method` now, and await its answer later: asks
+    /// made one after another reach it in that order, whenever each is
+    /// answered. `None` when no host runs; this never starts one.
+    pub fn ask_running(
+        self: &Arc<Self>,
+        method: &str,
+        params: Value,
+    ) -> Option<impl Future<Output = Result<Value, String>> + Send + 'static> {
+        let (asked, activity) = {
+            let mut state = lock(&self.state);
+            state.process.as_ref()?;
+            state.activity += 1;
+            (self.ask(&mut state, method, params), state.activity)
+        };
+        let (this, method) = (Arc::clone(self), method.to_string());
+        Some(async move {
+            let result = this.answered(asked, &method).await;
+            this.stop_when_idle(activity);
+            result
+        })
+    }
+
+    /// Ask the running process, telling it first which server it is for.
+    fn ask(&self, state: &mut State, method: &str, params: Value) -> Asked {
+        let server = self.services.server_url();
+        let process = state.process.as_mut().expect("running");
+        if process.context.as_deref() != Some(server.as_str()) {
+            let _ = process.out.send(ext_rpc::notification(
+                "context",
+                json!({ "serverUrl": server }),
+            ));
+            process.context = Some(server);
+        }
+        process.ask(method, params)
+    }
+
+    /// Tell the host `method`, now if it runs, and every host started after:
+    /// what it is told replaces what it was last told of the same.
+    pub fn tell(&self, method: &str, params: Value) {
+        let mut state = lock(&self.state);
+        if let Some(process) = &state.process {
+            let _ = process
+                .out
+                .send(ext_rpc::notification(method, params.clone()));
+        }
+        state.told.retain(|(told, _)| told != method);
+        state.told.push((method.to_string(), params));
+    }
+
+    /// What the next host will be told of `method`.
+    #[cfg(test)]
+    pub fn told_now(&self, method: &str) -> Option<Value> {
+        let state = lock(&self.state);
+        let told = state.told.iter().find(|(told, _)| told == method);
+        told.map(|(_, params)| params.clone())
     }
 
     /// The answer to `asked`, or why there is none. A call that runs out of
@@ -551,6 +624,9 @@ impl ExtHost {
             }
         });
 
+        for (method, params) in &state.told {
+            let _ = out.send(ext_rpc::notification(method, params.clone()));
+        }
         let stdout = child.stdout.take().expect("piped");
         tokio::spawn(Arc::clone(self).read(stdout, generation, out.downgrade(), pending.clone()));
         tokio::spawn(Arc::clone(self).wait(child, generation, killed));
@@ -608,7 +684,8 @@ impl ExtHost {
                     return;
                 };
                 let out = out.clone();
-                let deadline = self.timing.serve;
+                let deadline =
+                    serve_deadline_ms(&method).map_or(self.timing.serve, Duration::from_millis);
                 tokio::spawn(async move {
                     let result = tokio::time::timeout(deadline, answer)
                         .await
@@ -651,7 +728,7 @@ impl ExtHost {
                     state.running = names(&params["names"]);
                 }
             }
-            _ => {}
+            _ => self.services.told(method, params),
         }
     }
 
@@ -679,8 +756,11 @@ impl ExtHost {
             if state.stopping == Some(generation) || state.generation != generation {
                 return;
             }
+            // A hang while an extension loads is that extension's, as a crash
+            // is: each restart would load it and hang again. Any other hang
+            // may be a busy extension, and blames nobody.
             let blamed = if hung {
-                Vec::new()
+                state.loading.iter().cloned().collect()
             } else {
                 blame(state.loading.as_deref(), &state.running)
             };
@@ -760,6 +840,7 @@ pub(crate) mod tests {
     #[derive(Default)]
     pub struct FakeServices {
         pub changed: Mutex<Vec<(String, String)>>,
+        pub told: Mutex<Vec<(String, Value)>>,
         pub served: AtomicUsize,
         pub server: Mutex<String>,
     }
@@ -782,6 +863,9 @@ pub(crate) mod tests {
         }
         fn server_url(&self) -> String {
             lock(&self.server).clone()
+        }
+        fn told(&self, method: &str, params: &Value) {
+            lock(&self.told).push((method.into(), params.clone()));
         }
     }
 
@@ -1450,6 +1534,138 @@ pub(crate) mod tests {
         // Notifications from an old generation are ignored.
         host.told("loading", &json!({"name": "z"}), 0);
         assert_eq!(lock(&host.state).loading, None);
+        host.stop();
+    }
+
+    #[test]
+    fn what_the_host_says_for_the_panel_reaches_the_shell() {
+        let dir = tempfile::tempdir().unwrap();
+        let services = Arc::new(FakeServices::default());
+        let host = host(script_launch(""), dir.path(), services.clone());
+        host.told("panelShow", &json!({"url": "agentrq-ext://a/"}), 0);
+        assert_eq!(
+            *lock(&services.told),
+            vec![("panelShow".to_string(), json!({"url": "agentrq-ext://a/"}))]
+        );
+    }
+
+    #[test]
+    fn reads_the_installations_for_the_scheme() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = host(
+            script_launch(""),
+            dir.path(),
+            Arc::new(FakeServices::default()),
+        );
+        assert!(host.installations().is_empty());
+        install(
+            dir.path(),
+            r#"{"installations":[{"name":"notes","dir":"/x"}]}"#,
+        );
+        let names: Vec<String> = host.installations().into_iter().map(|i| i.name).collect();
+        assert_eq!(names, ["notes"]);
+    }
+
+    #[tokio::test]
+    async fn a_host_that_hangs_while_one_loads_blames_it_and_the_third_disables_it() {
+        let dir = tempfile::tempdir().unwrap();
+        install(
+            dir.path(),
+            r#"{"installations":[{"name":"stuck"},{"name":"good"}]}"#,
+        );
+        // Hangs without a word as soon as it says it is loading `stuck`,
+        // unless it was told to disable something: then it answers.
+        let script = r#"
+            const disable = JSON.parse(process.argv.at(-1));
+            const out = (m) => process.stdout.write(JSON.stringify({jsonrpc: '2.0', ...m}) + '\n');
+            out({ method: 'running', params: { names: ['good'] } });
+            if (disable.length) {
+                for (const d of disable) out({ method: 'changed', params: d });
+                require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+                    const m = JSON.parse(line);
+                    if (m.id !== undefined) out({ id: m.id, result: 'up' });
+                });
+            } else {
+                out({ method: 'loading', params: { name: 'stuck' } });
+                setTimeout(() => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0), 20);
+            }
+        "#;
+        let services = Arc::new(FakeServices::default());
+        let host = ExtHost::tuned(
+            script_launch(script),
+            dir.path().into(),
+            services.clone(),
+            HURRIED,
+        );
+        assert!(host.boot());
+        // Each call runs out of time, the ping too, and the host is killed.
+        let disabled = async {
+            while lock(&services.changed).is_empty() {
+                let _ = host.call("state", json!({})).await;
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(30), disabled)
+            .await
+            .expect("disabled in time");
+        assert_eq!(
+            *lock(&services.changed),
+            vec![(
+                "stuck".to_string(),
+                "The extension host was stopped three times while it ran.".to_string()
+            )]
+        );
+        assert_eq!(host.call("state", json!({})).await, Ok(json!("up")));
+        assert_eq!(lock(&host.state).ledger.count("good"), 0, "never blamed");
+        host.stop();
+    }
+
+    #[tokio::test]
+    async fn a_fork_that_panics_fails_alone() {
+        let failed = fork_with(Box::new(|| panic!("no reactor")));
+        assert_eq!(failed.unwrap_err().to_string(), "forking panicked");
+        // The thread lives on, and forks the next.
+        let dir = tempfile::tempdir().unwrap();
+        let host = host(script_launch(ECHO_PID), dir.path(), Arc::default());
+        assert!(host.call("pid", json!({})).await.is_ok());
+        host.stop();
+    }
+
+    /// Answers every request with its pid.
+    const ECHO_PID: &str = r#"
+        require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+            const m = JSON.parse(line);
+            if (m.id !== undefined) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: process.pid }) + '\n');
+        });
+    "#;
+
+    #[tokio::test]
+    async fn what_it_is_told_reaches_every_host_and_a_new_one_too() {
+        let dir = tempfile::tempdir().unwrap();
+        install(dir.path(), r#"{"installations":[{"name":"a"}]}"#);
+        // Answers every request with what it was last told of `open`.
+        let script = r#"
+            let told = null;
+            require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+                const m = JSON.parse(line);
+                if (m.method === 'open') told = m.params;
+                else if (m.id !== undefined) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: told }) + '\n');
+            });
+        "#;
+        let host = host(script_launch(script), dir.path(), Arc::default());
+        // Not running: kept for the host to come.
+        assert!(host.ask_running("x", json!({})).is_none());
+        host.tell("open", json!(["a"]));
+        assert_eq!(host.call("x", json!({})).await, Ok(json!(["a"])));
+        host.tell("open", json!(["a", "b"]));
+        let asked = host.ask_running("x", json!({})).expect("running");
+        assert_eq!(asked.await, Ok(json!(["a", "b"])));
+        // A host started after hears it before anything else.
+        let generation = lock(&host.state).generation;
+        host.kill_generation(generation);
+        until(|| lock(&host.state).generation > generation && host.is_running()).await;
+        assert_eq!(host.call("x", json!({})).await, Ok(json!(["a", "b"])));
+        assert_eq!(lock(&host.state).told.len(), 1, "the last word only");
         host.stop();
     }
 

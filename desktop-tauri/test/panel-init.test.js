@@ -13,14 +13,14 @@ const SOURCE = readFileSync(new URL('../src/guest/panel.js', import.meta.url), '
  * Run the init script in a page at `href`, as a frame of `top` or the top,
  * and hand an Extension's page `token` as the shell does once it loads.
  */
-function run(href, { webview2 = false, frame = false, answer, token = 'tk', chrome } = {}) {
+function run(href, { webview2 = false, frame = false, answer, token = 'tk', chrome, setTimeout = (fn) => fn() } = {}) {
   const url = new URL(href)
   const listeners = []
   const window = {
     location: { protocol: url.protocol, hostname: url.hostname },
     fetch: vi.fn(async () => answer ?? { json: async () => ({ ok: true, reply: 'pong' }) }),
     addEventListener: vi.fn((type, listener, capture) => listeners.push({ type, listener, capture })),
-    setTimeout: (fn) => fn(),
+    setTimeout,
     chrome,
     listeners,
   }
@@ -117,6 +117,34 @@ describe('the side panel guest init script', () => {
     ]) {
       expect(run('https://a.example/', options).listeners).toEqual([])
     }
+  })
+
+  it('hands the page what its Extension posts, only with the token it holds', () => {
+    const later = []
+    const window = run('agentrq-ext://notes/', { setTimeout: (fn) => later.push(fn) })
+    const heard = []
+    window.agentrq.panel.onMessage(() => {
+      throw new Error('broken')
+    })
+    window.agentrq.panel.onMessage((message) => heard.push(message))
+    window.__agentrqPanelMessage('tk', { n: 1 })
+    expect(heard).toEqual([{ n: 1 }])
+    // The listener that threw is reported once the others have heard it.
+    expect(later).toHaveLength(1)
+    expect(() => later[0]()).toThrow('broken')
+    window.__agentrqPanelMessage('guess', 2)
+    expect(heard).toEqual([{ n: 1 }])
+    expect(() => {
+      'use strict'
+      window.__agentrqPanelMessage = () => {}
+    }).toThrow()
+    // Before the page has a token, nothing it is handed is from the shell.
+    const early = run('agentrq-ext://notes/', { token: null })
+    const none = vi.fn()
+    early.agentrq.panel.onMessage(none)
+    early.__agentrqPanelMessage(null, 3)
+    early.__agentrqPanelMessage('null', 3)
+    expect(none).not.toHaveBeenCalled()
   })
 
   it('lets a page listen, and stop', () => {

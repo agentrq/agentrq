@@ -84,7 +84,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// How every download is made: https only, redirects included, with a
 /// deadline on connecting and on each read.
-fn client_builder() -> reqwest::ClientBuilder {
+fn client_builder(connect: Duration, idle: Duration) -> reqwest::ClientBuilder {
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_ENCODING};
     // The pinned size and hash are of the bytes nodejs.org stores.
     let identity = HeaderMap::from_iter([(ACCEPT_ENCODING, HeaderValue::from_static("identity"))]);
@@ -93,13 +93,15 @@ fn client_builder() -> reqwest::ClientBuilder {
         .no_gzip()
         .no_brotli()
         .default_headers(identity)
-        .connect_timeout(CONNECT_TIMEOUT)
-        .read_timeout(IDLE_TIMEOUT)
+        .connect_timeout(connect)
+        .read_timeout(idle)
 }
 
 /// The client every download uses.
 fn client() -> reqwest::Client {
-    client_builder().build().expect("a TLS backend")
+    client_builder(CONNECT_TIMEOUT, IDLE_TIMEOUT)
+        .build()
+        .expect("a TLS backend")
 }
 
 impl Node {
@@ -637,24 +639,33 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn asks_for_the_bytes_as_stored_with_a_deadline_on_each_wait() {
-        // What the production client is built with; `https_only` is
+        assert_eq!(CONNECT_TIMEOUT, Duration::from_secs(30));
+        assert_eq!(IDLE_TIMEOUT, Duration::from_secs(30));
+        // Over http, which is all a test can serve; `https_only` is
         // `refuses_anything_but_https`.
-        let settings = format!("{:?} {:?}", client_builder(), client());
-        for setting in [
-            "accepts: Accepts { gzip: false, brotli: false }",
-            "\"accept-encoding\": \"identity\"",
-            "connect_timeout: 30s",
-            "read_timeout: 30s",
-        ] {
-            assert!(settings.contains(setting), "{setting} in {settings}");
+        let plain = |idle| {
+            client_builder(CONNECT_TIMEOUT, idle)
+                .https_only(false)
+                .build()
+                .unwrap()
+        };
+        // A compressed answer is kept as it came: it is what the pin hashes.
+        for encoding in ["gzip", "br"] {
+            let header = format!("Content-Encoding: {encoding}");
+            let server = TestServer::start(move |_| reply("200 OK", &[&header], "stored")).await;
+            let body = plain(IDLE_TIMEOUT).get(&server.url).send().await.unwrap();
+            assert_eq!(body.bytes().await.unwrap(), "stored", "{encoding}");
+            let asked = server.requests().remove(0);
+            assert_eq!(asked.header("accept-encoding"), Some("identity"));
         }
-        // Served over http here, which is all a test can serve.
-        let server = serving(b"bytes".to_vec()).await;
-        let plain = client_builder().https_only(false).build().unwrap();
-        let body = plain.get(&server.url).send().await.unwrap().bytes().await;
-        assert_eq!(body.unwrap(), "bytes");
-        let asked = server.requests().remove(0);
-        assert_eq!(asked.header("accept-encoding"), Some("identity"));
+        // A body that stops coming fails once a wait outlasts the deadline.
+        let head = "HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n01234";
+        let stalled = TestServer::start(move |_| vec![send(head), Step::Wait(600_000)]).await;
+        let started = std::time::Instant::now();
+        let response = plain(Duration::from_millis(200));
+        let response = response.get(&stalled.url).send().await.unwrap();
+        assert!(response.bytes().await.is_err());
+        assert!(started.elapsed() < Duration::from_secs(10));
     }
 
     #[tokio::test]

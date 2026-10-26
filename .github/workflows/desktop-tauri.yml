@@ -11,6 +11,11 @@ on:
       - 'desktop/src/preload/**'
       # The extension host runs these unchanged, and its tests run the examples.
       - 'desktop/src/main/extensions/**'
+      - 'desktop/src/main/side-panel/bridge.js'
+      - 'desktop/src/main/side-panel/guest.js'
+      - 'desktop/src/main/links.js'
+      - 'desktop/src/main/auth.js'
+      - 'desktop/test/examples/**'
       - 'examples/extensions/**'
       - 'backend/**'
       - '.github/workflows/desktop-tauri.yml'
@@ -24,6 +29,11 @@ on:
       - 'desktop/src/preload/**'
       # The extension host runs these unchanged, and its tests run the examples.
       - 'desktop/src/main/extensions/**'
+      - 'desktop/src/main/side-panel/bridge.js'
+      - 'desktop/src/main/side-panel/guest.js'
+      - 'desktop/src/main/links.js'
+      - 'desktop/src/main/auth.js'
+      - 'desktop/test/examples/**'
       - 'examples/extensions/**'
       - 'backend/**'
       - '.github/workflows/desktop-tauri.yml'
@@ -165,7 +175,10 @@ jobs:
             done'
 
       # WP9's acceptance: the five examples through window.agentrq in the real
-      # app, its steps reported to test/e2e/extensions-server.mjs.
+      # app, its steps reported to test/e2e/extensions-server.mjs, which also
+      # streams the guardrail a tool call to refuse and answers the
+      # supervisor's OAuth with a real redirect to agentrq://. An xdg-open
+      # first on PATH records any call: the OAuth window must make none.
       - name: Extensions in the app (Linux)
         if: runner.os == 'Linux'
         working-directory: desktop-tauri
@@ -174,15 +187,28 @@ jobs:
           SERVER=$!
           export AGENTRQ_SERVER_URL=http://127.0.0.1:39117
           export AGENTRQ_E2E_INIT_SCRIPT="$(sed "s|__EXAMPLES__|$(cd ../examples/extensions && pwd)|" test/e2e/extensions.js)"
+          export XDG_DATA_HOME="$RUNNER_TEMP/agentrq-data"
+          mkdir -p "$RUNNER_TEMP/opener"
+          printf '#!/bin/sh\necho "$@" >> "%s"\n' "$RUNNER_TEMP/opened.txt" > "$RUNNER_TEMP/opener/xdg-open"
+          chmod +x "$RUNNER_TEMP/opener/xdg-open"
+          export PATH="$RUNNER_TEMP/opener:$PATH"
           xvfb-run -a -s "-screen 0 1400x900x24" dbus-run-session -- bash -c '
             WEBKIT_DISABLE_DMABUF_RENDERER=1 src-tauri/target/release/agentrq-tauri &
             APP=$!
-            for i in $(seq 1 90); do kill -0 '$SERVER' 2>/dev/null || break; sleep 1; done
+            for i in $(seq 1 180); do kill -0 '$SERVER' 2>/dev/null || break; sleep 1; done
             kill $APP
             wait $APP || true'
           cat extension-steps.txt
           if kill -0 $SERVER 2>/dev/null; then kill $SERVER; echo 'The steps never finished.'; exit 1; fi
           wait $SERVER
+          if [ -s "$RUNNER_TEMP/opened.txt" ]; then echo 'xdg-open was called:'; cat "$RUNNER_TEMP/opened.txt"; exit 1; fi
+
+      # desktop/test/examples and the five examples through the bundled host,
+      # on the Node.js the acceptance above downloaded.
+      - name: The examples on the app's own Node.js (Linux)
+        if: runner.os == 'Linux'
+        working-directory: desktop-tauri
+        run: npm run test:sidecar -- "$RUNNER_TEMP/agentrq-data/com.agentrq.desktop.tauri/bin/node"
 
       - name: Screenshots and window background (macOS)
         if: runner.os == 'macOS'

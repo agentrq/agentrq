@@ -10,7 +10,8 @@
  * links go, how wide the panel may be. They cannot say whether a real webview
  * honours them: that a guest really is made, that a page's own redirect really
  * stays in the panel, that a reload of the app really takes every guest with
- * it, that an Extension's page really reaches its Extension and nothing else.
+ * it, that an Extension's page really reaches its Extension and nothing else,
+ * and that the Extension really reaches its page and the panel.
  *
  * The app is the real debug build on a scratch backend, signed in as the root
  * user, on a task whose message links to a stand-in site (lib/site.mjs).
@@ -19,6 +20,9 @@
  * own controls in the main page. A guest's death is a silence: its page beats
  * every 100 ms, so "closed" is read as "will never beat again", measured
  * against a page that is known to have started later, never as a wait.
+ *
+ * The Extension is a real one, installed through the Extensions bridge and
+ * run by the extension host on the Node.js the app downloads from nodejs.org.
  *
  * What only a real OS can do is not here: SKIPPED says what, and why.
  *
@@ -38,6 +42,31 @@ import { waitFor } from './lib/webdriver.mjs'
 const EXTENSION = 'verify-notes'
 const EXTENSION_PAGE = `agentrq-ext://${EXTENSION}/panel/index.html`
 
+/** The Extension: it echoes what its page sends, and posts to it, or opens the panel, when asked. */
+const extensionFiles = {
+  'package.json': JSON.stringify({ name: EXTENSION, version: '1.0.0', type: 'module', main: 'index.js', private: true }),
+  'agentrq-extension.json': JSON.stringify({
+    name: EXTENSION,
+    displayName: 'Verify notes',
+    version: '1.0.0',
+    description: 'The side panel verify script\'s Extension.',
+    license: 'MIT',
+    engines: { agentrq: '>=0.9' },
+    provides: { panels: [{ id: 'notes', label: 'Notes', entry: 'panel/index.html' }] },
+    artifact: { release: 'v1.0.0', asset: `${EXTENSION}-1.0.0.tgz`, sha256: '0'.repeat(64) },
+  }),
+  'index.js': `export const name = ${JSON.stringify(EXTENSION)}
+export const inject = ['panel']
+export function apply(ctx) {
+  ctx.panel.onMessage((message) => {
+    if (message?.type === 'post') setTimeout(() => ctx.panel.post({ type: 'posted', n: message.n }), 50)
+    if (message?.type === 'show') return ctx.panel.open({ url: message.url })
+    return { echo: message }
+  })
+}
+`,
+}
+
 /** The page an Extension shows in the panel: it asks its Extension, and tells the site. */
 const extensionPage = (origin) => `<!doctype html><html><body><script>
   const gid = 'ext-' + Math.random().toString(36).slice(2);
@@ -45,6 +74,12 @@ const extensionPage = (origin) => `<!doctype html><html><body><script>
   const panel = window.agentrq && window.agentrq.panel;
   tell('hello=1&page=' + location.pathname + '&keys=' + Object.keys(window.agentrq || {}).join() +
     '&send=' + typeof (panel && panel.send) + '&node=' + typeof require);
+  // What the Extension posts, told to the site.
+  panel.onMessage((message) => tell('posted=' + encodeURIComponent(JSON.stringify(message))));
+  // Asked to post, once the page listens; and, given an address, to open the panel there.
+  panel.send({ type: 'post', n: 3 });
+  const show = new URLSearchParams(location.search).get('show');
+  if (show) panel.send({ type: 'show', url: show });
   // Something to hand back to the Extension, and to be handed back.
   panel.send({ type: 'ping', n: 7 }).then(
     (answer) => tell('answer=' + encodeURIComponent(JSON.stringify(answer))),
@@ -83,12 +118,8 @@ await runVerify(
     shell = process.platform === 'linux' ? await stubShell() : null
     await mkdir(join(dir, 'panel'))
     await writeFile(join(dir, 'panel/index.html'), extensionPage(site.origin))
-    // The debug build installs this one Extension, answered by an echo, until
-    // WP9's host does it for real.
-    app = await launchApp({
-      serverUrl: backend.url,
-      env: { ...shell?.env, AGENTRQ_E2E_EXTENSION: `${EXTENSION}:${dir}:panel/index.html` },
-    })
+    for (const [file, text] of Object.entries(extensionFiles)) await writeFile(join(dir, file), text)
+    app = await launchApp({ serverUrl: backend.url, env: shell?.env })
     const { session } = app
     const page = (code) => session.evaluate(code)
     const inPage = (what, code, options) => session.waitForPage(what, code, options)
@@ -133,6 +164,19 @@ await runVerify(
       return { workspace: workspace.id, task: task.id }
     })()`)
     const taskPath = `/workspaces/${ids.workspace}/tasks/${ids.task}`
+
+    // The Extension, installed as the Extensions page does: Node first. The
+    // download can outlast a script's run, so the page keeps the outcome.
+    await page(`(window.__verifyInstalled = null, (async () => {
+      const ext = window.agentrq.extensions
+      if (!(await ext.state()).node?.installed) {
+        const node = await ext.downloadNode()
+        if (!node?.ok) return node
+      }
+      return ext.installLocal(${JSON.stringify(dir)}, { grant: null })
+    })().then((answer) => (window.__verifyInstalled = answer ?? {}), (err) => (window.__verifyInstalled = { reason: String(err) })), true)`)
+    const installed = await inPage('the Extension to be installed', 'window.__verifyInstalled', { timeout: 300000 })
+    record('the Extension installs, Node.js and all', installed.ok === true, JSON.stringify(installed))
     /** Load the task and wait until it has drawn, with the panel as the page remembered it. */
     const openTask = async () => {
       // The old document is told apart from the new by a marker only it has.
@@ -267,6 +311,15 @@ await runVerify(
     await stillAlive(ext.gid)
     const chosen = (await address()) === EXTENSION_PAGE
     record('the address shows the Extension\'s page', chosen, await address())
+    const posted = await site.hit('the Extension to post to its page', (h) => h.query.get('gid') === ext.gid && h.query.has('posted'))
+    record('what the Extension posts reaches its page', JSON.parse(posted.query.get('posted')).n === 3, posted.query.get('posted'))
+    // The Extension opens the panel at an address of its choosing.
+    since = mark()
+    const shown = `${site.origin}/second`
+    await type(`${EXTENSION_PAGE}?show=${encodeURIComponent(shown)}`)
+    await hello('the page the Extension opened to load', '/second', since)
+    await addressIs(shown)
+    record('the Extension can open the panel at an address', true, shown)
 
     printResults('the side panel, in a real window', [...results, ...SKIPPED])
     return summarize(results, SKIPPED)

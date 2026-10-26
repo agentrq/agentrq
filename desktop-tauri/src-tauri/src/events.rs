@@ -23,6 +23,7 @@ use agentrq_desktop_core::sse::{
 use futures_util::{Stream, StreamExt};
 use serde_json::Value;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::Semaphore;
 use tokio::task::AbortHandle;
 
 use crate::ext_host::ExtHost;
@@ -35,29 +36,27 @@ pub trait Events: Send + Sync {
     fn on_event(&self, event: &Value);
 }
 
+/// How many tool-call reviews may wait on the extension host at once. Past
+/// it an event goes unreviewed, and the person answers its tool call.
+const MAX_REVIEWS: usize = 32;
+
 /// Forwards events to the extension host for tool-call review when running,
-/// while passing every event to the inner [`Events`] handler. One task sends
-/// them, in the stream's order, one at a time.
+/// while passing every event to the inner [`Events`] handler. Each is sent as
+/// it comes, so the host has them in the stream's order, but none waits for
+/// the one before to be answered: Electron does not await a review either,
+/// and a slow reviewer would hold up every tool call behind it.
 pub struct ToolReviewEvents {
     notifier: Arc<dyn Events>,
     host: Arc<ExtHost>,
-    queue: UnboundedSender<Value>,
+    reviewing: Arc<Semaphore>,
 }
 
 impl ToolReviewEvents {
     pub fn new(notifier: Arc<dyn Events>, host: Arc<ExtHost>) -> Self {
-        let (queue, mut events) = unbounded_channel::<Value>();
-        let reviewer = host.clone();
-        tauri::async_runtime::spawn(async move {
-            while let Some(event) = events.recv().await {
-                let event = serde_json::json!({ "event": event });
-                let _ = reviewer.call("reviewToolCalls", event).await;
-            }
-        });
         Self {
             notifier,
             host,
-            queue,
+            reviewing: Arc::new(Semaphore::new(MAX_REVIEWS)),
         }
     }
 }
@@ -65,8 +64,16 @@ impl ToolReviewEvents {
 impl Events for ToolReviewEvents {
     fn on_event(&self, event: &Value) {
         self.notifier.on_event(event);
-        if self.host.is_running() {
-            let _ = self.queue.send(event.clone());
+        let Ok(permit) = Arc::clone(&self.reviewing).try_acquire_owned() else {
+            eprintln!("[extensions] too many tool-call reviews wait; this event goes unreviewed");
+            return;
+        };
+        let params = serde_json::json!({ "event": event });
+        if let Some(review) = self.host.ask_running("reviewToolCalls", params) {
+            tauri::async_runtime::spawn(async move {
+                let _ = review.await;
+                drop(permit);
+            });
         }
     }
 }
@@ -512,6 +519,61 @@ pub(crate) mod tests {
         let wanted: String = types.iter().map(|kind| format!("{kind}\n")).collect();
         until(|| read().len() >= wanted.len()).await;
         assert_eq!(read(), wanted, "in order, and never the first");
+        host.stop();
+    }
+
+    #[tokio::test]
+    async fn a_slow_review_holds_up_no_other_and_too_many_waiting_are_dropped() {
+        use crate::ext_host::tests::{until, FakeServices};
+        use crate::ext_host::Launch;
+        let dir = tempfile::tempdir().unwrap();
+        let reviewed = dir.path().join("reviewed");
+        // Writes down each event it is asked to review, and never answers a
+        // slow one; `state` is answered once every line before it is read.
+        let script = format!(
+            r#"require('readline').createInterface({{ input: process.stdin }}).on('line', (line) => {{
+  const m = JSON.parse(line)
+  if (m.id === undefined) return
+  if (m.method === 'reviewToolCalls') {{
+    require('fs').appendFileSync({reviewed:?}, m.params.event.type + '\n')
+    if (m.params.event.type === 'slow') return
+  }}
+  process.stdout.write(JSON.stringify({{ jsonrpc: '2.0', id: m.id, result: {{ ok: true }} }}) + '\n')
+}})"#,
+            reviewed = reviewed.to_string_lossy()
+        );
+        let launch = Launch {
+            program: "node".into(),
+            args: vec!["-e".into(), script.into()],
+        };
+        std::fs::write(
+            dir.path().join("extensions-installed.json"),
+            r#"{"installations":[{"name":"x","enabled":true}]}"#,
+        )
+        .unwrap();
+        let host = ExtHost::new(launch, dir.path().into(), Arc::new(FakeServices::default()));
+        let review = ToolReviewEvents::new(Arc::new(Recorded::default()), host.clone());
+        host.call("state", json!({})).await.unwrap();
+        let read = || std::fs::read_to_string(&reviewed).unwrap_or_default();
+
+        // The slow one is never answered; the two after it are reviewed at
+        // once, not when it runs out of time a minute later.
+        for kind in ["slow", "a", "b"] {
+            review.on_event(&json!({ "type": kind }));
+        }
+        until(|| read() == "slow\na\nb\n").await;
+        until(|| review.reviewing.available_permits() == MAX_REVIEWS - 1).await;
+
+        // With every review waiting, the next event is not sent at all.
+        for _ in 1..MAX_REVIEWS {
+            review.on_event(&json!({ "type": "slow" }));
+        }
+        assert_eq!(review.reviewing.available_permits(), 0);
+        review.on_event(&json!({ "type": "late" }));
+        // Answered after everything sent before it has been read.
+        host.call("state", json!({})).await.unwrap();
+        assert_eq!(read().lines().count(), MAX_REVIEWS + 2);
+        assert!(!read().contains("late"));
         host.stop();
     }
 }

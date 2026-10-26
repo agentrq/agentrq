@@ -103,9 +103,15 @@
   navigation, never straight after the call.
 - **The supervisor's authorisation window is lent the jar's cookies for its page**
   (SameSite kept), and its `Lease` takes them back before the window is destroyed,
-  even when the run is dropped; every close waits for that. The redirect is matched
-  exactly and cancelled; on Windows wry never asks about subframes, so `handlers.rs`
-  guards them and external launches.
+  even when the run is dropped; every close waits for that, for 20 s at most, then
+  destroys it anyway: a stuck take-back would leave a window nothing can close. The
+  redirect is matched exactly and cancelled; on Windows wry never asks about
+  subframes, so `handlers.rs` guards them and external launches. WebKit asks about
+  a subframe as the page, so there `supervisor-auth.js`'s state check is the guard.
+- **A sign-in, or removing a profile, first ends that profile's authorisation
+  window and waits for its take-back** (`OAuthWindows::close_for`). They share the
+  store: a sign-in would move the lent `at` into the jar, and a removal would
+  delete a store still in use.
 
 ## Profiles and the main window
 
@@ -261,6 +267,14 @@
   second, started while an unlock prompt holds the first, can create a second key.
 - **A host call waits for `start`.** One that arrives while it runs and installs
   what it is loading would load that extension twice.
+- **A hang blames the extension being loaded**, so three of them disable it, as a
+  crash does; a hang with nothing loading blames none.
+- **Tool-call reviews are asked in order and awaited apart** (`ask_running`, 32 at
+  most). `call` awaits the Node check first, so concurrent calls lose their order.
+- **The panel bridge is Electron's `bridge.js`, run in the host; Rust only routes.**
+  A page's send goes to `panelSend` with the address Rust read off the guest, never
+  one the request names. `post` must count pages at once, so Rust keeps the host
+  told which Extensions have a page open (`panelOpen`, re-sent to every new host).
 
 ## Releases, bundles and updater
 

@@ -80,7 +80,11 @@ npm test                 # vitest
 npm run test:coverage    # vitest with the 100% gate
 npm run test:rust        # cargo test, core/ then src-tauri/
 npm run coverage:rust    # cargo llvm-cov with the 100% line gate
+npm run test:sidecar -- <node>   # the examples on the app's Node.js, through the bundled host
 ```
+
+`test:sidecar` takes the `node` the app downloaded (`<data dir>/bin/node`) and
+needs `npm run build:ext-host` first.
 
 `src-tauri` needs the built renderer (`npm run build:renderer`), because
 `tauri::generate_context!` reads it at compile time. `coverage:rust` needs

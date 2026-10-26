@@ -199,8 +199,8 @@ impl Lines {
 /// restarted only when it then misses a [`PING`] too.
 pub fn deadline_ms(method: &str) -> u64 {
     match method {
-        // Waits for a person.
-        "authorize" => 10 * 60_000,
+        // Waits for a person, in the shell's window.
+        "authorize" => AUTH_WINDOW_MS + 60_000,
         // Downloads from GitHub.
         "installFromCatalogue" | "refresh" => 5 * 60_000,
         // Copies, loads or unloads extensions, or runs one's action.
@@ -214,6 +214,17 @@ pub fn deadline_ms(method: &str) -> u64 {
         "supervisor" => 5_000,
         _ => 30_000,
     }
+}
+
+/// How long the host waits on the shell's authorisation window, in ms: the
+/// window's own deadline (`oauth_window::DEADLINE`) and a minute more.
+pub const AUTH_WINDOW_MS: u64 = 11 * 60_000;
+
+/// How long the shell may take over what the host asks of it, when it is not
+/// the usual (`rpc.js`'s `DEADLINE_MS`): the authorisation window waits for a
+/// person.
+pub fn serve_deadline_ms(method: &str) -> Option<u64> {
+    (method == "authWindow").then_some(AUTH_WINDOW_MS)
 }
 
 /// What the shell asks a host that let a call run out of time. The wire
@@ -388,7 +399,12 @@ mod tests {
 
     #[test]
     fn every_method_has_a_deadline() {
-        assert_eq!(deadline_ms("authorize"), 600_000);
+        assert_eq!(deadline_ms("authorize"), 720_000);
+        // The window's deadline is under the host's, and the host's under the shell's.
+        let window = crate::oauth_window::DEADLINE.as_millis() as u64;
+        assert!(window < AUTH_WINDOW_MS && AUTH_WINDOW_MS < deadline_ms("authorize"));
+        assert_eq!(serve_deadline_ms("authWindow"), Some(AUTH_WINDOW_MS));
+        assert_eq!(serve_deadline_ms("profileFetch"), None);
         assert_eq!(deadline_ms("installFromCatalogue"), 300_000);
         assert_eq!(deadline_ms("refresh"), 300_000);
         for method in [

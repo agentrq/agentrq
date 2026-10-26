@@ -25,7 +25,7 @@ macOS and Windows (the `Desktop App (Tauri)` workflow's test job): `core::x` is
 macOS has no WKWebView driver, and on Windows msedgedriver does not start the
 app.
 
-Open gaps that hold several rows: **WP9** (#1048, extensions), **WP8 release job** (#1035, no release
+Open gaps that hold several rows: **WP8 release job** (#1035, no release
 carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 (the `verify-side-panel`, `verify-webmcp` and `verify-ui-telemetry` ports).
 
@@ -100,7 +100,7 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 | Guest requests refused by the app's schemes | `src-tauri::scheme`, `src-tauri::panel_scheme`, `panel-init.test.js` | M25 | M25 | M25 |
 | Find in page | `core::side_panel::wire`, `core::side_panel::find`, `src-tauri::side_panel` | M29 | M29 | M29 |
 | Site permissions bar, list, timeout | `core::side_panel::permissions`, `core::side_panel::permission_store`, `core::side_panel::platform_permissions`, `src-tauri::panel_permissions` | M26 | M26, M27 | M26, M28 |
-| `agentrq-ext://` extension pages and their bridge | `core::side_panel::ext_scheme`, `core::side_panel::bridge`, `panel-init.test.js` | G WP9 | G WP9 | G WP9 |
+| `agentrq-ext://` extension pages and their bridge | `core::side_panel::ext_scheme`, `core::side_panel::child`, `src-tauri::panel_scheme`, `src-tauri::side_panel`, `panel-init.test.js`, `ext-host-runtime.test.js` | A `verify-side-panel` | M25, M46 | M25, M46 |
 
 ### Files, clipboard and native helpers
 
@@ -132,7 +132,8 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 
 | Feature | Tests | Linux | macOS | Windows |
 |---|---|---|---|---|
-| Install, run, uninstall; settings; supervisor sign-in; drawers; tool-call review | — | G WP9, then M43 | G WP9, then M43 | G WP9, then M43 |
+| Install, run, uninstall; settings; supervisor sign-in; drawers; tool-call review | `ext-host-runtime.test.js`, `ext-host-examples.test.js`, `src-tauri::ext_host`, `src-tauri::extensions`, `src-tauri::oauth_window`, `src-tauri::events` | A `test/e2e/extensions.js` | M43 | M43 |
+| `desktop/test/examples/*` and the examples through the bundled host, on the downloaded Node.js | `npm run test:sidecar` | A (CI's test job) | M43 | M43 |
 | Node.js downloaded on first use, checked against its pin, offered again when the pin moves | `core::ext_node`, `src-tauri::ext_node`, `extensionCatalogue.test.js`, `extensionsViewNode.test.js` (frontend) | A `test/e2e/extensions.js` | M45 | M45 |
 
 ### Whole-app checks
@@ -143,7 +144,7 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 | `verify-e2e`, `verify-connection`, `verify-markdown-links` | A | M (no driver): M5, M6, M9, M30 | G follow-up: msedgedriver cannot start the app in CI; untried by hand |
 | `verify-side-panel` | G WP10 part 2 | M17–M25 | M17–M25 |
 | `verify-webmcp`, `verify-ui-telemetry` | G WP10 part 2 | M44 | M44 |
-| `verify-extensions` | G WP9 | G WP9 | G WP9 |
+| `test/e2e/extensions.js`, in CI's test job | A | M43 | M43 |
 
 ## Bridge members
 
@@ -168,7 +169,7 @@ command takes them. `verify-e2e` checks on Linux that the whole bridge is there.
 | `navigation.onNavigate` | `agentrq:navigate`, `navigation_ready` | `bridge.test.js` | M11, M14, M15 | M11, M14, M15 | M11, M14, M15 |
 | `extensions.state`, `refresh`, `chooseFolder`, `installLocal`, `installFromCatalogue`, `uninstall`, `setEnabled`, `configure`, `setHookConsent`, `supervisor`, `authorize`, `deauthorize`, `entries`, `drawer`, `invoke` | `extensions_*` | `src-tauri::extensions`, `core::ext_host` | A `test/e2e/extensions.js` | M43 | M43 |
 | `extensions.downloadNode`, `cancelNodeDownload`, `onNodeProgress` (Tauri only: Electron bundles Node) | `extensions_download_node`, `extensions_cancel_node_download`, `agentrq:extensions:node-progress` | `src-tauri::ext_node`, `src-tauri::extensions`, `core::ext_node`, `parity.test.js` | A `test/e2e/extensions.js` | M45 | M45 |
-| `extensions.onChanged` | `agentrq:extensions:changed` | `parity.test.js` | G WP9 | G WP9 | G WP9 |
+| `extensions.onChanged` | `agentrq:extensions:changed` | `parity.test.js`, `src-tauri::extensions`, `src-tauri::ext_host` | M43 | M43 | M43 |
 | `updates.get`, `onStatus` | `update_get`, `agentrq:update:status` | `core::updater`, `src-tauri::commands`, `bridge.test.js` | A `verify-e2e` (no banner); M3 | M3 | M3 |
 | `updates.check` | `update_check` | `core::updater`, `src-tauri::commands` | G follow-up: menu item disabled | G same | G same |
 | `updates.installNow` | `update_install` | `core::updater` | M3 | M3 | M3 |
@@ -177,13 +178,13 @@ command takes them. `verify-e2e` checks on Linux that the whole bridge is there.
 | `sidePanel.onToggle` | `agentrq:side-panel:toggle` | `core::menu` | M17 | M17 | M17 |
 | `sidePanel.onOpen` | `agentrq:side-panel:open` | `src-tauri::side_panel` | M16 | M16 | M16 |
 | `sidePanel.onFind` | `agentrq:side-panel:find` | `core::side_panel::wire` | M29 | M29 | M29 |
-| `sidePanel.pages` | `side_panel_pages` | `src-tauri::commands` (empty list) | G WP9 | G WP9 | G WP9 |
+| `sidePanel.pages` | `side_panel_pages` | `src-tauri::commands` | A `test/e2e/extensions.js` | M43 | M43 |
 | `sidePanel.openExternal` | `side_panel_open_external` | `src-tauri::side_panel` | M17 | M17 | M17 |
 | `sidePanel.onPermissionRequest`, `onPermissionSettled` | `agentrq:side-panel:permission-*` | `core::side_panel::permissions`, `src-tauri::panel_permissions` | M26 | M26, M27 | M26, M28 |
 | `sidePanel.answerPermission`, `permissions`, `removePermission` | `side_panel_permission_answer`, `side_panel_permissions`, `side_panel_permission_remove` | `core::side_panel::permission_store`, `src-tauri::panel_permissions` | M26 | M26, M27 | M26, M28 |
 | `view.get`, `zoom`, `toggleFullScreen` | `view_get`, `view_zoom`, `view_fullscreen` | `core::window_view` | M36 | M36, M37 | M36 |
 | `theme.set` | `theme_set` | `core::theme` | A CI screenshots; M36 | A CI screenshots; M36 | A CI screenshots; M36 |
-| `panel.send`, `panel.onMessage` (guest) | `POST /.agentrq/panel-send` on `agentrq-ext` | `panel-init.test.js`, `src-tauri::panel_scheme`, `core::side_panel::bridge` | G WP9 (answers "extensions unavailable"); M25 | G WP9; M25 | G WP9; M25 |
+| `panel.send`, `panel.onMessage` (guest) | `POST /.agentrq/panel-send` on `agentrq-ext`; a post is evaluated into the page | `panel-init.test.js`, `src-tauri::panel_scheme`, `src-tauri::side_panel`, `ext-host-runtime.test.js` | A `verify-side-panel`; M25 | M25, M46 | M25, M46 |
 
 The bridge's own commands, which Electron has no channel for:
 
@@ -400,10 +401,13 @@ screenshots, in the PR or task that ran the checklist.
 
 ### Extensions and the rest
 
-43. Once WP9 lands: the five examples in `examples/extensions/` install, run
-    and uninstall; `desktop/test/examples/*` passes against the sidecar build;
-    a guardrail denies a tool call; the supervisor sign-in window and the
-    drawers open.
+43. The five examples in `examples/extensions/` install, run and uninstall;
+    `npm run test:sidecar` passes on the Node.js the app downloaded; a
+    guardrail denies a tool call; the supervisor's authorisation window opens
+    on the consent page without a sign-in, and authorising closes it with
+    nothing handed to the system (no `agentrq://` prompt); the drawers open.
+    An extension that crashes the host three times is turned off, and the
+    Extensions page says why.
 44. **[macOS, Windows]** The checks of `desktop/scripts/verify-webmcp.mjs` and
     `verify-ui-telemetry.mjs`, by hand: the WebMCP tools appear in
     `document.modelContext`, run, and go on sign-out; a keypress, a copy, a
@@ -414,3 +418,7 @@ screenshots, in the PR or task that ran the checklist.
     in place an example installs and runs. macOS: the downloaded `node` runs
     as a child of the signed, hardened app. Windows: the rename succeeds with
     an antivirus scanning `node.exe`.
+46. **[macOS, Windows]** Open the panel-notes example's page from its task
+    menu (**Add to notes**): the panel opens at it, typed notes are saved and
+    come back after a reload, and adding another task updates the open page.
+    Windows: the page's address is `http://agentrq-ext.panel-notes/…`.

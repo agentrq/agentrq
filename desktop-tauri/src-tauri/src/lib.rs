@@ -19,8 +19,6 @@ mod ext_node;
 mod extensions;
 mod network;
 mod notify;
-// The extension host's `authorize` reaches it in WP9 part 2.
-#[cfg_attr(not(test), allow(dead_code))]
 mod oauth_window;
 mod panel_permissions;
 mod panel_scheme;
@@ -521,8 +519,21 @@ impl<R: Runtime> SignInWindow for SignInWebview<'_, R> {
 
 /// Sign the active profile in, in a window on the real server and on that
 /// profile's webview storage. Never the system browser: the cookie would land
-/// in a jar the app cannot read.
+/// in a jar the app cannot read. An authorisation window open on that store
+/// is ended first, its session taken back (`OAuthWindows::close_for`).
 pub(crate) fn open_sign_in<R: Runtime>(app: &AppHandle<R>, start_url: String) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let profiles = app.state::<Arc<Profiles>>().inner().clone();
+        profiles
+            .auth_windows()
+            .close_for(&profiles.active_id())
+            .await;
+        open_sign_in_window(&app, start_url);
+    });
+}
+
+fn open_sign_in_window<R: Runtime>(app: &AppHandle<R>, start_url: String) {
     let profiles = app.state::<Arc<Profiles>>().inner().clone();
     let id = profiles.active_id();
     let server = profiles.server_url();
@@ -602,12 +613,18 @@ fn extension_host<R: Runtime>(
         data_dir.clone().into(),
         app.package_info().version.to_string().into(),
     ];
-    let emitter = app.clone();
+    let (emitter, authorizer) = (app.clone(), app.clone());
     let services = ShellServices::new(
         network,
         Arc::new(OsKeychain("extension-secrets-key")),
-        Box::new(move |detail| {
-            let _ = emitter.emit("agentrq:extensions:changed", detail);
+        Box::new(move |method, params| match method {
+            "changed" => {
+                let _ = emitter.emit("agentrq:extensions:changed", params);
+            }
+            _ => side_panel::host_told(&emitter, method, params),
+        }),
+        Box::new(move |url, redirect| {
+            Box::pin(oauth_window::for_host(authorizer.clone(), url, redirect))
         }),
     );
     let host = ExtHost::on_node(node, args, data_dir, Arc::new(services));
@@ -663,7 +680,7 @@ pub fn run() {
                     top_url: top.as_deref(),
                     token: token.as_deref(),
                 };
-                responder.respond(scheme.handle(&label, page, &request));
+                responder.respond(scheme.handle(&label, page, &request).await);
             });
         })
         // Tauri would serve its own assets on every webview, a guest's too:
@@ -705,6 +722,7 @@ pub fn run() {
             ));
             profiles.sweep();
             profiles.watch();
+            app.manage(profiles.auth_windows());
             app.manage(profiles.clone());
             let clicked = notifier.clone();
             handle.notification().on_action(move |action| {
@@ -739,7 +757,7 @@ pub fn run() {
             app.manage(scheme);
             init_updater(&handle);
             let side_panel = side_panel::SidePanelState::new(&handle, Box::new(open_link));
-            app.manage(side_panel.scheme());
+            app.manage(side_panel::scheme(host.clone()));
             app.manage(side_panel);
             app.manage(panel_permissions::PanelPermissions::default());
             app.manage(chrome::Chrome::new(data_dir));

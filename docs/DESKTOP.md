@@ -329,7 +329,7 @@ they do to the Electron app.
 
 Each of the following differences remains between the Tauri preview and the Electron app:
 
-- **Extensions are not there yet.** The extensions settings do not work in the preview. This is in progress.
+- **Extensions run on a Node.js the app downloads.** The Electron app runs extensions on the Node.js inside Electron. The preview ships without one, so the first time you install an extension, the Extensions page offers to download Node.js v24.22.1 from nodejs.org, once, with its checksum pinned. The download is 27.5 MB on Apple silicon Macs, 29.3 MB on Intel Macs, 32.0 MB on Linux x64, 31.0 MB on Linux arm64, 37.7 MB on Windows x64 and 33.8 MB on Windows arm64. Only the `node` binary is kept in the data directory: 82 to 127 MB unpacked.
 - WKWebView lacks public permission hooks for geolocation, notifications and screen capture, so side-panel guests cannot request them on macOS.
 - No Linux arm64 preview build is published in release assets yet (Linux preview is x64 only).
 - On macOS 13 and earlier, WKWebView ignores `data_store_identifier`, so side-panel guests run incognito and do not retain cookies across restarts.

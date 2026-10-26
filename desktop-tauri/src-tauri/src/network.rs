@@ -233,7 +233,7 @@ pub(crate) mod tests {
 
     /// No keychain to store a key in, answering after `delay_ms`.
     pub struct NoKeychain {
-        delay_ms: u64,
+        pub delay_ms: u64,
     }
 
     impl Keychain for NoKeychain {

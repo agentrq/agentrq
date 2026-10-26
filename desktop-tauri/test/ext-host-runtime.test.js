@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 
-import { createExtensionHost, createProfileFetch, panelSeam, unavailable } from '../src/ext-host/runtime.js'
+import { AUTH_WINDOW_MS, createExtensionHost, createProfileFetch } from '../src/ext-host/runtime.js'
 import { SEALED_PREFIX } from '../src/ext-host/vault.js'
 import { REDIRECT_URI } from '../../desktop/src/main/extensions/supervisor-auth.js'
 
@@ -110,7 +110,8 @@ function fakeShell({ keychain = true, routes = {} } = {}) {
     server,
     handlers,
     rpc: {
-      async request(method, params) {
+      async request(method, params, options) {
+        if (method === 'authWindow') expect(options).toEqual({ timeoutMs: AUTH_WINDOW_MS })
         return handlers[method](params)
       },
       notify(method, params) {
@@ -185,17 +186,43 @@ afterEach(async () => {
 })
 
 describe('the wiring Electron did in its main process', () => {
-  it('names what is not wired yet', () => {
-    expect(unavailable('The side panel', 'WP7b')).toBe('The side panel is unavailable in this preview until WP7b.')
-  })
+  it('lets an extension and its pages talk, by the address the shell read', async () => {
+    const shell = fakeShell()
+    const h = host(shell)
+    expect((await h.call('installLocal', { path: join(EXAMPLES, 'panel-notes') })).ok).toBe(true)
+    const from = 'agentrq-ext://panel-notes/'
+    expect(await h.call('panelSend', { senderUrl: from, message: { type: 'save', text: 'a' } })).toEqual({ ok: true, reply: { saved: true } })
+    expect(await h.call('panelSend', { senderUrl: from, message: { type: 'load' } })).toEqual({ ok: true, reply: { text: 'a' } })
+    expect(await h.call('panelSend', { senderUrl: from, message: { type: 'x' } })).toEqual({
+      ok: false,
+      reason: 'panel-notes failed: Notes does not know "x".',
+    })
+    expect((await h.call('panelSend', { senderUrl: 'https://a.example/', message: {} })).reason).toBe(
+      'Only an extension’s own pages can send to it.',
+    )
+    expect((await h.call('panelSend', { message: {} })).reason).toBe('Only an extension’s own pages can send to it.')
 
-  it('gives an extension a panel that says it is not there yet', async () => {
-    const panel = panelSeam('notes')
-    const refused = { ok: false, reason: 'The side panel is unavailable in this preview until WP7b.' }
-    expect(await panel.open({ page: 'notes' })).toEqual(refused)
-    expect(panel.post({})).toEqual(refused)
-    expect(() => panel.onMessage(() => {})).not.toThrow()
-    expect(() => panel.onMessage('no')).toThrow('notes: onMessage needs a function.')
+    // Its menu entry posts the notes and opens its page: no page is open, so
+    // the post reaches none and the shell is not asked to hand it over.
+    const add = { owner: 'panel-notes', id: 'add-to-notes', surface: 'task-menu' }
+    expect((await h.call('invoke', { target: add, context: { title: 'Ship' } })).ok).toBe(true)
+    const told = () => shell.notes.filter((n) => n.method.startsWith('panel'))
+    expect(told()).toEqual([{ method: 'panelShow', params: { url: 'agentrq-ext://panel-notes/panel/index.html' } }])
+    shell.notes.length = 0
+    h.notifications.panelOpen({ owners: ['other', 'panel-notes'] })
+    await h.call('invoke', { target: add, context: { title: 'Test' } })
+    expect(told()).toEqual([
+      { method: 'panelPost', params: { owner: 'panel-notes', message: { type: 'changed', text: 'a\n- Ship\n- Test' } } },
+      { method: 'panelShow', params: { url: 'agentrq-ext://panel-notes/panel/index.html' } },
+    ])
+    shell.notes.length = 0
+    h.notifications.panelOpen({ owners: 'garbled' })
+    await h.call('invoke', { target: add, context: {} })
+    expect(told().map((n) => n.method)).toEqual(['panelShow'])
+
+    // Unloaded, its pages are no longer answered.
+    expect((await h.call('setEnabled', { name: 'panel-notes', enabled: false })).ok).toBe(true)
+    expect((await h.call('panelSend', { senderUrl: from, message: {} })).reason).toBe('panel-notes does not listen to its page.')
   })
 
   it('fetches through the shell, bodies as base64', async () => {
@@ -439,9 +466,9 @@ describe('the account-wide tools', () => {
     shell.handlers.authWindow = () => null
     expect(await host(shell).call('authorize')).toEqual({ ok: false, reason: 'The authorisation window was closed.' })
     shell.handlers.authWindow = () => {
-      throw new Error('The authorisation window is unavailable in this preview until WP9 part 2.')
+      throw new Error('Another authorisation window is open.')
     }
-    expect((await host(shell).call('authorize')).reason).toBe('The authorisation window is unavailable in this preview until WP9 part 2.')
+    expect((await host(shell).call('authorize')).reason).toBe('Another authorisation window is open.')
   })
 
   it('does not keep it where there is no keychain, or when sealing fails', async () => {

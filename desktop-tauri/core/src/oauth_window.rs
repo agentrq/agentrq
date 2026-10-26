@@ -149,6 +149,16 @@ impl Flow {
         }
     }
 
+    /// Asked before a subframe follows `url`, where a webview tells subframes
+    /// apart (WebView2): it may load what the page may, but never the
+    /// redirect, and never ends the flow, as Electron's `will-redirect` is the
+    /// top frame's only. WebKitGTK and WKWebView ask about every frame as the
+    /// page, through `navigate`, so there a framed redirect ends the flow, and
+    /// `supervisor-auth.js`'s state check is what refuses it.
+    pub fn navigate_frame(&self, url: &Url) -> bool {
+        !self.ended && !is_redirect(url, &self.redirect) && is_loadable(url)
+    }
+
     /// Ends it for `why`, unless it has already ended.
     pub fn end(&mut self, why: OAuthError) -> Option<Result<Url, OAuthError>> {
         if std::mem::replace(&mut self.ended, true) {
@@ -346,6 +356,24 @@ mod tests {
         assert_eq!(flow.end(OAuthError::Closed), None);
         assert!(!flow.navigate(&url(REDIRECT)).load);
         assert_eq!(flow.navigate(&url(REDIRECT)).ended, None);
+    }
+
+    #[test]
+    fn a_subframe_never_ends_the_flow() {
+        let mut flow = flow();
+        assert!(flow.navigate_frame(&url("https://github.com/login")));
+        assert!(flow.navigate_frame(&url("about:blank")));
+        for refused in [
+            "agentrq://extensions/authorized?code=c&state=s",
+            "agentrq://open?route=/x",
+            "data:text/html,x",
+        ] {
+            assert!(!flow.navigate_frame(&url(refused)), "{refused}");
+        }
+        // The page's own redirect still ends it.
+        let landed = url("agentrq://extensions/authorized?code=c");
+        assert_eq!(flow.navigate(&landed).ended, Some(Ok(landed)));
+        assert!(!flow.navigate_frame(&url("https://github.com/login")));
     }
 
     #[test]

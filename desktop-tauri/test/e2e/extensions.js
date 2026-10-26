@@ -6,8 +6,11 @@
 // with __EXAMPLES__ filled in: an install refused for want of Node.js, Node
 // downloaded from nodejs.org as the page's prompt does, then the five examples
 // installed, listed, configured, turned off and on, and uninstalled through
-// window.agentrq, as the Extensions page does. Each step goes to the server,
-// which is extensions-server.mjs, through the app's own proxy.
+// window.agentrq, as the Extensions page does. On the way the guardrail
+// refuses a tool call the server's stream says is waiting, and the supervisor
+// is authorised through the app's OAuth window, which catches the server's
+// redirect to agentrq://. Each step goes to the server, which is
+// extensions-server.mjs, through the app's own proxy.
 const EXAMPLES = '__EXAMPLES__'
 const NAMES = ['task-stats', 'standup', 'digest', 'guardrail', 'panel-notes']
 const GRANTS = {
@@ -31,6 +34,17 @@ async function step(name, value, expected) {
 }
 
 const ok = (answer) => answer?.ok === true
+
+/** What `read` resolves to once it is something, or null after `ms`. */
+async function eventually(read, ms = 60000) {
+  const until = Date.now() + ms
+  while (Date.now() < until) {
+    const value = await read()
+    if (value) return value
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  return null
+}
 
 async function run() {
   const ext = window.agentrq.extensions
@@ -60,6 +74,15 @@ async function run() {
   await step('drawer frame', [frame.status, frame.headers.get('content-security-policy')], ([status, csp]) =>
     status === 200 && /script-src 'nonce-/.test(csp),
   )
+  await report('guardrail ready', true)
+  const verdict = await eventually(async () => (await fetch('/api/v1/__acceptance/verdict')).json())
+  await step('guardrail denies the tool call', verdict, (v) =>
+    v?.requestId === 'r1' && v.behavior === 'deny' && v.decidedBy === 'guardrail',
+  )
+  await step('supervisor before', await ext.supervisor(), (s) => s?.authorized === false)
+  await step('authorise the supervisor', await ext.authorize(), ok)
+  await step('supervisor after', await ext.supervisor(), (s) => s?.authorized === true)
+  await step('deauthorise', await ext.deauthorize(), ok)
   for (const name of NAMES) await step(`uninstall ${name}`, await ext.uninstall(name), ok)
   await step('listed after', (await ext.state()).installed, (installed) => installed.length === 0)
   await report('done', true)

@@ -20,7 +20,8 @@ import { SEALED_PREFIX } from '../src/ext-host/vault.js'
  * needs the side panel or the event stream.
  */
 
-const ENTRY = fileURLToPath(new URL('../src/ext-host/main.js', import.meta.url))
+// The source, or what ships when `npm run test:sidecar` names the bundle.
+const ENTRY = process.env.AGENTRQ_EXT_HOST_ENTRY || fileURLToPath(new URL('../src/ext-host/main.js', import.meta.url))
 const EXAMPLES = fileURLToPath(new URL('../../examples/extensions/', import.meta.url))
 const NAMES = ['task-stats', 'standup', 'digest', 'guardrail', 'panel-notes']
 
@@ -120,8 +121,9 @@ describe('the extension host, as a process', () => {
     expect((await host.call('setEnabled', { name: 'standup', enabled: true })).ok).toBe(true)
     expect((await host.call('entries', { surface: 'page' })).map((e) => e.owner)).toContain('standup')
 
-    // The panel page is listed; opening it is the shell's, and not wired yet.
+    // The panel page is listed, and answers what its page sends.
     expect(await host.call('panelPages')).toMatchObject([{ owner: 'panel-notes', url: 'agentrq-ext://panel-notes/panel/index.html' }])
+    expect(await host.call('panelSend', { senderUrl: 'agentrq-ext://panel-notes/', message: { type: 'load' } })).toEqual({ ok: true, reply: { text: '' } })
 
     for (const name of NAMES) {
       const removed = await host.call('uninstall', { name })
