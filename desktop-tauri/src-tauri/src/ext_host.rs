@@ -1017,17 +1017,15 @@ pub(crate) mod tests {
     async fn stdin_writer_stops_on_broken_pipe() {
         let dir = tempfile::tempdir().unwrap();
         install(dir.path(), r#"{"installations":[{"name":"a"}]}"#);
-        let host = host(
-            script_launch("require('fs').closeSync(0); setInterval(() => {}, 1000)"),
-            dir.path(),
-            Arc::default(),
-        );
-        assert!(host.boot());
-        until(|| host.is_running()).await;
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        let _ = host.call("state", json!({})).await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        host.stop();
+        let host = host(script_launch("process.exit(0)"), dir.path(), Arc::default());
+        let out = {
+            let mut state = lock(&host.state);
+            host.spawn(&mut state).unwrap();
+            state.process.as_ref().unwrap().out.clone()
+        };
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let _ = out.send(vec![b'\n']);
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
     #[test]
