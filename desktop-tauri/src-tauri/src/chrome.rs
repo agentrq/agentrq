@@ -86,6 +86,15 @@ const PLATFORM: &str = "win32";
 #[cfg(not(any(target_os = "macos", windows)))]
 const PLATFORM: &str = "linux";
 
+/// The View menu's Toggle Full Screen is our own item, so AppKit would add its
+/// "Enter Full Screen" beside it; this stops it. Before the menu is built.
+#[cfg(target_os = "macos")]
+pub fn hide_system_full_screen_item() {
+    use objc2_foundation::{ns_string, NSUserDefaults};
+    NSUserDefaults::standardUserDefaults()
+        .setBool_forKey(false, ns_string!("NSFullScreenMenuItemEverywhere"));
+}
+
 /// The work areas of the attached displays, in logical pixels.
 fn work_areas<R: Runtime>(app: &AppHandle<R>) -> Vec<Rect> {
     app.available_monitors()

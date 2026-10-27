@@ -59,7 +59,7 @@ cairo-rs = { version = "0.18.5", features = ["png"] }
 objc2 = "0.6.5"
 block2 = "0.6.2"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSApplication", "NSResponder", "NSEvent", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphics"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSProcessInfo", "NSString"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSProcessInfo", "NSString", "NSUserDefaults"] }
 objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration", "WKFindConfiguration", "WKFindResult", "WKContentWorld", "WKFrameInfo"] }
 
 [target.'cfg(windows)'.dependencies]

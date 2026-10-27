@@ -652,6 +652,8 @@ fn pick_folder<R: Runtime>(window: WebviewWindow<R>) -> PickedFolder {
 }
 
 pub fn run() {
+    #[cfg(target_os = "macos")]
+    chrome::hide_system_full_screen_item();
     let app = chrome::plugins(tauri::Builder::default())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(notify::ShellOnly(tauri_plugin_notification::init()))
