@@ -671,6 +671,16 @@ mod tests {
     }
 
     #[test]
+    fn mock_app_forgets_the_last_profiles_workspaces() {
+        let (_app, handle) = test_app();
+        init(&handle).unwrap();
+        let state = handle.state::<ShellState<tauri::test::MockRuntime>>();
+        state.touch_recent_workspace(&handle, "ws5", Some("Team 5"));
+        state.forget_recent_workspaces(&handle);
+        assert!(state.recent_workspaces.lock().unwrap().list().is_empty());
+    }
+
+    #[test]
     fn mock_app_shortcut_and_badge() {
         let (_app, handle) = test_app();
         init(&handle).unwrap();

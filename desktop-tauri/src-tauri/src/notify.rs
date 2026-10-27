@@ -556,6 +556,9 @@ pub(crate) mod tests {
         notifier.on_event(&reply_event("t1", "agent", "m1"));
         notifier.clicked("/workspaces/w1/tasks/t1");
         assert_eq!(desk.calls.load(Ordering::SeqCst), 5);
+        // A profile switch: nothing unread now, so only the workspaces go.
+        notifier.forget();
+        assert_eq!(desk.calls.load(Ordering::SeqCst), 6);
     }
 
     #[tokio::test]
