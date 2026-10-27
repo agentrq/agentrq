@@ -8,8 +8,10 @@
   <!-- Laid out by its own width, not the window's: beside the desktop side
        panel the task gets a phone's width, and should look like it does on a
        phone. `@min-[40rem]:` and `@min-[48rem]:` are `sm:` and `md:` measured
-       against this element. -->
-  <div class="@container h-full flex flex-col w-full max-w-full overflow-x-hidden relative page-surface" v-if="task && workspace"
+       against this element. Clipped, not hidden: `hidden` makes it a scroll
+       container, and in WebKitGTK the timeline's ping inside one cost ~45% of
+       a core beside the panel, idle. `min-h-0` keeps a scroll container's height. -->
+  <div class="@container h-full flex flex-col w-full max-w-full min-h-0 overflow-x-hidden supports-[overflow:clip]:overflow-x-clip relative page-surface" v-if="task && workspace"
        @dragenter="onDragEnter"
        @dragover="onDragOver"
        @dragleave="onDragLeave"

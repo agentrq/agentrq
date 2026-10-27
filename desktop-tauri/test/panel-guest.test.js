@@ -415,6 +415,56 @@ describe('createTauriGuest', () => {
     expect(found.mock.calls).toEqual([[{ active: 2, total: 5 }]])
   })
 
+  it('sends nothing more once a static page has settled, whatever changes around it', async () => {
+    const { win, host, guest, invoke, calls } = rig()
+    guest.mount(host, 'https://a.example/')
+    await frame(win)
+    const sent = invoke.mock.calls.length
+    // The app's own page keeps changing beside the panel: a timer's text, a
+    // class flipped, an element that covers nothing of the host.
+    const badge = positioned(box(0, 0, 40, 40))
+    win.document.body.append(badge)
+    for (let i = 0; i < 3; i++) {
+      win.mutated([{ type: i % 2 ? 'attributes' : 'childList', target: badge, addedNodes: [] }])
+      win.resized()
+      win.listeners.get('scroll')()
+      await frame(win)
+    }
+    expect(invoke.mock.calls.length).toBe(sent)
+    expect(calls('side_panel_guest_place')).toEqual([])
+    expect(win.frames).toEqual([])
+  })
+
+  it('hears its own picture come and go without sending again', async () => {
+    const { win, host, guest, calls } = rig()
+    guest.mount(host, 'https://a.example/')
+    await frame(win)
+    const dialog = positioned(box(0, 0, 1000, 1000))
+    win.document.body.append(dialog)
+    win.mutated([{ type: 'childList', addedNodes: [dialog] }])
+    await frame(win)
+    const placed = calls('side_panel_guest_place').length
+    // What a real observer reports of the picture it put in the host.
+    for (let i = 0; i < 3; i++) {
+      win.mutated([{ type: 'childList', addedNodes: [...host.children] }])
+      await frame(win)
+    }
+    expect(calls('side_panel_guest_place').length).toBe(placed)
+
+    dialog.remove()
+    dialog.isConnected = false
+    win.mutated([])
+    await frame(win)
+    const shown = calls('side_panel_guest_place').length
+    for (let i = 0; i < 3; i++) {
+      win.mutated([{ type: 'childList', addedNodes: [] }])
+      await frame(win)
+    }
+    expect(calls('side_panel_guest_place').length).toBe(shown)
+    expect(calls('side_panel_guest_snapshot').length).toBe(1)
+    expect(win.frames).toEqual([])
+  })
+
   it('swaps the guest for its picture while something is over it, and back', async () => {
     const { win, host, guest, calls } = rig()
     guest.mount(host, 'https://a.example/')
