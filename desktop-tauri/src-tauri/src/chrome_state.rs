@@ -22,11 +22,10 @@ impl WindowStateFile for StateFile {
         std::fs::read_to_string(&self.0)
     }
 
+    /// Through a `.part` and a rename, as the config is: a crash halfway through
+    /// a save would otherwise leave a file the next launch cannot read.
     fn write_file(&self, contents: &str) -> io::Result<()> {
-        self.0
-            .parent()
-            .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|()| std::fs::write(&self.0, contents))
+        crate::vault::write_private(&self.0, contents.as_bytes())
     }
 }
 
