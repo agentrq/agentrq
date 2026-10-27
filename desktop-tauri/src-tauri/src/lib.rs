@@ -804,6 +804,10 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::{Path, PathBuf};
+    use syn::punctuated::Punctuated;
+    use syn::visit::{self, Visit};
+    use syn::{Attribute, Meta, Token};
 
     #[test]
     fn decides_whether_to_install_on_exit() {
@@ -828,64 +832,328 @@ mod tests {
     /// function; only tests listen.
     #[test]
     fn no_production_code_listens_to_events_in_rust() {
-        let sample = "fn a() {\n    app.listen(\"x\", f);\n}\n#[cfg(test)]\nmod helper;\n\
-                      #[cfg(test)]\nmod tests {\n    fn b() {\n        app.once(\"y\", f);\n    }\n}\n";
+        let sample = [
+            (
+                "src/lib.rs",
+                r#"
+                mod live;
+                #[cfg(test)]
+                mod helper;
+                #[cfg_attr(unix, path = "os/unix.rs")]
+                #[cfg_attr(windows, path = "os/windows.rs")]
+                mod os;
+                fn production(app: &App) {
+                    app.listen("x", f);
+                }
+                #[cfg(test)]
+                mod tests {
+                    fn brace() -> char { '{' }
+                    const S: &str = "{{"; // {
+                    fn heard(app: &App) { app.listen("t", f); }
+                }
+                fn after_the_brace(app: &App) {
+                    Listener::listen(&app, "y", f);
+                    <App as Listener>::once(&app, "y", f);
+                    std::iter::once(1);
+                    println!("{:?}", app.listen_any("z", f));
+                }
+                #[cfg(all(test, unix))]
+                fn test_only(app: &App) { app.listen("t", f); }
+                #[cfg(not(test))]
+                fn not_test(app: &App) { app.once_any("n", f); }
+                #[cfg(any(test, feature = "x"))]
+                fn maybe(app: &App) { app.listen("m", f); }
+                "#,
+            ),
+            (
+                "src/helper.rs",
+                r#"fn h(app: &App) { app.listen("h", f); }"#,
+            ),
+            ("src/live.rs", "mod tests;"),
+            (
+                "src/live/tests.rs",
+                "fn t(app: &App) { app.deep_link().on_open_url(f); }",
+            ),
+            (
+                "src/os/unix.rs",
+                r#"fn u(app: &App) { app.listen("u", f); }"#,
+            ),
+            ("src/os/windows.rs", ""),
+        ];
+        let read = |path: &Path| {
+            let path = path.to_string_lossy().replace('\\', "/");
+            let file = sample.iter().find(|(name, _)| *name == path);
+            file.map(|(_, text)| text.to_string())
+        };
+        let mut found = listeners(Path::new("src"), &["lib.rs"], &read);
+        found.sort();
         assert_eq!(
-            listeners(sample),
-            (vec!["2: app.listen(\"x\", f);".to_string()], vec!["helper"])
+            found,
+            [
+                "lib::after_the_brace: .listen_any(..)",
+                "lib::after_the_brace: Listener::listen",
+                "lib::after_the_brace: Listener::once",
+                "lib::live::tests::t: .on_open_url(..)",
+                "lib::maybe: .listen(..)",
+                "lib::not_test: .once_any(..)",
+                "lib::os::u: .listen(..)",
+                "lib::production: .listen(..)",
+            ]
         );
 
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut files = vec![src];
-        let mut test_only = Vec::new();
-        let mut found = Vec::new();
-        while let Some(path) = files.pop() {
-            if path.is_dir() {
-                files.extend(std::fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));
-                continue;
-            }
-            let text = std::fs::read_to_string(&path).unwrap();
-            let (lines, modules) = listeners(&text);
-            found.extend(lines.into_iter().map(|l| (path.clone(), l)));
-            test_only.extend(modules.iter().map(|m| format!("{m}.rs")));
-        }
-        found.retain(|(path, _)| !test_only.iter().any(|m| path.ends_with(m)));
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let read = |path: &Path| std::fs::read_to_string(path).ok();
+        let found = listeners(&src, &["lib.rs", "main.rs"], &read);
         assert!(found.is_empty(), "{found:#?}");
     }
 
-    /// The lines outside `#[cfg(test)]` items that register a Rust listener,
-    /// and the modules declared test-only.
-    fn listeners(text: &str) -> (Vec<String>, Vec<&str>) {
-        const CALLS: [&str; 5] = [
-            ".listen(",
-            ".listen_any(",
-            ".once(",
-            ".once_any(",
-            "on_open_url(",
-        ];
-        let (mut found, mut modules) = (Vec::new(), Vec::new());
-        let (mut in_test, mut depth, mut opened) = (false, 0i32, false);
-        for (n, line) in text.lines().enumerate() {
-            let code = line.trim();
-            if code == "#[cfg(test)]" {
-                (in_test, depth, opened) = (true, 0, false);
-                continue;
-            }
-            if !in_test {
-                if CALLS.iter().any(|call| code.contains(call)) {
-                    found.push(format!("{}: {code}", n + 1));
-                }
-                continue;
-            }
-            if !opened && code.ends_with(';') {
-                modules.extend(code.strip_prefix("mod ").and_then(|m| m.strip_suffix(';')));
-                in_test = false;
-                continue;
-            }
-            depth += code.matches('{').count() as i32 - code.matches('}').count() as i32;
-            opened |= code.contains('{');
-            in_test = !opened || depth > 0;
+    /// The calls that register a Rust listener.
+    const LISTENERS: [&str; 5] = ["listen", "listen_any", "once", "once_any", "on_open_url"];
+
+    /// The listeners registered outside test-only code, in `roots` and the
+    /// modules they declare, as `module::fn: call`.
+    fn listeners(
+        src: &Path,
+        roots: &[&str],
+        read: &dyn Fn(&Path) -> Option<String>,
+    ) -> Vec<String> {
+        let mut files: Vec<_> = roots
+            .iter()
+            .map(|root| {
+                let module = root.trim_end_matches(".rs").to_string();
+                (vec![src.join(root)], src.to_path_buf(), module)
+            })
+            .collect();
+        let mut found = Vec::new();
+        while let Some((candidates, dir, module)) = files.pop() {
+            let (file, text) = candidates
+                .iter()
+                .find_map(|file| Some((file, read(file)?)))
+                .unwrap_or_else(|| panic!("no file for {module}: {candidates:?}"));
+            let ast = syn::parse_file(&text).unwrap_or_else(|e| panic!("{file:?}: {e}"));
+            let here = file.parent().unwrap().to_path_buf();
+            let mut walk = Walk {
+                here,
+                dir,
+                module,
+                func: String::new(),
+                found: Vec::new(),
+                files: Vec::new(),
+            };
+            walk.visit_file(&ast);
+            found.append(&mut walk.found);
+            files.append(&mut walk.files);
         }
-        (found, modules)
+        found
+    }
+
+    /// One file's walk: what it registers, and the module files it declares,
+    /// each as the files it may be, where its own modules go, and its path.
+    struct Walk {
+        here: PathBuf,
+        dir: PathBuf,
+        module: String,
+        func: String,
+        found: Vec<String>,
+        files: Vec<(Vec<PathBuf>, PathBuf, String)>,
+    }
+
+    impl Walk {
+        fn report(&mut self, call: String) {
+            let at = [self.module.as_str(), self.func.as_str()].join("::");
+            self.found
+                .push(format!("{}: {call}", at.trim_end_matches("::")));
+        }
+
+        fn in_fn(&mut self, name: &syn::Ident, visit: impl FnOnce(&mut Self)) {
+            let outer = std::mem::replace(&mut self.func, name.to_string());
+            visit(self);
+            self.func = outer;
+        }
+    }
+
+    impl<'ast> Visit<'ast> for Walk {
+        fn visit_item(&mut self, i: &'ast syn::Item) {
+            let attrs = match i {
+                syn::Item::Const(i) => &i.attrs,
+                syn::Item::Fn(i) => &i.attrs,
+                syn::Item::Impl(i) => &i.attrs,
+                syn::Item::Macro(i) => &i.attrs,
+                syn::Item::Mod(i) => &i.attrs,
+                syn::Item::Static(i) => &i.attrs,
+                syn::Item::Trait(i) => &i.attrs,
+                _ => return,
+            };
+            if !test_only(attrs) {
+                visit::visit_item(self, i);
+            }
+        }
+
+        fn visit_impl_item(&mut self, i: &'ast syn::ImplItem) {
+            let attrs = match i {
+                syn::ImplItem::Const(i) => &i.attrs,
+                syn::ImplItem::Fn(i) => &i.attrs,
+                syn::ImplItem::Macro(i) => &i.attrs,
+                _ => return,
+            };
+            if !test_only(attrs) {
+                visit::visit_impl_item(self, i);
+            }
+        }
+
+        fn visit_trait_item(&mut self, i: &'ast syn::TraitItem) {
+            let attrs = match i {
+                syn::TraitItem::Const(i) => &i.attrs,
+                syn::TraitItem::Fn(i) => &i.attrs,
+                syn::TraitItem::Macro(i) => &i.attrs,
+                _ => return,
+            };
+            if !test_only(attrs) {
+                visit::visit_trait_item(self, i);
+            }
+        }
+
+        fn visit_stmt(&mut self, i: &'ast syn::Stmt) {
+            let attrs: &[Attribute] = match i {
+                syn::Stmt::Local(i) => &i.attrs,
+                syn::Stmt::Macro(i) => &i.attrs,
+                _ => &[],
+            };
+            if !test_only(attrs) {
+                visit::visit_stmt(self, i);
+            }
+        }
+
+        fn visit_item_fn(&mut self, i: &'ast syn::ItemFn) {
+            self.in_fn(&i.sig.ident, |walk| visit::visit_item_fn(walk, i));
+        }
+
+        fn visit_impl_item_fn(&mut self, i: &'ast syn::ImplItemFn) {
+            self.in_fn(&i.sig.ident, |walk| visit::visit_impl_item_fn(walk, i));
+        }
+
+        fn visit_trait_item_fn(&mut self, i: &'ast syn::TraitItemFn) {
+            self.in_fn(&i.sig.ident, |walk| visit::visit_trait_item_fn(walk, i));
+        }
+
+        fn visit_item_mod(&mut self, i: &'ast syn::ItemMod) {
+            let name = i.ident.to_string();
+            let module = format!("{}::{name}", self.module);
+            if i.content.is_some() {
+                let outer = (
+                    self.dir.clone(),
+                    std::mem::replace(&mut self.module, module),
+                );
+                self.dir.push(&name);
+                visit::visit_item_mod(self, i);
+                (self.dir, self.module) = outer;
+                return;
+            }
+            let paths = mod_paths(&i.attrs);
+            for path in &paths {
+                let file = self.here.join(path);
+                let dir = file.parent().unwrap().to_path_buf();
+                self.files.push((vec![file], dir, module.clone()));
+            }
+            if paths.is_empty() {
+                let dir = self.dir.join(&name);
+                let candidates = vec![self.dir.join(format!("{name}.rs")), dir.join("mod.rs")];
+                self.files.push((candidates, dir, module));
+            }
+        }
+
+        fn visit_expr_method_call(&mut self, i: &'ast syn::ExprMethodCall) {
+            if LISTENERS.contains(&i.method.to_string().as_str()) {
+                self.report(format!(".{}(..)", i.method));
+            }
+            visit::visit_expr_method_call(self, i);
+        }
+
+        /// The method named by its type or trait: `Listener::listen(&app, ..)`.
+        fn visit_expr_path(&mut self, i: &'ast syn::ExprPath) {
+            let names: Vec<String> = i
+                .path
+                .segments
+                .iter()
+                .map(|s| s.ident.to_string())
+                .collect();
+            if let [.., owner, method] = names.as_slice() {
+                if LISTENERS.contains(&method.as_str()) && owner.starts_with(char::is_uppercase) {
+                    self.report(names.join("::"));
+                }
+            }
+            visit::visit_expr_path(self, i);
+        }
+
+        /// A macro's arguments, where they are expressions: `format!(..)`.
+        fn visit_macro(&mut self, i: &'ast syn::Macro) {
+            if let Ok(args) =
+                i.parse_body_with(Punctuated::<syn::Expr, Token![,]>::parse_terminated)
+            {
+                args.iter().for_each(|arg| self.visit_expr(arg));
+            }
+            visit::visit_macro(self, i);
+        }
+    }
+
+    /// Whether a `cfg` among `attrs` is false in every build without `test`.
+    fn test_only(attrs: &[Attribute]) -> bool {
+        attrs.iter().any(|attr| {
+            attr.path().is_ident("cfg")
+                && attr
+                    .parse_args::<Meta>()
+                    .is_ok_and(|cfg| without_test(&cfg) == Some(false))
+        })
+    }
+
+    /// A cfg predicate's value in a build without `test`, or `None` when
+    /// something else decides it.
+    fn without_test(cfg: &Meta) -> Option<bool> {
+        let args = || match cfg {
+            Meta::List(list) => list
+                .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+                .map_or(vec![None], |args| args.iter().map(without_test).collect()),
+            _ => vec![None],
+        };
+        match cfg.path().get_ident()?.to_string().as_str() {
+            "test" => Some(false),
+            "not" => args().first().copied().flatten().map(|value| !value),
+            op @ ("all" | "any") => {
+                let decides = op == "any";
+                let args = args();
+                if args.contains(&Some(decides)) {
+                    Some(decides)
+                } else if args.iter().all(|arg| *arg == Some(!decides)) {
+                    Some(!decides)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// A `mod`'s `#[path]`, or every `#[cfg_attr(.., path = ..)]` it may take.
+    fn mod_paths(attrs: &[Attribute]) -> Vec<String> {
+        let metas = attrs.iter().flat_map(|attr| {
+            if attr.path().is_ident("cfg_attr") {
+                let args = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated);
+                args.map_or(Vec::new(), |args| args.into_iter().skip(1).collect())
+            } else {
+                vec![attr.meta.clone()]
+            }
+        });
+        metas
+            .filter_map(|meta| match meta {
+                Meta::NameValue(pair) if pair.path.is_ident("path") => match pair.value {
+                    syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(path),
+                        ..
+                    }) => Some(path.value()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect()
     }
 }

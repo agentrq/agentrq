@@ -378,7 +378,7 @@ pub async fn side_panel_permission_remove<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::side_panel::tests::wait_for;
+    use crate::side_panel::tests::{wait_for, Heard};
     use agentrq_desktop_core::side_panel::permissions::PermissionDetails;
     use agentrq_desktop_core::side_panel::platform_permissions::{webkit_ask, webview2_ask};
     use serde_json::{json, Value};
@@ -387,7 +387,7 @@ mod tests {
         get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime, INVOKE_KEY,
     };
     use tauri::webview::InvokeRequest;
-    use tauri::{Listener, WebviewWindow, WebviewWindowBuilder};
+    use tauri::{WebviewWindow, WebviewWindowBuilder};
 
     #[cfg(windows)]
     const LOCAL: &str = "http://tauri.localhost";
@@ -396,13 +396,14 @@ mod tests {
 
     const PAGE: &str = "https://webcamtests.example/check";
     const SITE: &str = "https://webcamtests.example";
-    /// Emitted only to deliver what Tauri queued; see [`Rig::told`].
-    const FLUSH: &str = "agentrq:test:flush";
+    const ASKED: &str = "agentrq:side-panel:permission-request";
+    const SETTLED: &str = "agentrq:side-panel:permission-settled";
 
     struct Rig {
         app: tauri::App<MockRuntime>,
         main: WebviewWindow<MockRuntime>,
-        heard: Arc<Mutex<Vec<(String, Value)>>>,
+        asked: Heard,
+        settled: Heard,
         profiles: crate::profiles::tests::Rig,
     }
 
@@ -410,17 +411,19 @@ mod tests {
         fn handle(&self) -> &AppHandle<MockRuntime> {
             self.app.handle()
         }
-        /// What the window was told so far. Tauri queues an emit that finds
-        /// its Rust listeners busy with another thread's emit, and only the
-        /// next emit that runs a listener delivers it: two guests asking at
-        /// once could leave a question in that queue for good. So this emits
-        /// first, every time (the window's own listeners are not queued).
-        fn told(&self) -> MutexGuard<'_, Vec<(String, Value)>> {
-            self.app.emit(FLUSH, ()).unwrap();
-            lock(&self.heard)
+        /// What the window was told so far.
+        fn told(&self) -> Vec<(String, Value)> {
+            self.named(Heard::all)
         }
+        /// What the window was told since the last `heard`.
         fn heard(&self) -> Vec<(String, Value)> {
-            std::mem::take(&mut *self.told())
+            self.named(Heard::take)
+        }
+        fn named(&self, read: fn(&Heard) -> Vec<Value>) -> Vec<(String, Value)> {
+            [(ASKED, &self.asked), (SETTLED, &self.settled)]
+                .into_iter()
+                .flat_map(|(event, heard)| read(heard).into_iter().map(|p| (event.to_string(), p)))
+                .collect()
         }
         /// A guest's request, and where its answer went.
         fn request(&self, label: &str, native: NativeAsk) -> Arc<Mutex<Option<bool>>> {
@@ -453,18 +456,8 @@ mod tests {
             .manage(PanelPermissions::default())
             .build(mock_context(noop_assets()))
             .expect("mock app");
-        let heard = Arc::new(Mutex::new(Vec::new()));
-        for event in [
-            "agentrq:side-panel:permission-request",
-            "agentrq:side-panel:permission-settled",
-        ] {
-            let heard = Arc::clone(&heard);
-            app.listen_any(event, move |e| {
-                let payload = serde_json::from_str(e.payload()).unwrap();
-                lock(&heard).push((event.to_string(), payload));
-            });
-        }
-        app.listen_any(FLUSH, |_| {});
+        let asked = Heard::new(app.handle(), ASKED);
+        let settled = Heard::new(app.handle(), SETTLED);
         let main = WebviewWindowBuilder::new(&app, MAIN, Default::default())
             .build()
             .expect("mock window");
@@ -475,7 +468,8 @@ mod tests {
         Rig {
             app,
             main,
-            heard,
+            asked,
+            settled,
             profiles,
         }
     }
@@ -532,7 +526,7 @@ mod tests {
         assert_eq!(
             rig.heard(),
             [(
-                "agentrq:side-panel:permission-request".to_string(),
+                ASKED.to_string(),
                 json!({"id": 1, "guestId": 1, "origin": SITE, "permissions": ["camera"]})
             )]
         );
@@ -545,13 +539,7 @@ mod tests {
         };
         assert_eq!(answer("allow"), Ok(json!(true)));
         assert_eq!(*lock(&answered), Some(true));
-        assert_eq!(
-            rig.heard(),
-            [(
-                "agentrq:side-panel:permission-settled".to_string(),
-                json!(1)
-            )]
-        );
+        assert_eq!(rig.heard(), [(SETTLED.to_string(), json!(1))]);
         assert_eq!(answer("allow"), Ok(json!(false)), "already settled");
         let saved = std::fs::read_to_string(rig.store_file("work")).unwrap();
         assert!(saved.contains("\"camera\": \"allow\""), "{saved}");
@@ -704,13 +692,7 @@ mod tests {
         assert_eq!(*lock(&answered), None, "another page's");
         cancel(rig.handle(), 1);
         assert_eq!(*lock(&answered), Some(false));
-        assert_eq!(
-            rig.heard(),
-            [(
-                "agentrq:side-panel:permission-settled".to_string(),
-                json!(1)
-            )]
-        );
+        assert_eq!(rig.heard(), [(SETTLED.to_string(), json!(1))]);
     }
 
     #[test]
@@ -737,7 +719,7 @@ mod tests {
         assert_eq!(
             rig.heard(),
             [(
-                "agentrq:side-panel:permission-request".to_string(),
+                ASKED.to_string(),
                 json!({"id": 1, "guestId": 1, "origin": SITE, "permissions": ["camera", "microphone"]})
             )]
         );

@@ -653,6 +653,25 @@ mod tests {
         rig.wait_done();
     }
 
+    /// The run that `end` wakes may destroy the window before `end` returns:
+    /// the close is still held, since `destroying` was read first. Holding
+    /// `done` keeps `end` from returning until the run has flipped it.
+    #[test]
+    fn a_close_is_held_though_the_run_destroys_the_window_meanwhile() {
+        let run = Run::new(PAGE, REDIRECT, DEADLINE).unwrap();
+        let pending = run.pending.clone();
+        let sending = lock(&pending.done);
+        let close = std::thread::spawn({
+            let pending = pending.clone();
+            move || pending.close_requested()
+        });
+        wait_for("the flow ended", &|| !pending.navigate_frame(PAGE));
+        pending.destroying.store(true, Ordering::SeqCst);
+        drop(sending);
+        assert!(close.join().unwrap(), "held for the take-back");
+        assert_eq!(block_on(run.ended).unwrap(), Err(OAuthError::Closed));
+    }
+
     #[test]
     fn gives_up_at_the_deadline() {
         let rig = rig();

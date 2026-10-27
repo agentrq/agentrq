@@ -70,6 +70,7 @@ windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse
 [dev-dependencies]
 tauri = { version = "2.12.5", features = ["test"] }
 lzma-rust2 = { version = "0.24.0", default-features = false, features = ["std", "encoder", "xz"] }
+syn = { version = "3.0.9", features = ["full", "visit"] }
 tar = { version = "0.4.46", default-features = false }
 tempfile = "3.27.0"
 tokio = { version = "1.54.1", features = ["time", "sync", "macros", "rt", "net", "io-util", "test-util"] }

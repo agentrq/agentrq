@@ -362,9 +362,11 @@ pub(crate) fn handle_shortcut_event<R: Runtime>(app: &AppHandle<R>, state: Short
     }
 }
 
-/// A link macOS asks the app to open, at a cold start too: setup has run by
-/// the first `Opened`. Never through the plugin's `on_open_url`, a Rust
-/// listener: Tauri queues an emit that meets another thread's.
+/// A link macOS asks the app to open. At a cold start AppKit may send it
+/// before setup: then there is no state yet and this drops it, and `init`
+/// routes it from the plugin's `get_current`. Never through the plugin's
+/// `on_open_url`, a Rust listener: Tauri queues an emit that meets another
+/// thread's.
 #[cfg(target_os = "macos")]
 pub(crate) fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &tauri::RunEvent) {
     let state = app.try_state::<ShellState<R>>();
@@ -411,7 +413,9 @@ pub fn navigation_ready<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Initialize shell services: state management and startup deep link.
+/// Initialize shell services: state management and startup deep link. The
+/// plugin's `get_current` is the only route for a macOS link sent before
+/// setup (see `on_run_event`).
 pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     app.manage(ShellState::<R>::default());
 
@@ -428,6 +432,7 @@ mod tests {
     use super::*;
     use crate::events::Events;
     use crate::notify::tests::{reply_event, FakeDesk};
+    use crate::side_panel::tests::Heard;
     use std::sync::Arc;
     use tauri::Listener;
 
@@ -442,6 +447,10 @@ mod tests {
     ) {
         let mut ctx = tauri::test::mock_context(tauri::test::noop_assets());
         ctx.config_mut().identifier = "com.agentrq.desktop.tauri".to_string();
+        ctx.config_mut().plugins.0.insert(
+            "deep-link".into(),
+            serde_json::json!({"desktop": {"schemes": [DEEP_LINK_SCHEME_TAURI]}}),
+        );
         let app = crate::chrome::plugins(tauri::test::mock_builder())
             .invoke_handler(crate::commands::handler())
             .build(ctx)
@@ -565,6 +574,45 @@ mod tests {
         delivered.lock().unwrap().clear();
         on_run_event(&handle, &opened("agentrq-tauri://workspaces/warm"));
         assert_eq!(*delivered.lock().unwrap(), vec!["\"/workspaces/warm\""]);
+    }
+
+    /// A link the plugin holds when setup runs is the cold start's, and
+    /// `init` routes it. Only macOS fills it from a run event, which a mock
+    /// cannot send, so here the plugin reads it from argv.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn init_routes_the_link_the_plugin_holds() {
+        let (_app, handle) = test_app();
+        let navigate = Heard::new(&handle, "agentrq:navigate");
+        handle
+            .deep_link()
+            .handle_cli_arguments(["app", "agentrq-tauri://workspaces/early"].into_iter());
+        init(&handle).unwrap();
+        on_page_load(&handle, &PageLoadEvent::Finished);
+        navigation_ready(&handle);
+        assert_eq!(navigate.all(), [serde_json::json!("/workspaces/early")]);
+    }
+
+    /// AppKit may send a cold start's link before setup, which then is left
+    /// to `init` (see `init_routes_the_link_the_plugin_holds`).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_link_before_setup_is_left_to_init() {
+        let (_app, handle) = test_app();
+        let navigate = Heard::new(&handle, "agentrq:navigate");
+        on_run_event(
+            &handle,
+            &tauri::RunEvent::Opened {
+                urls: vec![Url::parse("agentrq-tauri://workspaces/early").unwrap()],
+            },
+        );
+        assert!(handle
+            .try_state::<ShellState<tauri::test::MockRuntime>>()
+            .is_none());
+        init(&handle).unwrap();
+        on_page_load(&handle, &PageLoadEvent::Finished);
+        navigation_ready(&handle);
+        assert!(navigate.all().is_empty());
     }
 
     #[test]

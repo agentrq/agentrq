@@ -41,8 +41,8 @@
   and only the next emit that runs a Rust listener delivers it; JS listeners never
   miss one. So production code never listens in Rust (`listen`, `once`, the
   deep-link plugin's `on_open_url`): it handles the run event or calls the function,
-  and a `lib.rs` test checks. A test rig emits a no-op event before each read
-  (`side_panel::tests::Heard`, `panel_permissions`' `Rig::told`).
+  and a `lib.rs` test checks. Tests read events through `side_panel::tests::Heard`,
+  which emits a no-op event before each read.
 
 ## The bridge and its commands
 
