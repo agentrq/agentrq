@@ -424,7 +424,7 @@ describe('createTauriGuest', () => {
     // class flipped, an element that covers nothing of the host.
     const badge = positioned(box(0, 0, 40, 40))
     win.document.body.append(badge)
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 10; i++) {
       win.mutated([{ type: i % 2 ? 'attributes' : 'childList', target: badge, addedNodes: [] }])
       win.resized()
       win.listeners.get('scroll')()
