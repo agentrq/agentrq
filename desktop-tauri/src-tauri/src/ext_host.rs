@@ -1473,12 +1473,13 @@ pub(crate) mod tests {
         assert!(host.boot());
         // The third failure gives up under the same lock that counts it.
         until(|| lock(&host.state).startup_failures >= 3).await;
-        let state = lock(&host.state);
-        assert_eq!(state.startup_failures, 3);
-        assert!(state.process.is_none());
-        assert!(!state.restarting);
-        let generation = state.generation;
-        drop(state);
+        let generation = {
+            let state = lock(&host.state);
+            assert_eq!(state.startup_failures, 3);
+            assert!(state.process.is_none());
+            assert!(!state.restarting);
+            state.generation
+        };
         // A render's call is answered here, not by starting it a fourth time.
         assert_eq!(host.call("entries", json!({})).await, Ok(json!([])));
         assert_eq!(lock(&host.state).generation, generation);
