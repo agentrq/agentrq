@@ -7,8 +7,8 @@
  * for the Tauri guest, which may call no command (Tauri's IPC object is there,
  * as in every webview, and refuses it).
  *
- * Run before the page's own scripts, in the top frame only (wry runs it in
- * subframes too on Windows, hence the check). A web page gets only the two
+ * Run before the page's own scripts, in every frame. A frame gets only the
+ * notification answer below; the rest is the top frame's. A web page gets only the two
  * functions the shell calls, as fixed no-ops it cannot replace, so that what
  * the shell hands an Extension's page can never reach a site the guest moved
  * to in the meantime. An Extension's own page (`agentrq-ext:`) gets `window.agentrq.panel`, whose
@@ -25,12 +25,12 @@
  * `__WEBVIEW2__` is filled in by the shell: on Windows an Extension's page is
  * served as `http://agentrq-ext.<name>/`. So is `__NO_NOTIFICATIONS__`: on
  * macOS WKWebView can never show a site's notification, nor ask the person,
- * so a site is told it is denied rather than left at a "default" that no
- * answer ever follows.
+ * so a site, and each of its frames, is told it is denied (by the
+ * Permissions API too) rather than left at a "default" that no answer ever
+ * follows.
  */
 ;(() => {
   const webview2 = __WEBVIEW2__
-  if (window.top !== window) return
   const Notify = window.Notification
   if (__NO_NOTIFICATIONS__ && typeof Notify === 'function') {
     Object.defineProperty(Notify, 'permission', { get: () => 'denied', enumerable: true, configurable: false })
@@ -43,6 +43,24 @@
       configurable: false,
     })
   }
+  const permissions = window.navigator?.permissions
+  if (__NO_NOTIFICATIONS__ && typeof permissions?.query === 'function') {
+    const query = permissions.query.bind(permissions)
+    const denied = Object.freeze({
+      name: 'notifications',
+      state: 'denied',
+      onchange: null,
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent: () => false,
+    })
+    Object.defineProperty(permissions, 'query', {
+      value: (descriptor) => (descriptor?.name === 'notifications' ? Promise.resolve(denied) : query(descriptor)),
+      writable: false,
+      configurable: false,
+    })
+  }
+  if (window.top !== window) return
   if (webview2 && window.chrome?.webview) {
     const say = window.chrome.webview.postMessage.bind(window.chrome.webview)
     const later = window.setTimeout.bind(window)

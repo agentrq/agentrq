@@ -13,4 +13,5 @@ pub mod guest;
 pub mod permission_store;
 pub mod permissions;
 pub mod platform_permissions;
+pub mod site_notifications;
 pub mod wire;

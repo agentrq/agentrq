@@ -44,6 +44,11 @@ pub const SITE_KEY: &str = "site";
 /// replaces `window.Notification` with one that calls commands no capability
 /// grants: a site could then never ask to notify. Its commands go with it,
 /// since nothing may call them.
+///
+/// Only `name` and `initialize` are passed on. The plugin's other hooks drop
+/// the page listeners its commands kept, and there are none; a hook a newer
+/// plugin or `Plugin` trait adds must be passed on here if the shell needs
+/// it (`shell_only_was_checked_against_these_versions`).
 pub struct ShellOnly<P>(pub P);
 
 impl<R: Runtime, P: Plugin<R>> Plugin<R> for ShellOnly<P> {
@@ -613,6 +618,22 @@ pub(crate) mod tests {
         // Set up, which is all the shell's notifications need: this panics
         // when the plugin's state was never managed.
         app.notification();
+    }
+
+    /// A bump of either fails here until somebody has read the plugin's
+    /// hooks and the `Plugin` trait for what [`ShellOnly`] must pass on.
+    #[test]
+    fn shell_only_was_checked_against_these_versions() {
+        // CRLF in a Windows checkout.
+        let lock = include_str!("../Cargo.lock").replace("\r\n", "\n");
+        let locked = |name: &str| {
+            let entry = format!("[[package]]\nname = \"{name}\"\nversion = \"");
+            let at = lock.find(&entry).map(|at| at + entry.len());
+            at.and_then(|at| lock[at..].split('"').next())
+        };
+        assert_eq!(locked("tauri").map(|v| &v[..5]), Some("2.12."));
+        let plugin = locked("tauri-plugin-notification");
+        assert_eq!(plugin.map(|v| &v[..4]), Some("2.7."));
     }
 
     #[tokio::test]

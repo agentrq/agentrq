@@ -14,7 +14,7 @@ const POSTS = JSON.parse(readFileSync(new URL('./fixtures/message-scripts.json',
  * Run the init script in a page at `href`, as a frame of `top` or the top,
  * and hand an Extension's page `token` as the shell does once it loads.
  */
-function run(href, { webview2 = false, noNotifications = false, Notification, frame = false, answer, token = 'tk', chrome, setTimeout = (fn) => fn() } = {}) {
+function run(href, { webview2 = false, noNotifications = false, Notification, navigator, frame = false, answer, token = 'tk', chrome, setTimeout = (fn) => fn() } = {}) {
   const url = new URL(href)
   const listeners = []
   const window = {
@@ -25,6 +25,7 @@ function run(href, { webview2 = false, noNotifications = false, Notification, fr
     chrome,
     listeners,
     Notification,
+    navigator,
   }
   window.top = frame ? {} : window
   const script = SOURCE.replaceAll('__WEBVIEW2__', String(webview2)).replaceAll('__NO_NOTIFICATIONS__', String(noNotifications))
@@ -66,10 +67,36 @@ describe('the side panel guest init script', () => {
       mac.Notification.requestPermission = async () => 'granted'
     }).toThrow()
 
+    // So does a frame's, and the Permissions API.
+    const frame = run('https://chat.example/', { noNotifications: true, frame: true, Notification: native() })
+    expect(frame.Notification.permission).toBe('denied')
+    await expect(frame.Notification.requestPermission()).resolves.toBe('denied')
+    const query = vi.fn(async (descriptor) => ({ name: descriptor.name, state: 'prompt' }))
+    const permissions = { query }
+    const asked = run('https://chat.example/', { noNotifications: true, frame: true, navigator: { permissions } })
+    const status = await asked.navigator.permissions.query({ name: 'notifications' })
+    expect(status).toMatchObject({ name: 'notifications', state: 'denied', onchange: null })
+    status.addEventListener('change', () => {})
+    status.removeEventListener('change', () => {})
+    expect(status.dispatchEvent(new Event('change'))).toBe(false)
+    expect(Object.isFrozen(status)).toBe(true)
+    expect(query).not.toHaveBeenCalled()
+    await expect(permissions.query({ name: 'camera' })).resolves.toEqual({ name: 'camera', state: 'prompt' })
+    expect(query).toHaveBeenCalledWith({ name: 'camera' })
+    expect(() => {
+      'use strict'
+      permissions.query = async () => ({ state: 'granted' })
+    }).toThrow()
+    // A webview with no Permissions API keeps having none.
+    expect(run('https://chat.example/', { noNotifications: true, navigator: {} }).navigator.permissions).toBeUndefined()
+
     // Elsewhere the webview answers, through the window's bar.
     const linux = run('https://chat.example/', { Notification: native() })
     expect(linux.Notification.permission).toBe('default')
     await expect(linux.Notification.requestPermission()).resolves.toBe('default')
+    const elsewhere = { query }
+    run('https://chat.example/', { navigator: { permissions: elsewhere } })
+    expect(elsewhere.query).toBe(query)
     // And a webview with no notifications at all keeps having none.
     expect(run('https://chat.example/', { noNotifications: true }).Notification).toBeUndefined()
   })

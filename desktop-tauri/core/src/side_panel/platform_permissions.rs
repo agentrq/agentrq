@@ -121,6 +121,14 @@ pub fn webview2_ask(kind: i32, url: &str) -> NativeAsk {
     NativeAsk::Request(ask(name, url))
 }
 
+/// Whether the app's own window refuses a WebView2 `PermissionRequested` of
+/// `kind` without asking: notifications. The window never notifies through
+/// its webview, and WebView2 would otherwise prompt for them itself (the
+/// Workspace settings' Enable Push).
+pub fn main_refuses_webview2(kind: i32) -> bool {
+    kind == 4
+}
+
 /// A WKWebView media capture request, by its `WKMediaCaptureType`; `url` is
 /// the asking frame's origin ([`security_origin_url`]).
 pub fn wk_media_ask(capture_type: isize, url: &str) -> NativeAsk {
@@ -178,9 +186,9 @@ impl CommittedPages {
 
 /// The sites a WebKitGTK guest's new web process is told may, or may never,
 /// show notifications, before any page asks
-/// (`webkit_web_context_initialize_notification_permissions`): a site that
-/// checks `Notification.permission` without asking sees its answer. A site in
-/// neither asks.
+/// (`webkit_web_context_initialize_notification_permissions`): an allowed
+/// site reads "granted" without asking. WebKitGTK 2.52 still reads a blocked
+/// one as "default", and when it asks the stored Block answers with no bar.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NotificationSeeds {
     pub allowed: Vec<String>,
@@ -203,8 +211,9 @@ impl NotificationSeeds {
         seeds
     }
 
-    /// Whether the page at `url` may show a notification now: a page told
-    /// "granted" keeps showing them after its site's Allow is removed.
+    /// Whether the page at `url` may show a notification now. Asked at each
+    /// one: WebKit keeps telling a page "granted" after its site's Allow is
+    /// removed, until its web process is replaced.
     pub fn allows(&self, url: &str) -> bool {
         let origin = origin_of(url);
         self.allowed.contains(&origin)
@@ -333,6 +342,13 @@ mod tests {
             webview2_ask(2, URL),
             NativeAsk::MediaPart(media(&["video"], URL))
         );
+    }
+
+    #[test]
+    fn the_apps_window_refuses_notifications_alone() {
+        let refused: Vec<i32> = (-1..=13).filter(|&k| main_refuses_webview2(k)).collect();
+        assert_eq!(refused, [4]);
+        assert_eq!(keys(webview2_ask(4, URL)), ["notifications"]);
     }
 
     #[test]

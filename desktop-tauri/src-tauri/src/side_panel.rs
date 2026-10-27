@@ -472,10 +472,12 @@ pub fn seed_notifications<R: Runtime>(app: &AppHandle<R>, profile: &str, seeds: 
 }
 
 /// A site's notification was clicked: the window comes forward, and the page
-/// that showed it hears the click, as a browser's would.
-pub fn site_notification_clicked<R: Runtime>(app: &AppHandle<R>, label: &str, id: u64) {
-    crate::shell::focus_main_window(app);
+/// that showed it hears the click, as a browser's would. Whether there was
+/// a window to bring forward.
+pub fn site_notification_clicked<R: Runtime>(app: &AppHandle<R>, label: &str, id: u64) -> bool {
+    let window = crate::shell::focus_main_window(app);
     platform::notification_clicked(app, label, id);
+    window.is_some()
 }
 
 /// One guest, as its handlers know it.
@@ -557,7 +559,11 @@ pub async fn side_panel_guest_open<R: Runtime>(
         number,
     };
     let builder = WebviewBuilder::new(&label, start)
-        .initialization_script(guest_init_script(PANEL_JS, WEBVIEW2, NO_NOTIFICATIONS))
+        .initialization_script_for_all_frames(guest_init_script(
+            PANEL_JS,
+            WEBVIEW2,
+            NO_NOTIFICATIONS,
+        ))
         // White, as a browser's canvas is.
         .background_color(tauri::window::Color(255, 255, 255, 255));
     let builder = handlers::attach(builder, guest);
@@ -999,11 +1005,19 @@ pub(crate) mod tests {
     fn a_sites_notification_click_goes_to_the_window_and_its_page() {
         let rig = rig();
         let label = rig.open("https://example.com/");
-        // Nothing to hear it in a mock: the click's route ends in the
-        // platform's webview, which tells the page.
-        site_notification_clicked(rig.app.handle(), &label, 7);
-        site_notification_clicked(rig.app.handle(), "panel-guest-99", 7);
-        assert!(rig.app.get_webview(&label).is_some());
+        // The page's half is the platform's webview, which a mock has not:
+        // verify-side-panel clicks one through to the page.
+        assert!(site_notification_clicked(rig.app.handle(), &label, 7));
+        // A guest that has gone still brings the window forward.
+        assert!(site_notification_clicked(
+            rig.app.handle(),
+            "panel-guest-99",
+            7
+        ));
+        assert!(
+            rig.app.get_webview(&label).is_some(),
+            "the click closes nothing"
+        );
     }
 
     #[test]

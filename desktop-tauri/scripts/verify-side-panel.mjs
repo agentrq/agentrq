@@ -95,6 +95,7 @@ const extensionPage = (origin) => `<!doctype html><html><body><script>
 let backend
 let app
 let site
+let blocker
 let shell
 let dir
 
@@ -114,6 +115,7 @@ await runVerify(
     dir = await mkdtemp(join(tmpdir(), 'agentrq-verify-panel-'))
     backend = await startBackend()
     site = await startSite()
+    blocker = await startSite()
     shell = process.platform === 'linux' ? await stubShell() : null
     await mkdir(join(dir, 'panel'))
     await writeFile(join(dir, 'panel/index.html'), extensionPage(site.origin))
@@ -383,20 +385,39 @@ await runVerify(
 
     // ── a site's notifications ──────────────────────────────────────────────
     // The page asks on a person's click when its address says so (WebKit asks
-    // for nobody else), and shows one once allowed.
-    site.page('/notify', `<!doctype html><html><head><title>Notifies</title></head><body><script>
+    // for nobody else), and shows one once allowed; its other addresses show
+    // what the shell must hold back.
+    const NOTIFY = `<!doctype html><html><head><title>Notifies</title></head><body><script>
       const gid = Math.random().toString(36).slice(2);
       const tell = (what) => { new Image().src = '/beacon?gid=' + gid + '&' + what + '&_=' + Math.random(); };
       const N = window.Notification;
-      tell('hello=1&page=/notify&notification=' + (/\\[native code\\]/.test(String(N)) ? 'native' : typeof N) + '/' + N?.permission);
-      if (location.search === '?ask') document.addEventListener('click', () => N.requestPermission().then((answer) => {
+      const mode = location.search.slice(1);
+      tell('hello=1&page=/notify&mode=' + mode + '&notification=' + (/\\[native code\\]/.test(String(N)) ? 'native' : typeof N) + '/' + N?.permission);
+      const show = (title, options) => {
+        const shown = new N(title, options);
+        shown.onclick = () => tell('clicked=' + encodeURIComponent(title));
+        shown.onclose = () => tell('closed=' + encodeURIComponent(title));
+        return shown;
+      };
+      if (mode === 'ask') document.addEventListener('click', () => N.requestPermission().then((answer) => {
         tell('asked=' + answer);
-        if (answer !== 'granted') return;
-        window.shown = new N('Build passed', { body: 'Checked in the side panel' });
-        window.shown.onclick = () => tell('clicked=1');
+        if (answer === 'granted') show('Build passed', { body: 'Checked in the <b>side panel</b> & <a href="https://example.com">here</a>' });
+        // A blocked page that tries anyway.
+        else { show('Blocked anyway'); tell('tried=1'); }
       }), { once: true });
+      if (mode === 'tag') {
+        show('Tagged 1', { tag: 'build' });
+        setTimeout(() => { show('Tagged 2', { tag: 'build' }); tell('tagged=2'); }, 300);
+      }
+      if (mode === 'burst') {
+        try { for (let i = 1; i <= 8; i++) show('Burst ' + i); tell('burst=8'); }
+        catch (e) { tell('burst=' + encodeURIComponent(String(e))); }
+      }
+      if (mode === 'show') { if (N.permission === 'granted') show('After removal'); tell('shown=' + N.permission); }
       setInterval(() => tell('beat=1'), 100);
-    </script></body></html>`)
+    </script></body></html>`
+    site.page('/notify', NOTIFY)
+    blocker.page('/notify', NOTIFY)
     /**
      * A person's click in the middle of the guest, through the X server: no
      * script can make one. The app's page starts below the window's menu
@@ -412,7 +433,30 @@ await runVerify(
       const height = Number(/Geometry: \d+x(\d+)/.exec(xdotool('getwindowgeometry', window))?.[1] ?? box.height)
       xdotool('mousemove', '--window', window, String(box.x), String(box.y + height - box.height), 'click', '1')
     }
+    /**
+     * A new guest, at `url`: its page's hello. The panel opens again at the
+     * last address, so the guest leaves for a page that shows nothing first.
+     */
+    const newGuest = async (url, server = site) => {
+      const leaving = mark()
+      await type(link)
+      await hello('the guest to leave for a quiet page', '/page', leaving)
+      await closePanel()
+      const since = server.hits.length - 1
+      await page("document.querySelector('[data-side-panel-toggle]').click()")
+      await inPage('the panel', "!!document.querySelector('[data-side-panel]')")
+      await type(url)
+      const h = await server.hit(`${url} to load in a new guest`, (h) => h.path === '/beacon' && h.query.get('hello') === '1' && h.query.get('page') === '/notify' &&
+        h.query.get('mode') === new URL(url).search.slice(1), { since })
+      return { gid: h.query.get('gid'), said: Object.fromEntries(h.query) }
+    }
+    /** What the notifier was given whose title ends in `title`. */
+    const shownAs = async (title) => (await shell.notifications()).filter((n) => n.summary.endsWith(` — ${title}`))
+    /** Long enough for a notification the page made to have reached the notifier. */
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 1500))
+    const host = new URL(site.origin).host
     const xdotool = spawnSync('xdotool', ['version']).status === 0
+    const notificationChecks = 'a site\'s notification in the panel is asked for, shown, limited and refused'
     if (shell?.notifications && xdotool) {
       const notifying = mark()
       await type(`${site.origin}/notify?ask`)
@@ -421,27 +465,79 @@ await runVerify(
         notifier.said.notification)
       await clickGuest()
       const bar = await inPage('the permission bar', "document.querySelector('[data-side-panel-permission]')?.textContent.trim()")
-      record('asking to notify shows the bar in the window, naming its site', bar.includes(new URL(site.origin).host), bar)
+      record('asking to notify shows the bar in the window, naming its site', bar.includes(host), bar)
       await page("document.querySelector('[data-side-panel-permission-allow]').click()")
       const asked = await site.hit('the page to be answered', (h) => h.query.get('gid') === notifier.gid && h.query.has('asked'))
       record('Allow gives the page its permission', asked.query.get('asked') === 'granted', asked.query.get('asked'))
-      const notification = await waitFor('the notification to be shown',
-        async () => (await shell.notifications()).find((n) => n.summary === 'Build passed'))
-      record('the page\'s notification is shown through the app\'s notifier', notification.body === 'Checked in the side panel',
-        JSON.stringify(notification))
+      const notification = await waitFor('the notification to be shown', async () => (await shownAs('Build passed'))[0])
+      record('the page\'s notification is shown through the app\'s notifier, its title after the site\'s host',
+        notification.summary === `${host} — Build passed`, JSON.stringify(notification))
+      record('its markup is escaped', notification.body === 'Checked in the &lt;b&gt;side panel&lt;/b&gt; &amp; &lt;a href="https://example.com"&gt;here&lt;/a&gt;',
+        notification.body)
       await shell.click(notification.id)
-      await site.hit('the page to hear the click', (h) => h.query.get('gid') === notifier.gid && h.query.get('clicked') === '1')
+      await site.hit('the page to hear the click', (h) => h.query.get('gid') === notifier.gid && h.query.get('clicked') === 'Build passed')
       record('clicking it reaches the page', true)
+
       // A new guest's page of the site knows it may notify before it asks.
-      await closePanel()
-      const returning = mark()
-      await page("document.querySelector('[data-side-panel-toggle]').click()")
-      await inPage('the panel', "!!document.querySelector('[data-side-panel]')")
-      await type(`${site.origin}/notify`)
-      const returned = await hello('the site\'s page to load in a new guest', '/notify', returning)
-      record('a new page of an allowed site reads "granted" before asking', returned.said.notification === 'native/granted',
-        returned.said.notification)
-    } else SKIPPED.push(skip('a site\'s notification in the panel is asked for, shown and clicked', 'needs Linux\'s stand-in notification server and xdotool'))
+      const tagged = await newGuest(`${site.origin}/notify?tag`)
+      record('a new page of an allowed site reads "granted" before asking', tagged.said.notification === 'native/granted',
+        tagged.said.notification)
+      await site.hit('the page to show its second tagged one', (h) => h.query.get('gid') === tagged.gid && h.query.has('tagged'))
+      const [first, second] = await waitFor('both tagged ones to be shown', async () => {
+        const both = [...(await shownAs('Tagged 1')), ...(await shownAs('Tagged 2'))]
+        return both.length === 2 && both
+      })
+      await waitFor('the first tagged one to be closed', async () => (await shell.closes()).includes(first.id))
+      record('a notification with a tag replaces the last with that tag', !(await shell.closes()).includes(second.id),
+        `closed ${JSON.stringify(await shell.closes())} of ${first.id}, ${second.id}`)
+      await shell.dismiss(second.id)
+      await site.hit('the page to hear its notification closed', (h) => h.query.get('gid') === tagged.gid && h.query.get('closed') === 'Tagged 2')
+      record('dismissing one closes it for the page', true)
+
+      const burst = await newGuest(`${site.origin}/notify?burst`)
+      const burstDone = await site.hit('the page to show its burst', (h) => h.query.get('gid') === burst.gid && h.query.has('burst'))
+      await settle()
+      const bursts = (await shell.notifications()).filter((n) => / — Burst \d$/.test(n.summary)).map((n) => n.summary.split(' ').pop())
+      record('a page that floods shows five, then nothing', bursts.join() === '1,2,3,4,5', `${bursts.join()} (the page: ${burstDone.query.get('burst')}; ${burst.said.notification})`)
+
+      // With the site's Allow removed, a page WebKit already told "granted"
+      // still shows nothing: the shell asks again at each one.
+      const removing = await newGuest(`${site.origin}/notify`)
+      await page(`window.agentrq.sidePanel.removePermission(${JSON.stringify(site.origin)}, 'notifications')`)
+      const showing = mark()
+      await type(`${site.origin}/notify?show`)
+      const removed = await site.hit('the page to try after the removal', (h) => h.query.has('shown'), { since: showing })
+      await settle()
+      const afterRemoval = await shownAs('After removal')
+      record('after its Allow is removed, a page still told "granted" shows nothing',
+        removing.said.notification === 'native/granted' && removed.query.get('shown') === 'granted' && afterRemoval.length === 0,
+        `told ${removed.query.get('shown')}; notifier given ${JSON.stringify(afterRemoval)}`)
+
+      // A site the person blocks.
+      const blocking = await newGuest(`${blocker.origin}/notify?ask`, blocker)
+      await clickGuest()
+      await inPage('the permission bar', "document.querySelector('[data-side-panel-permission]')?.textContent.includes(" + JSON.stringify(new URL(blocker.origin).host) + ')')
+      await page("document.querySelector('[data-side-panel-permission-block]').click()")
+      const denied = await blocker.hit('the blocked page to try', (h) => h.query.get('gid') === blocking.gid && h.query.has('tried'))
+      await settle()
+      const blockedShown = await shownAs('Blocked anyway')
+      record('Block tells the page "denied", and it shows nothing', blockedShown.length === 0 &&
+        blocker.beacons(blocking.gid).some((h) => h.query.get('asked') === 'denied'), `${denied.query.get('tried')}; ${JSON.stringify(blockedShown)}`)
+      // WebKitGTK reads a blocked site as "default" in a new page, seeded or
+      // not; asked again, the stored Block answers it with no bar.
+      const returning = await newGuest(`${blocker.origin}/notify?ask`, blocker)
+      await clickGuest()
+      const again = await blocker.hit('the blocked page to be answered again', (h) => h.query.get('gid') === returning.gid && h.query.has('tried'))
+      const barAgain = await page("!!document.querySelector('[data-side-panel-permission]')")
+      await settle()
+      const stillNothing = await shownAs('Blocked anyway')
+      record('a new page of a blocked site is answered "denied" with no bar, and shows nothing',
+        blocker.beacons(returning.gid).some((h) => h.query.get('asked') === 'denied') && !barAgain && stillNothing.length === 0,
+        `${returning.said.notification}, then ${again.query.get('tried')}; bar ${barAgain ? 'shown' : 'not shown'}; ${JSON.stringify(stillNothing)}`)
+    } else if (process.env.CI) {
+      // A lost package must fail the run, never pass it unchecked.
+      record(notificationChecks, false, `CI must have Linux's stand-in notification server (python3-gi) and xdotool: ${shell?.notifications ? '' : 'no notification server; '}${xdotool ? '' : 'no xdotool'}`)
+    } else SKIPPED.push(skip(notificationChecks, 'needs Linux\'s stand-in notification server and xdotool'))
 
     // ── an Extension's page ─────────────────────────────────────────────────
     since = mark()
@@ -477,6 +573,7 @@ await runVerify(
     await app?.close()
     await shell?.stop()
     await site?.stop()
+    await blocker?.stop()
     await backend?.stop()
     if (dir) await rm(dir, { recursive: true, force: true })
   }

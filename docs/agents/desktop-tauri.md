@@ -59,7 +59,9 @@
   The parity test checks every implemented command's parameter names against the bridge.
 - **Scope the capability with `webviews`, never `windows`.** A window grant also covers
   every child webview in it, so side-panel guests and `agentrq-ext:` pages would
-  inherit all our commands. Guests get no capability; a test reads every capability file.
+  inherit all our commands. Guests get no capability; a test reads every capability
+  file and every `tauri*.conf.json` (Tauri merges the platform ones itself), refuses
+  a glob in a label, and finds no `add_capability` in the shell.
 - **A guest still has Tauri's IPC object** (`__TAURI_INTERNALS__`, `isTauri`), and the
   ACL is all that refuses its calls. Nothing can take the object out. Tauri prepends it
   to every webview with no per-webview switch, and defines it non-configurable. On
@@ -253,10 +255,14 @@
   with one that calls commands no capability grants. A site could then never
   ask to notify.
 - **A site's notification:** WebKitGTK's `show-notification` goes through the
-  plugin while the site's Allow stands. An emission hook seeds each new web
-  process with the answers. WebKitGTK refuses `requestPermission()` without a
-  person's click, which Chromium does not. WebView2 shows its own (runtime 128+).
-  WKWebView cannot, so `panel.js` tells a site `denied`.
+  plugin while the site's Allow stands, checked at each one: WebKit keeps a
+  page's "granted" after the Allow goes. Its title starts with the site's host
+  and its body's markup is escaped (`core::site_notifications`), or a site could
+  pass for the app. An emission hook seeds each new web process with the
+  answers; WebKitGTK 2.52 ignores the blocked list. WebKitGTK refuses
+  `requestPermission()` without a person's click, which Chromium does not.
+  WebView2 shows its own (runtime 128+), and `main` refuses one without a
+  prompt. WKWebView cannot, so `panel.js` tells a site and its frames `denied`.
 
 ## Extensions
 

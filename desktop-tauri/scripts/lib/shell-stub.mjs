@@ -58,7 +58,9 @@ GLib.MainLoop().run()
 `
 
 // The notification server's side: each Notify is a JSON line in argv[1], and
-// an id written to argv[2] is clicked, as a person's click on its body is.
+// so is each CloseNotification, as {"closed": id}. A line "click <id>" in
+// argv[2] clicks one, as a person's click on its body does, and "dismiss <id>"
+// closes it, as a person's dismissal does.
 const NOTIFICATIONS = `
 import json, sys
 import gi
@@ -90,16 +92,30 @@ def on_call(conn, sender, path, iface, method, params, invocation):
         with open(sys.argv[1], 'a') as log:
             log.write(json.dumps({'id': nid, 'app': app, 'summary': summary, 'body': body, 'actions': list(actions)}) + '\\n')
         invocation.return_value(GLib.Variant('(u)', (nid,)))
+    elif method == 'CloseNotification':
+        (nid,) = params.unpack()
+        with open(sys.argv[1], 'a') as log:
+            log.write(json.dumps({'closed': nid}) + '\\n')
+        invocation.return_value(None)
+        closed(nid, 3)
     else:
         invocation.return_value(None)
 
+def emit(signal, value):
+    state['conn'].emit_signal(None, '/org/freedesktop/Notifications', 'org.freedesktop.Notifications', signal, value)
+
+def closed(nid, reason):
+    emit('NotificationClosed', GLib.Variant('(uu)', (nid, reason)))
+
 def clicks():
     with open(sys.argv[2]) as asked:
-        ids = [int(line) for line in asked.read().split()]
-    for nid in ids[state['clicked']:]:
-        state['conn'].emit_signal(None, '/org/freedesktop/Notifications', 'org.freedesktop.Notifications',
-                                  'ActionInvoked', GLib.Variant('(us)', (nid, 'default')))
-    state['clicked'] = len(ids)
+        lines = [line.split() for line in asked.read().splitlines() if line.strip()]
+    for action, nid in lines[state['clicked']:]:
+        if action == 'click':
+            emit('ActionInvoked', GLib.Variant('(us)', (int(nid), 'default')))
+        else:
+            closed(int(nid), 2)
+    state['clicked'] = len(lines)
     return True
 
 def on_bus(conn, name):
@@ -139,7 +155,9 @@ function firstLine(child) {
  *   reveals: (() => Promise<string[]>) | null,
  *   whyNoReveals: string | null,
  *   notifications: (() => Promise<{ id: number, app: string, summary: string, body: string, actions: string[] }[]>) | null,
+ *   closes: () => Promise<number[]>,
  *   click: (id: number) => Promise<void>,
+ *   dismiss: (id: number) => Promise<void>,
  *   stop: () => Promise<void>,
  * }>}
  */
@@ -182,7 +200,9 @@ export async function stubShell() {
       })
       server.once('error', () => {})
       children.push(server)
-      if ((await firstLine(server)) === 'ready') notifications = async () => (await read(notifyLog)).map((line) => JSON.parse(line))
+      if ((await firstLine(server)) === 'ready') {
+        notifications = async () => (await read(notifyLog)).map((line) => JSON.parse(line)).filter((n) => n.closed === undefined)
+      }
     } else whyNoReveals = 'no python3 with GLib bindings (python3-gi) for the stand-in file manager'
   }
 
@@ -192,7 +212,9 @@ export async function stubShell() {
     reveals,
     whyNoReveals,
     notifications,
-    click: (id) => appendFile(clickLog, `${id}\n`),
+    closes: async () => (await read(notifyLog)).map((line) => JSON.parse(line).closed).filter((id) => id !== undefined),
+    click: (id) => appendFile(clickLog, `click ${id}\n`),
+    dismiss: (id) => appendFile(clickLog, `dismiss ${id}\n`),
     stop: async () => {
       for (const child of children) child.kill()
       await rm(dir, { recursive: true, force: true }).catch(() => {})

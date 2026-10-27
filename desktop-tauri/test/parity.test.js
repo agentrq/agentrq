@@ -413,45 +413,79 @@ describe('the Rust side serves what the bridge calls', () => {
  * Why a capability would reach a side panel guest, or `null`. Guests have
  * Tauri's IPC object like every webview, so the ACL is all that refuses them:
  * a `windows` grant covers the window's child webviews (guests are `main`'s),
- * a `remote` URL any page on it, and a webview pattern their labels.
+ * a `remote` URL any page on it, and a webview pattern their labels. Tauri
+ * matches labels as globs, so only a plain label is let through.
  */
 function reachesGuests(capability) {
   if (capability.windows !== undefined) return 'is scoped to windows, which covers their child webviews'
   if (capability.remote !== undefined) return 'grants remote URLs'
   if (!Array.isArray(capability.webviews) || capability.webviews.length === 0) return 'names no webview'
-  // Tauri matches labels as globs.
-  const glob = (pattern) => new RegExp(`^${pattern.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`)
-  const guest = capability.webviews.find((pattern) => ['panel-guest-1', 'panel-guest-42'].some((label) => glob(pattern).test(label)))
-  return guest === undefined ? null : `names the guests' labels (${guest})`
+  const glob = capability.webviews.find((label) => typeof label !== 'string' || /[*?[\]{}!\\]/.test(label))
+  if (glob !== undefined) return `names a glob, which could match the guests' labels (${glob})`
+  const guest = capability.webviews.find((label) => label.startsWith('panel-guest-'))
+  return guest === undefined ? null : `names a guest (${guest})`
+}
+
+/** The files Tauri merges into its config: the base, each platform's, and a script's `--config`. */
+const CONFIG = /^tauri(\.[a-z]+)?\.conf\.json5?$|^Tauri(\.[a-z]+)?\.toml$|\.conf\.json5?$/i
+
+/** Every file under `dir`, as a path from it. */
+function filesUnder(dir) {
+  return readdirSync(here(dir), { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => `${entry.parentPath.slice(here(dir).length)}/${entry.name}`.replace(/\\/g, '/').replace(/^\/+/, ''))
 }
 
 describe('no capability reaches a side panel guest', () => {
   it('holds for every capability file', () => {
-    const dir = here('../src-tauri/capabilities/')
-    const files = readdirSync(dir)
+    const files = readdirSync(here('../src-tauri/capabilities/'))
     expect(files).toContain('main.json')
     for (const file of files) {
       // Tauri reads TOML too, which this check would not.
       expect(file, 'a capability file').toMatch(/\.json$/)
-      expect(reachesGuests(JSON.parse(readFileSync(`${dir}${file}`, 'utf8'))), file).toBeNull()
+      expect(reachesGuests(JSON.parse(read(`../src-tauri/capabilities/${file}`))), file).toBeNull()
     }
   })
 
-  it('and no Tauri config adds one inline', () => {
-    for (const config of ['../src-tauri/tauri.conf.json', '../scripts/verify.tauri.conf.json']) {
+  it('and no Tauri config adds one inline, on any platform', () => {
+    const configs = [
+      ...readdirSync(here('../src-tauri/')).filter((name) => CONFIG.test(name)).map((name) => `../src-tauri/${name}`),
+      ...readdirSync(here('../scripts/')).filter((name) => CONFIG.test(name)).map((name) => `../scripts/${name}`),
+    ]
+    expect(configs).toEqual(expect.arrayContaining(['../src-tauri/tauri.conf.json', '../scripts/verify.tauri.conf.json']))
+    for (const config of configs) {
+      // JSON5 and TOML this check cannot read: keep to JSON.
+      expect(config, 'a Tauri config').toMatch(/\.json$/)
       expect(JSON.parse(read(config)).app?.security?.capabilities, config).toBeUndefined()
     }
   })
 
+  it('and the shell adds none at run time', () => {
+    const sources = filesUnder('../src-tauri/src/').map((file) => `../src-tauri/src/${file}`)
+    expect(sources).toContain('../src-tauri/src/lib.rs')
+    for (const source of [...sources, '../src-tauri/build.rs']) {
+      expect(read(source), source).not.toMatch(/add_capability/)
+    }
+  })
+
+  it('reads each platform\'s config and each script\'s', () => {
+    for (const name of ['tauri.conf.json', 'tauri.linux.conf.json', 'tauri.windows.conf.json', 'tauri.macos.conf.json', 'Tauri.toml', 'Tauri.linux.toml', 'tauri.conf.json5', 'verify.tauri.conf.json']) {
+      expect(CONFIG.test(name), name).toBe(true)
+    }
+    for (const name of ['Cargo.toml', 'package.json', 'main.json']) expect(CONFIG.test(name), name).toBe(false)
+  })
+
   it('tells each way a capability would reach one', () => {
     expect(reachesGuests({ webviews: ['main'] })).toBeNull()
-    expect(reachesGuests({ webviews: ['main', 'sign-in-*'] })).toBeNull()
+    expect(reachesGuests({ webviews: ['main', 'sign-in'] })).toBeNull()
     expect(reachesGuests({ windows: ['main'] })).toMatch(/windows/)
     expect(reachesGuests({ webviews: ['main'], remote: { urls: ['https://*'] } })).toMatch(/remote/)
     expect(reachesGuests({})).toMatch(/no webview/)
     expect(reachesGuests({ webviews: [] })).toMatch(/no webview/)
-    expect(reachesGuests({ webviews: ['*'] })).toMatch(/\(\*\)/)
-    expect(reachesGuests({ webviews: ['panel-guest-*'] })).toMatch(/panel-guest-\*/)
-    expect(reachesGuests({ webviews: ['panel-guest-4?'] })).toMatch(/panel-guest-4\?/)
+    for (const glob of ['*', 'panel-guest-*', 'panel-guest-4?', '[!x]anel-guest-*', '[p]anel-guest-1', '{main,panel-guest-1}', 'sign-in-*', 'p\\anel-guest-1']) {
+      expect(reachesGuests({ webviews: ['main', glob] }), glob).toBe(`names a glob, which could match the guests' labels (${glob})`)
+    }
+    expect(reachesGuests({ webviews: [7] })).toMatch(/glob/)
+    expect(reachesGuests({ webviews: ['panel-guest-1'] })).toMatch(/names a guest \(panel-guest-1\)/)
   })
 })

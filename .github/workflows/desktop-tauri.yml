@@ -285,6 +285,32 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit 1 }
           }
 
+      # The app's own window never shows WebView2's notification prompt (the
+      # Workspace settings' Enable Push): main-notifications.js asks, and
+      # extensions-server.mjs takes the answer, which must be "denied". A
+      # prompt leaves it unanswered.
+      - name: The window refuses notifications (Windows)
+        if: runner.os == 'Windows'
+        working-directory: desktop-tauri
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $server = Start-Process node -ArgumentList 'test/e2e/extensions-server.mjs', '39118' -RedirectStandardOutput notify-steps.txt -PassThru -NoNewWindow
+          # Read now, or ExitCode stays empty once it has exited.
+          $null = $server.Handle
+          $env:AGENTRQ_SERVER_URL = 'http://127.0.0.1:39118'
+          $env:AGENTRQ_E2E_INIT_SCRIPT = Get-Content -Raw test\e2e\main-notifications.js
+          $app = Start-Process src-tauri\target\release\agentrq-tauri.exe -PassThru
+          $answered = $server.WaitForExit(90000)
+          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          Get-Content notify-steps.txt
+          if (-not $answered) {
+            Stop-Process -Id $server.Id -Force
+            Write-Output 'The window was never answered: WebView2 asked the person.'
+            exit 1
+          }
+          if ($server.ExitCode -ne 0) { exit 1 }
+
       - name: Upload the screenshots
         if: always()
         uses: actions/upload-artifact@v4

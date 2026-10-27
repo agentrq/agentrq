@@ -156,20 +156,16 @@ pub async fn seed_notifications<R: Runtime>(app: &AppHandle<R>) {
 
 /// A guest was made for `profile`.
 pub fn opened<R: Runtime>(app: &AppHandle<R>, guest: u32, profile: &str) {
-    if let Some(state) = app.try_state::<PanelPermissions>() {
-        let page = Page {
-            profile: profile.to_string(),
-            document: 0,
-        };
-        lock(&state.pages).insert(guest, page);
-    }
+    let page = Page {
+        profile: profile.to_string(),
+        document: 0,
+    };
+    lock(&app.state::<PanelPermissions>().pages).insert(guest, page);
 }
 
 /// The guest has gone: whatever it asks from now on is refused.
 pub fn closed<R: Runtime>(app: &AppHandle<R>, guest: u32) {
-    if let Some(state) = app.try_state::<PanelPermissions>() {
-        lock(&state.pages).remove(&guest);
-    }
+    lock(&app.state::<PanelPermissions>().pages).remove(&guest);
 }
 
 /// A guest's page asked: `answer` is told once, never on the caller's stack
@@ -223,10 +219,21 @@ fn decide<R: Runtime>(
     let Some(current) = broker_for(app, guest, asked) else {
         return answer.give(false);
     };
+    // The answers are stored by now, and seeded before the page hears one:
+    // its first notification is held to them. Not `current`, which holds
+    // the broker that holds this.
+    let (app, profile, store) = (
+        app.clone(),
+        current.profile.clone(),
+        Arc::clone(&current.store),
+    );
     current.broker.request(
         Some(&GuestPage::new(u64::from(guest), page_url)),
         &ask.permission,
-        move |granted| answer.give(granted),
+        move |granted| {
+            seed(&app, &profile, &store.list());
+            answer.give(granted)
+        },
         Some(&ask.details),
     );
 }
@@ -291,9 +298,7 @@ fn half<R: Runtime>(
 /// The page went away: what it was asking is a Block, and what it asks
 /// next is a new document's. Nothing to do before any page has asked.
 pub fn cancel<R: Runtime>(app: &AppHandle<R>, guest: u32) {
-    let Some(state) = app.try_state::<PanelPermissions>() else {
-        return;
-    };
+    let state = app.state::<PanelPermissions>();
     if let Some(page) = lock(&state.pages).get_mut(&guest) {
         page.document += 1;
     }
@@ -321,14 +326,9 @@ pub async fn side_panel_permission_answer<R: Runtime>(
     } else {
         "block"
     };
-    spawn_blocking(move || {
-        let current = current(&app);
-        let answered = current.broker.answer(id, decision);
-        seed(&app, &current.profile, &current.store.list());
-        answered
-    })
-    .await
-    .unwrap_or(false)
+    spawn_blocking(move || current(&app).broker.answer(id, decision))
+        .await
+        .unwrap_or(false)
 }
 
 /// `agentrq:side-panel:permissions`: every answer, by site. Never an error,
@@ -691,17 +691,6 @@ mod tests {
             assert_eq!(answer, refused, "{cmd} {args}");
         }
         assert_eq!(*lock(&answered), None, "still waiting on the person");
-    }
-
-    #[test]
-    fn a_shell_without_the_broker_lets_a_guest_come_and_go() {
-        let app = mock_builder()
-            .build(mock_context(noop_assets()))
-            .expect("mock app");
-        opened(app.handle(), 1, "work");
-        cancel(app.handle(), 1);
-        closed(app.handle(), 1);
-        assert!(app.try_state::<PanelPermissions>().is_none());
     }
 
     #[test]

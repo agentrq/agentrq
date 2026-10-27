@@ -100,7 +100,7 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 | Guest requests refused by the app's schemes | `src-tauri::scheme`, `src-tauri::panel_scheme`, `panel-init.test.js` | M25 | M25 | M25 |
 | Find in page | `core::side_panel::wire`, `core::side_panel::find`, `src-tauri::side_panel` | A `verify-side-panel` (the bar's count, and each step by the page's own selection); M29 (the key in the page) | M29 | M29 |
 | Site permissions bar, list, timeout | `core::side_panel::permissions`, `core::side_panel::permission_store`, `core::side_panel::platform_permissions`, `src-tauri::panel_permissions` | A `verify-side-panel` (location: the bar, Allow, remembered, listed); M26 | M26, M27 | M26, M28 |
-| A site's notifications: asked, shown, clicked | `core::side_panel::platform_permissions`, `src-tauri::notify`, `panel-init.test.js` | A `verify-side-panel` | M47 (G: WKWebView cannot show one; the site reads "denied") | M47 |
+| A site's notifications: asked, shown, clicked, named for the site, limited, refused once removed or blocked | `core::side_panel::platform_permissions`, `core::side_panel::site_notifications`, `src-tauri::notify`, `panel-init.test.js` | A `verify-side-panel` | M47 (G: WKWebView cannot show one; the site reads "denied") | M47; A the app's own window is refused without a prompt (CI) |
 | `agentrq-ext://` extension pages and their bridge | `core::side_panel::ext_scheme`, `core::side_panel::child`, `src-tauri::panel_scheme`, `src-tauri::side_panel`, `panel-init.test.js`, `ext-host-runtime.test.js` | A `verify-side-panel` | M25, M46 | M25, M46 |
 
 ### Files, clipboard and native helpers
@@ -430,7 +430,12 @@ screenshots, in the PR or task that ran the checklist.
     page script.
     - **[Windows]** The click shows the bar, and **Allow** gives `granted`.
       The notification shows as WebView2's own toast (runtime 128+), and
-      clicking it runs the page's `onclick`. The app's own page never raises
-      WebView2's permission prompt.
-    - **[macOS]** `Notification.permission` reads `denied`,
-      `requestPermission()` resolves `denied` with no bar, and nothing shows.
+      clicking it runs the page's `onclick`. CI checks that the app's own
+      page is refused with no prompt; also click the Workspace settings'
+      **Enable Push** and see none.
+    - **[macOS]** First note `typeof Notification` in a guest: if it is
+      `undefined`, nothing shows and the rest of this step is moot.
+      Otherwise `Notification.permission` and
+      `navigator.permissions.query({name: 'notifications'})` read `denied`,
+      `requestPermission()` resolves `denied` with no bar, nothing shows, and
+      an `<iframe>` in the page reads the same.

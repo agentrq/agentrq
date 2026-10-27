@@ -268,6 +268,8 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>, profile: &str) -> tauri:
     watch_crashes(app, &window);
     #[cfg(windows)]
     switch_browser_accelerators_off(&window);
+    #[cfg(windows)]
+    refuse_notifications(&window);
     Ok(())
 }
 
@@ -352,6 +354,35 @@ fn switch_browser_accelerators_off<R: Runtime>(window: &WebviewWindow<R>) {
         {
             let _ = settings.SetAreBrowserAcceleratorKeysEnabled(false);
         }
+    });
+}
+
+/// The app's own page never notifies through its webview, so WebView2 is
+/// never left to ask the person itself (the Workspace settings' Enable Push):
+/// `core::main_refuses_webview2`'s kinds are denied at once, the rest left
+/// to WebView2.
+#[cfg(windows)]
+fn refuse_notifications<R: Runtime>(window: &WebviewWindow<R>) {
+    use agentrq_desktop_core::side_panel::platform_permissions::main_refuses_webview2;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_STATE_DENY,
+    };
+    use webview2_com::PermissionRequestedEventHandler;
+    let _ = window.with_webview(|webview| unsafe {
+        let Ok(core) = webview.controller().CoreWebView2() else {
+            return;
+        };
+        let handler = PermissionRequestedEventHandler::create(Box::new(|_, args| {
+            let Some(args) = args else { return Ok(()) };
+            let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
+            unsafe { args.PermissionKind(&mut kind)? };
+            if main_refuses_webview2(kind.0) {
+                unsafe { args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY)? };
+            }
+            Ok(())
+        }));
+        let mut token = Default::default();
+        let _ = core.add_PermissionRequested(&handler, &mut token);
     });
 }
 
