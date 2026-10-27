@@ -192,6 +192,9 @@ fn fork_one((spawn, runtime, child): Fork) {
     let _ = child.send(spawned.unwrap_or_else(|_| Err(std::io::Error::other("forking panicked"))));
 }
 
+/// Failed starts in a row, with no extension to blame, before the host is given up on.
+const MAX_STARTUP_FAILURES: u32 = 3;
+
 #[derive(Default)]
 struct State {
     process: Option<Process>,
@@ -373,8 +376,11 @@ impl ExtHost {
             let mut state = lock(&self.state);
             state.activity += 1;
             if state.process.is_none() {
+                // Given up on after failed starts, a page's render must not
+                // start it again; an action the user takes still does.
+                let gave_up = state.startup_failures >= MAX_STARTUP_FAILURES;
                 if let Some(answer) = answer_without_host(method, &params) {
-                    if state.restarting || self.wanted().is_empty() {
+                    if state.restarting || gave_up || self.wanted().is_empty() {
                         return Ok(answer);
                     }
                 }
@@ -624,6 +630,13 @@ impl ExtHost {
             }
         });
 
+        // First: an extension that calls its server while activating, or from
+        // a timer, needs it before any page asks.
+        let server = self.services.server_url();
+        let _ = out.send(ext_rpc::notification(
+            "context",
+            json!({ "serverUrl": server }),
+        ));
         for (method, params) in &state.told {
             let _ = out.send(ext_rpc::notification(method, params.clone()));
         }
@@ -637,7 +650,7 @@ impl ExtHost {
             out,
             pending,
             ids: Ids::default(),
-            context: None,
+            context: Some(server),
             kill,
         });
         Ok(())
@@ -766,7 +779,7 @@ impl ExtHost {
             };
             if blamed.is_empty() && !hung {
                 state.startup_failures += 1;
-                if state.startup_failures >= 3 {
+                if state.startup_failures >= MAX_STARTUP_FAILURES {
                     eprintln!(
                         "[ext-host] The extension host failed to start {} times in a row; giving up.",
                         state.startup_failures
@@ -1464,6 +1477,12 @@ pub(crate) mod tests {
         assert_eq!(state.startup_failures, 3);
         assert!(state.process.is_none());
         assert!(!state.restarting);
+        let generation = state.generation;
+        drop(state);
+        // A render's call is answered here, not by starting it a fourth time.
+        assert_eq!(host.call("entries", json!({})).await, Ok(json!([])));
+        assert_eq!(lock(&host.state).generation, generation);
+        host.stop();
     }
 
     #[test]
@@ -1534,6 +1553,32 @@ pub(crate) mod tests {
         // Notifications from an old generation are ignored.
         host.told("loading", &json!({"name": "z"}), 0);
         assert_eq!(lock(&host.state).loading, None);
+        host.stop();
+    }
+
+    #[tokio::test]
+    async fn a_new_host_is_told_its_server_before_anything_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let services = Arc::new(FakeServices::default());
+        *lock(&services.server) = "http://a".into();
+        // Answers every request with the first thing it was told.
+        let script = r#"
+            let first = null, buf = '';
+            process.stdin.on('data', (c) => {
+                buf += c;
+                let i;
+                while ((i = buf.indexOf('\n')) >= 0) {
+                    const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
+                    if (m.id === undefined) first ??= m;
+                    else process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: first }) + '\n');
+                }
+            });
+        "#;
+        let host = host(script_launch(script), dir.path(), services.clone());
+        host.tell("panelOpen", json!({"owners": []}));
+        let first = host.call("x", json!({})).await.unwrap();
+        assert_eq!(first["method"], "context");
+        assert_eq!(first["params"]["serverUrl"], "http://a");
         host.stop();
     }
 
