@@ -25,6 +25,7 @@
  */
 import { createApp, watch } from 'vue'
 import { createWebHistory } from 'vue-router'
+import { createPinia } from 'pinia'
 
 import { createAgentRQApp } from '@app/app'
 import { useThemeStore } from '@app/stores/themeStore'
@@ -99,6 +100,9 @@ if (connection.configured) {
     (theme) => window.agentrq.theme?.set(theme)
   )
 } else {
+  // Nothing else applies the theme before the app exists, so without this the
+  // screen stays light under a dark system.
+  const pinia = createPinia()
   createApp(ConnectionView, {
     initialUrl: connection.serverUrl,
     // A profile added and not yet connected can be abandoned; a first run has
@@ -107,5 +111,8 @@ if (connection.configured) {
     // Passed rather than read from the platform store: this view is mounted on
     // its own, before the application and its pinia exist.
     isMac: window.agentrq.platform === 'darwin',
-  }).mount('#app')
+  })
+    .use(pinia)
+    .mount('#app')
+  useThemeStore(pinia).init()
 }
