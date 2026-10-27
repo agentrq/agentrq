@@ -119,3 +119,14 @@ describe('the task description', () => {
     expect(box.classList).toContain('overflow-y-auto')
   })
 })
+
+describe('the task view', () => {
+  it('clips sideways without being a scroll container', async () => {
+    const page = await mount()
+    const root = page.el.querySelector('.\\@container')
+    // A scroll container here makes WebKitGTK repaint the view on every frame
+    // of the timeline's ping: ~45% of a core beside the desktop side panel.
+    expect(root.classList).toContain('supports-[overflow:clip]:overflow-x-clip')
+    expect(root.classList).toContain('min-h-0')
+  })
+})

@@ -201,6 +201,11 @@
 - **WebKit counts matches but never says which is active**, so core's
   `FindSession` keeps the ordinal; WKWebView does not even count, so a script does,
   in a content world of its own so the page never reads the text.
+- **In WebKitGTK an endless animation inside a scroll container can cost tens
+  of percent of a core.** Beside the panel, the timeline's ping in the task
+  view's `overflow-x-hidden` root took ~45% of a core with the page idle; the
+  root is now `overflow-x-clip`, which scrolls nothing. Measure the tree's CPU, not
+  the host's IPC: the host already sends bounds only when they change.
 
 ## Window, menu and keys
 
