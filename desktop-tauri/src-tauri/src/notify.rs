@@ -77,6 +77,8 @@ pub trait Desk: Send + Sync {
     fn set_unread(&self, count: u32, generation: u64);
     /// The tray's recent workspaces.
     fn touch_workspace(&self, id: &str, name: &str);
+    /// Drop them: they were another profile's.
+    fn forget_workspaces(&self);
 }
 
 /// The count is published by the [`Notifier`] once its lock is dropped: the
@@ -197,6 +199,7 @@ impl Notifier {
     fn forget(&self) {
         self.clear_unread();
         lock(&self.names).clear();
+        self.desk.forget_workspaces();
     }
 }
 
@@ -331,6 +334,9 @@ pub(crate) mod tests {
         fn touch_workspace(&self, id: &str, name: &str) {
             lock(&self.touched).push((id.to_string(), name.to_string()));
         }
+        fn forget_workspaces(&self) {
+            lock(&self.touched).clear();
+        }
     }
 
     #[derive(Default)]
@@ -420,6 +426,10 @@ pub(crate) mod tests {
         // Known now, so not asked for again.
         assert_eq!(rig.server.requests().len(), 1);
         assert_eq!(lock(&rig.notifier.names).get("w2").unwrap(), "");
+
+        // Another profile's stream: its tray starts with none of these.
+        rig.notifier.forget();
+        assert!(lock(&rig.desk.touched).is_empty());
     }
 
     #[tokio::test]
@@ -525,6 +535,9 @@ pub(crate) mod tests {
             self.wait_for_main_thread();
         }
         fn touch_workspace(&self, _id: &str, _name: &str) {
+            self.wait_for_main_thread();
+        }
+        fn forget_workspaces(&self) {
             self.wait_for_main_thread();
         }
     }

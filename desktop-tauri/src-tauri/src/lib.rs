@@ -465,6 +465,12 @@ impl<R: Runtime> Desk for TauriDesk<R> {
             shell.touch_recent_workspace(&self.0, id, Some(name));
         }
     }
+
+    fn forget_workspaces(&self) {
+        if let Some(shell) = self.shell() {
+            shell.forget_recent_workspaces(&self.0);
+        }
+    }
 }
 
 /// A removed profile's store that a quit kept from being deleted, deleted now.
