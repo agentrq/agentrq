@@ -375,9 +375,9 @@ fn refuse_notifications<R: Runtime>(window: &WebviewWindow<R>) {
         let handler = PermissionRequestedEventHandler::create(Box::new(|_, args| {
             let Some(args) = args else { return Ok(()) };
             let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
-            unsafe { args.PermissionKind(&mut kind)? };
+            args.PermissionKind(&mut kind)?;
             if main_refuses_webview2(kind.0) {
-                unsafe { args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY)? };
+                args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY)?;
             }
             Ok(())
         }));
