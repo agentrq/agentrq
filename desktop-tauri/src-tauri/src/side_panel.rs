@@ -890,7 +890,7 @@ pub(crate) mod tests {
         app: tauri::App<MockRuntime>,
         main: WebviewWindow<MockRuntime>,
         opened: Opened,
-        events: Arc<Mutex<Vec<Value>>>,
+        events: Heard,
         _profiles: crate::profiles::tests::Rig,
     }
 
@@ -905,7 +905,7 @@ pub(crate) mod tests {
             std::mem::take(&mut *lock(&self.opened))
         }
         fn events(&self) -> Vec<Value> {
-            std::mem::take(&mut *lock(&self.events))
+            self.events.take()
         }
         fn seen(&self, label: &str) -> Option<(String, bool, u64, Option<String>)> {
             let state = self.state();
@@ -953,11 +953,7 @@ pub(crate) mod tests {
             lock(&log).push((target, url.to_string()));
         });
         app.manage(SidePanelState::new(app.handle(), open));
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let heard = Arc::clone(&events);
-        app.listen_any(GUEST_EVENT, move |event| {
-            lock(&heard).push(serde_json::from_str(event.payload()).unwrap());
-        });
+        let events = Heard::new(app.handle(), GUEST_EVENT);
         let main = WebviewWindowBuilder::new(&app, MAIN, Default::default())
             .build()
             .expect("mock window");
@@ -1000,6 +996,43 @@ pub(crate) mod tests {
             .find(|()| done() || std::time::Instant::now() > deadline);
         assert!(done(), "{what}");
     }
+
+    /// What a test's Rust listener heard of `event`, from every target. Tauri
+    /// queues an emit that meets another thread's until the next emit that
+    /// runs a Rust handler, so each read emits one first.
+    pub(crate) struct Heard {
+        app: AppHandle<MockRuntime>,
+        payloads: Arc<Mutex<Vec<Value>>>,
+    }
+
+    impl Heard {
+        pub(crate) fn new(app: &AppHandle<MockRuntime>, event: &str) -> Self {
+            let payloads = Arc::new(Mutex::new(Vec::new()));
+            let log = Arc::clone(&payloads);
+            app.listen_any(event, move |event| {
+                lock(&log).push(serde_json::from_str(event.payload()).unwrap());
+            });
+            app.listen_any(FLUSH, |_| ());
+            Self {
+                app: app.clone(),
+                payloads,
+            }
+        }
+
+        /// Everything heard so far.
+        pub(crate) fn all(&self) -> Vec<Value> {
+            self.app.emit(FLUSH, ()).unwrap();
+            lock(&self.payloads).clone()
+        }
+
+        /// Everything heard since the last `take`.
+        pub(crate) fn take(&self) -> Vec<Value> {
+            self.app.emit(FLUSH, ()).unwrap();
+            std::mem::take(&mut *lock(&self.payloads))
+        }
+    }
+
+    const FLUSH: &str = "agentrq:test:flush";
 
     #[test]
     fn a_sites_notification_click_goes_to_the_window_and_its_page() {
@@ -1318,8 +1351,8 @@ pub(crate) mod tests {
         assert_eq!(first.len(), 64);
         assert_eq!(token(rig.handle(), &ext), Some(first.clone()));
         wait_for("the load reported", &|| {
-            let events = lock(&rig.events);
-            events
+            rig.events
+                .all()
                 .last()
                 .is_some_and(|e| e["kind"] == "loading" && e["loading"] == false)
         });

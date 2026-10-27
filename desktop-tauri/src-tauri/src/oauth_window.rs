@@ -239,10 +239,12 @@ impl Pending {
 
     /// The person closing the window, which is declining. Whether to keep it
     /// open: always, until the run has taken its session back and destroys
-    /// it, which no close may skip.
+    /// it, which no close may skip. Read before ending: the run it wakes may
+    /// be destroying the window by the time `end` returns.
     pub fn close_requested(&self) -> bool {
+        let held = !self.destroying.load(Ordering::SeqCst);
         self.end(OAuthError::Closed);
-        !self.destroying.load(Ordering::SeqCst)
+        held
     }
 
     fn send(&self, ended: Ended) {

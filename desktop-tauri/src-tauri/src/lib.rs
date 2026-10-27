@@ -796,6 +796,8 @@ pub fn run() {
             _ => {}
         }
         chrome::on_run_event(app, &event);
+        #[cfg(target_os = "macos")]
+        shell::on_run_event(app, &event);
     });
 }
 
@@ -818,5 +820,72 @@ mod tests {
         assert!(!pubkey_is_set(Some("   ")));
         assert!(!pubkey_is_set(Some("\t\n")));
         assert!(pubkey_is_set(Some("dW50cnVzdGVkIGNvbW1lbnQ6...")));
+    }
+
+    /// Tauri queues a Rust listener's registration, and an emit that meets
+    /// another thread's, until the next emit that runs a Rust handler, which
+    /// may never come. So production code handles the run event or calls the
+    /// function; only tests listen.
+    #[test]
+    fn no_production_code_listens_to_events_in_rust() {
+        let sample = "fn a() {\n    app.listen(\"x\", f);\n}\n#[cfg(test)]\nmod helper;\n\
+                      #[cfg(test)]\nmod tests {\n    fn b() {\n        app.once(\"y\", f);\n    }\n}\n";
+        assert_eq!(
+            listeners(sample),
+            (vec!["2: app.listen(\"x\", f);".to_string()], vec!["helper"])
+        );
+
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = vec![src];
+        let mut test_only = Vec::new();
+        let mut found = Vec::new();
+        while let Some(path) = files.pop() {
+            if path.is_dir() {
+                files.extend(std::fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            let (lines, modules) = listeners(&text);
+            found.extend(lines.into_iter().map(|l| (path.clone(), l)));
+            test_only.extend(modules.iter().map(|m| format!("{m}.rs")));
+        }
+        found.retain(|(path, _)| !test_only.iter().any(|m| path.ends_with(m)));
+        assert!(found.is_empty(), "{found:#?}");
+    }
+
+    /// The lines outside `#[cfg(test)]` items that register a Rust listener,
+    /// and the modules declared test-only.
+    fn listeners(text: &str) -> (Vec<String>, Vec<&str>) {
+        const CALLS: [&str; 5] = [
+            ".listen(",
+            ".listen_any(",
+            ".once(",
+            ".once_any(",
+            "on_open_url(",
+        ];
+        let (mut found, mut modules) = (Vec::new(), Vec::new());
+        let (mut in_test, mut depth, mut opened) = (false, 0i32, false);
+        for (n, line) in text.lines().enumerate() {
+            let code = line.trim();
+            if code == "#[cfg(test)]" {
+                (in_test, depth, opened) = (true, 0, false);
+                continue;
+            }
+            if !in_test {
+                if CALLS.iter().any(|call| code.contains(call)) {
+                    found.push(format!("{}: {code}", n + 1));
+                }
+                continue;
+            }
+            if !opened && code.ends_with(';') {
+                modules.extend(code.strip_prefix("mod ").and_then(|m| m.strip_suffix(';')));
+                in_test = false;
+                continue;
+            }
+            depth += code.matches('{').count() as i32 - code.matches('}').count() as i32;
+            opened |= code.contains('{');
+            in_test = !opened || depth > 0;
+        }
+        (found, modules)
     }
 }
