@@ -566,6 +566,34 @@ await runVerify(
     await addressIs(shown)
     record('the Extension can open the panel at an address', true, shown)
 
+    // ── a reply while a task is open ────────────────────────────────────────
+    // Leaving a task with messages for one with none opens its description,
+    // which once squeezed the conversation until replies arrived out of sight.
+    await closePanel()
+    const live = await page(`(async () => {
+      const call = async (path, body) => (await fetch('/api/v1/workspaces/${ids.workspace}' + path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json()
+      await call('/tasks/${ids.task}/reply', { reply: { text: 'An earlier message.', attachments: [] } })
+      const { task } = await call('/tasks', { task: { title: 'Live replies',
+        body: 'A long brief.\\n\\n' + '- one more point to read through\\n'.repeat(60), createdBy: 'human', assignee: 'agent' } })
+      return task.id
+    })()`)
+    const router = "document.querySelector('#app').__vue_app__.config.globalProperties.$router"
+    await page(`${router}.push(${JSON.stringify(taskPath)}).then(() => true)`)
+    await inPage('the task with a message', "document.body.textContent.includes('An earlier message.')")
+    await page(`${router}.push('/workspaces/${ids.workspace}/tasks/${live}').then(() => true)`)
+    await inPage('the task with none', "document.body.textContent.includes('A long brief.')")
+    await page(`fetch('/api/v1/workspaces/${ids.workspace}/tasks/${live}/reply', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reply: { text: 'A live reply.', attachments: [] } }) }).then(() => true)`)
+    // Seen, not only in the DOM: what is drawn at the reply's own middle is the reply.
+    const seen = await inPage('the reply to be drawn', `(() => {
+      const bubble = [...document.querySelectorAll('.md-body')].find((el) => el.textContent.includes('A live reply.'));
+      if (!bubble) return false;
+      const r = bubble.getBoundingClientRect();
+      return bubble.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)) && Math.round(r.height);
+    })()`).catch(() => 0)
+    record('a reply posted while a task is open appears in it', seen > 0, `drawn ${seen}px tall`)
+
     printResults('the side panel, in a real window', [...results, ...SKIPPED])
     return summarize(results, SKIPPED)
   },

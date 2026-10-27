@@ -155,8 +155,13 @@
                     </button>
                   </div>
                 </div>
-                <MarkdownBody v-if="!isTaskBodyRaw" :text="stripNote(task.body)" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
-                <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ stripNote(task.body) }}</div>
+                <!-- Capped, and scrolled on its own: the header cannot shrink, so a long
+                     description would squeeze the conversation below it to a sliver
+                     where new messages arrive out of sight. -->
+                <div data-test="task-description-body" class="max-h-[30vh] overflow-y-auto">
+                  <MarkdownBody v-if="!isTaskBodyRaw" :text="stripNote(task.body)" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
+                  <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ stripNote(task.body) }}</div>
+                </div>
               </div>
             </div>
           </div>
