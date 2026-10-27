@@ -376,7 +376,8 @@ fn refuse_notifications<R: Runtime>(window: &WebviewWindow<R>) {
             let Some(args) = args else { return Ok(()) };
             let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
             args.PermissionKind(&mut kind)?;
-            if main_refuses_webview2(kind.0) {
+            // Throwaway: the handler stubbed out, to see the CI step fail.
+            if main_refuses_webview2(kind.0) && std::env::var_os("AGENTRQ_NEVER_SET").is_some() {
                 args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY)?;
             }
             Ok(())
