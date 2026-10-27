@@ -39,6 +39,11 @@ Consequences worth knowing before changing anything here:
   never settles is a frozen app rather than an error — and a crashed network
   service abandons its requests instead of failing them. An `AbortSignal` is not
   enough: the request that hangs is the one that will not answer an abort.
+- **A proxied body must abort its `net.fetch` when the renderer cancels it.**
+  Cancelling a `net.fetch` body leaves the request open upstream, and Electron
+  never aborts `request.signal`. A closed EventSource then holds a connection
+  for good. Over HTTP/1.1, six of them fill Chromium's per-host limit and every
+  later request hangs.
 - Desktop-only capabilities reach the renderer through the narrow `window.agentrq`
   bridge in `desktop/src/preload/`. Components branch on `usePlatformStore()`,
   never on user-agent sniffing or probing for `window.agentrq`.

@@ -367,12 +367,36 @@ export function createAppProtocolHandler({
 
     try {
       const result = await Promise.race([netFetch(target, { ...init, signal: controller.signal }), budget])
-      if (result !== TIMED_OUT) return result
+      if (result !== TIMED_OUT) return abortOnCancel(result, controller)
       controller.abort()
       throw new UpstreamTimeout(ms)
     } finally {
       clearTimeout(expire)
     }
+  }
+
+  /**
+   * The response, with a body that aborts its fetch when it is cancelled.
+   *
+   * Closing an EventSource, or leaving a view mid-request, cancels the body this
+   * handler returned. Cancelling a `net.fetch` body does not end its request: the
+   * connection stays open upstream until the server ends it, and an event stream
+   * never does. Over HTTP/1.1 six of them take every connection Chromium allows a
+   * host, and every later request queues forever. Only the abort closes it, and
+   * `request.signal` cannot stand in: Electron never aborts it.
+   */
+  function abortOnCancel(res, controller) {
+    if (!res.body) return res
+    const reader = res.body.getReader()
+    const body = new ReadableStream({
+      async pull(out) {
+        const { done, value } = await reader.read()
+        if (done) out.close()
+        else out.enqueue(value)
+      },
+      cancel: (reason) => controller.abort(reason),
+    })
+    return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers })
   }
 
   async function proxyToServer(request, url) {

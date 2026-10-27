@@ -508,6 +508,47 @@ describe('createAppProtocolHandler — proxying', () => {
     expect(new TextDecoder().decode(chunk.value)).toBe('data: still here\n\n')
   })
 
+  it('closes the upstream when the renderer cancels the stream', async () => {
+    // What a closed EventSource does. Like net.fetch, this upstream ignores a
+    // cancelled body and closes only on its abort signal, so a stream that was
+    // merely passed through would stay open and hold a connection for good.
+    let upstreamOpen = false
+    const netFetch = vi.fn(async (_url, init) => {
+      upstreamOpen = true
+      init.signal.addEventListener('abort', () => (upstreamOpen = false))
+      return new Response(new ReadableStream({ cancel: () => {} }), { status: 200 })
+    })
+    const { handler } = makeHandler({ netFetch })
+
+    const res = await handler(makeRequest('app://agentrq/api/v1/events/stream'))
+    expect(upstreamOpen).toBe(true)
+
+    await res.body.cancel()
+    expect(upstreamOpen).toBe(false)
+  })
+
+  it('does not abort a body that was read to its end', async () => {
+    let signal
+    const netFetch = vi.fn(async (_url, init) => {
+      signal = init.signal
+      return new Response('{"ok":true}', { status: 200 })
+    })
+    const { handler } = makeHandler({ netFetch })
+
+    const res = await handler(makeRequest('app://agentrq/api/v1/tasks'))
+    expect(await res.text()).toBe('{"ok":true}')
+    expect(signal.aborted).toBe(false)
+  })
+
+  it('passes a response with no body through as one', async () => {
+    const netFetch = vi.fn(async () => new Response(null, { status: 204 }))
+    const { handler } = makeHandler({ netFetch })
+
+    const res = await handler(makeRequest('app://agentrq/api/v1/tasks/t1', { method: 'DELETE' }))
+    expect(res.status).toBe(204)
+    expect(res.body).toBeNull()
+  })
+
   it('bounds a forwarded request at thirty seconds by default', () => {
     expect(PROXY_TIMEOUT_MS).toBe(30000)
   })
