@@ -264,6 +264,15 @@ impl<F: ConfigFile> ServerConfigStore<F> {
         migrate_config(&raw)
     }
 
+    /// What is on disk, or `None` when the file is missing or unreadable —
+    /// which [`load`](Self::load) answers with a first run, and which must
+    /// never be taken as every other profile having been removed.
+    pub fn load_stored(&self) -> Option<ServerConfig> {
+        let contents = self.file.read_file().ok()?;
+        let raw = serde_json::from_str::<Value>(&contents).ok()?;
+        Some(migrate_config(&raw))
+    }
+
     /// The profile in use, with its own server and mute list.
     pub fn active(&self) -> Profile {
         self.load().active().clone()
@@ -808,6 +817,19 @@ mod tests {
         assert_eq!(config.version, CONFIG_VERSION);
         assert_eq!(config.profiles.len(), 1);
         assert_eq!(config.profiles[0].server_url, "");
+    }
+
+    #[test]
+    fn says_when_nothing_was_really_read() {
+        assert!(ServerConfigStore::new(&MemoryFile::default())
+            .load_stored()
+            .is_none());
+        assert!(ServerConfigStore::new(&MemoryFile::with("{ not json"))
+            .load_stored()
+            .is_none());
+        let file = MemoryFile::with(r#"{"version":1,"serverUrl":"https://example.com"}"#);
+        let stored = ServerConfigStore::new(&file).load_stored().unwrap();
+        assert_eq!(stored.active().server_url, "https://example.com");
     }
 
     #[test]

@@ -327,6 +327,10 @@ impl Profiles {
     /// closed can hold its folder open for a moment, so a removal that could
     /// not delete it is finished here, at the next start.
     pub fn sweep(&self) {
+        // An unreadable config reads as a first run, which owns no profile.
+        if self.store().load_stored().is_none() {
+            return;
+        }
         let names: Vec<String> = std::fs::read_dir(self.base.join("profiles"))
             .into_iter()
             .flatten()
@@ -342,6 +346,9 @@ impl Profiles {
     /// counterpart for a store.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn orphaned_stores(&self, stores: &[[u8; 16]]) -> Vec<[u8; 16]> {
+        if self.store().load_stored().is_none() {
+            return Vec::new();
+        }
         orphaned_data_stores(stores, &self.config().state())
     }
 
@@ -1466,7 +1473,11 @@ pub(crate) mod tests {
 
     #[test]
     fn sweeps_the_folders_of_removed_profiles_on_start() {
-        let rig = rig();
+        let rig = rig_with(
+            Some(json!({"version": 3, "activeProfileId": "default",
+                "profiles": [{"id": "default", "label": "Default", "serverUrl": ""}]})),
+            None,
+        );
         let base = rig.dir.path();
         for name in ["default", "gone", "Keep"] {
             std::fs::create_dir_all(base.join("profiles").join(name)).unwrap();
@@ -1476,6 +1487,20 @@ pub(crate) mod tests {
         assert!(!base.join("profiles/gone").exists());
         assert!(base.join("profiles/Keep").exists(), "not a profile's name");
         rig_with(None, None).profiles.sweep();
+    }
+
+    #[test]
+    fn sweeps_nothing_when_the_config_cannot_be_read() {
+        let rig = rig();
+        let base = rig.dir.path();
+        std::fs::create_dir_all(base.join("profiles/abc123")).unwrap();
+        std::fs::write(base.join(CONFIG_FILENAME), "{ not json").unwrap();
+        rig.profiles.sweep();
+        assert!(base.join("profiles/abc123").exists());
+        assert_eq!(
+            rig.profiles.orphaned_stores(&[[7; 16]]),
+            Vec::<[u8; 16]>::new()
+        );
     }
 
     #[test]
