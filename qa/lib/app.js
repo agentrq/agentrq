@@ -53,6 +53,11 @@ export async function createTask(page, workspaceId, title, status = 'notstarted'
   return (await expectOk(res, `creating the task ${title}`)).task
 }
 
+export async function replyToTask(page, workspaceId, taskId, text) {
+  const res = await send(page, 'POST', `/workspaces/${workspaceId}/tasks/${taskId}/reply`, { reply: { text, attachments: [] } })
+  return expectOk(res, `replying to task ${taskId}`)
+}
+
 export async function setTaskStatus(page, workspaceId, taskId, value) {
   const res = await send(page, 'PATCH', `/workspaces/${workspaceId}/tasks/${taskId}/status`, { status: { value } })
   return (await expectOk(res, `moving task ${taskId} to ${value}`)).task

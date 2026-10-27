@@ -586,13 +586,16 @@ await runVerify(
     await page(`fetch('/api/v1/workspaces/${ids.workspace}/tasks/${live}/reply', { method: 'POST',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reply: { text: 'A live reply.', attachments: [] } }) }).then(() => true)`)
     // Seen, not only in the DOM: what is drawn at the reply's own middle is the reply.
-    const seen = await inPage('the reply to be drawn', `(() => {
+    const atReply = `(() => {
       const bubble = [...document.querySelectorAll('.md-body')].find((el) => el.textContent.includes('A live reply.'));
-      if (!bubble) return false;
+      if (!bubble) return 'no reply in the page';
       const r = bubble.getBoundingClientRect();
-      return bubble.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)) && Math.round(r.height);
-    })()`).catch(() => 0)
-    record('a reply posted while a task is open appears in it', seen > 0, `drawn ${seen}px tall`)
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      if (bubble.contains(hit)) return 'the reply';
+      return hit ? 'a <' + hit.tagName.toLowerCase() + '> reading ' + JSON.stringify(hit.textContent.trim().slice(0, 40)) : 'nothing, outside the window';
+    })()`
+    const seen = await inPage('the reply to be drawn', `${atReply} === 'the reply'`).catch(() => false)
+    record('a reply posted while a task is open appears in it', seen === true, `at its middle: ${await page(atReply)}`)
 
     printResults('the side panel, in a real window', [...results, ...SKIPPED])
     return summarize(results, SKIPPED)

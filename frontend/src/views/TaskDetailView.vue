@@ -1576,11 +1576,12 @@ async function loadEarlierToolCalls() {
   }
 }
 
-watch(() => sortedMessages.value.length, (count) => {
-  if (count === 0 && task.value?.body) {
-    isDescriptionCollapsed.value = false;
-  }
-}, { immediate: true });
+// The description is open while a task has nothing but it to read, and out of
+// the conversation's way once there is more: load() decides it for each task,
+// and the first reply closes it.
+watch(() => sortedMessages.value.length, (count, before) => {
+  if (before === 0 && count > 0) isDescriptionCollapsed.value = true;
+});
 
 function scrollToBottom() {
   // The container is resolved after the wait, not before: see useChatScroll.
@@ -1648,6 +1649,7 @@ async function load() {
     // the one thing where showing something stale is worse than showing
     // nothing, so nothing local survives this line.
     task.value = tRes.task;
+    isDescriptionCollapsed.value = !tRes.task.body || !!tRes.task.messages?.length;
     stateTransitions.value = tRes.stateTransitions || [];
     cacheTask(sharedCache(), tRes.task);
     loadTaskPlan(workspaceId.value, taskId.value);
@@ -1679,6 +1681,7 @@ watch(() => route.params.taskId, (newTaskId, oldTaskId) => {
   flushHeldMessage();
   replyText.value = '';
   replyAttachments.value = [];
+  isDescriptionCollapsed.value = true;
 
   if (newTaskId && newTaskId !== task.value?.id) {
     disconnect();
