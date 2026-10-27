@@ -59,9 +59,10 @@ pub const INSTALL_COMMAND: &str = "curl -fsSL https://agentrq.com/install.sh | s
 /// someone at a terminal and wrong for someone who just pressed a button.
 ///
 /// Chained with `&&`, so a failed install leaves the old app in place rather
-/// than reopening whatever is left of it.
+/// than reopening whatever is left of it. Fetched before it runs: piped, a
+/// failed download runs an empty script that exits 0.
 pub const INSTALL_SCRIPT_COMMAND: &str =
-    "curl -fsSL https://agentrq.com/install.sh | sh -s -- --quit --tauri && open -a 'AgentRQ Tauri'";
+    "s=$(curl -fsSL https://agentrq.com/install.sh) && printf '%s\\n' \"$s\" | sh -s -- --quit --tauri && open -a 'AgentRQ Tauri'";
 
 const DISABLED_IN_DEVELOPMENT: &str = "Updates are disabled in a development build";
 
@@ -458,10 +459,12 @@ fn last_percent(text: &str) -> Option<f64> {
 /// requests are `-s` and never print one, but that is install.sh's choice, not
 /// ours to rely on.
 pub fn parse_installer_log(text: &str) -> InstallerLogState {
-    // `^error: (.*)$` per line, where curl's `\r` redraws also end a line.
-    let error = text
-        .split(['\n', '\r', '\u{2028}', '\u{2029}'])
+    // `^error: (.*)$` per line, where curl's `\r` redraws also end a line; or
+    // curl's own, when fetching the installer itself failed.
+    let lines = || text.split(['\n', '\r', '\u{2028}', '\u{2029}']);
+    let error = lines()
         .find_map(|line| line.strip_prefix("error: "))
+        .or_else(|| lines().find(|line| line.starts_with("curl: ")))
         // JS `trim()` also strips a byte-order mark, which Rust's does not.
         .map(|rest| {
             rest.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
@@ -920,6 +923,7 @@ impl Updater {
         self.inner
             .logger
             .warn(&format!("installer failed: {reason}"));
+        self.inner.auto_updater.set_auto_install_on_app_quit(true);
         self.enqueue(UpdateStatus::Error, &reason, INSTALL_COMMAND, None);
     }
 
@@ -963,10 +967,14 @@ impl Updater {
             return ActionResult::refused("Updates cannot be installed from here");
         };
 
+        // On Linux the installer leaves this app running, and installing what
+        // was downloaded earlier at quit would put an older version back.
+        self.inner.auto_updater.set_auto_install_on_app_quit(false);
         let mut log = None;
         match self.launch_installer(spawner, &mut log) {
             Ok(()) => ActionResult::ok(),
             Err(error) => {
+                self.inner.auto_updater.set_auto_install_on_app_quit(true);
                 if let Some(log) = log {
                     log.close();
                 }
@@ -2076,6 +2084,41 @@ mod tests {
             parse_installer_log(&log).error,
             "download failed: https://x"
         );
+        // The installer itself could not be fetched, so only curl spoke.
+        assert_eq!(
+            parse_installer_log("curl: (6) Could not resolve host: agentrq.com\n").error,
+            "curl: (6) Could not resolve host: agentrq.com"
+        );
+    }
+
+    #[test]
+    fn fetches_the_installer_before_running_it() {
+        // Piped, a failed download runs an empty script, which exits 0.
+        assert!(INSTALL_SCRIPT_COMMAND
+            .starts_with("s=$(curl -fsSL https://agentrq.com/install.sh) && "));
+        assert!(!INSTALL_SCRIPT_COMMAND.contains("install.sh |"));
+    }
+
+    #[test]
+    fn does_not_install_an_earlier_download_at_quit_while_the_installer_runs() {
+        let s = running("linux");
+        s.setup.auto.auto_install.store(true, Ordering::SeqCst);
+
+        s.setup.updater.install_via_script();
+        assert!(!s.setup.auto.auto_install.load(Ordering::SeqCst));
+
+        // A failed install leaves the download as the way forward.
+        s.spawner.child.end(InstallerExit::Exited(Some(1)));
+        assert!(s.setup.auto.auto_install.load(Ordering::SeqCst));
+
+        let failing = FakeSpawner {
+            fail_with: Some("EPERM".to_string()),
+            ..Default::default()
+        };
+        let (s, _) = with_spawn("linux", Some(failing), false);
+        s.setup.auto.auto_install.store(true, Ordering::SeqCst);
+        s.setup.updater.install_via_script();
+        assert!(s.setup.auto.auto_install.load(Ordering::SeqCst));
     }
 
     #[test]

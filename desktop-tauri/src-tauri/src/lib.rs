@@ -190,17 +190,34 @@ impl<R: Runtime> AutoUpdater for TauriAutoUpdater<R> {
                 }
             };
 
-            emit_event(UpdaterEvent::Checking);
+            // With an update already downloaded only a newer one is news: a
+            // 'checking' over it hides Restart, and the same update would be
+            // downloaded again on every check.
+            let held = downloaded
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|(update, _)| update.version.clone());
+            if held.is_none() {
+                emit_event(UpdaterEvent::Checking);
+            }
             let updater = match app.updater() {
                 Ok(u) => u,
                 Err(e) => {
-                    emit_event(UpdaterEvent::Error(e.to_string()));
+                    if held.is_none() {
+                        emit_event(UpdaterEvent::Error(e.to_string()));
+                    }
                     checking.store(false, Ordering::SeqCst);
                     return;
                 }
             };
 
             match updater.check().await {
+                Ok(Some(update)) if held.as_deref() == Some(update.version.as_str()) => {
+                    emit_event(UpdaterEvent::Downloaded {
+                        version: Some(update.version),
+                    });
+                }
                 Ok(Some(update)) => {
                     let version = update.version.clone();
                     emit_event(UpdaterEvent::Available {
@@ -242,9 +259,11 @@ impl<R: Runtime> AutoUpdater for TauriAutoUpdater<R> {
                         }
                     }
                 }
+                Ok(None) if held.is_some() => {}
                 Ok(None) => {
                     emit_event(UpdaterEvent::NotAvailable);
                 }
+                Err(e) if held.is_some() => eprintln!("update check failed: {e}"),
                 Err(e) => {
                     emit_event(UpdaterEvent::Error(e.to_string()));
                 }
@@ -256,11 +275,18 @@ impl<R: Runtime> AutoUpdater for TauriAutoUpdater<R> {
     }
 
     fn quit_and_install(&self) {
-        if let Some((update, bytes)) = self.downloaded.lock().unwrap().take() {
-            if let Err(e) = update.install(bytes) {
-                eprintln!("failed to install update: {e}");
-            } else {
-                self.app.restart();
+        // Kept on failure, so the next check offers it again.
+        let result = match self.downloaded.lock().unwrap().as_ref() {
+            Some((update, bytes)) => update.install(bytes),
+            None => return,
+        };
+        match result {
+            Ok(()) => self.app.restart(),
+            Err(e) => {
+                let u = self.updater_cell.lock().unwrap().clone();
+                if let Some(u) = u {
+                    u.handle_event(UpdaterEvent::Error(e.to_string()));
+                }
             }
         }
     }
