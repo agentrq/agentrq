@@ -63,6 +63,8 @@ dependencies = [
  "objc2-app-kit",
  "objc2-foundation",
  "objc2-web-kit",
+ "proc-macro2",
+ "quote",
  "reqwest",
  "rust-ini",
  "serde",

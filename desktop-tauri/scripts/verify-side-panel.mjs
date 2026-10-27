@@ -98,6 +98,7 @@ let site
 let blocker
 let shell
 let dir
+let home
 
 const results = []
 const record = (name, pass, detail = '') => results.push({ name, pass, detail })
@@ -113,6 +114,7 @@ const SKIPPED = [
 await runVerify(
   async () => {
     dir = await mkdtemp(join(tmpdir(), 'agentrq-verify-panel-'))
+    home = await mkdtemp(join(tmpdir(), 'agentrq-verify-app-'))
     backend = await startBackend()
     site = await startSite()
     blocker = await startSite()
@@ -120,7 +122,7 @@ await runVerify(
     await mkdir(join(dir, 'panel'))
     await writeFile(join(dir, 'panel/index.html'), extensionPage(site.origin))
     for (const [file, text] of Object.entries(extensionFiles)) await writeFile(join(dir, file), text)
-    app = await launchApp({ serverUrl: backend.url, env: shell?.env })
+    app = await launchApp({ serverUrl: backend.url, env: shell?.env, home })
     const { session } = app
     const page = (code) => session.evaluate(code)
     const inPage = (what, code, options) => session.waitForPage(what, code, options)
@@ -498,8 +500,11 @@ await runVerify(
       const burst = await newGuest(`${site.origin}/notify?burst`)
       const burstDone = await site.hit('the page to show its burst', (h) => h.query.get('gid') === burst.gid && h.query.has('burst'))
       await settle()
-      const bursts = (await shell.notifications()).filter((n) => / — Burst \d$/.test(n.summary)).map((n) => n.summary.split(' ').pop())
+      // Each is sent to the notifier on a thread of its own, so in any order.
+      const bursts = (await shell.notifications()).filter((n) => / — Burst \d$/.test(n.summary)).map((n) => n.summary.split(' ').pop()).sort()
       record('a page that floods shows five, then nothing', bursts.join() === '1,2,3,4,5', `${bursts.join()} (the page: ${burstDone.query.get('burst')}; ${burst.said.notification})`)
+      const burstClosed = site.beacons(burst.gid).map((h) => h.query.get('closed')).filter(Boolean).sort()
+      record('the page hears the ones past the limit closed, as a browser\'s would', burstClosed.join() === 'Burst 6,Burst 7,Burst 8', burstClosed.join())
 
       // With the site's Allow removed, a page WebKit already told "granted"
       // still shows nothing: the shell asks again at each one.
@@ -510,9 +515,10 @@ await runVerify(
       const removed = await site.hit('the page to try after the removal', (h) => h.query.has('shown'), { since: showing })
       await settle()
       const afterRemoval = await shownAs('After removal')
-      record('after its Allow is removed, a page still told "granted" shows nothing',
-        removing.said.notification === 'native/granted' && removed.query.get('shown') === 'granted' && afterRemoval.length === 0,
-        `told ${removed.query.get('shown')}; notifier given ${JSON.stringify(afterRemoval)}`)
+      const removedClosed = site.beacons(removed.query.get('gid')).some((h) => h.query.get('closed') === 'After removal')
+      record('after its Allow is removed, a page still told "granted" shows nothing, and hears it closed',
+        removing.said.notification === 'native/granted' && removed.query.get('shown') === 'granted' && afterRemoval.length === 0 && removedClosed,
+        `told ${removed.query.get('shown')}; notifier given ${JSON.stringify(afterRemoval)}; ${removedClosed ? '' : 'not '}closed for the page`)
 
       // A site the person blocks.
       const blocking = await newGuest(`${blocker.origin}/notify?ask`, blocker)
@@ -598,6 +604,38 @@ await runVerify(
     const seen = await inPage('the reply to be drawn', `${atReply} === 'the reply'`).catch(() => false)
     record('a reply posted while a task is open appears in it', seen === true, `at its middle: ${await page(atReply)}`)
 
+    // ── the app's own notification ──────────────────────────────────────────
+    // A task the agent makes is news, and its click opens it. Signing in from
+    // the page leaves the shell's event stream stopped by its 401, as in
+    // Electron, so the app is launched again, signed in. Until the stream is
+    // connected an event is lost: the agent makes another task every two
+    // seconds until one shows.
+    const appNotificationChecks = 'an app notification is shown, and its click opens its task'
+    if (shell?.notifications) {
+      await app.close()
+      app = await launchApp({ serverUrl: backend.url, env: shell.env, home })
+      const again = (code) => app.session.evaluate(code)
+      await app.session.waitForPage('the app to start again', "!!document.querySelector('#app')?.children.length")
+      const made = new Map()
+      const fromAgent = (title) => again(`(async () => (await (await fetch(${JSON.stringify(`/api/v1/workspaces/${ids.workspace}/tasks`)}, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task: { title: ${JSON.stringify(title)}, body: 'Made by the agent.', createdBy: 'agent', assignee: 'human' } }) })).json()).task.id)()`)
+      const news = await waitFor('the agent\'s new task to be shown', async () => {
+        const shown = (await shell.notifications()).find((n) => made.has(n.summary))
+        if (shown) return shown
+        const title = `From the agent ${made.size + 1}`
+        made.set(`New task: ${title}`, await fromAgent(title))
+        return false
+      }, { interval: 2000 })
+      record('an agent\'s new task is shown through the notifier, named for its workspace', news.body === 'panel', JSON.stringify(news))
+      const route = `/workspaces/${ids.workspace}/tasks/${made.get(news.summary)}`
+      await shell.click(news.id)
+      await app.session.waitForPage(`the app to open ${route}`, `location.pathname === ${JSON.stringify(route)}`)
+      record('clicking it opens its task', true, route)
+    } else if (process.env.CI) {
+      record(appNotificationChecks, false, 'CI must have Linux\'s stand-in notification server (python3-gi)')
+    } else SKIPPED.push(skip(appNotificationChecks, 'needs Linux\'s stand-in notification server'))
+
     printResults('the side panel, in a real window', [...results, ...SKIPPED])
     return summarize(results, SKIPPED)
   },
@@ -608,5 +646,6 @@ await runVerify(
     await blocker?.stop()
     await backend?.stop()
     if (dir) await rm(dir, { recursive: true, force: true })
+    if (home) await rm(home, { recursive: true, force: true })
   }
 )

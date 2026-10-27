@@ -378,6 +378,9 @@ fn refuse_notifications<R: Runtime>(window: &WebviewWindow<R>) {
             args.PermissionKind(&mut kind)?;
             if main_refuses_webview2(kind.0) {
                 args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY)?;
+                // CI's proof that this ran: WebView2 may deny on its own.
+                #[cfg(any(debug_assertions, feature = "e2e"))]
+                eprintln!("the main window refused WebView2 permission kind {}", kind.0);
             }
             Ok(())
         }));

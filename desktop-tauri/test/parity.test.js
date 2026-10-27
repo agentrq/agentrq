@@ -429,6 +429,21 @@ function reachesGuests(capability) {
 /** The files Tauri merges into its config: the base, each platform's, and a script's `--config`. */
 const CONFIG = /^tauri(\.[a-z]+)?\.conf\.json5?$|^Tauri(\.[a-z]+)?\.toml$|\.conf\.json5?$/i
 
+/**
+ * Each config a command line hands the Tauri CLI, which merges it too: the
+ * value of a `--config`, a `-c` given inline JSON, or a `TAURI_CONFIG`, each
+ * as `{ inline }` (its JSON text, unquoted) or `{ file }`. A `-c` that is not
+ * JSON is another program's (`bash -c '..'`).
+ */
+function configsGiven(text) {
+  const given = /(--config(?:=|\s+)|(?<![\w-])-c\s+|TAURI_CONFIG\s*[=:]\s*)(?:'([^']*)'|"((?:[^"\\]|\\.)*)"|(\{\S*|[^\s'"]+))/g
+  return [...text.matchAll(given)].flatMap(([, flag, single, double, bare]) => {
+    const value = single ?? double?.replace(/\\(.)/g, '$1') ?? bare
+    if (value.trimStart().startsWith('{')) return [{ inline: value }]
+    return flag.startsWith('-c') ? [] : [{ file: value }]
+  })
+}
+
 /** Every file under `dir`, as a path from it. */
 function filesUnder(dir) {
   return readdirSync(here(dir), { recursive: true, withFileTypes: true })
@@ -460,12 +475,58 @@ describe('no capability reaches a side panel guest', () => {
     }
   })
 
-  it('and the shell adds none at run time', () => {
+  it('and no command line hands the CLI one inline, nor a config this check does not read', () => {
+    const checked = [...readdirSync(here('../src-tauri/')), ...readdirSync(here('../scripts/'))].filter((name) => CONFIG.test(name))
+    const runners = [
+      ...readdirSync(here('../../.github/workflows/')).map((name) => `../../.github/workflows/${name}`),
+      ...filesUnder('../scripts/').map((file) => `../scripts/${file}`),
+      '../package.json',
+      '../../Makefile',
+    ]
+    expect(runners).toContain('../../.github/workflows/desktop-release.yml')
+    const inline = []
+    for (const runner of runners) {
+      for (const config of configsGiven(read(runner))) {
+        if (config.file !== undefined) {
+          const name = config.file.split(/[\\/]/).pop()
+          // Vite's and Vitest's are scripts; one in JSON or TOML is Tauri's.
+          if (/\.(json5?|toml)$/i.test(name)) expect(checked, `${runner}: --config ${config.file}`).toContain(name)
+          continue
+        }
+        let parsed
+        expect(() => (parsed = JSON.parse(config.inline)), `${runner}: ${config.inline}`).not.toThrow()
+        expect(parsed.app?.security?.capabilities, `${runner}: ${config.inline}`).toBeUndefined()
+        inline.push(config.inline)
+      }
+    }
+    // desktop-release.yml's own, read as the CLI reads it.
+    expect(inline).toContain('{"bundle":{"createUpdaterArtifacts":false}}')
+  })
+
+  it('reads each way a command line gives the CLI a config', () => {
+    const capability = '{"app":{"security":{"capabilities":[{"identifier":"x","webviews":["*"],"permissions":[]}]}}}'
+    const lines = [
+      `args+=(--config '${capability}')`,
+      `npx tauri build --config=${capability}`,
+      `npx tauri build -c "${capability.replace(/"/g, '\\"')}"`,
+      `  TAURI_CONFIG: '${capability}'`,
+      `TAURI_CONFIG=${capability} npx tauri build`,
+    ]
+    for (const line of lines) expect(configsGiven(line), line).toEqual([{ inline: capability }])
+    expect(configsGiven('tauri build --debug --config scripts/verify.tauri.conf.json')).toEqual([{ file: 'scripts/verify.tauri.conf.json' }])
+    expect(configsGiven('"build": "tauri build --config scripts/other.json",')).toEqual([{ file: 'scripts/other.json' }])
+    expect(configsGiven("vite build --config vite.renderer.config.mjs && bash -c 'echo -c x'")).toEqual([{ file: 'vite.renderer.config.mjs' }])
+    expect(configsGiven('sudo dpkg --configure -a')).toEqual([])
+  })
+
+  it('and the shell adds none at run time, nor its build script', () => {
     const sources = filesUnder('../src-tauri/src/').map((file) => `../src-tauri/src/${file}`)
     expect(sources).toContain('../src-tauri/src/lib.rs')
     for (const source of [...sources, '../src-tauri/build.rs']) {
       expect(read(source), source).not.toMatch(/add_capability/)
     }
+    // `capabilities_path_pattern(..)` would read capability files from anywhere.
+    expect(read('../src-tauri/build.rs')).not.toMatch(/capabilit\w*\s*\(/i)
   })
 
   it('reads each platform\'s config and each script\'s', () => {

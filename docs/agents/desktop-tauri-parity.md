@@ -69,10 +69,10 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 | Feature | Tests | Linux | macOS | Windows |
 |---|---|---|---|---|
 | The shell's event stream (backoff, 401 stop, 75 s watchdog) | `core::sse`, `src-tauri::events` | A (unit) | A (unit) | A (unit) |
-| Native notifications for agent activity | `core::notifications`, `src-tauri::notify` | M10 | M10 | M10 |
+| Native notifications for agent activity | `core::notifications`, `src-tauri::notify` | A `verify-side-panel` (an agent's new task); M10 | M10 | M10 |
 | Your own actions do not notify; 10 s dedupe | `core::notifications` | A (unit) | A (unit) | A (unit) |
 | Mute per workspace | `src-tauri::commands` | M10 | M10 | M10 |
-| Notification click opens the task | `src-tauri::shell` | M11 | M11 | M11; G follow-up: a click from the Action Center |
+| Notification click opens the task | `src-tauri::shell` | A `verify-side-panel` (opens it); M11 (focuses the window) | M11 | M11; G follow-up: a click from the Action Center |
 | Unread badge, cleared on focus | `core::notifications`, `src-tauri::shell` | M12 | M12 | M12 |
 | Tray / menu-bar item | `core::tray` | M13 | M13 | M13 |
 | Global shortcut `Cmd/Ctrl+Shift+N` | — | M14 | M14 | M14 |
@@ -100,7 +100,7 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 | Guest requests refused by the app's schemes | `src-tauri::scheme`, `src-tauri::panel_scheme`, `panel-init.test.js` | M25 | M25 | M25 |
 | Find in page | `core::side_panel::wire`, `core::side_panel::find`, `src-tauri::side_panel` | A `verify-side-panel` (the bar's count, and each step by the page's own selection); M29 (the key in the page) | M29 | M29 |
 | Site permissions bar, list, timeout | `core::side_panel::permissions`, `core::side_panel::permission_store`, `core::side_panel::platform_permissions`, `src-tauri::panel_permissions` | A `verify-side-panel` (location: the bar, Allow, remembered, listed); M26 | M26, M27 | M26, M28 |
-| A site's notifications: asked, shown, clicked, named for the site, limited, refused once removed or blocked | `core::side_panel::platform_permissions`, `core::side_panel::site_notifications`, `src-tauri::notify`, `panel-init.test.js` | A `verify-side-panel` | M47 (G: WKWebView cannot show one; the site reads "denied") | M47; A the app's own window is refused without a prompt (CI) |
+| A site's notifications: asked, shown, clicked, named for the site, limited, refused once removed or blocked | `core::side_panel::platform_permissions`, `core::side_panel::site_notifications`, `src-tauri::notify`, `panel-init.test.js` | A `verify-side-panel` | M47 (G: WKWebView cannot show one; the site reads "denied") | M47; A the app's own window is refused by the shell, without a prompt (CI) |
 | `agentrq-ext://` extension pages and their bridge | `core::side_panel::ext_scheme`, `core::side_panel::child`, `src-tauri::panel_scheme`, `src-tauri::side_panel`, `panel-init.test.js`, `ext-host-runtime.test.js` | A `verify-side-panel` | M25, M46 | M25, M46 |
 
 ### Files, clipboard and native helpers

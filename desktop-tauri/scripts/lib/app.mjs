@@ -35,13 +35,15 @@ function dataEnv(home) {
  * @param {string} [options.serverUrl] Pin the app to this server, as
  *   AGENTRQ_SERVER_URL does for a user. Left out, the app starts unconfigured.
  * @param {object} [options.env] More environment for the app.
+ * @param {string} [options.home] A data folder the caller keeps, and removes:
+ *   a relaunch on it starts where the last run left off, signed in.
  * @returns {Promise<{session: Session, close: () => Promise<void>}>}
  */
-export async function launchApp({ serverUrl, env: extra } = {}) {
+export async function launchApp({ serverUrl, env: extra, home: kept } = {}) {
   if (!existsSync(BINARY)) {
     throw new Error(`${BINARY} is missing: run \`npm run build:debug\` first`)
   }
-  const home = await mkdtemp(join(tmpdir(), 'agentrq-verify-app-'))
+  const home = kept ?? (await mkdtemp(join(tmpdir(), 'agentrq-verify-app-')))
   const env = {
     ...dataEnv(home),
     // The app is run under Xvfb in CI, where the DMA-BUF renderer draws nothing.
@@ -61,7 +63,7 @@ export async function launchApp({ serverUrl, env: extra } = {}) {
     session = await Session.create(driver.base, BINARY)
   } catch (err) {
     await driver.stop()
-    await rm(home, { recursive: true, force: true }).catch(() => {})
+    if (!kept) await rm(home, { recursive: true, force: true }).catch(() => {})
     throw err
   }
   return {
@@ -69,7 +71,7 @@ export async function launchApp({ serverUrl, env: extra } = {}) {
     close: async () => {
       await session.quit()
       await driver.stop()
-      await rm(home, { recursive: true, force: true }).catch(() => {})
+      if (!kept) await rm(home, { recursive: true, force: true }).catch(() => {})
     },
   }
 }

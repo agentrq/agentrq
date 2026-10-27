@@ -296,8 +296,9 @@ fn hook_notification_seeds() {
 
 /// A page's notification, shown through the app's own notifier while its
 /// site is allowed ([`NotificationSeeds::allows`], asked at each one), named
-/// for its site and within the limit. One with a tag closes the last with
-/// it in WebKit, which closes that one in the notifier too.
+/// for its site and within the limit; one it refuses is closed, so its page
+/// hears so. One with a tag closes the last with it in WebKit, which closes
+/// that one in the notifier too.
 fn watch_notifications<R: Runtime>(
     view: &webkit2gtk::WebView,
     app: tauri::AppHandle<R>,
@@ -308,9 +309,11 @@ fn watch_notifications<R: Runtime>(
     view.connect_show_notification(move |_, notification| {
         let url = COMMITTED.with(|committed| committed.borrow().requesting_url(&label));
         if !seeds_for(None).is_some_and(|seeds| seeds.allows(&url)) {
+            notification.close();
             return true;
         }
         let Some(id) = SITE.with(|site| site.borrow_mut().admit(&label, Instant::now())) else {
+            notification.close();
             return true;
         };
         let key = (label.clone(), notification.id());

@@ -804,7 +804,10 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proc_macro2::{Delimiter, TokenStream, TokenTree};
+    use quote::ToTokens;
     use std::path::{Path, PathBuf};
+    use syn::parse::{ParseStream, Parser};
     use syn::punctuated::Punctuated;
     use syn::visit::{self, Visit};
     use syn::{Attribute, Meta, Token};
@@ -844,6 +847,26 @@ mod tests {
                 mod os;
                 fn production(app: &App) {
                     app.listen("x", f);
+                    #[cfg(test)]
+                    app.listen("t", f);
+                }
+                #[test]
+                fn bare_test(app: &App) { app.listen("t", f); }
+                #[tokio::test]
+                async fn async_test(app: &App) { app.listen("t", f); }
+                fn selects(app: &App) {
+                    tokio::select! {
+                        _ = app.listen("s", f) => {}
+                        _ = <App as Listener>::once(&app, "s", f) => {}
+                    }
+                }
+                fn repeats(app: &App) {
+                    let v = vec![app.once("v", f); 2];
+                    let w = vec![std::iter::once(1); 2];
+                    let n = vec![app.listen; 2];
+                }
+                macro_rules! hears {
+                    ($app:expr) => { $app.listen_any("r", f) };
                 }
                 #[cfg(test)]
                 mod tests {
@@ -890,6 +913,7 @@ mod tests {
         assert_eq!(
             found,
             [
+                "lib: .listen_any(..)",
                 "lib::after_the_brace: .listen_any(..)",
                 "lib::after_the_brace: Listener::listen",
                 "lib::after_the_brace: Listener::once",
@@ -898,6 +922,9 @@ mod tests {
                 "lib::not_test: .once_any(..)",
                 "lib::os::u: .listen(..)",
                 "lib::production: .listen(..)",
+                "lib::repeats: .once(..)",
+                "lib::selects: .listen(..)",
+                "lib::selects: Listener::once",
             ]
         );
 
@@ -1014,12 +1041,13 @@ mod tests {
         }
 
         fn visit_stmt(&mut self, i: &'ast syn::Stmt) {
-            let attrs: &[Attribute] = match i {
-                syn::Stmt::Local(i) => &i.attrs,
-                syn::Stmt::Macro(i) => &i.attrs,
-                _ => &[],
+            let attrs = match i {
+                syn::Stmt::Local(i) => i.attrs.clone(),
+                syn::Stmt::Macro(i) => i.attrs.clone(),
+                syn::Stmt::Expr(i, _) => expr_attrs(i),
+                syn::Stmt::Item(_) => Vec::new(),
             };
-            if !test_only(attrs) {
+            if !test_only(&attrs) {
                 visit::visit_stmt(self, i);
             }
         }
@@ -1078,31 +1106,88 @@ mod tests {
                 .map(|s| s.ident.to_string())
                 .collect();
             if let [.., owner, method] = names.as_slice() {
-                if LISTENERS.contains(&method.as_str()) && owner.starts_with(char::is_uppercase) {
-                    self.report(names.join("::"));
-                }
+                self.report_path(owner, method);
             }
             visit::visit_expr_path(self, i);
         }
 
-        /// A macro's arguments, where they are expressions: `format!(..)`.
+        /// A macro's arguments, where they are expressions: `format!(..)`;
+        /// otherwise its tokens: `tokio::select! {..}`, `vec![x; n]`.
         fn visit_macro(&mut self, i: &'ast syn::Macro) {
-            if let Ok(args) =
-                i.parse_body_with(Punctuated::<syn::Expr, Token![,]>::parse_terminated)
-            {
-                args.iter().for_each(|arg| self.visit_expr(arg));
+            match i.parse_body_with(Punctuated::<syn::Expr, Token![,]>::parse_terminated) {
+                Ok(args) => args.iter().for_each(|arg| self.visit_expr(arg)),
+                Err(_) => self.scan(i.tokens.clone()),
             }
             visit::visit_macro(self, i);
         }
     }
 
-    /// Whether a `cfg` among `attrs` is false in every build without `test`.
+    impl Walk {
+        fn report_path(&mut self, owner: &str, method: &str) {
+            if LISTENERS.contains(&method) && owner.starts_with(char::is_uppercase) {
+                self.report(format!("{owner}::{method}"));
+            }
+        }
+
+        /// The calls among tokens that are not expressions, by what comes
+        /// before a listener's name: `.` or `Owner::`, `<T as Owner>::`.
+        fn scan(&mut self, tokens: TokenStream) {
+            let tokens: Vec<TokenTree> = tokens.into_iter().collect();
+            for (at, token) in tokens.iter().enumerate() {
+                if let TokenTree::Group(group) = token {
+                    self.scan(group.stream());
+                }
+                let called = matches!(
+                    tokens.get(at + 1),
+                    Some(TokenTree::Group(args)) if args.delimiter() == Delimiter::Parenthesis
+                );
+                let (TokenTree::Ident(method), true) = (token, called) else {
+                    continue;
+                };
+                let method = method.to_string();
+                let before: Vec<String> = tokens[..at]
+                    .iter()
+                    .rev()
+                    .take(4)
+                    .map(ToString::to_string)
+                    .collect();
+                let before: Vec<&str> = before.iter().map(String::as_str).collect();
+                match before.as_slice() {
+                    [".", ..] if LISTENERS.contains(&method.as_str()) => {
+                        self.report(format!(".{method}(..)"))
+                    }
+                    [":", ":", ">", owner, ..] | [":", ":", owner, ..] => {
+                        self.report_path(owner, &method)
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// An expression statement's attributes, which syn keeps on the
+    /// expression: `#[cfg(test)] app.listen(..);`.
+    fn expr_attrs(expr: &syn::Expr) -> Vec<Attribute> {
+        let outer = |input: ParseStream| {
+            let attrs = Attribute::parse_outer(input)?;
+            input.parse::<TokenStream>()?;
+            Ok(attrs)
+        };
+        outer.parse2(expr.to_token_stream()).unwrap_or_default()
+    }
+
+    /// Whether `attrs` hold a test, `#[test]` or `#[tokio::test]`, or a
+    /// `cfg` that is false in every build without `test`.
     fn test_only(attrs: &[Attribute]) -> bool {
         attrs.iter().any(|attr| {
-            attr.path().is_ident("cfg")
-                && attr
-                    .parse_args::<Meta>()
-                    .is_ok_and(|cfg| without_test(&cfg) == Some(false))
+            attr.path()
+                .segments
+                .last()
+                .is_some_and(|s| s.ident == "test")
+                || attr.path().is_ident("cfg")
+                    && attr
+                        .parse_args::<Meta>()
+                        .is_ok_and(|cfg| without_test(&cfg) == Some(false))
         })
     }
 
