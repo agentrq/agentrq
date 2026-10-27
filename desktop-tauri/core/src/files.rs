@@ -68,9 +68,17 @@ pub fn local_path_from_file_url(raw_url: &str) -> String {
         path.remove(0);
     }
 
+    // `file:///%5C%5Chost` has no host, but decodes to a UNC path on Windows:
+    // the same other machine, by another spelling.
+    let unc = path
+        .chars()
+        .take(2)
+        .filter(|c| matches!(c, '/' | '\\'))
+        .count()
+        == 2;
     // A NUL byte truncates the path inside the platform's own file APIs, so
     // what gets opened would not be what was inspected here.
-    if path.contains('\0') {
+    if unc || path.contains('\0') {
         String::new()
     } else {
         path
@@ -185,6 +193,23 @@ mod tests {
         assert_eq!(
             local_path_from_file_url("file://fileserver/share/report.pdf"),
             ""
+        );
+        // No host, but a UNC path once Windows reads it.
+        // The parser folds `file:////host` into a rooted path, not a UNC one.
+        assert_eq!(
+            local_path_from_file_url("file:////fileserver/share/report.pdf"),
+            "/fileserver/share/report.pdf"
+        );
+        for raw in [
+            "file:///%5C%5Cfileserver%5Cshare%5Creport.pdf",
+            "file:///%5Cfileserver%5Cshare%5Creport.pdf",
+            "file:///%2F%2Ffileserver/share/report.pdf",
+        ] {
+            assert_eq!(local_path_from_file_url(raw), "", "{raw}");
+        }
+        assert_eq!(
+            local_path_from_file_url("file:///C:/Users/me/report.pdf"),
+            "C:/Users/me/report.pdf"
         );
     }
 
