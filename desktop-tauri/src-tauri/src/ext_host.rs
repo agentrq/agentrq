@@ -76,8 +76,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 fn is_allowed_env(key: &str) -> bool {
     let upper = key.to_uppercase();
+    // Not one that changes what Node runs (`NODE_OPTIONS`, `NODE_PATH`); the
+    // two a network that inspects TLS, or needs a proxy, is reached through.
     if upper.starts_with("NODE_") {
-        return false;
+        return matches!(upper.as_str(), "NODE_EXTRA_CA_CERTS" | "NODE_USE_ENV_PROXY");
     }
     matches!(
         upper.as_str(),
@@ -94,6 +96,8 @@ fn is_allowed_env(key: &str) -> bool {
             | "HTTPS_PROXY"
             | "ALL_PROXY"
             | "NO_PROXY"
+            | "SSL_CERT_FILE"
+            | "SSL_CERT_DIR"
             | "SYSTEMROOT"
             | "COMSPEC"
             | "PATHEXT"
@@ -1502,6 +1506,9 @@ pub(crate) mod tests {
         assert!(is_allowed_env("HTTP_PROXY"));
         assert!(!is_allowed_env("NODE_OPTIONS"));
         assert!(!is_allowed_env("NODE_PATH"));
+        assert!(is_allowed_env("NODE_EXTRA_CA_CERTS"));
+        assert!(is_allowed_env("NODE_USE_ENV_PROXY"));
+        assert!(is_allowed_env("SSL_CERT_FILE"));
         assert!(!is_allowed_env("SECRET_KEY"));
     }
 

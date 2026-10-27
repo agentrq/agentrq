@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use agentrq_desktop_core::ext_host::fetch_allowed;
 use agentrq_desktop_core::ext_node::needs_node as needs_node_reason;
+use agentrq_desktop_core::ext_rpc;
 use agentrq_desktop_core::protocol::{
     drawer_lookup, filter_request_headers, filter_response_headers, proxy_error_reply, sends_body,
     DrawerLookup, ProxyError,
@@ -203,7 +204,10 @@ impl Shell {
             url,
             headers: filter_request_headers(headers),
             body: body.filter(|_| has_body),
-            limits: BodyLimits::default(),
+            limits: BodyLimits {
+                max_bytes: FETCH_MAX_BODY_BYTES,
+                ..BodyLimits::default()
+            },
         };
         let incoming = match upstream::send(&net.client, out).await {
             Ok(incoming) => incoming,
@@ -220,6 +224,11 @@ impl Shell {
         })
     }
 }
+
+/// The largest body an extension's fetch can be answered with: base64 on one
+/// wire line, which the host drops whole when it is longer than
+/// [`ext_rpc::MAX_LINE_BYTES`], leaving the fetch to wait out its deadline.
+const FETCH_MAX_BODY_BYTES: u64 = (ext_rpc::MAX_LINE_BYTES as u64 / 4) * 3 - 1024 * 1024;
 
 fn strings(value: &Value) -> Vec<String> {
     value
