@@ -369,10 +369,12 @@ fn is_windows_unsafe_name(segment: &str) -> bool {
     let device = ["CON", "PRN", "AUX", "NUL"]
         .iter()
         .any(|name| stem.eq_ignore_ascii_case(name))
+        // Bytes, not a `str` slice: byte 3 can fall inside a character (`abé`).
         || ["COM", "LPT"].iter().any(|prefix| {
+            let stem = stem.as_bytes();
             stem.len() == 4
-                && stem[..3].eq_ignore_ascii_case(prefix)
-                && matches!(stem.as_bytes()[3], b'1'..=b'9')
+                && stem[..3].eq_ignore_ascii_case(prefix.as_bytes())
+                && matches!(stem[3], b'1'..=b'9')
         });
     device
 }
@@ -2172,6 +2174,10 @@ mod tests {
             "/assets/auxiliary",
             "/assets/a b.js",
         ] {
+            assert!(serve(raw, true).serve().is_some(), "{raw}");
+        }
+        // Four bytes whose fourth starts inside a character.
+        for raw in ["/skills/ab%C3%A9", "/x%E2%82%AC", "/abé"] {
             assert!(serve(raw, true).serve().is_some(), "{raw}");
         }
     }
