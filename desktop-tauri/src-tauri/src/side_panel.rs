@@ -214,6 +214,9 @@ pub struct SidePanelState<R: Runtime> {
     /// Each guest's find session, while its find bar is open.
     finds: Mutex<HashMap<String, FindSession>>,
     open: OpenLink<R>,
+    /// Bumped by [`close_all`]: an open that awaited across one is for a page
+    /// that has gone.
+    closed: AtomicU32,
 }
 
 impl<R: Runtime> SidePanelState<R> {
@@ -225,6 +228,7 @@ impl<R: Runtime> SidePanelState<R> {
             keys: PendingKeys::default(),
             finds: Mutex::new(HashMap::new()),
             open,
+            closed: AtomicU32::new(0),
         }
     }
 }
@@ -536,6 +540,7 @@ pub async fn side_panel_guest_open<R: Runtime>(
         return Err("Only the app's window has a side panel.".to_string());
     }
     let state = app.state::<SidePanelState<R>>();
+    let closed = state.closed.load(Ordering::SeqCst);
     // `will-attach-webview`: what the element asked to open is checked
     // before anything is made.
     let mut params = Map::from_iter([("src".to_string(), json!(url))]);
@@ -573,6 +578,7 @@ pub async fn side_panel_guest_open<R: Runtime>(
     let main = chrome::main_webview(&app).ok_or("The app's window has gone.")?;
     // Before its first page's web process starts.
     crate::panel_permissions::seed_notifications(&app).await;
+    still_current(&app, closed, &profile)?;
     lock(&state.guests).insert(label.clone(), Seen::default());
     crate::panel_permissions::opened(&app, number, &profile);
     let added = main.window().add_child(
@@ -592,6 +598,19 @@ pub async fn side_panel_guest_open<R: Runtime>(
     // Dropping the handle leaves the watch running.
     drop(watch_in_page(app.clone(), label.clone()));
     Ok(label)
+}
+
+/// The page reloaded, or the profile changed, since `closed` was read: a
+/// guest added now would cover a page that never learns its label, or use
+/// the old profile's storage.
+fn still_current<R: Runtime>(app: &AppHandle<R>, closed: u32, profile: &str) -> Result<(), String> {
+    let state = app.state::<SidePanelState<R>>();
+    if state.closed.load(Ordering::SeqCst) != closed
+        || app.state::<Arc<Network>>().active_id() != profile
+    {
+        return Err("The app's page changed while the panel opened.".to_string());
+    }
+    Ok(())
 }
 
 fn guest<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<Webview<R>, String> {
@@ -779,6 +798,7 @@ pub fn close_all<R: Runtime>(app: &AppHandle<R>) {
     let Some(state) = app.try_state::<SidePanelState<R>>() else {
         return;
     };
+    state.closed.fetch_add(1, Ordering::SeqCst);
     let mut labels: Vec<String> = lock(&state.guests).keys().cloned().collect();
     for label in app.webviews().into_keys().filter(|l| is_guest_label(l)) {
         if !labels.contains(&label) {
@@ -1293,6 +1313,17 @@ pub(crate) mod tests {
         let bare = mock_builder().build(mock_context(noop_assets())).unwrap();
         close_all(bare.handle());
         assert_eq!(token(bare.handle(), "panel-guest-1"), None);
+    }
+
+    #[test]
+    fn an_open_that_waited_across_a_reload_or_a_switch_is_abandoned() {
+        let rig = rig();
+        let profile = rig.handle().state::<Arc<Network>>().active_id();
+        let closed = rig.state().closed.load(Ordering::SeqCst);
+        assert_eq!(still_current(rig.handle(), closed, &profile), Ok(()));
+        assert!(still_current(rig.handle(), closed, "another").is_err());
+        close_all(rig.handle());
+        assert!(still_current(rig.handle(), closed, &profile).is_err());
     }
 
     #[test]

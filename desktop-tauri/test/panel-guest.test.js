@@ -357,6 +357,19 @@ describe('createTauriGuest', () => {
     expect(navigate).toHaveBeenCalledWith({ url: 'https://a.example/', inPage: false })
   })
 
+  it('keeps nothing once its guest could not be opened', async () => {
+    const { host, guest, emit, calls } = rig({ open: () => Promise.reject(new Error('refused')) })
+    const navigate = vi.fn()
+    guest.on('navigate', navigate)
+    guest.mount(host, 'https://a.example/')
+    await settle()
+    expect(() => emit({ kind: 'navigate', label: 'panel-guest-1', url: 'https://a.example/' })).not.toThrow()
+    expect(navigate).not.toHaveBeenCalled()
+    guest.reload()
+    await settle()
+    expect(calls('side_panel_guest_navigate')).toEqual([])
+  })
+
   it('takes the focus away from the page when the guest takes the keyboard', async () => {
     const { win, host, guest, emit } = rig()
     guest.mount(host, 'https://a.example/')

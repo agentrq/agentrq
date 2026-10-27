@@ -137,7 +137,7 @@ export function createTauriGuest({ invoke, listen, win = globalThis.window }) {
 
   function onEvent(event) {
     const payload = event.payload
-    if (label === null) return early.push(event)
+    if (label === null) return early?.push(event)
     if (payload?.label !== label) return
     if ('canGoBack' in payload) {
       nav.canGoBack = payload.canGoBack
@@ -263,11 +263,18 @@ export function createTauriGuest({ invoke, listen, win = globalThis.window }) {
 
       const rect = rectOf()
       lastPlace = placeKey({ rect, visible: state.visible })
-      ready = invoke('side_panel_guest_open', { url, rect, visible: state.visible }).then((opened) => {
-        label = opened
-        for (const event of early) onEvent(event)
-        early = []
-      })
+      ready = invoke('side_panel_guest_open', { url, rect, visible: state.visible }).then(
+        (opened) => {
+          label = opened
+          for (const event of early) onEvent(event)
+          early = []
+        },
+        (error) => {
+          // No guest will ever claim them: stop keeping every guest's events.
+          early = null
+          throw error
+        },
+      )
       ready.then(schedule, warn)
     },
 
