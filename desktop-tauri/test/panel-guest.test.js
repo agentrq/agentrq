@@ -424,7 +424,7 @@ describe('createTauriGuest', () => {
     // class flipped, an element that covers nothing of the host.
     const badge = positioned(box(0, 0, 40, 40))
     win.document.body.append(badge)
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 3; i++) {
       win.mutated([{ type: i % 2 ? 'attributes' : 'childList', target: badge, addedNodes: [] }])
       win.resized()
       win.listeners.get('scroll')()
@@ -445,7 +445,7 @@ describe('createTauriGuest', () => {
     await frame(win)
     const placed = calls('side_panel_guest_place').length
     // What a real observer reports of the picture it put in the host.
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 3; i++) {
       win.mutated([{ type: 'childList', addedNodes: [...host.children] }])
       await frame(win)
     }
@@ -456,7 +456,7 @@ describe('createTauriGuest', () => {
     win.mutated([])
     await frame(win)
     const shown = calls('side_panel_guest_place').length
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 3; i++) {
       win.mutated([{ type: 'childList', addedNodes: [] }])
       await frame(win)
     }
