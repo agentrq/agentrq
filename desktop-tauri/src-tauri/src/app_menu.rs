@@ -247,6 +247,9 @@ pub fn quit<R: Runtime>(app: &AppHandle<R>) {
 }
 
 /// Install the system tray icon and initial menu.
+/// Marks the tray's items apart from the app menu's, which share their ids.
+const TRAY_ID_PREFIX: &str = "tray:";
+
 pub fn install_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let icon_bytes = include_bytes!("../icons/icon.png");
     let img = Image::from_bytes(icon_bytes)?;
@@ -266,8 +269,12 @@ pub fn install_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                 crate::shell::focus_main_window(&app_click);
             }
         })
+        // Tauri hands this every menu's events, and the app menu's handler
+        // the tray's: the prefix keeps `new-task` and `quit` from running twice.
         .on_menu_event(move |_app, event| {
-            crate::shell::handle_tray_menu_event(&app_menu, event.id.as_ref());
+            if let Some(id) = event.id.as_ref().strip_prefix(TRAY_ID_PREFIX) {
+                crate::shell::handle_tray_menu_event(&app_menu, id);
+            }
         })
         .build(app)?;
     update_tray(app, &[], 0);
@@ -301,7 +308,7 @@ fn build_tray_menu<R: Runtime>(
             TrayMenuItem::Item {
                 id, label, enabled, ..
             } => {
-                let menu_item = MenuItemBuilder::with_id(id, label)
+                let menu_item = MenuItemBuilder::with_id(format!("{TRAY_ID_PREFIX}{id}"), label)
                     .enabled(*enabled)
                     .build(app)?;
                 builder = builder.item(&menu_item);
