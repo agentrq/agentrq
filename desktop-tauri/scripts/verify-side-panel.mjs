@@ -616,21 +616,28 @@ await runVerify(
       app = await launchApp({ serverUrl: backend.url, env: shell.env, home })
       const again = (code) => app.session.evaluate(code)
       await app.session.waitForPage('the app to start again', "!!document.querySelector('#app')?.children.length")
+      // Built in the page from what it knows, so no value is pasted into code.
+      const FROM_AGENT = `(async () => {
+        const list = await (await fetch('/api/v1/workspaces')).json();
+        const workspace = (Array.isArray(list) ? list : list.workspaces).find((w) => w.name === 'panel');
+        const title = 'From the agent ' + (window.__verifyMade = (window.__verifyMade || 0) + 1);
+        const { task } = await (await fetch('/api/v1/workspaces/' + workspace.id + '/tasks', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task: { title, body: 'Made by the agent.', createdBy: 'agent', assignee: 'human' } }) })).json();
+        return { title, route: '/workspaces/' + workspace.id + '/tasks/' + task.id };
+      })()`
       const made = new Map()
-      const fromAgent = (title) => again(`(async () => (await (await fetch(${JSON.stringify(`/api/v1/workspaces/${ids.workspace}/tasks`)}, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task: { title: ${JSON.stringify(title)}, body: 'Made by the agent.', createdBy: 'agent', assignee: 'human' } }) })).json()).task.id)()`)
       const news = await waitFor('the agent\'s new task to be shown', async () => {
         const shown = (await shell.notifications()).find((n) => made.has(n.summary))
         if (shown) return shown
-        const title = `From the agent ${made.size + 1}`
-        made.set(`New task: ${title}`, await fromAgent(title))
+        const task = await again(FROM_AGENT)
+        made.set(`New task: ${task.title}`, task.route)
         return false
       }, { interval: 2000 })
       record('an agent\'s new task is shown through the notifier, named for its workspace', news.body === 'panel', JSON.stringify(news))
-      const route = `/workspaces/${ids.workspace}/tasks/${made.get(news.summary)}`
+      const route = made.get(news.summary)
       await shell.click(news.id)
-      await app.session.waitForPage(`the app to open ${route}`, `location.pathname === ${JSON.stringify(route)}`)
+      await waitFor(`the app to open ${route}`, async () => (await again('location.pathname')) === route)
       record('clicking it opens its task', true, route)
     } else if (process.env.CI) {
       record(appNotificationChecks, false, 'CI must have Linux\'s stand-in notification server (python3-gi)')

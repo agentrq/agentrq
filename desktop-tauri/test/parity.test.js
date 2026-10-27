@@ -508,7 +508,7 @@ describe('no capability reaches a side panel guest', () => {
     const lines = [
       `args+=(--config '${capability}')`,
       `npx tauri build --config=${capability}`,
-      `npx tauri build -c "${capability.replace(/"/g, '\\"')}"`,
+      `npx tauri build -c ${JSON.stringify(capability)}`,
       `  TAURI_CONFIG: '${capability}'`,
       `TAURI_CONFIG=${capability} npx tauri build`,
     ]
