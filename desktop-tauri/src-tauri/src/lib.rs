@@ -351,9 +351,11 @@ fn init_updater<R: Runtime>(app: &AppHandle<R>) {
     });
 
     deps.spawner = Some(Arc::new(StdInstallerSpawner));
-    if let Ok(temp_dir) = app.path().temp_dir() {
+    // The user's own folder: Linux's temp dir is the shared `/tmp`, where a
+    // fixed name is someone else's file as often as ours.
+    if let Ok(log_dir) = app.path().app_cache_dir() {
         deps.create_install_log = Some(Arc::new(move || {
-            agentrq_desktop_core::install_log::create_install_log(&temp_dir)
+            agentrq_desktop_core::install_log::create_install_log(&log_dir)
                 .map(|f| Arc::new(f) as Arc<dyn agentrq_desktop_core::install_log::InstallLog>)
                 .map_err(|e| e.to_string())
         }));

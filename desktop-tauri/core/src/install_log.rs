@@ -38,8 +38,9 @@ pub struct FileInstallLog {
     file: Mutex<Option<File>>,
 }
 
-/// Create (or truncate) the log in `dir`.
+/// Create (or truncate) the log in `dir`, made if it is not there yet.
 pub fn create_install_log(dir: &Path) -> io::Result<FileInstallLog> {
+    std::fs::create_dir_all(dir)?;
     let path = dir.join(INSTALL_LOG_FILENAME);
     let file = File::create(&path)?;
     Ok(FileInstallLog {
@@ -146,9 +147,16 @@ mod tests {
     }
 
     #[test]
-    fn cannot_be_created_where_there_is_no_folder() {
+    fn makes_its_folder_but_cannot_be_created_where_a_file_is() {
         let dir = temp_dir("install-log-c");
         std::fs::remove_dir_all(&dir).unwrap();
+        let log = create_install_log(&dir).unwrap();
+        assert_eq!(log.read(), "");
+        log.close();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        std::fs::write(&dir, "").unwrap();
         assert!(create_install_log(&dir).is_err());
+        std::fs::remove_file(&dir).unwrap();
     }
 }
