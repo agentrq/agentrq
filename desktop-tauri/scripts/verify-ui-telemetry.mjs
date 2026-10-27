@@ -124,8 +124,8 @@ await runVerify(
     await key({ key: 't' })
     await reportOf('ui_trajectory_view')
 
-    // The description starts collapsed, and the markdown, with the copy controls
-    // beside it, only exists once it is expanded.
+    // The markdown, with the copy controls beside it, only exists once the
+    // description is expanded. A task with no messages opens it on its own.
     const collapsed = await page("!!document.querySelector('.truncate.cursor-pointer')")
     if (collapsed) await page("document.querySelector('.truncate.cursor-pointer').click()")
     await inPage('the description to render', "document.querySelectorAll('.md-body').length > 0").catch(() => {})

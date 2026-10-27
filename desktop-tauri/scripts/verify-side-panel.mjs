@@ -353,8 +353,9 @@ await runVerify(
     }
 
     await closePanel()
-    // The description starts collapsed, and its markdown is drawn once expanded.
-    await page("document.querySelector('.truncate.cursor-pointer').click()")
+    // The task has no messages yet, so its description opens on its own; the
+    // link is in its markdown.
+    await page("document.querySelector('.truncate.cursor-pointer')?.click()")
     await inPage('the message link', `!!${messageLink}`)
     let since = mark()
     await page(`${messageLink}.click()`)
