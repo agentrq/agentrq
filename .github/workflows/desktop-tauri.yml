@@ -288,7 +288,8 @@ jobs:
       # The app's own window never shows WebView2's notification prompt (the
       # Workspace settings' Enable Push): main-notifications.js asks, and
       # extensions-server.mjs takes the answer, which must be "denied". A
-      # prompt leaves it unanswered.
+      # prompt leaves it unanswered. A runner's WebView2 denies on its own, so
+      # the shell's handler must also say on stderr that it refused.
       - name: The window refuses notifications (Windows)
         if: runner.os == 'Windows'
         working-directory: desktop-tauri
@@ -300,7 +301,7 @@ jobs:
           $null = $server.Handle
           $env:AGENTRQ_SERVER_URL = 'http://127.0.0.1:39118'
           $env:AGENTRQ_E2E_INIT_SCRIPT = Get-Content -Raw test\e2e\main-notifications.js
-          $app = Start-Process src-tauri\target\release\agentrq-tauri.exe -PassThru
+          $app = Start-Process src-tauri\target\release\agentrq-tauri.exe -RedirectStandardError notify-app.txt -PassThru
           $answered = $server.WaitForExit(90000)
           Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
           Get-Content notify-steps.txt
@@ -310,6 +311,11 @@ jobs:
             exit 1
           }
           if ($server.ExitCode -ne 0) { exit 1 }
+          if (-not (Select-String -Path notify-app.txt -Pattern 'the main window refused WebView2 permission kind' -Quiet)) {
+            Get-Content notify-app.txt
+            Write-Output 'Denied, but not by the shell: its handler never ran.'
+            exit 1
+          }
 
       - name: Upload the screenshots
         if: always()
