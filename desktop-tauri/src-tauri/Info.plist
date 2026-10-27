@@ -4,6 +4,8 @@
   <dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>AgentRQ uses the microphone for voice dictation.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>A site open in the side panel can use the camera when you allow it.</string>
     <key>CFBundleURLTypes</key>
     <array>
       <dict>
