@@ -633,12 +633,17 @@ await runVerify(
         const task = await again(FROM_AGENT)
         made.set(`New task: ${task.title}`, task.route)
         return false
-      }, { interval: 2000 })
-      record('an agent\'s new task is shown through the notifier, named for its workspace', news.body === 'panel', JSON.stringify(news))
-      const route = made.get(news.summary)
-      await shell.click(news.id)
-      await waitFor(`the app to open ${route}`, async () => (await again('location.pathname')) === route)
-      record('clicking it opens its task', true, route)
+      }, { interval: 2000 }).catch((err) => err)
+      if (news instanceof Error) {
+        record(appNotificationChecks, false, news.message)
+      } else {
+        record('an agent\'s new task is shown through the notifier, named for its workspace', news.body === 'panel', JSON.stringify(news))
+        const route = made.get(news.summary)
+        await shell.click(news.id)
+        const opened = await waitFor(`the app to open ${route}`, async () => (await again('location.pathname')) === route)
+          .catch(() => false)
+        record('clicking it opens its task', opened === true, opened ? route : `still at ${await again('location.pathname')}`)
+      }
     } else if (process.env.CI) {
       record(appNotificationChecks, false, 'CI must have Linux\'s stand-in notification server (python3-gi)')
     } else SKIPPED.push(skip(appNotificationChecks, 'needs Linux\'s stand-in notification server'))

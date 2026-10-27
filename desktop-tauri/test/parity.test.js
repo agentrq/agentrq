@@ -439,9 +439,26 @@ function configsGiven(text) {
   const given = /(--config(?:=|\s+)|(?<![\w-])-c\s+|TAURI_CONFIG\s*[=:]\s*)(?:'([^']*)'|"((?:[^"\\]|\\.)*)"|(\{\S*|[^\s'"]+))/g
   return [...text.matchAll(given)].flatMap(([, flag, single, double, bare]) => {
     const value = single ?? double?.replace(/\\(.)/g, '$1') ?? bare
+    if (flag.startsWith('-c')) {
+      // `jq -c '{..}'` is not JSON, and the CLI would refuse one that is not.
+      if (!value.trimStart().startsWith('{')) return []
+      try { JSON.parse(value) } catch { return [] }
+    }
     if (value.trimStart().startsWith('{')) return [{ inline: value }]
     return flag.startsWith('-c') ? [] : [{ file: value }]
   })
+}
+
+/** What a runner's shell runs: package.json's scripts are JSON strings, so read them unescaped. */
+function commandLines(runner) {
+  const text = read(runner)
+  return runner.endsWith('package.json') ? Object.values(JSON.parse(text).scripts ?? {}).join('\n') : text
+}
+
+/** Whether `file` is one of `checked`, by path: a name alone can belong to a file elsewhere. */
+function isChecked(file, checked) {
+  const path = file.replace(/\\/g, '/').replace(/^(\.\.?\/)+/, '')
+  return checked.some((known) => path === known || path === known.split('/').pop())
 }
 
 /** Every file under `dir`, as a path from it. */
@@ -476,7 +493,10 @@ describe('no capability reaches a side panel guest', () => {
   })
 
   it('and no command line hands the CLI one inline, nor a config this check does not read', () => {
-    const checked = [...readdirSync(here('../src-tauri/')), ...readdirSync(here('../scripts/'))].filter((name) => CONFIG.test(name))
+    const checked = [
+      ...readdirSync(here('../src-tauri/')).filter((name) => CONFIG.test(name)).map((name) => `src-tauri/${name}`),
+      ...readdirSync(here('../scripts/')).filter((name) => CONFIG.test(name)).map((name) => `scripts/${name}`),
+    ]
     const runners = [
       ...readdirSync(here('../../.github/workflows/')).map((name) => `../../.github/workflows/${name}`),
       ...filesUnder('../scripts/').map((file) => `../scripts/${file}`),
@@ -486,11 +506,12 @@ describe('no capability reaches a side panel guest', () => {
     expect(runners).toContain('../../.github/workflows/desktop-release.yml')
     const inline = []
     for (const runner of runners) {
-      for (const config of configsGiven(read(runner))) {
+      for (const config of configsGiven(commandLines(runner))) {
         if (config.file !== undefined) {
-          const name = config.file.split(/[\\/]/).pop()
           // Vite's and Vitest's are scripts; one in JSON or TOML is Tauri's.
-          if (/\.(json5?|toml)$/i.test(name)) expect(checked, `${runner}: --config ${config.file}`).toContain(name)
+          if (/\.(json5?|toml)$/i.test(config.file)) {
+            expect(isChecked(config.file, checked), `${runner}: --config ${config.file}`).toBe(true)
+          }
           continue
         }
         let parsed
@@ -517,6 +538,20 @@ describe('no capability reaches a side panel guest', () => {
     expect(configsGiven('"build": "tauri build --config scripts/other.json",')).toEqual([{ file: 'scripts/other.json' }])
     expect(configsGiven("vite build --config vite.renderer.config.mjs && bash -c 'echo -c x'")).toEqual([{ file: 'vite.renderer.config.mjs' }])
     expect(configsGiven('sudo dpkg --configure -a')).toEqual([])
+    expect(configsGiven("jq -c '{name: .tag}' release.json")).toEqual([])
+    // package.json's scripts, unescaped as commandLines reads them.
+    const script = JSON.parse(JSON.stringify({ build: `tauri build --config "${capability.replace(/"/g, '\\"')}"` })).build
+    expect(configsGiven(script)).toEqual([{ inline: capability }])
+  })
+
+  it('takes a config file by its path, not its name', () => {
+    const checked = ['src-tauri/tauri.conf.json', 'scripts/verify.tauri.conf.json']
+    for (const file of ['scripts/verify.tauri.conf.json', '../scripts/verify.tauri.conf.json', './tauri.conf.json', 'tauri.conf.json']) {
+      expect(isChecked(file, checked), file).toBe(true)
+    }
+    for (const file of ['../other/tauri.conf.json', '/tmp/verify.tauri.conf.json', 'src-tauri/verify.tauri.conf.json']) {
+      expect(isChecked(file, checked), file).toBe(false)
+    }
   })
 
   it('and the shell adds none at run time, nor its build script', () => {

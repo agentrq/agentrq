@@ -139,7 +139,8 @@ export async function startDriver({ port, env, nativeDriver } = {}) {
   })
   return {
     base,
-    // Resolves once the driver, and so the port, is really gone.
+    // Resolves once the driver and the app it started are really gone: an app
+    // still exiting holds its single-instance name, and a relaunch hands off to it.
     stop: async () => {
       if (process.platform !== 'win32' && child.pid) {
         try { process.kill(-child.pid, 'SIGCONT') } catch {}
@@ -147,6 +148,12 @@ export async function startDriver({ port, env, nativeDriver } = {}) {
         setTimeout(() => {
           try { process.kill(-child.pid, 'SIGKILL') } catch {}
         }, 2000).unref()
+        await gone
+        await waitFor('the app to exit', () => {
+          try { process.kill(-child.pid, 0) } catch { return true }
+          return false
+        }, { timeout: 5000, interval: 100 }).catch(() => {})
+        return
       } else {
         try { child.kill() } catch {}
       }
