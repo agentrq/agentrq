@@ -20,7 +20,7 @@ dependencies = [
 
 [[package]]
 name = "agentrq-desktop-core"
-version = "0.13.4"
+version = "0.14.0"
 dependencies = [
  "lzma-rust2",
  "serde",
@@ -33,7 +33,7 @@ dependencies = [
 
 [[package]]
 name = "agentrq-tauri"
-version = "0.13.4"
+version = "0.14.0"
 dependencies = [
  "agentrq-desktop-core",
  "base64 0.23.1",
