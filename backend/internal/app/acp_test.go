@@ -88,7 +88,7 @@ func TestACPTokenAuth(t *testing.T) {
 		"a person's session token is unauthorized": func() (string, error) { return tokens.CreateToken(user, "a@b.c", "A", "") },
 		"a terminal ticket is unauthorized":        func() (string, error) { return tokens.CreateTerminalTicket(user, "123") },
 		"a refresh token is unauthorized":          func() (string, error) { return tokens.CreateMCPToken(user, ws7, "refresh") },
-		"an OAuth code is unauthorized":            func() (string, error) { return tokens.CreateOAuthCodeToken(user, ws7) },
+		"an OAuth code is unauthorized":            func() (string, error) { return tokens.CreateOAuthCodeToken(user, ws7, "") },
 		"the supervisor's token is unauthorized":   func() (string, error) { return tokens.CreateMCPToken(user, "coremcp", "access") },
 		"a token naming no workspace is unauthorized": func() (string, error) {
 			return tokens.CreateMCPToken(user, "", "access")

@@ -98,7 +98,7 @@ func TestTokenService(t *testing.T) {
 		userID := "user123"
 		workspaceID := "ws456"
 
-		token, err := s.CreateOAuthCodeToken(userID, workspaceID)
+		token, err := s.CreateOAuthCodeToken(userID, workspaceID, "the-challenge")
 		if err != nil {
 			t.Fatalf("failed to create OAuth code token: %v", err)
 		}
@@ -113,6 +113,9 @@ func TestTokenService(t *testing.T) {
 		}
 		if len(claims.Audience) == 0 || claims.Audience[0] != workspaceID {
 			t.Errorf("expected audience %s, got %v", workspaceID, claims.Audience)
+		}
+		if claims.CodeChallenge != "the-challenge" {
+			t.Errorf("expected the code to carry its PKCE challenge, got %q", claims.CodeChallenge)
 		}
 
 		// Check expiry is within bounds ~ 2 mins
@@ -321,7 +324,7 @@ func TestSessionToken(t *testing.T) {
 		"workspace MCP access token":  func() (string, error) { return s.CreateMCPToken("user123", "workspace1", "access") },
 		"workspace MCP refresh token": func() (string, error) { return s.CreateMCPToken("user123", "workspace1", "refresh") },
 		"supervisor MCP access token": func() (string, error) { return s.CreateMCPToken("user123", "coremcp", "access") },
-		"OAuth authorization code":    func() (string, error) { return s.CreateOAuthCodeToken("user123", "workspace1") },
+		"OAuth authorization code":    func() (string, error) { return s.CreateOAuthCodeToken("user123", "workspace1", "") },
 		"human refresh token":         func() (string, error) { return s.CreateRefreshToken("user123") },
 		"terminal ticket":             func() (string, error) { return s.CreateTerminalTicket("user123", "42") },
 		"browser ticket":              func() (string, error) { return s.CreateBrowserTicket("user123") },
@@ -540,7 +543,7 @@ func TestOAuthConsentToken(t *testing.T) {
 	refused := map[string]func() (string, error){
 		"a token signed with another secret": func() (string, error) { return other.CreateOAuthConsentToken("user-1", consent) },
 		"an access token":                    func() (string, error) { return svc.CreateToken("user-1", "a@b.c", "A", "") },
-		"an authorization code":              func() (string, error) { return svc.CreateOAuthCodeToken("user-1", "ws1") },
+		"an authorization code":              func() (string, error) { return svc.CreateOAuthCodeToken("user-1", "ws1", "") },
 		"a browser ticket":                   func() (string, error) { return svc.CreateBrowserTicket("user-1") },
 		"an empty string":                    func() (string, error) { return "", nil },
 	}

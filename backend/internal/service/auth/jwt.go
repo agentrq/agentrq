@@ -83,6 +83,9 @@ type Claims struct {
 	Email   string `json:"email,omitempty"`
 	Name    string `json:"name,omitempty"`
 	Picture string `json:"picture,omitempty"`
+	// CodeChallenge is the PKCE challenge an authorization code was issued
+	// for; the token endpoint redeems the code only with its verifier.
+	CodeChallenge string `json:"cch,omitempty"`
 }
 
 type StateClaims struct {
@@ -126,7 +129,7 @@ type TokenService interface {
 	CreateRefreshToken(userID string) (string, error)
 	ValidateRefreshToken(tokenStr string) (*Claims, error)
 	CreateMCPToken(userID, workspaceID, tokenType string) (string, error)
-	CreateOAuthCodeToken(userID, workspaceID string) (string, error)
+	CreateOAuthCodeToken(userID, workspaceID, codeChallenge string) (string, error)
 	CreateTerminalTicket(userID, sessionID string) (string, error)
 	ValidateTerminalTicket(tokenStr, sessionID string) (*Claims, error)
 	CreateBrowserTicket(userID string) (string, error)
@@ -325,12 +328,13 @@ func (s *tokenService) ValidateOAuthConsentToken(tokenStr, userID string, consen
 	return nil
 }
 
-func (s *tokenService) CreateOAuthCodeToken(userID, workspaceID string) (string, error) {
+func (s *tokenService) CreateOAuthCodeToken(userID, workspaceID, codeChallenge string) (string, error) {
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(2 * time.Minute)), // 2 minutes short lived
 		},
+		CodeChallenge: codeChallenge,
 	}
 
 	if workspaceID != "" {

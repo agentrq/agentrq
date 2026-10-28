@@ -42,7 +42,7 @@ func TestIdentifyUser_OnlyThisWorkspacesAccessToken(t *testing.T) {
 	refused := map[string]string{
 		"another workspace's access token": mint(tokens.CreateMCPToken("user-1", monoflake.ID(other).String(), "access")),
 		"this workspace's refresh token":   mint(tokens.CreateMCPToken("user-1", wsID, "refresh")),
-		"an authorization code":            mint(tokens.CreateOAuthCodeToken("user-1", wsID)),
+		"an authorization code":            mint(tokens.CreateOAuthCodeToken("user-1", wsID, "")),
 		"a supervisor access token":        mint(tokens.CreateMCPToken("user-1", "coremcp", "access")),
 		"a person's session":               mint(tokens.CreateToken("user-1", "a@b.com", "A", "")),
 		"a token with no audience":         mint(noAudience, err),

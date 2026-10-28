@@ -429,6 +429,7 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 			// that is itself an https URL is resolved as a client metadata
 			// document (oauthAuthorizeHandler's CIMDResolver backs this).
 			"client_id_metadata_document_supported": true,
+			"code_challenge_methods_supported":      []string{oauthconsent.PKCEMethod},
 			"logo_uri":                              h.baseURL + "/agentrq.png",
 		}
 
@@ -503,6 +504,12 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			return
 		}
 
+		codeChallenge := r.URL.Query().Get("code_challenge")
+		if err := oauthconsent.CheckCodeChallenge(codeChallenge, r.URL.Query().Get("code_challenge_method")); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
 		if userID == "" {
 			proto := "https://"
 			if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
@@ -529,7 +536,7 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			State:                  state,
 			Resource:               "coremcp",
 			Access:                 "Act as your supervisor across every workspace on this account: create, change and fork workspaces, and read, create, change and delete their tasks.",
-			Issue:                  func() (string, error) { return h.tokenSvc.CreateOAuthCodeToken(userID, "coremcp") },
+			Issue:                  func() (string, error) { return h.tokenSvc.CreateOAuthCodeToken(userID, "coremcp", codeChallenge) },
 			Decided: func(allowed bool) {
 				h.crud.RecordOAuthConsent(r.Context(), entity.RecordOAuthConsentRequest{
 					UserID:  monoflake.IDFromBase62(userID).Int64(),
@@ -595,6 +602,10 @@ func (h *handler) oauthTokenHandler() http.Handler {
 				}
 			}
 			if !hasAuthCode {
+				http.Error(w, `{"error": "invalid_grant"}`, http.StatusUnauthorized)
+				return
+			}
+			if !oauthconsent.CodeVerifierMatches(claims.CodeChallenge, r.Form.Get("code_verifier")) {
 				http.Error(w, `{"error": "invalid_grant"}`, http.StatusUnauthorized)
 				return
 			}

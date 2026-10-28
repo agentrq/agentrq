@@ -37,7 +37,7 @@ func (authorizeTokenSvc) CreateToken(userID, email, name, picture string) (strin
 func (authorizeTokenSvc) CreateMCPToken(userID, workspaceID, tokenType string) (string, error) {
 	return "mcp-token", nil
 }
-func (authorizeTokenSvc) CreateOAuthCodeToken(userID, workspaceID string) (string, error) {
+func (authorizeTokenSvc) CreateOAuthCodeToken(userID, workspaceID, codeChallenge string) (string, error) {
 	return "code-token", nil
 }
 func (authorizeTokenSvc) CreateTerminalTicket(userID, sessionID string) (string, error) {

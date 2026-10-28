@@ -54,7 +54,7 @@ func (m *mockTokenSvc) ValidateSessionToken(tokenStr string) (*auth.Claims, erro
 	return nil, jwt.ErrSignatureInvalid
 }
 
-func (m *mockTokenSvc) CreateOAuthCodeToken(userID, workspaceID string) (string, error) {
+func (m *mockTokenSvc) CreateOAuthCodeToken(userID, workspaceID, codeChallenge string) (string, error) {
 	m.validCode = "mocked-code-" + userID + "-" + workspaceID
 	return m.validCode, nil
 }

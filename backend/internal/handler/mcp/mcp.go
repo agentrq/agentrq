@@ -519,6 +519,7 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 			// that is itself an https URL is resolved as a client metadata
 			// document (oauthAuthorizeHandler's CIMDResolver backs this).
 			"client_id_metadata_document_supported": true,
+			"code_challenge_methods_supported":      []string{oauthconsent.PKCEMethod},
 			"logo_uri":                              h.baseURL + "/agentrq.png",
 		}
 
@@ -584,6 +585,12 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			return
 		}
 
+		codeChallenge := r.URL.Query().Get("code_challenge")
+		if err := oauthconsent.CheckCodeChallenge(codeChallenge, r.URL.Query().Get("code_challenge_method")); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
 		if userID == "" {
 			// Not signed in: to the login page, then back here.
 			proto := "https://"
@@ -630,7 +637,9 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			State:                  state,
 			Resource:               workspaceIDBase62,
 			Access:                 "Work as the agent of " + consentWorkspaceName(workspace.Name, workspaceIDBase62) + ": create and update its tasks, message you, change its memory and skills, and use the websites you shared with it.",
-			Issue:                  func() (string, error) { return h.tokenSvc.CreateOAuthCodeToken(userID, workspaceIDBase62) },
+			Issue: func() (string, error) {
+				return h.tokenSvc.CreateOAuthCodeToken(userID, workspaceIDBase62, codeChallenge)
+			},
 			Decided: func(allowed bool) {
 				h.crud.RecordOAuthConsent(r.Context(), entity.RecordOAuthConsentRequest{
 					UserID:      workspace.UserID,
@@ -694,6 +703,10 @@ func (h *handler) oauthTokenHandler() http.Handler {
 				}
 			}
 			if !hasAuthCode {
+				http.Error(w, `{"error": "invalid_grant"}`, http.StatusUnauthorized)
+				return
+			}
+			if !oauthconsent.CodeVerifierMatches(claims.CodeChallenge, r.Form.Get("code_verifier")) {
 				http.Error(w, `{"error": "invalid_grant"}`, http.StatusUnauthorized)
 				return
 			}

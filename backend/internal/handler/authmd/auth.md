@@ -48,13 +48,15 @@ on any port (RFC 8252).
 The authorization code grant, with a person in the loop:
 
 1. Send the person's browser to `/oauth2/authorize` under the server's path
-   with `response_type=code`, `client_id`, `redirect_uri` and `state`.
+   with `response_type=code`, `client_id`, `redirect_uri` and `state`, and
+   PKCE's `code_challenge` with `code_challenge_method=S256` (only S256).
 2. If they are not signed in, they sign in to AgentRQ first.
 3. They see a consent page naming the client and what it will be able to do,
    and press Allow or Deny. Allow returns `code` to the `redirect_uri`; Deny
    returns `error=access_denied`.
-4. `POST` `grant_type=authorization_code&code=…` to `/oauth2/token` under the
-   same path.
+4. `POST` `grant_type=authorization_code&code=…&code_verifier=…` to
+   `/oauth2/token` under the same path. A code issued without a challenge is
+   redeemed without a verifier.
 
 The response carries `access_token`, `refresh_token`, `token_type` `bearer`,
 `expires_in` and `scope`. To renew, `POST`
