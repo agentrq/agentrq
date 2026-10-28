@@ -241,3 +241,37 @@ func TestManifest_EveryHost(t *testing.T) {
 		}
 	}
 }
+
+// OpenAI verifies a plugin submission's domain by reading this token from
+// the MCP host, or a parent domain, exactly as it issued it.
+func TestOpenAIChallenge_EveryHost(t *testing.T) {
+	mux := http.NewServeMux()
+	if _, err := New(Params{Mux: mux, TokenSvc: codeTokenSvc{}, BaseURL: "https://agentrq.com", Domain: "agentrq.com", MCPURL: setupEndpoint, OpenAIAppsChallenge: "challenge-token"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, host := range []string{"agentrq.com", "mcp.agentrq.com"} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, setupRequest(http.MethodGet, host, openAIChallengePath))
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", host, w.Code)
+		}
+		if got := w.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+			t.Errorf("%s: Content-Type = %q", host, got)
+		}
+		if got := w.Body.String(); got != "challenge-token" {
+			t.Errorf("%s: body = %q, want the token alone", host, got)
+		}
+	}
+}
+
+func TestOpenAIChallenge_NoneSet(t *testing.T) {
+	mux := newSetupMux(t)
+	for _, host := range []string{"agentrq.com", "mcp.agentrq.com"} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, setupRequest(http.MethodGet, host, openAIChallengePath))
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404", host, w.Code)
+		}
+	}
+}

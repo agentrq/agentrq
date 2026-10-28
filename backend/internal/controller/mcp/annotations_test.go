@@ -79,15 +79,16 @@ func TestEveryToolIsAnnotated(t *testing.T) {
 			continue
 		}
 
-		// destructiveHint means nothing on a read-only tool, and everything on
-		// the rest: without it the protocol's default applies, which is that
-		// the tool destroys things.
-		_, destructiveDeclared := annotations["destructiveHint"]
-		if readOnly && destructiveDeclared {
-			t.Errorf("tool %q is read-only and still declares destructiveHint", name)
+		// OpenAI's plugin review wants destructiveHint and openWorldHint
+		// stated on every tool, a read-only one included, where it is false.
+		destructive, ok := annotations["destructiveHint"].(bool)
+		if !ok {
+			t.Errorf("tool %q does not say whether it destroys", name)
+		} else if readOnly && destructive {
+			t.Errorf("tool %q is read-only and still claims to destroy", name)
 		}
-		if !readOnly && !destructiveDeclared {
-			t.Errorf("tool %q writes but does not say whether it destroys", name)
+		if _, ok := annotations["openWorldHint"].(bool); !ok {
+			t.Errorf("tool %q does not say whether its world is open", name)
 		}
 	}
 }

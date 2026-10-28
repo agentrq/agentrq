@@ -44,6 +44,9 @@ type Params struct {
 	Public fs.FS
 	// MCPURL is this server's public endpoint, which its manifest names.
 	MCPURL string
+	// OpenAIAppsChallenge is OpenAI's domain verification token for a plugin
+	// submission; empty serves none.
+	OpenAIAppsChallenge string
 }
 
 type Handler interface{}
@@ -123,6 +126,8 @@ func New(p Params) (Handler, error) {
 	p.Mux.Handle("/auth.md", authMD)
 	manifest := manifestHandler(p.MCPURL)
 	p.Mux.Handle(manifestPath, manifest)
+	openAIChallenge := openAIChallengeHandler(p.OpenAIAppsChallenge)
+	p.Mux.Handle(openAIChallengePath, openAIChallenge)
 
 	// Host-based distinct paths
 	if hostPattern != "" {
@@ -134,6 +139,7 @@ func New(p Params) (Handler, error) {
 		p.Mux.Handle(hostPattern+"/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
 		p.Mux.Handle(hostPattern+"/auth.md", authMD)
 		p.Mux.Handle(hostPattern+manifestPath, manifest)
+		p.Mux.Handle(hostPattern+openAIChallengePath, openAIChallenge)
 		// Every other path on this host is the MCP endpoint, which would
 		// answer robots.txt with a 401.
 		p.Mux.Handle(hostPattern+"/robots.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

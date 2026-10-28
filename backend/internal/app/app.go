@@ -150,6 +150,10 @@ type (
 		Pano struct {
 			MaxTTLDays int `yaml:"maxTtlDays"`
 		} `yaml:"pano"`
+		MCP struct {
+			// OpenAI's domain verification token for a plugin submission.
+			OpenAIAppsChallenge string `yaml:"openaiAppsChallenge"`
+		} `yaml:"mcp"`
 		// Native ACP: the endpoints acp-gateway uses in native mode.
 		ACP struct {
 			V1 struct {
@@ -688,6 +692,8 @@ func New(cfg Config) (*App, error) {
 		PubSub:     pubsubSvc,
 		Public:     cfg.Web,
 		MCPURL:     launcher.URLs.Core(),
+
+		OpenAIAppsChallenge: cfg.MCP.OpenAIAppsChallenge,
 	}); err != nil {
 		return nil, fmt.Errorf("coremcp handler: %w", err)
 	}

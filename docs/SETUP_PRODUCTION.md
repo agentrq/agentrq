@@ -282,6 +282,12 @@ An attachment's upload type is kept only when a browser cannot run it; anything 
 
 Values are whole numbers. The server refuses to start on anything else, or on a memory size above `131072`.
 
+### MCP
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENTRQ_MCP_OPENAI_APPS_CHALLENGE` | (empty) | The domain verification token OpenAI issues when you submit the MCP server as a plugin, served as plain text at `/.well-known/openai-apps-challenge` on every host. Empty answers 404. |
+
 ### Native ACP
 
 | Variable | Default | Description |

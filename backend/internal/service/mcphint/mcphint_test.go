@@ -23,10 +23,9 @@ func TestRead(t *testing.T) {
 	if !a.ReadOnlyHint {
 		t.Error("a read is not marked read-only")
 	}
-	// Meaningless on a read-only tool, so they are left off rather than left
-	// to be interpreted.
-	if a.DestructiveHint != nil {
-		t.Error("a read declares destructiveHint")
+	// Stated anyway: OpenAI's plugin review wants every hint explicit.
+	if deref(t, "destructiveHint", a.DestructiveHint) {
+		t.Error("a read claims to destroy")
 	}
 	if a.IdempotentHint {
 		t.Error("a read declares idempotentHint")

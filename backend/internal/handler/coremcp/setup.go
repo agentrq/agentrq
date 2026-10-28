@@ -97,6 +97,24 @@ func serverManifest(endpoint string) []byte {
 	return append(b, '\n')
 }
 
+// openAIChallengePath is where OpenAI checks that a plugin's submitter
+// controls the MCP server's domain.
+const openAIChallengePath = "/.well-known/openai-apps-challenge"
+
+// openAIChallengeHandler answers with the token OpenAI issued for the
+// submission, exactly as given, or 404 when none is set.
+func openAIChallengeHandler(token string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if token == "" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte(token))
+	})
+}
+
 // manifestHandler answers with the manifest, which names endpoint on every
 // host, so clients and directories find the server from any of them.
 func manifestHandler(endpoint string) http.Handler {

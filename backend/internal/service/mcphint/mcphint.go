@@ -29,14 +29,15 @@ func closedWorld() *bool { return hint(false) }
 
 // Read is a tool that answers a question and changes nothing.
 //
-// DestructiveHint and IdempotentHint are left out on purpose: the protocol says
-// both are meaningful only when ReadOnlyHint is false, and a hint that carries
-// no meaning still has to be read by somebody.
+// DestructiveHint is stated as false even though the protocol reads it only
+// when ReadOnlyHint is false: OpenAI's plugin review wants all three hints
+// explicit on every tool. IdempotentHint is left at its zero value.
 func Read(title string) *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{
-		Title:         title,
-		ReadOnlyHint:  true,
-		OpenWorldHint: closedWorld(),
+		Title:           title,
+		ReadOnlyHint:    true,
+		DestructiveHint: hint(false),
+		OpenWorldHint:   closedWorld(),
 	}
 }
 
