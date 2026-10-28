@@ -1230,8 +1230,8 @@ export const TELEMETRY_UI_COPY_MARKDOWN = 'ui_copy_markdown';
 export const TELEMETRY_UI_COPY_CODE = 'ui_copy_code';
 export const TELEMETRY_UI_TRAJECTORY_VIEW = 'ui_trajectory_view';
 export const TELEMETRY_UI_PLAN_COMMENT = 'ui_plan_comment';
-// A task's links panel opened.
-export const TELEMETRY_UI_LINKS_OPEN = 'ui_links_open';
+// A link followed from a task's links panel.
+export const TELEMETRY_UI_TASK_LINK_OPEN = 'ui_task_link_open';
 export const TELEMETRY_UI_SPIN_UP = 'ui_spin_up';
 // A dictation done by a phone's own speech recognition rather than Whisper.
 export const TELEMETRY_UI_DICTATION_END = 'ui_dictation_end';

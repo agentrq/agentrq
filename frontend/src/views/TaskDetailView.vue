@@ -177,8 +177,9 @@
           <!-- The agent's plan, pinned here so it stays in view however long the conversation gets -->
           <TaskPlanPanel v-if="taskPlan" class="mb-1" :plan="taskPlan" :messages="task.messages || []" :disabled="offline" @comment="commentOnPlan" />
 
-          <!-- Every link the task mentions: pull requests, Pano docs, other tasks, the rest -->
-          <TaskLinksPanel class="mb-1" :task="task" :task-id="taskId" @open="recordUiAction(TELEMETRY_UI_LINKS_OPEN, route)" />
+          <!-- Every link the task mentions. Pinned beside the conversation where
+               there is room for it; here, under the plan, where there is not. -->
+          <TaskLinksPanel class="mb-1 @min-[48rem]:hidden" :task="task" :task-id="taskId" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
 
           <!-- Attachments -->
           <div v-if="task.attachments && task.attachments.length > 0" class="mt-8 flex flex-wrap gap-3">
@@ -196,8 +197,10 @@
       </div>
     </div>
 
+    <!-- The conversation, with the task's links pinned beside it -->
+    <div v-if="activeView === 'chat'" class="flex-1 min-h-0 flex">
     <!-- Scrollable chat area -->
-    <div v-if="activeView === 'chat'" ref="scrollContainer" class="flex-1 overflow-y-auto px-1 @min-[40rem]:px-4 pt-0 pb-6 flex flex-col gap-4 scroll-smooth custom-scrollbar overflow-x-hidden relative" style="overscroll-behavior-y: contain;">
+    <div ref="scrollContainer" class="flex-1 min-w-0 overflow-y-auto px-1 @min-[40rem]:px-4 pt-0 pb-6 flex flex-col gap-4 scroll-smooth custom-scrollbar overflow-x-hidden relative" style="overscroll-behavior-y: contain;">
 
       <!-- Drag & Drop Overlay -->
       <div v-if="isDragging" class="absolute inset-0 bg-white/95 dark:bg-zinc-900/95 z-50 flex flex-col items-center justify-center border-4 border-dashed border-gray-300 dark:border-zinc-700 m-4 rounded-xl transition-all duration-200 animate-in fade-in zoom-in-95">
@@ -736,6 +739,8 @@
         </li>
       </ul>
     </div>
+    <TaskLinksPanel pinned class="hidden @min-[48rem]:flex w-52 shrink-0 self-start max-h-[calc(100%-0.5rem)] mr-4" :task="task" :task-id="taskId" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
+    </div>
 
     <!-- Tool call trajectory (replaces the chat area in place) -->
     <TrajectoryPanel v-else :messages="trajectoryMessages" :tool-calls="sortedToolCalls"
@@ -1005,7 +1010,7 @@ import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { downloadAttachment } from '../composables/useAttachmentDownload';
 import { useEscapeKey } from '../composables/useEscapeKey';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT, TELEMETRY_UI_PLAN_COMMENT, TELEMETRY_UI_LINKS_OPEN } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT, TELEMETRY_UI_PLAN_COMMENT, TELEMETRY_UI_TASK_LINK_OPEN } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';

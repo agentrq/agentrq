@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * The task's links panel, mounted for real: read from the task's description
- * and messages, kept current as messages arrive, and its opening counted.
+ * The task's links, mounted for real: read from the task's description and
+ * messages, kept current as messages arrive, pinned beside the conversation
+ * and under the plan for a narrow view, and a followed link counted.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -84,7 +85,7 @@ vi.mock('../src/api', () => ({
   updateTaskAllowAllCommands: vi.fn(),
   serverOrigin: () => Promise.resolve(window.location.origin),
   recordTelemetry: (...args) => recordTelemetry(...args),
-  TELEMETRY_UI_LINKS_OPEN: 'ui_links_open',
+  TELEMETRY_UI_TASK_LINK_OPEN: 'ui_task_link_open',
   API_BASE_URL: '/api/v1',
 }))
 
@@ -123,13 +124,20 @@ afterEach(() => {
 describe('TaskDetailView and the task links', () => {
   const summary = (el) => el.querySelector('[data-testid="task-links-summary"]')?.textContent
 
-  it('lists the links of the description and the messages, and counts opening them', async () => {
+  it('lists the links of the description and the messages, pinned and under the plan, and counts a followed one', async () => {
     const el = await mount()
+    const [bar, pinned] = el.querySelectorAll('[data-testid="task-links"]')
+    expect(bar.hasAttribute('data-pinned')).toBe(false)
+    expect(bar.className).toContain('@min-[48rem]:hidden')
+    expect(pinned.getAttribute('data-pinned')).toBe('true')
+    expect(pinned.className).toContain('@min-[48rem]:flex')
     expect(summary(el)).toBe('· gh#12 · Roadmap')
-    el.querySelector('[data-testid="task-links-toggle"]').click()
-    await settle()
-    expect(el.querySelector('[data-testid="task-links-pr"]').textContent).toContain('gh#12')
-    expect(recordTelemetry).toHaveBeenCalledWith('ui_links_open', 'ws1')
+
+    const pr = pinned.querySelector('[data-testid="task-links-pr"] a')
+    expect(pr.textContent).toContain('gh#12')
+    pr.addEventListener('click', (e) => e.preventDefault())
+    pr.click()
+    expect(recordTelemetry).toHaveBeenCalledWith('ui_task_link_open', 'ws1')
   })
 
   it('picks up a link from a message that arrives while the task is open', async () => {

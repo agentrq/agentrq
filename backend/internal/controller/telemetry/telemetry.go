@@ -285,8 +285,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDWorkspaceResetID
 	case entity.ActionUIPlanComment:
 		action = model.ActionIDUIPlanComment
-	case entity.ActionUILinksOpen:
-		action = model.ActionIDUILinksOpen
+	case entity.ActionUITaskLinkOpen:
+		action = model.ActionIDUITaskLinkOpen
 	default:
 		return
 	}

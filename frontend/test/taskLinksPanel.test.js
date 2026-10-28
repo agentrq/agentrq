@@ -13,12 +13,12 @@ const { default: TaskLinksPanel } = await import('../src/components/TaskLinksPan
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 const mounted = []
 
-function mount(task, taskId = 't1') {
-  const state = reactive({ task, opened: 0 })
+function mount(task, { taskId = 't1', pinned = false } = {}) {
+  const state = reactive({ task, followed: 0 })
   const el = document.createElement('div')
   document.body.appendChild(el)
   const app = createApp({
-    render: () => h(TaskLinksPanel, { task: state.task, taskId, onOpen: () => state.opened++ }),
+    render: () => h(TaskLinksPanel, { task: state.task, taskId, pinned, onFollow: () => state.followed++ }),
   })
   app.component('RouterLink', { props: ['to'], setup: (p, { slots }) => () => h('a', { 'data-to': p.to }, slots.default?.()) })
   mounted.push(app)
@@ -54,6 +54,7 @@ describe('TaskLinksPanel', () => {
     await settle()
     expect(q('task-links-count').textContent.trim()).toBe('4')
     expect(q('task-links-summary').textContent).toBe('· gh#1099 · Roadmap · Login · example.com/docs')
+    expect(q('task-links').hasAttribute('data-pinned')).toBe(false)
     expect(q('task-links-body')).toBeNull()
   })
 
@@ -63,7 +64,7 @@ describe('TaskLinksPanel', () => {
     q('task-links-toggle').click()
     await settle()
     expect(q('task-links-toggle').getAttribute('aria-expanded')).toBe('true')
-    expect(state.opened).toBe(1)
+    expect(state.followed).toBe(0)
 
     const pr = q('task-links-pr').querySelector('a')
     expect(pr.textContent.trim()).toBe('gh#1099')
@@ -76,10 +77,26 @@ describe('TaskLinksPanel', () => {
     expect(external.getAttribute('href')).toBe('https://example.com/docs')
     expect(external.getAttribute('rel')).toBe('noopener noreferrer')
 
+    for (const kind of ['pr', 'pano', 'task', 'external']) q(`task-links-${kind}`).querySelector('a').click()
+    expect(state.followed).toBe(4)
+
     q('task-links-toggle').click()
     await settle()
     expect(q('task-links-body')).toBeNull()
-    expect(state.opened).toBe(1)
+  })
+
+  it('pinned, starts open as a note listing the links one under another, and folds to its header', async () => {
+    const { q, el } = mount(task, { pinned: true })
+    await settle()
+    expect(q('task-links').getAttribute('data-pinned')).toBe('true')
+    expect(q('task-links-toggle').getAttribute('aria-expanded')).toBe('true')
+    expect(q('task-links-summary')).toBeNull()
+    expect(q('task-links-pr').querySelector('ul').className).toContain('flex-col')
+    expect(el.querySelectorAll('[data-testid="task-links-body"] li')).toHaveLength(4)
+    q('task-links-toggle').click()
+    await settle()
+    expect(q('task-links-body')).toBeNull()
+    expect(q('task-links-count').textContent.trim()).toBe('4')
   })
 
   it('counts links to the server as in-app ones in the desktop app, whose page origin is app://', async () => {
