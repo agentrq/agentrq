@@ -23,7 +23,7 @@ use agentrq_desktop_core::protocol::{
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Runtime, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Runtime, State, Window};
 
 use crate::ext_host::{Answer, ExtHost, Services};
 use crate::ext_node::{Failure, Health};
@@ -230,7 +230,7 @@ impl Services for ShellServices {
 pub type PickedFolder = Pin<Box<dyn Future<Output = Option<String>> + Send>>;
 
 /// Opens the dialog for `chooseFolder`, over the window that asked.
-pub type FolderPicker<R> = Box<dyn Fn(WebviewWindow<R>) -> PickedFolder + Send + Sync>;
+pub type FolderPicker<R> = Box<dyn Fn(Window<R>) -> PickedFolder + Send + Sync>;
 
 /// The managed picker.
 pub struct Picker<R: Runtime>(pub FolderPicker<R>);
@@ -342,9 +342,12 @@ pub fn extensions_cancel_node_download(host: State<'_, Arc<ExtHost>>) -> bool {
 
 /// `agentrq:extensions:choose-folder`: the dialog here, the reading in the
 /// host. Cancelling is not a failure.
+///
+/// A `Window`, not a `WebviewWindow`: with the side panel open the window
+/// holds a second webview, and a `WebviewWindow` then fails to extract.
 #[tauri::command]
 pub async fn extensions_choose_folder<R: Runtime>(
-    window: WebviewWindow<R>,
+    window: Window<R>,
     host: State<'_, Arc<ExtHost>>,
     picker: State<'_, Picker<R>>,
 ) -> Result<Value, String> {
@@ -1004,6 +1007,24 @@ pub(crate) mod tests {
     #[test]
     fn a_dismissed_folder_dialog_is_cancelled_not_failed() {
         let app = app(Some(script_launch(ECHO)), None);
+        assert_eq!(
+            call(&app, "extensions_choose_folder", json!({})),
+            Ok(json!({"ok": false, "cancelled": true}))
+        );
+    }
+
+    #[test]
+    fn the_folder_dialog_opens_with_the_side_panel_open() {
+        let app = app(Some(script_launch(ECHO)), None);
+        app.webview
+            .as_ref()
+            .window()
+            .add_child(
+                tauri::webview::WebviewBuilder::new("panel", Default::default()),
+                tauri::LogicalPosition::new(0, 0),
+                tauri::LogicalSize::new(10, 10),
+            )
+            .expect("mock panel");
         assert_eq!(
             call(&app, "extensions_choose_folder", json!({})),
             Ok(json!({"ok": false, "cancelled": true}))

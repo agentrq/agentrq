@@ -625,7 +625,7 @@ fn extension_host<R: Runtime>(
 }
 
 /// `chooseFolder`'s dialog, off the async runtime: it blocks until closed.
-fn pick_folder<R: Runtime>(window: WebviewWindow<R>) -> PickedFolder {
+fn pick_folder<R: Runtime>(window: tauri::Window<R>) -> PickedFolder {
     Box::pin(async move {
         let picked = tauri::async_runtime::spawn_blocking(move || {
             window

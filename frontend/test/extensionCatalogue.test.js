@@ -738,6 +738,15 @@ describe('useExtensionCatalogue', () => {
       expect(catalogue.error.value).toContain('no agentrq-extension.json');
     });
 
+    it('reports a dialog the bridge could not open', async () => {
+      const bridge = fakeBridge({ chooseFolder: vi.fn(async () => { throw new Error('no dialog'); }) });
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.chooseFolder();
+
+      expect(catalogue.error.value).toBe('no dialog');
+    });
+
     it('reports a folder that answered with nothing at all', async () => {
       const catalogue = useExtensionCatalogue({ bridge: fakeBridge({ chooseFolder: vi.fn(async () => undefined) }) });
 
