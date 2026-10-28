@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/agentrq/agentrq/backend/internal/service/config"
 )
 
 // The deliberate mirror of controller/mcp's protocol_version_test.go, which
@@ -208,5 +210,29 @@ func TestCoreMCPRefusesTheStreamAndTeardown(t *testing.T) {
 		if allow := resp.Header.Get("Allow"); allow != "POST" {
 			t.Errorf("%s: Allow = %q, want POST", method, allow)
 		}
+	}
+}
+
+// serverInfo.version is how a client tells which release it reached, so it is
+// the app's own release rather than a fixed placeholder.
+func TestCoreMCPInitializeAdvertisesTheRelease(t *testing.T) {
+	srv := newStatelessTestServer(t)
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25",` +
+		`"capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}`
+
+	status, out, _ := corePost(t, srv.URL, map[string]string{"MCP-Protocol-Version": "2025-11-25"}, body)
+	if status != http.StatusOK {
+		t.Fatalf("initialize: expected 200, got %d: %s", status, out)
+	}
+	var env struct {
+		Result struct {
+			ServerInfo struct{ Version string } `json:"serverInfo"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out, &env); err != nil {
+		t.Fatalf("decode %s: %v", out, err)
+	}
+	if got := env.Result.ServerInfo.Version; got != config.Release() {
+		t.Errorf("serverInfo.version = %q, want the release %q", got, config.Release())
 	}
 }

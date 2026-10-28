@@ -112,6 +112,12 @@ func (s *service) Version() string {
 	return string(_appVersion)
 }
 
+// Release is the app version without its v prefix, as semver, for the MCP
+// servers' serverInfo.version so a client can tell which release it reached.
+func Release() string {
+	return strings.TrimPrefix(_appVersion, "v")
+}
+
 // Env return current config environment
 func env() string {
 	env := os.Getenv(_envVar)

@@ -15,6 +15,7 @@ import (
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
@@ -42,7 +43,7 @@ type ForkMerger interface {
 func NewServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Service) *WorkspaceServer {
 	srv := mcp.NewServer(&mcp.Implementation{
 		Name:    "agentrq",
-		Version: "1.0.0",
+		Version: config.Release(),
 		Icons: []mcp.Icon{
 			{
 				Source:   baseURL + "/agentrq.png",

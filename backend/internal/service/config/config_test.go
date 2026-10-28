@@ -7,6 +7,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -111,6 +112,9 @@ database:
 		}
 		if s.Version() != "v0.14.0" {
 			t.Errorf("Expected version v0.14.0, got %s", s.Version())
+		}
+		if Release() != strings.TrimPrefix(s.Version(), "v") {
+			t.Errorf("Release() = %s, want %s without its v", Release(), s.Version())
 		}
 		if s.Env() != "development" {
 			t.Errorf("Env mismatch: %s", s.Env())

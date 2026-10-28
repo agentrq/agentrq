@@ -32,6 +32,7 @@ import (
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
@@ -538,7 +539,7 @@ func NewWorkspaceServer(
 	mcpSrv := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    fmt.Sprintf("agentrq-workspace-%s", workspaceIDStr),
-			Version: "1.0.0",
+			Version: config.Release(),
 			Icons:   workspaceIcons(icon, baseURL),
 		},
 		&mcp.ServerOptions{

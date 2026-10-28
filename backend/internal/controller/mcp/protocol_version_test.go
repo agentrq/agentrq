@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	"github.com/golang/mock/gomock"
@@ -442,5 +443,29 @@ func TestDuplicateInitializeOnSameSessionIsRefused(t *testing.T) {
 	}
 	if freshEnv.Error != nil {
 		t.Errorf("fresh initialize failed: %s", freshEnv.Error.Message)
+	}
+}
+
+// serverInfo.version is how a client tells which release it reached, so it is
+// the app's own release rather than a fixed placeholder.
+func TestInitializeAdvertisesTheRelease(t *testing.T) {
+	srv := newProtocolTestServer(t)
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25",` +
+		`"capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}`
+
+	status, out, _ := mcpPost(t, srv.URL, map[string]string{"MCP-Protocol-Version": "2025-11-25"}, body)
+	if status != http.StatusOK {
+		t.Fatalf("initialize: expected 200, got %d: %s", status, out)
+	}
+	var env struct {
+		Result struct {
+			ServerInfo struct{ Version string } `json:"serverInfo"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out, &env); err != nil {
+		t.Fatalf("decode %s: %v", out, err)
+	}
+	if got := env.Result.ServerInfo.Version; got != config.Release() {
+		t.Errorf("serverInfo.version = %q, want the release %q", got, config.Release())
 	}
 }
