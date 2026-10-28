@@ -9,7 +9,7 @@
 
 - **Pure logic goes in `core/`**, which has no Tauri dependency and a 100% line
   gate. `src-tauri/src/lib.rs` is wiring only and is outside the gate.
-- **`chrome.rs`, `app_menu.rs`, `side_panel/`'s platform files and `handlers.rs`, and `oauth_window/handlers.rs`
+- **`chrome.rs`, `app_menu.rs`, `side_panel/`'s platform files and `handlers.rs`, `notify/macos.rs`, and `oauth_window/handlers.rs`
   are wiring and outside the coverage gate too**; a rule goes in `core/` or a
   gated file with its test. `side_panel.rs` is gated: llvm-cov counts a closure
   per generic instance, so keep closures out of its commands. An async command whose
