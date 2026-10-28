@@ -745,6 +745,11 @@ describe('useExtensionCatalogue', () => {
       await catalogue.chooseFolder();
 
       expect(catalogue.error.value).toBe('no dialog');
+
+      bridge.chooseFolder.mockRejectedValueOnce('current webview is not a WebviewWindow');
+      await catalogue.chooseFolder();
+
+      expect(catalogue.error.value).toBe('current webview is not a WebviewWindow');
     });
 
     it('reports a folder that answered with nothing at all', async () => {

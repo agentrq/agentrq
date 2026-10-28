@@ -362,7 +362,8 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
     try {
       found = await bridge.chooseFolder();
     } catch (err) {
-      error.value = err?.message || String(err) || 'Could not open the folder dialog.';
+      // Tauri rejects with the bare reason; a JavaScript bridge, with an Error.
+      error.value = typeof err === 'string' ? err : err.message;
       return;
     }
     if (refusedForNode(found, chooseFolder)) return;
