@@ -687,6 +687,7 @@ func New(cfg Config) (*App, error) {
 		Mux:        mux,
 		PubSub:     pubsubSvc,
 		Public:     cfg.Web,
+		MCPURL:     launcher.URLs.Core(),
 	}); err != nil {
 		return nil, fmt.Errorf("coremcp handler: %w", err)
 	}

@@ -18,8 +18,10 @@ per-workspace has to change for it to be reachable.
 `.go` file in this package, so a mismatch fails `npm test`. The two Claude
 plugin docs (`plugins/claude/agentrq/README.md` and its `SKILL.md`) and the
 Gemini extension's `plugins/gemini/README.md` need a table row too —
-`plugin_docs_test.go` checks those. The setup tab's permissions
-snippet allows this server as `mcp__agentrq__*`, so it needs nothing.
+`plugin_docs_test.go` checks those. So does `setupTools` (`setup.go`), the
+list a browser opening `/mcp` sees; `TestSetupPage_ListsEveryTool` checks it.
+The setup tab's permissions snippet allows this server as `mcp__agentrq__*`,
+so it needs nothing.
 
 **Adding a *resource* or *prompt* trips none of the above.** Those parity
 tests match only `mcp.AddTool(s.server, &mcp.Tool{Name: "..."` — an

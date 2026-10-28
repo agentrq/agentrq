@@ -42,6 +42,8 @@ type Params struct {
 	// Public is the web build the static handler serves, for its robots.txt
 	// on the mcp. host.
 	Public fs.FS
+	// MCPURL is this server's public endpoint, which its manifest names.
+	MCPURL string
 }
 
 type Handler interface{}
@@ -119,6 +121,8 @@ func New(p Params) (Handler, error) {
 	// below answers every other path with this server's endpoint.
 	authMD := authmd.Handler(p.BaseURL)
 	p.Mux.Handle("/auth.md", authMD)
+	manifest := manifestHandler(p.MCPURL)
+	p.Mux.Handle(manifestPath, manifest)
 
 	// Host-based distinct paths
 	if hostPattern != "" {
@@ -129,6 +133,7 @@ func New(p Params) (Handler, error) {
 		p.Mux.Handle(hostPattern+"/oauth2/token", corsWrapper(h.oauthTokenHandler()))
 		p.Mux.Handle(hostPattern+"/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
 		p.Mux.Handle(hostPattern+"/auth.md", authMD)
+		p.Mux.Handle(hostPattern+manifestPath, manifest)
 		// Every other path on this host is the MCP endpoint, which would
 		// answer robots.txt with a 401.
 		p.Mux.Handle(hostPattern+"/robots.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -339,6 +344,11 @@ func (h *handler) streamableHandler() http.Handler {
 			ev = ev.Str("h_"+strings.ToLower(k), strings.Join(v, ", "))
 		}
 		ev.Msg("CoreMCP call")
+
+		if wantsSetupPage(r) {
+			h.serveSetupPage(w, r)
+			return
+		}
 
 		queryToken := getTokenVal(r)
 		if queryToken == "" {

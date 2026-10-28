@@ -62,7 +62,7 @@ Each line says what the note will stop you getting wrong.
 - **[CoreMCP, and the supervisor workspace](docs/agents/coremcp-and-supervisor.md)**
   — `backend/internal/handler/coremcp/`, the account-wide server every account's
   auto-created "supervisor" workspace talks to. A new tool there is a change in
-  three places, all of them tested; a new resource or prompt is invisible
+  four places, all of them tested; a new resource or prompt is invisible
   to all of them and needs its own test instead.
 - **[WebMCP](docs/agents/webmcp.md)** — the tool catalogue mirrors
   `frontend/src/api.js` function for function, and a test fails when it stops
