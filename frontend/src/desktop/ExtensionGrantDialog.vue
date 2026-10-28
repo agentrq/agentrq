@@ -116,7 +116,7 @@
               <span class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400">
                 {{ field.label }}
                 <span v-if="field.type === 'secret'" class="normal-case font-medium text-gray-400 dark:text-zinc-500">
-                  — stored in your keychain, never shown again
+                  — stored encrypted on this computer, never shown again
                 </span>
               </span>
               <input v-model="values[field.key]"
