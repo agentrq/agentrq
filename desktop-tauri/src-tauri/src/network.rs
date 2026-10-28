@@ -14,25 +14,19 @@
 //! [`ProfileNet::set_server_url`] after the connection screen.
 //!
 //! A profile is opened once and kept: two jars on one file would each write
-//! over the other's cookies. Opening the first one waits on the keychain, so
+//! over the other's cookies. Opening the first one reads the jars' key, so
 //! nothing that does not talk to the server waits for it.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
-use std::time::Duration;
 
 use agentrq_desktop_core::attachment_store::{AttachmentStore, DiskFs};
 use agentrq_desktop_core::protocol::AppProtocol;
 use tokio::sync::OnceCell;
 
 use crate::cookie_jar::ProfileJar;
-use crate::vault::{load_key, Keychain, Vault};
-
-/// How long the keychain may take to hand over the key. It can block on an
-/// unlock prompt; past this the sessions are kept in memory only, until the
-/// app restarts.
-pub const KEYCHAIN_DEADLINE: Duration = Duration::from_secs(10);
+use crate::vault::{load_key, Vault};
 
 /// A profile's folder: its jar and its attachments, side by side.
 pub fn profile_dir(base: &Path, id: &str) -> PathBuf {
@@ -98,10 +92,8 @@ impl ProfileNet {
 /// Every profile's network lives here; one is active.
 pub struct Network {
     base: PathBuf,
-    keychain: Arc<dyn Keychain + Send + Sync>,
-    /// `None` when the keychain refused or was too slow.
+    /// `None` when the key file could not be written.
     vault: OnceCell<Option<Vault>>,
-    keychain_deadline: Duration,
     first: (String, String),
     active: Mutex<Option<Arc<ProfileNet>>>,
     opened: Mutex<HashMap<String, Arc<ProfileNet>>>,
@@ -115,16 +107,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 impl Network {
     /// `first` is the profile id and server to start with.
-    pub fn new(
-        base: PathBuf,
-        keychain: Arc<dyn Keychain + Send + Sync>,
-        first: (String, String),
-    ) -> Self {
+    pub fn new(base: PathBuf, first: (String, String)) -> Self {
         Self {
             base,
-            keychain,
             vault: OnceCell::new(),
-            keychain_deadline: KEYCHAIN_DEADLINE,
             first,
             active: Mutex::new(None),
             opened: Mutex::new(HashMap::new()),
@@ -134,11 +120,9 @@ impl Network {
     async fn vault(&self) -> Option<Vault> {
         self.vault
             .get_or_init(|| async {
-                let keychain = self.keychain.clone();
-                let fallback = self.base.join("cookie.key");
-                let read = tokio::task::spawn_blocking(move || load_key(&*keychain, &fallback));
-                match tokio::time::timeout(self.keychain_deadline, read).await {
-                    Ok(Ok(Ok(key))) => Some(Vault::new(&key)),
+                let path = self.base.join("cookie.key");
+                match tokio::task::spawn_blocking(move || load_key(&path)).await {
+                    Ok(Ok(key)) => Some(Vault::new(&key)),
                     _ => None,
                 }
             })
@@ -229,34 +213,8 @@ impl Network {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::vault::KeychainError;
-
-    /// No keychain to store a key in, answering after `delay_ms`.
-    pub struct NoKeychain {
-        pub delay_ms: u64,
-    }
-
-    impl Keychain for NoKeychain {
-        fn get(&self) -> Result<Option<Vec<u8>>, KeychainError> {
-            std::thread::sleep(Duration::from_millis(self.delay_ms));
-            Ok(None)
-        }
-        fn set(&self, _: &[u8]) -> Result<(), KeychainError> {
-            Err(KeychainError::Missing)
-        }
-    }
-
     pub fn network(dir: &Path, server_url: &str) -> Network {
-        slow_network(dir, server_url, 0)
-    }
-
-    /// A network whose keychain takes `delay_ms` to answer.
-    pub fn slow_network(dir: &Path, server_url: &str, delay_ms: u64) -> Network {
-        Network::new(
-            dir.to_path_buf(),
-            Arc::new(NoKeychain { delay_ms }),
-            ("default".into(), server_url.into()),
-        )
+        Network::new(dir.to_path_buf(), ("default".into(), server_url.into()))
     }
 
     #[tokio::test]
@@ -269,7 +227,7 @@ pub(crate) mod tests {
         assert_eq!(net.active_id(), "default");
         assert_eq!(first.server_url(), "http://127.0.0.1:1");
         assert!(Arc::ptr_eq(&first, &net.active().await));
-        assert!(dir.path().join("cookie.key").exists(), "no keychain here");
+        assert!(dir.path().join("cookie.key").exists());
     }
 
     #[tokio::test]
@@ -312,7 +270,7 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         let net = Arc::new(network(dir.path(), "http://127.0.0.1:1"));
         assert_eq!(net.server_url(), "http://127.0.0.1:1");
-        assert!(net.current().is_none(), "the keychain was not asked");
+        assert!(net.current().is_none(), "the key was not read");
         net.active().await.set_server_url("http://127.0.0.1:5");
         assert_eq!(
             net.protocol("").proxy_target("/api/v1/x", "").unwrap(),
@@ -321,13 +279,13 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn keeps_the_session_in_memory_when_the_keychain_hangs() {
+    async fn keeps_the_session_in_memory_when_its_key_cannot_be_written() {
         let dir = tempfile::tempdir().unwrap();
-        let mut net = slow_network(dir.path(), "", 1000);
-        net.keychain_deadline = Duration::from_millis(50);
+        let blocker = dir.path().join("file");
+        std::fs::write(&blocker, b"x").unwrap();
+        let net = network(&blocker, "");
         let opened = net.active().await;
         assert!(opened.jar.is_memory_only());
-        assert!(!dir.path().join("cookie.key").exists());
 
         // The active one is kept, in memory; any other is opened afresh.
         assert!(Arc::ptr_eq(&opened, &net.profile("default", "").await));

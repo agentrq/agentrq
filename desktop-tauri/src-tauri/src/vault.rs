@@ -2,12 +2,13 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! The key the cookie jars are encrypted with, and the encryption.
+//! The keys the cookie jars and the extension secrets are encrypted with, and
+//! the encryption.
 //!
-//! The key lives in the OS keychain, so a copy of the profile folder is not a
-//! copy of the session. Where there is no keychain (a Linux box with no Secret
-//! Service) it lives in a file only this user can read, beside the jars: the
-//! same fallback Chromium makes there, and no weaker than the jar it protects.
+//! Each key is random and lives in a file only this user can read, beside what
+//! it protects, as Chromium keeps its key on a Linux box with no keyring. The
+//! OS keychain is never asked: on macOS an unsigned or re-signed build makes it
+//! prompt for the login password, and a refusal there signed every profile out.
 
 use std::fs;
 use std::io::{self, Write};
@@ -22,24 +23,6 @@ const NONCE_LEN: usize = 24;
 /// What a sealed file starts with, so a different format is never fed to the
 /// cipher as if it were this one.
 const MAGIC: &[u8] = b"ARQV1";
-
-/// Why the keychain did not answer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KeychainError {
-    /// There is none here (a Linux box with no Secret Service): a key file
-    /// stands in for it.
-    Missing,
-    /// There is one, and it said no this time (locked, a prompt dismissed). A
-    /// key file made now would seal the jars with a key the keychain does not
-    /// hold, and the next run would find them unreadable: signed out.
-    Refused,
-}
-
-/// The OS keychain's entry for the key.
-pub trait Keychain {
-    fn get(&self) -> Result<Option<Vec<u8>>, KeychainError>;
-    fn set(&self, secret: &[u8]) -> Result<(), KeychainError>;
-}
 
 /// Seals and opens what is written to disk.
 #[derive(Clone)]
@@ -85,61 +68,17 @@ pub(crate) fn random<const N: usize>() -> [u8; N] {
     bytes
 }
 
-/// The key: the one in `fallback` if there is one (the jars were sealed with
-/// it when there was no keychain), the keychain's, a new one stored there, or,
-/// with no keychain, a new `fallback` readable by this user only. `Err` when
-/// the keychain refused, or the file could not be written: the caller then
-/// keeps its sessions in memory.
-pub fn load_key(keychain: &dyn Keychain, fallback: &Path) -> io::Result<[u8; KEY_LEN]> {
-    if let Ok(key) = <[u8; KEY_LEN]>::try_from(fs::read(fallback).unwrap_or_default().as_slice()) {
+/// The key in `path`, or a new one written there, readable by this user only.
+/// A file that is not a key is replaced: what it sealed could not be opened
+/// anyway. `Err` when it cannot be written; the caller then keeps what it
+/// would have sealed in memory.
+pub fn load_key(path: &Path) -> io::Result<[u8; KEY_LEN]> {
+    if let Ok(key) = <[u8; KEY_LEN]>::try_from(fs::read(path).unwrap_or_default().as_slice()) {
         return Ok(key);
     }
-    match keychain.get() {
-        Ok(Some(found)) => {
-            if let Ok(key) = <[u8; KEY_LEN]>::try_from(found.as_slice()) {
-                return Ok(key);
-            }
-        }
-        Ok(None) => {}
-        Err(error) => return no_keychain(error, fallback),
-    }
     let key = random();
-    match keychain.set(&key) {
-        Ok(()) => Ok(key),
-        Err(error) => no_keychain(error, fallback),
-    }
-}
-
-fn no_keychain(error: KeychainError, fallback: &Path) -> io::Result<[u8; KEY_LEN]> {
-    if error == KeychainError::Refused {
-        return Err(io::Error::other("the keychain refused"));
-    }
-    let key = random();
-    write_private(fallback, &key)?;
+    write_private(path, &key)?;
     Ok(key)
-}
-
-/// A key held in the keychain and nowhere else, made there on first use;
-/// `None` when there is no keychain or it refused. For extension secrets:
-/// Electron's `safeStorage` refuses them on a Linux box with no keyring, and
-/// so does this, rather than keep their key in a file beside them.
-pub fn keychain_only_key(keychain: &dyn Keychain) -> Option<[u8; KEY_LEN]> {
-    match keychain.get().ok()? {
-        Some(found) => match <[u8; KEY_LEN]>::try_from(found.as_slice()) {
-            Ok(key) => Some(key),
-            Err(_) => {
-                eprintln!(
-                    "[vault] The extension secrets key in the keychain is malformed; refusing it to avoid overwriting secrets."
-                );
-                None
-            }
-        },
-        None => {
-            let key = random();
-            keychain.set(&key).ok()?;
-            Some(key)
-        }
-    }
 }
 
 /// Writes a file only this user can read, whole or not at all: a sibling is
@@ -162,32 +101,6 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
-
-    /// A keychain holding at most one secret, which can be made to fail.
-    #[derive(Default)]
-    struct Fake {
-        secret: RefCell<Option<Vec<u8>>>,
-        get_fails: Option<KeychainError>,
-        set_fails: Option<KeychainError>,
-    }
-
-    impl Keychain for Fake {
-        fn get(&self) -> Result<Option<Vec<u8>>, KeychainError> {
-            match self.get_fails {
-                Some(error) => Err(error),
-                None => Ok(self.secret.borrow().clone()),
-            }
-        }
-        fn set(&self, secret: &[u8]) -> Result<(), KeychainError> {
-            if let Some(error) = self.set_fails {
-                return Err(error);
-            }
-            *self.secret.borrow_mut() = Some(secret.to_vec());
-            Ok(())
-        }
-    }
-
     #[test]
     fn opens_what_it_sealed_and_nothing_else() {
         let vault = Vault::new(&random_key());
@@ -208,122 +121,29 @@ mod tests {
     }
 
     #[test]
-    fn keeps_a_secrets_key_in_the_keychain_only() {
-        let keychain = Fake::default();
-        let first = keychain_only_key(&keychain).unwrap();
-        assert_eq!(keychain.secret.borrow().as_deref(), Some(&first[..]));
-        assert_eq!(keychain_only_key(&keychain), Some(first));
-
-        *keychain.secret.borrow_mut() = Some(b"short".to_vec());
-        assert_eq!(keychain_only_key(&keychain), None);
-        assert_eq!(keychain.secret.borrow().as_deref(), Some(&b"short"[..]));
-
-        for error in [KeychainError::Missing, KeychainError::Refused] {
-            let missing = Fake {
-                get_fails: Some(error),
-                ..Fake::default()
-            };
-            assert_eq!(keychain_only_key(&missing), None);
-            let unwritable = Fake {
-                set_fails: Some(error),
-                ..Fake::default()
-            };
-            assert_eq!(keychain_only_key(&unwritable), None);
-        }
-    }
-
-    #[test]
-    fn keeps_the_key_in_the_keychain() {
+    fn makes_a_private_key_file_once_and_keeps_it() {
         let dir = tempfile::tempdir().unwrap();
-        let fallback = dir.path().join("key");
-        let keychain = Fake::default();
+        let path = dir.path().join("nested").join("key");
 
-        let first = load_key(&keychain, &fallback).unwrap();
-        assert_eq!(keychain.secret.borrow().as_deref(), Some(&first[..]));
-        assert_eq!(load_key(&keychain, &fallback).unwrap(), first);
-        assert!(!fallback.exists(), "no key file while there is a keychain");
-    }
-
-    #[test]
-    fn replaces_a_keychain_entry_that_is_not_a_key() {
-        let dir = tempfile::tempdir().unwrap();
-        let keychain = Fake::default();
-        *keychain.secret.borrow_mut() = Some(b"short".to_vec());
-
-        let key = load_key(&keychain, &dir.path().join("key")).unwrap();
-        assert_eq!(keychain.secret.borrow().as_deref(), Some(&key[..]));
-    }
-
-    #[test]
-    fn falls_back_to_a_private_file_without_a_keychain() {
-        let dir = tempfile::tempdir().unwrap();
-        let fallback = dir.path().join("nested").join("key");
-        let keychain = Fake {
-            get_fails: Some(KeychainError::Missing),
-            ..Fake::default()
-        };
-
-        let key = load_key(&keychain, &fallback).unwrap();
-        assert_eq!(fs::read(&fallback).unwrap(), key);
-        assert_eq!(load_key(&keychain, &fallback).unwrap(), key);
+        let key = load_key(&path).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), key);
+        assert_eq!(load_key(&path).unwrap(), key);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = fs::metadata(&fallback).unwrap().permissions().mode();
+            let mode = fs::metadata(&path).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o600);
         }
     }
 
     #[test]
-    fn falls_back_to_the_file_when_there_is_no_keychain_to_store_it_in() {
+    fn replaces_a_file_that_is_not_a_key() {
         let dir = tempfile::tempdir().unwrap();
-        let fallback = dir.path().join("key");
-        let keychain = Fake {
-            set_fails: Some(KeychainError::Missing),
-            ..Fake::default()
-        };
+        let path = dir.path().join("key");
+        fs::write(&path, b"short").unwrap();
 
-        let key = load_key(&keychain, &fallback).unwrap();
-        assert_eq!(fs::read(&fallback).unwrap(), key);
-    }
-
-    #[test]
-    fn makes_no_key_file_when_the_keychain_refuses_this_time() {
-        let dir = tempfile::tempdir().unwrap();
-        let fallback = dir.path().join("key");
-        for keychain in [
-            Fake {
-                get_fails: Some(KeychainError::Refused),
-                ..Fake::default()
-            },
-            Fake {
-                set_fails: Some(KeychainError::Refused),
-                ..Fake::default()
-            },
-        ] {
-            assert!(load_key(&keychain, &fallback).is_err());
-            assert!(!fallback.exists());
-        }
-    }
-
-    #[test]
-    fn keeps_using_a_key_file_once_the_keychain_appears() {
-        let dir = tempfile::tempdir().unwrap();
-        let fallback = dir.path().join("key");
-        let missing = Fake {
-            get_fails: Some(KeychainError::Missing),
-            ..Fake::default()
-        };
-        let key = load_key(&missing, &fallback).unwrap();
-
-        let keychain = Fake::default();
-        assert_eq!(load_key(&keychain, &fallback).unwrap(), key);
-        assert_eq!(*keychain.secret.borrow(), None, "never asked");
-        let refused = Fake {
-            get_fails: Some(KeychainError::Refused),
-            ..Fake::default()
-        };
-        assert_eq!(load_key(&refused, &fallback).unwrap(), key);
+        let key = load_key(&path).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), key);
     }
 
     #[test]
@@ -331,10 +151,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let blocker = dir.path().join("file");
         fs::write(&blocker, b"x").unwrap();
-        let keychain = Fake {
-            get_fails: Some(KeychainError::Missing),
-            ..Fake::default()
-        };
-        assert!(load_key(&keychain, &blocker.join("key")).is_err());
+        assert!(load_key(&blocker.join("key")).is_err());
     }
 }

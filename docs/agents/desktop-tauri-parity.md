@@ -57,7 +57,7 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 | Live updates over `EventSource` | `net.test.js`, `src-tauri::event_source` | A `verify-e2e` (stream opens); M9 | M9 | M9 |
 | Root-token sign-in | `core::auth` | A `verify-e2e` | M6 | M6 |
 | Google and GitHub sign-in in the app | `core::auth`, `core::links`, `src-tauri::sign_in` | M6 | M6 | M6 |
-| Session survives a restart (keychain-sealed jar) | `src-tauri::cookie_jar`, `src-tauri::vault` | M6 | M6 | M6 |
+| Session survives a restart (jar sealed with a private key file) | `src-tauri::cookie_jar`, `src-tauri::vault` | M6 | M6 | M6 |
 | Log Out, Switch Server | `core::menu`, `src-tauri::sign_in` | M7 | M7 | M7 |
 | Profiles: add, rename, switch, remove | `core::profiles`, `src-tauri::profiles`, `src-tauri::commands` | M8 | M8 | M8 |
 | Profile storage kept apart | `src-tauri::profiles` | M8 | M8 | M8 |
@@ -236,8 +236,8 @@ screenshots, in the PR or task that ran the checklist.
 6. Sign in with a root token, Google and GitHub. The sign-in window stays in
    the app, never the system browser, closes itself, and the main window
    reloads signed in. Closing the sign-in window counts as a failure. Quit and
-   start again: still signed in (the jar is sealed in Keychain, Credential
-   Manager or the Secret Service).
+   start again: still signed in (the jar is sealed with `cookie.key`, a file
+   only this user can read). No keychain prompt appears.
 7. **Log Out** clears the session and keeps the server; **Switch Server** goes
    back to the connection screen (the AgentRQ menu on macOS, File elsewhere).
 8. Profiles:

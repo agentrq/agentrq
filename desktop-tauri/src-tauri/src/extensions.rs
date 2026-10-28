@@ -6,12 +6,12 @@
 //!
 //! Each command is Electron's `agentrq:extensions:*` handler, answered by the
 //! extension host (`ext_host.rs`). The host in turn asks the shell for what
-//! only the shell has: a fetch through the profile's jar, and the keychain.
+//! only the shell has: a fetch through the profile's jar, and sealed secrets.
 
 use std::future::Future;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 
 use agentrq_desktop_core::ext_host::fetch_allowed;
 use agentrq_desktop_core::ext_node::needs_node as needs_node_reason;
@@ -26,18 +26,13 @@ use tauri::{AppHandle, Emitter, Runtime, State, WebviewWindow};
 
 use crate::ext_host::{Answer, ExtHost, Services};
 use crate::ext_node::{Failure, Health};
-use crate::network::{Network, KEYCHAIN_DEADLINE};
+use crate::network::Network;
 use crate::scheme::Drawers;
 use crate::upstream::{self, pairs, BodyLimits, Outgoing};
-use crate::vault::{keychain_only_key, Keychain, Vault, KEY_LEN};
+use crate::vault::{load_key, Vault};
 
 /// What a value the shell sealed for the host starts with (`vault.js`).
 pub const SEALED_PREFIX: &str = "arqv1:";
-
-pub const KEYCHAIN_COOLDOWN: Duration = Duration::from_millis(1000);
-
-/// The extension secrets' keychain, separate from the cookie jars' key.
-pub type SecretsKeychain = Arc<dyn Keychain + Send + Sync>;
 
 /// The supervisor's authorisation window, given its page and the redirect
 /// it ends at (`oauth_window::for_host`).
@@ -49,20 +44,12 @@ pub type Told = Box<dyn Fn(&str, &Value) + Send + Sync>;
 /// What the host is answered with, and where its news goes.
 pub struct ShellServices(Arc<Shell>);
 
-struct VaultCache {
-    vault: Option<Vault>,
-    failed_at: Option<std::time::Instant>,
-    /// The keychain read under way, which may create the key. Waited on
-    /// rather than started again: two at once could each create a key.
-    reading: Option<tokio::task::JoinHandle<Option<[u8; KEY_LEN]>>>,
-}
-
 struct Shell {
     network: Arc<Network>,
-    keychain: SecretsKeychain,
-    keychain_deadline: Duration,
-    keychain_cooldown: Duration,
-    vault: tokio::sync::Mutex<VaultCache>,
+    /// The secrets' key file, separate from the cookie jars'.
+    key_path: PathBuf,
+    /// Held while the key is read, so two asks never each make one.
+    vault: tokio::sync::Mutex<Option<Vault>>,
     on_told: Told,
     auth_window: AuthWindow,
 }
@@ -70,37 +57,14 @@ struct Shell {
 impl ShellServices {
     pub fn new(
         network: Arc<Network>,
-        keychain: SecretsKeychain,
+        key_path: PathBuf,
         on_told: Told,
         auth_window: AuthWindow,
-    ) -> Self {
-        Self::tuned(
-            network,
-            keychain,
-            on_told,
-            auth_window,
-            (KEYCHAIN_DEADLINE, KEYCHAIN_COOLDOWN),
-        )
-    }
-
-    /// `keychain` is its deadline and its cooldown.
-    fn tuned(
-        network: Arc<Network>,
-        keychain: SecretsKeychain,
-        on_told: Told,
-        auth_window: AuthWindow,
-        (keychain_deadline, keychain_cooldown): (Duration, Duration),
     ) -> Self {
         Self(Arc::new(Shell {
             network,
-            keychain,
-            keychain_deadline,
-            keychain_cooldown,
-            vault: tokio::sync::Mutex::new(VaultCache {
-                vault: None,
-                failed_at: None,
-                reading: None,
-            }),
+            key_path,
+            vault: tokio::sync::Mutex::new(None),
             on_told,
             auth_window,
         }))
@@ -108,38 +72,17 @@ impl ShellServices {
 }
 
 impl Shell {
-    /// The secrets' vault, cached when available; re-queries after cooldown
-    /// when the last attempt failed.
+    /// The secrets' vault, cached once its key is read; asked again next time
+    /// when the key file could not be written.
     async fn vault(&self) -> Option<Vault> {
         let mut cache = self.vault.lock().await;
-        if let Some(vault) = &cache.vault {
-            return Some(vault.clone());
-        }
-        if let Some(failed_at) = cache.failed_at {
-            if failed_at.elapsed() < self.keychain_cooldown {
-                return None;
+        if cache.is_none() {
+            let path = self.key_path.clone();
+            if let Ok(Ok(key)) = tokio::task::spawn_blocking(move || load_key(&path)).await {
+                *cache = Some(Vault::new(&key));
             }
         }
-        let keychain = self.keychain.clone();
-        let reading = cache.reading.get_or_insert_with(|| {
-            tokio::task::spawn_blocking(move || keychain_only_key(&*keychain))
-        });
-        let read = tokio::time::timeout(self.keychain_deadline, reading).await;
-        if read.is_ok() {
-            cache.reading = None;
-        }
-        match read {
-            Ok(Ok(Some(key))) => {
-                let vault = Vault::new(&key);
-                cache.vault = Some(vault.clone());
-                cache.failed_at = None;
-                Some(vault)
-            }
-            _ => {
-                cache.failed_at = Some(std::time::Instant::now());
-                None
-            }
-        }
+        cache.clone()
     }
 
     async fn seal(&self, params: Value) -> Result<Value, String> {
@@ -555,8 +498,6 @@ pub(crate) mod tests {
     use crate::ext_host::Launch;
     use crate::network::tests::network;
     use crate::test_server::{closed_port, reply, send, Step, TestServer};
-    use crate::vault::KeychainError;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
     use tauri::ipc::{CallbackFn, InvokeBody};
     use tauri::test::{
@@ -570,58 +511,27 @@ pub(crate) mod tests {
     #[cfg(not(windows))]
     const LOCAL: &str = "tauri://localhost";
 
-    /// A keychain in memory: holding a key, refusing, or slow to answer.
-    #[derive(Default)]
-    struct MemKeychain {
-        held: Mutex<Option<Vec<u8>>>,
-        refuses: Mutex<bool>,
-        delay_ms: u64,
-    }
-
-    impl Keychain for MemKeychain {
-        fn get(&self) -> Result<Option<Vec<u8>>, KeychainError> {
-            std::thread::sleep(Duration::from_millis(self.delay_ms));
-            if *self.refuses.lock().unwrap() {
-                return Err(KeychainError::Refused);
-            }
-            Ok(self.held.lock().unwrap().clone())
-        }
-        fn set(&self, secret: &[u8]) -> Result<(), KeychainError> {
-            *self.held.lock().unwrap() = Some(secret.to_vec());
-            Ok(())
-        }
-    }
-
     struct Rig {
         services: ShellServices,
         told: Arc<Mutex<Vec<Value>>>,
         _dir: tempfile::TempDir,
     }
 
-    fn services(server_url: &str, keychain: MemKeychain) -> Rig {
-        services_tuned(
-            server_url,
-            Arc::new(keychain),
-            Duration::from_millis(300),
-            KEYCHAIN_COOLDOWN,
-        )
+    fn services(server_url: &str) -> Rig {
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join("secrets.key");
+        services_keyed(server_url, dir, key_path)
     }
 
-    fn services_tuned(
-        server_url: &str,
-        keychain: Arc<dyn Keychain + Send + Sync>,
-        keychain_deadline: Duration,
-        keychain_cooldown: Duration,
-    ) -> Rig {
-        let dir = tempfile::tempdir().unwrap();
+    /// Services whose secrets' key lives at `key_path`.
+    fn services_keyed(server_url: &str, dir: tempfile::TempDir, key_path: PathBuf) -> Rig {
         let told = Arc::new(Mutex::new(Vec::new()));
         let log = told.clone();
-        let services = ShellServices::tuned(
+        let services = ShellServices::new(
             Arc::new(network(dir.path(), server_url)),
-            keychain,
+            key_path,
             Box::new(move |method, detail| log.lock().unwrap().push(json!([method, detail]))),
             Box::new(|url, redirect| Box::pin(async move { Ok(json!([url, redirect])) })),
-            (keychain_deadline, keychain_cooldown),
         );
         Rig {
             services,
@@ -635,8 +545,8 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn seals_and_opens_with_a_key_kept_only_in_the_keychain() {
-        let rig = services("", MemKeychain::default());
+    async fn seals_and_opens_with_a_key_kept_in_a_private_file() {
+        let rig = services("");
         assert_eq!(
             ask(&rig, "vault", json!({})).await,
             Ok(json!({"available": true}))
@@ -663,128 +573,48 @@ pub(crate) mod tests {
             opened,
             json!({"opened": ["hunter2", "", null, null, null, null]})
         );
+
+        assert!(rig._dir.path().join("secrets.key").exists());
+        let key = rig._dir.path().join("secrets.key");
+        let next_launch = services_keyed("", tempfile::tempdir().unwrap(), key);
+        let opened = ask(&next_launch, "open", json!({"blobs": [blobs[0]]})).await;
+        assert_eq!(opened, Ok(json!({"opened": ["hunter2"]})));
     }
 
     #[tokio::test]
-    async fn refuses_a_secret_without_a_keychain_and_opens_nothing() {
-        for keychain in [
-            MemKeychain {
-                refuses: Mutex::new(true),
-                ..Default::default()
-            },
-            MemKeychain {
-                delay_ms: 2_000,
-                ..Default::default()
-            },
-        ] {
-            let rig = services("", keychain);
-            assert_eq!(
-                ask(&rig, "vault", json!({})).await,
-                Ok(json!({"available": false}))
-            );
-            assert_eq!(
-                ask(&rig, "seal", json!({"texts": ["x"]})).await,
-                Ok(json!({"ok": false, "reason": "This system has no secure storage available."}))
-            );
-            let opened = ask(&rig, "open", json!({"blobs": ["arqv1:AAAA"]})).await;
-            assert_eq!(opened, Ok(json!({"opened": [null]})));
-        }
-    }
-
-    #[tokio::test]
-    async fn asking_again_after_a_keychain_failure_recovers_once_unlocked() {
-        let key = [7u8; 32];
-        let keychain = Arc::new(MemKeychain {
-            refuses: Mutex::new(true),
-            ..Default::default()
-        });
-        let rig = services_tuned(
-            "http://127.0.0.1:9",
-            keychain.clone(),
-            Duration::from_millis(50),
-            Duration::from_millis(50),
+    async fn refuses_a_secret_until_its_key_can_be_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("blocker");
+        std::fs::write(&blocker, b"x").unwrap();
+        let rig = services_keyed("", dir, blocker.join("secrets.key"));
+        assert_eq!(
+            ask(&rig, "vault", json!({})).await,
+            Ok(json!({"available": false}))
         );
-        let res = ask(&rig, "seal", json!({"texts": ["secret"]}))
-            .await
-            .unwrap();
-        assert_eq!(res["ok"], false);
+        assert_eq!(
+            ask(&rig, "seal", json!({"texts": ["x"]})).await,
+            Ok(json!({"ok": false, "reason": "This system has no secure storage available."}))
+        );
+        let opened = ask(&rig, "open", json!({"blobs": ["arqv1:AAAA"]})).await;
+        assert_eq!(opened, Ok(json!({"opened": [null]})));
 
-        // Before cooldown expires: still fails
-        let res_fast = ask(&rig, "seal", json!({"texts": ["secret"]}))
-            .await
-            .unwrap();
-        assert_eq!(res_fast["ok"], false);
-
-        // Wait past cooldown
-        tokio::time::sleep(Duration::from_millis(60)).await;
-
-        // Keychain is now unlocked and returns key
-        *keychain.refuses.lock().unwrap() = false;
-        *keychain.held.lock().unwrap() = Some(key.to_vec());
-
-        // Second attempt asks again and succeeds!
-        let res2 = ask(&rig, "seal", json!({"texts": ["secret"]}))
-            .await
-            .unwrap();
-        assert_eq!(res2["ok"], true);
-    }
-
-    /// A keychain whose reads wait until it is unlocked, counting each read
-    /// and write.
-    #[derive(Default)]
-    struct LockedKeychain {
-        unlocked: Mutex<bool>,
-        unlocking: std::sync::Condvar,
-        held: Mutex<Option<Vec<u8>>>,
-        gets: AtomicUsize,
-        sets: AtomicUsize,
-    }
-
-    impl Keychain for LockedKeychain {
-        fn get(&self) -> Result<Option<Vec<u8>>, KeychainError> {
-            self.gets.fetch_add(1, Ordering::SeqCst);
-            let unlocked = self.unlocked.lock().unwrap();
-            drop(self.unlocking.wait_while(unlocked, |open| !*open).unwrap());
-            Ok(self.held.lock().unwrap().clone())
-        }
-        fn set(&self, secret: &[u8]) -> Result<(), KeychainError> {
-            self.sets.fetch_add(1, Ordering::SeqCst);
-            *self.held.lock().unwrap() = Some(secret.to_vec());
-            Ok(())
-        }
+        // Asked again, once the folder can be made.
+        std::fs::remove_file(&blocker).unwrap();
+        let sealed = ask(&rig, "seal", json!({"texts": ["x"]})).await.unwrap();
+        assert_eq!(sealed["ok"], true);
     }
 
     #[tokio::test]
-    async fn a_slow_unlock_creates_one_key_however_often_it_is_asked() {
-        let keychain = Arc::new(LockedKeychain::default());
-        let tuned = |keychain: Arc<LockedKeychain>| {
-            services_tuned("", keychain, Duration::from_millis(100), Duration::ZERO)
-        };
-        let rig = tuned(keychain.clone());
-        // Locked: each ask runs out of time waiting on the one read.
-        for _ in 0..3 {
-            let asked = ask(&rig, "vault", json!({})).await;
-            assert_eq!(asked, Ok(json!({"available": false})));
-        }
-        assert_eq!(keychain.gets.load(Ordering::SeqCst), 1);
-
-        // Unlocked: that read creates the key, and nothing else does.
-        *keychain.unlocked.lock().unwrap() = true;
-        keychain.unlocking.notify_all();
-        crate::side_panel::tests::wait_for("the read finishes", &|| {
-            let cache = rig.services.0.vault.try_lock();
-            cache.is_ok_and(|cache| cache.reading.as_ref().is_some_and(|r| r.is_finished()))
-        });
-        let sealed = ask(&rig, "seal", json!({"texts": ["s"]})).await.unwrap();
-        assert_eq!(sealed["ok"], true);
-        assert_eq!(keychain.gets.load(Ordering::SeqCst), 1);
-        assert_eq!(keychain.sets.load(Ordering::SeqCst), 1);
-
-        // The key it sealed with is the one the keychain kept.
-        let blobs = json!({"blobs": sealed["sealed"]});
-        let next_launch = tuned(keychain.clone());
-        let opened = ask(&next_launch, "open", blobs).await;
-        assert_eq!(opened, Ok(json!({"opened": ["s"]})));
+    async fn asks_at_the_same_time_share_one_key() {
+        let rig = services("");
+        let texts = json!({"texts": ["s"]});
+        let (a, b) = tokio::join!(ask(&rig, "seal", texts.clone()), ask(&rig, "seal", texts));
+        let blobs = [
+            a.unwrap()["sealed"][0].clone(),
+            b.unwrap()["sealed"][0].clone(),
+        ];
+        let opened = ask(&rig, "open", json!({ "blobs": blobs })).await;
+        assert_eq!(opened, Ok(json!({"opened": ["s", "s"]})));
     }
 
     #[tokio::test]
@@ -803,7 +633,7 @@ pub(crate) mod tests {
             )
         })
         .await;
-        let rig = services(&server.url, MemKeychain::default());
+        let rig = services(&server.url);
         let posted = ask(
             &rig,
             "profileFetch",
@@ -869,7 +699,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn says_why_a_fetch_failed() {
         let gone = closed_port().await;
-        let rig = services(&gone, MemKeychain::default());
+        let rig = services(&gone);
         let failed = ask(&rig, "profileFetch", json!({"url": format!("{gone}/x")}))
             .await
             .unwrap();
@@ -882,7 +712,7 @@ pub(crate) mod tests {
             ]
         })
         .await;
-        let rig = services(&cut.url, MemKeychain::default());
+        let rig = services(&cut.url);
         let broke = ask(
             &rig,
             "profileFetch",
@@ -898,7 +728,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn serves_only_its_own_methods_and_passes_on_the_news() {
-        let rig = services("http://127.0.0.1:9", MemKeychain::default());
+        let rig = services("http://127.0.0.1:9");
         let asked = json!({"url": "https://a.example/authorize", "redirectUri": "agentrq://x"});
         assert_eq!(
             ask(&rig, "authWindow", asked).await,
@@ -922,11 +752,10 @@ pub(crate) mod tests {
         );
         let real = ShellServices::new(
             Arc::new(network(rig._dir.path(), "")),
-            Arc::new(MemKeychain::default()),
+            rig._dir.path().join("secrets.key"),
             untold(),
             Box::new(|_, _| Box::pin(async { Ok(Value::Null) })),
         );
-        assert_eq!(real.0.keychain_deadline, KEYCHAIN_DEADLINE);
         let asked = real.serve("authWindow", json!({})).expect("served").await;
         assert_eq!(asked, Ok(Value::Null));
         real.told("panelShow", &json!({}));

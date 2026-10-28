@@ -94,7 +94,7 @@ impl Scheme {
     }
 
     /// Answer `request`, made by the webview labelled `webview`. Only a proxied
-    /// request opens the profile, which can wait on the keychain: the renderer
+    /// request opens the profile, which reads its key from disk: the renderer
     /// itself never does. Any other webview (a side panel guest) gets nothing,
     /// not even the renderer: the scheme is app-wide, and a page in the panel
     /// could otherwise frame the app.
@@ -593,16 +593,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn serves_the_renderer_without_waiting_for_the_keychain() {
+    async fn serves_the_renderer_without_opening_a_profile() {
         let dir = tempfile::tempdir().unwrap();
-        let network = crate::network::tests::slow_network(dir.path(), "https://a.example", 5_000);
+        let network = crate::network::tests::network(dir.path(), "https://a.example");
         let scheme = Scheme::new(Arc::new(network), renderer(), "");
-        let started = std::time::Instant::now();
         let res = scheme.handle(MAIN_WEBVIEW, request("GET", "/", b"")).await;
         assert_eq!(body(&res), "<html>app</html>");
         let csp = header(&res, "content-security-policy").unwrap();
         assert!(csp.contains("wss://a.example"), "{csp}");
-        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(
+            !dir.path().join("cookie.key").exists(),
+            "no key read for it"
+        );
     }
 
     #[tokio::test]

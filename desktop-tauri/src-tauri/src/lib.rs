@@ -64,7 +64,6 @@ use scheme::{Assets, Scheme, MAIN_WEBVIEW};
 use sign_in::CookieWebview;
 use tauri::path::BaseDirectory;
 use tauri_plugin_dialog::DialogExt;
-use vault::{Keychain, KeychainError};
 
 /// The Vite dev server, when this is `tauri dev`. The scheme forwards to it,
 /// so dev and release share one origin.
@@ -91,46 +90,6 @@ impl<R: Runtime> Assets for Bundled<R> {
             .then(|| self.app.asset_resolver().get(path.to_string()))
             .flatten()
             .map(|asset| asset.bytes)
-    }
-}
-
-/// A key in the OS keychain: the cookie jars' (`cookie-jar-key`) or the
-/// extension secrets' (`extension-secrets-key`).
-struct OsKeychain(&'static str);
-
-impl OsKeychain {
-    fn entry(&self) -> Result<keyring::Entry, KeychainError> {
-        keyring::Entry::new("com.agentrq.desktop.tauri", self.0).map_err(keychain_error)
-    }
-}
-
-/// A locked keychain, or a dismissed prompt, is a refusal this time; no store
-/// at all is a missing one. macOS and Windows always have a keychain, so any
-/// other failure there is passing too; on Linux it means there is no Secret
-/// Service.
-fn keychain_error(error: keyring::Error) -> KeychainError {
-    match error {
-        keyring::Error::NoStorageAccess(_) => KeychainError::Refused,
-        keyring::Error::NoDefaultStore | keyring::Error::NotSupportedByStore(_) => {
-            KeychainError::Missing
-        }
-        #[cfg(any(target_os = "macos", windows))]
-        _ => KeychainError::Refused,
-        #[cfg(not(any(target_os = "macos", windows)))]
-        _ => KeychainError::Missing,
-    }
-}
-
-impl Keychain for OsKeychain {
-    fn get(&self) -> Result<Option<Vec<u8>>, KeychainError> {
-        match self.entry()?.get_secret() {
-            Ok(secret) => Ok(Some(secret)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(error) => Err(keychain_error(error)),
-        }
-    }
-    fn set(&self, secret: &[u8]) -> Result<(), KeychainError> {
-        self.entry()?.set_secret(secret).map_err(keychain_error)
     }
 }
 
@@ -615,7 +574,7 @@ fn extension_host<R: Runtime>(
     let (emitter, authorizer) = (app.clone(), app.clone());
     let services = ShellServices::new(
         network,
-        Arc::new(OsKeychain("extension-secrets-key")),
+        data_dir.join("secrets.key"),
         Box::new(move |method, params| match method {
             "changed" => {
                 let _ = emitter.emit("agentrq:extensions:changed", params);
@@ -695,7 +654,6 @@ pub fn run() {
             let lock = connection_lock(std::env::var("AGENTRQ_SERVER_URL").ok().as_deref());
             let network = Arc::new(Network::new(
                 data_dir.clone(),
-                Arc::new(OsKeychain("cookie-jar-key")),
                 profiles::first_profile(&data_dir, lock.as_deref()),
             ));
             let handle = app.handle().clone();

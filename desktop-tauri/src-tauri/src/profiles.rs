@@ -457,8 +457,7 @@ impl Profiles {
     }
 
     /// Rebuild the window on the active profile. Its network is opened now,
-    /// which can wait on the keychain, and made active once the old window is
-    /// gone.
+    /// and made active once the old window is gone.
     async fn reopen(&self) -> ProfilesView {
         self.watcher.switching();
         let config = self.config();
@@ -714,18 +713,6 @@ pub(crate) mod tests {
     use crate::test_server::{reply, Step, TestServer};
     use agentrq_desktop_core::profiles::data_store_id;
 
-    /// No keychain: the jars' key goes to a file.
-    struct NoKeychain;
-
-    impl crate::vault::Keychain for NoKeychain {
-        fn get(&self) -> Result<Option<Vec<u8>>, crate::vault::KeychainError> {
-            Ok(None)
-        }
-        fn set(&self, _: &[u8]) -> Result<(), crate::vault::KeychainError> {
-            Err(crate::vault::KeychainError::Missing)
-        }
-    }
-
     /// What the shell was asked to do. Like the real one, it only starts
     /// closing the window: a test says when it is gone, with
     /// `main_window_closed`.
@@ -825,11 +812,7 @@ pub(crate) mod tests {
             std::fs::write(dir.path().join(CONFIG_FILENAME), config.to_string()).unwrap();
         }
         let first = first_profile(dir.path(), lock);
-        let network = Arc::new(Network::new(
-            dir.path().to_path_buf(),
-            Arc::new(NoKeychain),
-            first,
-        ));
+        let network = Arc::new(Network::new(dir.path().to_path_buf(), first));
         let calls = shell.calls.clone();
         let watcher = Arc::new(FakeWatcher::default());
         let profiles = Arc::new(Profiles::new(

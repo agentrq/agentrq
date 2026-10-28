@@ -1131,7 +1131,6 @@ mod tests {
         use crate::ext_host::tests::script_launch;
         use crate::ext_host::{ExtHost, Services};
         use crate::extensions::ShellServices;
-        use crate::network::tests::NoKeychain;
         let rig = rig();
         // `authorize` asks the shell for its window, and answers with that.
         let script = r#"
@@ -1148,9 +1147,10 @@ mod tests {
             });
         "#;
         let app = rig.app.handle().clone();
+        let keys = tempfile::tempdir().unwrap();
         let services: Arc<dyn Services> = Arc::new(ShellServices::new(
             rig._profiles.network.clone(),
-            Arc::new(NoKeychain { delay_ms: 0 }),
+            keys.path().join("secrets.key"),
             crate::extensions::tests::untold(),
             Box::new(move |url, redirect| Box::pin(for_host(app.clone(), url, redirect))),
         ));

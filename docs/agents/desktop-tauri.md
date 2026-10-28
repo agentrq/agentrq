@@ -92,8 +92,12 @@
   is exempt, with nosniff kept.**
 - **The app registers its own `tauri` scheme, a 403**, so no guest reaches the
   built-in asset server (`tauri://localhost`, `http://tauri.localhost`).
-- **A cookie jar with no vault never writes its file.** A slow or refused
-  keychain leaves the session in memory; a jar resealed with a stand-in key
+- **The jars' and the extension secrets' keys are random files, never the OS
+  keychain** (`vault::load_key`): on macOS an unsigned or re-signed build makes
+  the keychain prompt for the login password, and a refusal signed every profile
+  out.
+- **A cookie jar with no vault never writes its file.** A key file that cannot
+  be written leaves the session in memory; a jar resealed with a stand-in key
   would sign the person out for good.
 - **With no vault, only the active profile's network is kept** (`Network::open`).
   Any other is opened afresh on each use: its jar can never read its file, so a
@@ -295,10 +299,8 @@
 - **A call past its deadline fails alone.** Only a missed `ping`, which `rpc.js`
   answers ahead of every handler, kills the host, and that kill blames no
   extension: three slow renders must not disable everything running.
-- **Extension secrets use a keychain-only key** (`vault::keychain_only_key`),
-  never a file beside them: with no keychain they are refused, as Electron's
-  `safeStorage` refuses them. One read of it at a time (`VaultCache::reading`): a
-  second, started while an unlock prompt holds the first, can create a second key.
+- **Extension secrets have a key file of their own** (`secrets.key`), read
+  under the vault's lock: two asks at once must not each make a key.
 - **A host call waits for `start`.** One that arrives while it runs and installs
   what it is loading would load that extension twice.
 - **A hang blames the extension being loaded**, so three of them disable it, as a
