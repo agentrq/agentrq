@@ -424,6 +424,18 @@ impl<R: Runtime> TauriDesk<R> {
 }
 
 impl<R: Runtime> Desk for TauriDesk<R> {
+    #[cfg(target_os = "macos")]
+    fn show(&self, notification: &Notification) -> bool {
+        let (title, body) = (notification.title.clone(), notification.body.clone());
+        let route = notification.route.clone();
+        self.0
+            .run_on_main_thread(move || {
+                notify::macos::show(&title, &body, &route);
+            })
+            .is_ok()
+    }
+
+    #[cfg(not(target_os = "macos"))]
     fn show(&self, notification: &Notification) -> bool {
         self.0
             .notification()
@@ -717,6 +729,11 @@ pub fn run() {
             profiles.watch();
             app.manage(profiles.auth_windows());
             app.manage(profiles.clone());
+            #[cfg(target_os = "macos")]
+            if let Some(mtm) = objc2::MainThreadMarker::new() {
+                let clicked = notifier.clone();
+                notify::macos::watch(mtm, move |route| clicked.clicked(&route));
+            }
             let clicked = notifier.clone();
             let site = handle.clone();
             handle.notification().on_action(move |action| {

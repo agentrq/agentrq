@@ -26,6 +26,9 @@ use crate::events::{EventStream, Events};
 use crate::network::Network;
 use crate::profiles::{Muted, Watcher};
 
+#[cfg(target_os = "macos")]
+pub mod macos;
+
 pub const WORKSPACES_PATH: &str = "/api/v1/workspaces";
 
 /// How long the workspace list may take. Every await needs a deadline

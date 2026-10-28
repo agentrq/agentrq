@@ -72,7 +72,7 @@ carries the Tauri build yet, so there is no update feed), and **WP10 part 2**
 | Native notifications for agent activity | `core::notifications`, `src-tauri::notify` | A `verify-side-panel` (an agent's new task); M10 | M10 | M10 |
 | Your own actions do not notify; 10 s dedupe | `core::notifications` | A (unit) | A (unit) | A (unit) |
 | Mute per workspace | `src-tauri::commands` | M10 | M10 | M10 |
-| Notification click opens the task | `src-tauri::shell` | A `verify-side-panel` (opens it); M11 (focuses the window) | M11 | M11; G follow-up: a click from the Action Center |
+| Notification click opens the task | `src-tauri::shell`, `src-tauri::notify::macos` | A `verify-side-panel` (opens it); M11 (focuses the window) | M11, passed on macOS 27 from the banner and from the Notification Center | M11; G follow-up: a click from the Action Center |
 | Unread badge, cleared on focus | `core::notifications`, `src-tauri::shell` | M12 | M12 | M12 |
 | Tray / menu-bar item | `core::tray` | M13 | M13 | M13 |
 | Global shortcut `Cmd/Ctrl+Shift+N` | — | M14 | M14 | M14 |
