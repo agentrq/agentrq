@@ -47,6 +47,7 @@ import { AUTH_COOKIE, matchOAuthLogin, oauthStartUrl, runOAuthFlow } from './aut
 import { QUICK_CREATE_ACCELERATOR, buildMenuTemplate } from './menu.js'
 import {
   badgeFor,
+  createHeldNotifications,
   createNotificationGate,
   createSelfActionGate,
   createUnreadCounter,
@@ -163,6 +164,7 @@ let unread = null
 // handler and once by the CRUD-event consumer — so identical notifications
 // have to be collapsed before they reach the user.
 const notificationGate = createNotificationGate()
+const heldNotifications = createHeldNotifications()
 
 // The SSE stream carries the task, not the message, so it cannot say whether
 // a reply/respond event was the human's own action or the agent's. This is
@@ -574,6 +576,7 @@ function handleStreamEvent(event) {
     unread?.clear()
     navigate(notification.route)
   })
+  heldNotifications.hold(native)
   native.show()
   unread?.increment()
   // The tray is the at-a-glance version of the same news.

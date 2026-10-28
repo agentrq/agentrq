@@ -297,6 +297,34 @@ export function createNotificationGate({ windowMs = DEDUPE_WINDOW_MS, now = () =
   }
 }
 
+/** How many shown notifications are held for their click. */
+export const HELD_NOTIFICATIONS = 50
+
+/**
+ * Hold each shown notification until it is clicked or closed.
+ *
+ * Electron's `Notification` reports its click only while JavaScript still
+ * references it: one the garbage collector takes is shown, and its click does
+ * nothing. A notification left in the Notification Center may never close, so
+ * the oldest are let go past `max`.
+ */
+export function createHeldNotifications({ max = HELD_NOTIFICATIONS } = {}) {
+  const held = new Set()
+
+  return {
+    hold(notification) {
+      held.add(notification)
+      const release = () => held.delete(notification)
+      notification.once('click', release)
+      notification.once('close', release)
+      if (held.size > max) held.delete(held.values().next().value)
+    },
+    get size() {
+      return held.size
+    },
+  }
+}
+
 /**
  * Unread count behind the dock badge and taskbar overlay.
  *

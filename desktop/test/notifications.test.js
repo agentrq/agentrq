@@ -2,12 +2,15 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { EventEmitter } from 'node:events'
+
 import { describe, it, expect, vi } from 'vitest'
 
 import {
   DEDUPE_WINDOW_MS,
   NOTIFIABLE_TYPES,
   SELF_ACTION_WINDOW_MS,
+  createHeldNotifications,
   createNotificationGate,
   createSelfActionGate,
   badgeFor,
@@ -401,6 +404,37 @@ describe('createSelfActionGate', () => {
 
   it('has a sane default window', () => {
     expect(SELF_ACTION_WINDOW_MS).toBe(10000)
+  })
+})
+
+describe('createHeldNotifications', () => {
+  it('holds a notification until it is clicked or closed', () => {
+    const held = createHeldNotifications()
+    const clicked = new EventEmitter()
+    const closed = new EventEmitter()
+    held.hold(clicked)
+    held.hold(closed)
+    expect(held.size).toBe(2)
+
+    clicked.emit('click')
+    closed.emit('close')
+
+    expect(held.size).toBe(0)
+  })
+
+  it('lets the oldest go past its limit', () => {
+    const held = createHeldNotifications({ max: 2 })
+    const [first, second, third] = [new EventEmitter(), new EventEmitter(), new EventEmitter()]
+    held.hold(first)
+    held.hold(second)
+    held.hold(third)
+    expect(held.size).toBe(2)
+
+    // The first is gone already; its click releases nothing else.
+    first.emit('click')
+    expect(held.size).toBe(2)
+    third.emit('close')
+    expect(held.size).toBe(1)
   })
 })
 
