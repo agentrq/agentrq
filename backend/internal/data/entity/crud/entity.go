@@ -1713,6 +1713,9 @@ const (
 	// A comment on a step of a task's plan, sent to the agent. Reported by
 	// the browser: the server sees only the message it becomes.
 	ActionUIPlanComment Action = 107
+	// A task's links panel opened. Reported by the browser: the server sees
+	// nothing of it.
+	ActionUILinksOpen Action = 108
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1757,6 +1760,8 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionUIAcpAgentPick, true
 	case "ui_plan_comment":
 		return ActionUIPlanComment, true
+	case "ui_links_open":
+		return ActionUILinksOpen, true
 	}
 	return 0, false
 }
@@ -1921,6 +1926,8 @@ func (a Action) String() string {
 		return "workspace_reset_id"
 	case ActionUIPlanComment:
 		return "ui_plan_comment"
+	case ActionUILinksOpen:
+		return "ui_links_open"
 	}
 	return "unknown"
 }

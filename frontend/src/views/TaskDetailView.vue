@@ -177,6 +177,9 @@
           <!-- The agent's plan, pinned here so it stays in view however long the conversation gets -->
           <TaskPlanPanel v-if="taskPlan" class="mb-1" :plan="taskPlan" :messages="task.messages || []" :disabled="offline" @comment="commentOnPlan" />
 
+          <!-- Every link the task mentions: pull requests, Pano docs, other tasks, the rest -->
+          <TaskLinksPanel class="mb-1" :task="task" :task-id="taskId" @open="recordUiAction(TELEMETRY_UI_LINKS_OPEN, route)" />
+
           <!-- Attachments -->
           <div v-if="task.attachments && task.attachments.length > 0" class="mt-8 flex flex-wrap gap-3">
             <div v-for="(att, i) in task.attachments" :key="i"
@@ -1002,7 +1005,7 @@ import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { downloadAttachment } from '../composables/useAttachmentDownload';
 import { useEscapeKey } from '../composables/useEscapeKey';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT, TELEMETRY_UI_PLAN_COMMENT } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT, TELEMETRY_UI_PLAN_COMMENT, TELEMETRY_UI_LINKS_OPEN } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
@@ -1036,6 +1039,7 @@ import { elicitOutcome, elicitRows, isElicitExpired } from '../composables/useEl
 import { withRequestAnswered } from '../composables/useRequestAnswer';
 import MarkdownBody from '../components/MarkdownBody.vue';
 import TaskPlanPanel from '../components/TaskPlanPanel.vue';
+import TaskLinksPanel from '../components/TaskLinksPanel.vue';
 import { useTaskPlan, planCommentText } from '../composables/useTaskPlan';
 import EmojiPicker from '../components/EmojiPicker.vue';
 import ComposerBox from '../components/ComposerBox.vue';

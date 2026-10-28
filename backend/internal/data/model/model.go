@@ -785,6 +785,8 @@ const (
 	ActionIDMCPPlanUpdate
 	// A comment on a step of a task's plan, sent to the agent.
 	ActionIDUIPlanComment
+	// A task's links panel opened.
+	ActionIDUILinksOpen
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

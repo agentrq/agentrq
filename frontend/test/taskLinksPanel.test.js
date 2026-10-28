@@ -1,0 +1,103 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
+
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import { createApp, h, reactive } from 'vue'
+
+const serverOrigin = vi.fn()
+vi.mock('../src/api', () => ({ serverOrigin: (...args) => serverOrigin(...args) }))
+
+const { default: TaskLinksPanel } = await import('../src/components/TaskLinksPanel.vue')
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+const mounted = []
+
+function mount(task, taskId = 't1') {
+  const state = reactive({ task, opened: 0 })
+  const el = document.createElement('div')
+  document.body.appendChild(el)
+  const app = createApp({
+    render: () => h(TaskLinksPanel, { task: state.task, taskId, onOpen: () => state.opened++ }),
+  })
+  app.component('RouterLink', { props: ['to'], setup: (p, { slots }) => () => h('a', { 'data-to': p.to }, slots.default?.()) })
+  mounted.push(app)
+  app.mount(el)
+  const q = (id) => el.querySelector(`[data-testid="${id}"]`)
+  return { el, state, q }
+}
+
+beforeEach(() => {
+  serverOrigin.mockReset()
+  serverOrigin.mockResolvedValue(window.location.origin)
+})
+
+afterEach(() => {
+  while (mounted.length) mounted.pop().unmount()
+  document.body.innerHTML = ''
+})
+
+const task = {
+  body: 'Fixes https://github.com/agentrq/agentrq/pull/1099',
+  messages: [{ text: '[Roadmap](/pano/d1), [Login](/workspaces/w1/tasks/t2), https://example.com/docs' }],
+}
+
+describe('TaskLinksPanel', () => {
+  it('hides itself when the task has no links', async () => {
+    const { el } = mount({ body: 'nothing to see', messages: [] })
+    await settle()
+    expect(el.querySelector('[data-testid="task-links"]')).toBeNull()
+  })
+
+  it('shows a one-line bar with the count and the labels', async () => {
+    const { q } = mount(task)
+    await settle()
+    expect(q('task-links-count').textContent.trim()).toBe('4')
+    expect(q('task-links-summary').textContent).toBe('· gh#1099 · Roadmap · Login · example.com/docs')
+    expect(q('task-links-body')).toBeNull()
+  })
+
+  it('opens to the links by group, routing in-app links and opening the rest in a new tab', async () => {
+    const { q, state } = mount(task)
+    await settle()
+    q('task-links-toggle').click()
+    await settle()
+    expect(q('task-links-toggle').getAttribute('aria-expanded')).toBe('true')
+    expect(state.opened).toBe(1)
+
+    const pr = q('task-links-pr').querySelector('a')
+    expect(pr.textContent.trim()).toBe('gh#1099')
+    expect(pr.getAttribute('href')).toBe('https://github.com/agentrq/agentrq/pull/1099')
+    expect(pr.getAttribute('target')).toBe('_blank')
+    expect(pr.querySelector('[data-testid="task-links-github"]')).not.toBeNull()
+    expect(q('task-links-pano').querySelector('a').getAttribute('data-to')).toBe('/pano/d1')
+    expect(q('task-links-task').querySelector('a').getAttribute('data-to')).toBe('/workspaces/w1/tasks/t2')
+    const external = q('task-links-external').querySelector('a')
+    expect(external.getAttribute('href')).toBe('https://example.com/docs')
+    expect(external.getAttribute('rel')).toBe('noopener noreferrer')
+
+    q('task-links-toggle').click()
+    await settle()
+    expect(q('task-links-body')).toBeNull()
+    expect(state.opened).toBe(1)
+  })
+
+  it('counts links to the server as in-app ones in the desktop app, whose page origin is app://', async () => {
+    serverOrigin.mockResolvedValue('https://app.agentrq.com')
+    const { q } = mount({ body: 'https://app.agentrq.com/pano/d9' })
+    await settle()
+    expect(q('task-links-summary').textContent).toBe('· d9')
+    q('task-links-toggle').click()
+    await settle()
+    expect(q('task-links-pano')).not.toBeNull()
+  })
+
+  it('keeps the page origin when the server address cannot be had', async () => {
+    serverOrigin.mockRejectedValue(new Error('bridge disconnected'))
+    const { q } = mount({ body: '[Roadmap](/pano/d1)' })
+    await settle()
+    q('task-links-toggle').click()
+    await settle()
+    expect(q('task-links-pano')).not.toBeNull()
+  })
+})
