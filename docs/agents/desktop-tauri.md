@@ -135,6 +135,9 @@
   profile switch cannot build the new window beside the old one. Destroy `main`
   and build the new one in the run loop's `Destroyed` event: the label is free
   by then and the window count never reaches zero, so Linux and Windows don't quit.
+  **Not on macOS**: wry drops the scheme handlers filed under `main` when the old
+  one is freed, after that event, so a `main` built in it stays blank. Build it a
+  turn later, posted from off the main thread.
   Only `chrome::open_main_window` builds it, with one builder: Tauri keeps just the
   last `on_navigation` and `on_page_load`.
 - **The network and a removed profile's storage change only once the old `main`

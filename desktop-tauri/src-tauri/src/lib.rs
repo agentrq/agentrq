@@ -784,6 +784,21 @@ pub fn run() {
             } if label == MAIN_WEBVIEW
                 && app.state::<Reopening>().0.swap(false, Ordering::SeqCst) =>
             {
+                // wry on macOS files a webview's scheme handlers under its
+                // label, and the old `main` takes them with it when it is
+                // dropped, after this callback: a `main` built here gets no
+                // answer from `app` and stays blank. macOS does not quit with
+                // no window, so it is built a turn later, posted from off the
+                // main thread (from on it, `run_on_main_thread` runs at once).
+                #[cfg(target_os = "macos")]
+                {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let handle = app.clone();
+                        let _ = app.run_on_main_thread(move || rebuild_main(&handle));
+                    });
+                }
+                #[cfg(not(target_os = "macos"))]
                 rebuild_main(app);
             }
             RunEvent::Exit => {
