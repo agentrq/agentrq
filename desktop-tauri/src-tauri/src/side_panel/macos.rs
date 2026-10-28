@@ -139,26 +139,67 @@ fn hook_media_capture(view: &WKWebView) {
     });
 }
 
-/// Whether a key event is for a guest: its window's first responder is a
-/// guest's WKWebView, or a view inside one.
-unsafe fn in_guest(event: &NSEvent) -> bool {
-    let window: *mut AnyObject = msg_send![event, window];
+/// The guest a window's first responder is, or is inside.
+unsafe fn responding_guest(window: *mut AnyObject) -> Option<String> {
     if window.is_null() {
-        return false;
+        return None;
     }
-    let ours: Vec<usize> = guests(|guests| guests.keys().copied().collect());
+    let ours: HashMap<usize, String> = guests(|guests| {
+        guests
+            .iter()
+            .map(|(view, (label, _))| (*view, label.clone()))
+            .collect()
+    });
     let mut view: *mut AnyObject = msg_send![window, firstResponder];
     while !view.is_null() {
-        if ours.contains(&(view as usize)) {
-            return true;
+        if let Some(label) = ours.get(&(view as usize)) {
+            return Some(label.clone());
         }
         let nested: bool = msg_send![view, respondsToSelector: sel!(superview)];
         if !nested {
-            return false;
+            return None;
         }
         view = msg_send![view, superview];
     }
-    false
+    None
+}
+
+/// Whether a key event is for a guest.
+unsafe fn in_guest(event: &NSEvent) -> bool {
+    responding_guest(msg_send![event, window]).is_some()
+}
+
+/// A click that puts the keyboard in a guest: the app's page keeps its
+/// `activeElement`, so it is told, as GTK's focus-in and WebView2's
+/// `GotFocus` tell it. The first responder changes once the click is
+/// handled, so it is read a turn later.
+fn watch_focus<R: Runtime>(app: tauri::AppHandle<R>) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(move || {
+        let block = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
+            let window: *mut AnyObject = unsafe { msg_send![event.as_ref(), window] };
+            let window = window as usize;
+            let app = app.clone();
+            // From the main thread, `run_on_main_thread` would run at once.
+            tauri::async_runtime::spawn(async move {
+                let emitter = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    if let Some(label) = unsafe { responding_guest(window as *mut AnyObject) } {
+                        super::emit(&emitter, super::GuestEvent::Focus { label });
+                    }
+                });
+            });
+            event.as_ptr()
+        });
+        let clicks =
+            NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown | NSEventMask::OtherMouseDown;
+        if let Some(monitor) =
+            unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(clicks, &block) }
+        {
+            // For the life of the app.
+            std::mem::forget(monitor);
+        }
+    });
 }
 
 /// Cmd+F in a guest, before its page sees it: the window's find bar opens
@@ -304,7 +345,8 @@ pub fn notification_clicked<R: Runtime>(_app: &tauri::AppHandle<R>, _label: &str
 
 /// WKWebView reports a failed load to wry's own navigation delegate, which
 /// it does not expose: the page shows WebKit's empty view instead. Its
-/// camera and microphone requests and Cmd+F are the guest's to watch.
+/// camera and microphone requests, Cmd+F and the clicks that focus it are
+/// the guest's to watch.
 pub fn watch<R: Runtime>(guest: &Webview<R>) {
     let app = guest.app_handle().clone();
     let label = guest.label().to_string();
@@ -312,6 +354,7 @@ pub fn watch<R: Runtime>(guest: &Webview<R>) {
         let view = wk(&view);
         hook_media_capture(view);
         watch_find_key(app.clone());
+        watch_focus(app.clone());
         let (asking, name) = (app, label.clone());
         let asker: Asker = Arc::new(move |native, url, id| {
             let main = asking.clone();
