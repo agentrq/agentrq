@@ -540,7 +540,7 @@ describe('no capability reaches a side panel guest', () => {
     expect(configsGiven('sudo dpkg --configure -a')).toEqual([])
     expect(configsGiven("jq -c '{name: .tag}' release.json")).toEqual([])
     // package.json's scripts, unescaped as commandLines reads them.
-    const script = JSON.parse(JSON.stringify({ build: `tauri build --config "${capability.replace(/"/g, '\\"')}"` })).build
+    const script = JSON.parse(JSON.stringify({ build: `tauri build --config ${JSON.stringify(capability)}` })).build
     expect(configsGiven(script)).toEqual([{ inline: capability }])
   })
 
