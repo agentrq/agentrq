@@ -47,17 +47,44 @@ func NewServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Servic
 	return newServer(crudCtrl, baseURL, pubsubSvc, NewTaskListeners())
 }
 
+// The title and website match the registry manifest (serverManifest).
+const (
+	serverTitle       = "AgentRQ"
+	serverWebsiteURL  = "https://agentrq.com"
+	serverDescription = "Run an AgentRQ account: hand tasks to the agents of its workspaces and follow them up, " +
+		"fork workspaces, read their memory and skills, chain workspaces with events and workflows, " +
+		"launch agents on machines and share Pano docs."
+	serverInstructions = "AgentRQ account server: every workspace, task and agent of the signed-in account. " +
+		"Each workspace is one agent with its own mission; give it work by creating a task there rather than doing the work yourself.\n" +
+		"Tools take {action, payload}; call `help` for a tool's actions and payloads before its first use.\n" +
+		"- `workspace` list/get: what each agent is doing; create, fork, mergeFork.\n" +
+		"- `task` create to delegate; messages to follow up; respond to a waiting permission request.\n" +
+		"- `memory`, `skills`: what a workspace knows, read-only.\n" +
+		"- `events`, `workflows`: let one workspace's task start tasks in another.\n" +
+		"- `machines`: agentrqd machines; launch or stop their agents.\n" +
+		"- `pano`: markdown docs every workspace shares.\n" +
+		"IDs come from list and get results; never guess one."
+)
+
 func newServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Service, listeners *TaskListeners) *WorkspaceServer {
 	srv := mcp.NewServer(&mcp.Implementation{
-		Name:    "agentrq",
-		Version: config.Release(),
+		Name:        "agentrq",
+		Title:       serverTitle,
+		Description: serverDescription,
+		Version:     config.Release(),
+		WebsiteURL:  serverWebsiteURL,
 		Icons: []mcp.Icon{
 			{
 				Source:   baseURL + "/agentrq.png",
 				MIMEType: "image/png",
+				Sizes:    []string{"512x512"},
 			},
 		},
-	}, &mcp.ServerOptions{SubscribeHandler: subscribeNothing, UnsubscribeHandler: unsubscribeNothing})
+	}, &mcp.ServerOptions{
+		Instructions:       serverInstructions,
+		SubscribeHandler:   subscribeNothing,
+		UnsubscribeHandler: unsubscribeNothing,
+	})
 
 	// Stateless, unlike the per-workspace server, which pushes to its agent over
 	// the SSE stream and so must keep sessions. Only a listen pushes here, on

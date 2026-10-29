@@ -85,9 +85,9 @@ func serverManifest(endpoint string) []byte {
 	b, _ := json.MarshalIndent(manifest{
 		Schema:      "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
 		Name:        "io.github.agentrq/agentrq",
-		Title:       "AgentRQ",
+		Title:       serverTitle,
 		Description: "Task manager for AI agents. Orchestrate agents to achieve large goals in unified control plane.",
-		WebsiteURL:  "https://agentrq.com",
+		WebsiteURL:  serverWebsiteURL,
 		Repository:  manifestRepo{URL: "https://github.com/agentrq/agentrq", Source: "github"},
 		Icons:       []manifestIcon{{Src: "https://agentrq.com/favicon.svg", MIMEType: "image/svg+xml", Sizes: []string{"any"}}},
 		Version:     config.Release(),
