@@ -82,6 +82,9 @@
             </svg>
           </button>
         </div>
+
+        <div class="w-px h-4 bg-gray-200 dark:bg-zinc-800"></div>
+        <NewTaskButton />
       </div>
     </div>
 
@@ -227,6 +230,7 @@ import DeleteModal from '../components/DeleteModal.vue';
 import MoveTaskModal from '../components/MoveTaskModal.vue';
 import ContextMenu from '../components/ContextMenu.vue';
 import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
+import NewTaskButton from '../components/NewTaskButton.vue';
 import { canEditTask, canDeleteTask, taskEditPath, withoutTask } from '../composables/useTaskRowActions';
 import { menuItemsFor, parseSelection } from '../composables/useTaskContextMenu';
 import { useExtensionSurfaces } from '../composables/useExtensionSurfaces';

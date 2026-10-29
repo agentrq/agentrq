@@ -8,9 +8,12 @@
      no workspace in the route it lists them all and names each card's. -->
 <template>
   <div class="flex flex-col h-full w-full min-h-0">
-    <div class="w-full px-4 py-2 shrink-0 flex flex-col min-w-0">
-      <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">Kanban</h1>
-      <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">Every workspace's tasks on one board.</p>
+    <div class="@container w-full px-4 py-2 shrink-0 flex items-start justify-between gap-4">
+      <div class="flex flex-col min-w-0">
+        <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">Kanban</h1>
+        <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">Every workspace's tasks on one board.</p>
+      </div>
+      <NewTaskButton />
     </div>
     <KanbanBoardView />
   </div>
@@ -21,6 +24,7 @@ import { watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useViewport } from '../composables/useViewport';
 import KanbanBoardView from './KanbanBoardView.vue';
+import NewTaskButton from '../components/NewTaskButton.vue';
 
 const router = useRouter();
 const { isMobile } = useViewport();

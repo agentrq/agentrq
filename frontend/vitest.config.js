@@ -112,6 +112,8 @@ export default defineConfig({
         'src/components/TaskAttachmentChips.vue',
         'src/components/TaskOptionsTools.vue',
         'src/components/PanoTaskButton.vue',
+        'src/components/NewTaskButton.vue',
+        'src/components/WorkspaceSwitcher.vue',
         'src/components/PanoProgress.vue',
         'src/components/PanoChatColumn.vue',
         'src/components/ResizeHandle.vue',

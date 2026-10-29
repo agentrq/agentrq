@@ -359,6 +359,18 @@ describe('KanbanBoardView across every workspace', () => {
     expect(replace).not.toHaveBeenCalled()
   })
 
+  it('asks the shell for a new task from its heading', async () => {
+    const opened = vi.fn()
+    window.addEventListener('open-new-task', opened)
+    try {
+      const { el } = await mount({ component: KanbanView, workspaces })
+      el.querySelector('[data-test="new-task"]').click()
+      expect(opened).toHaveBeenCalledTimes(1)
+    } finally {
+      window.removeEventListener('open-new-task', opened)
+    }
+  })
+
   it('sends a phone-width screen to the task list, as the workspace board does', async () => {
     replace.mockClear()
     const width = window.innerWidth

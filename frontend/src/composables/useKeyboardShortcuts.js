@@ -67,7 +67,7 @@ export const SHORTCUTS = [
     id: 'new-task',
     key: 'n',
     label: 'New task',
-    hint: 'Opens the task form for the workspace you are in',
+    hint: 'Opens the task form for the workspace you are in, or asks which',
     scope: 'global',
   },
   {
@@ -347,9 +347,9 @@ export function useShortcuts(handlers, options = {}) {
  *
  * The task form belongs to a workspace, so the shortcut has to pick one. The
  * workspace on screen is the obvious answer; failing that, a user with a single
- * workspace can only have meant that one. With no way to tell, the workspace
- * list is the honest destination — better than guessing and dropping a task in
- * the wrong place.
+ * workspace can only have meant that one. With several and no way to tell, it
+ * answers '' and the shell asks which — better than guessing and dropping a
+ * task in the wrong place. With none, the workspace list, to make one.
  *
  * The desktop menu answers the same question from its recent-workspace list
  * (`newTaskRoute` in `desktop/src/main/index.js`); this is the browser's
@@ -361,5 +361,5 @@ export function useShortcuts(handlers, options = {}) {
 export function newTaskRoute(currentWorkspaceId, workspaces = []) {
   if (currentWorkspaceId) return `/workspaces/${currentWorkspaceId}/tasks/new`;
   if (workspaces.length === 1) return `/workspaces/${workspaces[0].id}/tasks/new`;
-  return '/';
+  return workspaces.length ? '' : '/';
 }

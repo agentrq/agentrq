@@ -486,9 +486,12 @@ describe('newTaskRoute', () => {
   })
 
   it('asks rather than guesses when several workspaces are in play', () => {
-    // Dropping a task into an arbitrary workspace is worse than a short detour
-    // through the list.
-    expect(newTaskRoute(undefined, [{ id: 'a' }, { id: 'b' }])).toBe('/')
+    // Dropping a task into an arbitrary workspace is worse than a quick pick.
+    expect(newTaskRoute(undefined, [{ id: 'a' }, { id: 'b' }])).toBe('')
+  })
+
+  it('leads to the workspace list when there is no workspace to make it in', () => {
+    expect(newTaskRoute(undefined, [])).toBe('/')
     expect(newTaskRoute(undefined)).toBe('/')
   })
 })

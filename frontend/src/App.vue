@@ -492,6 +492,7 @@
          workspaces, and the help sheet describes shortcuts a view may own. -->
     <CommandPalette :show="overlay === 'palette'" :shortcut-label="findTaskLabel" @close="closeOverlay()" />
     <WorkspaceSwitcher :show="overlay === 'switcher'" :current-workspace-id="currentWorkspaceId ?? ''" @close="closeOverlay()" />
+    <WorkspaceSwitcher :show="overlay === 'new-task'" for-new-task @close="closeOverlay()" />
     <MachineSwitcher :show="overlay === 'machines'" :current-machine-id="currentMachineId(route)" @close="closeOverlay()" />
     <ShortcutsHelp :show="overlay === 'help'" :mac="isMacKeyboard" @close="closeOverlay()" />
 
@@ -797,8 +798,8 @@ function startRetentionSweep(db) {
 // of these; see TaskDetailView for the chat/trajectory pair.
 
 /**
- * Which full-screen overlay is up, if any: 'palette', 'switcher', 'machines'
- * or 'help'.
+ * Which full-screen overlay is up, if any: 'palette', 'switcher', 'new-task'
+ * (the switcher, picking where a new task goes), 'machines' or 'help'.
  *
  * One value rather than a flag each, because they are mutually exclusive and
  * every opener would otherwise have to remember to close the other two — a
@@ -814,10 +815,18 @@ const findTaskLabel = computed(() =>
   formatShortcut(SHORTCUTS.find((s) => s.id === 'find-task'), { mac: isMacKeyboard.value })
 )
 
+// N, and the New Task button on the pages that span every workspace: the
+// workspace's form when there is no doubt which, else the switcher asks.
+const startNewTask = () => {
+  const to = newTaskRoute(currentWorkspaceId.value, workspaces.value)
+  if (to) router.push(to)
+  else openOverlay('new-task')
+}
+
 useShortcuts(
   {
     'find-task': () => openOverlay('palette'),
-    'new-task': () => router.push(newTaskRoute(currentWorkspaceId.value, workspaces.value)),
+    'new-task': startNewTask,
     'switch-workspace': () => openOverlay('switcher'),
     'switch-machine': () => openOverlay('machines'),
     'open-pano': () => router.push('/pano'),
@@ -949,11 +958,13 @@ let stopWatchingOverlays = null
 
 onMounted(() => {
   window.addEventListener('open-command-palette', openCommandPaletteHandler)
+  window.addEventListener('open-new-task', startNewTask)
   if (platformStore.isDesktop) stopWatchingOverlays = watchOverlays()
 })
 
 onUnmounted(() => {
   window.removeEventListener('open-command-palette', openCommandPaletteHandler)
+  window.removeEventListener('open-new-task', startNewTask)
   stopWatchingOverlays?.()
 })
 

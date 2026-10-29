@@ -108,6 +108,21 @@ beforeEach(() => {
 })
 
 describe('the sidebar task list', () => {
+  it('asks the shell for a new task, on every filter', async () => {
+    const opened = vi.fn()
+    window.addEventListener('open-new-task', opened)
+    try {
+      for (const filter of ['active', 'scheduled', 'pending', 'notstarted', 'ongoing', 'completed']) {
+        route.params = { filter }
+        const el = await mount(TaskListView)
+        el.querySelector('[data-test="new-task"]').click()
+      }
+      expect(opened).toHaveBeenCalledTimes(6)
+    } finally {
+      window.removeEventListener('open-new-task', opened)
+    }
+  })
+
   it('offers edit and delete on a row, as a workspace list does', async () => {
     const el = await mount(TaskListView)
     const row = rowOf(el, 'task a0')

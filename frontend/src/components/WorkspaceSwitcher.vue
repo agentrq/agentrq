@@ -32,6 +32,11 @@ const props = defineProps({
   show: Boolean,
   /** The workspace on screen, so its row can be marked rather than hidden. */
   currentWorkspaceId: { type: String, default: '' },
+  /**
+   * Picking where a new task goes, for `N` away from any workspace: a pick
+   * opens its task form, and archived ones, which take no tasks, are left out.
+   */
+  forNewTask: Boolean,
 });
 const emit = defineEmits(['close']);
 
@@ -42,7 +47,9 @@ const query = ref('');
 const highlighted = ref(0);
 const inputRef = ref(null);
 
-const workspaces = computed(() => workspaceStore.workspaces);
+const workspaces = computed(() =>
+  props.forNewTask ? workspaceStore.workspaces.filter((w) => !w.archivedAt) : workspaceStore.workspaces
+);
 
 /**
  * Ten rather than the finder's eight: these rows are one line instead of two,
@@ -78,7 +85,7 @@ function move(delta) {
 
 function open(workspace) {
   emit('close');
-  router.push(workspaceRoute(workspace));
+  router.push(workspaceRoute(workspace, props.forNewTask ? 'tasks/new' : ''));
 }
 
 function submit() {
@@ -91,7 +98,7 @@ const isCurrent = (workspace) => isCurrentWorkspace(workspace, props.currentWork
 
 <template>
   <Transition name="fade">
-    <div v-if="show" class="fixed inset-0 z-[150]" role="dialog" aria-modal="true" aria-label="Switch workspace">
+    <div v-if="show" class="fixed inset-0 z-[150]" role="dialog" aria-modal="true" :aria-label="forNewTask ? 'New task in workspace' : 'Switch workspace'">
       <div class="fixed inset-0 bg-gray-900/60 backdrop-blur-sm" @click="emit('close')"></div>
 
       <div class="relative mx-auto mt-[12vh] w-[92%] max-w-xl">
@@ -102,7 +109,7 @@ const isCurrent = (workspace) => isCurrentWorkspace(workspace, props.currentWork
               <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
             <input ref="inputRef" v-model="query" type="text" autocomplete="off" spellcheck="false"
-                   placeholder="Search workspaces by name"
+                   :placeholder="forNewTask ? 'New task in which workspace?' : 'Search workspaces by name'"
                    class="grow bg-transparent text-[14px] text-gray-900 dark:text-zinc-100 placeholder:text-gray-400 dark:placeholder:text-zinc-600 focus:outline-none"
                    @keydown.down.prevent="move(1)"
                    @keydown.up.prevent="move(-1)"
@@ -150,7 +157,7 @@ const isCurrent = (workspace) => isCurrentWorkspace(workspace, props.currentWork
           <div class="flex items-center justify-between gap-4 px-4 py-2 border-t border-gray-100 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-800/30">
             <span class="flex items-center gap-4 shrink-0">
               <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">↑↓ Navigate</span>
-              <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">↵ Switch</span>
+              <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">↵ {{ forNewTask ? 'New task' : 'Switch' }}</span>
             </span>
             <span v-if="hasWorkspaces" class="text-[9px] text-right text-gray-400 dark:text-zinc-500 truncate">
               {{ workspaces.length }} workspace{{ workspaces.length === 1 ? '' : 's' }}
