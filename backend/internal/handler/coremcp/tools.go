@@ -20,27 +20,27 @@ import (
 type (
 	WorkspaceToolParams struct {
 		Action  string         `json:"action" jsonschema:"enum: list, create, get, update, stats, fork, mergeFork, help"`
-		Payload map[string]any `json:"payload,omitempty" jsonschema:"The action's fields, as help prints them."`
+		Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them."`
 	}
 	MemoryToolParams struct {
 		Action  string         `json:"action" jsonschema:"enum: list, get, help"`
-		Payload map[string]any `json:"payload,omitempty" jsonschema:"The action's fields, as help prints them."`
+		Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them."`
 	}
 	SkillsToolParams struct {
 		Action  string         `json:"action" jsonschema:"enum: search, get, help"`
-		Payload map[string]any `json:"payload,omitempty" jsonschema:"The action's fields, as help prints them."`
+		Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them."`
 	}
 	EventsToolParams struct {
 		Action  string         `json:"action" jsonschema:"enum: list, create, get, update, delete, listTasks, listTriggers, createTrigger, getTrigger, updateTrigger, deleteTrigger, help"`
-		Payload map[string]any `json:"payload,omitempty" jsonschema:"The action's fields, as help prints them. Leave it out when the action takes none."`
+		Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them. Leave it out when the action takes none."`
 	}
 	WorkflowsToolParams struct {
 		Action  string         `json:"action" jsonschema:"enum: list, create, get, getText, update, delete, replaceFromText, listSteps, createStep, deleteStep, listTasks, help"`
-		Payload map[string]any `json:"payload,omitempty" jsonschema:"The action's fields, as help prints them. Leave it out when the action takes none."`
+		Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them. Leave it out when the action takes none."`
 	}
 	MachinesToolParams struct {
 		Action  string         `json:"action" jsonschema:"enum: list, createEnrolmentCode, launchAgent, stopAgent, help"`
-		Payload map[string]any `json:"payload,omitempty" jsonschema:"The action's fields, as help prints them. Leave it out when the action takes none."`
+		Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them. Leave it out when the action takes none."`
 	}
 	// HelpToolParams is the help tool's input: what to explain.
 	HelpToolParams struct {
@@ -49,21 +49,50 @@ type (
 )
 
 const (
-	twoInputs = "Two inputs: action, and payload, the action's fields; help gives an action's payload and an example. "
+	twoInputs = "Two inputs: action, one of the enum, and payload, an object with that action's fields; leave payload out when the action takes none. " +
+		"Run action help for every action, or help with payload {\"topic\": \"<action>\"} for one action's fields and an example. "
 
-	workspaceToolDescription = "The account's workspaces. " + twoInputs +
-		"list and get show what each workspace's agent is doing (running, idle, paused or offline); create and update do what they say; stats: a workspace's activity over 7 or 30 days; fork: a second workspace that shares the parent's settings, memory and skills; mergeFork: brings a fork's tasks back and removes it."
-	memoryToolDescription = "A workspace's memory, read-only. " + twoInputs +
-		"list: its memories' names and sizes; get: one in full. MEMORY.md is the index the others hang off."
-	skillsToolDescription = "The account's skills, as a workspace sees them, read-only. " + twoInputs +
-		"search: skills by name or description; get: one file of a skill by skill:// URI."
-	eventsToolDescription = "Events, the named signals workspaces publish, and their triggers, which create a task somewhere else when one fires. " + twoInputs +
-		"list, create, get, update and delete events; listTriggers, createTrigger, getTrigger, updateTrigger and deleteTrigger their triggers; listTasks: the tasks an event has spawned."
-	workflowsToolDescription = "Workflows: graphs of events and the workspaces they hand off to. " + twoInputs +
-		"list, create, get, update and delete workflows; listSteps, createStep and deleteStep their steps; getText and replaceFromText the whole graph as a document; listTasks: the tasks a workflow has spawned."
-	machinesToolDescription = "The account's machines running agentrqd, and the agents on them. " + twoInputs +
-		"list: the machines; createEnrolmentCode: a code to enrol a new one; launchAgent: starts an agent for a workspace; stopAgent: stops it."
-	helpToolDescription = "How to call this server's tools. With no action, every tool and its actions; with action set to a tool, its actions; with tool.action, like task.create, that action's payload and an example."
+	workspaceToolDescription = "Find, create and change the account's workspaces. A workspace is one agent's queue of tasks, with its mission, memory and skills. " +
+		"Use it to find the workspaceId every other tool here takes, and to see whether a workspace's agent is free before you hand it work. " + twoInputs +
+		"list: every workspace's id, name, forkOfId, workingDirectory and agent state (running, idle, paused or offline); includeDetails adds descriptions and settings, includeArchived adds archived ones. " +
+		"get (id): one workspace in full, with its mcpUrl and agent state. " +
+		"create (name in kebab-case, description as its mission): a new workspace; check list first for one with the same purpose, and an agent still has to be started in it, by a human or machines launchAgent. " +
+		"update (id): changes only the fields sent. stats (id, range 7d or 30d): its activity over that time. " +
+		"fork (workspaceId): a second workspace with its own queue and agent that shares the parent's settings, memory and skills, to work on tasks in parallel. " +
+		"mergeFork (workspaceId of the fork): stops its agent, moves every task back to the parent and removes the fork; refused while any of its tasks is not completed or rejected. " +
+		"Workspaces cannot be deleted here."
+	memoryToolDescription = "Read what a workspace's agent remembers: the notes it keeps from one task to the next, such as its project's conventions and lessons learned. " +
+		"Read-only: to change a note, create a task asking that workspace's agent to. " +
+		"Use it to check what a workspace knows before giving it work, or to carry a lesson to another workspace in a task's body. " + twoInputs +
+		"list (workspaceId): every memory's name, size and when it last changed, without content. " +
+		"get (workspaceId, name as list reports it): one memory in full. Start with memory.md, the index that links the others. " +
+		"workspaceId comes from workspace list."
+	skillsToolDescription = "Read the skills a workspace's agent can load: reusable instructions, a SKILL.md and its files, shared across the account and turned on or off per workspace. " +
+		"Read-only. Use it to see what a workspace can already do before giving it work, or to name a skill in a task by its skill:// URI. " + twoInputs +
+		"search (workspaceId, optional q, limit and offset): skills by name or description, each with its description, source, size, and whether it is on for the account (enabled) and in that workspace (workspaceEnabled); the agent sees only skills with both on. Content is not included. " +
+		"get (workspaceId, uri as skill://<name>/<path>): one file; skill://<name> alone returns its SKILL.md and the list of its other files. " +
+		"workspaceId comes from workspace list."
+	eventsToolDescription = "Make one workspace's work start another's. An event is a named signal an agent publishes when it finishes something; a trigger on it creates a task in a workspace each time it fires, and the task's body can carry what the publisher sent. " +
+		"Agents publish events from their own workspace's server, not from here. For a whole chain drawn as one graph, use workflows. " + twoInputs +
+		"list, get (eventId), create (name, lowercase and unique, and payloadGuidelines telling the publisher what to send), update (eventId: its payloadGuidelines only; the name is fixed) and delete (eventId; its triggers stop firing). " +
+		"listTriggers (eventId), getTrigger, updateTrigger and deleteTrigger (triggerId) manage what happens when it fires. " +
+		"createTrigger (eventId, workspaceId, title, and a body that may carry {{EVENT_PAYLOAD}} and {{EVENT_FAQ}}): emitEventId publishes a second event when the spawned task completes, and cronSchedule is at most hourly. " +
+		"updateTrigger writes every field as given, so send the ones to keep as well. " +
+		"listTasks (eventId): the tasks it has spawned, to check that what was wired up is running."
+	workflowsToolDescription = "Design multi-step pipelines across workspaces. A workflow is a graph of events and the workspaces that react to them: each step creates a task in a workspace when its event fires, and can publish the next event when that task completes. " +
+		"Use it to build or read a whole chain at once; events holds the events themselves and single triggers. " + twoInputs +
+		"list, get (workflowId), create (name, description, and startEventId, the event that starts it), update (workflowId: only the fields sent change) and delete (workflowId, with its steps). " +
+		"listSteps (workflowId), createStep (workflowId, eventId, workspaceId, title; the body may carry {{EVENT_PAYLOAD}} and {{EVENT_FAQ}}, and emitEventId hands off to the next step) and deleteStep (workflowId, stepId) change one step at a time. " +
+		"getText (workflowId) reads the whole graph as an indented document, and replaceFromText (workflowId, text) rewrites the whole graph from one; the events and workspaces it names must already exist, and an unknown name leaves the workflow untouched. " +
+		"listTasks (workflowId): the tasks it has spawned."
+	machinesToolDescription = "Run agents on the account's machines. Each machine runs agentrqd, which starts and stops coding agents (claude-code, or another agent through acp-gateway) in a workspace's working directory. " +
+		"Use it to see where agents run, to start an agent for a workspace that has none, or to stop one. " + twoInputs +
+		"list: every machine's id, name, OS, agentrqd version, whether it is enabled and online, and the agents on it with their workspaces and state. " +
+		"createEnrolmentCode: a one-time code a human uses to enrol a new machine; it is shown once and expires shortly, so hand it on at once (the agentrq://guides/agentrqd-setup resource has the steps). " +
+		"launchAgent (workspaceId, machineId from list, kind claude-code or acp-gateway, optional model and effort): starts an agent, which connects a few seconds later and picks up its tasks; refused while the workspace already has an agent or has no working directory, or when the machine is disabled, offline or runs an agentrqd too old for what was asked. " +
+		"stopAgent (workspaceId): stops that workspace's agent at once, ending whatever it is in the middle of."
+	helpToolDescription = "How to call this server's tools. Every tool here takes an action and its payload: call help when you do not know an action's fields. Read-only. " +
+		"With no action, every tool and its actions; with action set to a tool, like task, its actions; with tool.action, like task.create, that action's payload and an example."
 )
 
 func (s *WorkspaceServer) workspaceActions() []mcpevent.ToolAction {

@@ -18,12 +18,14 @@ import (
 )
 
 // taskToolDescription is the supervisor's task tool's description.
-const taskToolDescription = "Read and manage the tasks of every workspace on the account. Two inputs: action, and payload, the action's fields. " +
-	"Run action help for the actions, and help with payload {\"topic\": \"<action>\"} for one's payload. " +
-	"list and listAll list one workspace's tasks or every workspace's; create, get, reply and delete do what they say; " +
-	"messages reads only a task's conversation, far smaller than get, to follow up on a task; " +
+const taskToolDescription = "Hand out, follow and steer the work of every workspace on the account. A task is one piece of work, assigned to a workspace's agent or to the human, with a conversation between them. " +
+	"Use it to give a workspace work, check on it, answer an agent that is waiting, and close it. " + twoInputs +
+	"An action on one task takes its workspaceId and taskId; workspaceId comes from workspace list. " +
+	"list (workspaceId) and listAll list one workspace's tasks or every workspace's, 5 by default and at most 50, filtered by text, status, creator or awaitingReply; " +
+	"create (workspaceId, title, body) adds a task, assigned to the human unless assignee says agent, once or on a cronSchedule; get reads a task in full; " +
+	"messages reads only a task's conversation, far smaller than get, to follow up on a task; reply posts to it; " +
 	"respond answers the permission request a task is waiting on; updateStatus, updateSortingOrder, updateAssignee, updateAllowAll and updateSchedule change one thing about a task; " +
-	"getAttachment gets a task's attachment. delete cannot be undone: to stop a scheduled task without losing its history, updateStatus it to rejected instead."
+	"getAttachment gets a task's attachment. delete removes a task with its messages and attachments and cannot be undone: to stop a scheduled task without losing its history, updateStatus it to rejected instead."
 
 // awaitingReplyHelp is the rule replyState follows, as list, listAll and get
 // tell it.
@@ -35,7 +37,7 @@ const awaitingReplyHelp = "Each task has awaitingReply: true while a question or
 // TaskParams is the input to the task tool.
 type TaskParams struct {
 	Action  string         `json:"action" jsonschema:"enum: list, listAll, create, get, messages, reply, respond, updateStatus, updateSortingOrder, updateAssignee, updateAllowAll, updateSchedule, delete, getAttachment, help"`
-	Payload map[string]any `json:"payload,omitempty" jsonschema:"The action's fields, as help prints them."`
+	Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them."`
 }
 
 // taskActions are the task tool's actions, each run by the handler of the
