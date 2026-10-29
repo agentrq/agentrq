@@ -300,17 +300,13 @@ curl -fsSL https://agentrq.com/install.sh | sh -s -- --tauri
 Run it again to update. Setting `AGENTRQ_TAURI=1` does the same as `--tauri`.
 
 On Windows, or by hand from the
-[latest release](https://github.com/agentrq/agentrq/releases/latest), download the
+[latest release](https://github.com/agentrq/agentrq-desktop/releases/latest) of
+[agentrq/agentrq-desktop](https://github.com/agentrq/agentrq-desktop), where the
+Tauri build lives, download the
 assets named `AgentRQ-Tauri-<version>-<arch>.<ext>`:
 - **macOS**: `AgentRQ-Tauri-<version>-arm64.dmg` (Apple silicon) or `AgentRQ-Tauri-<version>-x64.dmg` (Intel)
 - **Windows**: `AgentRQ-Tauri-<version>-x64.exe` (NSIS setup installer)
 - **Linux**: `AgentRQ-Tauri-<version>-x64.AppImage` or `AgentRQ-Tauri-<version>-x64.deb`
-
-> **Not released yet.** The release job has landed (#1035), but no release
-> carries the Tauri assets yet (the latest release, v0.13.4, predates it). The
-> first release after v0.13.4 is the first to carry them; until then
-> `install.sh --tauri` stops with *"release has no downloadable Tauri assets"*,
-> so [build it yourself](../desktop-tauri/README.md).
 
 The preview installs beside the Electron app, not over it. It is called
 **AgentRQ Tauri**, it opens `agentrq-tauri://` links rather than `agentrq://`,
@@ -358,8 +354,9 @@ AGENTRQ_SERVER_URL=https://agentrq.example.com make desktop-dev
 The renderer is built from `frontend/src`, so a change to the web app appears in
 the desktop app with no separate step.
 
-The Tauri preview builds with `make desktop-tauri-dev` and `make desktop-tauri`;
-its setup is in [`desktop-tauri/README.md`](../desktop-tauri/README.md).
+The Tauri preview lives in
+[agentrq/agentrq-desktop](https://github.com/agentrq/agentrq-desktop), which
+pins this repository as a submodule and builds the same renderer.
 
 Deeper detail — how the app:// proxy works, why the connection screen lives
 where it does, how to run the verification scripts — is in

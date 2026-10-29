@@ -148,6 +148,11 @@ x86_64 | amd64 | x64) arch="x64" ;;
 esac
 
 if [ -n "$TAURI" ]; then
+	# The Tauri build is released from its own repository.
+	API="https://api.github.com/repos/agentrq/agentrq-desktop/releases"
+	RELEASES_PAGE="https://github.com/agentrq/agentrq-desktop/releases"
+	# Its tags are not agentrq's, so its icons come from agentrq's main.
+	icon_ref="main"
 	app_product="AgentRQ Tauri"
 	app_bundle="AgentRQ Tauri.app"
 	bin_name="agentrq-tauri"
@@ -441,7 +446,7 @@ else
 		esac
 		if mkdir -p "$icons_dir/$size/apps" 2>/dev/null &&
 			curl -fsL -o "$icons_dir/$size/apps/$bin_name.png" \
-				"$RAW/$tag/frontend/public/$src_icon" </dev/null; then
+				"$RAW/${icon_ref:-$tag}/frontend/public/$src_icon" </dev/null; then
 			icon_ok=1
 		else
 			rm -f "$icons_dir/$size/apps/$bin_name.png"

@@ -22,7 +22,6 @@ index: the detail lives in `docs/agents/`, one note per subsystem.
 - `backend/` — Go backend (Fiber HTTP, GORM, MCP server)
 - `frontend/` — Vue3 frontend, and the single source of UI for **both** the web and desktop builds
 - `desktop/` — Electron shell; its renderer is built from `frontend/src`
-- `desktop-tauri/` — the Tauri shell (preview) beside Electron, which stays the default: `core/` is pure Rust, `src-tauri/` the app, and its renderer is `desktop/src/renderer` unchanged, behind a `window.agentrq` bridge of its own
 - `daemon/` — `agentrqd`, which runs agents on somebody's machine. A **separate Go module**, wired in with a `replace` directive, and **Apache-2.0**: it must never import the AGPL `backend/`
 - `installers/` — the desktop and `agentrqd` install scripts (Apache-2.0); agentrq.com serves agentrq-landing's copy of each
 - `cli/` — `cli/agentrq-ws` (npm `@agentrq/agentrq-ws`), a dependency-free command-line client for a workspace, covering every workspace MCP tool
@@ -41,12 +40,11 @@ Each line says what the note will stop you getting wrong.
   needs a deadline; and five traps that leave no trace in source — Tailwind's
   scan root, the macOS title bar, macOS URL schemes, the macOS sandbox log
   line, and the Linux app icon.
-- **[Tauri desktop app](docs/agents/desktop-tauri.md)** — `desktop-tauri/`.
-  Where pure logic goes, how a bridge command is named, and the WebKit,
-  WebView2 and WKWebView traps the WP0 spikes found: request bodies, the `at`
-  cookie, the child webview on Linux, drag regions and a lost write at quit.
-  Its [parity checklist](docs/agents/desktop-tauri-parity.md) says what proves
-  each feature on each OS; update a row with the change that moves it.
+- **The Tauri desktop app lives in
+  [agentrq/agentrq-desktop](https://github.com/agentrq/agentrq-desktop)**, with
+  its notes. It pins this repository and builds `frontend/`,
+  `desktop/src/renderer`, `desktop/src/preload` and `desktop/src/main/extensions`
+  as they are, so a change there can break it; CI here cannot tell you.
 - **[Machines and the daemon](docs/agents/machines-and-daemon.md)** — `daemon/`,
   the machines pages, terminals. Why a reconnect must not kill the agents and a
   shutdown must; why the browser names no session; why the terminal socket

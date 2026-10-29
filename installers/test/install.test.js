@@ -32,7 +32,7 @@ while [ $# -gt 0 ]; do
 	esac
 done
 case "$url" in
-*api.github.com*) cat "$RELEASE" ;;
+*api.github.com*) echo "API $url" >> "$LOG"; cat "$RELEASE" ;;
 *)
 	echo "DOWNLOAD $url" >> "$LOG"
 	if [ -n "$MOCK_INSTALL" ]; then
@@ -60,8 +60,10 @@ function run({ arch, names, args = [], osName = 'Linux', env = {} }) {
     env: { HOME: path.join(root, 'home'), PATH: `${bin}:/usr/bin:/bin`, RELEASE: releaseFile, LOG: log, TMPDIR: root, ...env },
     encoding: 'utf8',
   });
-  const downloads = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean);
-  return { r, downloads, root };
+  const lines = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean);
+  const downloads = lines.filter((l) => l.startsWith('DOWNLOAD '));
+  const apis = lines.filter((l) => l.startsWith('API '));
+  return { r, downloads, apis, root };
 }
 
 const ELECTRON = ['AgentRQ-1.2.3.AppImage', 'AgentRQ-1.2.3-arm64.AppImage'];
@@ -92,6 +94,11 @@ for (const [arch, want] of [['x86_64', 'AgentRQ-Tauri-1.2.3-x86_64.AppImage'], [
     });
   }
 }
+
+test('--tauri asks agentrq-desktop for its releases, and plain asks agentrq', () => {
+  assert.ok(run({ arch: 'x86_64', names: TAURI, args: ['--tauri'] }).apis[0].startsWith('API https://api.github.com/repos/agentrq/agentrq-desktop/releases/'));
+  assert.ok(run({ arch: 'x86_64', names: ELECTRON }).apis[0].startsWith('API https://api.github.com/repos/agentrq/agentrq/releases/'));
+});
 
 test('--tauri with only Electron assets is refused', () => {
   const { r, downloads } = run({ arch: 'x86_64', names: ELECTRON, args: ['--tauri'] });

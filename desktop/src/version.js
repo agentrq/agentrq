@@ -5,9 +5,8 @@
 /**
  * Keeping the versions in this repository in step.
  *
- * The desktop app, the web frontend, the Go backend and the Tauri desktop app
- * (whose version is written in four files) each carry their own version, and
- * they are meant to be the same number. That matters more for the
+ * The desktop app, the web frontend and the Go backend each carry their own
+ * version, and they are meant to be the same number. That matters more for the
  * desktop app than for the others: its version is what electron-updater
  * compares against a GitHub Release to decide whether an update exists. A
  * desktop build stamped lower than the release it came from would offer to
@@ -22,21 +21,13 @@ export const VERSION_SOURCES = {
   desktop: 'desktop/package.json',
   frontend: 'frontend/package.json',
   backend: 'backend/internal/service/config/config.go',
-  tauri: 'desktop-tauri/package.json',
-  tauriConf: 'desktop-tauri/src-tauri/tauri.conf.json',
-  tauriCargo: 'desktop-tauri/src-tauri/Cargo.toml',
-  tauriCore: 'desktop-tauri/core/Cargo.toml',
 }
 
-/** How each source is read: a package.json-like JSON file, Go, or a Cargo.toml. */
+/** How each source is read: a package.json-like JSON file or Go. */
 export const VERSION_FORMATS = {
   desktop: 'json',
   frontend: 'json',
   backend: 'go',
-  tauri: 'json',
-  tauriConf: 'json',
-  tauriCargo: 'cargo',
-  tauriCore: 'cargo',
 }
 
 /**
@@ -66,26 +57,7 @@ export function parseGoVersion(contents) {
   return match ? match[1] : null
 }
 
-/**
- * Pull the package's own version out of a Cargo.toml.
- *
- * Only the `[package]` table counts: a dependency's `version = "…"` sits in
- * another table, and reading that would compare against somebody else's number.
- */
-export function parseCargoVersion(contents) {
-  let inPackage = false
-  for (const raw of String(contents ?? '').split('\n')) {
-    const line = raw.trim()
-    if (line.startsWith('[')) inPackage = line === '[package]'
-    else if (inPackage) {
-      const match = /^version\s*=\s*"([^"]+)"/.exec(line)
-      if (match) return match[1]
-    }
-  }
-  return null
-}
-
-const PARSERS = { json: parsePackageVersion, go: parseGoVersion, cargo: parseCargoVersion }
+const PARSERS = { json: parsePackageVersion, go: parseGoVersion }
 
 /** Every version, read from each source's contents (keyed as `VERSION_SOURCES`). */
 export function readVersions(contents) {

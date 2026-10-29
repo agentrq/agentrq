@@ -75,8 +75,6 @@ describe('noticeLinesFor', () => {
     for (const path of [
       'backend/internal/app/app.go',
       'desktop/src/main/index.js',
-      'desktop-tauri/src-tauri/src/lib.rs',
-      'desktop-tauri/core/src/links.rs',
       'frontend/src/App.vue',
     ]) {
       expect(noticeLinesFor(path), path).toEqual([...NOTICE_LINES, SPDX])
@@ -124,7 +122,7 @@ describe('extensionOf', () => {
 
 describe('isOurs', () => {
   it('claims the source we write', () => {
-    for (const path of ['backend/internal/app/app.go', 'frontend/src/App.vue', 'desktop/src/main/index.js', 'a/b.mjs', 'c.ts', 'desktop-tauri/src-tauri/build.rs']) {
+    for (const path of ['backend/internal/app/app.go', 'frontend/src/App.vue', 'desktop/src/main/index.js', 'a/b.mjs', 'c.ts', 'desktop/src/build.rs']) {
       expect(isOurs(path), path).toBe(true)
     }
   })
@@ -137,8 +135,8 @@ describe('isOurs', () => {
       'desktop/dist/renderer/app.js',
       'frontend/coverage/lcov-report/x.js',
       'plugins/deepseek-harness/lib/index.js',
-      'desktop-tauri/src-tauri/target/debug/build/out/x.rs',
-      'desktop-tauri/core/target/llvm-cov-target/a.rs',
+      'crates/x/target/debug/build/out/x.rs',
+      'crates/x/target/llvm-cov-target/a.rs',
     ]) {
       expect(isOurs(path), path).toBe(false)
     }
@@ -213,8 +211,8 @@ describe('withNotice', () => {
   })
 
   // Rust's `//!` is the module's documentation in the same way.
-  it('keeps a Rust module doc comment its own, with the AGPL line under desktop-tauri/', () => {
-    const path = 'desktop-tauri/src-tauri/src/scheme.rs'
+  it('keeps a Rust module doc comment its own, with the AGPL line under desktop/', () => {
+    const path = 'desktop/src/scheme.rs'
     const rs = '//! The app scheme.\n\nuse http::Response;\n'
 
     expect(withNotice(rs, path)).toBe(`// ${NOTICE_LINES[0]}\n// ${NOTICE_LINES[1]}\n// ${SPDX}\n\n${rs}`)

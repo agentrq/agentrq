@@ -1,4 +1,4 @@
-.PHONY: dev backend frontend desktop desktop-dev desktop-tauri desktop-tauri-dev install stop mocks test fmt hooks remote-claude remote-agy plugin-deepseek
+.PHONY: dev backend frontend desktop desktop-dev install stop mocks test fmt hooks remote-claude remote-agy plugin-deepseek
 
 remote-claude:
 	claude --name agentrq-code --autocompact 400k --dangerously-load-development-channels server:agentrq-0ZzhYQG2qtl
@@ -40,10 +40,10 @@ stop:
 	-@lsof -ti:3000,3001 | xargs kill -9 2>/dev/null || true
 	-@lsof -ti:5173 | xargs kill -9 2>/dev/null || true
 	-@pkill -f "go run main.go" || true
-	@# Every vite but the Tauri app's, which `make stop` did not start: `tauri dev`
+	@# Every vite but the Tauri app's (agentrq-desktop's src/tauri/), which `make stop` did not start: `tauri dev`
 	@# goes down with it. Its npm and sh wrappers name no package, so only the
 	@# node processes are killed, and their wrappers exit after them.
-	-@for p in $$(pgrep -f node_modules/.bin/vite); do ps -o args= -p $$p | grep -q desktop-tauri || kill $$p 2>/dev/null; done; true
+	-@for p in $$(pgrep -f node_modules/.bin/vite); do ps -o args= -p $$p | grep -q src/tauri/ || kill $$p 2>/dev/null; done; true
 	-@pkill -f "agentrq_binary" || true
 	-@lsof -ti:5174 | xargs kill -9 2>/dev/null || true
 	-@pkill -f "desktop/node_modules/electron" || true
@@ -61,17 +61,6 @@ desktop:
 	@echo "Building Desktop App..."
 	@cd desktop && npm run package
 
-# Run the Tauri desktop app (preview) in dev: Vite on :5175 plus `tauri dev`.
-# Linux needs libwebkit2gtk-4.1-dev, libayatana-appindicator3-dev and librsvg2-dev.
-desktop-tauri-dev:
-	@echo "Starting Tauri Desktop App..."
-	@cd desktop-tauri && npm run dev
-
-# Build the Tauri desktop app (preview) into desktop-tauri/src-tauri/target/.
-desktop-tauri:
-	@echo "Building Tauri Desktop App..."
-	@cd desktop-tauri && npm run build
-
 # Install all dependencies for the whole repo
 install:
 	@echo "Installing Dependencies..."
@@ -80,7 +69,6 @@ install:
 	@# The desktop renderer is built from frontend/src, so the frontend's
 	@# dependencies have to be in place before this.
 	@cd desktop && npm install
-	@cd desktop-tauri && npm install
 	@make hooks
 
 # Point git at the tracked hooks in .githooks so every clone shares them

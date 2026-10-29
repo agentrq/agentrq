@@ -54,7 +54,7 @@ export const NOTICE = NOTICE_LINES[0]
 export const SPDX = 'SPDX-License-Identifier: AGPL-3.0-only'
 export const SPDX_APACHE = 'SPDX-License-Identifier: Apache-2.0'
 
-const AGPL = /^(backend|desktop|desktop-tauri|frontend)\//
+const AGPL = /^(backend|desktop|frontend)\//
 const APACHE = /^(daemon|installers)\//
 
 /** Every line this file's notice has: the two above, and the licence where it applies. */
