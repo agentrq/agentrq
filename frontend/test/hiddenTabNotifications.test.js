@@ -7,6 +7,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   createHiddenTabNotifier,
   notificationUrl,
+  pageUnattended,
   showSystemNotification,
   systemNotificationFor,
 } from '../src/composables/useHiddenTabNotifications';
@@ -23,6 +24,20 @@ const reply = (over = {}) => ({
 const moved = { type: 'task.status', payload: { taskId: 't1', workspaceId: 'w1', title: 'Ship it', from: 'ongoing', to: 'blocked' } };
 const sessionFailed = { type: 'session.updated', payload: { status: 'failed', error: 'claude: not found' } };
 const names = { workspaceName: (id) => (id === 'w1' ? 'agentrq-code' : '') };
+
+describe('pageUnattended', () => {
+  it('is a hidden tab, or a visible one whose window is not focused', () => {
+    expect(pageUnattended({ hidden: true, hasFocus: () => true })).toBe(true);
+    expect(pageUnattended({ hidden: false, hasFocus: () => false })).toBe(true);
+    expect(pageUnattended({ hidden: false, hasFocus: () => true })).toBe(false);
+  });
+
+  it('reads the document itself by default', () => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    expect(pageUnattended()).toBe(true);
+    vi.restoreAllMocks();
+  });
+});
 
 describe('notificationUrl', () => {
   it('opens the task, else its workspace, else the app, under the base path', () => {

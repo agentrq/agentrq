@@ -1732,6 +1732,11 @@ if (!app.requestSingleInstanceLock()) {
   })
   app.on('child-process-gone', (_event, details) => handleChildProcessGone(details))
 
+  // Windows shows a toast only for the AUMID of the installer's Start menu
+  // shortcut, which is electron-builder's appId. Left unset, Electron makes up
+  // `electron.app.AgentRQ` and every notification is dropped without an error.
+  if (process.platform === 'win32') app.setAppUserModelId('com.agentrq.desktop')
+
   app.on('second-instance', (_event, argv) => {
     const url = deepLinkFromArgv(argv)
     if (url) openDeepLink(url)

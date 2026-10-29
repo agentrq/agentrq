@@ -545,7 +545,7 @@ import { useWorkspaceStore } from './stores/workspaceStore'
 import { useFormat } from './composables/useFormat'
 import { usePushNotifications } from './composables/usePushNotifications'
 import { toastFor, createPresenceToasts } from './composables/useStreamToasts'
-import { createHiddenTabNotifier, showSystemNotification } from './composables/useHiddenTabNotifications'
+import { createHiddenTabNotifier, pageUnattended, showSystemNotification } from './composables/useHiddenTabNotifications'
 import Toast from './components/Toast.vue'
 import DeleteModal from './components/DeleteModal.vue'
 import SidebarWorkspaces from './components/SidebarWorkspaces.vue'
@@ -980,10 +980,10 @@ const { connect, disconnect, isConnected, onEvent } = useEventBus(undefined, { b
 // A stream toast names the workspace it happened in, as the card's eyebrow.
 const showStreamToast = (toast) => notifyEvent(toast, workspaceStore.getWorkspace(toast.workspaceId)?.name ?? '')
 
-// The same news as a system notification while the tab is in the background,
+// The same news as a system notification while nobody is looking at the tab,
 // where a toast goes unseen. Not when Web Push already brings it.
 const notifyWhileHidden = createHiddenTabNotifier({
-  isHidden: () => document.hidden,
+  isHidden: () => pageUnattended(),
   permission: () => ('Notification' in window ? Notification.permission : 'denied'),
   isPushActive: usePushNotifications().checkWorkspaceSubscription,
   show: (notification) => showSystemNotification(notification, { basePath: window.__AGENTRQ_BASE_PATH__ }),

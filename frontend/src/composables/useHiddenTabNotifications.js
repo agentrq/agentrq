@@ -5,8 +5,8 @@
 /**
  * System notifications from the live stream, for a tab nobody is looking at.
  *
- * A toast is drawn inside the page, so with the tab in the background it is
- * news nobody sees. Web Push covers that, but only for a workspace this browser
+ * A toast is drawn inside the page, so with the tab in the background, or its
+ * window behind another app's, it is news nobody sees. Web Push covers that, but only for a workspace this browser
  * has subscribed to, on a server with VAPID keys. Otherwise, with the
  * permission already given, the page raises the notification itself.
  *
@@ -15,6 +15,15 @@
  */
 
 import { toastFor } from './useStreamToasts';
+
+/**
+ * Nobody is looking: the tab is hidden, or its window is not the focused one.
+ * Hidden alone missed a window left visible behind another app, which is where
+ * an installed PWA usually sits; the desktop shells notify then too.
+ */
+export function pageUnattended(doc = document) {
+  return doc.hidden || !doc.hasFocus();
+}
 
 /**
  * Where a notification opens: the task, else its workspace, else the app.
@@ -30,7 +39,7 @@ export function notificationUrl({ taskId, workspaceId }, basePath = '') {
 /**
  * The system notification an event deserves, or null.
  *
- * No open task is passed on: with the tab hidden, a reply on the task on
+ * No open task is passed on: with nobody looking, a reply on the task on
  * screen is as unseen as any other.
  */
 export function systemNotificationFor(event, { workspaceName = () => '', basePath = '' } = {}) {
@@ -67,7 +76,7 @@ export async function showSystemNotification(notification, { serviceWorker = nav
  * The stream handler. Resolves true when it raised a notification.
  *
  * @param {object} deps
- * @param {() => boolean} deps.isHidden            the tab is in the background
+ * @param {() => boolean} deps.isHidden            nobody is looking (`pageUnattended`)
  * @param {() => string} deps.permission           `Notification.permission`
  * @param {(workspaceId: string) => Promise<boolean>} deps.isPushActive
  *        Web Push already delivers this workspace's news to this browser
