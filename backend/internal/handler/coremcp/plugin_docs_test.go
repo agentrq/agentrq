@@ -398,11 +398,12 @@ func TestCursorPluginManifest(t *testing.T) {
 				t.Fatalf("cannot read %s: %v", manifestPath, err)
 			}
 			var manifest struct {
-				Name      string `json:"name"`
-				Version   string `json:"version"`
-				License   string `json:"license"`
-				Logo      string `json:"logo"`
-				Variables struct {
+				Name       string `json:"name"`
+				Version    string `json:"version"`
+				License    string `json:"license"`
+				Logo       string `json:"logo"`
+				MCPServers string `json:"mcpServers"`
+				Variables  struct {
 					Properties map[string]json.RawMessage `json:"properties"`
 				} `json:"variables"`
 			}
@@ -418,7 +419,13 @@ func TestCursorPluginManifest(t *testing.T) {
 			if logo, err := os.ReadFile(filepath.Join(pluginDir, manifest.Logo)); err != nil || !bytes.Contains(logo, []byte("<svg")) {
 				t.Errorf("%s logo %q is not an SVG in the plugin folder", manifestPath, manifest.Logo)
 			}
+			if license, err := os.ReadFile(filepath.Join(pluginDir, "LICENSE")); err != nil || !bytes.Contains(license, []byte("Apache License")) {
+				t.Errorf("%s has no Apache LICENSE beside its manifest", entry.Source)
+			}
 
+			if manifest.MCPServers != "./mcp.json" {
+				t.Errorf("%s mcpServers = %q, want ./mcp.json", manifestPath, manifest.MCPServers)
+			}
 			mcpPath := filepath.Join(pluginDir, "mcp.json")
 			raw, err = os.ReadFile(mcpPath)
 			if err != nil {
@@ -426,15 +433,16 @@ func TestCursorPluginManifest(t *testing.T) {
 			}
 			var mcp struct {
 				MCPServers map[string]struct {
-					URL string `json:"url"`
+					Type string `json:"type"`
+					URL  string `json:"url"`
 				} `json:"mcpServers"`
 			}
 			if err := json.Unmarshal(raw, &mcp); err != nil {
 				t.Fatalf("invalid JSON in %s: %v", mcpPath, err)
 			}
 			want := servers[entry.Name]
-			if got := mcp.MCPServers[want[0]].URL; got != want[1] || len(mcp.MCPServers) != 1 {
-				t.Errorf("%s = %v, want only %s at %s", mcpPath, mcp.MCPServers, want[0], want[1])
+			if got := mcp.MCPServers[want[0]]; got.Type != "http" || got.URL != want[1] || len(mcp.MCPServers) != 1 {
+				t.Errorf("%s = %v, want only %s, over http at %s", mcpPath, mcp.MCPServers, want[0], want[1])
 			}
 			// Every ${VAR} the server uses must be a variable the manifest
 			// declares, or Cursor has nothing to put there.

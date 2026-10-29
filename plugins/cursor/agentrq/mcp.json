@@ -1,6 +1,7 @@
 {
   "mcpServers": {
     "agentrq": {
+      "type": "http",
       "url": "https://mcp.agentrq.com/mcp"
     }
   }

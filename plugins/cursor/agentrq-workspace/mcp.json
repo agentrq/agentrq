@@ -1,6 +1,7 @@
 {
   "mcpServers": {
     "agentrq-workspace": {
+      "type": "http",
       "url": "${AGENTRQ_WORKSPACE_MCP_URL}"
     }
   }

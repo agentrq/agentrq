@@ -12,15 +12,20 @@
   "license": "Apache-2.0",
   "keywords": ["agentrq", "mcp", "tasks", "human-in-the-loop", "task-manager"],
   "logo": "assets/logo.svg",
+  "category": "developer-tools",
+  "tags": ["agentrq", "tasks", "human-in-the-loop", "mcp"],
   "variables": {
     "type": "object",
     "properties": {
       "AGENTRQ_WORKSPACE_MCP_URL": {
         "type": "string",
         "title": "Workspace MCP URL",
-        "description": "Your unique AgentRQ Workspace MCP URL, shown in the workspace's Setup tab (e.g., https://<WORKSPACEID>.mcp.agentrq.com/?token=...)"
+        "description": "Your unique AgentRQ Workspace MCP URL, shown in the workspace's Setup tab (e.g., https://<WORKSPACEID>.mcp.agentrq.com/?token=...)",
+        "writeOnly": true,
+        "format": "password"
       }
     },
     "required": ["AGENTRQ_WORKSPACE_MCP_URL"]
-  }
+  },
+  "mcpServers": "./mcp.json"
 }

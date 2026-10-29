@@ -11,5 +11,8 @@
   "repository": "https://github.com/agentrq/agentrq",
   "license": "Apache-2.0",
   "keywords": ["agentrq", "mcp", "tasks", "multi-agent", "human-in-the-loop", "agent-orchestration"],
-  "logo": "assets/logo.svg"
+  "logo": "assets/logo.svg",
+  "category": "developer-tools",
+  "tags": ["agentrq", "orchestration", "multi-agent", "mcp"],
+  "mcpServers": "./mcp.json"
 }
