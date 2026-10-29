@@ -386,6 +386,10 @@ var subActionIDByToolName = map[string]uint8{
 
 	"resource:new-workspace-guide":  model.SubActionIDMCPResourceNewWorkspaceGuide,
 	"resource:agentrqd-setup-guide": model.SubActionIDMCPResourceAgentrqdSetupGuide,
+	"resource:task":                 model.SubActionIDMCPResourceTask,
+	"resource:workspace-tasks":      model.SubActionIDMCPResourceWorkspaceTasks,
+	"resource:delegated-tasks":      model.SubActionIDMCPResourceDelegatedTasks,
+	"subscriptions/listen":          model.SubActionIDMCPSubscriptionsListen,
 
 	"prompt:new-workspace":    model.SubActionIDMCPPromptNewWorkspace,
 	"prompt:setup-agentrqd":   model.SubActionIDMCPPromptSetupAgentrqd,

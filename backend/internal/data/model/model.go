@@ -900,6 +900,11 @@ const (
 	SubActionIDMCPHelp
 	// The supervisor task tool's messages action.
 	SubActionIDMCPGetTaskMessages
+	// CoreMCP's task resources, and the listens that follow them.
+	SubActionIDMCPResourceTask
+	SubActionIDMCPResourceWorkspaceTasks
+	SubActionIDMCPResourceDelegatedTasks
+	SubActionIDMCPSubscriptionsListen
 )
 
 // ForkSettings is the one list of what a workspace fork inherits from its

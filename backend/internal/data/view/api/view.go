@@ -342,6 +342,18 @@ type (
 		Messages  []TaskMessage `json:"messages"`
 	}
 
+	// TaskResource is a task as the supervisor's task resource reads it: its
+	// state and the end of its conversation, what a change notice sends it to.
+	TaskResource struct {
+		ID            string        `json:"id"`
+		WorkspaceID   string        `json:"workspaceId"`
+		Title         string        `json:"title"`
+		Status        string        `json:"status"`
+		UpdatedAt     time.Time     `json:"updatedAt"`
+		AwaitingReply bool          `json:"awaitingReply"`
+		Messages      []TaskMessage `json:"messages"`
+	}
+
 	TaskMessage struct {
 		ID          string    `json:"id"`
 		CreatedAt   time.Time `json:"createdAt"`

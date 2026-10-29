@@ -31,6 +31,7 @@ type WorkspaceServer struct {
 	launcher     AgentLauncher
 	baseURL      string
 	pubsub       pubsub.Service
+	listeners    *TaskListeners
 }
 
 // ForkMerger is forkmerge.Merger: the merge REST runs too, so mergeFork stops
@@ -41,6 +42,10 @@ type ForkMerger interface {
 
 // NewServer creates a single MCP server instance with tools that span all user-accessible endpoints.
 func NewServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Service) *WorkspaceServer {
+	return newServer(crudCtrl, baseURL, pubsubSvc, NewTaskListeners())
+}
+
+func newServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Service, listeners *TaskListeners) *WorkspaceServer {
 	srv := mcp.NewServer(&mcp.Implementation{
 		Name:    "agentrq",
 		Version: config.Release(),
@@ -50,11 +55,11 @@ func NewServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Servic
 				MIMEType: "image/png",
 			},
 		},
-	}, &mcp.ServerOptions{})
+	}, &mcp.ServerOptions{SubscribeHandler: subscribeNothing, UnsubscribeHandler: unsubscribeNothing})
 
 	// Stateless, unlike the per-workspace server, which pushes to its agent over
-	// the SSE stream and so must keep sessions. Nothing here pushes, so there is
-	// no session worth holding — and only a stateless transport may serve
+	// the SSE stream and so must keep sessions. Only a listen pushes here, on
+	// the stream of its own request — and only a stateless transport may serve
 	// revision 2026-07-28. Older revisions are served exactly as before.
 	streamHandler := mcp.NewStreamableHTTPHandler(func(request *http.Request) *mcp.Server {
 		return srv
@@ -66,9 +71,11 @@ func NewServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Servic
 		crud:         crudCtrl,
 		baseURL:      baseURL,
 		pubsub:       pubsubSvc,
+		listeners:    listeners,
 	}
 
 	ws.registerTools()
+	listeners.serve(srv)
 	return ws
 }
 
@@ -362,8 +369,10 @@ func (s *WorkspaceServer) registerTools() {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "help", Description: helpToolDescription, Annotations: mcphint.Read("How to call these tools")}, s.handleHelpTool)
 	s.server.AddReceivingMiddleware(mcpevent.ActionToolsMiddleware(actionToolNames, legacyTools))
 
-	// Resources and prompts — see resources.go and prompts.go.
+	// Resources and prompts — see resources.go, task_resources.go and prompts.go.
 	s.registerResources()
+	s.registerTaskResources()
+	s.server.AddReceivingMiddleware(s.subscriptionsMiddleware)
 	s.registerPrompts()
 }
 

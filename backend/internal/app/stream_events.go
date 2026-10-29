@@ -150,3 +150,38 @@ func syncPanoAssignees(ctx context.Context, pano panoTaskSyncer, bus *eventbus.B
 		})
 	}
 }
+
+// taskListeners are the supervisor's listens to tasks (coremcp.TaskListeners).
+type taskListeners interface {
+	Listening() bool
+	TaskChanged(workspaceID, taskID, delegatedByWorkspaceID int64)
+}
+
+// notifyTaskListeners tells the supervisor's listens that a task changed: the
+// task itself, or a message in it, a question or permission request of its
+// agent included. It reads nothing while nobody listens.
+func notifyTaskListeners(ctx context.Context, repo base.Repository, listeners taskListeners, ev entity.CRUDEvent) {
+	if !listeners.Listening() {
+		return
+	}
+	var taskID int64
+	switch ev.ResourceType {
+	case entity.ResourceTask:
+		taskID = ev.ResourceID
+	case entity.ResourceMessage:
+		msg, err := repo.SystemGetMessage(ctx, ev.ResourceID)
+		if err != nil {
+			return
+		}
+		taskID = msg.TaskID
+	default:
+		return
+	}
+	// A deleted task is gone: its workspace comes from the event, and the
+	// workspace that delegated it is no longer known.
+	workspaceID, delegatedBy := ev.WorkspaceID, int64(0)
+	if t, err := repo.SystemGetTask(ctx, taskID); err == nil {
+		workspaceID, delegatedBy = t.WorkspaceID, t.CreatedByWorkspaceID
+	}
+	listeners.TaskChanged(workspaceID, taskID, delegatedBy)
+}

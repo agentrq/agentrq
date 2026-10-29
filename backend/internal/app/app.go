@@ -176,6 +176,9 @@ type (
 		taskAgents taskagent.Controller
 		// acpV1Hub holds the native ACP v1 connections, told on shutdown.
 		acpV1Hub *acpv1.Hub
+		// taskListeners holds the supervisor's listens to tasks, ended on
+		// shutdown.
+		taskListeners interface{ Close() }
 		// probes is told on shutdown, so readiness fails while it drains.
 		probes *health.Handler
 		// memq holds the queued emails, sent before shutdown returns.
@@ -612,6 +615,9 @@ func New(cfg Config) (*App, error) {
 		zlog.Error().Err(err).Msg("failed to start event consumer")
 	}
 
+	// The supervisor's listens to tasks, told of changes by the forwarder below.
+	taskListeners := handlercoremcp.NewTaskListeners()
+
 	// Central PubSub to EventBus SSE Forwarder
 	go func() {
 		sub, err := pubsubSvc.Subscribe(context.Background(), pubsub.SubscribeRequest{
@@ -631,6 +637,7 @@ func New(cfg Config) (*App, error) {
 			// Forwarded in the background, so a slow read never holds up the topic.
 			go forwardCRUDEvent(context.Background(), repo, bus, event)
 			go syncPanoAssignees(context.Background(), crudCtrl, bus, event)
+			go notifyTaskListeners(context.Background(), repo, taskListeners, event)
 		}
 		zlog.Warn().Msg("[app] central SSE forwarder pubsub channel closed")
 	}()
@@ -694,6 +701,7 @@ func New(cfg Config) (*App, error) {
 		MCPURL:     launcher.URLs.Core(),
 
 		OpenAIAppsChallenge: cfg.MCP.OpenAIAppsChallenge,
+		TaskListeners:       taskListeners,
 	}); err != nil {
 		return nil, fmt.Errorf("coremcp handler: %w", err)
 	}
@@ -877,7 +885,7 @@ func New(cfg Config) (*App, error) {
 	}
 
 	cancelOnErr = nil // App takes ownership; defer must not cancel.
-	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, taskAgents: taskAgentCtrl, acpV1Hub: acpV1Hub, probes: probes, memq: mqSvc, drainDelay: cfg.App.DrainDelay, cancel: appCancel}, nil
+	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, taskAgents: taskAgentCtrl, acpV1Hub: acpV1Hub, taskListeners: taskListeners, probes: probes, memq: mqSvc, drainDelay: cfg.App.DrainDelay, cancel: appCancel}, nil
 }
 
 // instanceID names this backend process for the (machineId, instanceId)
@@ -1271,11 +1279,12 @@ func (a *App) Run() error {
 }
 
 // Shutdown gracefully stops the app, within ctx's deadline. Readiness fails
-// and the app keeps serving for the drain delay. Then the native ACP links and
-// the event streams end, in-flight requests finish, and only after them the
-// app context is cancelled, so the consumers wired to it still see what those
-// requests published. Queued emails are sent, and buffered telemetry and agent
-// names written, before it returns. Safe to call once on SIGINT/SIGTERM.
+// and the app keeps serving for the drain delay. Then the native ACP links,
+// the supervisor's task listens and the event streams end, in-flight requests
+// finish, and only after them the app context is cancelled, so the consumers
+// wired to it still see what those requests published. Queued emails are
+// sent, and buffered telemetry and agent names written, before it returns.
+// Safe to call once on SIGINT/SIGTERM.
 func (a *App) Shutdown(ctx context.Context) error {
 	if a.probes != nil {
 		a.probes.Drain()
@@ -1286,6 +1295,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 	if a.acpV1Hub != nil {
 		a.acpV1Hub.CloseAll("the server is shutting down")
+	}
+	if a.taskListeners != nil {
+		a.taskListeners.Close()
 	}
 	err := a.server.Shutdown(ctx)
 	a.cancel()

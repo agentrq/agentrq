@@ -38,8 +38,8 @@ per-workspace server.
 **This server is stateless** (`StreamableHTTPOptions.Stateless = true`), which
 is how it serves protocol revision 2026-07-28 — the SDK offers that revision
 only on a stateless transport. Older revisions are served exactly as before;
-what changes is that GET and DELETE now answer 405, which costs a server that
-has never pushed a notification nothing. The **opposite** rule holds for the
+what changes is that GET and DELETE now answer 405. It pushes only on a
+`subscriptions/listen`, on that POST's own stream. The **opposite** rule holds for the
 per-workspace server, which must stay stateful — see
 [mcp-and-tasks.md](mcp-and-tasks.md). `protocol_version_test.go` in both
 packages fails if either is flipped.
@@ -65,3 +65,13 @@ supervisor invisible until a reload — which is how forks and task deletes were
 **`awaitingReply` is one rule written twice**: `replyState` in Go for the
 fields, `awaitingReplyClause` in SQL for the filter, so paging holds. Change
 both, and the shared cases in both tests, or list and filter disagree.
+
+**A task listen hears only what the app's CRUD forwarder tells it**
+(`notifyTaskListeners` → `TaskListeners`), so a change that publishes no CRUD
+event never reaches the supervisor, and the in-process pubsub means a listen
+on one instance misses another instance's changes. A listen is a POST that
+stays open: `App.Shutdown` closes the listeners before the drain, or every
+listen holds it until the deadline. **Authorization is decided once, when the
+listen opens**: `subscriptionsMiddleware` keeps only URIs of workspaces the
+caller owns, and the listen ends when its token expires. The SDK fans a notice
+out by URI alone, so never let a URI past it unchecked.

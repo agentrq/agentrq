@@ -5,6 +5,7 @@
 package coremcp
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -47,6 +48,9 @@ type Params struct {
 	// OpenAIAppsChallenge is OpenAI's domain verification token for a plugin
 	// submission; empty serves none.
 	OpenAIAppsChallenge string
+	// TaskListeners hears of the task changes the supervisor listens to.
+	// Optional: the server keeps its own when nil.
+	TaskListeners *TaskListeners
 }
 
 type Handler interface{}
@@ -88,7 +92,7 @@ func New(p Params) (Handler, error) {
 		cimd = auth.NewCIMDResolver()
 	}
 
-	srv := NewServer(p.Crud, p.BaseURL, p.PubSub)
+	srv := newServer(p.Crud, p.BaseURL, p.PubSub, cmp.Or(p.TaskListeners, NewTaskListeners()))
 	srv.forks = p.ForkMerger
 	srv.launcher = p.Launcher
 	h := &handler{

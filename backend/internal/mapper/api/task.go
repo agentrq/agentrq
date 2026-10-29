@@ -192,21 +192,41 @@ func FromTaskEntityToTaskMessagesMCPResponse(t entity.Task, msgs []entity.Messag
 		Status:    t.Status,
 		UpdatedAt: t.UpdatedAt,
 		Total:     total,
-		Messages:  make([]view.TaskMessage, len(msgs)),
+		Messages:  fromMessageEntitiesToTaskMessageViews(msgs),
 	}
+	payload, _ := json.Marshal(res)
+	return payload
+}
+
+// FromTaskEntityToTaskResourceMCPResponse is a task as the supervisor's task
+// resource reads it, with msgs, the end of its conversation.
+func FromTaskEntityToTaskResourceMCPResponse(t entity.Task, msgs []entity.Message, awaitingReply bool) []byte {
+	payload, _ := json.Marshal(view.TaskResource{
+		ID:            monoflake.ID(t.ID).String(),
+		WorkspaceID:   monoflake.ID(t.WorkspaceID).String(),
+		Title:         t.Title,
+		Status:        t.Status,
+		UpdatedAt:     t.UpdatedAt,
+		AwaitingReply: awaitingReply,
+		Messages:      fromMessageEntitiesToTaskMessageViews(msgs),
+	})
+	return payload
+}
+
+func fromMessageEntitiesToTaskMessageViews(msgs []entity.Message) []view.TaskMessage {
+	out := make([]view.TaskMessage, len(msgs))
 	for i, m := range msgs {
-		res.Messages[i] = view.TaskMessage{
+		out[i] = view.TaskMessage{
 			ID:        monoflake.ID(m.ID).String(),
 			CreatedAt: m.CreatedAt,
 			Sender:    m.Sender,
 			Text:      m.Text,
 		}
 		for _, a := range m.Attachments {
-			res.Messages[i].Attachments = append(res.Messages[i].Attachments, a.Filename)
+			out[i].Attachments = append(out[i].Attachments, a.Filename)
 		}
 	}
-	payload, _ := json.Marshal(res)
-	return payload
+	return out
 }
 
 func FromHTTPRequestToListTasksRequestEntity(c *fiber.Ctx) *entity.ListTasksRequest {

@@ -587,6 +587,10 @@ Beyond tools, the Supervisor also exposes MCP **resources** — read-only refere
 Resources:
 - `agentrq://guides/new-workspace`: how to set up a new workspace end-to-end.
 - `agentrq://guides/agentrqd-setup`: how to install `agentrqd` and enrol a new machine, with the enrol command templated to this server.
+- `agentrq://workspaces/{workspaceId}/tasks/{taskId}`: a task's status, `updatedAt`, `awaitingReply` and its last five text messages, without tool calls.
+- `agentrq://workspaces/{workspaceId}/tasks` and `agentrq://tasks/delegated-by/{workspaceId}`: the newest 50 tasks of a workspace, or of those a workspace delegated through `task.create`, as `task.list` returns them.
+
+A client on protocol revision 2026-07-28 can follow the three task resources with `subscriptions/listen`, on the caller's own workspaces, at most 100 per listen. It gets `notifications/resources/updated` when a task's status changes, a message arrives, or its agent asks a question or a permission, instead of polling.
 
 Prompts:
 - `new-workspace`: scaffold a new workspace for a stated purpose.

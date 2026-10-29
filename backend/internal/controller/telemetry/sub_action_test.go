@@ -53,6 +53,13 @@ func listedNames(t *testing.T, srv *sdkmcp.Server) []string {
 	for _, r := range resources.Resources {
 		names = append(names, "resource:"+r.Name)
 	}
+	templates, err := client.ListResourceTemplates(ctx, nil)
+	if err != nil {
+		t.Fatalf("list resource templates: %v", err)
+	}
+	for _, r := range templates.ResourceTemplates {
+		names = append(names, "resource:"+r.Name)
+	}
 
 	prompts, err := client.ListPrompts(ctx, nil)
 	if err != nil {
