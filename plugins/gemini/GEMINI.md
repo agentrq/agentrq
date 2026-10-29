@@ -35,7 +35,7 @@ one action's payload with an example.
    its agents already know how to do.
 3. **Read the whole task.** `task.get` returns it in full, thread included; act on that,
    not on the title alone. To follow up on a task you delegated, `task.messages` with
-   `since` returns only the newer messages, far cheaper than another `get`.
+   `since` returns only the newer messages, far more efficient than another `get`.
 4. **Keep the human in the loop.** When blocked or needing approval, set the status to
    `blocked` and say what you need with `task.reply`. `blocked` is the status the
    interface surfaces as needing attention.
