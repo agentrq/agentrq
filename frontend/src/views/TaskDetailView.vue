@@ -739,7 +739,7 @@
         </li>
       </ul>
     </div>
-    <TaskLinksPanel pinned class="hidden @min-[48rem]:flex absolute top-0 right-4 z-10 w-52 max-h-[calc(100%-0.5rem)] shadow-lg" :task="task" :task-id="taskId" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
+    <TaskLinksPanel pinned class="hidden @min-[48rem]:flex absolute top-0 right-4 z-10 max-h-[calc(100%-0.5rem)] shadow-lg" :task="task" :task-id="taskId" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
     </div>
 
     <!-- Tool call trajectory (replaces the chat area in place) -->

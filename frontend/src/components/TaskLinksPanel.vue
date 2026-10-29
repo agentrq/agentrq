@@ -6,16 +6,16 @@
 
 <template>
   <section v-if="links.total" class="border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden min-w-0"
-           :class="pinned ? 'flex-col' : 'w-full'" data-testid="task-links" :data-pinned="pinned || null">
-    <button type="button" @click="expanded = !expanded" :aria-expanded="expanded"
+           :class="pinned ? ['flex-col', folded ? '' : 'w-52'] : 'w-full'" data-testid="task-links" :data-pinned="pinned || null">
+    <button type="button" @click="expanded = !expanded" :aria-expanded="expanded" :title="folded ? 'Links' : null"
             class="w-full shrink-0 flex items-center gap-2 px-3 py-1.5 text-left bg-gray-50 dark:bg-zinc-800/80 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors min-w-0"
             data-testid="task-links-toggle">
       <svg class="w-3.5 h-3.5 shrink-0 text-gray-500 dark:text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-      <span class="text-[10px] font-semibold text-gray-800 dark:text-zinc-200 shrink-0">Links</span>
+      <span v-if="!folded" class="text-[10px] font-semibold text-gray-800 dark:text-zinc-200 shrink-0">Links</span>
       <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 shrink-0" data-testid="task-links-count">{{ links.total }}</span>
       <span v-if="!pinned" class="text-[11px] text-gray-600 dark:text-zinc-400 truncate min-w-0" data-testid="task-links-summary">· {{ summary }}</span>
-      <span class="flex-1"></span>
-      <svg class="w-3 h-3 shrink-0 text-gray-400 dark:text-zinc-500 transition-transform" :class="expanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+      <span v-if="!folded" class="flex-1"></span>
+      <svg v-if="!folded" class="w-3 h-3 shrink-0 text-gray-400 dark:text-zinc-500 transition-transform" :class="expanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
     </button>
 
     <div v-if="expanded" class="p-3 overflow-y-auto flex flex-col gap-2 min-w-0" :class="pinned ? 'min-h-0' : 'max-h-[45vh]'" data-testid="task-links-body">
@@ -40,7 +40,8 @@
  * Every link the task mentions: pull requests, Pano docs, other tasks and the
  * rest, so none has to be dug out of a long conversation.
  *
- * Pinned, it is a small note over the conversation's corner, open until folded.
+ * Pinned, it is a small note over the conversation's corner, open until folded
+ * to just its icon and count.
  * Otherwise it is a one-line bar under the plan that opens to the list, for a
  * view too narrow to have room beside the conversation.
  */
@@ -62,6 +63,7 @@ const GITHUB_MARK = 'M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.5
 const chip = 'max-w-full px-1.5 py-0.5 rounded border border-gray-200 dark:border-zinc-700 text-[11px] text-gray-700 dark:text-zinc-300 hover:border-gray-400 dark:hover:border-zinc-500 hover:text-gray-900 dark:hover:text-zinc-100 transition-colors';
 
 const expanded = ref(props.pinned);
+const folded = computed(() => props.pinned && !expanded.value);
 
 // Links to this server are what make a task or Pano link. In the desktop app
 // the page's own origin is `app://`, so the server is asked for its address.

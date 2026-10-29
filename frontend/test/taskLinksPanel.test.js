@@ -56,6 +56,8 @@ describe('TaskLinksPanel', () => {
     expect(q('task-links-summary').textContent).toBe('· gh#1099 · Roadmap · Login · example.com/docs')
     expect(q('task-links').hasAttribute('data-pinned')).toBe(false)
     expect(q('task-links-body')).toBeNull()
+    expect(q('task-links-toggle').textContent).toContain('Links')
+    expect(q('task-links-toggle').hasAttribute('title')).toBe(false)
   })
 
   it('opens to the links by group, routing in-app links and opening the rest in a new tab', async () => {
@@ -85,7 +87,7 @@ describe('TaskLinksPanel', () => {
     expect(q('task-links-body')).toBeNull()
   })
 
-  it('pinned, starts open as a note listing the links one under another, and folds to its header', async () => {
+  it('pinned, starts open as a note listing the links one under another, and folds to its icon and count', async () => {
     const { q, el } = mount(task, { pinned: true })
     await settle()
     expect(q('task-links').getAttribute('data-pinned')).toBe('true')
@@ -93,10 +95,16 @@ describe('TaskLinksPanel', () => {
     expect(q('task-links-summary')).toBeNull()
     expect(q('task-links-pr').querySelector('ul').className).toContain('flex-col')
     expect(el.querySelectorAll('[data-testid="task-links-body"] li')).toHaveLength(4)
+    expect(q('task-links').className).toContain('w-52')
+    expect(q('task-links-toggle').textContent).toContain('Links')
     q('task-links-toggle').click()
     await settle()
     expect(q('task-links-body')).toBeNull()
     expect(q('task-links-count').textContent.trim()).toBe('4')
+    expect(q('task-links').className).not.toContain('w-52')
+    expect(q('task-links-toggle').textContent.trim()).toBe('4')
+    expect(q('task-links-toggle').getAttribute('title')).toBe('Links')
+    expect(q('task-links-toggle').querySelectorAll('svg')).toHaveLength(1)
   })
 
   it('counts links to the server as in-app ones in the desktop app, whose page origin is app://', async () => {
