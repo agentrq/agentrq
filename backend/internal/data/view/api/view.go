@@ -314,6 +314,23 @@ type (
 		ToolCalls []ToolCall `json:"toolCalls"`
 	}
 
+	// TaskMessagesResponse is a task's conversation without its tool calls or
+	// the agent's telemetry: what the supervisor reads to follow up on a task.
+	TaskMessagesResponse struct {
+		Status    string        `json:"status"`
+		UpdatedAt time.Time     `json:"updatedAt"`
+		Total     int           `json:"total"`
+		Messages  []TaskMessage `json:"messages"`
+	}
+
+	TaskMessage struct {
+		ID          string    `json:"id"`
+		CreatedAt   time.Time `json:"createdAt"`
+		Sender      string    `json:"sender"`
+		Text        string    `json:"text"`
+		Attachments []string  `json:"attachments,omitempty"`
+	}
+
 	TaskStateTransition struct {
 		FromState  string    `json:"fromState"`
 		ToState    string    `json:"toState"`

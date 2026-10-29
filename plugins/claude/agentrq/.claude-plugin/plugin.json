@@ -1,7 +1,7 @@
 {
   "name": "agentrq",
   "description": "Human-in-the-loop task supervisor for AI agents",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "icon": "./.claude-plugin/icon.png",
   "privacyPolicyUrl": "https://agentrq.com/privacy",
   "mcpServers": {

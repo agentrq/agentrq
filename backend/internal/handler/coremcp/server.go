@@ -241,8 +241,17 @@ type CreateTaskParams struct {
 }
 
 type GetTaskParams struct {
+	WorkspaceID      string `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
+	TaskID           string `json:"taskId" jsonschema:"The task's ID (base62)."`
+	IncludeToolCalls bool   `json:"includeToolCalls,omitempty" jsonschema:"true adds the agent's tool calls, most of a busy task's size; without it toolCallCount still says how many there are. Default false."`
+	MessagesSince    string `json:"messagesSince,omitempty" jsonschema:"Only the messages created after this time (RFC3339), like the createdAt of the last message you read."`
+}
+
+type TaskMessagesParams struct {
 	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
 	TaskID      string `json:"taskId" jsonschema:"The task's ID (base62)."`
+	Since       string `json:"since,omitempty" jsonschema:"Only the messages created after this time (RFC3339), like the createdAt of the last message you read."`
+	Limit       int    `json:"limit,omitempty" jsonschema:"At most this many messages, the newest ones; default 20, capped at 100."`
 }
 
 type RespondToTaskParams struct {
@@ -625,6 +634,10 @@ func (s *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToo
 
 func (s *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolRequest, args GetTaskParams) (*mcp.CallToolResult, any, error) {
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getTask", parseID(args.WorkspaceID))
+	since, err := parseSince("messagesSince", args.MessagesSince)
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
 	userID := getUserID(ctx)
 	res, err := s.crud.GetTask(ctx, entity.GetTaskRequest{
 		UserID:      userID,
@@ -634,9 +647,43 @@ func (s *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolRe
 	if err != nil {
 		return errorResponse(err), nil, nil
 	}
+	if !args.IncludeToolCalls {
+		res.Task.ToolCalls = nil
+	}
+	res.Task.Messages = messagesAfter(res.Task.Messages, since)
 
 	b := apiMapper.FromGetTaskResponseEntityToHTTPResponse(res)
 	return textResponse(string(b)), nil, nil
+}
+
+// handleTaskMessages answers what a task's thread says, oldest first, without
+// the tool calls and agent telemetry that make up most of a get.
+func (s *WorkspaceServer) handleTaskMessages(ctx context.Context, req *mcp.CallToolRequest, args TaskMessagesParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getTaskMessages", parseID(args.WorkspaceID))
+	since, err := parseSince("since", args.Since)
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+	res, err := s.crud.GetTask(ctx, entity.GetTaskRequest{
+		UserID:      getUserID(ctx),
+		WorkspaceID: parseID(args.WorkspaceID),
+		TaskID:      parseID(args.TaskID),
+	})
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+
+	msgs := textMessages(messagesAfter(res.Task.Messages, since))
+	total := len(msgs)
+	limit := args.Limit
+	if limit <= 0 {
+		limit = defaultTaskMessages
+	}
+	limit = min(limit, maxTaskMessages)
+	if len(msgs) > limit {
+		msgs = msgs[len(msgs)-limit:]
+	}
+	return textResponse(string(apiMapper.FromTaskEntityToTaskMessagesMCPResponse(res.Task, msgs, total))), nil, nil
 }
 
 func (s *WorkspaceServer) handleRespondToTask(ctx context.Context, req *mcp.CallToolRequest, args RespondToTaskParams) (*mcp.CallToolResult, any, error) {

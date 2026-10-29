@@ -19,6 +19,11 @@ type mockTaskCrud struct {
 
 	createTask func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error)
 	listTasks  func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error)
+	getTask    func(ctx context.Context, req entity.GetTaskRequest) (*entity.GetTaskResponse, error)
+}
+
+func (m *mockTaskCrud) GetTask(ctx context.Context, req entity.GetTaskRequest) (*entity.GetTaskResponse, error) {
+	return m.getTask(ctx, req)
 }
 
 func (m *mockTaskCrud) CreateTask(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {

@@ -75,7 +75,7 @@ func TestTaskTool_RefusesABadCall(t *testing.T) {
 	}{
 		{"create", map[string]any{"title": "t"}, "create: payload needs workspaceId"},
 		{"respond", map[string]any{"workspaceId": "a", "taskId": "b", "decision": "allow"}, `respond: bad payload: unknown field "decision"`},
-		{"archive", nil, `unknown action "archive": use list, listAll, create, get, reply, respond, updateStatus, updateSortingOrder, updateAssignee, updateAllowAll, updateSchedule, delete, getAttachment or help`},
+		{"archive", nil, `unknown action "archive": use list, listAll, create, get, messages, reply, respond, updateStatus, updateSortingOrder, updateAssignee, updateAllowAll, updateSchedule, delete, getAttachment or help`},
 	} {
 		res := toolResult(srv.handleTask(authedContext(), nil, TaskParams{Action: tc.action, Payload: tc.payload}))
 		if !res.isError || res.text != tc.want {

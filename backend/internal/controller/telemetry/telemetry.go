@@ -333,6 +333,7 @@ var subActionIDByToolName = map[string]uint8{
 	"getMemory":               model.SubActionIDMCPGetMemory,
 	"getSkill":                model.SubActionIDMCPGetSkill,
 	"getTask":                 model.SubActionIDMCPGetTask,
+	"getTaskMessages":         model.SubActionIDMCPGetTaskMessages,
 	"getWorkflow":             model.SubActionIDMCPGetWorkflow,
 	"getWorkflowText":         model.SubActionIDMCPGetWorkflowText,
 	"getWorkspace":            model.SubActionIDMCPGetWorkspace,

@@ -21,7 +21,8 @@ Gemini extension's `plugins/gemini/README.md` need a table row too —
 `plugin_docs_test.go` checks those. So does `setupTools` (`setup.go`), the
 list a browser opening `/mcp` sees; `TestSetupPage_ListsEveryTool` checks it.
 The setup tab's permissions snippet allows this server as `mcp__agentrq__*`,
-so it needs nothing.
+so it needs nothing. A new *action* on a tool goes in `SUPERVISOR_ACTIONS`
+beside it, and in `newerActions` (`action_tools_test.go`) with its telemetry name.
 
 **Adding a *resource* or *prompt* trips none of the above.** Those parity
 tests match only `mcp.AddTool(s.server, &mcp.Tool{Name: "..."` — an

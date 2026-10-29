@@ -898,6 +898,8 @@ const (
 	SubActionIDMCPWorkflows
 	SubActionIDMCPMachines
 	SubActionIDMCPHelp
+	// The supervisor task tool's messages action.
+	SubActionIDMCPGetTaskMessages
 )
 
 // ForkSettings is the one list of what a workspace fork inherits from its

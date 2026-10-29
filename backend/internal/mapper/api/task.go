@@ -147,6 +147,31 @@ func FromGetTaskResponseEntityToHTTPResponse(rs *entity.GetTaskResponse) []byte 
 	return payload
 }
 
+// FromTaskEntityToTaskMessagesMCPResponse answers the supervisor's task
+// messages: msgs, already chosen from t's, and total, how many matched before
+// the limit.
+func FromTaskEntityToTaskMessagesMCPResponse(t entity.Task, msgs []entity.Message, total int) []byte {
+	res := view.TaskMessagesResponse{
+		Status:    t.Status,
+		UpdatedAt: t.UpdatedAt,
+		Total:     total,
+		Messages:  make([]view.TaskMessage, len(msgs)),
+	}
+	for i, m := range msgs {
+		res.Messages[i] = view.TaskMessage{
+			ID:        monoflake.ID(m.ID).String(),
+			CreatedAt: m.CreatedAt,
+			Sender:    m.Sender,
+			Text:      m.Text,
+		}
+		for _, a := range m.Attachments {
+			res.Messages[i].Attachments = append(res.Messages[i].Attachments, a.Filename)
+		}
+	}
+	payload, _ := json.Marshal(res)
+	return payload
+}
+
 func FromHTTPRequestToListTasksRequestEntity(c *fiber.Ctx) *entity.ListTasksRequest {
 	var workspaceID int64
 	if idParam := c.Params("id"); idParam != "" {

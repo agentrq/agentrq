@@ -118,6 +118,9 @@ func TestServerHandlers_EmitToolCallTelemetry(t *testing.T) {
 		{"getTask", testWorkspace, func(ctx context.Context, srv *WorkspaceServer) (*mcp.CallToolResult, any, error) {
 			return srv.handleGetTask(ctx, nil, GetTaskParams{WorkspaceID: base62(testWorkspace), TaskID: base62(testTriggerID)})
 		}},
+		{"getTaskMessages", testWorkspace, func(ctx context.Context, srv *WorkspaceServer) (*mcp.CallToolResult, any, error) {
+			return srv.handleTaskMessages(ctx, nil, TaskMessagesParams{WorkspaceID: base62(testWorkspace), TaskID: base62(testTriggerID)})
+		}},
 		{"respondToTask", testWorkspace, func(ctx context.Context, srv *WorkspaceServer) (*mcp.CallToolResult, any, error) {
 			return srv.handleRespondToTask(ctx, nil, RespondToTaskParams{WorkspaceID: base62(testWorkspace), TaskID: base62(testTriggerID), Action: "allow"})
 		}},

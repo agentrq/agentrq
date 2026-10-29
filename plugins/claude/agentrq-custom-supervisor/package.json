@@ -1,6 +1,6 @@
 {
   "name": "agentrq-custom-supervisor",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AgentRQ Supervisor Plugin for Claude Code, for a self-hosted server",
   "keywords": [
     "claude-plugin",

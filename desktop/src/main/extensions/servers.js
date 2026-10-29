@@ -89,6 +89,7 @@ export const SUPERVISOR_ACTIONS = Object.freeze({
     'listAll',
     'create',
     'get',
+    'messages',
     'reply',
     'respond',
     'updateStatus',

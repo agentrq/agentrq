@@ -1,6 +1,6 @@
 {
   "name": "agentrq",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "description": "Human-in-the-loop task supervisor for AI agents",
   "mcpServers": {
     "agentrq": {

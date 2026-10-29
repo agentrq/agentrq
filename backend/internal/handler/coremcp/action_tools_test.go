@@ -7,6 +7,7 @@ package coremcp
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -20,8 +21,12 @@ import (
 // Every retired tool is an action, and that action, given its own example,
 // runs the handler of the tool it replaced: the example decodes into the
 // payload with every required field, and the call is still recorded under the
-// old name. An action with no example takes no payload.
+// old name. An action with no example takes no payload. An action added since
+// replaced no tool, and is recorded under the name newerActions gives it.
 func TestActionTools_EveryExampleRunsTheToolItReplaced(t *testing.T) {
+	newerActions := map[string]mcpevent.LegacyTool{
+		"getTaskMessages": {Tool: "task", Action: "messages"},
+	}
 	var recorded string
 	fps := &fakePubSub{onPublish: func(req pubsub.PublishRequest) {
 		if recorded == "" {
@@ -42,7 +47,9 @@ func TestActionTools_EveryExampleRunsTheToolItReplaced(t *testing.T) {
 		byTool[tool.Name] = tool.Actions
 	}
 	covered := map[string]bool{}
-	for old, l := range legacyTools {
+	recordedAs := maps.Clone(legacyTools)
+	maps.Copy(recordedAs, newerActions)
+	for old, l := range recordedAs {
 		var action *mcpevent.ToolAction
 		for i, a := range byTool[l.Tool] {
 			if a.Name == l.Action {
