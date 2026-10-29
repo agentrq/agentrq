@@ -172,6 +172,20 @@
             <span v-if="!isCollapsed || isMobileMenuOpen">Pano</span>
           </router-link>
 
+          <!-- Desktop and large screens only, like the workspace board it shows. -->
+          <router-link to="/kanban"
+              @mouseenter="showTooltip($event, 'Kanban')" @mouseleave="hideTooltip"
+              class="hidden md:flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
+              :class="[
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
+                $route.path === '/kanban' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+              ]">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h3a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM15 5a1 1 0 011-1h3a1 1 0 011 1v9a1 1 0 01-1 1h-3a1 1 0 01-1-1V5z" />
+            </svg>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Kanban</span>
+          </router-link>
+
           <router-link to="/skills"
               @mouseenter="showTooltip($event, 'Skills')" @mouseleave="hideTooltip"
               class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
@@ -196,20 +210,6 @@
           <div v-if="!isCollapsed || isMobileMenuOpen" class="p-2 border-gray-200/50 dark:border-zinc-600/50">
             <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Tasks</span>
           </div>
-
-          <!-- Desktop and large screens only, like the workspace board it shows. -->
-          <router-link to="/kanban"
-              @mouseenter="showTooltip($event, 'Kanban')" @mouseleave="hideTooltip"
-              class="hidden md:flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
-              :class="[
-                (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
-                $route.path === '/kanban' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
-              ]">
-            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h3a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM15 5a1 1 0 011-1h3a1 1 0 011 1v9a1 1 0 01-1 1h-3a1 1 0 01-1-1V5z" />
-            </svg>
-            <span v-if="!isCollapsed || isMobileMenuOpen">Kanban</span>
-          </router-link>
 
           <router-link to="/tasks/scheduled"
               @mouseenter="showTooltip($event, 'Scheduled')" @mouseleave="hideTooltip"
