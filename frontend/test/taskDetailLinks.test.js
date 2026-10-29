@@ -4,7 +4,7 @@
 
 /**
  * The task's links, mounted for real: read from the task's description and
- * messages, kept current as messages arrive, pinned beside the conversation
+ * messages, kept current as messages arrive, pinned over the conversation
  * and under the plan for a narrow view, and a followed link counted.
  */
 
@@ -131,6 +131,9 @@ describe('TaskDetailView and the task links', () => {
     expect(bar.className).toContain('@min-[48rem]:hidden')
     expect(pinned.getAttribute('data-pinned')).toBe('true')
     expect(pinned.className).toContain('@min-[48rem]:flex')
+    // It floats over the conversation, which keeps its full width.
+    expect(pinned.className).toContain('absolute')
+    expect(pinned.parentElement.className).toContain('relative')
     expect(summary(el)).toBe('· gh#12 · Roadmap')
 
     const pr = pinned.querySelector('[data-testid="task-links-pr"] a')

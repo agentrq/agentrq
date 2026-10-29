@@ -177,7 +177,7 @@
           <!-- The agent's plan, pinned here so it stays in view however long the conversation gets -->
           <TaskPlanPanel v-if="taskPlan" class="mb-1" :plan="taskPlan" :messages="task.messages || []" :disabled="offline" @comment="commentOnPlan" />
 
-          <!-- Every link the task mentions. Pinned beside the conversation where
+          <!-- Every link the task mentions. Pinned over the conversation where
                there is room for it; here, under the plan, where there is not. -->
           <TaskLinksPanel class="mb-1 @min-[48rem]:hidden" :task="task" :task-id="taskId" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
 
@@ -197,8 +197,8 @@
       </div>
     </div>
 
-    <!-- The conversation, with the task's links pinned beside it -->
-    <div v-if="activeView === 'chat'" class="flex-1 min-h-0 flex">
+    <!-- The conversation, with the task's links pinned over its corner -->
+    <div v-if="activeView === 'chat'" class="flex-1 min-h-0 flex relative">
     <!-- Scrollable chat area -->
     <div ref="scrollContainer" class="flex-1 min-w-0 overflow-y-auto px-1 @min-[40rem]:px-4 pt-0 pb-6 flex flex-col gap-4 scroll-smooth custom-scrollbar overflow-x-hidden relative" style="overscroll-behavior-y: contain;">
 
@@ -739,7 +739,7 @@
         </li>
       </ul>
     </div>
-    <TaskLinksPanel pinned class="hidden @min-[48rem]:flex w-52 shrink-0 self-start max-h-[calc(100%-0.5rem)] mr-4" :task="task" :task-id="taskId" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
+    <TaskLinksPanel pinned class="hidden @min-[48rem]:flex absolute top-0 right-4 z-10 w-52 max-h-[calc(100%-0.5rem)] shadow-lg" :task="task" :task-id="taskId" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
     </div>
 
     <!-- Tool call trajectory (replaces the chat area in place) -->

@@ -40,7 +40,7 @@
  * Every link the task mentions: pull requests, Pano docs, other tasks and the
  * rest, so none has to be dug out of a long conversation.
  *
- * Pinned, it is a small note beside the conversation, open until folded.
+ * Pinned, it is a small note over the conversation's corner, open until folded.
  * Otherwise it is a one-line bar under the plan that opens to the list, for a
  * view too narrow to have room beside the conversation.
  */
