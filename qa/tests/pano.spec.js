@@ -225,11 +225,44 @@ test('a checklist item assigned to a workspace follows its task, and a mention p
   const read = await pano(call, { action: 'read', id: doc.id })
   expect(read.markdown, 'agents read the assignee and its status').toContain(`- [x] backend → [@${workspace.name}](/workspaces/${workspace.id}/tasks/${task.id} "completed")`)
 
+  // Completed before its work landed: unticked by hand, the item stays so,
+  // and says so, until the task's status changes again.
+  const box = item.locator('input[type="checkbox"]')
+  const paper = page.locator('article').filter({ has: page.getByTestId('pano-body') })
+  await paper.screenshot({ path: test.info().outputPath('pano-completed-light.png'), animations: 'disabled' })
+  const unticked = nextResponse(page, 'PUT', `/api/v1/pano/${doc.id}`)
+  await box.click()
+  expect((await unticked).status(), 'the untick is saved').toBe(200)
+  await expect(chip).toHaveAttribute('data-unticked', '')
+  await expect(chip).toContainText('Completed · not ticked')
+  await expect(box).not.toBeChecked()
+  await expect(page.getByTestId('pano-progress')).toContainText('0 of 3 done')
+  await paper.screenshot({ path: test.info().outputPath('pano-not-ticked-light.png'), animations: 'disabled' })
+  const held = await pano(call, { action: 'read', id: doc.id })
+  expect(held.markdown, 'agents read the box and the task\'s status').toContain(`- [ ] backend → [@${workspace.name}](/workspaces/${workspace.id}/tasks/${task.id} "completed")`)
+  await setTaskStatus(page, workspace.id, task.id, 'ongoing')
+  await expect(box, 'reopened, it follows its task again').toBeDisabled()
+  await setTaskStatus(page, workspace.id, task.id, 'completed')
+  await expect(box, 'completed again, it ticks').toBeChecked()
+  await expect(chip).not.toHaveAttribute('data-unticked', '')
+
   // The menu of an assigned item names its task.
   await item.hover()
   await item.locator('[data-pano-assign]').click()
   await expect(page.getByTestId('pano-item-task')).toContainText(task.id)
-  await page.keyboard.press('Escape')
+  // Ticked by hand, it keeps its box whatever its task does.
+  await paper.screenshot({ path: test.info().outputPath('pano-tick-mode-light.png'), animations: 'disabled' })
+  const byHand = nextResponse(page, 'PUT', `/api/v1/pano/${doc.id}`)
+  await page.getByTestId('pano-item-tick-mode').click()
+  expect((await byHand).status()).toBe(200)
+  await expect(chip).toHaveAttribute('data-manual', '')
+  await setTaskStatus(page, workspace.id, task.id, 'ongoing')
+  await expect(chip).toHaveAttribute('data-status', 'ongoing')
+  await expect(box, 'a manual item never unticks itself').toBeChecked()
+  const manual = await pano(call, { action: 'read', id: doc.id })
+  expect(manual.markdown).toContain(`- [x] backend → [@${workspace.name}](/workspaces/${workspace.id}/tasks/${task.id} "ongoing manual")`)
+  await setTaskStatus(page, workspace.id, task.id, 'completed')
+  await expect(chip).toHaveAttribute('data-status', 'completed')
   await page.getByTestId('pano-title').click()
 
   // A mention, picked from the suggestions, pings the workspace's agent.
@@ -354,7 +387,8 @@ test('a task linked from a doc opens beside it', async ({ page, workspace }) => 
   await expect(page.locator('[data-pano-chat]')).toBeVisible()
   await expect(page.getByTestId('pano-body')).toBeVisible()
   if (process.env.QA_SCREENSHOT) await page.screenshot({ path: process.env.QA_SCREENSHOT })
-  traffic.expectClean()
+  // A task with no agent plan answers 404 for it.
+  traffic.expectClean({ allow: ['404 /plan'] })
 })
 
 // A doc is linked to the tasks that worked on it without the agent writing a

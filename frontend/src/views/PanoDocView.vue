@@ -34,7 +34,7 @@ const router = useRouter()
 const id = route.path === '/pano/new' ? null : String(route.params.docId ?? route.params.id)
 const {
   doc, loading, error, busy, editing, draft, conflict,
-  load, startEditing, cancelEditing, reloadEditing, addDraftFile, removeDraftFile, save, checkItem, assignItem, remove, comment, attach,
+  load, startEditing, cancelEditing, reloadEditing, addDraftFile, removeDraftFile, save, checkItem, tickByHand, assignItem, remove, comment, attach,
 } = usePanoDoc(id, { api, color: route.query.color })
 const { workspaces } = storeToRefs(useWorkspaceStore())
 const { notifySuccess, notifyError } = useToasts()
@@ -196,7 +196,7 @@ function openItemMenu(container, button) {
     index: panoCheckboxIndex(container, button.previousElementSibling),
     top: at.bottom - paper.top + 4,
     left: Math.max(at.left - paper.left, 8),
-    task: chip && { path: chip.dataset.panoTask, id: chip.dataset.panoTask.split('/').pop(), status: chip.dataset.status, name: chip.childNodes[1].textContent },
+    task: chip && { path: chip.dataset.panoTask, id: chip.dataset.panoTask.split('/').pop(), status: chip.dataset.status, name: chip.childNodes[1].textContent, manual: 'manual' in chip.dataset },
   }
   itemMenuButton = button
   button.setAttribute('aria-expanded', 'true')
@@ -208,6 +208,12 @@ function closeItemMenu(event) {
   itemMenuButton?.setAttribute('aria-expanded', 'false')
   itemMenuButton = null
   itemMenu.value = null
+}
+
+async function onTickByHand() {
+  const { index, task } = itemMenu.value
+  closeItemMenu()
+  await run(() => tickByHand(index, !task.manual))
 }
 
 async function onAssign(workspace) {
@@ -469,6 +475,8 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
                 <span class="shrink-0 text-[10px] text-gray-500 dark:text-zinc-400">{{ PANO_TASK_STATUSES[itemMenu.task.status] }}</span>
                 <span class="ml-auto shrink-0 font-mono text-[10px] text-gray-400 dark:text-zinc-500">{{ itemMenu.task.id }}</span>
               </a>
+              <button type="button" role="menuitem" data-test="pano-item-tick-mode" :disabled="busy" @click="onTickByHand"
+                class="block w-full px-3 py-1.5 text-left text-xs text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-50">{{ itemMenu.task.manual ? 'Tick when its task completes' : 'Tick by hand' }}</button>
               <div class="my-1 border-t border-gray-100 dark:border-zinc-800"></div>
             </template>
             <p :class="menuHeader">{{ itemMenu.task ? 'Reassign to' : 'Assign to' }}</p>

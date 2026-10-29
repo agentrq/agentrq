@@ -251,6 +251,10 @@ func TestPanoRepository_EveryStatementFailure(t *testing.T) {
 		{"update with links", func(r Repository) error {
 			return r.SavePanoDoc(ctx, model.PanoDoc{ID: 1, Version: 1, UserID: skUser, UpdatedAt: later, ExpiresAt: later.Add(time.Hour)}, false, nil, nil, []model.PanoDocTask{{ID: 71, DocID: 1, TaskID: 81}})
 		}},
+		{"update with an unticked link", func(r Repository) error {
+			return r.SavePanoDoc(ctx, model.PanoDoc{ID: 1, Version: 1, UserID: skUser, UpdatedAt: later, ExpiresAt: later.Add(time.Hour)}, false, nil, nil, []model.PanoDocTask{{ID: 71, DocID: 1, TaskID: 81, Unticked: true}})
+		}},
+		{"clear unticked", func(r Repository) error { return r.ClearPanoUnticked(ctx, skUser, 81) }},
 		{"link", func(r Repository) error {
 			_, err := r.LinkPanoDocTasks(ctx, []model.PanoDocTask{{ID: 71, DocID: 1, TaskID: 81}})
 			return err
@@ -369,6 +373,66 @@ func TestPanoRepository_DocTaskLinks(t *testing.T) {
 	db.Model(&model.PanoDocTask{}).Where("task_id = ?", 32).Count(&left)
 	if left != 0 {
 		t.Errorf("%d links to the deleted task are left, want none", left)
+	}
+}
+
+// A save marks the doc's links Unticked as it is told, clearing the others;
+// a task's status moving on clears its own, in every doc and only its
+// account's.
+func TestPanoRepository_Unticked(t *testing.T) {
+	ctx := context.Background()
+	db, r := panoDB(t)
+	seedPano(t, r)
+	for _, task := range []model.Task{
+		{ID: 31, UserID: skUser, WorkspaceID: 7, Status: "completed"},
+		{ID: 32, UserID: skUser, WorkspaceID: 7, Status: "completed"},
+	} {
+		if err := db.Create(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	later := panoNow.Add(time.Hour)
+	save := func(version int64, links ...model.PanoDocTask) {
+		t.Helper()
+		if err := r.SavePanoDoc(ctx, model.PanoDoc{ID: 1, Version: version, UserID: skUser, UpdatedAt: later, ExpiresAt: later.Add(time.Hour)}, false, nil, nil, links); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unticked := func() []int64 {
+		t.Helper()
+		got, err := r.ListPanoDocTasks(ctx, skUser, []int64{1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []int64
+		for _, s := range got {
+			if s.Unticked {
+				ids = append(ids, s.TaskID)
+			}
+		}
+		return ids
+	}
+	save(1, model.PanoDocTask{ID: 41, UserID: skUser, DocID: 1, TaskID: 31, Unticked: true}, model.PanoDocTask{ID: 42, UserID: skUser, DocID: 1, TaskID: 32})
+	if got := unticked(); !reflect.DeepEqual(got, []int64{31}) {
+		t.Errorf("after a save the unticked tasks are %v, want 31", got)
+	}
+	save(2, model.PanoDocTask{ID: 43, UserID: skUser, DocID: 1, TaskID: 31}, model.PanoDocTask{ID: 44, UserID: skUser, DocID: 1, TaskID: 32, Unticked: true})
+	if got := unticked(); !reflect.DeepEqual(got, []int64{32}) {
+		t.Errorf("after a second save the unticked tasks are %v, want only 32", got)
+	}
+	// Another account's link to the same task is never cleared.
+	if err := db.Create(&model.PanoDocTask{ID: 45, UserID: skUser + 1, DocID: 2, TaskID: 32, Unticked: true}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := r.ClearPanoUnticked(ctx, skUser, 32); err != nil {
+		t.Fatal(err)
+	}
+	if got := unticked(); len(got) != 0 {
+		t.Errorf("after clearing task 32 the unticked tasks are %v, want none", got)
+	}
+	var theirs model.PanoDocTask
+	if err := db.First(&theirs, 45).Error; err != nil || !theirs.Unticked {
+		t.Errorf("another account's link is %+v, %v, want it left unticked", theirs, err)
 	}
 }
 

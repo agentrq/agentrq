@@ -208,6 +208,7 @@ a.pano-assignee { cursor: pointer; }
 .pano-assignee[data-status="completed"] .pano-status, .pano-assignee[data-status="done"] .pano-status { background: #16a34a; }
 .pano-assignee[data-status="rejected"] .pano-status { background: #dc2626; }
 .pano-assignee .pano-status-label { font-weight: 500; opacity: 0.8; }
+.pano-assignee[data-unticked] .pano-status { background: transparent; box-shadow: inset 0 0 0 2px #16a34a; }
 .pano-mention { font-weight: 700; color: rgb(37 99 235); }
 .dark .pano-mention { color: rgb(96 165 250); }
 .md-body a { text-decoration: underline; }

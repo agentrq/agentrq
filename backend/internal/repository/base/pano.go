@@ -85,18 +85,46 @@ func (r *repository) SavePanoDoc(ctx context.Context, d model.PanoDoc, create bo
 				return err
 			}
 		}
-		_, err := linkPanoDocTasks(tx, links)
-		return err
+		if _, err := linkPanoDocTasks(tx, links); err != nil {
+			return err
+		}
+		return setPanoUnticked(tx, d.ID, links)
 	})
 }
 
+// setPanoUnticked marks the doc's links to the tasks in links that are
+// Unticked, and clears every other link of the doc.
+func setPanoUnticked(tx *gorm.DB, docID int64, links []model.PanoDocTask) error {
+	if err := tx.Model(&model.PanoDocTask{}).Where("doc_id = ? AND unticked = ?", docID, true).UpdateColumn("unticked", false).Error; err != nil {
+		return err
+	}
+	var held []int64
+	for _, l := range links {
+		if l.Unticked {
+			held = append(held, l.TaskID)
+		}
+	}
+	if len(held) == 0 {
+		return nil
+	}
+	return tx.Model(&model.PanoDocTask{}).Where("doc_id = ? AND task_id IN ?", docID, held).UpdateColumn("unticked", true).Error
+}
+
+// ClearPanoUnticked lets the items a task's docs unticked by hand follow the
+// task again, once its status has moved on from completed.
+func (r *repository) ClearPanoUnticked(ctx context.Context, userID, taskID int64) error {
+	return r.conn(ctx).Model(&model.PanoDocTask{}).Where("task_id = ? AND user_id = ? AND unticked = ?", taskID, userID, true).UpdateColumn("unticked", false).Error
+}
+
 // PanoTaskStatus is a task linked to a doc, with its status now. DocID is
-// set only where several docs' tasks are read at once.
+// set only where several docs' tasks are read at once, and Unticked only
+// where a doc's links are.
 type PanoTaskStatus struct {
 	DocID       int64
 	TaskID      int64
 	WorkspaceID int64
 	Status      string
+	Unticked    bool
 }
 
 // linkPanoDocTasks adds the links not already there, and returns how many it
@@ -123,7 +151,7 @@ func (r *repository) ListPanoDocTasks(ctx context.Context, userID int64, docIDs 
 		return out, nil
 	}
 	err := r.conn(ctx).Table("pano_doc_tasks").
-		Select("pano_doc_tasks.doc_id, pano_doc_tasks.task_id, tasks.workspace_id, tasks.status").
+		Select("pano_doc_tasks.doc_id, pano_doc_tasks.task_id, tasks.workspace_id, tasks.status, pano_doc_tasks.unticked").
 		Joins("JOIN tasks ON tasks.id = pano_doc_tasks.task_id AND tasks.user_id = pano_doc_tasks.user_id").
 		Where("pano_doc_tasks.doc_id IN ? AND pano_doc_tasks.user_id = ?", docIDs, userID).
 		Order("pano_doc_tasks.doc_id, pano_doc_tasks.created_at asc, pano_doc_tasks.id asc").

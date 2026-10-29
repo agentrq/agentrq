@@ -327,10 +327,11 @@ func (c *controller) SavePanoDoc(ctx context.Context, req entity.SavePanoDocRequ
 	if err != nil {
 		return nil, err
 	}
+	panoUnticked(req.Markdown, assigned)
 	markdown := panoOverlay(req.Markdown, assigned)
 	taskLinks := make([]model.PanoDocTask, len(assigned))
 	for i, t := range assigned {
-		taskLinks[i] = model.PanoDocTask{ID: c.idgen.NextID(), CreatedAt: now, UserID: uid, DocID: d.ID, TaskID: t.TaskID, WorkspaceID: t.WorkspaceID}
+		taskLinks[i] = model.PanoDocTask{ID: c.idgen.NextID(), CreatedAt: now, UserID: uid, DocID: d.ID, TaskID: t.TaskID, WorkspaceID: t.WorkspaceID, Unticked: t.Unticked}
 	}
 
 	d.Title = title
@@ -648,8 +649,27 @@ func panoChecklist(markdown string) (done, total int) {
 }
 
 // panoAssignee ends a checklist item assigned to a task: a link to the task,
-// titled with its status, as the web app writes it.
-var panoAssignee = regexp.MustCompile(`\]\((/workspaces/([0-9A-Za-z]+)/tasks/([0-9A-Za-z]+))(?: "[a-z]*")?\)[ \t]*$`)
+// titled with its status, as the web app writes it, and with manual after it
+// when the item is ticked by hand.
+var panoAssignee = regexp.MustCompile(`\]\((/workspaces/([0-9A-Za-z]+)/tasks/([0-9A-Za-z]+))(?: "([a-z ]*)")?\)[ \t]*$`)
+
+// panoTitle is what an assigned item's link title says: the status its writer
+// saw, and whether the item is ticked by hand.
+func panoTitle(title string) (status string, manual bool) {
+	for _, w := range strings.Fields(title) {
+		if w == "manual" {
+			manual = true
+		} else if status == "" {
+			status = w
+		}
+	}
+	return status, manual
+}
+
+// panoDone is whether a task's status is completed; done is its older name.
+func panoDone(status string) bool {
+	return status == "completed" || status == "done"
+}
 
 // panoAssigneeName is the text of an assignee's link, up to panoAssignee:
 // what the board's ASSIGNEE strips with it.
@@ -702,13 +722,14 @@ func panoTaskPath(workspaceID, taskID int64) string {
 }
 
 // panoOverlay gives every checklist item assigned to one of tasks that task's
-// status, ticked once it is completed. However many items one task has, all
-// of them follow it. An item assigned to a task that is not in tasks, such as
-// a deleted one, loses its assignee and becomes the writer's own.
+// status, ticked once it is completed, unless the task is Unticked. However
+// many items one task has, all of them follow it. An item ticked by hand
+// keeps its box. An item assigned to a task that is not in tasks, such as a
+// deleted one, loses its assignee and becomes the writer's own.
 func panoOverlay(markdown string, tasks []base.PanoTaskStatus) string {
-	status := make(map[string]string, len(tasks))
+	byPath := make(map[string]base.PanoTaskStatus, len(tasks))
 	for _, t := range tasks {
-		status[panoTaskPath(t.WorkspaceID, t.TaskID)] = t.Status
+		byPath[panoTaskPath(t.WorkspaceID, t.TaskID)] = t
 	}
 	lines := strings.Split(markdown, "\n")
 	panoItems(lines, func(i int, item []int) {
@@ -718,20 +739,48 @@ func panoOverlay(markdown string, tasks []base.PanoTaskStatus) string {
 			return
 		}
 		path := line[link[2]:link[3]]
-		st, ok := status[path]
+		t, ok := byPath[path]
 		if !ok {
 			if m := panoAssigneeName.FindStringIndex(line[:link[0]+1]); m != nil {
 				lines[i] = line[:m[0]]
 			}
 			return
 		}
+		title := t.Status
 		box := " "
-		if st == "completed" || st == "done" {
+		if link[8] >= 0 {
+			if _, manual := panoTitle(line[link[8]:link[9]]); manual {
+				title += " manual"
+				box = strings.ToLower(line[item[2]:item[3]])
+			}
+		}
+		if title == t.Status && panoDone(t.Status) && !t.Unticked {
 			box = "x"
 		}
-		lines[i] = line[:item[2]] + box + line[item[3]:link[0]] + `](` + path + ` "` + st + `")`
+		lines[i] = line[:item[2]] + box + line[item[3]:link[0]] + `](` + path + ` "` + title + `")`
 	})
 	return strings.Join(lines, "\n")
+}
+
+// panoUnticked marks Unticked each of tasks, all completed, that an item of
+// the markdown leaves unticked while its link says it is completed: its writer
+// saw the task completed and unticked it. An item ticked by hand is not
+// counted.
+func panoUnticked(markdown string, tasks []base.PanoTaskStatus) {
+	held := map[string]bool{}
+	lines := strings.Split(markdown, "\n")
+	panoItems(lines, func(i int, item []int) {
+		m := panoAssignee.FindStringSubmatch(lines[i])
+		if m == nil || lines[i][item[2]:item[3]] != " " {
+			return
+		}
+		if status, manual := panoTitle(m[4]); panoDone(status) && !manual {
+			held[m[1]] = true
+		}
+	})
+	for i, t := range tasks {
+		tasks[i].Unticked = panoDone(t.Status) && held[panoTaskPath(t.WorkspaceID, t.TaskID)]
+	}
 }
 
 // linkPanoDocToAgentTask links a doc an agent wrote to the task it is on: the
@@ -761,6 +810,12 @@ func (c *controller) SyncPanoTask(ctx context.Context, taskID int64) (int64, []i
 	ids, err := c.repository.ListPanoDocIDsOfTask(ctx, t.UserID, taskID)
 	if err != nil {
 		return t.UserID, nil, err
+	}
+	// Items unticked by hand stay so only while the task stays completed.
+	if len(ids) > 0 && !panoDone(t.Status) {
+		if err := c.repository.ClearPanoUnticked(ctx, t.UserID, taskID); err != nil {
+			return t.UserID, nil, err
+		}
 	}
 	linked, err := c.syncPanoDocs(ctx, t.UserID, ids)
 	return t.UserID, linked, err

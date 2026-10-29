@@ -62,6 +62,8 @@ import {
   panoMentionTaskBody,
   panoMentions,
   pingPanoWorkspaces,
+  panoLinkTitle,
+  panoTickByHand,
 } from '../src/composables/usePano';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -377,6 +379,15 @@ describe('clickable checkboxes', () => {
     const notATask = '<li><input disabled="" type="checkbox"> a <span class="md-dead-link" title="notes.md">notes</span></li>';
     expect(panoCheckable(notATask)).toBe('<li><input type="checkbox"> a <span class="md-dead-link" title="notes.md">notes</span></li>');
     expect(panoCheckable('<input disabled="" type="checkbox"> <span class="md-dead-link" title="/workspaces/w/tasks/t">@api</span>')).toBe('<input type="checkbox"> <span class="md-dead-link" title="/workspaces/w/tasks/t">@api</span>');
+  });
+
+  it('lets a completed task\'s item and a manual one be clicked, and marks a completed one left unticked', () => {
+    const item = (box, title) => `<li><input ${box}disabled="" type="checkbox"> a → <span class="md-dead-link" title="/workspaces/w/tasks/t" data-link-title="${title}">@api</span></li>`;
+    expect(panoCheckable(item('checked="" ', 'completed'))).toBe('<li><input checked="" type="checkbox"> a → <span class="md-dead-link" title="/workspaces/w/tasks/t" data-link-title="completed">@api</span></li>');
+    expect(panoCheckable(item('', 'completed'))).toBe('<li><input type="checkbox"> a → <span class="md-dead-link" title="/workspaces/w/tasks/t" data-link-title="completed unticked">@api</span></li>');
+    expect(panoCheckable(item('', 'done manual'))).toBe('<li><input type="checkbox"> a → <span class="md-dead-link" title="/workspaces/w/tasks/t" data-link-title="done manual unticked">@api</span></li>');
+    expect(panoCheckable(item('', 'ongoing manual'))).toBe('<li><input type="checkbox"> a → <span class="md-dead-link" title="/workspaces/w/tasks/t" data-link-title="ongoing manual">@api</span></li>');
+    expect(panoCheckable(item('', 'ongoing'))).toBe('<li><input title="Follows its task" disabled="" type="checkbox"> a → <span class="md-dead-link" title="/workspaces/w/tasks/t" data-link-title="ongoing">@api</span></li>');
   });
 
   it('takes no html as none', () => {
@@ -714,6 +725,21 @@ describe('one doc', () => {
     expect(d.busy.value).toBe(false);
   });
 
+  it('makes an assigned item ticked by hand, and reads it back', async () => {
+    const md = '- [ ] a → [@api](/workspaces/w/tasks/t "completed")';
+    const api = fakeApi({ getPanoDoc: vi.fn(() => Promise.resolve({ doc: { ...DOC, markdown: md } })) });
+    const d = usePanoDoc('d1', { api });
+    await d.load();
+    const p = d.tickByHand(0, true);
+    expect(d.busy.value).toBe(true);
+    await p;
+    expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', { title: 'Plan', markdown: '- [ ] a → [@api](/workspaces/w/tasks/t "completed manual")', ttlDays: 0, color: '', files: [], version: 5 });
+    expect(api.getPanoDoc).toHaveBeenCalledTimes(2);
+    api.updatePanoDoc.mockRejectedValueOnce(new Error('no'));
+    await expect(d.tickByHand(0, false)).rejects.toThrow('no');
+    expect(d.busy.value).toBe(false);
+  });
+
   it('pings each workspace a comment mentions, after posting it', async () => {
     const api = fakeApi({ createTask: vi.fn((ws) => Promise.resolve({ task: { id: `t-${ws}` } })) });
     const d = usePanoDoc('d1', { api });
@@ -826,6 +852,31 @@ describe('assigning a checklist item', () => {
     expect(assignPanoItem('- [x] a → [@old](/workspaces/w0/tasks/t0 "completed")', 0, 'new [x]', PATH)).toBe(`- [x] a → [@new x](${PATH} "notstarted")`);
     expect(assignPanoItem('- [ ] a', 3, 'api', PATH)).toBe('- [ ] a');
     expect(assignPanoItem(null, 0, 'api', PATH)).toBe('');
+  });
+
+  it('reads an assignee\'s link title', () => {
+    expect(panoLinkTitle('completed')).toEqual({ status: 'completed', manual: false, unticked: false });
+    expect(panoLinkTitle('completed manual unticked')).toEqual({ status: 'completed', manual: true, unticked: true });
+    expect(panoLinkTitle('manual  ongoing')).toEqual({ status: 'ongoing', manual: true, unticked: false });
+    expect(panoLinkTitle(undefined)).toEqual({ status: '', manual: false, unticked: false });
+  });
+
+  it('makes an item ticked by hand, or follow its task again with its box as the task has it', () => {
+    expect(panoTickByHand(`- [ ] a → [@api](${PATH} "completed")`, 0, true)).toBe(`- [ ] a → [@api](${PATH} "completed manual")`);
+    expect(panoTickByHand(`* [X] a → [@api](${PATH} "ongoing")  `, 0, true)).toBe(`* [X] a → [@api](${PATH} "ongoing manual")  `);
+    expect(panoTickByHand(`- [ ] a → [@api](${PATH} "completed manual")`, 0, false)).toBe(`- [x] a → [@api](${PATH} "completed")`);
+    expect(panoTickByHand(`- [x] a → [@api](${PATH} "ongoing manual")`, 0, false)).toBe(`- [ ] a → [@api](${PATH} "ongoing")`);
+    expect(panoTickByHand(`- [ ] a → [@api](${PATH})`, 0, true)).toBe(`- [ ] a → [@api](${PATH} "notstarted manual")`);
+    expect(panoTickByHand(`- [ ] a [it](${PATH})\n- [ ] b`, 0, true)).toBe(`- [ ] a [it](${PATH})\n- [ ] b`);
+    expect(panoTickByHand('- [ ] a', 3, true)).toBe('- [ ] a');
+    expect(panoTickByHand(null, 0, true)).toBe('');
+  });
+
+  it('shows a completed task\'s item left unticked, and one ticked by hand, on its chip', () => {
+    const html = (title) => `<li>x → <span class="md-dead-link" title="${PATH}" data-link-title="${title}">@api</span></li>`;
+    expect(panoAssignees(html('completed unticked'))).toBe(`<li>x <a class="pano-assignee" href="${PATH}" data-pano-task="${PATH}" data-status="completed" data-unticked="" title="Completed · not ticked · task t1"><span class="pano-status" aria-hidden="true"></span>@api<span class="pano-status-label">Completed · not ticked</span></a></li>`);
+    expect(panoAssignees(html('ongoing manual'), { link: false })).toBe('<li>x <span class="pano-assignee" data-status="ongoing" data-manual="" title="Ongoing · task t1 · ticked by hand"><span class="pano-status" aria-hidden="true"></span>@api<span class="pano-status-label">Ongoing</span></span></li>');
+    expect(panoAssignees(html('ongoing unticked'))).toContain('<span class="pano-status-label">Ongoing</span>');
   });
 
   it('makes an assignee a chip with its task\'s status, linked or not', () => {

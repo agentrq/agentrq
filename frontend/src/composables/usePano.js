@@ -235,8 +235,26 @@ export function togglePanoCheckbox(markdown, index, checked) {
 }
 
 // Who a checklist item is assigned to: a link to the task, titled with its
-// status, closing its line. The server keeps the status and the box in step.
-const ASSIGNEE = /[ \t]*→ \[@[^\]\n]*\]\(\/workspaces\/[^/)\s]+\/tasks\/[^/)\s]+(?: "[a-z]*")?\)[ \t]*$/
+// status and, when the item is ticked by hand, manual, closing its line. The
+// server keeps the status, and the box unless it is ticked by hand, in step.
+const ASSIGNEE = /[ \t]*→ \[@[^\]\n]*\]\(\/workspaces\/[^/)\s]+\/tasks\/[^/)\s]+(?: "[a-z ]*")?\)[ \t]*$/
+const ASSIGNEE_TITLE = /(\]\([^)\s]+)(?: "([a-z ]*)")?\)([ \t]*)$/
+
+/**
+ * What an assignee's link title says: the task's status, whether the item is
+ * ticked by hand (manual), and whether it is a completed task's item left
+ * unticked (unticked, which panoCheckable adds).
+ */
+export function panoLinkTitle(title) {
+  const words = String(title || '').split(' ').filter(Boolean)
+  return {
+    status: words.find((w) => w !== 'manual' && w !== 'unticked') || '',
+    manual: words.includes('manual'),
+    unticked: words.includes('unticked'),
+  }
+}
+
+const panoDone = (status) => status === 'completed' || status === 'done'
 const TASK_PATH = /^\/workspaces\/[^/"\s]+\/tasks\/[^/"\s]+$/
 
 /** The text of task-list item number `index`, without its assignee; '' when there is none. */
@@ -261,6 +279,25 @@ export function assignPanoItem(markdown, index, name, path) {
   return lines.join('\n')
 }
 
+/**
+ * The markdown with task-list item number `index`, an assigned one, ticked by
+ * hand (`manual`) or following its task. Following it again, its box is set
+ * as the task's status has it, so the server does not take an empty box for
+ * an untick.
+ */
+export function panoTickByHand(markdown, index, manual) {
+  const lines = String(markdown || '').split('\n')
+  const item = findTaskItem(lines, index)
+  if (item && ASSIGNEE.test(lines[item.line])) {
+    const { line, match: m } = item
+    const t = ASSIGNEE_TITLE.exec(lines[line])
+    const { status } = panoLinkTitle(t[2])
+    const box = manual ? m[2] : panoDone(status) ? 'x' : ' '
+    lines[line] = m[1] + box + m[3] + lines[line].slice(m[0].length, t.index) + `${t[1]} "${status || 'notstarted'}${manual ? ' manual' : ''}")${t[3]}`
+  }
+  return lines.join('\n')
+}
+
 // The desktop top bar's menu icon.
 const DOTS = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.75"></circle><circle cx="12" cy="12" r="1.75"></circle><circle cx="12" cy="19" r="1.75"></circle></svg>'
 
@@ -280,14 +317,18 @@ export const PANO_TASK_STATUSES = {
  * task, or with `link: false` (inside a card that is a link) a plain chip.
  */
 export function panoAssignees(html, { link = true } = {}) {
-  return String(html || '').replace(/(?:→ )?<span class="md-dead-link" title="([^"]*)"(?: data-link-title="([^"]*)")?>([^<]*)<\/span>/g, (span, href, status = '', text) => {
+  return String(html || '').replace(/(?:→ )?<span class="md-dead-link" title="([^"]*)"(?: data-link-title="([^"]*)")?>([^<]*)<\/span>/g, (span, href, linkTitle, text) => {
     if (!TASK_PATH.test(href)) return span
+    const { status, manual, unticked } = panoLinkTitle(linkTitle)
     const known = Object.hasOwn(PANO_TASK_STATUSES, status) ? status : 'notstarted'
-    const title = `${PANO_TASK_STATUSES[known]} · task ${href.split('/').pop()}`
-    const inner = `<span class="pano-status" aria-hidden="true"></span>${text}<span class="pano-status-label">${PANO_TASK_STATUSES[known]}</span>`
+    const held = unticked && panoDone(known)
+    const label = held ? `${PANO_TASK_STATUSES[known]} · not ticked` : PANO_TASK_STATUSES[known]
+    const title = `${label} · task ${href.split('/').pop()}${manual ? ' · ticked by hand' : ''}`
+    const attrs = `data-status="${known}"${manual ? ' data-manual=""' : ''}${held ? ' data-unticked=""' : ''} title="${title}"`
+    const inner = `<span class="pano-status" aria-hidden="true"></span>${text}<span class="pano-status-label">${label}</span>`
     return link
-      ? `<a class="pano-assignee" href="${href}" data-pano-task="${href}" data-status="${known}" title="${title}">${inner}</a>`
-      : `<span class="pano-assignee" data-status="${known}" title="${title}">${inner}</span>`
+      ? `<a class="pano-assignee" href="${href}" data-pano-task="${href}" ${attrs}>${inner}</a>`
+      : `<span class="pano-assignee" ${attrs}>${inner}</span>`
   })
 }
 
@@ -457,8 +498,10 @@ export async function pingPanoWorkspaces(doc, comment, mentions, { api, wait = s
 
 /**
  * Rendered markdown with its task-list checkboxes made clickable, except an
- * item's assigned to a task: its box follows the task, so it stays as the
- * task's status says.
+ * item's assigned to a task that is not completed: its box follows the task,
+ * so it stays as the task's status says. An item ticked by hand is always
+ * clickable, and a completed task's item can be unticked, which its assignee
+ * then shows, with unticked added to its link's title.
  */
 export function panoCheckable(html) {
   let n = 0
@@ -466,11 +509,19 @@ export function panoCheckable(html) {
   if (String(html || '').includes('md-dead-link')) {
     const page = document.createElement('div')
     page.innerHTML = html
+    let held = false
     page.querySelectorAll('input[type="checkbox"]').forEach((box, i) => {
       const item = box.closest('li')
       const link = item && [...item.querySelectorAll('.md-dead-link')].find((a) => a.closest('li') === item && TASK_PATH.test(a.title))
-      if (link) locked.add(i)
+      if (!link) return
+      const { status, manual } = panoLinkTitle(link.dataset.linkTitle)
+      if (!manual && !panoDone(status)) locked.add(i)
+      if (panoDone(status) && !box.checked) {
+        link.dataset.linkTitle += ' unticked'
+        held = true
+      }
     })
+    if (held) html = page.innerHTML
   }
   return String(html || '').replace(/<input\b[^>]*>/g, (tag) => {
     if (!tag.includes('type="checkbox"')) return tag
@@ -691,6 +742,18 @@ export function usePanoDoc(id, { api, color = PANO_COLORS[0].name }) {
     }
   }
 
+  /** Makes an assigned checklist item ticked by hand, or follow its task again. */
+  async function tickByHand(index, manual) {
+    busy.value = true
+    try {
+      const d = doc.value
+      await guarded(() => api.updatePanoDoc(id, { title: d.title, markdown: panoTickByHand(d.markdown, index, manual), ttlDays: 0, color: '', files: [], version: d.version }))
+      await load({ quiet: true })
+    } finally {
+      busy.value = false
+    }
+  }
+
   /**
    * Assigns checklist item number `index` to a workspace: a task for its agent,
    * linked from the item. Returns the task.
@@ -747,7 +810,7 @@ export function usePanoDoc(id, { api, color = PANO_COLORS[0].name }) {
 
   return {
     doc, loading, error, busy, editing, draft, conflict,
-    load, startEditing, cancelEditing, reloadEditing, addDraftFile, removeDraftFile, save, checkItem, assignItem, remove, comment, attach,
+    load, startEditing, cancelEditing, reloadEditing, addDraftFile, removeDraftFile, save, checkItem, tickByHand, assignItem, remove, comment, attach,
   }
 }
 

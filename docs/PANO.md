@@ -44,6 +44,13 @@ ongoing, blocked, completed — wherever its status changes, and the item is
 ticked once the task is completed. In the markdown it is a link:
 `- [ ] backend → [@api](/workspaces/<id>/tasks/<id> "ongoing")`.
 
+A task is often completed before its work has landed, when its pull request is
+open but not merged. Untick its item, and it stays unticked until the task's
+status changes; its chip reads "Completed · not ticked" meanwhile, so it is not
+mistaken for open work. For an item that should only ever be ticked by hand,
+choose **Tick by hand** in its ⋮ menu, or write `manual` after the status:
+`"completed manual"`. Its chip still follows the task, but its box is yours.
+
 **@ a workspace** in a comment to ping its agent: the comment box suggests
 workspaces as you type, and each one the comment names gets a task, "Pano:
 <title>", that quotes the comment and asks the agent to answer with a comment.

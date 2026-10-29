@@ -348,6 +348,9 @@ type (
 		DocID       int64 `gorm:"uniqueIndex:uk_pano_doc_tasks_doc_id_task_id,priority:1;index:idx_pano_doc_tasks_task_id_doc_id,priority:2"`
 		TaskID      int64 `gorm:"uniqueIndex:uk_pano_doc_tasks_doc_id_task_id,priority:2;index:idx_pano_doc_tasks_task_id_doc_id,priority:1"`
 		WorkspaceID int64 `gorm:"index:idx_pano_doc_tasks_workspace_id"`
+		// Unticked is set when the doc's items of a completed task were
+		// unticked by hand, and keeps them unticked until its status changes.
+		Unticked bool `gorm:"not null;default:false"`
 	}
 
 	// WorkspaceSkill turns an account's skill on in one of its workspaces:

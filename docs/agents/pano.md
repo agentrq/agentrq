@@ -19,10 +19,15 @@
 - **An assigned item ends `→ [@name](/workspaces/<id>/tasks/<id> "status")`**;
   `assignPanoItem` and `panoAssignee` must agree on it. Its status and tick are
   the task's, laid over the markdown on read, list, edit and save
-  (`panoOverlay`), so the stored text can be stale and its box is read-only. The
+  (`panoOverlay`), so the stored text can be stale, and its box takes a click only where one sticks: a manual item, or a completed task's. The
   count sync uses `UpdateColumn`: stamped as a save, it would reorder the board.
   An item whose task is not among the doc's (deleted, or never the account's)
   loses its assignee there; a task delete recounts its docs, which it unlinks.
+- **A manual untick is `pano_doc_tasks.unticked`, never the markdown.** A save
+  sets it only when the item's link already said completed (its writer saw
+  it), and `SyncPanoTask` clears it on any other status; reading it from the
+  stored box would hold a stale untick through a reopen. `"<status> manual"`
+  keeps the writer's box; the board's `ASSIGNEE` must accept the same title.
 - **A doc's tasks are rows in `pano_doc_tasks`, never markdown**: from an
   assigned item, a `#`-tagged chat (`panoDocId`), or an agent's write while it
   has exactly one ongoing task, since a guess between two would mislink. The

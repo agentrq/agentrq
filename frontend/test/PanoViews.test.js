@@ -1065,6 +1065,27 @@ describe('a doc', () => {
       expect(router.currentRoute.value.path).toBe('/workspaces/ws2/tasks/t7');
     });
 
+    it('lets a completed task\'s item be unticked, shows it so, and ticks an item by hand from its menu', async () => {
+      api.getPanoDoc.mockResolvedValue({ doc: { ...DOC, markdown: '- [ ] ship → [@ops](/workspaces/ws2/tasks/t7 "completed")\n- [x] docs → [@ops](/workspaces/ws2/tasks/t8 "ongoing manual")' } });
+      const { el } = await mount('/pano/d1');
+      const [ship, docs] = $(el, 'pano-body').querySelectorAll('a.pano-assignee');
+      expect(ship.dataset.unticked).toBe('');
+      expect(text(ship)).toBe('@opsCompleted · not ticked');
+      expect('manual' in docs.dataset).toBe(true);
+      const boxes = $(el, 'pano-body').querySelectorAll('input[type="checkbox"]');
+      expect([...boxes].map((b) => b.disabled)).toEqual([false, false]);
+      const menus = $(el, 'pano-body').querySelectorAll('[data-pano-assign]');
+      await click(menus[0]);
+      expect(text($(el, 'pano-item-tick-mode'))).toBe('Tick by hand');
+      await click($(el, 'pano-item-tick-mode'));
+      expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', expect.objectContaining({ markdown: expect.stringContaining('- [ ] ship → [@ops](/workspaces/ws2/tasks/t7 "completed manual")') }));
+      expect($(el, 'pano-item-menu')).toBeNull();
+      await click($(el, 'pano-body').querySelectorAll('[data-pano-assign]')[1]);
+      expect(text($(el, 'pano-item-tick-mode'))).toBe('Tick when its task completes');
+      await click($(el, 'pano-item-tick-mode'));
+      expect(api.updatePanoDoc).toHaveBeenLastCalledWith('d1', expect.objectContaining({ markdown: expect.stringContaining('- [ ] docs → [@ops](/workspaces/ws2/tasks/t8 "ongoing")') }));
+    });
+
     it('opens an assigned task beside the doc on a large screen, from the chip and from the menu', async () => {
       vi.stubGlobal('matchMedia', () => ({ matches: true }));
       try {

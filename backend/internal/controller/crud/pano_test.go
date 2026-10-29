@@ -762,6 +762,9 @@ func TestPanoOverlay(t *testing.T) {
 		{"a plain link to another task is left", "- [ ] read [it](" + panoTaskPath(ws, other) + ")", "completed", "- [ ] read [it](" + panoTaskPath(ws, other) + ")"},
 		{"a link that is not an item is left", "see [@api](" + path + ")", "completed", "see [@api](" + path + ")"},
 		{"fenced code is text", "```\n- [ ] ship → [@api](" + path + ")\n```\n~~~\n~~~", "completed", "```\n- [ ] ship → [@api](" + path + ")\n```\n~~~\n~~~"},
+		{"a manual item keeps its empty box", "- [ ] ship → [@api](" + path + ` "ongoing manual")`, "completed", "- [ ] ship → [@api](" + path + ` "completed manual")`},
+		{"and its ticked one", "- [X] ship → [@api](" + path + ` "manual")`, "blocked", "- [x] ship → [@api](" + path + ` "blocked manual")`},
+		{"manual is a word of the title", "- [ ] ship → [@api](" + path + ` "manually")`, "completed", "- [x] ship → [@api](" + path + ` "completed")`},
 	} {
 		if got := panoOverlay(tc.markdown, tasks(tc.status)); got != tc.want {
 			t.Errorf("%s: panoOverlay = %q, want %q", tc.name, got, tc.want)
@@ -769,6 +772,57 @@ func TestPanoOverlay(t *testing.T) {
 	}
 	if got := panoOverlay("- [x] ship → [@api]("+path+` "completed")`, nil); got != "- [x] ship" {
 		t.Errorf("with no tasks panoOverlay = %q, want the item without its assignee", got)
+	}
+	unticked := []base.PanoTaskStatus{{TaskID: task, WorkspaceID: ws, Status: "completed", Unticked: true}}
+	if got, want := panoOverlay("- [x] ship → [@api]("+path+` "completed")`, unticked), "- [ ] ship → [@api]("+path+` "completed")`; got != want {
+		t.Errorf("an unticked task's item reads %q, want %q", got, want)
+	}
+}
+
+func TestPanoTitle(t *testing.T) {
+	for _, tc := range []struct {
+		title, status string
+		manual        bool
+	}{
+		{"", "", false},
+		{"ongoing", "ongoing", false},
+		{"completed manual", "completed", true},
+		{"manual", "", true},
+		{"manual done", "done", true},
+		{" ongoing  extra ", "ongoing", false},
+	} {
+		if status, manual := panoTitle(tc.title); status != tc.status || manual != tc.manual {
+			t.Errorf("panoTitle(%q) = %q, %v, want %q, %v", tc.title, status, manual, tc.status, tc.manual)
+		}
+	}
+}
+
+func TestPanoUnticked(t *testing.T) {
+	const ws = int64(11)
+	item := func(box string, task int64, title string) string {
+		return "- [" + box + "] x → [@api](" + panoTaskPath(ws, task) + ` "` + title + `")`
+	}
+	md := strings.Join([]string{
+		item(" ", 21, "completed"),        // unticked while completed: held
+		item("x", 22, "completed"),        // ticked: not held
+		item(" ", 23, "ongoing"),          // its writer saw it ongoing: follows
+		item(" ", 24, "done"),             // the old name counts
+		item(" ", 25, "completed"),        // the task is not completed now
+		item(" ", 26, "completed manual"), // ticked by hand: no hold
+		"```", item(" ", 27, "completed"), "```",
+	}, "\n")
+	tasks := []base.PanoTaskStatus{{TaskID: 21, WorkspaceID: ws, Status: "completed"}, {TaskID: 22, WorkspaceID: ws, Status: "completed"},
+		{TaskID: 23, WorkspaceID: ws, Status: "completed"}, {TaskID: 24, WorkspaceID: ws, Status: "done"}, {TaskID: 25, WorkspaceID: ws, Status: "ongoing"},
+		{TaskID: 26, WorkspaceID: ws, Status: "completed"}, {TaskID: 27, WorkspaceID: ws, Status: "completed", Unticked: true}}
+	panoUnticked(md, tasks)
+	var got []int64
+	for _, t := range tasks {
+		if t.Unticked {
+			got = append(got, t.TaskID)
+		}
+	}
+	if !reflect.DeepEqual(got, []int64{21, 24}) {
+		t.Errorf("panoUnticked marked %v, want 21 and 24", got)
 	}
 }
 
@@ -978,16 +1032,17 @@ func TestPano_SyncTask(t *testing.T) {
 		}
 	})
 
-	for _, tc := range []struct{ name, op, table string }{
-		{"the links", "query", "pano_doc_tasks"},
-		{"the doc", "query", "pano_docs"},
-		{"the write", "update", "pano_docs"},
+	for _, tc := range []struct{ name, op, table, from, status string }{
+		{"the links", "query", "pano_doc_tasks", "ongoing", "completed"},
+		{"the doc", "query", "pano_docs", "ongoing", "completed"},
+		{"the write", "update", "pano_docs", "ongoing", "completed"},
+		{"clearing the unticked", "update", "pano_doc_tasks", "completed", "ongoing"},
 	} {
 		t.Run(tc.name+" failing is passed on", func(t *testing.T) {
 			e := newPanoEnv(t)
-			task := e.panoTasks(t, "ongoing")[0]
+			task := e.panoTasks(t, tc.from)[0]
 			e.save(t, entity.SavePanoDocRequest{Title: "Launch", Markdown: taskItem("ship", task)})
-			e.db.Model(&model.Task{}).Where("id = ?", task.ID).Update("status", "completed")
+			e.db.Model(&model.Task{}).Where("id = ?", task.ID).Update("status", tc.status)
 			failOn(e.db, tc.op, tc.table)
 			if _, _, err := e.c.SyncPanoTask(e.ctx, task.ID); err == nil {
 				t.Error("SyncPanoTask returned no error, want the injected failure")
@@ -1003,6 +1058,123 @@ func TestPano_SyncTask(t *testing.T) {
 			t.Error("SyncPanoTask returned no error, want the injected failure")
 		}
 	})
+}
+
+// unticked is the ids of the tasks the env's links hold unticked.
+func (e *panoEnv) unticked(t *testing.T) []int64 {
+	t.Helper()
+	var ids []int64
+	for _, l := range e.links(t) {
+		if l.Unticked {
+			ids = append(ids, l.TaskID)
+		}
+	}
+	return ids
+}
+
+func (e *panoEnv) setStatus(t *testing.T, task model.Task, status string) {
+	t.Helper()
+	if err := e.db.Model(&model.Task{}).Where("id = ?", task.ID).Update("status", status).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := e.c.SyncPanoTask(e.ctx, task.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (e *panoEnv) replace(t *testing.T, doc entity.PanoDoc, old, new string) entity.PanoDoc {
+	t.Helper()
+	rs, err := e.c.EditPanoDoc(e.ctx, entity.EditPanoDocRequest{UserID: skUserStr, ID: doc.ID, Version: doc.Version, Ops: []entity.PanoEditOp{{Op: "replace", OldString: old, NewString: new}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rs.Doc
+}
+
+// A completed task's item unticked by hand stays unticked, through its task's
+// updates and later saves, until its status changes; then it follows the task
+// again, and ticks when it is completed once more.
+func TestPano_AManualUntickHolds(t *testing.T) {
+	e := newPanoEnv(t)
+	task := e.panoTasks(t, "ongoing")[0]
+	link := " → [@alpha](" + panoTaskPath(skWS, task.ID) + ` "`
+	doc := e.save(t, entity.SavePanoDocRequest{Title: "Plan", Markdown: taskItem("ship", task)})
+	e.setStatus(t, task, "completed")
+	doc = e.get(t, doc.ID)
+	if doc.Markdown != "- [x] ship"+link+`completed")` || doc.ChecklistDone != 1 {
+		t.Fatalf("a completed task's item reads %q, %d done, want it ticked", doc.Markdown, doc.ChecklistDone)
+	}
+
+	doc = e.replace(t, doc, "- [x] ship", "- [ ] ship")
+	held := "- [ ] ship" + link + `completed")`
+	if doc.Markdown != held || doc.ChecklistDone != 0 || !reflect.DeepEqual(e.unticked(t), []int64{task.ID}) {
+		t.Fatalf("after the untick the doc is %q, %d done, unticked %v, want %q, none done", doc.Markdown, doc.ChecklistDone, e.unticked(t), held)
+	}
+	// Another update of the completed task, and another save, keep it.
+	e.setStatus(t, task, "completed")
+	doc = e.replace(t, e.get(t, doc.ID), "ship", "ship it")
+	if got := e.get(t, doc.ID); got.Markdown != "- [ ] ship it"+link+`completed")` || got.ChecklistDone != 0 {
+		t.Errorf("after an update and a save the doc is %q, %d done, want the item still unticked", got.Markdown, got.ChecklistDone)
+	}
+	// Ticking it by hand lets it follow the task again.
+	doc = e.replace(t, e.get(t, doc.ID), "- [ ] ship", "- [x] ship")
+	if doc.ChecklistDone != 1 || len(e.unticked(t)) != 0 {
+		t.Errorf("after ticking it back the doc has %d done, unticked %v, want 1 and none", doc.ChecklistDone, e.unticked(t))
+	}
+
+	// Reopened and completed again, an unticked item ticks: the status changed.
+	doc = e.replace(t, e.get(t, doc.ID), "- [x] ship", "- [ ] ship")
+	e.setStatus(t, task, "ongoing")
+	if got := e.get(t, doc.ID); got.Markdown != "- [ ] ship it"+link+`ongoing")` || len(e.unticked(t)) != 0 || got.Version != doc.Version {
+		t.Errorf("reopened, the doc is %q at version %d, unticked %v, want it following the task, at version %d", got.Markdown, got.Version, e.unticked(t), doc.Version)
+	}
+	e.setStatus(t, task, "completed")
+	if got := e.get(t, doc.ID); got.Markdown != "- [x] ship it"+link+`completed")` || got.ChecklistDone != 1 {
+		t.Errorf("completed again, the doc is %q, %d done, want the item ticked", got.Markdown, got.ChecklistDone)
+	}
+
+	// Text written before the task was completed is not an untick: it ticks.
+	stale := e.get(t, doc.ID)
+	doc = e.save(t, entity.SavePanoDocRequest{ID: doc.ID, Version: stale.Version, Title: "Plan", Markdown: "- [ ] ship it" + link + `ongoing")`})
+	if doc.ChecklistDone != 1 || len(e.unticked(t)) != 0 {
+		t.Errorf("a save of the item as ongoing has %d done, unticked %v, want it ticked", doc.ChecklistDone, e.unticked(t))
+	}
+}
+
+// An item whose link says manual is the doc author's to tick: it never ticks
+// or unticks itself, whatever its task does, and its status still shows.
+func TestPano_AManualItemNeverTicksItself(t *testing.T) {
+	e := newPanoEnv(t)
+	task := e.panoTasks(t, "ongoing")[0]
+	link := " → [@alpha](" + panoTaskPath(skWS, task.ID) + ` "`
+	doc := e.save(t, entity.SavePanoDocRequest{Title: "Plan", Markdown: "- [ ] ship" + link + `notstarted manual")`})
+	if doc.Markdown != "- [ ] ship"+link+`ongoing manual")` {
+		t.Errorf("a manual item is saved as %q", doc.Markdown)
+	}
+	e.setStatus(t, task, "completed")
+	if got := e.get(t, doc.ID); got.Markdown != "- [ ] ship"+link+`completed manual")` || got.ChecklistDone != 0 {
+		t.Errorf("its task completed, a manual item reads %q, %d done, want it unticked", got.Markdown, got.ChecklistDone)
+	}
+	doc = e.replace(t, e.get(t, doc.ID), "- [ ] ship", "- [x] ship")
+	e.setStatus(t, task, "ongoing")
+	if got := e.get(t, doc.ID); got.Markdown != "- [x] ship"+link+`ongoing manual")` || got.ChecklistDone != 1 || len(e.unticked(t)) != 0 {
+		t.Errorf("ticked by hand and reopened, a manual item reads %q, %d done, want it ticked", got.Markdown, got.ChecklistDone)
+	}
+}
+
+// A task's status changing between a read and a save of the doc is no write:
+// the save, at the version read, goes through.
+func TestPano_AStatusChangeDoesNotStaleAnEdit(t *testing.T) {
+	e := newPanoEnv(t)
+	tasks := e.panoTasks(t, "completed", "ongoing")
+	doc := e.save(t, entity.SavePanoDocRequest{Title: "Plan", Markdown: taskItem("a", tasks[0]) + "\n" + taskItem("b", tasks[1])})
+	read := e.get(t, doc.ID)
+	e.setStatus(t, tasks[1], "completed")
+	e.setStatus(t, tasks[0], "ongoing")
+	got := e.save(t, entity.SavePanoDocRequest{ID: doc.ID, Version: read.Version, Title: "Plan", Markdown: read.Markdown + "\n\nnotes"})
+	if got.Version != read.Version+1 || got.ChecklistDone != 1 || len(e.unticked(t)) != 0 {
+		t.Errorf("the edit is at version %d with %d done, unticked %v, want version %d and b ticked: its writer never saw it completed", got.Version, got.ChecklistDone, e.unticked(t), read.Version+1)
+	}
 }
 
 // Deleting a task unassigns its items: they read as the writer's own, and
