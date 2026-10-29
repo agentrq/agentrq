@@ -61,3 +61,7 @@ fourth copy of the same steps.
 `app.go`'s forwarder turns into a stream event (`stream_events.go`). A REST
 handler that calls `bus.Publish` itself leaves the same change made by the
 supervisor invisible until a reload — which is how forks and task deletes were.
+
+**`awaitingReply` is one rule written twice**: `replyState` in Go for the
+fields, `awaitingReplyClause` in SQL for the filter, so paging holds. Change
+both, and the shared cases in both tests, or list and filter disagree.

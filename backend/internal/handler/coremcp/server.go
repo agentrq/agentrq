@@ -217,6 +217,7 @@ type ListTasksParams struct {
 	Status               string `json:"status,omitempty" jsonschema:"Only tasks with this status."`
 	CreatedBy            string `json:"createdBy,omitempty" jsonschema:"Only tasks created by 'human' or 'agent'."`
 	CreatedByWorkspaceID string `json:"createdByWorkspaceId,omitempty" jsonschema:"Only tasks delegated by this workspace (base62) through this tool's create."`
+	AwaitingReply        bool   `json:"awaitingReply,omitempty" jsonschema:"true keeps only the tasks awaiting a reply: a question or permission request still pending, or an agent's last message ending in a question mark."`
 	Limit                int    `json:"limit,omitempty" jsonschema:"Maximum number of tasks to return, default 5, capped at 50"`
 	Offset               int    `json:"offset,omitempty" jsonschema:"Number of tasks to skip"`
 }
@@ -226,6 +227,7 @@ type ListAllTasksParams struct {
 	Status               string `json:"status,omitempty" jsonschema:"Only tasks with this status."`
 	CreatedBy            string `json:"createdBy,omitempty" jsonschema:"Only tasks created by 'human' or 'agent'."`
 	CreatedByWorkspaceID string `json:"createdByWorkspaceId,omitempty" jsonschema:"Only tasks delegated by this workspace (base62) through this tool's create."`
+	AwaitingReply        bool   `json:"awaitingReply,omitempty" jsonschema:"true keeps only the tasks awaiting a reply: a question or permission request still pending, or an agent's last message ending in a question mark."`
 	Limit                int    `json:"limit,omitempty" jsonschema:"Maximum number of tasks to return, default 5, capped at 50"`
 	Offset               int    `json:"offset,omitempty" jsonschema:"Number of tasks to skip"`
 }
@@ -551,6 +553,8 @@ func (s *WorkspaceServer) handleListTasks(ctx context.Context, req *mcp.CallTool
 		CreatedByWorkspaceID: parseID(args.CreatedByWorkspaceID),
 		Status:               statuses,
 		CreatedBy:            args.CreatedBy,
+		AwaitingReply:        args.AwaitingReply,
+		PreloadReplyMessages: true,
 		Limit:                limit,
 		Offset:               args.Offset,
 	})
@@ -558,8 +562,7 @@ func (s *WorkspaceServer) handleListTasks(ctx context.Context, req *mcp.CallTool
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromListTasksResponseEntityToHTTPResponse(res)
-	return textResponse(string(b)), nil, nil
+	return textResponse(string(apiMapper.FromListTasksResponseEntityToMCPResponse(res, replyStates(res.Tasks)))), nil, nil
 }
 
 func (s *WorkspaceServer) handleListAllTasks(ctx context.Context, req *mcp.CallToolRequest, args ListAllTasksParams) (*mcp.CallToolResult, any, error) {
@@ -585,6 +588,8 @@ func (s *WorkspaceServer) handleListAllTasks(ctx context.Context, req *mcp.CallT
 		CreatedByWorkspaceID: parseID(args.CreatedByWorkspaceID),
 		Status:               statuses,
 		CreatedBy:            args.CreatedBy,
+		AwaitingReply:        args.AwaitingReply,
+		PreloadReplyMessages: true,
 		Limit:                limit,
 		Offset:               args.Offset,
 		// WorkspaceID = 0 implies all
@@ -593,8 +598,7 @@ func (s *WorkspaceServer) handleListAllTasks(ctx context.Context, req *mcp.CallT
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromListTasksResponseEntityToHTTPResponse(res)
-	return textResponse(string(b)), nil, nil
+	return textResponse(string(apiMapper.FromListTasksResponseEntityToMCPResponse(res, replyStates(res.Tasks)))), nil, nil
 }
 
 func (s *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToolRequest, args CreateTaskParams) (*mcp.CallToolResult, any, error) {
@@ -650,10 +654,10 @@ func (s *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolRe
 	if !args.IncludeToolCalls {
 		res.Task.ToolCalls = nil
 	}
+	state := replyState(res.Task.Messages)
 	res.Task.Messages = messagesAfter(res.Task.Messages, since)
 
-	b := apiMapper.FromGetTaskResponseEntityToHTTPResponse(res)
-	return textResponse(string(b)), nil, nil
+	return textResponse(string(apiMapper.FromGetTaskResponseEntityToMCPResponse(res, state))), nil, nil
 }
 
 // handleTaskMessages answers what a task's thread says, oldest first, without

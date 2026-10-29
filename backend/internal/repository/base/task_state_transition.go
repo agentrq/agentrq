@@ -147,10 +147,15 @@ func syncNeedsInput(tx *gorm.DB, taskID int64) error {
 // own, and a plan item still to do is not a question to anyone.
 func pendingRequestClause(tx *gorm.DB) string {
 	if tx.Dialector.Name() == "postgres" {
-		return "metadata->>'status' = 'pending'"
+		return pgPendingRequest
 	}
-	return "json_valid(metadata) AND json_extract(metadata, '$.status') = 'pending'"
+	return sqlitePendingRequest
 }
+
+const (
+	pgPendingRequest     = "metadata->>'status' = 'pending'"
+	sqlitePendingRequest = "json_valid(metadata) AND json_extract(metadata, '$.status') = 'pending'"
+)
 
 func isClosedTaskState(s model.TaskState) bool {
 	return s == model.TaskStateCompleted || s == model.TaskStateRejected

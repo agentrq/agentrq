@@ -314,6 +314,25 @@ type (
 		ToolCalls []ToolCall `json:"toolCalls"`
 	}
 
+	// SupervisorTask is a task as the supervisor's task tool lists and gets
+	// it: with whether it awaits a reply, and who spoke last in its
+	// conversation, and when.
+	SupervisorTask struct {
+		Task
+		AwaitingReply bool       `json:"awaitingReply"`
+		LastMessageAt *time.Time `json:"lastMessageAt,omitempty"`
+		LastMessageBy string     `json:"lastMessageBy,omitempty"`
+	}
+
+	SupervisorListTasksResponse struct {
+		Tasks []SupervisorTask `json:"tasks"`
+	}
+
+	SupervisorGetTaskResponse struct {
+		GetTaskResponse
+		Task SupervisorTask `json:"task"`
+	}
+
 	// TaskMessagesResponse is a task's conversation without its tool calls or
 	// the agent's telemetry: what the supervisor reads to follow up on a task.
 	TaskMessagesResponse struct {

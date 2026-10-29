@@ -122,6 +122,44 @@ func FromListTaskToolCallsResponseEntityToHTTPResponse(rs *entity.ListTaskToolCa
 }
 
 func FromGetTaskResponseEntityToHTTPResponse(rs *entity.GetTaskResponse) []byte {
+	payload, _ := json.Marshal(fromGetTaskResponseEntityToView(rs))
+	return payload
+}
+
+// FromGetTaskResponseEntityToMCPResponse answers the supervisor's task get:
+// the task, with whether it awaits a reply.
+func FromGetTaskResponseEntityToMCPResponse(rs *entity.GetTaskResponse, state entity.TaskReplyState) []byte {
+	payload, _ := json.Marshal(view.SupervisorGetTaskResponse{
+		GetTaskResponse: fromGetTaskResponseEntityToView(rs),
+		Task:            fromTaskEntityToSupervisorView(rs.Task, state),
+	})
+	return payload
+}
+
+// FromListTasksResponseEntityToMCPResponse answers the supervisor's task list
+// and listAll: each task with its state, states[i] being rs.Tasks[i]'s.
+func FromListTasksResponseEntityToMCPResponse(rs *entity.ListTasksResponse, states []entity.TaskReplyState) []byte {
+	tasks := make([]view.SupervisorTask, len(rs.Tasks))
+	for i, t := range rs.Tasks {
+		tasks[i] = fromTaskEntityToSupervisorView(t, states[i])
+	}
+	payload, _ := json.Marshal(view.SupervisorListTasksResponse{Tasks: tasks})
+	return payload
+}
+
+func fromTaskEntityToSupervisorView(t entity.Task, state entity.TaskReplyState) view.SupervisorTask {
+	v := view.SupervisorTask{
+		Task:          FromEntityTaskToView(t),
+		AwaitingReply: state.AwaitingReply,
+		LastMessageBy: state.LastMessageBy,
+	}
+	if !state.LastMessageAt.IsZero() {
+		v.LastMessageAt = &state.LastMessageAt
+	}
+	return v
+}
+
+func fromGetTaskResponseEntityToView(rs *entity.GetTaskResponse) view.GetTaskResponse {
 	transitions := make([]view.TaskStateTransition, len(rs.StateTransitions))
 	for i, tr := range rs.StateTransitions {
 		transitions[i] = view.TaskStateTransition{
@@ -132,7 +170,7 @@ func FromGetTaskResponseEntityToHTTPResponse(rs *entity.GetTaskResponse) []byte 
 			CreatedAt:  tr.CreatedAt,
 		}
 	}
-	payload, _ := json.Marshal(view.GetTaskResponse{
+	return view.GetTaskResponse{
 		Task:             FromEntityTaskToView(rs.Task),
 		StateTransitions: transitions,
 		Timing: view.TaskTiming{
@@ -143,8 +181,7 @@ func FromGetTaskResponseEntityToHTTPResponse(rs *entity.GetTaskResponse) []byte 
 			NeedsInputSeconds:   rs.Timing.NeedsInputSeconds,
 			WorkedSeconds:       rs.Timing.WorkedSeconds,
 		},
-	})
-	return payload
+	}
 }
 
 // FromTaskEntityToTaskMessagesMCPResponse answers the supervisor's task

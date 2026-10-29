@@ -462,10 +462,23 @@ type (
 		Offset               int
 		UserID               string
 		PreloadMessages      bool
+		// AwaitingReply keeps the tasks awaiting a reply, as the supervisor
+		// tells them; PreloadReplyMessages loads only the messages that rule
+		// reads: the pending requests and the conversation's newest message.
+		AwaitingReply        bool
+		PreloadReplyMessages bool
 	}
 
 	ListTasksResponse struct {
 		Tasks []Task
+	}
+
+	// TaskReplyState is whether a task awaits a reply, as the supervisor
+	// tells it, and the newest message of its conversation.
+	TaskReplyState struct {
+		AwaitingReply bool
+		LastMessageAt time.Time
+		LastMessageBy string
 	}
 
 	RespondToTaskRequest struct {

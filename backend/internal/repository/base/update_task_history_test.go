@@ -36,10 +36,12 @@ var historyTables = []any{&model.Task{}, &model.Message{}, &model.ToolCall{}, &m
 
 func historyDBs(t *testing.T) []historyDB {
 	t.Helper()
-	quiet := &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)}
-	dbs := []historyDB{{name: "sqlite", db: openHistoryDB(t, sqlite.Open("file::memory:?_pragma=foreign_keys(1)"), quiet)}}
+	// A config each: gorm.Open keeps the one it is given and sets its
+	// Dialector, so a shared one would make SQLite answer to Postgres's name.
+	quiet := func() *gorm.Config { return &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)} }
+	dbs := []historyDB{{name: "sqlite", db: openHistoryDB(t, sqlite.Open("file::memory:?_pragma=foreign_keys(1)"), quiet())}}
 	if dsn := os.Getenv("AGENTRQ_TEST_POSTGRES_DSN"); dsn != "" {
-		pg := openHistoryDB(t, postgres.Open(dsn), quiet)
+		pg := openHistoryDB(t, postgres.Open(dsn), quiet())
 		dbs = append(dbs, historyDB{name: "postgres", db: pg})
 	} else {
 		t.Log("AGENTRQ_TEST_POSTGRES_DSN is not set; running on SQLite only")

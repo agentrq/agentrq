@@ -724,6 +724,9 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 		}
 		q = q.Where("id IN (SELECT task_id FROM messages m1 WHERE created_at = (SELECT MAX(created_at) FROM messages m2 WHERE m2.task_id = m1.task_id) AND " + metadataExpr + ")")
 	}
+	if req.AwaitingReply {
+		q = q.Where(awaitingReplyClause(r.conn(ctx)), endsWithQuestionMark)
+	}
 
 	orderBy := "created_at desc"
 	if req.Filter == "pending_approval" {
@@ -764,6 +767,12 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 	err := q.Order(orderBy).Find(&tasks).Error
 	if err != nil {
 		return nil, err
+	}
+
+	if req.PreloadReplyMessages && len(tasks) > 0 {
+		if err := r.awaitingReplyMessages(ctx, tasks); err != nil {
+			return nil, err
+		}
 	}
 
 	if req.PreloadMessages && len(tasks) > 0 {

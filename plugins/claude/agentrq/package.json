@@ -1,6 +1,6 @@
 {
   "name": "agentrq",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "description": "AgentRQ Supervisor Plugin for Claude Code",
   "keywords": [
     "claude-plugin",

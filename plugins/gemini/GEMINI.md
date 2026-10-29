@@ -36,6 +36,8 @@ one action's payload with an example.
 3. **Read the whole task.** `task.get` returns it in full, thread included; act on that,
    not on the title alone. To follow up on a task you delegated, `task.messages` with
    `since` returns only the newer messages, far more efficient than another `get`.
+   An agent waiting on an answer often leaves its task `ongoing`: `task.listAll` with
+   `awaitingReply: true` finds the tasks whose agent asked something nobody answered.
 4. **Keep the human in the loop.** When blocked or needing approval, set the status to
    `blocked` and say what you need with `task.reply`. `blocked` is the status the
    interface surfaces as needing attention.
