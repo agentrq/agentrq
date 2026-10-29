@@ -77,6 +77,9 @@ type (
 		ClearContext bool  `gorm:"default:false"`
 		TriggerID    int64 `gorm:"index:idx_tasks_trigger_id"` // event that caused this task
 		EventID      int64 `gorm:"index:idx_tasks_event_id"`   // event this task emits on completion
+		// CreatedByWorkspaceID is the workspace that delegated this task through
+		// the supervisor's task tool; zero (NULL on older rows) for any other.
+		CreatedByWorkspaceID int64 `gorm:"index:idx_tasks_created_by_workspace_id"`
 		// WorkflowID carries workflow context through a run: when this task
 		// publishes its event, the consumer routes the fan-out through this
 		// workflow's steps instead of the global triggers, and stamps the same

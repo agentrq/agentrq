@@ -212,20 +212,22 @@ type GetWorkspaceStatsParams struct {
 }
 
 type ListTasksParams struct {
-	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
-	Filter      string `json:"filter,omitempty" jsonschema:"Only tasks whose title or body contains it."`
-	Status      string `json:"status,omitempty" jsonschema:"Only tasks with this status."`
-	CreatedBy   string `json:"createdBy,omitempty" jsonschema:"Only tasks created by 'human' or 'agent'."`
-	Limit       int    `json:"limit,omitempty" jsonschema:"Maximum number of tasks to return, default 5, capped at 50"`
-	Offset      int    `json:"offset,omitempty" jsonschema:"Number of tasks to skip"`
+	WorkspaceID          string `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
+	Filter               string `json:"filter,omitempty" jsonschema:"Only tasks whose title or body contains it, ignoring case."`
+	Status               string `json:"status,omitempty" jsonschema:"Only tasks with this status."`
+	CreatedBy            string `json:"createdBy,omitempty" jsonschema:"Only tasks created by 'human' or 'agent'."`
+	CreatedByWorkspaceID string `json:"createdByWorkspaceId,omitempty" jsonschema:"Only tasks delegated by this workspace (base62) through this tool's create."`
+	Limit                int    `json:"limit,omitempty" jsonschema:"Maximum number of tasks to return, default 5, capped at 50"`
+	Offset               int    `json:"offset,omitempty" jsonschema:"Number of tasks to skip"`
 }
 
 type ListAllTasksParams struct {
-	Filter    string `json:"filter,omitempty" jsonschema:"Only tasks whose title or body contains it."`
-	Status    string `json:"status,omitempty" jsonschema:"Only tasks with this status."`
-	CreatedBy string `json:"createdBy,omitempty" jsonschema:"Only tasks created by 'human' or 'agent'."`
-	Limit     int    `json:"limit,omitempty" jsonschema:"Maximum number of tasks to return, default 5, capped at 50"`
-	Offset    int    `json:"offset,omitempty" jsonschema:"Number of tasks to skip"`
+	Filter               string `json:"filter,omitempty" jsonschema:"Only tasks whose title or body contains it, ignoring case."`
+	Status               string `json:"status,omitempty" jsonschema:"Only tasks with this status."`
+	CreatedBy            string `json:"createdBy,omitempty" jsonschema:"Only tasks created by 'human' or 'agent'."`
+	CreatedByWorkspaceID string `json:"createdByWorkspaceId,omitempty" jsonschema:"Only tasks delegated by this workspace (base62) through this tool's create."`
+	Limit                int    `json:"limit,omitempty" jsonschema:"Maximum number of tasks to return, default 5, capped at 50"`
+	Offset               int    `json:"offset,omitempty" jsonschema:"Number of tasks to skip"`
 }
 
 type CreateTaskParams struct {
@@ -534,13 +536,14 @@ func (s *WorkspaceServer) handleListTasks(ctx context.Context, req *mcp.CallTool
 	}
 
 	res, err := s.crud.ListTasks(ctx, entity.ListTasksRequest{
-		UserID:      userID,
-		WorkspaceID: parseID(args.WorkspaceID),
-		Filter:      args.Filter,
-		Status:      statuses,
-		CreatedBy:   args.CreatedBy,
-		Limit:       limit,
-		Offset:      args.Offset,
+		UserID:               userID,
+		WorkspaceID:          parseID(args.WorkspaceID),
+		Search:               args.Filter,
+		CreatedByWorkspaceID: parseID(args.CreatedByWorkspaceID),
+		Status:               statuses,
+		CreatedBy:            args.CreatedBy,
+		Limit:                limit,
+		Offset:               args.Offset,
 	})
 	if err != nil {
 		return errorResponse(err), nil, nil
@@ -568,12 +571,13 @@ func (s *WorkspaceServer) handleListAllTasks(ctx context.Context, req *mcp.CallT
 	}
 
 	res, err := s.crud.ListTasks(ctx, entity.ListTasksRequest{
-		UserID:    userID,
-		Filter:    args.Filter,
-		Status:    statuses,
-		CreatedBy: args.CreatedBy,
-		Limit:     limit,
-		Offset:    args.Offset,
+		UserID:               userID,
+		Search:               args.Filter,
+		CreatedByWorkspaceID: parseID(args.CreatedByWorkspaceID),
+		Status:               statuses,
+		CreatedBy:            args.CreatedBy,
+		Limit:                limit,
+		Offset:               args.Offset,
 		// WorkspaceID = 0 implies all
 	})
 	if err != nil {
@@ -609,6 +613,7 @@ func (s *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToo
 			ParentID:     parseID(args.ParentID),
 			ClearContext: args.ClearContext,
 		},
+		BySupervisor: true,
 	})
 	if err != nil {
 		return errorResponse(err), nil, nil

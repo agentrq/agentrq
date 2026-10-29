@@ -336,6 +336,96 @@ func TestRepository_ListTasks_FiltersByAssignee(t *testing.T) {
 	}
 }
 
+// Search matches title or body, ignoring case, and LIKE's wildcards in it are
+// plain text: the supervisor's filter was ignored until this existed.
+func TestRepository_ListTasks_SearchesTitleAndBody(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{}, &model.TaskStateTransition{}, &model.TaskLatency{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	userID := int64(10)
+
+	db.Create(&model.Task{ID: 1, WorkspaceID: 1, UserID: userID, Title: "Release the Gateway", Body: "tag main", Status: "notstarted"})
+	db.Create(&model.Task{ID: 2, WorkspaceID: 2, UserID: userID, Title: "Fix login", Body: "the OAuth gateway drops the cookie", Status: "notstarted"})
+	db.Create(&model.Task{ID: 3, WorkspaceID: 1, UserID: userID, Title: "Unrelated", Body: "nothing to see", Status: "notstarted"})
+	db.Create(&model.Task{ID: 4, WorkspaceID: 1, UserID: userID + 1, Title: "gateway of another account", Status: "notstarted"})
+
+	cases := []struct {
+		name   string
+		req    entity.ListTasksRequest
+		wantID []int64
+	}{
+		{"no match", entity.ListTasksRequest{Search: "zzqx-no-such-text"}, nil},
+		{"title only, any case", entity.ListTasksRequest{Search: "rElEaSe"}, []int64{1}},
+		{"body only", entity.ListTasksRequest{Search: "oauth"}, []int64{2}},
+		{"title or body", entity.ListTasksRequest{Search: "GATEWAY"}, []int64{1, 2}},
+		{"one workspace", entity.ListTasksRequest{WorkspaceID: 2, Search: "gateway"}, []int64{2}},
+		{"wildcards are literal", entity.ListTasksRequest{Search: "%"}, nil},
+		{"underscore is literal", entity.ListTasksRequest{Search: "_"}, nil},
+	}
+	for _, tc := range cases {
+		tasks, err := repo.ListTasks(ctx, tc.req, userID)
+		if err != nil {
+			t.Fatalf("%s: ListTasks failed: %v", tc.name, err)
+		}
+		got := map[int64]bool{}
+		for _, task := range tasks {
+			got[task.ID] = true
+		}
+		if len(got) != len(tc.wantID) {
+			t.Errorf("%s: got %d tasks %v, want %v", tc.name, len(got), got, tc.wantID)
+			continue
+		}
+		for _, id := range tc.wantID {
+			if !got[id] {
+				t.Errorf("%s: task %d missing from %v", tc.name, id, got)
+			}
+		}
+	}
+}
+
+// The supervisor lists what one workspace delegated; older tasks, which have
+// no delegating workspace, are never among them.
+func TestRepository_ListTasks_FiltersByDelegatingWorkspace(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{}, &model.TaskStateTransition{}, &model.TaskLatency{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	userID := int64(10)
+
+	db.Create(&model.Task{ID: 1, WorkspaceID: 1, UserID: userID, Title: "Delegated by 7", Status: "notstarted", CreatedByWorkspaceID: 7})
+	db.Create(&model.Task{ID: 2, WorkspaceID: 2, UserID: userID, Title: "Delegated by 8", Status: "notstarted", CreatedByWorkspaceID: 8})
+	db.Create(&model.Task{ID: 3, WorkspaceID: 1, UserID: userID, Title: "Made in the workspace", Status: "notstarted"})
+	// A row from before the column existed holds NULL.
+	db.Exec("UPDATE tasks SET created_by_workspace_id = NULL WHERE id = 3")
+
+	tasks, err := repo.ListTasks(ctx, entity.ListTasksRequest{CreatedByWorkspaceID: 7}, userID)
+	if err != nil {
+		t.Fatalf("ListTasks failed: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != 1 || tasks[0].CreatedByWorkspaceID != 7 {
+		t.Fatalf("expected only task 1, delegated by 7, got %+v", tasks)
+	}
+
+	all, err := repo.ListTasks(ctx, entity.ListTasksRequest{}, userID)
+	if err != nil {
+		t.Fatalf("ListTasks failed: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("expected the NULL row to read back with the rest, got %d tasks", len(all))
+	}
+}
+
 func TestRepository_CountTasks_FiltersByStatusAndAssignee(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

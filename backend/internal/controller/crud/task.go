@@ -90,6 +90,19 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		}
 	}
 
+	// The supervisor's token names the account, not the calling workspace, so
+	// its task is put down to the supervisor workspace, if the account has one.
+	var createdByWorkspaceID int64
+	if req.BySupervisor {
+		sup, found, err := c.findSupervisorWorkspace(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			createdByWorkspaceID = sup.ID
+		}
+	}
+
 	now := time.Now()
 
 	// The attachments are filed under the task, so it needs its id first.
@@ -167,6 +180,7 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		EventID:               eventID,
 		WorkflowID:            req.Task.WorkflowID,
 		CompletionTriggerType: completionTrigger,
+		CreatedByWorkspaceID:  createdByWorkspaceID,
 	}
 	var created model.Task
 	if req.PanoDocID != 0 {
@@ -936,6 +950,7 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 		WorkflowID:            m.WorkflowID,
 		WorkflowDepth:         m.WorkflowDepth,
 		CompletionTriggerType: m.CompletionTriggerType,
+		CreatedByWorkspaceID:  m.CreatedByWorkspaceID,
 	}
 }
 

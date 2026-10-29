@@ -462,6 +462,9 @@ func FromEntityTaskToView(t entity.Task) view.Task {
 		res.WorkflowID = monoflake.ID(t.WorkflowID).String()
 	}
 	res.CompletionTriggerType = t.CompletionTriggerType
+	if t.CreatedByWorkspaceID != 0 {
+		res.CreatedByWorkspaceID = monoflake.ID(t.CreatedByWorkspaceID).String()
+	}
 	return res
 }
 
@@ -602,6 +605,9 @@ func FromModelTaskToView(t model.Task) view.Task {
 		res.WorkflowID = monoflake.ID(t.WorkflowID).String()
 	}
 	res.CompletionTriggerType = t.CompletionTriggerType
+	if t.CreatedByWorkspaceID != 0 {
+		res.CreatedByWorkspaceID = monoflake.ID(t.CreatedByWorkspaceID).String()
+	}
 	return res
 }
 func FromHTTPRequestToUpdateScheduledTaskRequestEntity(c *fiber.Ctx) *entity.UpdateScheduledTaskRequest {

@@ -18,11 +18,19 @@ type mockTaskCrud struct {
 	crud.Controller
 
 	createTask func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error)
+	listTasks  func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error)
 }
 
 func (m *mockTaskCrud) CreateTask(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
 	return m.createTask(ctx, req)
 }
+
+func (m *mockTaskCrud) ListTasks(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+	return m.listTasks(ctx, req)
+}
+
+// delegatingWorkspace is the workspace that hands a task to testWorkspace.
+const delegatingWorkspace = int64(301)
 
 func taskServer(ctrl *mockTaskCrud) *WorkspaceServer {
 	return &WorkspaceServer{crud: ctrl}
@@ -70,6 +78,9 @@ func TestCreateTask_ClearContextDefaultsToFalseWhenOmitted(t *testing.T) {
 	if got.Task.CreatedBy != "agent" {
 		t.Errorf("CreatedBy = %q, want %q so the crud layer applies the workspace's clearContextDefault", got.Task.CreatedBy, "agent")
 	}
+	if !got.BySupervisor {
+		t.Errorf("BySupervisor = false, want true so the crud layer records the supervisor workspace as the delegator")
+	}
 }
 
 // The interface may leave a title out and have the browser name the task, so
@@ -89,6 +100,52 @@ func TestCreateTask_StillRequiresATitle(t *testing.T) {
 		}))
 		if !res.isError || res.text != "title is required" {
 			t.Errorf("createTask titled %q answered %+v, want the error \"title is required\"", title, res)
+		}
+	}
+}
+
+// filter is text to find in a title or body. The crud layer's own Filter is a
+// named view ("pending_approval"), which drops any other value, so the
+// supervisor's text must arrive as Search.
+func TestListTasks_FilterSearchesTitleAndBody(t *testing.T) {
+	var got []entity.ListTasksRequest
+	ctrl := &mockTaskCrud{listTasks: func(_ context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+		got = append(got, req)
+		return &entity.ListTasksResponse{}, nil
+	}}
+	srv := taskServer(ctrl)
+
+	textOf(t, toolResult(srv.handleListTasks(authedContext(), nil, ListTasksParams{WorkspaceID: base62(testWorkspace), Filter: "gateway"})))
+	textOf(t, toolResult(srv.handleListAllTasks(authedContext(), nil, ListAllTasksParams{Filter: "gateway"})))
+
+	if len(got) != 2 {
+		t.Fatalf("ListTasks called %d times, want 2", len(got))
+	}
+	for i, req := range got {
+		if req.Search != "gateway" || req.Filter != "" {
+			t.Errorf("call %d: Search = %q, Filter = %q, want the text in Search and no Filter", i, req.Search, req.Filter)
+		}
+	}
+}
+
+// createdByWorkspaceId lists what one workspace delegated, in one query.
+func TestListTasks_FiltersByDelegatingWorkspace(t *testing.T) {
+	var got []entity.ListTasksRequest
+	ctrl := &mockTaskCrud{listTasks: func(_ context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+		got = append(got, req)
+		return &entity.ListTasksResponse{}, nil
+	}}
+	srv := taskServer(ctrl)
+
+	textOf(t, toolResult(srv.handleListTasks(authedContext(), nil, ListTasksParams{WorkspaceID: base62(testWorkspace), CreatedByWorkspaceID: base62(delegatingWorkspace)})))
+	textOf(t, toolResult(srv.handleListAllTasks(authedContext(), nil, ListAllTasksParams{CreatedByWorkspaceID: base62(delegatingWorkspace)})))
+
+	if len(got) != 2 {
+		t.Fatalf("ListTasks called %d times, want 2", len(got))
+	}
+	for i, req := range got {
+		if req.CreatedByWorkspaceID != delegatingWorkspace {
+			t.Errorf("call %d: CreatedByWorkspaceID = %d, want %d", i, req.CreatedByWorkspaceID, delegatingWorkspace)
 		}
 	}
 }

@@ -364,6 +364,7 @@ type (
 		WorkflowID            int64
 		WorkflowDepth         int
 		CompletionTriggerType int16
+		CreatedByWorkspaceID  int64
 	}
 
 	CreateTaskRequest struct {
@@ -372,6 +373,9 @@ type (
 		// PanoDocID, when set, is the Pano doc the task is about: the two are
 		// linked as the task is created, or neither is written.
 		PanoDocID int64
+		// BySupervisor says the supervisor's task tool is creating it: the
+		// account's supervisor workspace is recorded as the one delegating it.
+		BySupervisor bool
 	}
 
 	CreateTaskResponse struct {
@@ -447,15 +451,17 @@ type (
 	}
 
 	ListTasksRequest struct {
-		WorkspaceID     int64
-		CreatedBy       string   // optional filter
-		Assignee        string   // optional filter, e.g. "agent" | "human"
-		Status          []string // optional filter
-		Filter          string   // e.g. "pending_approval"
-		Limit           int
-		Offset          int
-		UserID          string
-		PreloadMessages bool
+		WorkspaceID          int64
+		CreatedBy            string   // optional filter
+		Assignee             string   // optional filter, e.g. "agent" | "human"
+		Status               []string // optional filter
+		Filter               string   // e.g. "pending_approval"
+		Search               string   // optional: title or body contains it, ignoring case
+		CreatedByWorkspaceID int64    // optional filter: the workspace that delegated it
+		Limit                int
+		Offset               int
+		UserID               string
+		PreloadMessages      bool
 	}
 
 	ListTasksResponse struct {

@@ -81,6 +81,22 @@ func TestTaskViews_CountToolCalls(t *testing.T) {
 	}
 }
 
+// Both views name the workspace that delegated a task, and leave the field out
+// for every other task.
+func TestTaskViews_NameTheDelegatingWorkspace(t *testing.T) {
+	want := monoflake.ID(7).String()
+	if got := FromModelTaskToView(model.Task{ID: 1, CreatedByWorkspaceID: 7}); got.CreatedByWorkspaceID != want {
+		t.Errorf("event view says %q, want %q", got.CreatedByWorkspaceID, want)
+	}
+	if got := FromEntityTaskToView(entity.Task{ID: 1, CreatedByWorkspaceID: 7}); got.CreatedByWorkspaceID != want {
+		t.Errorf("REST view says %q, want %q", got.CreatedByWorkspaceID, want)
+	}
+	b, _ := json.Marshal(FromEntityTaskToView(entity.Task{ID: 1}))
+	if strings.Contains(string(b), "createdByWorkspaceId") {
+		t.Errorf("a task nobody delegated carries the field: %s", b)
+	}
+}
+
 // The stream event carries the task's plan, or no plan once it is withdrawn.
 func TestFromModelTaskPlanToUpdatedView(t *testing.T) {
 	at := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)

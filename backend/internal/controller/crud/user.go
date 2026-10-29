@@ -170,20 +170,33 @@ func (c *controller) createSupervisorWorkspace(ctx context.Context, userID int64
 // makes it as signup does when there is none: the Pano's chat talks to it.
 func (c *controller) EnsureSupervisorWorkspace(ctx context.Context, req entity.EnsureSupervisorWorkspaceRequest) (*entity.GetWorkspaceResponse, error) {
 	userID := monoflake.IDFromBase62(req.UserID).Int64()
-	workspaces, err := c.repository.ListWorkspaces(ctx, userID, false)
+	w, found, err := c.findSupervisorWorkspace(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	for _, w := range workspaces {
-		if w.Name == supervisorWorkspaceName {
-			return &entity.GetWorkspaceResponse{Workspace: fromModelWorkspaceToEntity(w)}, nil
-		}
+	if found {
+		return &entity.GetWorkspaceResponse{Workspace: fromModelWorkspaceToEntity(w)}, nil
 	}
 	created, err := c.createSupervisorWorkspace(ctx, userID, time.Now())
 	if err != nil {
 		return nil, err
 	}
 	return &entity.GetWorkspaceResponse{Workspace: fromModelWorkspaceToEntity(created)}, nil
+}
+
+// findSupervisorWorkspace returns the account's supervisor workspace, and
+// whether it has one.
+func (c *controller) findSupervisorWorkspace(ctx context.Context, userID int64) (model.Workspace, bool, error) {
+	workspaces, err := c.repository.ListWorkspaces(ctx, userID, false)
+	if err != nil {
+		return model.Workspace{}, false, err
+	}
+	for _, w := range workspaces {
+		if w.Name == supervisorWorkspaceName {
+			return w, true, nil
+		}
+	}
+	return model.Workspace{}, false, nil
 }
 
 func (c *controller) CreateUser(ctx context.Context, u entity.User) (entity.User, error) {

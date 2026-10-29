@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -597,6 +598,9 @@ func (r *repository) ResetWorkspaceID(ctx context.Context, oldID, newID, userID 
 		if err := tx.Model(&model.PanoDoc{}).Where("updated_by_workspace_id = ?", oldID).UpdateColumn("updated_by_workspace_id", newID).Error; err != nil {
 			return err
 		}
+		if err := tx.Model(&model.Task{}).Where("created_by_workspace_id = ?", oldID).UpdateColumn("created_by_workspace_id", newID).Error; err != nil {
+			return err
+		}
 
 		// A public attachment link names its file, kept under the content
 		// workspace: this one, for its own tasks and its forks'.
@@ -691,6 +695,9 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 	if req.CreatedBy != "" {
 		q = q.Where("created_by = ?", req.CreatedBy)
 	}
+	if req.CreatedByWorkspaceID != 0 {
+		q = q.Where("created_by_workspace_id = ?", req.CreatedByWorkspaceID)
+	}
 	if req.Assignee != "" {
 		q = q.Where("assignee = ?", req.Assignee)
 	}
@@ -698,6 +705,11 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 		q = q.Where("status = ?", req.Status[0])
 	} else if len(req.Status) > 0 {
 		q = q.Where("status IN ?", req.Status)
+	}
+	if req.Search != "" {
+		// LIKE's own wildcards in Search are matched literally.
+		pattern := "%" + likeEscaper.Replace(strings.ToLower(req.Search)) + "%"
+		q = q.Where(`(LOWER(title) LIKE ? ESCAPE '\' OR LOWER(body) LIKE ? ESCAPE '\')`, pattern, pattern)
 	}
 
 	if req.Filter == "pending_approval" {

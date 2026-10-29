@@ -29,13 +29,13 @@ type TaskParams struct {
 func (s *WorkspaceServer) taskActions() []mcpevent.ToolAction {
 	return []mcpevent.ToolAction{
 		mcpevent.NewToolAction("list", "List a workspace's tasks.", s.handleListTasks).
-			WithDetails("filter, status and createdBy narrow the list; limit (default 5, at most 50) and offset page through it.").
+			WithDetails("filter keeps the tasks whose title or body contains it, ignoring case; status, createdBy ('human' or 'agent') and createdByWorkspaceId (the workspace that delegated it through create) narrow the list further; limit (default 5, at most 50) and offset page through it.").
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "status": "blocked", "limit": 10}`),
 		mcpevent.NewToolAction("listAll", "List the tasks of every workspace.", s.handleListAllTasks).
-			WithDetails("filter, status and createdBy narrow the list; limit (default 5, at most 50) and offset page through it.").
+			WithDetails("filter keeps the tasks whose title or body contains it, ignoring case; status, createdBy ('human' or 'agent') and createdByWorkspaceId (the workspace that delegated it through create) narrow the list further; limit (default 5, at most 50) and offset page through it.").
 			WithExample(`{"status": "ongoing"}`),
 		mcpevent.NewToolAction("create", "Create a task in a workspace, assigned to the human unless assignee says otherwise.", s.handleCreateTask).
-			WithDetails("Write the full context into body: the receiving agent has nothing else. cronSchedule makes it a scheduled task: a recurring one runs at most hourly, a one-time one fixes dom and month.").
+			WithDetails("Write the full context into body: the receiving agent has nothing else. cronSchedule makes it a scheduled task: a recurring one runs at most hourly, a one-time one fixes dom and month. The task records the supervisor workspace as its createdByWorkspaceId, which list and listAll filter on.").
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "title": "Release v0.9.20", "body": "Tag main and publish the release notes.", "assignee": "agent", "clearContext": true}`),
 		mcpevent.NewToolAction("get", "Get a task.", s.handleGetTask).
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ"}`),

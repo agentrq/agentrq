@@ -90,6 +90,8 @@ func TestResetWorkspaceID_MovesEveryRowNamingTheWorkspace(t *testing.T) {
 	for _, task := range []model.Task{
 		{ID: 500, WorkspaceID: rsFork, UserID: rsUser, Attachments: attachments(rsOld)},
 		{ID: 600, WorkspaceID: rsOther, UserID: rsUser, Attachments: attachments(rsOther)},
+		// Another workspace's task that this one delegated to it.
+		{ID: 700, WorkspaceID: rsOther, UserID: rsUser, CreatedByWorkspaceID: rsOld},
 	} {
 		if err := db.Create(&task).Error; err != nil {
 			t.Fatal(err)
@@ -145,6 +147,12 @@ func TestResetWorkspaceID_MovesEveryRowNamingTheWorkspace(t *testing.T) {
 		t.Errorf("the Pano docs were written by %d/%d and %d/%d, want %d/%d and %d/%d",
 			docs[0].CreatedByWorkspaceID, docs[0].UpdatedByWorkspaceID, docs[1].CreatedByWorkspaceID, docs[1].UpdatedByWorkspaceID,
 			rsNew, rsNew, rsOther, rsNew)
+	}
+
+	var delegated model.Task
+	db.First(&delegated, 700)
+	if delegated.CreatedByWorkspaceID != rsNew {
+		t.Errorf("the delegated task names %d as its delegator, want the new id %d", delegated.CreatedByWorkspaceID, rsNew)
 	}
 
 	var task model.Task
@@ -240,6 +248,7 @@ func TestResetWorkspaceID_CoversEveryColumnNamingAWorkspace(t *testing.T) {
 		"SkillShare.TargetWorkspaceID": true,
 		"PanoDoc.CreatedByWorkspaceID": true,
 		"PanoDoc.UpdatedByWorkspaceID": true,
+		"Task.CreatedByWorkspaceID":    true,
 	}
 	for _, m := range workspaceIDTables {
 		covered[reflect.TypeOf(m).Elem().Name()+".WorkspaceID"] = true

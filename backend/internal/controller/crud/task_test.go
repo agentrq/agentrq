@@ -52,6 +52,64 @@ func TestCreateTask_Success(t *testing.T) {
 	}
 }
 
+// A task the supervisor's task tool creates is put down to the account's
+// supervisor workspace; with none, and for any other task, nothing is.
+func TestCreateTask_BySupervisorRecordsTheSupervisorWorkspace(t *testing.T) {
+	cases := []struct {
+		name         string
+		bySupervisor bool
+		workspaces   []model.Workspace
+		want         int64
+	}{
+		{"by the supervisor", true, []model.Workspace{{ID: 8, Name: "app"}, {ID: 9, Name: "supervisor"}}, 9},
+		{"no supervisor workspace", true, []model.Workspace{{ID: 8, Name: "app"}}, 0},
+		{"not by the supervisor", false, nil, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTestController(t)
+
+			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+			if tc.bySupervisor {
+				e.repo.EXPECT().ListWorkspaces(gomock.Any(), testUserID, false).Return(tc.workspaces, nil)
+			}
+			e.idgen.EXPECT().NextID().Return(int64(44))
+			e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+				return m, nil
+			})
+
+			resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
+				UserID:       testUserIDStr,
+				Task:         entity.Task{WorkspaceID: 1, Title: "Delegated", CreatedBy: "agent"},
+				BySupervisor: tc.bySupervisor,
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.Task.CreatedByWorkspaceID != tc.want {
+				t.Errorf("CreatedByWorkspaceID = %d, want %d", resp.Task.CreatedByWorkspaceID, tc.want)
+			}
+		})
+	}
+}
+
+// A task whose delegator cannot be looked up is not created at all.
+func TestCreateTask_BySupervisorFailsWhenTheLookupFails(t *testing.T) {
+	e := newTestController(t)
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().ListWorkspaces(gomock.Any(), testUserID, false).Return(nil, errors.New("database unavailable"))
+
+	_, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
+		UserID:       testUserIDStr,
+		Task:         entity.Task{WorkspaceID: 1, Title: "Delegated", CreatedBy: "agent"},
+		BySupervisor: true,
+	})
+	if err == nil || err.Error() != "database unavailable" {
+		t.Fatalf("err = %v, want database unavailable", err)
+	}
+}
+
 func TestCreateTask_AgentInheritYOLO(t *testing.T) {
 	e := newTestController(t)
 

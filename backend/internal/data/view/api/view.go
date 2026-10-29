@@ -278,6 +278,9 @@ type (
 		// two the author actually picked.
 		WorkflowID            string `json:"workflowId,omitempty"`
 		CompletionTriggerType int16  `json:"completionTriggerType,omitempty"`
+		// CreatedByWorkspaceID is the workspace that delegated the task through
+		// the supervisor's task tool.
+		CreatedByWorkspaceID string `json:"createdByWorkspaceId,omitempty"`
 	}
 
 	// TaskStatusChange is the "task.status" stream event: an agent moving a

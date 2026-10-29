@@ -3297,6 +3297,12 @@ components:
         completionTriggerType:
           type: integer
           description: Records which of `eventId` or `workflowId` the author actually picked.
+        createdByWorkspaceId:
+          type: string
+          readOnly: true
+          description: |
+            The workspace that delegated this task through the supervisor's
+            task tool. Absent for a task created any other way.
 
     TaskEnvelope:
       type: object
