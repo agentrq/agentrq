@@ -1,0 +1,52 @@
+name: Cursor Plugins
+
+# Cursor reads its marketplace from this repository's root and each plugin from
+# the folder an entry names, so there is nothing to build or publish. What can
+# break is a manifest, a missing file it points at, a skill drifting from the
+# Claude plugins' copy, and the documented tools drifting from the servers.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.cursor-plugin/**'
+      - 'plugins/cursor/**'
+      - 'plugins/claude/agentrq/skills/**'
+      - 'plugins/claude/agentrq-workspace/skills/**'
+      - 'backend/internal/handler/coremcp/**'
+      - 'backend/internal/controller/mcp/**'
+      - '.github/workflows/plugin-cursor.yml'
+  pull_request:
+    paths:
+      - '.cursor-plugin/**'
+      - 'plugins/cursor/**'
+      - 'plugins/claude/agentrq/skills/**'
+      - 'plugins/claude/agentrq-workspace/skills/**'
+      - 'backend/internal/handler/coremcp/**'
+      - 'backend/internal/controller/mcp/**'
+      - '.github/workflows/plugin-cursor.yml'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  check:
+    name: Manifests and documented tools
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Check the Cursor plugins
+        working-directory: backend
+        run: go test ./internal/handler/coremcp/ -run 'TestCursorPlugin|TestPluginDocs' -v

@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "agentrq-workspace": {
+      "url": "${AGENTRQ_WORKSPACE_MCP_URL}"
+    }
+  }
+}

@@ -368,6 +368,7 @@ CoreMCP 使用 OAuth2，让管理型 Agent 在当前用户权限范围内查看�
 官方 README 提到的扩展包括：
 
 - Claude Code plugin marketplace extension
+- Cursor plugins（[`plugins/cursor`](plugins/cursor/agentrq/README.md)：`agentrq` 为 Supervisor，`agentrq-workspace` 为单个 Workspace 的执行 Agent）
 - Gemini CLI extension
 - ACP Gateway（Antigravity / Codex）
 - DeepSeek Harness plugin

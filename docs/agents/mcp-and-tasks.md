@@ -34,8 +34,8 @@ stays green. It catches only the reverse — a CLI verb that stops calling a too
 it used to.
 
 The one test that really compares the two is `plugin_docs_test.go`: it fails
-when `plugins/claude/agentrq-workspace/README.md` or its `SKILL.md` lacks a row
-for a tool. The setup tab's `.claude/settings.local.json` snippet needs nothing —
+when `plugins/{claude,cursor}/agentrq-workspace/README.md` or its `SKILL.md` lacks
+a row for a tool. The setup tab's `.claude/settings.local.json` snippet needs nothing —
 it allows the server with one `mcp__<server>__*` wildcard.
 
 The remaining copies are documentation and fail silently: `README.md` (the

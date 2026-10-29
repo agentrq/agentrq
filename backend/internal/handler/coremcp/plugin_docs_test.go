@@ -132,6 +132,8 @@ func TestPluginDocsListExactlyTheRegisteredTools(t *testing.T) {
 				"plugins/claude/agentrq/skills/agentrq/SKILL.md",
 				"plugins/claude/agentrq-custom-supervisor/README.md",
 				"plugins/claude/agentrq-custom-supervisor/skills/agentrq/SKILL.md",
+				"plugins/cursor/agentrq/README.md",
+				"plugins/cursor/agentrq/skills/agentrq/SKILL.md",
 			},
 		},
 		{
@@ -150,6 +152,8 @@ func TestPluginDocsListExactlyTheRegisteredTools(t *testing.T) {
 			docs: []string{
 				"plugins/claude/agentrq-workspace/README.md",
 				"plugins/claude/agentrq-workspace/skills/agentrq-workspace/SKILL.md",
+				"plugins/cursor/agentrq-workspace/README.md",
+				"plugins/cursor/agentrq-workspace/skills/agentrq-workspace/SKILL.md",
 			},
 		},
 	}
@@ -200,6 +204,10 @@ func TestPluginDocsDoNotNameInvalidStatuses(t *testing.T) {
 		"plugins/claude/agentrq-workspace/skills/agentrq-workspace/SKILL.md",
 		"plugins/claude/agentrq-custom-supervisor/README.md",
 		"plugins/claude/agentrq-custom-supervisor/skills/agentrq/SKILL.md",
+		"plugins/cursor/agentrq/README.md",
+		"plugins/cursor/agentrq/skills/agentrq/SKILL.md",
+		"plugins/cursor/agentrq-workspace/README.md",
+		"plugins/cursor/agentrq-workspace/skills/agentrq-workspace/SKILL.md",
 		"plugins/gemini/README.md",
 		"plugins/gemini/GEMINI.md",
 	}
@@ -310,5 +318,139 @@ func TestPluginDocsCustomSupervisorSkillMatchesTheHostedOne(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Errorf("%s differs from %s; copy the hosted skill over it", custom, hosted)
+	}
+}
+
+// The Cursor plugins are the Claude plugins packaged for Cursor, so their skills
+// must not drift from the Claude plugins' copies either.
+func TestPluginDocsCursorSkillsMatchTheClaudeOnes(t *testing.T) {
+	root := repoRoot(t)
+	for _, skill := range []string{
+		"agentrq/skills/agentrq/SKILL.md",
+		"agentrq-workspace/skills/agentrq-workspace/SKILL.md",
+	} {
+		cursor := "plugins/cursor/" + skill
+		claude := "plugins/claude/" + skill
+
+		got, err := os.ReadFile(filepath.Join(root, cursor))
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", cursor, err)
+		}
+		want, err := os.ReadFile(filepath.Join(root, claude))
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", claude, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s differs from %s; copy the Claude skill over it", cursor, claude)
+		}
+	}
+}
+
+// Cursor reads the marketplace from the repository root and each plugin from
+// the folder its entry names, and lists nothing whose names disagree or whose
+// files are missing. Nothing here runs Cursor, so this is the check that they
+// are there.
+func TestCursorPluginManifest(t *testing.T) {
+	root := repoRoot(t)
+	marketPath := filepath.Join(root, ".cursor-plugin", "marketplace.json")
+	raw, err := os.ReadFile(marketPath)
+	if err != nil {
+		t.Fatalf("cannot read %s: %v", marketPath, err)
+	}
+	var market struct {
+		Name  string `json:"name"`
+		Owner struct {
+			Name string `json:"name"`
+		} `json:"owner"`
+		Plugins []struct {
+			Name   string `json:"name"`
+			Source string `json:"source"`
+		} `json:"plugins"`
+	}
+	if err := json.Unmarshal(raw, &market); err != nil {
+		t.Fatalf("invalid JSON in %s: %v", marketPath, err)
+	}
+	kebab := regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`)
+	if !kebab.MatchString(market.Name) || market.Owner.Name == "" {
+		t.Errorf("%s needs a kebab-case name and an owner.name, got %q and %q", marketPath, market.Name, market.Owner.Name)
+	}
+
+	// The MCP server each plugin declares. The workspace one has no fixed URL:
+	// it is the variable its manifest declares, filled in by Cursor.
+	servers := map[string][2]string{
+		"agentrq":           {"agentrq", "https://mcp.agentrq.com/mcp"},
+		"agentrq-workspace": {"agentrq-workspace", "${AGENTRQ_WORKSPACE_MCP_URL}"},
+	}
+	var names []string
+	for _, entry := range market.Plugins {
+		names = append(names, entry.Name)
+	}
+	if !slices.Equal(names, []string{"agentrq", "agentrq-workspace"}) {
+		t.Fatalf("%s lists %v, want [agentrq agentrq-workspace]", marketPath, names)
+	}
+
+	for _, entry := range market.Plugins {
+		t.Run(entry.Name, func(t *testing.T) {
+			pluginDir := filepath.Join(root, entry.Source)
+			manifestPath := filepath.Join(pluginDir, ".cursor-plugin", "plugin.json")
+			raw, err := os.ReadFile(manifestPath)
+			if err != nil {
+				t.Fatalf("cannot read %s: %v", manifestPath, err)
+			}
+			var manifest struct {
+				Name      string `json:"name"`
+				Version   string `json:"version"`
+				License   string `json:"license"`
+				Logo      string `json:"logo"`
+				Variables struct {
+					Properties map[string]json.RawMessage `json:"properties"`
+				} `json:"variables"`
+			}
+			if err := json.Unmarshal(raw, &manifest); err != nil {
+				t.Fatalf("invalid JSON in %s: %v", manifestPath, err)
+			}
+			if manifest.Name != entry.Name {
+				t.Errorf("%s calls itself %q; the marketplace calls it %q", manifestPath, manifest.Name, entry.Name)
+			}
+			if manifest.Version == "" || manifest.License != "Apache-2.0" {
+				t.Errorf("%s version = %q, license = %q; want a version and Apache-2.0", manifestPath, manifest.Version, manifest.License)
+			}
+			if logo, err := os.ReadFile(filepath.Join(pluginDir, manifest.Logo)); err != nil || !bytes.Contains(logo, []byte("<svg")) {
+				t.Errorf("%s logo %q is not an SVG in the plugin folder", manifestPath, manifest.Logo)
+			}
+
+			mcpPath := filepath.Join(pluginDir, "mcp.json")
+			raw, err = os.ReadFile(mcpPath)
+			if err != nil {
+				t.Fatalf("cannot read %s: %v", mcpPath, err)
+			}
+			var mcp struct {
+				MCPServers map[string]struct {
+					URL string `json:"url"`
+				} `json:"mcpServers"`
+			}
+			if err := json.Unmarshal(raw, &mcp); err != nil {
+				t.Fatalf("invalid JSON in %s: %v", mcpPath, err)
+			}
+			want := servers[entry.Name]
+			if got := mcp.MCPServers[want[0]].URL; got != want[1] || len(mcp.MCPServers) != 1 {
+				t.Errorf("%s = %v, want only %s at %s", mcpPath, mcp.MCPServers, want[0], want[1])
+			}
+			// Every ${VAR} the server uses must be a variable the manifest
+			// declares, or Cursor has nothing to put there.
+			for _, m := range regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`).FindAllStringSubmatch(string(raw), -1) {
+				if _, ok := manifest.Variables.Properties[m[1]]; !ok {
+					t.Errorf("%s uses ${%s}, which %s does not declare under variables", mcpPath, m[1], manifestPath)
+				}
+			}
+
+			readme, err := os.ReadFile(filepath.Join(pluginDir, "README.md"))
+			if err != nil {
+				t.Fatalf("cannot read README.md: %v", err)
+			}
+			if !strings.Contains(string(readme), "[Privacy Policy](https://agentrq.com/privacy)") {
+				t.Errorf("%s README.md does not contain [Privacy Policy](https://agentrq.com/privacy)", entry.Source)
+			}
+		})
 	}
 }

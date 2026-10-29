@@ -629,6 +629,14 @@ Plugins for Claude Code are published from this repository's own marketplace, ea
 
 > Previously these lived in a separate `agentrq-claude-extension` repository. The marketplace URL is now this repository; if you added the old one, re-add the marketplace at the URL above.
 
+### 🖱️ Cursor
+Plugins for Cursor are published from this repository too, with the same skills and MCP access as the Claude Code ones:
+
+- [`agentrq`](plugins/cursor/agentrq/README.md) — the **supervisor**, connected to `https://mcp.agentrq.com/mcp`; it signs in with OAuth and asks nothing at install.
+- [`agentrq-workspace`](plugins/cursor/agentrq-workspace/README.md) — the **workspace agent**; its MCP URL is a plugin variable set under **Plugins → Configure** in the Cursor dashboard.
+
+**Installation:** open **Customize** in Cursor's sidebar, find **AgentRQ** and select **Install**.
+
 ### ♊ Gemini CLI
 The Gemini CLI extension allows you to manage AgentRQ workspaces and tasks directly from your terminal using Google's Gemini models.
 

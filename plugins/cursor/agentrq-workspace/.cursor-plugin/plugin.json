@@ -1,0 +1,26 @@
+{
+  "name": "agentrq-workspace",
+  "displayName": "AgentRQ Workspace",
+  "version": "1.0.0",
+  "description": "Workspace agent that executes tasks assigned by humans or supervisors, communicates progress via reply, and manages task lifecycle within a specific AgentRQ workspace",
+  "author": {
+    "name": "Mustafa Turan",
+    "email": "dev@agentrq.com"
+  },
+  "homepage": "https://agentrq.com",
+  "repository": "https://github.com/agentrq/agentrq",
+  "license": "Apache-2.0",
+  "keywords": ["agentrq", "mcp", "tasks", "human-in-the-loop", "task-manager"],
+  "logo": "assets/logo.svg",
+  "variables": {
+    "type": "object",
+    "properties": {
+      "AGENTRQ_WORKSPACE_MCP_URL": {
+        "type": "string",
+        "title": "Workspace MCP URL",
+        "description": "Your unique AgentRQ Workspace MCP URL, shown in the workspace's Setup tab (e.g., https://<WORKSPACEID>.mcp.agentrq.com/?token=...)"
+      }
+    },
+    "required": ["AGENTRQ_WORKSPACE_MCP_URL"]
+  }
+}

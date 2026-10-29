@@ -1,0 +1,22 @@
+{
+  "name": "agentrq",
+  "owner": {
+    "name": "AgentRQ",
+    "email": "hi@agentrq.com"
+  },
+  "metadata": {
+    "description": "Task manager for AI agents. Orchestrate multiple agents, trigger agentic flows with events on your desired language."
+  },
+  "plugins": [
+    {
+      "name": "agentrq",
+      "source": "./plugins/cursor/agentrq",
+      "description": "Human-in-the-loop agent orchestration for managing multiple agents with specialized tasks."
+    },
+    {
+      "name": "agentrq-workspace",
+      "source": "./plugins/cursor/agentrq-workspace",
+      "description": "Human-in-the-loop task manager for AI agents"
+    }
+  ]
+}

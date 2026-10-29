@@ -15,8 +15,8 @@ per-workspace has to change for it to be reachable.
 **Adding or renaming a *tool*** here means updating `SUPERVISOR_TOOLS`
 (`desktop/src/main/extensions/servers.js`), which
 `desktop/test/extensions/servers.test.js` regex-compares against every non-test
-`.go` file in this package, so a mismatch fails `npm test`. The two Claude
-plugin docs (`plugins/claude/agentrq/README.md` and its `SKILL.md`) and the
+`.go` file in this package, so a mismatch fails `npm test`. The Claude and
+Cursor plugin docs (`plugins/{claude,cursor}/agentrq/README.md` and its `SKILL.md`) and the
 Gemini extension's `plugins/gemini/README.md` need a table row too —
 `plugin_docs_test.go` checks those. So does `setupTools` (`setup.go`), the
 list a browser opening `/mcp` sees; `TestSetupPage_ListsEveryTool` checks it.
