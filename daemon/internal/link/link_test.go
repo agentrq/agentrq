@@ -899,12 +899,26 @@ func TestTheHeartbeatSaysWhatIsRunning(t *testing.T) {
 		for _, c := range b.controls(t, wire.OpHeartbeat) {
 			var hb wire.Heartbeat
 			_ = json.Unmarshal(c.Body, &hb)
-			if len(hb.Sessions) == 1 && hb.Sessions[0] == 7 {
+			if len(hb.Sessions) == 1 && hb.Sessions[0] == 7 &&
+				len(hb.Activity) == 1 && hb.Activity[0].SessionID == 7 {
 				return true
 			}
 		}
 		return false
-	}, "no heartbeat named the running session")
+	}, "no heartbeat named the running session and its activity")
+}
+
+// A session the supervisor still lists may have no stream, like one restored
+// after an update that has not started yet: it has no activity to report.
+func TestActivityIsOnlyForSessionsWithAStream(t *testing.T) {
+	s := newStreams()
+	s.open(7, 80, 24, nil)
+	defer s.remove(7)
+
+	got := s.activity([]uint64{7, 8})
+	if len(got) != 1 || got[0].SessionID != 7 {
+		t.Fatalf("activity() = %+v, want only session 7", got)
+	}
 }
 
 // A daemon that reconnects has to bring its terminals with it.

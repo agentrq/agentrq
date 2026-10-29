@@ -45,6 +45,10 @@ func (m *mockForkCrud) ListWorkspaces(context.Context, entity.ListWorkspacesRequ
 	}}, nil
 }
 
+func (m *mockForkCrud) ListAgentActivity(context.Context, entity.ListAgentActivityRequest) (*entity.ListAgentActivityResponse, error) {
+	return &entity.ListAgentActivityResponse{}, nil
+}
+
 func (m *mockForkCrud) GetWorkspace(_ context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceResponse, error) {
 	return &entity.GetWorkspaceResponse{Workspace: entity.Workspace{ID: req.ID, Name: "api fork", ForkOfID: forkParentID}}, nil
 }
@@ -141,7 +145,7 @@ func TestMergeFork_Refused(t *testing.T) {
 // An agent reading the workspaces can tell a fork from its parent.
 func TestWorkspaceOutputCarriesForkOfID(t *testing.T) {
 	s := &WorkspaceServer{crud: &mockForkCrud{}}
-	list := textOf(t, toolResult(s.handleListWorkspaces(authedContext(), nil, ListWorkspacesParams{})))
+	list := textOf(t, toolResult(s.handleListWorkspaces(authedContext(), nil, ListWorkspacesParams{IncludeDetails: true})))
 	if !strings.Contains(list, `"forkOfId":"`+b62(forkParentID)+`"`) || !strings.Contains(list, `"forkCount":1`) {
 		t.Errorf("listWorkspaces = %s", list)
 	}

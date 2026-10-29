@@ -31,6 +31,8 @@ type SessionController interface {
 	ForkFolderMachines(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error)
 	RecordTerminalView(ctx context.Context, req entity.RecordTerminalViewRequest)
 	RecordSessionKill(ctx context.Context, req entity.RecordSessionKillRequest)
+	RecordSessionActivity(ctx context.Context, req entity.RecordSessionActivityRequest) error
+	ListAgentActivity(ctx context.Context, req entity.ListAgentActivityRequest) (*entity.ListAgentActivityResponse, error)
 }
 
 func toSessionView(s model.Session) entity.SessionView {
@@ -75,6 +77,7 @@ func (c *controller) CreateSession(ctx context.Context, req entity.CreateSession
 		UserID:      uid,
 		WorkspaceID: monoflake.IDFromBase62(req.WorkspaceID).Int64(),
 		Kind:        req.Kind,
+		Model:       req.Model,
 		Status:      machinerules.SessionStarting,
 		Cols:        int(req.Cols),
 		Rows:        int(req.Rows),

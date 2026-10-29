@@ -29,6 +29,7 @@ type daemonRecorder interface {
 	RecordMachineVersion(ctx context.Context, req entity.RecordMachineVersionRequest) error
 	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
 	RecordForkDirectory(ctx context.Context, req entity.RecordForkDirectoryRequest) error
+	RecordSessionActivity(ctx context.Context, req entity.RecordSessionActivityRequest) error
 }
 
 // notifier tells the browser something changed, so a page showing machines
@@ -99,6 +100,7 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 			}
 			recordMetrics(ctx, rec, s.Identity.MachineID, hb)
 			reconcile(ctx, rec, s.Identity.MachineID, hb.Sessions)
+			recordActivity(ctx, rec, s.Identity.MachineID, hb.Activity, time.Now())
 			announceMachine(notify, s.Identity, hb)
 			return nil
 		case wire.OpAcpAgents, wire.OpAcpModels:
@@ -182,6 +184,26 @@ func recordMetrics(ctx context.Context, rec daemonRecorder, machineID int64, hb 
 	})
 	if err != nil {
 		zlog.Warn().Err(err).Int64("machine_id", machineID).Msg("[machine] could not record metrics")
+	}
+}
+
+// recordActivity stores what the heartbeat said of each session's terminal,
+// turning its idle seconds into a time on this server's clock.
+func recordActivity(ctx context.Context, rec daemonRecorder, machineID int64, activity []wire.SessionActivity, now time.Time) {
+	if len(activity) == 0 {
+		return
+	}
+	sessions := make([]entity.SessionActivity, 0, len(activity))
+	for _, a := range activity {
+		sessions = append(sessions, entity.SessionActivity{
+			SessionID:     int64(a.SessionID),
+			LastOutputAt:  now.Add(-time.Duration(a.IdleSec) * time.Second),
+			UsageLimited:  a.UsageLimited,
+			UsageResetsAt: a.ResetsAt,
+		})
+	}
+	if err := rec.RecordSessionActivity(ctx, entity.RecordSessionActivityRequest{MachineID: machineID, Sessions: sessions}); err != nil {
+		zlog.Warn().Err(err).Int64("machine_id", machineID).Msg("[machine] could not record session activity")
 	}
 }
 

@@ -32,6 +32,8 @@ type Params struct {
 	// Launcher starts and stops a workspace's agent on a machine, as the
 	// web launch form does.
 	Launcher AgentLauncher
+	// Agents says whether an agent is attached to a workspace, and its model.
+	Agents   AgentPresence
 	TokenSvc auth.TokenService
 	// CIMD resolves Client ID Metadata Document URLs. Optional: a default
 	// network-backed resolver is used when nil.
@@ -95,6 +97,7 @@ func New(p Params) (Handler, error) {
 	srv := newServer(p.Crud, p.BaseURL, p.PubSub, cmp.Or(p.TaskListeners, NewTaskListeners()))
 	srv.forks = p.ForkMerger
 	srv.launcher = p.Launcher
+	srv.agents = p.Agents
 	h := &handler{
 		coremcpServer: srv,
 		crud:          p.Crud,

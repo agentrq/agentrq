@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
@@ -29,6 +30,7 @@ type WorkspaceServer struct {
 	crud         crud.Controller
 	forks        ForkMerger
 	launcher     AgentLauncher
+	agents       AgentPresence
 	baseURL      string
 	pubsub       pubsub.Service
 	listeners    *TaskListeners
@@ -180,6 +182,7 @@ func (s *WorkspaceServer) mcpURL(workspaceID int64) string {
 
 type ListWorkspacesParams struct {
 	IncludeArchived bool `json:"includeArchived,omitempty" jsonschema:"Include archived workspaces"`
+	IncludeDetails  bool `json:"includeDetails,omitempty" jsonschema:"true returns every field of each workspace, its description and settings included. Default false: only id, name, forkOfId, workingDirectory and agent."`
 }
 
 type CreateWorkspaceParams struct {
@@ -392,7 +395,18 @@ func (s *WorkspaceServer) handleListWorkspaces(ctx context.Context, req *mcp.Cal
 	if err != nil {
 		return errorResponse(err), nil, nil
 	}
+	activity, err := s.agentActivity(ctx, userID)
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+	now := time.Now()
+	for i := range res.Workspaces {
+		s.fillAgent(&res.Workspaces[i], activity, now)
+	}
 
+	if !args.IncludeDetails {
+		return textResponse(string(apiMapper.FromListWorkspacesResponseEntityToMCPSummaryResponse(res))), nil, nil
+	}
 	b := apiMapper.FromListWorkspacesResponseEntityToMCPResponse(res, s.mcpURL)
 	return textResponse(string(b)), nil, nil
 }
@@ -470,6 +484,11 @@ func (s *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.CallT
 	if err != nil {
 		return errorResponse(err), nil, nil
 	}
+	activity, err := s.agentActivity(ctx, userID)
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+	s.fillAgent(&res.Workspace, activity, time.Now())
 
 	b := apiMapper.FromGetWorkspaceResponseEntityToMCPResponse(res, s.mcpURL(res.Workspace.ID))
 	return textResponse(string(b)), nil, nil

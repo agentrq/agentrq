@@ -38,13 +38,13 @@ Every tool takes two inputs, `action` and `payload` (the action's fields), e.g.
 
 | Tool | Actions |
 | --- | --- |
-| `workspace` | The account's workspaces: `list`, `create`, `get` (with its `mcpUrl`), `update` (only the fields sent change), `stats` (over 7 or 30 days), `fork` (its own queue and agent, sharing the parent's settings, memory and skills) and `mergeFork` (back into the parent, once its tasks are done) |
+| `workspace` | The account's workspaces: `list` (short unless `includeDetails`), `create`, `get` (with its `mcpUrl`), each with what its agent is doing (running, idle, paused at a usage limit, or offline), `update` (only the fields sent change), `stats` (over 7 or 30 days), `fork` (its own queue and agent, sharing the parent's settings, memory and skills) and `mergeFork` (back into the parent, once its tasks are done) |
 | `task` | The tasks of every workspace: `list`, `listAll` (each task says whether it is `awaitingReply`, which also filters), `create`, `get` (tool calls only with `includeToolCalls`; `messagesSince` keeps the newer messages), `messages` (just the conversation, oldest first, with the task's status), `reply`, `respond` (answer a permission request: allow, allow_all, reject, or text), `updateStatus`, `updateSortingOrder`, `updateAssignee`, `updateAllowAll`, `updateSchedule`, `delete` (with its messages and attachments; cannot be undone) and `getAttachment` |
 | `memory` | A workspace's memory, read-only: `list` (name, size, last change) and `get` (one in full; `MEMORY.md` is the index) |
 | `skills` | The account's skills as a workspace sees them, read-only: `search` and `get` (one file by `skill://` URI) |
 | `events` | Named signals and the triggers that turn them into tasks: `list`, `create`, `get`, `update`, `delete`, `listTasks`, `listTriggers`, `createTrigger`, `getTrigger`, `updateTrigger` and `deleteTrigger` |
 | `workflows` | Graphs of events and the workspaces they hand off to: `list`, `create`, `get`, `getText`, `update`, `delete`, `replaceFromText`, `listSteps`, `createStep`, `deleteStep` and `listTasks` |
-| `machines` | Machines running agentrqd: `list`, `createEnrolmentCode` (one-time, expires shortly), `launchAgent` and `stopAgent` |
+| `machines` | Machines running agentrqd: `list` (with each agent's workspace and state), `createEnrolmentCode` (one-time, expires shortly), `launchAgent` and `stopAgent` |
 | `pano` | The account's shared markdown docs: `save`, `read`, `comment`, `attach` and `delete`. Writes are recorded as the supervisor workspace |
 | `help` | How to call the other tools: every tool, one tool's actions (`{"action": "task"}`), or one action's payload and an example (`{"action": "task.create"}`) |
 

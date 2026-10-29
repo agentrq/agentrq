@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
@@ -44,6 +45,11 @@ func (s *WorkspaceServer) handleListMachines(ctx context.Context, req *mcp.CallT
 	if err != nil {
 		return errorResponse(err), nil, nil
 	}
+	activity, err := s.agentActivity(ctx, getUserID(ctx))
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+	s.fillMachineAgents(res.Machines, activity, time.Now())
 	return jsonResponse(res), nil, nil
 }
 

@@ -232,6 +232,7 @@ func (l *Link) heartbeat(ctx context.Context, conn *Conn) {
 			return false
 		}
 		hb.Sessions = l.Supervisor.Running()
+		hb.Activity = l.streams.activity(hb.Sessions)
 		if err := conn.Control(wire.Control{Op: wire.OpHeartbeat, Body: mustJSON(hb)}); err != nil {
 			l.Log.Debug("heartbeat not sent", "error", err)
 		}

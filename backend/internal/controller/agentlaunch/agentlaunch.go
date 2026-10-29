@@ -299,6 +299,7 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 		MachineID:   rq.MachineID,
 		WorkspaceID: rq.WorkspaceID,
 		Kind:        rq.Kind,
+		Model:       rq.Model,
 		Cols:        rq.Cols,
 		Rows:        rq.Rows,
 	})

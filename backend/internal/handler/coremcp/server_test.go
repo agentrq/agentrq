@@ -27,6 +27,10 @@ func (m *mockServerCrud) ListWorkspaces(ctx context.Context, req entity.ListWork
 	return &entity.ListWorkspacesResponse{}, nil
 }
 
+func (m *mockServerCrud) ListAgentActivity(ctx context.Context, req entity.ListAgentActivityRequest) (*entity.ListAgentActivityResponse, error) {
+	return &entity.ListAgentActivityResponse{}, nil
+}
+
 func (m *mockServerCrud) CreateWorkspace(ctx context.Context, req entity.CreateWorkspaceRequest) (*entity.CreateWorkspaceResponse, error) {
 	return &entity.CreateWorkspaceResponse{Workspace: entity.Workspace{ID: testWorkspace}}, nil
 }

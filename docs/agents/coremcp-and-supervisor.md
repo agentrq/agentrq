@@ -75,3 +75,9 @@ listen holds it until the deadline. **Authorization is decided once, when the
 listen opens**: `subscriptionsMiddleware` keeps only URIs of workspaces the
 caller owns, and the listen ends when its token expires. The SDK fans a notice
 out by URI alone, so never let a URI past it unchecked.
+
+**An agent's state is read from its terminal, not its MCP connection.** A
+usage-limit pause keeps the connection open and calls nothing, so only the
+screen agentrqd keeps shows it (`stream/activity.go`, sent with each
+heartbeat). `agentConnected` is filled per handler here, as in REST; a
+handler that skips it reads false for an agent at work.

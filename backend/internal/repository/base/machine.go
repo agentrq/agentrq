@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 )
 
@@ -270,6 +271,55 @@ func (r *repository) ForkFolderMachines(ctx context.Context, workspaceID, userID
 	ids := append(recorded, running...)
 	slices.Sort(ids)
 	return slices.Compact(ids), nil
+}
+
+// RecordSessionActivity stores what a heartbeat said of each session's
+// terminal, scoped to the machine that sent it.
+func (r *repository) RecordSessionActivity(ctx context.Context, machineID int64, sessions []entity.SessionActivity) error {
+	for _, a := range sessions {
+		err := r.conn(ctx).Model(&model.Session{}).
+			Where("id = ? AND machine_id = ?", a.SessionID, machineID).
+			Updates(map[string]any{
+				"last_output_at":  a.LastOutputAt,
+				"usage_limited":   a.UsageLimited,
+				"usage_resets_at": a.UsageResetsAt,
+			}).Error
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ListLiveSessionsByUser returns the sessions still starting or running on
+// any of a user's machines.
+func (r *repository) ListLiveSessionsByUser(ctx context.Context, userID int64) ([]model.Session, error) {
+	var out []model.Session
+	err := r.conn(ctx).Where("user_id = ? AND status IN ?", userID, []string{"starting", "running"}).
+		Order("created_at DESC").Find(&out).Error
+	return out, err
+}
+
+// LatestOngoingAgentTasks maps each of a user's workspaces with an ongoing
+// task assigned to its agent to the one updated last.
+func (r *repository) LatestOngoingAgentTasks(ctx context.Context, userID int64) (map[int64]int64, error) {
+	var rows []struct {
+		ID          int64
+		WorkspaceID int64
+	}
+	err := r.conn(ctx).Model(&model.Task{}).Select("id, workspace_id").
+		Where("user_id = ? AND status = ? AND assignee = ?", userID, "ongoing", "agent").
+		Order("updated_at DESC").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]int64, len(rows))
+	for _, row := range rows {
+		if _, ok := out[row.WorkspaceID]; !ok {
+			out[row.WorkspaceID] = row.ID
+		}
+	}
+	return out, nil
 }
 
 // UpdateSessionState records what the daemon reported.

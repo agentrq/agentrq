@@ -26,7 +26,13 @@ type recordedState struct {
 	offers     []entity.RecordAvailableVersionRequest
 	versions   []entity.RecordMachineVersionRequest
 	forkDirs   []entity.RecordForkDirectoryRequest
+	activity   []entity.RecordSessionActivityRequest
 	err        error
+}
+
+func (r *recordedState) RecordSessionActivity(_ context.Context, req entity.RecordSessionActivityRequest) error {
+	r.activity = append(r.activity, req)
+	return r.err
 }
 
 func (r *recordedState) RecordForkDirectory(_ context.Context, req entity.RecordForkDirectoryRequest) error {
@@ -304,6 +310,37 @@ func mustBytes(t *testing.T, v any) []byte {
 	return b
 }
 
+// A session's idle seconds land as a time on this server's clock, so the
+// machine's own clock never has to agree; a heartbeat with no activity, from
+// an older agentrqd, writes nothing.
+func TestAHeartbeatRecordsEachSessionsActivity(t *testing.T) {
+	rec := &recordedState{}
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
+	session := &machine.Session{Identity: machine.Identity{MachineID: 11}}
+
+	resets := time.Date(2026, 10, 29, 17, 0, 0, 0, time.UTC)
+	before := time.Now()
+	if err := handle(context.Background(), session, heartbeatFrame(t, wire.Heartbeat{
+		MemTotal: 1,
+		Activity: []wire.SessionActivity{{SessionID: 7, IdleSec: 600, UsageLimited: true, ResetsAt: &resets}},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := handle(context.Background(), session, heartbeatFrame(t, wire.Heartbeat{MemTotal: 1})); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.activity) != 1 || rec.activity[0].MachineID != 11 || len(rec.activity[0].Sessions) != 1 {
+		t.Fatalf("recorded %+v, want one heartbeat's activity for machine 11", rec.activity)
+	}
+	got := rec.activity[0].Sessions[0]
+	if got.SessionID != 7 || !got.UsageLimited || got.UsageResetsAt == nil || !got.UsageResetsAt.Equal(resets) {
+		t.Errorf("activity = %+v", got)
+	}
+	if want := before.Add(-600 * time.Second); got.LastOutputAt.Before(want.Add(-time.Second)) || got.LastOutputAt.After(time.Now().Add(-600*time.Second)) {
+		t.Errorf("lastOutputAt = %v, want about %v", got.LastOutputAt, want)
+	}
+}
+
 // Nothing a daemon sends costs it its connection, metrics included.
 func TestABadHeartbeatDoesNotEndTheConnection(t *testing.T) {
 	rec := &recordedState{err: errors.New("database is down")}
@@ -317,7 +354,7 @@ func TestABadHeartbeatDoesNotEndTheConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []wire.Frame{bad, badHello, heartbeatFrame(t, wire.Heartbeat{MemTotal: 1})} {
+	for _, f := range []wire.Frame{bad, badHello, heartbeatFrame(t, wire.Heartbeat{MemTotal: 1, Activity: []wire.SessionActivity{{SessionID: 7}}})} {
 		if err := handle(context.Background(), &machine.Session{}, f); err != nil {
 			t.Errorf("a heartbeat ended the connection: %v", err)
 		}

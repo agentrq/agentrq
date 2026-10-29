@@ -27,9 +27,9 @@ Every tool takes two inputs, `action` and `payload` (the action's fields), e.g. 
 |------|-------------|
 | `workspace` | The account's workspaces, and their forks: `list`, `create`, `get`, `update`, `stats`, `fork`, `mergeFork` |
 
-- `list` — List all workspaces (optionally include archived)
+- `list` — List all workspaces (optionally include archived): id, name, fork parent, working directory and `agent`, what its agent is doing. `includeDetails: true` returns every field
 - `create` — Create a new workspace with name, description, notification settings, and self-learning notes
-- `get` — Get workspace details by ID
+- `get` — Get workspace details by ID, with `agent`: `state` (`running`, `idle`, `paused` at a usage limit until `pausedUntil`, or `offline`), `machineId`, `model`, `taskId` (its latest ongoing task) and `lastActivityAt` (when its terminal last printed)
 - `update` — Update workspace name, description, notification settings, or self-learning notes
 - `stats` — Get workspace statistics for a given time range (`7d` or `30d`)
 - `fork` — Fork a workspace: its own queue and agent, sharing the parent's settings, memory and skills. Move tasks into it for a second agent to work them
@@ -98,7 +98,7 @@ A machine is a computer running agentrqd; it is where a workspace's agent runs.
 | `machines` | Machines running agentrqd, and the agents on them: `createEnrolmentCode`, `list`, `launchAgent`, `stopAgent` |
 
 - `createEnrolmentCode` — Mint a one-time code for enrolling a new machine with agentrqd. Shown once and expires shortly — hand it to the human right away
-- `list` — List the account's machines: enabled, online, agentrqd version and how many agents each runs
+- `list` — List the account's machines: enabled, online, agentrqd version, how many agents each runs, and `agents`: each one's workspace and state, as in `workspace.get`
 - `launchAgent` — Start a workspace's agent (`claude-code` or `acp-gateway`, with an optional `model` and, for `claude-code`, `effort` and `autocompact` — 100k to 900k, default 400k; for `acp-gateway`, `acpVersion`, the ACP version it speaks, `"1"` when left out) on a machine from `machines.list`. It connects a few seconds later and picks up its tasks. Refused while the workspace already has one, has no working directory, or the machine is off, offline or too old
 - `stopAgent` — Stop the agent a workspace is running on a machine, ending what it is in the middle of
 

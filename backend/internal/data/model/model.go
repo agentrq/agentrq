@@ -592,6 +592,14 @@ type (
 		Rows      int
 		StartedAt *time.Time
 		EndedAt   *time.Time
+
+		// Model is what the launch asked for, empty for the agent's default.
+		Model string `gorm:"type:varchar(128)"`
+		// What the daemon's heartbeat last said of the terminal: when it last
+		// printed, and whether a usage-limit notice is on it, until when.
+		LastOutputAt  *time.Time
+		UsageLimited  bool
+		UsageResetsAt *time.Time
 	}
 
 	// User represents a human user

@@ -50,16 +50,24 @@ type Pump struct {
 	coalescer *Coalescer
 	attached  bool
 	resyncs   int
+
+	// lastOutput is when the terminal last printed; limitLine and limitSeen
+	// are the usage-limit notice on screen and when it first appeared (see
+	// activity.go).
+	lastOutput time.Time
+	limitLine  string
+	limitSeen  time.Time
 }
 
 // NewPump makes a pump for one session.
 func NewPump(sessionID uint64, screen *Screen, sender Sender) *Pump {
 	return &Pump{
-		SessionID: sessionID,
-		Screen:    screen,
-		Sender:    sender,
-		Now:       time.Now,
-		coalescer: NewCoalescer(Window, MaxBatch),
+		SessionID:  sessionID,
+		Screen:     screen,
+		Sender:     sender,
+		Now:        time.Now,
+		coalescer:  NewCoalescer(Window, MaxBatch),
+		lastOutput: time.Now(),
 	}
 }
 
@@ -143,7 +151,9 @@ func (p *Pump) Feed(b []byte) error {
 	}
 
 	p.mu.Lock()
-	due := p.coalescer.Add(b, p.Now())
+	now := p.Now()
+	p.lastOutput = now
+	due := p.coalescer.Add(b, now)
 	attached := p.attached
 	p.mu.Unlock()
 

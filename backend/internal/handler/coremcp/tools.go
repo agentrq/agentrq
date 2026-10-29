@@ -52,7 +52,7 @@ const (
 	twoInputs = "Two inputs: action, and payload, the action's fields; help gives an action's payload and an example. "
 
 	workspaceToolDescription = "The account's workspaces. " + twoInputs +
-		"list, create, get and update do what they say; stats: a workspace's activity over 7 or 30 days; fork: a second workspace that shares the parent's settings, memory and skills; mergeFork: brings a fork's tasks back and removes it."
+		"list and get show what each workspace's agent is doing (running, idle, paused or offline); create and update do what they say; stats: a workspace's activity over 7 or 30 days; fork: a second workspace that shares the parent's settings, memory and skills; mergeFork: brings a fork's tasks back and removes it."
 	memoryToolDescription = "A workspace's memory, read-only. " + twoInputs +
 		"list: its memories' names and sizes; get: one in full. MEMORY.md is the index the others hang off."
 	skillsToolDescription = "The account's skills, as a workspace sees them, read-only. " + twoInputs +
@@ -68,12 +68,14 @@ const (
 
 func (s *WorkspaceServer) workspaceActions() []mcpevent.ToolAction {
 	return []mcpevent.ToolAction{
-		mcpevent.NewToolAction("list", "List the account's workspaces.", s.handleListWorkspaces).
+		mcpevent.NewToolAction("list", "List the account's workspaces, and what each one's agent is doing.", s.handleListWorkspaces).
+			WithDetails("Each comes with only its id, name, forkOfId, workingDirectory and agent unless includeDetails is true. " + agentStateHelp).
 			WithExample(`{"includeArchived": false}`),
 		mcpevent.NewToolAction("create", "Create a workspace.", s.handleCreateWorkspace).
 			WithDetails("Check list first for one with the same purpose. A human still has to connect an agent to it, or launch one with machines launchAgent.").
 			WithExample(`{"name": "release-notes", "description": "Writes the release notes for every tag."}`),
-		mcpevent.NewToolAction("get", "Get a workspace, with its mcpUrl.", s.handleGetWorkspace).
+		mcpevent.NewToolAction("get", "Get a workspace, with its mcpUrl and what its agent is doing.", s.handleGetWorkspace).
+			WithDetails(agentStateHelp).
 			WithExample(`{"id": "0ZzhYQG2qtl"}`),
 		mcpevent.NewToolAction("update", "Update a workspace: only the fields sent change.", s.handleUpdateWorkspace).
 			WithExample(`{"id": "0ZzhYQG2qtl", "description": "Writes and publishes the release notes."}`),
@@ -166,7 +168,8 @@ func (s *WorkspaceServer) workflowsActions() []mcpevent.ToolAction {
 
 func (s *WorkspaceServer) machinesActions() []mcpevent.ToolAction {
 	return []mcpevent.ToolAction{
-		mcpevent.NewToolAction("list", "List the account's machines: name, OS, agentrqd version, whether each is enabled and online, and its running agents.", s.handleListMachines),
+		mcpevent.NewToolAction("list", "List the account's machines: name, OS, agentrqd version, whether each is enabled and online, and its agents.", s.handleListMachines).
+			WithDetails("agents names each agent's workspace and what it is doing. " + agentStateHelp),
 		mcpevent.NewToolAction("createEnrolmentCode", "Mint a one-time code for enrolling a new machine with agentrqd.", s.handleCreateEnrolmentCode).
 			WithDetails("It is shown once and expires shortly, so hand it to the human right away; the agentrq://guides/agentrqd-setup resource has the rest of the setup."),
 		mcpevent.NewToolAction("launchAgent", "Start an agent for a workspace on one of the account's machines.", s.handleLaunchAgent).

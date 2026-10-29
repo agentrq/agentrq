@@ -90,6 +90,41 @@ func FromListWorkspacesResponseEntityToMCPResponse(rs *entity.ListWorkspacesResp
 	return payload
 }
 
+// FromListWorkspacesResponseEntityToMCPSummaryResponse is the supervisor's
+// short list: each workspace's id, name, fork parent, folder and agent.
+func FromListWorkspacesResponseEntityToMCPSummaryResponse(rs *entity.ListWorkspacesResponse) []byte {
+	workspaces := make([]view.WorkspaceSummary, len(rs.Workspaces))
+	for i, p := range rs.Workspaces {
+		workspaces[i] = view.WorkspaceSummary{
+			ID:               monoflake.ID(p.ID).String(),
+			Name:             p.Name,
+			WorkingDirectory: p.WorkingDirectory,
+			Agent:            fromEntityAgentStateToView(p.Agent),
+		}
+		if p.ForkOfID != 0 {
+			workspaces[i].ForkOfID = monoflake.ID(p.ForkOfID).String()
+		}
+	}
+	payload, _ := json.Marshal(view.ListWorkspaceSummariesResponse{Workspaces: workspaces})
+	return payload
+}
+
+// fromEntityAgentStateToView is what a workspace's agent is doing, nil when
+// nobody asked.
+func fromEntityAgentStateToView(p *entity.AgentState) *view.AgentState {
+	if p == nil {
+		return nil
+	}
+	return &view.AgentState{
+		State:          p.State,
+		PausedUntil:    p.PausedUntil,
+		MachineID:      p.MachineID,
+		Model:          p.Model,
+		TaskID:         p.TaskID,
+		LastActivityAt: p.LastActivityAt,
+	}
+}
+
 func FromHTTPRequestToGetWorkspaceRequestEntity(c *fiber.Ctx) *entity.GetWorkspaceRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
@@ -172,6 +207,7 @@ func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace
 		ArchivedAt:            p.ArchivedAt,
 		NotificationSettings:  fromEntityNotificationSettingsToView(p.NotificationSettings),
 		AgentConnected:        p.AgentConnected,
+		Agent:                 fromEntityAgentStateToView(p.Agent),
 		AgentSupportsStop:     p.AgentSupportsStop,
 		AgentModels:           fromEntityAgentModelsToView(p.AgentModels),
 		AgentEffort:           fromEntityAgentEffortToView(p.AgentEffort),

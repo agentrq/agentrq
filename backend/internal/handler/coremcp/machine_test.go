@@ -23,6 +23,14 @@ type mockMachineCrud struct {
 
 	createEnrolmentCode func(ctx context.Context, req entity.CreateEnrolmentCodeRequest) (*entity.CreateEnrolmentCodeResponse, error)
 	listMachines        func(ctx context.Context, req entity.ListMachinesRequest) (*entity.ListMachinesResponse, error)
+	listAgentActivity   func(ctx context.Context, req entity.ListAgentActivityRequest) (*entity.ListAgentActivityResponse, error)
+}
+
+func (m *mockMachineCrud) ListAgentActivity(ctx context.Context, req entity.ListAgentActivityRequest) (*entity.ListAgentActivityResponse, error) {
+	if m.listAgentActivity == nil {
+		return &entity.ListAgentActivityResponse{}, nil
+	}
+	return m.listAgentActivity(ctx, req)
 }
 
 func (m *mockMachineCrud) ListMachines(ctx context.Context, req entity.ListMachinesRequest) (*entity.ListMachinesResponse, error) {

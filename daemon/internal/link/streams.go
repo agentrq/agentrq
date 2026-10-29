@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentrq/agentrq/daemon/internal/stream"
+	"github.com/agentrq/agentrq/daemon/wire"
 )
 
 // FlushInterval is how often a pending batch is checked for.
@@ -157,6 +158,17 @@ func (s *streams) rebind(sender stream.Sender, watched func(uint64) bool) []erro
 		}
 	}
 	return errs
+}
+
+// activity is the heartbeat's line for each of ids that has a stream.
+func (s *streams) activity(ids []uint64) []wire.SessionActivity {
+	var out []wire.SessionActivity
+	for _, id := range ids {
+		if p, ok := s.get(id); ok {
+			out = append(out, p.Activity())
+		}
+	}
+	return out
 }
 
 // all is the pumps, copied so a caller can work without the lock.

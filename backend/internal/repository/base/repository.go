@@ -169,6 +169,9 @@ type Repository interface {
 	ForkFolderMachines(ctx context.Context, workspaceID, userID int64) ([]int64, error)
 	WorkspaceNamesByID(ctx context.Context, ids []int64, userID int64) (map[int64]string, error)
 	UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time, restored bool) error
+	RecordSessionActivity(ctx context.Context, machineID int64, sessions []entity.SessionActivity) error
+	ListLiveSessionsByUser(ctx context.Context, userID int64) ([]model.Session, error)
+	LatestOngoingAgentTasks(ctx context.Context, userID int64) (map[int64]int64, error)
 
 	// ToolCall
 	CreateToolCall(ctx context.Context, tc model.ToolCall, userID int64) (model.ToolCall, error)

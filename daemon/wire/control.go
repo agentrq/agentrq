@@ -7,6 +7,7 @@ package wire
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // Op names a control message. Control is the only part of the protocol that is
@@ -167,6 +168,22 @@ type Heartbeat struct {
 	// Sessions is what this daemon is still supervising, so a backend that
 	// restarted can correct rows it believes are running.
 	Sessions []uint64 `json:"sessions,omitempty"`
+
+	// Activity is what each session's terminal says about its agent: the
+	// only place a usage-limit pause shows, since a paused agent calls nothing.
+	Activity []SessionActivity `json:"activity,omitempty"`
+}
+
+// SessionActivity is one session's terminal, as the heartbeat reports it.
+type SessionActivity struct {
+	SessionID uint64 `json:"sessionId"`
+	// IdleSec is how long the terminal has printed nothing. A duration, not
+	// a time, so the machine's clock never has to agree with the backend's.
+	IdleSec int64 `json:"idleSec"`
+	// UsageLimited is whether the agent's usage-limit notice is on screen,
+	// and ResetsAt when it said the limit lifts, nil when it did not say.
+	UsageLimited bool       `json:"usageLimited,omitempty"`
+	ResetsAt     *time.Time `json:"resetsAt,omitempty"`
 }
 
 // Presence names everyone attached to a session.

@@ -38,6 +38,8 @@ one action's payload with an example.
    `since` returns only the newer messages, far more efficient than another `get`.
    An agent waiting on an answer often leaves its task `ongoing`: `task.listAll` with
    `awaitingReply: true` finds the tasks whose agent asked something nobody answered.
+   `workspace.get`, `workspace.list` and `machines.list` say what each agent is doing:
+   `running`, `idle`, `paused` at a usage limit until `pausedUntil`, or `offline`.
 4. **Keep the human in the loop.** When blocked or needing approval, set the status to
    `blocked` and say what you need with `task.reply`. `blocked` is the status the
    interface surfaces as needing attention.

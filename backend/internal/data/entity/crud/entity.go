@@ -25,16 +25,19 @@ type (
 
 	// Workspace entity
 	Workspace struct {
-		ID                    int64
-		CreatedAt             time.Time
-		UpdatedAt             time.Time
-		UserID                int64
-		Name                  string
-		Description           string
-		ArchivedAt            *time.Time
-		Icon                  string
-		NotificationSettings  *NotificationSettings
-		AgentConnected        bool
+		ID                   int64
+		CreatedAt            time.Time
+		UpdatedAt            time.Time
+		UserID               int64
+		Name                 string
+		Description          string
+		ArchivedAt           *time.Time
+		Icon                 string
+		NotificationSettings *NotificationSettings
+		AgentConnected       bool
+		// Agent is what the workspace's agent is doing, filled only for the
+		// supervisor.
+		Agent                 *AgentState
 		AgentSupportsStop     bool
 		AgentModels           *AgentModels
 		AgentEffort           *AgentEffort
@@ -2023,6 +2026,10 @@ type (
 		// has never said how much memory it has is a different thing from one
 		// that has none.
 		Metrics *MachineMetricsView `json:"metrics,omitempty"`
+
+		// Agents is what each agent on it is doing, filled only for the
+		// supervisor.
+		Agents []AgentState `json:"agents,omitempty"`
 	}
 
 	// MachineMetricsView is what a machine last said about itself.
@@ -2280,8 +2287,58 @@ type (
 		MachineID   string
 		WorkspaceID string
 		Kind        string
+		Model       string
 		Cols        uint16
 		Rows        uint16
+	}
+
+	// RecordSessionActivityRequest is what a heartbeat said of each session's
+	// terminal. MachineID is the socket's, so a daemon writes only its own.
+	RecordSessionActivityRequest struct {
+		MachineID int64
+		Sessions  []SessionActivity
+	}
+	SessionActivity struct {
+		SessionID     int64
+		LastOutputAt  time.Time
+		UsageLimited  bool
+		UsageResetsAt *time.Time
+	}
+
+	// ListAgentActivityRequest asks what is known of every agent of a user's
+	// workspaces: their live sessions, and the task each is on.
+	ListAgentActivityRequest struct {
+		UserID string
+	}
+	ListAgentActivityResponse struct {
+		// Workspaces has a workspace with a live session or an ongoing agent
+		// task; one with neither is left out.
+		Workspaces map[int64]AgentActivity
+	}
+	// AgentActivity is one workspace's agent as the database knows it.
+	// MachineID is zero when no machine runs it.
+	AgentActivity struct {
+		WorkspaceID   int64
+		WorkspaceName string
+		MachineID     int64
+		Model         string
+		LastOutputAt  *time.Time
+		UsageLimited  bool
+		UsageResetsAt *time.Time
+		TaskID        int64
+	}
+
+	// AgentState is what a workspace's agent is doing, as the supervisor
+	// reads it. State is running, idle, paused or offline.
+	AgentState struct {
+		WorkspaceID    string     `json:"workspaceId"`
+		WorkspaceName  string     `json:"workspaceName,omitempty"`
+		State          string     `json:"state"`
+		PausedUntil    *time.Time `json:"pausedUntil,omitempty"`
+		MachineID      string     `json:"machineId,omitempty"`
+		Model          string     `json:"model,omitempty"`
+		TaskID         string     `json:"taskId,omitempty"`
+		LastActivityAt *time.Time `json:"lastActivityAt,omitempty"`
 	}
 	CreateSessionResponse struct {
 		Session SessionView `json:"session"`

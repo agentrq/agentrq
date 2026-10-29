@@ -22,6 +22,7 @@ type (
 		Icon                 string                `json:"icon,omitempty"`
 		NotificationSettings *NotificationSettings `json:"notificationSettings,omitempty"`
 		AgentConnected       bool                  `json:"agentConnected"`
+		Agent                *AgentState           `json:"agent,omitempty"`
 		AgentSupportsStop    bool                  `json:"agentSupportsStop"`
 		AgentModels          *AgentModels          `json:"agentModels,omitempty"`
 		AgentEffort          *AgentEffort          `json:"agentEffort,omitempty"`
@@ -42,6 +43,29 @@ type (
 		ForkOf                *WorkspaceRef `json:"forkOf,omitempty"`
 		ForkCount             int           `json:"forkCount,omitempty"`
 		UnfinishedTasks       int           `json:"unfinishedTasks,omitempty"`
+	}
+
+	// AgentState is what a workspace's agent is doing, for the supervisor:
+	// running, idle, paused (a usage limit) or offline.
+	AgentState struct {
+		State          string     `json:"state"`
+		PausedUntil    *time.Time `json:"pausedUntil,omitempty"`
+		MachineID      string     `json:"machineId,omitempty"`
+		Model          string     `json:"model,omitempty"`
+		TaskID         string     `json:"taskId,omitempty"`
+		LastActivityAt *time.Time `json:"lastActivityAt,omitempty"`
+	}
+
+	// WorkspaceSummary is a workspace in the supervisor's short list.
+	WorkspaceSummary struct {
+		ID               string      `json:"id"`
+		Name             string      `json:"name"`
+		ForkOfID         string      `json:"forkOfId,omitempty"`
+		WorkingDirectory string      `json:"workingDirectory,omitempty"`
+		Agent            *AgentState `json:"agent,omitempty"`
+	}
+	ListWorkspaceSummariesResponse struct {
+		Workspaces []WorkspaceSummary `json:"workspaces"`
 	}
 
 	// WorkspaceRef names another workspace.
