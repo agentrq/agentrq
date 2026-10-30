@@ -15,14 +15,18 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
+	crudctrl "github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	mock_repo "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/golang/mock/gomock"
 	"github.com/mustafaturan/monoflake"
 	slackapi "github.com/slack-go/slack"
@@ -903,6 +907,42 @@ func TestHandleSlackEventRepliesWithoutAttachmentsItCannotFetch(t *testing.T) {
 	}
 }
 
+func TestHandleSlackEventTellsTheAgentAboutTheFilesItSaved(t *testing.T) {
+	files := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("png"))
+	}))
+	defer files.Close()
+
+	f := newFlowFixture(t)
+	ids := mock_idgen.NewMockService(gomock.NewController(t))
+	ids.EXPECT().NextID().Return(int64(62))
+	store, err := storage.NewNestedPublic(t.TempDir(), "https://agentrq.example/storage/artifacts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Saves the files as the real ReplyToTask does.
+	f.crud.replyToTaskFunc = func(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error) {
+		crudctrl.SaveAttachments(store, ids, req.WorkspaceID, req.TaskID, req.Attachments)
+		return &entity.ReplyToTaskResponse{}, nil
+	}
+	f.expectMentionThread(authorizedLink(t, 42), nil)
+	f.repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(42)).Return(model.Workspace{ID: 42, UserID: 100}, nil)
+
+	err = f.controller().HandleSlackEvent(context.Background(), mention("see the shot", "1.1",
+		SlackFile{ID: "F1", Name: "shot.png", MimeType: "image/png", URLPrivateDownload: files.URL}))
+	if err != nil {
+		t.Fatalf("HandleSlackEvent: %v", err)
+	}
+	id := monoflake.ID(62).String()
+	want := "[Reply to task " + monoflake.ID(9).String() + "] see the shot\nAttachments:\n  - id=" + id + " name=shot.png type=image/png"
+	if f.mcp.pushed != want {
+		t.Errorf("pushed %q, want %q", f.mcp.pushed, want)
+	}
+	if len(f.mcp.notified) != 1 || f.mcp.notified[0].ID != id {
+		t.Errorf("attachments handed over = %+v", f.mcp.notified)
+	}
+}
+
 func TestHandleSlackEventSkipsDownloadsWithAnUndecryptableToken(t *testing.T) {
 	f := newFlowFixture(t)
 	f.params.MCPManager = nil
@@ -998,6 +1038,36 @@ func TestHandleSlashCommandKeepsAnUnclosedQuoteAsText(t *testing.T) {
 	}
 }
 
+func TestHandleSlashCommandCutsALongTitleByCharacters(t *testing.T) {
+	ascii := strings.Repeat("a", 59)
+	tests := map[string]string{
+		ascii + "é":   ascii + "é",
+		ascii + "é🙂x": ascii + "é...",
+		ascii + "🙂🙂":  ascii + "🙂...",
+	}
+	for text, want := range tests {
+		t.Run(text[59:], func(t *testing.T) {
+			f := newFlowFixture(t)
+			f.expectSlashWorkspace()
+			f.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), int64(100)).Return(nil, nil)
+			var got entity.CreateTaskRequest
+			f.crud.createTaskFunc = func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+				got = req
+				return &entity.CreateTaskResponse{}, nil
+			}
+			if _, _, err := f.controller().HandleSlashCommand(context.Background(), "C1", text); err != nil {
+				t.Fatalf("HandleSlashCommand: %v", err)
+			}
+			if got.Task.Title != want || !utf8.ValidString(got.Task.Title) {
+				t.Errorf("title %q, want %q", got.Task.Title, want)
+			}
+			if got.Task.Body != text {
+				t.Errorf("body %q, want the whole text", got.Task.Body)
+			}
+		})
+	}
+}
+
 func TestHandleSlashCommandHoldsTheAgentWhileItIsBusy(t *testing.T) {
 	// The new task is 7; a listed task 7 is the new one itself.
 	const newID = int64(7)
@@ -1068,22 +1138,31 @@ func TestHandleTaskApprovalRejectsAnActionWithoutIDs(t *testing.T) {
 }
 
 func TestHandleTaskApprovalNeedsUsableCredentials(t *testing.T) {
-	t.Run("no link", func(t *testing.T) {
-		f := newFlowFixture(t)
-		f.repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(42)).Return(model.Workspace{UserID: 100}, nil)
-		f.repo.EXPECT().GetSlackWorkspaceLink(gomock.Any(), int64(42)).Return(model.SlackWorkspaceLink{}, errNotFound)
-		if err := f.controller().HandleTaskApproval(context.Background(), approvalAction(42, 9, "allow")); err == nil || !strings.Contains(err.Error(), "credentials not found") {
-			t.Fatalf("err = %v", err)
-		}
-	})
-	t.Run("undecryptable token", func(t *testing.T) {
-		f := newFlowFixture(t)
-		f.repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(42)).Return(model.Workspace{UserID: 100}, nil)
-		f.repo.EXPECT().GetSlackWorkspaceLink(gomock.Any(), int64(42)).Return(undecryptableLink(42), nil)
-		if err := f.controller().HandleTaskApproval(context.Background(), approvalAction(42, 9, "allow")); err == nil || !strings.Contains(err.Error(), "decryption failed") {
-			t.Fatalf("err = %v", err)
-		}
-	})
+	tests := []struct {
+		name    string
+		link    model.SlackWorkspaceLink
+		linkErr error
+		wantErr string
+	}{
+		{"no link", model.SlackWorkspaceLink{}, errNotFound, "slack workspace credentials not found: record not found"},
+		{"link without a token", model.SlackWorkspaceLink{WorkspaceID: 42, SlackChannelID: "C1"}, nil, "slack workspace credentials not found: the link has no bot token"},
+		{"undecryptable token", undecryptableLink(42), nil, "slack decryption failed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFlowFixture(t)
+			f.crud.respondToTaskFunc = func(ctx context.Context, req entity.RespondToTaskRequest) (*entity.RespondToTaskResponse, error) {
+				t.Error("the approval was applied without usable credentials")
+				return nil, nil
+			}
+			f.repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(42)).Return(model.Workspace{UserID: 100}, nil)
+			f.repo.EXPECT().GetSlackWorkspaceLink(gomock.Any(), int64(42)).Return(tt.link, tt.linkErr)
+			err := f.controller().HandleTaskApproval(context.Background(), approvalAction(42, 9, "allow"))
+			if err == nil || !strings.HasPrefix(err.Error(), tt.wantErr) {
+				t.Fatalf("err = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
 }
 
 func TestHandleTaskApprovalShowsAFailedResponseInSlack(t *testing.T) {
@@ -1153,6 +1232,10 @@ func TestHandleMCPPermissionEarlyFailures(t *testing.T) {
 			f.repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(42)).Return(model.Workspace{UserID: 100}, nil)
 			f.repo.EXPECT().GetSlackWorkspaceLink(gomock.Any(), int64(42)).Return(model.SlackWorkspaceLink{}, errNotFound)
 		}, "credentials not found"},
+		{"link without a token", permissionAction(42, "allow"), func(f *flowFixture) {
+			f.repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(42)).Return(model.Workspace{UserID: 100}, nil)
+			f.repo.EXPECT().GetSlackWorkspaceLink(gomock.Any(), int64(42)).Return(model.SlackWorkspaceLink{WorkspaceID: 42}, nil)
+		}, "slack workspace credentials not found: the link has no bot token"},
 		{"undecryptable token", permissionAction(42, "allow"), func(f *flowFixture) {
 			f.repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(42)).Return(model.Workspace{UserID: 100}, nil)
 			f.repo.EXPECT().GetSlackWorkspaceLink(gomock.Any(), int64(42)).Return(undecryptableLink(42), nil)

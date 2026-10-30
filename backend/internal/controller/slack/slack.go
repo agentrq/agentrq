@@ -554,6 +554,7 @@ func (c *controller) HandleSlackEvent(ctx context.Context, payload SlackEventPay
 
 	if c.mcp != nil {
 		content := fmt.Sprintf("[Reply to task %s] %s", monoflake.ID(thread.TaskID).String(), text)
+		// ReplyToTask saved the files and wrote their IDs into attachments.
 		if atts := formatSlackAttachments(attachments); atts != "" {
 			content += "\n" + atts
 		}
@@ -604,8 +605,9 @@ func (c *controller) HandleSlashCommand(ctx context.Context, channelID string, t
 		}
 	}
 
-	if len(title) > 60 {
-		title = title[:60] + "..."
+	// Cut by characters, not bytes, so a multi-byte character is never split.
+	if r := []rune(title); len(r) > 60 {
+		title = string(r[:60]) + "..."
 	}
 
 	ctx = entity.WithOrigin(ctx, entity.OriginSlack)
@@ -682,25 +684,19 @@ func (c *controller) HandleTaskApproval(ctx context.Context, action SlackBlockAc
 	}
 	ownerID := monoflake.ID(ws.UserID).String()
 
+	// Credentials first: an approval that cannot be shown in Slack is not applied.
+	decryptedToken, err := c.botToken(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+
 	ctx = entity.WithOrigin(ctx, entity.OriginSlack)
-	_, err = c.crud.RespondToTask(ctx, entity.RespondToTaskRequest{
+	if _, err := c.crud.RespondToTask(ctx, entity.RespondToTaskRequest{
 		WorkspaceID: workspaceID,
 		TaskID:      taskID,
 		Action:      taskAction,
 		UserID:      ownerID,
-	})
-
-	// Retrieve Slack Workspace bot credentials
-	link, linkErr := c.repo.GetSlackWorkspaceLink(ctx, workspaceID)
-	if linkErr != nil || link.AccessToken == "" {
-		return fmt.Errorf("slack workspace credentials not found: %w", linkErr)
-	}
-	decryptedToken, decErr := security.Decrypt(link.AccessToken, c.tokenKey, link.TokenNonce)
-	if decErr != nil {
-		return fmt.Errorf("slack decryption failed: %w", decErr)
-	}
-
-	if err != nil {
+	}); err != nil {
 		// Update the Slack message to show the error
 		updateErr := c.slack.UpdateMessage(ctx, decryptedToken, action.ChannelID, action.MessageTS,
 			slacksvc.BuildResultBlocks(fmt.Sprintf("⚠️ Action failed: %s", err.Error())))
@@ -745,14 +741,9 @@ func (c *controller) HandleMCPPermission(ctx context.Context, action SlackBlockA
 	}
 	ownerID := monoflake.ID(ws.UserID).String()
 
-	// Retrieve Slack Workspace bot credentials
-	link, linkErr := c.repo.GetSlackWorkspaceLink(ctx, workspaceID)
-	if linkErr != nil || link.AccessToken == "" {
-		return fmt.Errorf("slack workspace credentials not found: %w", linkErr)
-	}
-	decryptedToken, decErr := security.Decrypt(link.AccessToken, c.tokenKey, link.TokenNonce)
-	if decErr != nil {
-		return fmt.Errorf("slack decryption failed: %w", decErr)
+	decryptedToken, err := c.botToken(ctx, workspaceID)
+	if err != nil {
+		return err
 	}
 
 	if c.mcp == nil {
@@ -815,6 +806,22 @@ func (c *controller) HandleMCPPermission(ctx context.Context, action SlackBlockA
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
+
+// botToken is the workspace's decrypted Slack bot token.
+func (c *controller) botToken(ctx context.Context, workspaceID int64) (string, error) {
+	link, err := c.repo.GetSlackWorkspaceLink(ctx, workspaceID)
+	if err != nil {
+		return "", fmt.Errorf("slack workspace credentials not found: %w", err)
+	}
+	if link.AccessToken == "" {
+		return "", fmt.Errorf("slack workspace credentials not found: the link has no bot token")
+	}
+	token, err := security.Decrypt(link.AccessToken, c.tokenKey, link.TokenNonce)
+	if err != nil {
+		return "", fmt.Errorf("slack decryption failed: %w", err)
+	}
+	return token, nil
+}
 
 func stripBotMention(text, botUserID string) string {
 	if botUserID == "" {
