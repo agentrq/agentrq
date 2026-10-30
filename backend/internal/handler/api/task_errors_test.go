@@ -638,3 +638,77 @@ func readSSEFrame(r *bufio.Reader) (string, error) {
 		}
 	}
 }
+
+// gonePeer takes ok writes and then fails every one after, as fasthttp's pipe
+// does once the client has disconnected.
+type gonePeer struct {
+	ok  int
+	got strings.Builder
+}
+
+func (p *gonePeer) Write(b []byte) (int, error) {
+	if p.ok == 0 {
+		return 0, io.ErrClosedPipe
+	}
+	p.ok--
+	return p.got.Write(b)
+}
+
+// streamEventsReturns runs streamEvents and fails the test if it is still
+// writing after five seconds.
+func streamEventsReturns(t *testing.T, p *gonePeer, ch <-chan []byte, keepalive time.Duration) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		streamEvents(bufio.NewWriter(p), errPathWorkspace, ch, keepalive)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stream kept running")
+	}
+}
+
+// A stream ends as soon as the client is gone, so the handler releases its
+// bus subscription instead of holding it until the process exits.
+func TestStreamEvents(t *testing.T) {
+	hello := ": connected to workspace " + errPathWorkspace + " events\n\n"
+
+	t.Run("ends when the bus closes the channel", func(t *testing.T) {
+		ch := make(chan []byte, 1)
+		ch <- []byte("data: x\n\n")
+		close(ch)
+		p := &gonePeer{ok: 10}
+		streamEventsReturns(t, p, ch, time.Hour)
+		if got := p.got.String(); got != hello+"data: x\n\n" {
+			t.Errorf("wrote %q", got)
+		}
+	})
+
+	t.Run("ends when the client is gone before the opening line", func(t *testing.T) {
+		p := &gonePeer{}
+		streamEventsReturns(t, p, make(chan []byte), time.Hour)
+		if got := p.got.String(); got != "" {
+			t.Errorf("wrote %q", got)
+		}
+	})
+
+	t.Run("ends when an event cannot be written", func(t *testing.T) {
+		ch := make(chan []byte, 1)
+		ch <- []byte("data: x\n\n")
+		p := &gonePeer{ok: 1}
+		streamEventsReturns(t, p, ch, time.Hour)
+		if got := p.got.String(); got != hello {
+			t.Errorf("wrote %q", got)
+		}
+	})
+
+	t.Run("an idle stream finds out from its keepalive", func(t *testing.T) {
+		p := &gonePeer{ok: 2}
+		streamEventsReturns(t, p, make(chan []byte), time.Millisecond)
+		if got := p.got.String(); got != hello+": agentrq\n\n" {
+			t.Errorf("wrote %q", got)
+		}
+	})
+}

@@ -760,36 +760,46 @@ func (h *handler) sseEvents() fiber.Handler {
 
 		// Use Fiber's streaming response
 		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
-			// Inside the stream writer, create a long-lived context
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
 			defer h.bus.Unsubscribe(workspaceID, userID, ch)
-
-			// Send a heartbeat comment to establish the stream
-			_, _ = fmt.Fprintf(w, ": connected to workspace %s events\n\n", workspaceIDParam)
-			_ = w.Flush()
-
-			ticker := time.NewTicker(30 * time.Second)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case data, ok := <-ch:
-					if !ok {
-						return
-					}
-					_, _ = w.Write(data)
-					_ = w.Flush()
-				case <-ticker.C:
-					_, _ = w.Write([]byte(": agentrq\n\n"))
-					_ = w.Flush()
-				case <-ctx.Done():
-					return
-				}
-			}
+			streamEvents(w, workspaceIDParam, ch, 30*time.Second)
 		})
 		return nil
 	}
+}
+
+// streamEvents writes the workspace's events until the bus closes ch or a
+// write fails. fasthttp gives a stream writer no context, so a failed flush is
+// the only sign that the client has gone; the keepalive lets an idle stream
+// find out too, instead of holding its bus subscription forever.
+func streamEvents(w *bufio.Writer, workspaceIDParam string, ch <-chan []byte, keepalive time.Duration) {
+	if !writeFrame(w, []byte(": connected to workspace "+workspaceIDParam+" events\n\n")) {
+		return
+	}
+
+	ticker := time.NewTicker(keepalive)
+	defer ticker.Stop()
+
+	for {
+		frame := []byte(": agentrq\n\n")
+		select {
+		case data, ok := <-ch:
+			if !ok {
+				return
+			}
+			frame = data
+		case <-ticker.C:
+		}
+		if !writeFrame(w, frame) {
+			return
+		}
+	}
+}
+
+// writeFrame reports whether the frame reached the client. A bufio.Writer
+// keeps its first error, so Flush also reports a failed Write.
+func writeFrame(w *bufio.Writer, frame []byte) bool {
+	_, _ = w.Write(frame)
+	return w.Flush() == nil
 }
 func (h *handler) getAttachment() fiber.Handler {
 	return func(c *fiber.Ctx) error {
