@@ -54,3 +54,17 @@ func TestServerDiscover_AdvertisesLogo(t *testing.T) {
 	}
 	t.Errorf("expected the AgentRQ logo among the server's icons, got %v", info["icons"])
 }
+
+// Directories score a server on its title, description and website, read from
+// the identity a client is sent.
+func TestServerDiscover_AdvertisesIdentity(t *testing.T) {
+	srv := newProtocolTestServer(t)
+	_, result := discoverResult(t, srv)
+
+	meta, _ := result["_meta"].(map[string]any)
+	info, _ := meta["io.modelcontextprotocol/serverInfo"].(map[string]any)
+	if info["title"] != serverTitle || info["description"] != serverDescription || info["websiteUrl"] != serverWebsiteURL {
+		t.Errorf("serverInfo advertised title %q, description %q and website %q; want %q, %q and %q",
+			info["title"], info["description"], info["websiteUrl"], serverTitle, serverDescription, serverWebsiteURL)
+	}
+}

@@ -538,9 +538,12 @@ func NewWorkspaceServer(
 	workspaceIDStr := monoflake.ID(workspaceID).String()
 	mcpSrv := mcp.NewServer(
 		&mcp.Implementation{
-			Name:    fmt.Sprintf("agentrq-workspace-%s", workspaceIDStr),
-			Version: config.Release(),
-			Icons:   workspaceIcons(icon, baseURL),
+			Name:        fmt.Sprintf("agentrq-workspace-%s", workspaceIDStr),
+			Title:       serverTitle,
+			Description: serverDescription,
+			Version:     config.Release(),
+			WebsiteURL:  serverWebsiteURL,
+			Icons:       workspaceIcons(icon, baseURL),
 		},
 		&mcp.ServerOptions{
 			Capabilities: &mcp.ServerCapabilities{
@@ -1252,6 +1255,15 @@ func statusCheckMessage(t model.Task) string {
 // workspaceIcons lists the workspace's own icon, then the AgentRQ logo the
 // account-wide server uses. Without the logo a workspace with no icon of its
 // own advertised none, and clients that only fetch https icons showed none.
+// Shown by clients and directories; the per-workspace detail is in Name and
+// Instructions, since serverInfo is fixed when the server is created.
+const (
+	serverTitle       = "AgentRQ Workspace"
+	serverWebsiteURL  = "https://agentrq.com"
+	serverDescription = "Work on the tasks a human assigns in one AgentRQ workspace: " +
+		"reply to them and ask them questions, and read and keep the workspace's memory, skills and Pano docs."
+)
+
 func workspaceIcons(icon, baseURL string) []mcp.Icon {
 	var icons []mcp.Icon
 	if icon != "" {
