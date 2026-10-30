@@ -10,7 +10,6 @@ import {
   Tray,
   clipboard,
   dialog,
-  safeStorage,
   globalShortcut,
   ipcMain,
   nativeImage,
@@ -58,6 +57,7 @@ import { createProcessGoneHandler } from './network-service.js'
 import { createEventStreamClient } from './sse.js'
 import { LinkTarget, classifyLink } from './links.js'
 import { toggleFullScreen, viewState, zoomWindow } from './window-view.js'
+import { createVault } from './vault.js'
 import { FileOpenAction, fileOpenAction, localPathFromFileUrl } from './files.js'
 import { showEmojiPanel } from './emoji-panel.js'
 import { UpdateStatus, createUpdater } from './updater.js'
@@ -1282,16 +1282,12 @@ function buildExtensionRuntime() {
     claimedKeys: () => claimedShortcuts(installedNow),
   })
 
+  // Not the OS keychain, which prompts on macOS: see vault.js.
+  const vault = createVault({ keyFile: join(app.getPath('userData'), 'secrets.key') })
+
   const configStore = createConfigStore({
     store: jsonStore('extensions-config.json'),
-    vault: {
-      // The real question, asked of the OS rather than assumed: a Linux box with
-      // no keyring answers no, and a secret is then refused rather than written
-      // to a JSON file the user believes is protected.
-      available: () => safeStorage.isEncryptionAvailable(),
-      encrypt: (text) => safeStorage.encryptString(text).toString('base64'),
-      decrypt: (blob) => safeStorage.decryptString(Buffer.from(blob, 'base64')),
-    },
+    vault,
   })
 
   /**
@@ -1371,31 +1367,32 @@ function buildExtensionRuntime() {
   /**
    * The supervisor token, kept the way a credential is kept.
    *
-   * Through `safeStorage`, not a plain JSON file: it reaches every workspace on
-   * the account, which is the widest thing this app ever holds. Where there is
-   * no secure storage it is simply not persisted — the person authorises again
+   * Sealed by the vault, not a plain JSON file: it reaches every workspace on
+   * the account, which is the widest thing this app ever holds. Where the vault
+   * has no key it is simply not persisted — the person authorises again
    * next launch, which is a worse experience and the right trade.
    */
   const authStore = jsonStore('extensions-supervisor-auth.json')
 
   async function saveSupervisorAuth() {
     const held = supervisorAuth.saved()
-    if (!held.token || !safeStorage.isEncryptionAvailable()) return
+    if (!held.token || !vault.available()) return
     try {
-      await authStore.write({ sealed: safeStorage.encryptString(JSON.stringify(held)).toString('base64') })
+      await authStore.write({ sealed: vault.encrypt(JSON.stringify(held)) })
     } catch (error) {
       console.warn('could not store the supervisor authorisation:', error?.message ?? error)
     }
   }
 
   async function restoreSupervisorAuth() {
-    if (!safeStorage.isEncryptionAvailable()) return
+    if (!vault.available()) return
     try {
       const { sealed } = (await authStore.read()) ?? {}
-      if (sealed) supervisorAuth.restore(JSON.parse(safeStorage.decryptString(Buffer.from(sealed, 'base64'))))
+      if (sealed) supervisorAuth.restore(JSON.parse(vault.decrypt(sealed)))
     } catch {
-      // A file that will not decrypt is one from another machine or another
-      // user. Nothing to do but ask again.
+      // A file that will not decrypt is one from another machine, another
+      // user, or a build that sealed it with the keychain. Nothing to do but
+      // ask again.
     }
   }
 
@@ -1453,11 +1450,7 @@ function buildExtensionRuntime() {
    */
   const storageStore = createStorageStore({
     store: jsonStore('extensions-storage.json'),
-    vault: {
-      available: () => safeStorage.isEncryptionAvailable(),
-      encrypt: (text) => safeStorage.encryptString(text).toString('base64'),
-      decrypt: (blob) => safeStorage.decryptString(Buffer.from(blob, 'base64')),
-    },
+    vault,
   })
 
   const host = createHost({

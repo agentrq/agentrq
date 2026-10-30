@@ -27,7 +27,7 @@
  * - **Uninstall stops meaning anything.** `forget` runs as part of removal and
  *   the data is actually gone. A file an extension wrote outlives it, and
  *   nothing in the app knows it is there to offer.
- * - **Secrets lose the keychain.** A secret written here is refused outright on
+ * - **Secrets lose their encryption.** A secret written here is refused outright on
  *   a machine with no secure storage rather than written in the clear, which is
  *   a scruple an extension rolling its own has no reason to have thought about.
  * - **Workspaces do not stay apart.** Per-workspace state is the common case

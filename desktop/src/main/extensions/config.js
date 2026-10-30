@@ -7,8 +7,8 @@
  *
  * The manifest declares the fields; this validates what a user typed against
  * them and keeps the answers. The split matters: ordinary values are readable
- * settings, and secrets are not — an API key belongs in the OS keychain and
- * should never appear in a file somebody could back up, sync or paste.
+ * settings, and secrets are not — an API key is sealed by the vault and should
+ * never appear in the clear in a file somebody could back up, sync or paste.
  *
  * ## Secrets are write-only from the interface
  *

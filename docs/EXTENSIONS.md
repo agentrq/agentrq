@@ -263,8 +263,8 @@ and a window opens on your own server's sign-in page.
 Asked, never assumed. A credential that reaches every workspace is not
 something an app should acquire because you installed something; the prompt
 appears only once an installed extension has actually been granted the account.
-The token is stored through the OS keychain and can be given back at any time,
-after which the next account-wide call asks again.
+The token is stored encrypted, with a key only your user can read, and can be
+given back at any time, after which the next account-wide call asks again.
 
 This matters because a workspace token and a supervisor session outlive any
 single extension and reach every workspace on the account. An extension that is
@@ -555,7 +555,7 @@ See [`guardrail`](../examples/extensions/guardrail/) for a complete one.
 await ctx.storage.set('rules', { list: [...] })           // this install
 await ctx.storage.workspace(id).set('rules', { ... })     // this workspace
 await ctx.storage.workspace(id).get('rules')
-await ctx.storage.secret.set('apiKey', value)             // the OS keychain
+await ctx.storage.secret.set('apiKey', value)             // stored encrypted
 ```
 
 `config` in the manifest is fields **AgentRQ renders and validates** — right for
@@ -575,8 +575,8 @@ things:
 
 - **Uninstall stops meaning anything.** This is emptied on removal; your file is
   not, and nothing in the app knows it is there.
-- **Secrets lose the keychain.** A secret here is *refused* on a machine with no
-  secure storage rather than written in the clear.
+- **Secrets lose their encryption.** A secret here is *refused* on a machine with
+  no secure storage rather than written in the clear.
 - **Workspaces stop staying apart.** Key it yourself and only you know the data
   is per-workspace.
 - **Size is unbounded.** 64 KB per value, 512 KB per scope, **refused rather
@@ -775,8 +775,9 @@ list of rules, per-workspace overrides, anything somebody builds rather than
 fills in — use [`ctx.storage`](#ctxstorage--settings-you-define-the-shape-of)
 and draw your own screen.
 
-A `secret` is stored encrypted through the OS keychain, never shown back to the
-user or to the catalogue, and — importantly — **refused rather than written in
+A `secret` is stored encrypted with a key only your user can read (not in the OS
+keychain, which would prompt for a password), never shown back to the user or to
+the catalogue, and — importantly — **refused rather than written in
 the clear** if the machine has no secure storage available. Storing it anyway
 would be the worst of both worlds: the user believes it is protected, and it is
 sitting in a JSON file.
