@@ -104,3 +104,29 @@ func TestATrustedProxysClientsAreCountedApart(t *testing.T) {
 		}
 	}
 }
+
+func TestDisabledPassesEverythingThrough(t *testing.T) {
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := New(false, 1, time.Minute)(ok)
+	for i := 0; i < 5; i++ {
+		if code := serve(h, "203.0.113.7:4000", nil); code != http.StatusOK {
+			t.Fatalf("request %d with protection off: got %d, want 200", i+1, code)
+		}
+	}
+}
+
+// The rate is per second: a peer that stayed under it is counted afresh in the
+// next second rather than accumulating towards a block.
+func TestCountResetsEachSecond(t *testing.T) {
+	h := newHandler(1)
+	if code := serve(h, "203.0.113.7:4000", nil); code != http.StatusOK {
+		t.Fatalf("first request: got %d, want 200", code)
+	}
+
+	// The window is one second of wall-clock time, so the clock has to move past it.
+	time.Sleep(1100 * time.Millisecond)
+
+	if code := serve(h, "203.0.113.7:4000", nil); code != http.StatusOK {
+		t.Fatalf("first request of the next second: got %d, want 200", code)
+	}
+}

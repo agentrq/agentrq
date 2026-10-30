@@ -123,3 +123,95 @@ func TestATrustedProxysClientsAreCountedApart(t *testing.T) {
 		}
 	}
 }
+
+func TestDisabledPassesEverythingThrough(t *testing.T) {
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := New(false, 1, 1, time.Minute, tokens{})(ok)
+	for i := 0; i < 5; i++ {
+		w := serve(h, "203.0.113.7:4000", nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("request %d with the limiter off: got %d, want 200", i+1, w.Code)
+		}
+		if got := w.Header().Get("X-RateLimit-Limit"); got != "" {
+			t.Fatalf("a disabled limiter set X-RateLimit-Limit = %q", got)
+		}
+	}
+}
+
+func serveURL(h http.Handler, remote, target string, headers map[string]string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(http.MethodGet, target, nil)
+	r.RemoteAddr = remote
+	for k, v := range headers {
+		r.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+
+// The user is read from the at cookie, the bearer header or the token query
+// parameter; whichever names them, they share one quota.
+func TestCountsAUserFromCookieOrQuery(t *testing.T) {
+	h := newHandler(100, 2)
+
+	w := serve(h, "203.0.113.1:4000", map[string]string{"Cookie": "at=tok-bob"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("first request as bob (cookie): got %d", w.Code)
+	}
+	if got := w.Header().Get("X-RateLimit-Limit-User"); got != "2" {
+		t.Fatalf("a cookie user should get user headers, X-RateLimit-Limit-User = %q", got)
+	}
+
+	w = serveURL(h, "203.0.113.2:4000", "/?token=tok-bob", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("second request as bob (query): got %d", w.Code)
+	}
+	if got := w.Header().Get("X-RateLimit-Remaining-User"); got != "0" {
+		t.Fatalf("X-RateLimit-Remaining-User = %q, want 0 after two requests as bob", got)
+	}
+
+	if w := serve(h, "203.0.113.3:4000", map[string]string{"Cookie": "at=tok-bob"}); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("third request as bob: got %d, want 429", w.Code)
+	}
+
+	// A query token that does not validate leaves the request anonymous.
+	w = serveURL(h, "203.0.113.4:4000", "/?token=forged", nil)
+	if w.Code != http.StatusOK || w.Header().Get("X-RateLimit-Limit-User") != "" {
+		t.Fatalf("an invalid query token: got %d with user limit %q, want an anonymous 200", w.Code, w.Header().Get("X-RateLimit-Limit-User"))
+	}
+}
+
+// Once the window has passed, both the peer's and the user's counts start over.
+func TestQuotaResetsAfterTheWindow(t *testing.T) {
+	const window = 20 * time.Millisecond
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	bearer := map[string]string{"Authorization": "Bearer tok-alice"}
+
+	// One peer, so the peer's count is what limits.
+	h := New(true, 1, 100, window, tokens{})(ok)
+	if w := serve(h, "203.0.113.7:4000", nil); w.Code != http.StatusOK {
+		t.Fatalf("peer's first request: got %d", w.Code)
+	}
+	if w := serve(h, "203.0.113.7:4000", nil); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("peer's second request in the window: got %d, want 429", w.Code)
+	}
+
+	// One user from many peers, so the user's count is what limits.
+	u := New(true, 100, 1, window, tokens{})(ok)
+	if w := serve(u, "203.0.113.8:4000", bearer); w.Code != http.StatusOK {
+		t.Fatalf("user's first request: got %d", w.Code)
+	}
+	if w := serve(u, "203.0.113.9:4000", bearer); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("user's second request in the window: got %d, want 429", w.Code)
+	}
+
+	// The window is wall-clock time, so the clock has to move past it.
+	time.Sleep(2 * window)
+
+	if w := serve(h, "203.0.113.7:4000", nil); w.Code != http.StatusOK {
+		t.Fatalf("peer's first request of the next window: got %d, want 200", w.Code)
+	}
+	if w := serve(u, "203.0.113.8:4000", bearer); w.Code != http.StatusOK {
+		t.Fatalf("user's first request of the next window: got %d, want 200", w.Code)
+	}
+}
