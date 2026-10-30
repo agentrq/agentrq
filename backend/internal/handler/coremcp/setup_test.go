@@ -196,8 +196,8 @@ func TestSetupPage_ListsEveryTool(t *testing.T) {
 }
 
 // TestManifest keeps the served manifest equal to the server.json published
-// to the MCP Registry, except for the version, which is this release, and
-// the remote, which is this server's.
+// to the MCP Registry, except for the remote, which is this server's. The
+// version must be this release too, so a version bump updates server.json.
 func TestManifest(t *testing.T) {
 	raw, err := os.ReadFile("../../../../server.json")
 	if err != nil {
@@ -207,7 +207,9 @@ func TestManifest(t *testing.T) {
 	if err := json.Unmarshal(raw, &want); err != nil {
 		t.Fatal(err)
 	}
-	want["version"] = config.Release()
+	if want["version"] != config.Release() {
+		t.Errorf("server.json version = %v, want %s: bump it with the release", want["version"], config.Release())
+	}
 	want["remotes"] = []any{map[string]any{"type": "streamable-http", "url": "https://mcp.example.com/mcp"}}
 
 	var got map[string]any
