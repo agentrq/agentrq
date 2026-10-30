@@ -97,6 +97,8 @@ AGENTRQ_RATELIMIT_ENABLED=true
 AGENTRQ_RATELIMIT_MAX_PER_IP=60
 AGENTRQ_RATELIMIT_MAX_PER_USER=100
 AGENTRQ_RATELIMIT_WINDOW=60s
+AGENTRQ_TRUSTED_PROXIES=
+AGENTRQ_CLIENT_IP_HEADER=X-Real-IP
 ```
 
 ### 3. Create storage directory and run
@@ -411,3 +413,5 @@ docker logs --tail 100 agentrq
 | `AGENTRQ_RATELIMIT_MAX_PER_IP` | No | `60` | Max requests per window per IP |
 | `AGENTRQ_RATELIMIT_MAX_PER_USER` | No | `100` | Max requests per window per user |
 | `AGENTRQ_RATELIMIT_WINDOW` | No | `60s` | Rate limit window duration |
+| `AGENTRQ_TRUSTED_PROXIES` | No | *(empty)* | Proxies whose client-address header is believed, as comma-separated CIDRs or addresses. Empty believes none, and every client is the address that connected |
+| `AGENTRQ_CLIENT_IP_HEADER` | No | `X-Real-IP` | The header a trusted proxy names the client in: `X-Real-IP`, `X-Forwarded-For` (read from the right) or `CF-Connecting-IP` |

@@ -140,6 +140,7 @@ cp .env .env.backup
 - Place behind a reverse proxy (Nginx, Traefik, Cloudflare)
 - Enable rate limiting (default: 60 req/IP, 100 req/user per minute)
 - Enable DDoS protection (default: 20 req/sec)
+- Behind a proxy, set `AGENTRQ_TRUSTED_PROXIES` (see [Client addresses](#client-addresses))
 - Use firewall rules to restrict non-HTTP(S) traffic
 
 ### 6. Regular Updates
@@ -326,6 +327,23 @@ server {
     }
 }
 ```
+
+### Client addresses
+
+The DDoS guard, the rate limiter and the admin sign-in throttle count each client by address. The server believes a proxy's client-address header only from the proxies in `AGENTRQ_TRUSTED_PROXIES` (comma-separated CIDRs or addresses). It is empty by default: no header is believed, and each client is the address that connected. That is right when clients connect to the server directly, and a client can never choose its own address by sending a header.
+
+Behind a proxy, list the address the proxy connects from, or every client behind it shares one limit. The server logs `no proxy is trusted` once when it sees that. A blocked client then blocks everybody.
+
+| Proxy | `AGENTRQ_TRUSTED_PROXIES` | `AGENTRQ_CLIENT_IP_HEADER` |
+|---|---|---|
+| nginx on the same host, server not in Docker | `127.0.0.1,::1` | `X-Real-IP` |
+| nginx on the Docker host, server in docker-compose | `172.16.0.0/12` (Docker's bridge networks) | `X-Real-IP` |
+| Cloudflare, proxied | [Cloudflare's ranges](https://www.cloudflare.com/ips/) | `CF-Connecting-IP` |
+| AWS ALB, Caddy, Traefik | the proxy's subnet | `X-Forwarded-For` |
+
+`X-Forwarded-For` is read from the right: the client is the first entry that is not a trusted proxy, since the client writes the leftmost entries itself.
+
+With no proxy, make sure the server sees the real client. Rootless Docker, `userland-proxy`, or `"iptables": false` show every client as Docker's gateway, so all of them share one limit. Use `network_mode: host`, or put a proxy in front.
 
 ## Troubleshooting
 

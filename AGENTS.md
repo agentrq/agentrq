@@ -122,6 +122,10 @@ area they belong to — while adding a route, or a single API call.
 - **A new dependency starts at its latest release**, and its range floor is
   that release (`^x.y.z`, not an older one). An older pin arrives with its
   advisories already open, and the floor lets a lockfile fall back to them.
+- **Count a client by its peer address, never by a header.** Only
+  `middleware/clientip` reads `X-Real-IP`/`X-Forwarded-For`, and only from
+  `AGENTRQ_TRUSTED_PROXIES`; it puts the client in `RemoteAddr`. A header read
+  anywhere else is one the client writes, and spoofing it escapes the throttle.
 - **Never relax backend CORS to accommodate the desktop app.** It does not need
   it — see [the desktop note](docs/agents/desktop.md) — and doing so widens the
   attack surface of every deployment.

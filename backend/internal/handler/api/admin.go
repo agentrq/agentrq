@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/clientip"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/gofiber/fiber/v2"
@@ -65,9 +64,11 @@ func (l *loginAttempts) allow(key string, now time.Time, window time.Duration) (
 	return true, 0
 }
 
-// clientIP names the client the sign-in throttle counts tries for.
+// clientIP names the client the sign-in throttle counts tries for: the peer,
+// which clientip's middleware has already replaced with the client a trusted
+// proxy names. No header is read here.
 func clientIP(c *fiber.Ctx) string {
-	return clientip.Proxied(c.Context().RemoteIP(), c.Get("X-Real-IP"))
+	return c.Context().RemoteIP().String()
 }
 
 // registerAdminRoutes adds the operator's routes, apart from the users' API:

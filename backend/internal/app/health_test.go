@@ -107,6 +107,16 @@ func TestNewRefusesANegativeDrainDelay(t *testing.T) {
 	}
 }
 
+func TestNewRefusesATrustedProxyThatIsNotAnAddress(t *testing.T) {
+	var cfg Config
+	cfg.Auth.JWTSecret = "secret"
+	cfg.Network.TrustedProxies = "proxy.local"
+	_, err := New(cfg)
+	if err == nil || !strings.Contains(err.Error(), "network.trustedProxies") {
+		t.Fatalf("New = %v, want a network.trustedProxies error", err)
+	}
+}
+
 // The drain delay is read from AGENTRQ_APP_DRAIN_DELAY through the real
 // base.yaml, as main reads it.
 func TestDrainDelayFromTheEnvironment(t *testing.T) {

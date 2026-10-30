@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/clientip"
+
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -105,10 +107,15 @@ func TestSpoofedForwardedForCannotExhaustSomebodyElsesQuota(t *testing.T) {
 	}
 }
 
-// Behind the deployment's own proxy every request arrives from one private
-// peer; X-Real-IP is what keeps its clients apart.
-func TestAPrivateProxysClientsAreCountedApart(t *testing.T) {
-	h := newHandler(2, 100)
+// Behind the deployment's own proxy every request arrives from one peer; the
+// X-Real-IP it sets, believed because the operator trusts it, keeps its
+// clients apart.
+func TestATrustedProxysClientsAreCountedApart(t *testing.T) {
+	clients, err := clientip.New("10.0.0.5", "X-Real-IP")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := clients.Middleware(newHandler(2, 100))
 	for i := 0; i < 20; i++ {
 		xri := map[string]string{"X-Real-IP": fmt.Sprintf("198.51.100.%d", i)}
 		if w := serve(h, "10.0.0.5:4000", xri); w.Code != http.StatusOK {

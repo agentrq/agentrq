@@ -40,6 +40,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	handlerapi "github.com/agentrq/agentrq/backend/internal/handler/api"
+	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/clientip"
 	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/ddos"
 	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/ratelimit"
 	handlercoremcp "github.com/agentrq/agentrq/backend/internal/handler/coremcp"
@@ -138,6 +139,11 @@ type (
 			MaxPerUser int           `yaml:"maxPerUser"`
 			Window     time.Duration `yaml:"window"`
 		} `yaml:"ratelimit"`
+		// The proxies whose client-address header is believed, and that header.
+		Network struct {
+			TrustedProxies string `yaml:"trustedProxies"`
+			ClientIPHeader string `yaml:"clientIpHeader"`
+		} `yaml:"network"`
 		Storage cleanup.Config `yaml:"storage"`
 		// Zero leaves the default in place.
 		Memory struct {
@@ -197,6 +203,10 @@ func New(cfg Config) (*App, error) {
 	}
 	if cfg.App.DrainDelay < 0 {
 		return nil, fmt.Errorf("app.drainDelay: %s is negative", cfg.App.DrainDelay)
+	}
+	clients, err := clientip.New(cfg.Network.TrustedProxies, cfg.Network.ClientIPHeader)
+	if err != nil {
+		return nil, fmt.Errorf("network.trustedProxies: %w", err)
 	}
 	certStore, err := newCertStore(cfg.SSL.S3)
 	if err != nil {
@@ -863,6 +873,7 @@ func New(cfg Config) (*App, error) {
 	var finalRouter = publicFilesFirst(mux, fiberHandler)
 	finalRouter = ratelimit.New(cfg.Ratelimit.Enabled, cfg.Ratelimit.MaxPerIP, cfg.Ratelimit.MaxPerUser, cfg.Ratelimit.Window, tokenSvc)(finalRouter)
 	finalRouter = ddos.New(cfg.Ddos.Enabled, cfg.Ddos.MaxRequestsPerSecond, cfg.Ddos.BlockDuration)(finalRouter)
+	finalRouter = clients.Middleware(finalRouter)
 
 	probes := health.New(pingDB(db))
 
