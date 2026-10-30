@@ -15,25 +15,25 @@ import (
 	"github.com/golang/mock/gomock"
 )
 
-var errDBDown = errors.New("database unavailable")
+var errEventDBDown = errors.New("database unavailable")
 
 // A failure that is not a taken name is passed on as it is, not as a conflict.
 func TestCreateEvent_RepositoryError(t *testing.T) {
 	e := newTestController(t)
 	e.idgen.EXPECT().NextID().Return(int64(100))
-	e.repo.EXPECT().CreateEvent(gomock.Any(), gomock.Any()).Return(model.Event{}, errDBDown)
+	e.repo.EXPECT().CreateEvent(gomock.Any(), gomock.Any()).Return(model.Event{}, errEventDBDown)
 
 	_, err := e.controller.CreateEvent(context.Background(), entity.CreateEventRequest{UserID: testUserIDStr, Name: "deploy_done"})
-	if !errors.Is(err, errDBDown) || errors.Is(err, ErrDuplicateName) {
+	if !errors.Is(err, errEventDBDown) || errors.Is(err, ErrDuplicateName) {
 		t.Fatalf("expected the repository error unchanged, got %v", err)
 	}
 }
 
 func TestListEvents_RepositoryError(t *testing.T) {
 	e := newTestController(t)
-	e.repo.EXPECT().ListEventsByUser(gomock.Any(), testUserID).Return(nil, errDBDown)
+	e.repo.EXPECT().ListEventsByUser(gomock.Any(), testUserID).Return(nil, errEventDBDown)
 
-	if _, err := e.controller.ListEvents(context.Background(), entity.ListEventsRequest{UserID: testUserIDStr}); !errors.Is(err, errDBDown) {
+	if _, err := e.controller.ListEvents(context.Background(), entity.ListEventsRequest{UserID: testUserIDStr}); !errors.Is(err, errEventDBDown) {
 		t.Fatalf("expected the repository error, got %v", err)
 	}
 }
@@ -78,9 +78,9 @@ func TestCreateEventTrigger_RepositoryErrors(t *testing.T) {
 	t.Run("workspace access check fails", func(t *testing.T) {
 		e := newTestController(t)
 		e.repo.EXPECT().GetEvent(gomock.Any(), int64(100), testUserID).Return(model.Event{ID: 100}, nil)
-		e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(10), testUserID).Return(false, errDBDown)
+		e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(10), testUserID).Return(false, errEventDBDown)
 
-		if _, err := e.controller.CreateEventTrigger(context.Background(), req); !errors.Is(err, errDBDown) {
+		if _, err := e.controller.CreateEventTrigger(context.Background(), req); !errors.Is(err, errEventDBDown) {
 			t.Fatalf("expected the access check error, got %v", err)
 		}
 	})
@@ -90,9 +90,9 @@ func TestCreateEventTrigger_RepositoryErrors(t *testing.T) {
 		e.repo.EXPECT().GetEvent(gomock.Any(), int64(100), testUserID).Return(model.Event{ID: 100}, nil)
 		e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(10), testUserID).Return(true, nil)
 		e.idgen.EXPECT().NextID().Return(int64(200))
-		e.repo.EXPECT().CreateEventTrigger(gomock.Any(), gomock.Any()).Return(model.EventTrigger{}, errDBDown)
+		e.repo.EXPECT().CreateEventTrigger(gomock.Any(), gomock.Any()).Return(model.EventTrigger{}, errEventDBDown)
 
-		if _, err := e.controller.CreateEventTrigger(context.Background(), req); !errors.Is(err, errDBDown) {
+		if _, err := e.controller.CreateEventTrigger(context.Background(), req); !errors.Is(err, errEventDBDown) {
 			t.Fatalf("expected the create error, got %v", err)
 		}
 	})
@@ -109,30 +109,30 @@ func TestGetEventTrigger_NotFound(t *testing.T) {
 
 func TestListEventTriggers_RepositoryError(t *testing.T) {
 	e := newTestController(t)
-	e.repo.EXPECT().ListEventTriggersByEvent(gomock.Any(), int64(100), testUserID).Return(nil, errDBDown)
+	e.repo.EXPECT().ListEventTriggersByEvent(gomock.Any(), int64(100), testUserID).Return(nil, errEventDBDown)
 
-	if _, err := e.controller.ListEventTriggers(context.Background(), entity.ListEventTriggersRequest{EventID: 100, UserID: testUserIDStr}); !errors.Is(err, errDBDown) {
+	if _, err := e.controller.ListEventTriggers(context.Background(), entity.ListEventTriggersRequest{EventID: 100, UserID: testUserIDStr}); !errors.Is(err, errEventDBDown) {
 		t.Fatalf("expected the repository error, got %v", err)
 	}
 }
 
 func TestUpdateEventTrigger_WorkspaceAccessCheckFails(t *testing.T) {
 	e := newTestController(t)
-	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(10), testUserID).Return(false, errDBDown)
+	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(10), testUserID).Return(false, errEventDBDown)
 
 	_, err := e.controller.UpdateEventTrigger(context.Background(), entity.UpdateEventTriggerRequest{
 		ID: 200, UserID: testUserIDStr, WorkspaceID: 10, Title: "Review",
 	})
-	if !errors.Is(err, errDBDown) {
+	if !errors.Is(err, errEventDBDown) {
 		t.Fatalf("expected the access check error, got %v", err)
 	}
 }
 
 func TestListTasksFromEvent_RepositoryError(t *testing.T) {
 	e := newTestController(t)
-	e.repo.EXPECT().ListTasksByTriggerID(gomock.Any(), int64(100), testUserID).Return(nil, errDBDown)
+	e.repo.EXPECT().ListTasksByTriggerID(gomock.Any(), int64(100), testUserID).Return(nil, errEventDBDown)
 
-	if _, err := e.controller.ListTasksFromEvent(context.Background(), entity.ListTasksFromEventRequest{EventID: 100, UserID: testUserIDStr}); !errors.Is(err, errDBDown) {
+	if _, err := e.controller.ListTasksFromEvent(context.Background(), entity.ListTasksFromEventRequest{EventID: 100, UserID: testUserIDStr}); !errors.Is(err, errEventDBDown) {
 		t.Fatalf("expected the repository error, got %v", err)
 	}
 }
