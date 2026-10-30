@@ -9,6 +9,7 @@ const serverOrigin = vi.fn()
 vi.mock('../src/api', () => ({ serverOrigin: (...args) => serverOrigin(...args) }))
 
 const { default: TaskLinksPanel } = await import('../src/components/TaskLinksPanel.vue')
+const { panelLinkFromEvent } = await import('../src/composables/useMarkdownLinks')
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 const mounted = []
@@ -105,6 +106,20 @@ describe('TaskLinksPanel', () => {
     expect(q('task-links-toggle').textContent.trim()).toBe('4')
     expect(q('task-links-toggle').getAttribute('title')).toBe('Links')
     expect(q('task-links-toggle').querySelectorAll('svg')).toHaveLength(1)
+  })
+
+  it('opens its web links in the desktop side panel, as a message\'s own links do', async () => {
+    const { q } = mount(task, { pinned: true })
+    await settle()
+    const opened = []
+    const listen = (event) => opened.push(panelLinkFromEvent(event))
+    document.addEventListener('click', listen)
+    try {
+      for (const kind of ['pr', 'external']) q(`task-links-${kind}`).querySelector('a').click()
+    } finally {
+      document.removeEventListener('click', listen)
+    }
+    expect(opened).toEqual(['https://github.com/agentrq/agentrq/pull/1099', 'https://example.com/docs'])
   })
 
   it('counts links to the server as in-app ones in the desktop app, whose page origin is app://', async () => {

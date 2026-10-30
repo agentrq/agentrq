@@ -401,6 +401,24 @@ app.whenReady().then(async () => {
   await until(() => guest && !guest.isDestroyed() && guest.getURL().startsWith(origin))
   record('back on the page it was showing', guest?.getURL() === `${origin}/second`, guest?.getURL())
 
+  // The task's Links note gathers the same link, and opens it the same way.
+  await js("document.querySelector('[data-side-panel-close]').click()")
+  await until(() => js("!document.querySelector('[data-side-panel]')"))
+  const noteLink = `document.querySelector('[data-testid="task-links"][data-pinned] a[href="${origin}/second"]')`
+  await until(() => js(`!!${noteLink}`))
+  const routedBeforeNote = routed.length
+  await js(`${noteLink}.click()`)
+  const fromNote = await until(() => js("!!document.querySelector('[data-side-panel]')"))
+  await until(() => guest && !guest.isDestroyed() && guest.getURL() === `${origin}/second`)
+  await wait(200)
+  record('a plain click on a link in the Links note opens it in the panel, not the browser',
+    Boolean(fromNote) && guest?.getURL() === `${origin}/second` && routed.length === routedBeforeNote,
+    `${guest?.getURL()} ${JSON.stringify(routed.slice(routedBeforeNote))}`)
+  if (process.env.SHOTS) {
+    await wait(800)
+    await writeFile(join(process.env.SHOTS, `side-panel-links-note-${theme}.png`), (frame ?? (await win.webContents.capturePage())).toPNG())
+  }
+
   // A page asking for a permission: the bar, the answer, and remembering it.
   const askPermission = () => guest.executeJavaScript('Notification.requestPermission().then((r) => { document.title = r; return r })', true)
   await guest.loadURL(`${origin}/ask`)

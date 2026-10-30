@@ -230,6 +230,9 @@ export async function followFileLink(rawUrl, { isDesktop, bridge, copyText }) {
 /** Rendered message content: every view that injects markdown wraps it in this. */
 export const MESSAGE_CONTENT_SELECTOR = '.md-body';
 
+/** Links the app collects from messages, such as a task's Links note: they open where the message's own would. */
+export const MESSAGE_LINKS_SELECTOR = '[data-message-links]';
+
 /** AgentRQ's own sign-in, which has to land in the profile's session, not the panel's. */
 const SIGN_IN_PATH = '/api/v1/auth/';
 
@@ -240,9 +243,9 @@ const SIGN_IN_PATH = '/api/v1/auth/';
  * Only a plain primary click: Cmd/Ctrl, Shift or Alt with it is somebody
  * asking for the page *elsewhere*, and is left to reach the shell, which opens
  * the system browser exactly as before. Only `http(s)` links inside rendered
- * content — a link the app draws itself is not one a person reads in a
- * message. And never AgentRQ's own sign-in: the panel keeps its own cookies,
- * so signing in there would leave the app signed out.
+ * content, or gathered from it — a link the app draws itself is not one a
+ * person reads in a message. And never AgentRQ's own sign-in: the panel keeps
+ * its own cookies, so signing in there would leave the app signed out.
  *
  * @param {MouseEvent} event
  * @returns {string}
@@ -252,7 +255,7 @@ export function panelLinkFromEvent(event) {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return '';
 
   const anchor = event.target?.closest?.('a[href]');
-  if (!anchor || anchor.hasAttribute('download') || !anchor.closest(MESSAGE_CONTENT_SELECTOR)) return '';
+  if (!anchor || anchor.hasAttribute('download') || !anchor.closest(`${MESSAGE_CONTENT_SELECTOR}, ${MESSAGE_LINKS_SELECTOR}`)) return '';
 
   let url;
   try {

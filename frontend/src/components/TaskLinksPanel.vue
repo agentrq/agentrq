@@ -6,7 +6,7 @@
 
 <template>
   <section v-if="links.total" class="border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden min-w-0"
-           :class="pinned ? ['flex-col', folded ? '' : 'w-52'] : 'w-full'" data-testid="task-links" :data-pinned="pinned || null">
+           :class="pinned ? ['flex-col', folded ? '' : 'w-52'] : 'w-full'" data-testid="task-links" data-message-links :data-pinned="pinned || null">
     <button type="button" @click="expanded = !expanded" :aria-expanded="expanded" :title="folded ? 'Links' : null"
             class="w-full shrink-0 flex items-center gap-2 px-3 py-1.5 text-left bg-gray-50 dark:bg-zinc-800/80 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors min-w-0"
             data-testid="task-links-toggle">

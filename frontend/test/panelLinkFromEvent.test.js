@@ -60,6 +60,14 @@ describe('panelLinkFromEvent', () => {
     expect(panelLinkFromEvent(undefined)).toBe('')
   })
 
+  it('opens a link gathered from the messages, like the task\'s Links note', () => {
+    const note = document.createElement('section')
+    note.setAttribute('data-message-links', '')
+    note.innerHTML = '<a href="https://github.com/agentrq/agentrq/pull/1099" target="_blank">gh#1099</a>'
+    document.body.append(note)
+    expect(panelLinkFromEvent(click(note.querySelector('a')))).toBe('https://github.com/agentrq/agentrq/pull/1099')
+  })
+
   it('keeps links the app draws itself out of it', () => {
     const outside = document.createElement('a')
     outside.href = 'https://agentrq.com/docs'
