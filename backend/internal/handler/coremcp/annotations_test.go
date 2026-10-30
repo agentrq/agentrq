@@ -19,11 +19,15 @@ import (
 // none is indistinguishable from a read.
 func listedTools(t *testing.T) []*mcp.Tool {
 	t.Helper()
-	srv := NewServer(&mockEventCrud{}, "https://agentrq.example", nil)
+	return toolsOf(t, NewServer(&mockEventCrud{}, "https://agentrq.example", nil).server)
+}
 
+// toolsOf is what server answers to tools/list, through an in-memory client.
+func toolsOf(t *testing.T, server *mcp.Server) []*mcp.Tool {
+	t.Helper()
 	ctx := context.Background()
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	serverSession, err := srv.server.Connect(ctx, serverTransport, nil)
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	if err != nil {
 		t.Fatalf("connect server: %v", err)
 	}

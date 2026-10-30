@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -63,6 +64,22 @@ type ActionTool struct {
 	Name    string
 	Summary string
 	Actions []ToolAction
+}
+
+// ActionInputSchema is the input schema of an action tool that takes P: P's
+// own, with action offered as an enum of actions and help, which a struct tag
+// cannot say. Built from the actions the tool runs, the two cannot drift.
+func ActionInputSchema[P any](actions []ToolAction) *jsonschema.Schema {
+	s, err := jsonschema.For[P](nil)
+	if err != nil {
+		panic(fmt.Sprintf("the input schema of %v: %v", reflect.TypeFor[P](), err))
+	}
+	enum := make([]any, 0, len(actions)+1)
+	for _, a := range actions {
+		enum = append(enum, a.Name)
+	}
+	s.Properties["action"].Enum = append(enum, "help")
+	return s
 }
 
 // ToolsHelp is the help tool: with no topic every tool and its actions, with

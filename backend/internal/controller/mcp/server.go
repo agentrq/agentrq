@@ -574,36 +574,42 @@ func NewWorkspaceServer(
 		Name:        "task",
 		Description: TaskToolDescription + TaskCLIHint,
 		Annotations: mcphint.Write("Work on tasks"),
+		InputSchema: ActionInputSchema[TaskParams](ps.taskActions()),
 	}, ps.handleTask)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "memory",
 		Description: MemoryToolDescription,
 		Annotations: mcphint.Overwrite("Read and write this workspace's memory"),
+		InputSchema: ActionInputSchema[MemoryParams](ps.memoryActions()),
 	}, ps.handleMemory)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "skills",
 		Description: SkillsToolDescription,
 		Annotations: mcphint.Overwrite("Find, read and write skills"),
+		InputSchema: ActionInputSchema[SkillsParams](ps.skillsActions()),
 	}, ps.handleSkills)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "workspace",
 		Description: WorkspaceToolDescription,
 		Annotations: mcphint.Write("This workspace and its events"),
+		InputSchema: ActionInputSchema[WorkspaceParams](ps.workspaceActions()),
 	}, ps.handleWorkspace)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "pano",
 		Description: PanoToolDescription + PanoCLIHint,
 		Annotations: mcphint.Overwrite("Read and write Pano docs"),
+		InputSchema: ActionInputSchema[PanoParams](PanoActions(ps.pano, ps.userID, ps.contentID())),
 	}, ps.handlePano)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "siteTools",
 		Description: SiteToolsToolDescription,
 		Annotations: mcphint.OpenWorld(mcphint.Write("Shared websites' tools")),
+		InputSchema: ActionInputSchema[SiteToolsParams](ps.siteToolsActions()),
 	}, ps.handleSiteTools)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{

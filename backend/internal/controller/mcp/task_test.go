@@ -7,7 +7,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -99,29 +98,6 @@ func TestTaskTool_Help(t *testing.T) {
 			t.Errorf("help %v answered %q (error %v), want %q", tc.payload, text, isErr, tc.want)
 		}
 	}
-}
-
-// assertActionsMatchEnum fails when a tool's action enum and its actions
-// drift: an action the schema offers that nothing runs, or one it hides.
-func assertActionsMatchEnum(t *testing.T, params any, actions []ToolAction) {
-	t.Helper()
-	f, _ := reflect.TypeOf(params).FieldByName("Action")
-	enum, ok := strings.CutPrefix(f.Tag.Get("jsonschema"), "enum: ")
-	if !ok {
-		t.Fatalf("%T.Action has no enum", params)
-	}
-	var names []string
-	for _, a := range actions {
-		names = append(names, a.Name)
-	}
-	if offered := strings.Split(enum, ", "); !slices.Equal(offered, append(names, "help")) {
-		t.Errorf("%T offers actions %v but runs %v and help", params, offered, names)
-	}
-}
-
-func TestTaskAndPano_EnumsMatchTheirActions(t *testing.T) {
-	assertActionsMatchEnum(t, TaskParams{}, (&WorkspaceServer{}).taskActions())
-	assertActionsMatchEnum(t, PanoParams{}, PanoActions(nil, "", 0))
 }
 
 func TestPano_Help(t *testing.T) {

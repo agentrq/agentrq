@@ -17,7 +17,7 @@ import (
 )
 
 func (s *WorkspaceServer) registerPanoTools() {
-	mcp.AddTool(s.server, &mcp.Tool{Name: "pano", Description: mcpevent.PanoToolDescription, Annotations: mcphint.Overwrite("Read and write Pano docs")}, s.handlePano)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "pano", Description: mcpevent.PanoToolDescription, Annotations: mcphint.Overwrite("Read and write Pano docs"), InputSchema: mcpevent.ActionInputSchema[mcpevent.PanoParams](mcpevent.PanoActions(nil, "", 0))}, s.handlePano)
 }
 
 // handlePano runs the workspace server's pano tool for the supervisor, which

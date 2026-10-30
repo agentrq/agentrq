@@ -388,13 +388,13 @@ func (s *WorkspaceServer) registerTools() {
 	// Every tool takes an action and its payload — see tools.go and task.go.
 	// The annotation is the most a tool's actions can do, so a tool with a
 	// delete is destructive even for its reads.
-	mcp.AddTool(s.server, &mcp.Tool{Name: "workspace", Description: workspaceToolDescription, Annotations: mcphint.Overwrite("Manage workspaces")}, s.handleWorkspaceTool)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "task", Description: taskToolDescription, Annotations: mcphint.Overwrite("Manage tasks")}, s.handleTask)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "memory", Description: memoryToolDescription, Annotations: mcphint.Read("Read a workspace's memory")}, s.handleMemoryTool)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "skills", Description: skillsToolDescription, Annotations: mcphint.Read("Read a workspace's skills")}, s.handleSkillsTool)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "events", Description: eventsToolDescription, Annotations: mcphint.Overwrite("Manage events and triggers")}, s.handleEventsTool)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "workflows", Description: workflowsToolDescription, Annotations: mcphint.Overwrite("Manage workflows")}, s.handleWorkflowsTool)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "machines", Description: machinesToolDescription, Annotations: mcphint.Overwrite("Manage machines and agents")}, s.handleMachinesTool)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "workspace", Description: workspaceToolDescription, Annotations: mcphint.Overwrite("Manage workspaces"), InputSchema: mcpevent.ActionInputSchema[WorkspaceToolParams](s.workspaceActions())}, s.handleWorkspaceTool)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "task", Description: taskToolDescription, Annotations: mcphint.Overwrite("Manage tasks"), InputSchema: mcpevent.ActionInputSchema[TaskParams](s.taskActions())}, s.handleTask)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "memory", Description: memoryToolDescription, Annotations: mcphint.Read("Read a workspace's memory"), InputSchema: mcpevent.ActionInputSchema[MemoryToolParams](s.memoryActions())}, s.handleMemoryTool)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "skills", Description: skillsToolDescription, Annotations: mcphint.Read("Read a workspace's skills"), InputSchema: mcpevent.ActionInputSchema[SkillsToolParams](s.skillsActions())}, s.handleSkillsTool)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "events", Description: eventsToolDescription, Annotations: mcphint.Overwrite("Manage events and triggers"), InputSchema: mcpevent.ActionInputSchema[EventsToolParams](s.eventsActions())}, s.handleEventsTool)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "workflows", Description: workflowsToolDescription, Annotations: mcphint.Overwrite("Manage workflows"), InputSchema: mcpevent.ActionInputSchema[WorkflowsToolParams](s.workflowsActions())}, s.handleWorkflowsTool)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "machines", Description: machinesToolDescription, Annotations: mcphint.Overwrite("Manage machines and agents"), InputSchema: mcpevent.ActionInputSchema[MachinesToolParams](s.machinesActions())}, s.handleMachinesTool)
 	s.registerPanoTools()
 	mcp.AddTool(s.server, &mcp.Tool{Name: "help", Description: helpToolDescription, Annotations: mcphint.Read("How to call these tools")}, s.handleHelpTool)
 	s.server.AddReceivingMiddleware(mcpevent.ActionToolsMiddleware(actionToolNames, legacyTools))

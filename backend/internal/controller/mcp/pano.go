@@ -46,8 +46,8 @@ var PanoToolDescription = "Read and write the Pano: markdown docs shared by ever
 
 // PanoParams is the input to the pano tool.
 type PanoParams struct {
-	Action  string         `json:"action" jsonschema:"enum: save, edit, read, comment, attach, delete, help"`
-	Payload map[string]any `json:"payload,omitempty" jsonschema:"The action's fields, as help prints them."`
+	Action  string         `json:"action" jsonschema:"What to do: one of the actions this tool's description lists, or help for each action's fields and an example."`
+	Payload map[string]any `json:"payload,omitempty" jsonschema:"The fields the chosen action works on, such as the ids it reads or the text it writes; help with payload {\"topic\": \"<action>\"} names them and gives an example. Leave it out for an action that takes none."`
 }
 
 // The pano tool's payloads, one per action.

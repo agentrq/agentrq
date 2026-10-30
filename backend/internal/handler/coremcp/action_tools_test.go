@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -91,21 +90,40 @@ func TestActionTools_EveryExampleRunsTheToolItReplaced(t *testing.T) {
 
 // The enum each tool's schema offers is exactly its actions and help.
 func TestActionTools_EnumsAreTheirActions(t *testing.T) {
-	srv := &WorkspaceServer{}
-	params := map[string]any{
-		"workspace": WorkspaceToolParams{}, "task": TaskParams{}, "memory": MemoryToolParams{}, "skills": SkillsToolParams{},
-		"events": EventsToolParams{}, "workflows": WorkflowsToolParams{}, "machines": MachinesToolParams{}, "pano": mcpevent.PanoParams{},
-	}
-	for _, tool := range srv.tools() {
-		f, _ := reflect.TypeOf(params[tool.Name]).FieldByName("Action")
+	enums := actionEnums(t, NewServer(&mockEventCrud{}, "https://agentrq.example", nil).server)
+	for _, tool := range (&WorkspaceServer{}).tools() {
 		var names []string
 		for _, a := range tool.Actions {
 			names = append(names, a.Name)
 		}
-		if got := strings.Split(strings.TrimPrefix(f.Tag.Get("jsonschema"), "enum: "), ", "); !slices.Equal(got, append(names, "help")) {
-			t.Errorf("%s offers %v, but runs %v and help", tool.Name, got, names)
+		if got := enums[tool.Name]; !slices.Equal(got, append(names, "help")) {
+			t.Errorf("%s offers actions %v, but runs %v and help", tool.Name, got, names)
 		}
 	}
+}
+
+// actionEnums is the enum of action each of server's tools offers a client,
+// by tool name; a tool that offers none is left out.
+func actionEnums(t *testing.T, server *mcp.Server) map[string][]string {
+	t.Helper()
+	enums := map[string][]string{}
+	for _, tool := range toolsOf(t, server) {
+		var schema struct {
+			Properties struct {
+				Action struct {
+					Enum []string `json:"enum"`
+				} `json:"action"`
+			} `json:"properties"`
+		}
+		raw, _ := json.Marshal(tool.InputSchema)
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatalf("%s's input schema %s: %v", tool.Name, raw, err)
+		}
+		if enum := schema.Properties.Action.Enum; len(enum) > 0 {
+			enums[tool.Name] = enum
+		}
+	}
+	return enums
 }
 
 // Each tool routes its own actions, records help and a mistake as itself,

@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -62,12 +63,36 @@ func TestTools_EveryExampleIsAPayloadItsActionTakes(t *testing.T) {
 	}
 }
 
+// The enum of action each tool offers a client is exactly its actions and help.
 func TestTools_EnumsMatchTheirActions(t *testing.T) {
-	ps := &WorkspaceServer{}
-	assertActionsMatchEnum(t, MemoryParams{}, ps.memoryActions())
-	assertActionsMatchEnum(t, SkillsParams{}, ps.skillsActions())
-	assertActionsMatchEnum(t, WorkspaceParams{}, ps.workspaceActions())
-	assertActionsMatchEnum(t, SiteToolsParams{}, ps.siteToolsActions())
+	enums := map[string][]any{}
+	for _, tool := range toolsOverTheWire(t) {
+		schema, _ := tool["inputSchema"].(map[string]any)
+		props, _ := schema["properties"].(map[string]any)
+		action, _ := props["action"].(map[string]any)
+		enum, _ := action["enum"].([]any)
+		enums[tool["name"].(string)] = enum
+	}
+	for _, tool := range (&WorkspaceServer{}).tools() {
+		want := []any{}
+		for _, a := range tool.Actions {
+			want = append(want, a.Name)
+		}
+		if got := enums[tool.Name]; !reflect.DeepEqual(got, append(want, "help")) {
+			t.Errorf("%s offers actions %v, but runs %v and help", tool.Name, got, want)
+		}
+	}
+}
+
+// A params type the schema package cannot describe is a programming error,
+// caught when the server registers its tools.
+func TestActionInputSchema_PanicsOnATypeWithNoSchema(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil || !strings.Contains(fmt.Sprint(r), "the input schema of struct { Action chan int") {
+			t.Errorf("ActionInputSchema of a channel field recovered %v, want a panic naming the type", r)
+		}
+	}()
+	ActionInputSchema[struct{ Action chan int }](nil)
 }
 
 // Each action reaches the handler of the tool it replaced, which records the

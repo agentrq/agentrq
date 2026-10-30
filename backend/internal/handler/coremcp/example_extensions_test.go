@@ -8,13 +8,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // The example extensions declare the MCP tools they intend to call, and the
@@ -36,15 +37,22 @@ import (
 // A tool, or one action of a tool that takes them: `task.create`.
 var manifestToolRe = regexp.MustCompile(`^[a-zA-Z]+(\.[a-zA-Z]+)?$`)
 
-// actionsOf reads the actions an action tool offers from its params' enum.
-func actionsOf(t *testing.T, params any) []string {
-	t.Helper()
-	f, ok := reflect.TypeOf(params).FieldByName("Action")
-	enum, isEnum := strings.CutPrefix(f.Tag.Get("jsonschema"), "enum: ")
-	if !ok || !isEnum {
-		t.Fatalf("%T has no Action enum", params)
-	}
-	return strings.Split(enum, ", ")
+// workspaceServer is a workspace's MCP server with nothing behind it, enough
+// to list its tools.
+func workspaceServer() *mcp.Server {
+	ps := mcpevent.NewWorkspaceServer(
+		1, 0, "user", "http://localhost",
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil,           // clearAgentContext
+		nil,           // publishEvent
+		nil, nil, nil, // loadMemory, saveMemory, deleteMemory
+		nil, // skills
+		nil, // pano
+		nil, // siteTools
+		nil, nil, nil,
+		eventbus.New(), nil, nil, "", "name", "desc", nil, nil, nil, nil,
+	)
+	return ps.MCPServer()
 }
 
 type exampleManifest struct {
@@ -60,24 +68,8 @@ func TestExampleExtensionsAskForToolsThatExist(t *testing.T) {
 
 	workspaceTools := namesUnder(t, filepath.Join(root, "backend/internal/controller/mcp"), workspaceToolRe)
 	supervisorTools := namesUnder(t, filepath.Join(root, "backend/internal/handler/coremcp"), coreToolRe)
-	workspaceActions := map[string][]string{
-		"task":      actionsOf(t, mcpevent.TaskParams{}),
-		"memory":    actionsOf(t, mcpevent.MemoryParams{}),
-		"skills":    actionsOf(t, mcpevent.SkillsParams{}),
-		"workspace": actionsOf(t, mcpevent.WorkspaceParams{}),
-		"siteTools": actionsOf(t, mcpevent.SiteToolsParams{}),
-		"pano":      actionsOf(t, mcpevent.PanoParams{}),
-	}
-	supervisorActions := map[string][]string{
-		"workspace": actionsOf(t, WorkspaceToolParams{}),
-		"task":      actionsOf(t, TaskParams{}),
-		"memory":    actionsOf(t, MemoryToolParams{}),
-		"skills":    actionsOf(t, SkillsToolParams{}),
-		"events":    actionsOf(t, EventsToolParams{}),
-		"workflows": actionsOf(t, WorkflowsToolParams{}),
-		"machines":  actionsOf(t, MachinesToolParams{}),
-		"pano":      actionsOf(t, mcpevent.PanoParams{}),
-	}
+	workspaceActions := actionEnums(t, workspaceServer())
+	supervisorActions := actionEnums(t, NewServer(&mockEventCrud{}, "https://agentrq.example", nil).server)
 
 	dir := filepath.Join(root, "examples/extensions")
 	entries, err := os.ReadDir(dir)

@@ -7,8 +7,6 @@ package coremcp
 import (
 	"context"
 	"encoding/json"
-	"reflect"
-	"slices"
 	"strings"
 	"testing"
 
@@ -101,18 +99,6 @@ func TestTaskTool_HelpPrintsEachActionsPayload(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("help respond lacks %q:\n%s", want, text)
 		}
-	}
-}
-
-// The enum the schema offers is exactly the actions the tool runs.
-func TestTaskTool_EnumIsItsActions(t *testing.T) {
-	f, _ := reflect.TypeOf(TaskParams{}).FieldByName("Action")
-	var names []string
-	for _, a := range (&WorkspaceServer{}).taskActions() {
-		names = append(names, a.Name)
-	}
-	if got := strings.Split(strings.TrimPrefix(f.Tag.Get("jsonschema"), "enum: "), ", "); !slices.Equal(got, append(names, "help")) {
-		t.Errorf("TaskParams offers %v, but the tool runs %v and help", got, names)
 	}
 }
 

@@ -29,8 +29,8 @@ const TaskCLIHint = " Prefer the shell for attachments to save tokens: `npx -y @
 
 // TaskParams is the input to the task tool.
 type TaskParams struct {
-	Action  string         `json:"action" jsonschema:"enum: create, get, updateStatus, reply, elicit, getAttachment, help"`
-	Payload map[string]any `json:"payload,omitempty" jsonschema:"The action's fields, as help prints them. Leave it out when the action takes none."`
+	Action  string         `json:"action" jsonschema:"What to do: one of the actions this tool's description lists, or help for each action's fields and an example."`
+	Payload map[string]any `json:"payload,omitempty" jsonschema:"The fields the chosen action works on, such as the ids it reads or the text it writes; help with payload {\"topic\": \"<action>\"} names them and gives an example. Leave it out for an action that takes none."`
 }
 
 // taskActions are the task tool's actions, each run by the handler of the

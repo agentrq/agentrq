@@ -16,31 +16,32 @@ import (
 // them. Each action is run by the handler of the tool it replaced, which still
 // records the call under that tool's name.
 
-// The tools' inputs. The enum is each tool's actions, and help.
+// The tools' inputs. Their schemas offer each tool's actions, and help, as
+// the enum of action: see ActionInputSchema.
 type (
 	WorkspaceToolParams struct {
-		Action  string         `json:"action" jsonschema:"enum: list, create, get, update, stats, fork, mergeFork, help"`
-		Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them."`
+		Action  string         `json:"action" jsonschema:"What to do: one of the actions this tool's description lists, or help for each action's fields and an example."`
+		Payload map[string]any `json:"payload,omitempty" jsonschema:"The fields the chosen action works on, such as the ids it reads or the text it writes; help with payload {\"topic\": \"<action>\"} names them and gives an example. Leave it out for an action that takes none."`
 	}
 	MemoryToolParams struct {
-		Action  string         `json:"action" jsonschema:"enum: list, get, help"`
-		Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them."`
+		Action  string         `json:"action" jsonschema:"What to do: one of the actions this tool's description lists, or help for each action's fields and an example."`
+		Payload map[string]any `json:"payload,omitempty" jsonschema:"The fields the chosen action works on, such as the ids it reads or the text it writes; help with payload {\"topic\": \"<action>\"} names them and gives an example. Leave it out for an action that takes none."`
 	}
 	SkillsToolParams struct {
-		Action  string         `json:"action" jsonschema:"enum: search, get, help"`
-		Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them."`
+		Action  string         `json:"action" jsonschema:"What to do: one of the actions this tool's description lists, or help for each action's fields and an example."`
+		Payload map[string]any `json:"payload,omitempty" jsonschema:"The fields the chosen action works on, such as the ids it reads or the text it writes; help with payload {\"topic\": \"<action>\"} names them and gives an example. Leave it out for an action that takes none."`
 	}
 	EventsToolParams struct {
-		Action  string         `json:"action" jsonschema:"enum: list, create, get, update, delete, listTasks, listTriggers, createTrigger, getTrigger, updateTrigger, deleteTrigger, help"`
-		Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them. Leave it out when the action takes none."`
+		Action  string         `json:"action" jsonschema:"What to do: one of the actions this tool's description lists, or help for each action's fields and an example."`
+		Payload map[string]any `json:"payload,omitempty" jsonschema:"The fields the chosen action works on, such as the ids it reads or the text it writes; help with payload {\"topic\": \"<action>\"} names them and gives an example. Leave it out for an action that takes none."`
 	}
 	WorkflowsToolParams struct {
-		Action  string         `json:"action" jsonschema:"enum: list, create, get, getText, update, delete, replaceFromText, listSteps, createStep, deleteStep, listTasks, help"`
-		Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them. Leave it out when the action takes none."`
+		Action  string         `json:"action" jsonschema:"What to do: one of the actions this tool's description lists, or help for each action's fields and an example."`
+		Payload map[string]any `json:"payload,omitempty" jsonschema:"The fields the chosen action works on, such as the ids it reads or the text it writes; help with payload {\"topic\": \"<action>\"} names them and gives an example. Leave it out for an action that takes none."`
 	}
 	MachinesToolParams struct {
-		Action  string         `json:"action" jsonschema:"enum: list, createEnrolmentCode, launchAgent, stopAgent, help"`
-		Payload map[string]any `json:"payload,omitempty" jsonschema:"An object with the action's fields, as help prints them. Leave it out when the action takes none."`
+		Action  string         `json:"action" jsonschema:"What to do: one of the actions this tool's description lists, or help for each action's fields and an example."`
+		Payload map[string]any `json:"payload,omitempty" jsonschema:"The fields the chosen action works on, such as the ids it reads or the text it writes; help with payload {\"topic\": \"<action>\"} names them and gives an example. Leave it out for an action that takes none."`
 	}
 	// HelpToolParams is the help tool's input: what to explain.
 	HelpToolParams struct {
