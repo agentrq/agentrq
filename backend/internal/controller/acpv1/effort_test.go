@@ -134,6 +134,25 @@ func TestEngineEffort(t *testing.T) {
 		})
 	})
 
+	t.Run("an effort switch whose answer updates models passes the model change on", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.readyAsking(rec)
+		rec.wait(t, func() bool { return len(rec.models) == 1 && len(rec.effort) == 1 })
+		l.SetEffort(context.Background(), "sess-1", "effort", "low")
+		a.answer(a.expectParams("session/set_config_option", `{"sessionId":"sess-1","configId":"effort","value":"low"}`),
+			`{"configOptions":`+configOptionsOf(t, `"currentValue":"model-large"`, `"currentValue":"model-small"`, `"currentValue":"high"`, `"currentValue":"low"`)+`}`)
+		rec.wait(t, func() bool { return len(rec.models) == 2 && len(rec.effort) == 2 })
+		rec.read(func() {
+			if m := rec.models[1]; m.CurrentModel != "model-small" {
+				t.Fatalf("models report was %+v, want model-small after the effort switch", m)
+			}
+			if e := rec.effort[1]; e.CurrentEffort != "low" {
+				t.Fatalf("effort report was %+v, want low after the effort switch", e)
+			}
+		})
+	})
+
 	t.Run("SetEffort switches the session and becomes the default for new ones", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgent(t, rec)
