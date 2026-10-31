@@ -38,7 +38,8 @@
 <script setup>
 /**
  * Every link the task mentions: pull requests, Pano docs, other tasks and the
- * rest, so none has to be dug out of a long conversation.
+ * rest, so none has to be dug out of a long conversation. The Pano docs linked
+ * to the task are listed too, mentioned or not.
  *
  * Pinned, it is a small note over the conversation's corner, open until folded
  * to just its icon and count.
@@ -53,6 +54,8 @@ const props = defineProps({
   task: { type: Object, required: true },
   taskId: { type: String, default: '' },
   pinned: { type: Boolean, default: false },
+  // The Pano docs linked to the task, which the conversation may never name.
+  panoDocs: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits(['follow']);
@@ -73,6 +76,6 @@ Promise.resolve()
   .then((o) => { origin.value = o; })
   .catch(() => {});
 
-const links = computed(() => taskLinks(props.task, { origin: origin.value, taskId: props.taskId }));
+const links = computed(() => taskLinks(props.task, { origin: origin.value, taskId: props.taskId, panoDocs: props.panoDocs }));
 const summary = computed(() => links.value.groups.flatMap((g) => g.links.map((l) => l.label)).join(' · '));
 </script>

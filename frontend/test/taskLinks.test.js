@@ -90,6 +90,15 @@ describe('taskLinks', () => {
     expect(result.groups[0].label).toBe('Pull requests')
   })
 
+  it('lists the Pano docs linked to the task first, by title, mentioned or not', () => {
+    const task = { body: `Read [${origin}/pano/d2](${origin}/pano/d2) and [Roadmap](/pano/d1).` }
+    const panoDocs = [{ id: 'd2', title: 'Spec' }, { id: 'd3', title: '' }, { id: 'd2', title: 'Spec again' }]
+    const result = taskLinks(task, { origin, panoDocs })
+    expect(kinds(result)).toEqual([['pano', ['Spec', 'd3', 'Roadmap']]])
+    expect(result.groups[0].links[0]).toEqual({ kind: 'pano', key: 'd2', to: '/pano/d2', label: 'Spec' })
+    expect(taskLinks({}, { origin, panoDocs: [{ id: 'd4', title: 'Plan' }] }).total).toBe(1)
+  })
+
   it('names the repository once pull requests come from more than one', () => {
     const task = { body: 'https://github.com/a/front/pull/1 https://github.com/a/back/pull/2' }
     expect(kinds(taskLinks(task, { origin }))).toEqual([['pr', ['front#1', 'back#2']]])

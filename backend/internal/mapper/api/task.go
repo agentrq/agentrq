@@ -170,9 +170,14 @@ func fromGetTaskResponseEntityToView(rs *entity.GetTaskResponse) view.GetTaskRes
 			CreatedAt:  tr.CreatedAt,
 		}
 	}
+	var docs []view.TaskPanoDoc
+	for _, d := range rs.PanoDocs {
+		docs = append(docs, view.TaskPanoDoc{ID: monoflake.ID(d.ID).String(), Title: d.Title})
+	}
 	return view.GetTaskResponse{
 		Task:             FromEntityTaskToView(rs.Task),
 		StateTransitions: transitions,
+		PanoDocs:         docs,
 		Timing: view.TaskTiming{
 			StartedAt:           rs.Timing.StartedAt,
 			ClosedAt:            rs.Timing.ClosedAt,

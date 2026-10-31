@@ -179,6 +179,17 @@ func (r *repository) ListPanoDocIDsOfTask(ctx context.Context, userID, taskID in
 	return ids, err
 }
 
+// ListPanoDocsOfTask returns the id and title of each of the account's docs a
+// task is linked to that has not expired by now, the first linked first.
+func (r *repository) ListPanoDocsOfTask(ctx context.Context, userID, taskID int64, now time.Time) ([]model.PanoDoc, error) {
+	var docs []model.PanoDoc
+	err := r.conn(ctx).Model(&model.PanoDoc{}).Select("pano_docs.id, pano_docs.title").
+		Joins("JOIN pano_doc_tasks ON pano_doc_tasks.doc_id = pano_docs.id AND pano_doc_tasks.user_id = pano_docs.user_id").
+		Where("pano_doc_tasks.task_id = ? AND pano_doc_tasks.user_id = ? AND pano_docs.expires_at > ?", taskID, userID, now).
+		Order("pano_doc_tasks.created_at, pano_doc_tasks.id").Find(&docs).Error
+	return docs, err
+}
+
 // ListOngoingAgentTaskIDs returns up to limit ids of a workspace's ongoing
 // tasks assigned to its agent.
 func (r *repository) ListOngoingAgentTaskIDs(ctx context.Context, userID, workspaceID int64, limit int) ([]int64, error) {

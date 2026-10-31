@@ -8,6 +8,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -44,6 +45,7 @@ func TestPanoDocTaskQueriesUseAnIndex(t *testing.T) {
 	}{
 		{"a doc's tasks, with their status", func() error { _, err := r.ListPanoDocTasks(ctx, skUser, []int64{1, 2}); return err }},
 		{"the docs of a task", func() error { _, err := r.ListPanoDocIDsOfTask(ctx, skUser, 31); return err }},
+		{"the titles of a task's docs", func() error { _, err := r.ListPanoDocsOfTask(ctx, skUser, 31, time.Now()); return err }},
 		{"the statuses of an item's tasks", func() error { _, err := r.ListPanoTaskStatuses(ctx, skUser, []int64{31, 32}); return err }},
 		{"a workspace's ongoing agent tasks", func() error { _, err := r.ListOngoingAgentTaskIDs(ctx, skUser, 7, 2); return err }},
 		{"a task's unticked links", func() error { return r.ClearPanoUnticked(ctx, skUser, 31) }},

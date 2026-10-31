@@ -55,6 +55,17 @@ func TestFromGetTaskResponseEntityToHTTPResponse_StateTransitions(t *testing.T) 
 	}
 }
 
+// A task's Pano docs are listed by id and title, and left out when it has none.
+func TestFromGetTaskResponseEntityToHTTPResponse_PanoDocs(t *testing.T) {
+	raw := string(FromGetTaskResponseEntityToHTTPResponse(&entity.GetTaskResponse{Task: entity.Task{ID: 1}, PanoDocs: []entity.PanoDoc{{ID: 7, Title: "Plan"}}}))
+	if want := `"panoDocs":[{"id":"` + monoflake.ID(7).String() + `","title":"Plan"}]`; !strings.Contains(raw, want) {
+		t.Errorf("response %s\nlacks %s", raw, want)
+	}
+	if raw := string(FromGetTaskResponseEntityToHTTPResponse(&entity.GetTaskResponse{Task: entity.Task{ID: 1}, PanoDocs: []entity.PanoDoc{}})); strings.Contains(raw, "panoDocs") {
+		t.Errorf("response %s has panoDocs, want none for a task with no docs", raw)
+	}
+}
+
 // A task view lists its tool calls the same way a toolCall.updated event
 // carries one, so a client can upsert either into the other.
 func TestFromModelTaskToView_ListsToolCallsAsTheEventCarriesThem(t *testing.T) {

@@ -102,19 +102,26 @@ export function classifyLink(link, origin) {
 
 /**
  * A task's links, grouped and de-duplicated, each in the order it first
- * appears. A link to the task itself is left out.
+ * appears. A link to the task itself is left out. The Pano docs linked to the
+ * task come first among its Pano links, by their title, whether or not the
+ * conversation mentions them.
  *
  * A pull request is `gh#123` while the task names only one repository, and
  * `repo#123` once it names more, where `gh` alone would be ambiguous.
  *
  * @param {{ body?: string, messages?: Array<{ text?: string }> }} task
- * @param {{ origin: string, taskId?: string }} context
+ * @param {{ origin: string, taskId?: string, panoDocs?: Array<{ id: string, title: string }> }} context
  * @returns {{ total: number, groups: Array<{ kind: string, label: string, links: object[] }> }}
  */
-export function taskLinks(task, { origin, taskId }) {
+export function taskLinks(task, { origin, taskId, panoDocs = [] }) {
   const links = [...linksInText(task?.body), ...(task?.messages || []).flatMap(messageLinks)];
   const seen = new Set();
   const byKind = Object.fromEntries(LINK_GROUPS.map((g) => [g.kind, []]));
+  for (const doc of panoDocs) {
+    if (seen.has(`pano ${doc.id}`)) continue;
+    seen.add(`pano ${doc.id}`);
+    byKind.pano.push({ kind: 'pano', key: doc.id, to: `/pano/${doc.id}`, label: doc.title || doc.id });
+  }
   for (const link of links) {
     const found = classifyLink(link, origin);
     if (!found || seen.has(`${found.kind} ${found.key}`)) continue;

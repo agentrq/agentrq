@@ -3366,6 +3366,14 @@ components:
           description: Every change of the task's status, oldest first. History begins when it was first recorded, so an older task may have none.
           items: { $ref: '#/components/schemas/TaskStateTransition' }
         timing: { $ref: '#/components/schemas/TaskTiming' }
+        panoDocs:
+          type: array
+          description: The Pano docs linked to the task, the first linked first; absent when it has none.
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
 
     TaskStateTransition:
       type: object

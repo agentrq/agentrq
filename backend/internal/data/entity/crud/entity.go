@@ -398,6 +398,9 @@ type (
 		Task             Task
 		StateTransitions []TaskStateTransition
 		Timing           TaskTiming
+		// PanoDocs are the Pano docs linked to the task, with only their id
+		// and title.
+		PanoDocs []PanoDoc
 	}
 
 	// ListTaskToolCallsRequest pages a task's tool calls: up to Limit made
