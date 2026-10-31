@@ -79,6 +79,17 @@ The task detail view's History tab lays out a lane-grouped timeline of every too
 <tr>
 <td colspan="2" valign="middle">
 
+### YOLO Mode
+
+Flip **YOLO** on a task and every permission request its agent sends from then on is allowed automatically: no waiting on you, and each call is still recorded in the task's history as auto-allowed. Turn it off and approvals come back. A workspace can turn it on for every task its agent creates, and an event trigger or a workflow step can create its tasks with it on.
+
+<img src="docs/assets/readme/yolo-mode.svg" width="1200" alt="AgentRQ YOLO mode: claude asks to run go test and waits, so you flip the task's YOLO toggle instead of answering. That call and every one after it is auto-allowed, edits and test runs land in the Trajectory view without a single wait, and 48 tests pass. You open the last call to see it was auto-allowed, turn YOLO off again, and the agents celebrate." />
+
+</td>
+</tr>
+<tr>
+<td colspan="2" valign="middle">
+
 ### Task Timeline
 
 Under every task, a timeline shows each status it has been in and for how long: a dot per change, with the time spent on the line to the next, stretches waiting on you in yellow and blocked ones in red. Above it, the totals say which agent worked on it and for how long, how long it was blocked or waited for your input, and how long it took from start to close. Every status change is recorded with the task itself, so nothing moves without leaving a dot.

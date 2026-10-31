@@ -62,6 +62,12 @@ Task 是 AgentRQ 的基本工作单元。任务可以分配给 human 或 agent�
 
 AgentRQ 的重点不是让 Agent 无限制执行，而是把人放在工作流中：人可以创建任务、补充上下文、查看状态、处理权限请求、接管或阻塞任务。
 
+### YOLO 模式
+
+在任务上打开 **YOLO**，此后该任务的 Agent 发出的每个权限请求都会被自动允许，无需等待你确认；每次调用仍会以 auto-allowed 记录在任务历史中。关闭后恢复人工审批。Workspace 可以为其 Agent 创建的所有任务默认开启 YOLO，事件触发器和工作流步骤也可以在创建任务时开启它。
+
+<img src="docs/assets/readme/yolo-mode.svg" width="1200" alt="AgentRQ YOLO 模式：claude 请求运行 go test 并等待，你没有逐条回答，而是打开任务的 YOLO 开关。此后每次调用都被自动允许，编辑和测试运行毫无等待地出现在 Trajectory 视图中，48 个测试通过。你打开最后一次调用，看到它是自动允许的，再关闭 YOLO，Agent 们一起庆祝。" />
+
 ### MCP
 
 MCP，即 Model Context Protocol，是 Agent 和 AgentRQ 之间的协议层。通过 MCP，Agent 可以调用 AgentRQ 提供的工具，例如 `task`（`get`、`reply`、`updateStatus`、`create` 等操作）、`memory`、`skills` 和 `pano`。
