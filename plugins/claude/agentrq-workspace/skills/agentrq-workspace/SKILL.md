@@ -55,23 +55,34 @@ You are a **workspace agent** executing tasks within a specific AgentRQ workspac
 
 ### 1. Starting a Task
 When you receive a channel message with a task:
+
+Step 1: Mark task as ongoing (**task**)
 ```json
-// Step 1: Mark task as ongoing (task)
 { "action": "updateStatus", "payload": { "taskId": "zX9vW7tS5rQ", "status": "ongoing" } }
+```
 
-// Step 2: Get workspace context (workspace; get takes no payload)
+Step 2: Get workspace context (**workspace**; get takes no payload)
+```json
 { "action": "get" }
+```
 
-// Step 3: Read what the workspace remembers (memory; no payload reads memory.md, the index)
+Step 3: Read what the workspace remembers (**memory**; no payload reads memory.md, the index)
+```json
 { "action": "load" }
+```
 
-// Step 4: Find a skill that matches the task (skills)
+Step 4: Find a skill that matches the task (**skills**)
+```json
 { "action": "search", "payload": { "q": "release" } }
+```
 
-// Not sure of a payload? Ask help (help)
+Not sure of a payload? Ask help (**help**)
+```json
 { "action": "task.create" }
+```
 
-// Step 5: Read the task and its conversation for full context (task)
+Step 5: Read the task and its conversation for full context (**task**)
+```json
 { "action": "get", "payload": { "taskId": "zX9vW7tS5rQ", "includeConversation": true, "cursor": 0, "limit": 10 } }
 ```
 
@@ -116,8 +127,9 @@ Set up recurring tasks with cron expressions:
 
 ### 5. Completing a Task
 Always send a summary before marking as completed:
+
+Step 1: Send summary via reply (**task**)
 ```json
-// Step 1: Send summary via reply (task)
 {
   "action": "reply",
   "payload": {
@@ -125,8 +137,10 @@ Always send a summary before marking as completed:
     "text": "Done! Changes made:\n- Fixed nil check in handler.go:42\n- Added unit test in handler_test.go\n- All 15 tests pass\n- No breaking changes"
   }
 }
+```
 
-// Step 2: Mark as completed (task)
+Step 2: Mark as completed (**task**)
+```json
 { "action": "updateStatus", "payload": { "taskId": "zX9vW7tS5rQ", "status": "completed" } }
 ```
 

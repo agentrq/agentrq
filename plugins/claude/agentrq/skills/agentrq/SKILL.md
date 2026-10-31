@@ -149,8 +149,9 @@ The server also offers reference guides as resources, and ready-made prompts:
 
 ### 1. Creating a Task for a Specialized Agent
 Break down work and assign it to the appropriate workspace agent:
+
+**task**
 ```json
-// task
 {
   "action": "create",
   "payload": {
@@ -164,8 +165,9 @@ Break down work and assign it to the appropriate workspace agent:
 
 ### 2. Creating a Scheduled/Cron Task
 Set up recurring tasks with cron expressions:
+
+**task**
 ```json
-// task
 {
   "action": "create",
   "payload": {
@@ -180,8 +182,9 @@ Set up recurring tasks with cron expressions:
 
 ### 3. Replying to a Task Thread
 Provide updates, ask questions, or share findings in a task's thread:
+
+**task**
 ```json
-// task
 {
   "action": "reply",
   "payload": {
@@ -194,8 +197,9 @@ Provide updates, ask questions, or share findings in a task's thread:
 
 ### 4. Updating Self-Learning Notes
 Capture workspace-specific knowledge for future sessions:
+
+**workspace**
 ```json
-// workspace
 {
   "action": "update",
   "payload": {
@@ -207,8 +211,9 @@ Capture workspace-specific knowledge for future sessions:
 
 ### 5. Responding to a Task
 Answer a permission request a task is waiting on. The payload's own `action` is `allow`, `allow_all`, `reject`, or `text`:
+
+**task**
 ```json
-// task
 {
   "action": "respond",
   "payload": {
@@ -222,8 +227,9 @@ Answer a permission request a task is waiting on. The payload's own `action` is 
 
 ### 6. Updating Task Status
 Track progress by updating status as work progresses:
+
+**task**
 ```json
-// task
 {
   "action": "updateStatus",
   "payload": {
@@ -236,8 +242,9 @@ Track progress by updating status as work progresses:
 
 ### 7. Launching an Agent
 Start a workspace's agent on an online machine from `machines.list`:
+
+**machines**
 ```json
-// machines
 {
   "action": "launchAgent",
   "payload": {
@@ -251,7 +258,8 @@ Start a workspace's agent on an online machine from `machines.list`:
 
 ### 8. Asking for an Action's Payload
 Not sure what an action takes? Ask the `help` tool:
+
+**help**
 ```json
-// help
 { "action": "events.createTrigger" }
 ```

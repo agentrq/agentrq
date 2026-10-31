@@ -1,7 +1,7 @@
 {
   "name": "agentrq-workspace",
   "displayName": "AgentRQ Workspace",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Workspace agent that executes tasks assigned by humans or supervisors, communicates progress via reply, and manages task lifecycle within a specific AgentRQ workspace",
   "author": {
     "name": "Mustafa Turan",
