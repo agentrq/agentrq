@@ -40,26 +40,36 @@ test('results go to the service worker, answers and errors alike', () => {
   ])
 })
 
-test('the page unloading tells the service worker; a return from the back/forward cache re-announces its tools', () => {
+test('the page unloading tells the service worker; a return from the back/forward cache or prerender activation re-announces its tools', () => {
   const { page, post, sent } = bridged()
   const show = (persisted) => page.window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted }))
-  // Loaded afresh, and restored before it had announced anything.
+  // Loaded afresh, activated or restored before it had announced anything.
   show(false)
   show(true)
+  page.document.dispatchEvent(new Event('prerenderingchange'))
   page.window.dispatchEvent(new Event('pagehide'))
   post({ type: 'tools', tools: [{ name: 'search' }] })
   page.window.dispatchEvent(new Event('pagehide'))
   show(true)
+  page.document.dispatchEvent(new Event('prerenderingchange'))
   assert.deepEqual(sent(), [
     { type: 'site-gone' },
     { type: 'site-tools', tools: [{ name: 'search' }] },
     { type: 'site-gone' },
     { type: 'site-tools', tools: [{ name: 'search' }] },
+    { type: 'site-tools', tools: [{ name: 'search' }] },
   ])
 })
 
-test('a call from the service worker goes to the observer', () => {
-  const { chrome, observer } = bridged()
+test('the service worker can ask the bridge for the page’s tools, and a call goes to the observer', () => {
+  const { chrome, post, observer } = bridged()
+  const replies = []
+  const collect = (tools) => replies.push(structuredClone(tools))
+  chrome.runtime.onMessage.fire({ type: 'site-tools' }, {}, collect)
+  post({ type: 'tools', tools: [{ name: 'search' }] })
+  chrome.runtime.onMessage.fire({ type: 'site-tools' }, {}, collect)
+  assert.deepEqual(replies, [null, { type: 'site-tools', tools: [{ name: 'search' }] }])
+
   chrome.runtime.onMessage.fire({ type: 'site-call', callId: 'c1', tool: 'search', arguments: { q: 'x' } })
   assert.deepEqual(observer.received, [{ source: 'agentrq-bridge', type: 'call', callId: 'c1', tool: 'search', arguments: { q: 'x' } }])
 })

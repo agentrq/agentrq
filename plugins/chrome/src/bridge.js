@@ -47,8 +47,12 @@
   window.addEventListener('pageshow', (event) => {
     if (event.persisted && tools) send(tools)
   })
+  document.addEventListener('prerenderingchange', () => {
+    if (tools) send(tools)
+  })
 
-  chrome.runtime.onMessage.addListener((message) => {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === 'site-tools') return void sendResponse(tools)
     if (message?.type !== 'site-call') return
     const { callId, tool, arguments: args } = message
     const detail = JSON.stringify({ source: 'agentrq-bridge', type: 'call', callId, tool, arguments: args })

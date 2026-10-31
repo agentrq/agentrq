@@ -73,9 +73,13 @@ export async function initStrip({ doc, chrome, fetchImpl, server }) {
       workspaces,
     )
   }
-  // A refusal comes back moments after Share is clicked, while the popup is open.
+  // A refusal comes back moments after Share is clicked, while the popup is open;
+  // a page still loading when the popup opened announces its tools the same way.
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && isRefusalChange(changes)) render()
+  })
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === 'site-tools' || message?.type === 'site-gone') render()
   })
   return render()
 }

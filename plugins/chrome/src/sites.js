@@ -85,7 +85,16 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
     const origin = front?.url ? new URL(front.url).origin : null
     const share = origin && (await listShares(chrome))[origin]
     const sharedWith = share?.workspaceId ?? null
-    const entry = front && tabs.entry(front.id)
+    let entry = front && tabs.entry(front.id)
+    // After a worker restart the badge still stands, while the tab's tools live
+    // only in its bridge until the popup asks for them.
+    if (origin && (!entry?.tools.length || origin !== entry.origin)) {
+      const offered = await chrome.tabs.sendMessage(front.id, { type: 'site-tools' }).catch(() => null)
+      if (offered?.tools?.length) {
+        await onSiteTools(front.id, front.url, offered.tools)
+        entry = tabs.entry(front.id)
+      }
+    }
     const refusal = origin && (await lastRefusal(chrome, origin))
     // A tab that has moved to another site keeps the old one's entry until
     // that page says something; it offers nothing yet.

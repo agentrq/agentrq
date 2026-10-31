@@ -55,11 +55,11 @@ export function createTabs(chrome, timers = globalThis) {
     const entry = tabs.get(tabId)
     if (!entry) return
     for (const call of calls.values()) {
-      if (call.tabId === tabId && call.documentId === documentId) {
+      if (call.tabId === tabId && (!call.documentId || call.documentId === documentId)) {
         call.settle({ error: `the ${entry.origin} page navigated away during the call` })
       }
     }
-    if (entry.documentId !== documentId) return
+    if (entry.documentId && entry.documentId !== documentId) return
     entry.tools = []
     badge(tabId)
   }
