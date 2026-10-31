@@ -242,7 +242,8 @@ func TestSkills_EmitTelemetry(t *testing.T) {
 	if _, err := s.readSkillFile(ctx, &mcp.ReadResourceRequest{Params: &mcp.ReadResourceParams{URI: supervisorSkillURI}}); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"skills/list", "skills/get", "resources/directory/read", "resource:skill"}
+	// A file is named as its resource is, as the other resources are.
+	want := []string{"skills/list", "skills/get", "resources/directory/read", "resource:agentrq/SKILL.md"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("telemetry = %v, want %v", got, want)
 	}

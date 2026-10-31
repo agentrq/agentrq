@@ -918,6 +918,11 @@ const (
 	SubActionIDMCPResourceWorkspaceTasks
 	SubActionIDMCPResourceDelegatedTasks
 	SubActionIDMCPSubscriptionsListen
+	// CoreMCP's agentrq skill and the Skills extension's methods.
+	SubActionIDMCPResourceAgentrqSkill
+	SubActionIDMCPSkillsList
+	SubActionIDMCPSkillsGet
+	SubActionIDMCPDirectoryRead
 )
 
 // ForkSettings is the one list of what a workspace fork inherits from its

@@ -311,8 +311,8 @@ func skillsCacheable() mcp.Cacheable {
 // readSkillFile serves a skill file: UTF-8 as text, anything else as a blob.
 // The server only routes registered URIs here.
 func (s *WorkspaceServer) readSkillFile(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-	s.emitTelemetry(ctx, mcpevent.ActionMCPMethodCall, "resource:skill", 0)
 	uri := req.Params.URI
+	s.emitTelemetry(ctx, mcpevent.ActionMCPMethodCall, "resource:"+strings.TrimPrefix(uri, skillScheme), 0)
 	body := s.skills.files[uri]
 	contents := &mcp.ResourceContents{URI: uri, MIMEType: skillMIMEType(uri)}
 	if utf8.Valid(body) {
