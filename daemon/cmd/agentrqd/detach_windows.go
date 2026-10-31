@@ -5,6 +5,7 @@
 package main
 
 import (
+	"os"
 	"syscall"
 
 	"golang.org/x/sys/windows"
@@ -16,4 +17,13 @@ func detachAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{
 		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
 	}
+}
+
+// stopProcess stops a running daemon on Windows.
+func stopProcess(pid int) error {
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	return p.Kill()
 }

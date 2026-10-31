@@ -261,3 +261,136 @@ func TestCmdServeDetachesByDefaultWhenEnrolled(t *testing.T) {
 		t.Errorf("cmdServe detached with %v, want %v", gotArgs, want)
 	}
 }
+
+func TestStopDaemon(t *testing.T) {
+	t.Run("signals the running daemon and waits for its status report to clear", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := localstatus.Write(dir, localstatus.File{PID: 4242}); err != nil {
+			t.Fatal(err)
+		}
+
+		var stoppedPID int
+		previousSignal := signalStop
+		previousWait := stopWait
+		previousPoll := stopPoll
+		t.Cleanup(func() {
+			signalStop = previousSignal
+			stopWait = previousWait
+			stopPoll = previousPoll
+		})
+		stopWait = 50 * time.Millisecond
+		stopPoll = 5 * time.Millisecond
+		signalStop = func(pid int) error {
+			stoppedPID = pid
+			go func() {
+				time.Sleep(10 * time.Millisecond)
+				localstatus.Clear(dir)
+			}()
+			return nil
+		}
+
+		if err := stopDaemon(dir, time.Now()); err != nil {
+			t.Fatalf("stopDaemon returned error: %v", err)
+		}
+		if stoppedPID != 4242 {
+			t.Errorf("stopDaemon signalled pid %d, want 4242", stoppedPID)
+		}
+		if _, err := os.Stat(localstatus.Path(dir)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("status file still exists after stopDaemon: %v", err)
+		}
+	})
+
+	t.Run("clears the status file after the wait when the process exits without removing it", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := localstatus.Write(dir, localstatus.File{PID: 4242}); err != nil {
+			t.Fatal(err)
+		}
+
+		previousSignal := signalStop
+		previousWait := stopWait
+		previousPoll := stopPoll
+		t.Cleanup(func() {
+			signalStop = previousSignal
+			stopWait = previousWait
+			stopPoll = previousPoll
+		})
+		stopWait = 10 * time.Millisecond
+		stopPoll = 5 * time.Millisecond
+		signalStop = func(int) error { return nil }
+
+		if err := stopDaemon(dir, time.Now()); err != nil {
+			t.Fatalf("stopDaemon returned error: %v", err)
+		}
+		if _, err := os.Stat(localstatus.Path(dir)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("status file still exists after stopDaemon: %v", err)
+		}
+	})
+
+	t.Run("succeeds quietly when no daemon is running", func(t *testing.T) {
+		if err := stopDaemon(t.TempDir(), time.Now()); err != nil {
+			t.Fatalf("stopDaemon returned error when not running: %v", err)
+		}
+	})
+
+	t.Run("clears a stale report when the daemon was already gone", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := localstatus.Write(dir, localstatus.File{PID: 4242}); err != nil {
+			t.Fatal(err)
+		}
+		if err := stopDaemon(dir, time.Now().Add(localstatus.Stale+time.Minute)); err != nil {
+			t.Fatalf("stopDaemon returned error on a stale report: %v", err)
+		}
+		if _, err := os.Stat(localstatus.Path(dir)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("stale status file still exists: %v", err)
+		}
+	})
+
+	t.Run("reports an unreadable status file", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(localstatus.Path(dir), []byte("{corrupt"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := stopDaemon(dir, time.Now()); err == nil {
+			t.Error("stopDaemon succeeded with a corrupt status file")
+		}
+	})
+
+	t.Run("reports when signalling the daemon fails", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := localstatus.Write(dir, localstatus.File{PID: 4242}); err != nil {
+			t.Fatal(err)
+		}
+		previous := signalStop
+		t.Cleanup(func() { signalStop = previous })
+		signalStop = func(int) error { return errors.New("operation not permitted") }
+
+		if err := stopDaemon(dir, time.Now()); err == nil {
+			t.Error("stopDaemon succeeded when signalStop failed")
+		}
+	})
+}
+
+func TestCmdStopAndRun(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", dir)
+	t.Setenv("APPDATA", dir)
+
+	if err := run(context.Background(), []string{"stop"}); err != nil {
+		t.Fatalf("run stop returned error: %v", err)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
+	t.Setenv("APPDATA", "")
+	t.Setenv("USERPROFILE", "")
+	if err := cmdStop(); err == nil {
+		t.Error("cmdStop succeeded without a user config directory")
+	}
+}
+
+func TestStopProcessReportsMissingPID(t *testing.T) {
+	if err := stopProcess(1<<22 - 1); err == nil {
+		t.Error("stopProcess succeeded for a non-existent pid")
+	}
+}

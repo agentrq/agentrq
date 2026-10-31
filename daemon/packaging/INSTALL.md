@@ -132,8 +132,14 @@ asking the account that would be doing the watching.
 ## Stopping it
 
 ```sh
+agentrqd stop
+```
+
+stops the running daemon and any agents on this machine. To also remove the
+machine's credential from this computer:
+
+```sh
 agentrqd disable --profile <id>
 ```
 
-removes the machine's credential from this computer. It takes effect
-immediately and does not need the server to agree.
+It takes effect immediately and does not need the server to agree.

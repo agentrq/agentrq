@@ -328,8 +328,9 @@ closes any connection it currently holds. The two are independent on purpose —
 either one alone is enough to stop that machine working, and you do not need
 access to the panel to do the local one.
 
-Stopping the daemon (`systemctl --user stop agentrqd`, or closing the terminal
-it runs in) stops new work but leaves the credential on disk.
+Stopping the daemon (`agentrqd stop`, or `systemctl --user stop agentrqd`) stops
+every running agent and refuses new work until started again, while leaving the
+credential on disk.
 
 ---
 
@@ -432,6 +433,7 @@ pasted into a bug report. The tokens directory is.
 agentrqd enroll --server <url> --code <code> [--profile <id>]
 agentrqd serve  [--profile <id>] [--foreground] [--verbose]
                 [--max-per-profile <n>] [--max-per-machine <n>]
+agentrqd stop
 agentrqd status
 agentrqd disable --profile <id>
 agentrqd rollback
