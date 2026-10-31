@@ -31,8 +31,9 @@ own test (list it, read/get it) the way `resources_test.go`/`prompts_test.go`
 do; nothing else needs to be told it exists.
 
 **The `agentrq` skill this server serves (`skills/`, MCP Skills extension) is
-a copy of the plugins' SKILL.md**: edit the plugin one and copy it over, or
-`plugin_docs_test.go` fails. Setting `Capabilities` drops the SDK's default
+a copy of the plugins' skill folder**: edit the plugin one and copy the folder
+over, or `plugin_docs_test.go` fails. Every file in it stays within 2000
+characters, a short SKILL.md and `references/`: split rather than grow one. Setting `Capabilities` drops the SDK's default
 `logging`, so `skillsCapabilities` keeps it.
 
 **A new tool, resource or prompt here needs a telemetry line too** — see

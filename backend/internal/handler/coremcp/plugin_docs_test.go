@@ -211,6 +211,16 @@ func TestPluginDocsDoNotNameInvalidStatuses(t *testing.T) {
 		"plugins/gemini/README.md",
 		"plugins/gemini/GEMINI.md",
 	}
+	// The supervisor skill's reference files; its other copies are held
+	// identical to this one.
+	references, err := filepath.Glob(filepath.Join(root, "plugins/claude/agentrq/skills/agentrq/references/*.md"))
+	if err != nil || len(references) == 0 {
+		t.Fatalf("found no reference files for the agentrq skill: %v", err)
+	}
+	for _, ref := range references {
+		rel, _ := filepath.Rel(root, ref)
+		docs = append(docs, rel)
+	}
 
 	for _, doc := range docs {
 		t.Run(doc, func(t *testing.T) {
@@ -306,22 +316,12 @@ func TestClaudePluginManifestStrictRequirements(t *testing.T) {
 // agentrq's.
 func TestPluginDocsCustomSupervisorSkillMatchesTheHostedOne(t *testing.T) {
 	root := repoRoot(t)
-	hosted := "plugins/claude/agentrq/skills/agentrq/SKILL.md"
-	want, err := os.ReadFile(filepath.Join(root, hosted))
-	if err != nil {
-		t.Fatalf("cannot read %s: %v", hosted, err)
-	}
+	hosted := "plugins/claude/agentrq/skills/agentrq"
 	for _, copied := range []string{
-		"plugins/claude/agentrq-custom-supervisor/skills/agentrq/SKILL.md",
-		"backend/internal/handler/coremcp/skills/agentrq/SKILL.md",
+		"plugins/claude/agentrq-custom-supervisor/skills/agentrq",
+		"backend/internal/handler/coremcp/skills/agentrq",
 	} {
-		got, err := os.ReadFile(filepath.Join(root, copied))
-		if err != nil {
-			t.Fatalf("cannot read %s: %v", copied, err)
-		}
-		if !bytes.Equal(got, want) {
-			t.Errorf("%s differs from %s; copy the hosted skill over it", copied, hosted)
-		}
+		checkSameSkill(t, root, copied, hosted)
 	}
 }
 
@@ -330,24 +330,52 @@ func TestPluginDocsCustomSupervisorSkillMatchesTheHostedOne(t *testing.T) {
 func TestPluginDocsCursorSkillsMatchTheClaudeOnes(t *testing.T) {
 	root := repoRoot(t)
 	for _, skill := range []string{
-		"agentrq/skills/agentrq/SKILL.md",
-		"agentrq-workspace/skills/agentrq-workspace/SKILL.md",
+		"agentrq/skills/agentrq",
+		"agentrq-workspace/skills/agentrq-workspace",
 	} {
-		cursor := "plugins/cursor/" + skill
-		claude := "plugins/claude/" + skill
+		checkSameSkill(t, root, "plugins/cursor/"+skill, "plugins/claude/"+skill)
+	}
+}
 
-		got, err := os.ReadFile(filepath.Join(root, cursor))
-		if err != nil {
-			t.Fatalf("cannot read %s: %v", cursor, err)
-		}
-		want, err := os.ReadFile(filepath.Join(root, claude))
-		if err != nil {
-			t.Fatalf("cannot read %s: %v", claude, err)
-		}
-		if !bytes.Equal(got, want) {
-			t.Errorf("%s differs from %s; copy the Claude skill over it", cursor, claude)
+// checkSameSkill checks the skill folder copied holds exactly the files of
+// the one at want, byte for byte.
+func checkSameSkill(t *testing.T, root, copied, want string) {
+	t.Helper()
+	got, wanted := skillFolder(t, filepath.Join(root, copied)), skillFolder(t, filepath.Join(root, want))
+	for name, body := range wanted {
+		if other, ok := got[name]; !ok {
+			t.Errorf("%s has no %s; copy %s over it", copied, name, want)
+		} else if !bytes.Equal(other, body) {
+			t.Errorf("%s differs from %s; copy %s over it", filepath.Join(copied, name), filepath.Join(want, name), want)
 		}
 	}
+	for name := range got {
+		if _, ok := wanted[name]; !ok {
+			t.Errorf("%s has %s, which %s does not; copy %s over it", copied, name, want, want)
+		}
+	}
+}
+
+// skillFolder reads every file under dir, by its path inside it.
+func skillFolder(t *testing.T, dir string) map[string][]byte {
+	t.Helper()
+	files := map[string][]byte{}
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(dir, path)
+		files[filepath.ToSlash(rel)] = body
+		return nil
+	})
+	if err != nil || len(files) == 0 {
+		t.Fatalf("cannot read the skill in %s: %v", dir, err)
+	}
+	return files
 }
 
 // Cursor reads the marketplace from the repository root and each plugin from

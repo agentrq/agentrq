@@ -6,6 +6,7 @@ package telemetry
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
@@ -51,6 +52,11 @@ func listedNames(t *testing.T, srv *sdkmcp.Server) []string {
 		t.Fatalf("list resources: %v", err)
 	}
 	for _, r := range resources.Resources {
+		// A skill's files are all counted as the skill.
+		if strings.HasPrefix(r.URI, "skill://") {
+			names = append(names, coremcp.SkillTelemetryName(r.URI))
+			continue
+		}
 		names = append(names, "resource:"+r.Name)
 	}
 	templates, err := client.ListResourceTemplates(ctx, nil)

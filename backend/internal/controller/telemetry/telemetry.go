@@ -392,7 +392,7 @@ var subActionIDByToolName = map[string]uint8{
 	"resource:workspace-tasks":      model.SubActionIDMCPResourceWorkspaceTasks,
 	"resource:delegated-tasks":      model.SubActionIDMCPResourceDelegatedTasks,
 	"subscriptions/listen":          model.SubActionIDMCPSubscriptionsListen,
-	"resource:agentrq/SKILL.md":     model.SubActionIDMCPResourceAgentrqSkill,
+	"resource:agentrq":              model.SubActionIDMCPResourceAgentrqSkill,
 	"skills/list":                   model.SubActionIDMCPSkillsList,
 	"skills/get":                    model.SubActionIDMCPSkillsGet,
 	"resources/directory/read":      model.SubActionIDMCPDirectoryRead,

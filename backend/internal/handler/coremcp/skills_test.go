@@ -14,9 +14,12 @@ import (
 	"io/fs"
 	"net/http"
 	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -129,9 +132,62 @@ func TestSkills_List(t *testing.T) {
 	if fm := skill["frontmatter"].(map[string]any); fm["name"] != "agentrq" || fm["description"] == "" {
 		t.Errorf("frontmatter = %v, want the agentrq skill's name and description", fm)
 	}
-	want := []any{map[string]any{"uri": supervisorSkillURI, "digest": skillDigest(body), "size": float64(len(body))}}
-	if !reflect.DeepEqual(skill["resources"], want) {
-		t.Errorf("resources = %v, want %v: the manifest must match the bytes served", skill["resources"], want)
+	resources, _ := skill["resources"].([]any)
+	if len(resources) != len(builtinSkills.files) {
+		t.Fatalf("the manifest lists %d files, want all %d of the skill's", len(resources), len(builtinSkills.files))
+	}
+	if first := resources[0].(map[string]any); first["uri"] != supervisorSkillURI || first["digest"] != skillDigest(body) || first["size"] != float64(len(body)) {
+		t.Errorf("the manifest starts with %v, want the SKILL.md with its digest and size", first)
+	}
+	// The manifest must match the bytes served, file by file.
+	for _, r := range resources {
+		r := r.(map[string]any)
+		uri, _ := r["uri"].(string)
+		served, err := builtinSkillFiles.ReadFile("skills/" + strings.TrimPrefix(uri, "skill://"))
+		if err != nil {
+			t.Errorf("the manifest lists %s, which the skill does not have", uri)
+			continue
+		}
+		if r["digest"] != skillDigest(served) || r["size"] != float64(len(served)) {
+			t.Errorf("%s is listed as %v, %v; want %s, %d", uri, r["digest"], r["size"], skillDigest(served), len(served))
+		}
+	}
+}
+
+// Every file the server serves for a skill stays small enough to read whole,
+// so a client loads only the parts it needs.
+func TestSkills_EveryFileFitsIn2000Characters(t *testing.T) {
+	if len(builtinSkills.files) < 2 {
+		t.Fatalf("the agentrq skill has %d files; it is meant to be split into a short SKILL.md and references", len(builtinSkills.files))
+	}
+	for uri, body := range builtinSkills.files {
+		if n := utf8.RuneCount(body); n > 2000 {
+			t.Errorf("%s is %d characters; keep each skill file within 2000 and split it", uri, n)
+		}
+	}
+}
+
+// Every reference file the SKILL.md sends an agent to is served: the ones it
+// names, and references/<tool>.md for each tool in its table that has no
+// shared file.
+func TestSkills_SKILLmdNamesOnlyServedFiles(t *testing.T) {
+	body := string(supervisorSkillBody(t))
+	var named []string
+	for _, m := range regexp.MustCompile("`([a-z-]+\\.md)`").FindAllStringSubmatch(body, -1) {
+		named = append(named, m[1])
+	}
+	for _, m := range regexp.MustCompile("(?m)^\\| `([a-zA-Z]+)`").FindAllStringSubmatch(body, -1) {
+		if tool := m[1]; !slices.Contains([]string{"help", "memory", "skills", "pano"}, tool) {
+			named = append(named, tool+".md")
+		}
+	}
+	if len(named) == 0 {
+		t.Fatal("the SKILL.md names no reference files")
+	}
+	for _, name := range named {
+		if _, ok := builtinSkills.files["skill://agentrq/references/"+name]; !ok {
+			t.Errorf("the SKILL.md sends an agent to references/%s, which is not served", name)
+		}
 	}
 }
 
@@ -158,12 +214,29 @@ func TestSkills_DirectoryRead(t *testing.T) {
 		t.Fatalf("resources/directory/read: %v", rpcErr)
 	}
 	checkCacheable(t, MethodDirectoryRead, rs)
-	want := []any{map[string]any{"uri": supervisorSkillURI, "name": "agentrq/SKILL.md", "description": builtinSkills.entries[0].Frontmatter["description"], "mimeType": "text/markdown", "size": float64(len(body))}}
+	want := []any{
+		map[string]any{"uri": supervisorSkillURI, "name": "agentrq/SKILL.md", "description": builtinSkills.entries[0].Frontmatter["description"], "mimeType": "text/markdown", "size": float64(len(body))},
+		map[string]any{"uri": "skill://agentrq/references", "name": "agentrq/references", "description": "The references directory of the agentrq skill.", "mimeType": "inode/directory"},
+	}
 	if !reflect.DeepEqual(rs["resources"], want) {
 		t.Errorf("resources = %v, want %v", rs["resources"], want)
 	}
 	if _, ok := rs["nextCursor"]; ok {
 		t.Error("every child fits on one page, so there is no cursor")
+	}
+
+	rs, rpcErr = skillsRPC(t, MethodDirectoryRead, `"uri":"skill://agentrq/references"`)
+	if rpcErr != nil {
+		t.Fatalf("resources/directory/read of the references: %v", rpcErr)
+	}
+	references, _ := rs["resources"].([]any)
+	if len(references) != len(builtinSkills.files)-1 {
+		t.Errorf("the references directory lists %d files, want every file but the SKILL.md (%d)", len(references), len(builtinSkills.files)-1)
+	}
+	for _, r := range references {
+		if r := r.(map[string]any); r["mimeType"] != "text/markdown" || !strings.HasPrefix(r["uri"].(string), "skill://agentrq/references/") {
+			t.Errorf("the references directory lists %v, want markdown files inside it", r)
+		}
 	}
 
 	for _, uri := range []string{supervisorSkillURI, "skill://nope", "skill://agentrq/", "skill:"} {
@@ -242,8 +315,11 @@ func TestSkills_EmitTelemetry(t *testing.T) {
 	if _, err := s.readSkillFile(ctx, &mcp.ReadResourceRequest{Params: &mcp.ReadResourceParams{URI: supervisorSkillURI}}); err != nil {
 		t.Fatal(err)
 	}
-	// A file is named as its resource is, as the other resources are.
-	want := []string{"skills/list", "skills/get", "resources/directory/read", "resource:agentrq/SKILL.md"}
+	if _, err := s.readSkillFile(ctx, &mcp.ReadResourceRequest{Params: &mcp.ReadResourceParams{URI: "skill://agentrq/references/task.md"}}); err != nil {
+		t.Fatal(err)
+	}
+	// Every file of a skill is counted as the skill.
+	want := []string{"skills/list", "skills/get", "resources/directory/read", "resource:agentrq", "resource:agentrq"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("telemetry = %v, want %v", got, want)
 	}

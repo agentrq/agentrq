@@ -303,6 +303,13 @@ func skillMIMEType(uri string) string {
 	return "application/octet-stream"
 }
 
+// SkillTelemetryName is what a read of a skill's file is counted as: the
+// skill, not the file, so adding a file needs no telemetry ID of its own.
+func SkillTelemetryName(uri string) string {
+	name, _, _ := strings.Cut(strings.TrimPrefix(uri, skillScheme), "/")
+	return "resource:" + name
+}
+
 // skillsCacheable lets any client cache skills for skillsTTL.
 func skillsCacheable() mcp.Cacheable {
 	return mcp.Cacheable{TTLMs: int(skillsTTL / time.Millisecond), CacheScope: "public"}
@@ -312,7 +319,7 @@ func skillsCacheable() mcp.Cacheable {
 // The server only routes registered URIs here.
 func (s *WorkspaceServer) readSkillFile(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	uri := req.Params.URI
-	s.emitTelemetry(ctx, mcpevent.ActionMCPMethodCall, "resource:"+strings.TrimPrefix(uri, skillScheme), 0)
+	s.emitTelemetry(ctx, mcpevent.ActionMCPMethodCall, SkillTelemetryName(uri), 0)
 	body := s.skills.files[uri]
 	contents := &mcp.ResourceContents{URI: uri, MIMEType: skillMIMEType(uri)}
 	if utf8.Valid(body) {
