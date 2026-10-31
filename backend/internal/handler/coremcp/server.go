@@ -34,6 +34,7 @@ type WorkspaceServer struct {
 	baseURL      string
 	pubsub       pubsub.Service
 	listeners    *TaskListeners
+	skills       *skillSet
 }
 
 // ForkMerger is forkmerge.Merger: the merge REST runs too, so mergeFork stops
@@ -63,7 +64,8 @@ const (
 		"- `events`, `workflows`: let one workspace's task start tasks in another.\n" +
 		"- `machines`: agentrqd machines; launch or stop their agents.\n" +
 		"- `pano`: markdown docs every workspace shares.\n" +
-		"IDs come from list and get results; never guess one."
+		"IDs come from list and get results; never guess one.\n" +
+		"The skill at skill://agentrq/SKILL.md (skills/list, resources/read) is the full supervisor guide."
 )
 
 func newServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Service, listeners *TaskListeners) *WorkspaceServer {
@@ -82,6 +84,7 @@ func newServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Servic
 		},
 	}, &mcp.ServerOptions{
 		Instructions:       serverInstructions,
+		Capabilities:       skillsCapabilities(),
 		SubscribeHandler:   subscribeNothing,
 		UnsubscribeHandler: unsubscribeNothing,
 	})
@@ -101,6 +104,7 @@ func newServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Servic
 		baseURL:      baseURL,
 		pubsub:       pubsubSvc,
 		listeners:    listeners,
+		skills:       builtinSkills,
 	}
 
 	ws.registerTools()
@@ -399,11 +403,13 @@ func (s *WorkspaceServer) registerTools() {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "help", Description: helpToolDescription, Annotations: mcphint.Read("How to call these tools")}, s.handleHelpTool)
 	s.server.AddReceivingMiddleware(mcpevent.ActionToolsMiddleware(actionToolNames, legacyTools))
 
-	// Resources and prompts — see resources.go, task_resources.go and prompts.go.
+	// Resources, prompts and skills — see resources.go, task_resources.go,
+	// prompts.go and skills.go.
 	s.registerResources()
 	s.registerTaskResources()
 	s.server.AddReceivingMiddleware(s.subscriptionsMiddleware)
 	s.registerPrompts()
+	s.registerSkills()
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────

@@ -301,23 +301,27 @@ func TestClaudePluginManifestStrictRequirements(t *testing.T) {
 	}
 }
 
-// agentrq-custom-supervisor is agentrq pointed at a self-hosted server, so its
-// skill must not drift from agentrq's copy.
+// agentrq-custom-supervisor is agentrq pointed at a self-hosted server, and
+// this server serves the same skill over MCP, so neither copy may drift from
+// agentrq's.
 func TestPluginDocsCustomSupervisorSkillMatchesTheHostedOne(t *testing.T) {
 	root := repoRoot(t)
-	custom := "plugins/claude/agentrq-custom-supervisor/skills/agentrq/SKILL.md"
 	hosted := "plugins/claude/agentrq/skills/agentrq/SKILL.md"
-
-	got, err := os.ReadFile(filepath.Join(root, custom))
-	if err != nil {
-		t.Fatalf("cannot read %s: %v", custom, err)
-	}
 	want, err := os.ReadFile(filepath.Join(root, hosted))
 	if err != nil {
 		t.Fatalf("cannot read %s: %v", hosted, err)
 	}
-	if !bytes.Equal(got, want) {
-		t.Errorf("%s differs from %s; copy the hosted skill over it", custom, hosted)
+	for _, copied := range []string{
+		"plugins/claude/agentrq-custom-supervisor/skills/agentrq/SKILL.md",
+		"backend/internal/handler/coremcp/skills/agentrq/SKILL.md",
+	} {
+		got, err := os.ReadFile(filepath.Join(root, copied))
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", copied, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s differs from %s; copy the hosted skill over it", copied, hosted)
+		}
 	}
 }
 

@@ -30,6 +30,11 @@ tests match only `mcp.AddTool(s.server, &mcp.Tool{Name: "..."` — an
 own test (list it, read/get it) the way `resources_test.go`/`prompts_test.go`
 do; nothing else needs to be told it exists.
 
+**The `agentrq` skill this server serves (`skills/`, MCP Skills extension) is
+a copy of the plugins' SKILL.md**: edit the plugin one and copy it over, or
+`plugin_docs_test.go` fails. Setting `Capabilities` drops the SDK's default
+`logging`, so `skillsCapabilities` keeps it.
+
 **A new tool, resource or prompt here needs a telemetry line too** — see
 [telemetry.md](telemetry.md)'s MCP section; `emitTelemetry` is on
 `WorkspaceServer` in `server.go`, first line of the handler, same as the
