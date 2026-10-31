@@ -33,7 +33,7 @@ var version = "dev"
 const usage = `agentrqd — the AgentRQ machine daemon
 
   agentrqd enroll --server <url> --code <code> [--profile <id>] [--insecure]
-  agentrqd serve [--profile <id>] [--verbose]
+  agentrqd serve [--profile <id>] [--foreground] [--verbose]
                  [--max-per-profile <n>] [--max-per-machine <n>]
   agentrqd rollback
   agentrqd status

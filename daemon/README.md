@@ -37,7 +37,8 @@ machine with its keystrokes and output travelling both ways.
 ## Running it
 
 ```sh
-agentrqd serve            # every enrolled profile
+agentrqd serve            # every enrolled profile, in the background
+agentrqd serve --foreground
 agentrqd serve --profile work --verbose
 agentrqd serve --max-per-profile 4 --max-per-machine 8
 ```

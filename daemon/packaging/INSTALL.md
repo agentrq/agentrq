@@ -86,8 +86,9 @@ makes the code safe to display.
 
 ## 3. Keep it running
 
-Enrolling starts it in the foreground. To keep it running, stop that one
-(Ctrl-C) and install it as a service.
+Enrolling starts it in the background (`agentrqd serve` does the same; pass
+`--foreground` to keep it attached to the terminal). To start it at boot as
+well, install it as a service.
 
 **Linux (systemd user service)** — the supported way:
 

@@ -192,8 +192,9 @@ makes the code safe to display.
 
 ### Keep it running
 
-Enrolling starts it straight away, in the foreground. To keep it running after
-you log out, stop that one (Ctrl-C) and use the service files. The installer
+Enrolling starts it straight away in the background (`agentrqd serve` does the
+same; pass `--foreground` to keep it attached to the terminal). To start it at
+boot as well, use the service files. The installer
 saves them beside the daemon's own config — `~/.config/agentrqd` on Linux,
 `~/Library/Application Support/agentrqd` on macOS — and a manual install
 leaves them in the archive you unpacked:
@@ -429,7 +430,7 @@ pasted into a bug report. The tokens directory is.
 
 ```sh
 agentrqd enroll --server <url> --code <code> [--profile <id>]
-agentrqd serve  [--profile <id>] [--verbose]
+agentrqd serve  [--profile <id>] [--foreground] [--verbose]
                 [--max-per-profile <n>] [--max-per-machine <n>]
 agentrqd status
 agentrqd disable --profile <id>

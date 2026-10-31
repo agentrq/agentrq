@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/agentrq/agentrq/daemon/internal/config"
 	"github.com/agentrq/agentrq/daemon/internal/link"
+	"github.com/agentrq/agentrq/daemon/internal/localstatus"
 	"github.com/agentrq/agentrq/daemon/internal/metrics"
 	"github.com/agentrq/agentrq/daemon/internal/pty"
 	"github.com/agentrq/agentrq/daemon/internal/supervisor"
@@ -79,6 +81,7 @@ func cmdServe(ctx context.Context, args []string) error {
 	fs := newFlags("serve")
 	only := fs.String("profile", "", "connect only this profile (default: all of them)")
 	verbose := fs.Bool("verbose", false, "log every frame decision")
+	foreground := fs.Bool("foreground", false, "stay attached to this terminal instead of running in the background")
 	manifestURL := fs.String("release-feed", DefaultManifestURL, "where to look for newer releases")
 	maxPerProfile := fs.Int("max-per-profile", sessionsPerProfile, "most agents one account may run here (0 for no limit)")
 	maxPerMachine := fs.Int("max-per-machine", sessionsPerMachine, "most agents this machine will run at once (0 for no limit)")
@@ -110,6 +113,10 @@ func cmdServe(ctx context.Context, args []string) error {
 	}
 	if len(profiles) == 0 {
 		return fmt.Errorf("no profiles are enrolled — run `agentrqd enroll` first")
+	}
+
+	if shouldDetach(*foreground, os.Getenv, runtime.GOOS) {
+		return startBackground(st.dir, args, time.Now())
 	}
 
 	level := slog.LevelInfo
@@ -227,6 +234,77 @@ func cmdServe(ctx context.Context, args []string) error {
 	stopLinks()
 	wg.Wait()
 	log.Info("agentrqd stopped")
+	return nil
+}
+
+// shouldDetach reports whether `agentrqd serve` should spawn a background
+// child and return the terminal to the caller.
+//
+// Service managers (systemd, launchd) expect the process they started to stay
+// in the foreground so they can track its lifetime, and `--foreground` asks
+// for the same thing at a terminal (including the detached child itself).
+func shouldDetach(foreground bool, env func(string) string, goos string) bool {
+	if foreground {
+		return false
+	}
+	return update.DetectMode(env, goos) != update.ModeSupervisor
+}
+
+// backgroundArgs builds the command line for the detached daemon.
+//
+// `--foreground` goes in `os.Args` of the child so that a later restart or
+// update from the control panel (`restartArgs`) replaces the background
+// process in place rather than detaching a second time or re-running `enroll`.
+func backgroundArgs(args []string) []string {
+	out := make([]string, 0, 2+len(args))
+	out = append(out, "serve", "--foreground")
+	return append(out, args...)
+}
+
+// startDetached spawns the background daemon process, swapped out by a test.
+var startDetached = runDetached
+
+func runDetached(bin string, args []string, logFile *os.File) (int, error) {
+	cmd := exec.Command(bin, args...)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	cmd.SysProcAttr = detachAttr()
+	if err := cmd.Start(); err != nil {
+		return 0, err
+	}
+	pid := cmd.Process.Pid
+	_ = cmd.Process.Release()
+	return pid, nil
+}
+
+// startBackground launches the daemon detached from this terminal, writing its
+// logs to `agentrqd.log` inside the config folder.
+func startBackground(dir string, args []string, now time.Time) error {
+	if f, err := localstatus.Read(dir, now); err == nil {
+		fmt.Printf("agentrqd is already running (pid %d).\n", f.PID)
+		return nil
+	}
+
+	self, err := executable()
+	if err != nil {
+		return fmt.Errorf("cannot locate this binary: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(self); err == nil {
+		self = resolved
+	}
+
+	logPath := filepath.Join(dir, "agentrqd.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", logPath, err)
+	}
+	defer logFile.Close()
+
+	pid, err := startDetached(self, backgroundArgs(args), logFile)
+	if err != nil {
+		return fmt.Errorf("cannot start in the background: %w", err)
+	}
+	fmt.Printf("agentrqd started in the background (pid %d, log: %s)\n", pid, logPath)
 	return nil
 }
 
