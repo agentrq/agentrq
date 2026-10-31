@@ -209,6 +209,23 @@ describe('KanbanBoardView', () => {
     expect(agent('Task n1')).toBeNull()
   })
 
+  it('draws the agent’s own icon beside its name, and none for an agent it does not know', async () => {
+    byStatus.ongoing = [
+      task('o1', 'ongoing', { agent: 'claude-code' }),
+      task('o2', 'ongoing', { agent: 'pi' }),
+      task('o3', 'ongoing', { agent: 'my-own-agent' }),
+    ]
+    const { card } = await mount()
+    const icon = (text) => card(text).querySelector('[data-test="card-agent"] [data-test="agent-icon"]')
+    expect(icon('Task o1').tagName).toBe('IMG')
+    expect(icon('Task o1').getAttribute('src')).toContain('claude-agent')
+    // An SVG goes in as markup, so a one-colour icon takes the text's colour.
+    expect(icon('Task o2').tagName).toBe('SPAN')
+    expect(icon('Task o2').querySelector('svg')).not.toBeNull()
+    expect(icon('Task o3')).toBeNull()
+    expect(card('Task o3').querySelector('[data-test="card-agent"]').textContent.trim()).toBe('my-own-agent')
+  })
+
   it('names the agent the moment a live update brings one, and keeps it through one that does not', async () => {
     const { card } = await mount()
     const agent = (text) => card(text).querySelector('[data-test="card-agent"]')

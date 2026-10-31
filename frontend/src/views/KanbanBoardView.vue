@@ -95,8 +95,11 @@
               <!-- The agent that last moved the card: the one on it now, or the
                    one that finished it. A row of its own, so the top row keeps
                    room for the workspace across every workspace. -->
-              <p v-if="t.agent" data-test="card-agent" :title="`Agent: ${t.agent}`"
-                 class="mt-1.5 truncate text-[10px] font-medium text-gray-500 dark:text-zinc-400">{{ t.agent }}</p>
+              <div v-if="t.agent" data-test="card-agent" :title="`Agent: ${t.agent}`"
+                   class="mt-1.5 flex items-center gap-1.5 min-w-0 text-[10px] font-medium text-gray-500 dark:text-zinc-400">
+                <AgentIcon :name="t.agent" />
+                <span class="truncate">{{ t.agent }}</span>
+              </div>
               
               <!-- Quick actions for Pending -->
               <div v-if="isPendingOnHuman(t) && requiresAllowDeny(t)" class="mt-3" @click.stop>
@@ -163,6 +166,7 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import { menuItemsFor, parseSelection } from '../composables/useTaskContextMenu';
 import { useExtensionSurfaces } from '../composables/useExtensionSurfaces';
 import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
+import AgentIcon from '../components/AgentIcon.vue';
 import LoadingState from '../components/LoadingState.vue';
 import MoveTaskModal from '../components/MoveTaskModal.vue';
 import ContextMenu from '../components/ContextMenu.vue';

@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048" viewBox="0 0 1000 1000">
+	<style>.B{fill:#011422}.C{fill-opacity:.35}</style>
+	<defs>
+		<linearGradient x1="500" y1="0" x2="500" y2="1000" id="A" href="#J">
+			<stop offset="0" stop-color="rgb(7.0588% 23.922% 36.471%)"/>
+			<stop offset="1" stop-color="rgb(0% 15.694% 27.463%)"/>
+		</linearGradient>
+		<linearGradient x1="-767.097" y1="671.252" x2="-767.097" y2="1008.418" id="B" href="#J">
+			<stop offset="0"/>
+			<stop offset="1" stop-color="#fff" stop-opacity="0"/>
+		</linearGradient>
+		<linearGradient x1="363.7" y1="673.513" x2="363.7" y2="1009.657" id="C" href="#J">
+			<stop offset="0"/>
+			<stop offset="1" stop-color="#fff" stop-opacity="0"/>
+		</linearGradient>
+		<linearGradient x1="465.261" y1="673.267" x2="465.261" y2="1008.685" id="D" href="#J">
+			<stop offset="0"/>
+			<stop offset="1" stop-color="#fff" stop-opacity="0"/>
+		</linearGradient>
+		<linearGradient x1="-767.098" y1="671.252" x2="-767.098" y2="1008.418" id="E" href="#J">
+			<stop offset="0"/>
+			<stop offset="1" stop-color="#fff" stop-opacity="0"/>
+		</linearGradient>
+		<linearGradient x1="-666.963" y1="673.513" x2="-666.963" y2="1009.657" id="F" href="#J">
+			<stop offset="0"/>
+			<stop offset="1" stop-color="#fff" stop-opacity="0"/>
+		</linearGradient>
+		<linearGradient x1="-565.402" y1="673.267" x2="-565.402" y2="1008.684" id="G" href="#J">
+			<stop offset="0"/>
+			<stop offset="1" stop-color="#fff" stop-opacity="0"/>
+		</linearGradient>
+		<path id="H" d="M-794.03 671.252h53.867v337.166h-53.867z"/>
+		<path id="I" d="M149.928 795.278h730.649v45.743H149.928z"/>
+		<linearGradient id="J" gradientUnits="userSpaceOnUse"/>
+	</defs>
+	<path d="M0 0h1000v1000H0z" stroke="#000" fill="url(#A)">
+		<title>back</title>
+	</path>
+	<g transform="matrix(.903759 0 0 .903759 36.45068 36.45068)">
+		<title>icon</title>
+		<g transform="translate(-.06)" class="C">
+			<title>shadow</title>
+			<g transform="scale(-1 1)">
+				<path d="M-794.03 671.252h53.867v337.166h-53.867z" fill="url(#E)"/>
+				<path d="M-691.1 673.513h48.264v336.144H-691.1z" paint-order="fill" fill="url(#F)"/>
+				<path d="M-589.39 673.267h47.97v335.418h-47.97z" paint-order="fill" fill="url(#G)"/>
+			</g>
+			<path d="M-794.03 671.252h53.867v337.166h-53.867z" transform="matrix(1, 0, 0, 1, 1030, 0)" fill="url(#B)"/>
+			<path d="M339.568 673.513h48.264v336.144h-48.264z" paint-order="fill" fill="url(#C)"/>
+			<path d="M441.276 673.267h47.97v335.418h-47.97z" paint-order="fill" fill="url(#D)"/>
+		</g>
+		<g>
+			<title>top</title>
+			<g>
+				<title>center</title>
+				<path d="M340.033 187.579H690.51v485.613H340.033z"/>
+				<path d="M441.111 16.552h148.321v654.809H441.111z"/>
+				<path d="M387.825 106.887h53.835v606.468h-53.835zm101.627-90.761h53.835v697.596h-53.835zm153.265 90.761h-53.835v606.468h53.835z" fill="#c3e1ec" stroke="#011422"/>
+			</g>
+			<path d="M237.079 327.721h52.736v343.885h-52.736zm556.381 0h-52.736v343.885h52.736z" stroke="#000" class="B"/>
+		</g>
+
+		<g>
+			<title>base</title>
+			<g id="base_clone">
+				<ellipse cx="150.395" cy="735.067" rx="21.225" ry="22.8" class="B"/>
+				<path d="M150.654 712.108h730.649v45.743H150.654z" class="B"/>
+				<ellipse cx="-880.15" cy="735.067" rx="21.225" ry="22.8" transform="matrix(-1, 0, 0, 1, 0, 0)" class="B"/>
+			</g>
+			<use href="#base_clone" y="83"/>
+			<use href="#base_clone" y="166"/>
+			<use href="#base_clone" y="249"/>
+		</g>
+	</g>
+</svg>
