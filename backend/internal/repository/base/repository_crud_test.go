@@ -7,6 +7,7 @@ package base
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -238,6 +239,14 @@ func TestRepository_PostgresBranches(t *testing.T) {
 			_, err := r.GetWorkspaceTaskCountsByCategory(ctx, crudWS, crudUser)
 			return err
 		}},
+		{"task counts by workspace", func(r Repository) error {
+			_, err := r.GetTaskCountsByWorkspace(ctx, crudUser)
+			return err
+		}},
+		{"task previews", func(r Repository) error {
+			_, err := r.ListTaskPreviews(ctx, crudUser, 4)
+			return err
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, repo := postgresNamed(t)
@@ -361,6 +370,10 @@ func TestRepository_CountQueries_SecondStatementFails(t *testing.T) {
 		}},
 		{"task counts by category", func(r Repository) error {
 			_, err := r.GetWorkspaceTaskCountsByCategory(ctx, crudWS, crudUser)
+			return err
+		}},
+		{"task counts by workspace", func(r Repository) error {
+			_, err := r.GetTaskCountsByWorkspace(ctx, crudUser)
 			return err
 		}},
 	} {
@@ -749,5 +762,93 @@ func TestRepository_Workflows(t *testing.T) {
 	// Tasks of past runs keep their workflow.
 	if tasks, _ := repo.ListTasksByWorkflowID(ctx, 3, crudUser); len(tasks) != 2 {
 		t.Errorf("DeleteWorkflow changed the tasks of past runs: %+v", tasks)
+	}
+}
+
+// A preview takes each workspace's tasks in the order its Active list shows
+// them — ongoing, blocked, not started in queue order, scheduled, then the
+// most recently finished — and stops at the limit, workspace by workspace.
+func TestRepository_ListTaskPreviews(t *testing.T) {
+	ctx := context.Background()
+	db, repo := crudDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	at := func(minutes int) time.Time { return now.Add(time.Duration(minutes) * time.Minute) }
+	other := crudWS + 1
+	mustCreate(t, db,
+		&model.Task{ID: 1, WorkspaceID: crudWS, UserID: crudUser, Title: "done", Status: "completed", CreatedAt: at(-90), UpdatedAt: at(-1)},
+		&model.Task{ID: 2, WorkspaceID: crudWS, UserID: crudUser, Title: "queued later", Status: "notstarted", CreatedAt: at(-10), UpdatedAt: at(-10)},
+		&model.Task{ID: 3, WorkspaceID: crudWS, UserID: crudUser, Title: "queued first", Status: "notstarted", SortOrder: 5, CreatedAt: at(-5), UpdatedAt: at(-5)},
+		&model.Task{ID: 4, WorkspaceID: crudWS, UserID: crudUser, Title: "queued earlier", Status: "notstarted", CreatedAt: at(-60), UpdatedAt: at(-60)},
+		&model.Task{ID: 5, WorkspaceID: crudWS, UserID: crudUser, Title: "blocked", Status: "blocked", CreatedAt: at(-30), UpdatedAt: at(-2)},
+		&model.Task{ID: 6, WorkspaceID: crudWS, UserID: crudUser, Title: "running", Status: "ongoing", CreatedAt: at(-40), UpdatedAt: at(-30)},
+		&model.Task{ID: 7, WorkspaceID: crudWS, UserID: crudUser, Title: "nightly", Status: "cron", CronSchedule: "0 2 * * *", CreatedAt: at(-50), UpdatedAt: at(-50)},
+		&model.Task{ID: 8, WorkspaceID: other, UserID: crudUser, Title: "old", Status: "rejected", Assignee: "human", CreatedAt: at(-80), UpdatedAt: at(-20)},
+		&model.Task{ID: 9, WorkspaceID: other, UserID: crudUser, Title: "new", Status: "completed", Assignee: "agent", CreatedAt: at(-70), UpdatedAt: at(-3)},
+		&model.Task{ID: 10, WorkspaceID: other, UserID: crudUser, Title: "weekly", Status: "cron", CronSchedule: "0 9 * * 1", CreatedAt: at(-70), UpdatedAt: at(-70)},
+		&model.Task{ID: 11, WorkspaceID: crudWS + 2, UserID: crudOther, Title: "theirs", Status: "ongoing", CreatedAt: at(0), UpdatedAt: at(0)},
+	)
+
+	got, err := repo.ListTaskPreviews(ctx, crudUser, 4)
+	if err != nil {
+		t.Fatalf("ListTaskPreviews: %v", err)
+	}
+	var ids []int64
+	for _, task := range got {
+		ids = append(ids, task.ID)
+	}
+	if want := []int64{6, 5, 3, 4, 10, 9, 8}; !reflect.DeepEqual(ids, want) {
+		t.Fatalf("previews = %v, want %v", ids, want)
+	}
+	if p := got[4]; p.WorkspaceID != other || p.Title != "weekly" || p.Status != "cron" || p.CronSchedule != "0 9 * * 1" ||
+		!p.CreatedAt.Equal(at(-70)) || !p.UpdatedAt.Equal(at(-70)) {
+		t.Errorf("preview read as %+v", p)
+	}
+	if got[5].Assignee != "agent" {
+		t.Errorf("assignee = %q, want agent", got[5].Assignee)
+	}
+
+	db2, repo2 := crudDB(t)
+	failAll(t, db2)
+	_, err = repo2.ListTaskPreviews(ctx, crudUser, 4)
+	wantInjected(t, "previews", err)
+}
+
+// Counts for every workspace at once match what the per-workspace counts say
+// for each, a workspace without tasks has no entry there, and asking for that
+// workspace alone gives zeroes.
+func TestRepository_GetTaskCountsByWorkspace(t *testing.T) {
+	ctx := context.Background()
+	db, repo := crudDB(t)
+	now := time.Now()
+	other := crudWS + 1
+	mustCreate(t, db,
+		&model.Task{ID: 1, WorkspaceID: crudWS, UserID: crudUser, Status: "ongoing", CreatedAt: now},
+		&model.Task{ID: 2, WorkspaceID: crudWS, UserID: crudUser, Status: "blocked", CreatedAt: now},
+		&model.Task{ID: 3, WorkspaceID: crudWS, UserID: crudUser, Status: "cron", CreatedAt: now},
+		&model.Task{ID: 4, WorkspaceID: other, UserID: crudUser, Status: "notstarted", CreatedAt: now},
+		&model.Task{ID: 5, WorkspaceID: other, UserID: crudUser, Status: "rejected", CreatedAt: now},
+		&model.Task{ID: 6, WorkspaceID: crudWS + 2, UserID: crudOther, Status: "ongoing", CreatedAt: now},
+		&model.Message{ID: 61, TaskID: 1, UserID: crudUser, CreatedAt: now, Metadata: []byte(`{"type":"permission_request","status":"pending"}`)},
+	)
+
+	got, err := repo.GetTaskCountsByWorkspace(ctx, crudUser)
+	if err != nil {
+		t.Fatalf("GetTaskCountsByWorkspace: %v", err)
+	}
+	want := map[int64]map[string]int64{
+		crudWS: {"ongoing": 2, "notstarted": 0, "scheduled": 1, "completed": 0, "pending": 1},
+		other:  {"ongoing": 0, "notstarted": 1, "scheduled": 0, "completed": 1, "pending": 0},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("counts = %v, want %v", got, want)
+	}
+	for id, counts := range want {
+		if one, err := repo.GetWorkspaceTaskCountsByCategory(ctx, id, crudUser); err != nil || !reflect.DeepEqual(one, counts) {
+			t.Errorf("workspace %d alone = %v, %v; want %v", id, one, err, counts)
+		}
+	}
+	empty := map[string]int64{"ongoing": 0, "notstarted": 0, "scheduled": 0, "completed": 0, "pending": 0}
+	if one, err := repo.GetWorkspaceTaskCountsByCategory(ctx, crudWS+9, crudUser); err != nil || !reflect.DeepEqual(one, empty) {
+		t.Errorf("a workspace without tasks = %v, %v; want zeroes", one, err)
 	}
 }

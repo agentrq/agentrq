@@ -199,6 +199,8 @@ type Repository interface {
 	GetDetailedUserStats(ctx context.Context, userID int64, startTime, endTime int64) (entity.GetDetailedUserStatsRows, error)
 	GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error)
 	GetWorkspaceTaskCountsByCategory(ctx context.Context, workspaceID int64, userID int64) (map[string]int64, error)
+	GetTaskCountsByWorkspace(ctx context.Context, userID int64) (map[int64]map[string]int64, error)
+	ListTaskPreviews(ctx context.Context, userID int64, perWorkspace int) ([]model.Task, error)
 	GetTelemetryActionCounts(ctx context.Context) (map[uint8]int64, error)
 
 	// Telemetry aggregation — hourly/daily/monthly rollups (see
@@ -1710,28 +1712,67 @@ func (r *repository) GetGlobalTaskStats(ctx context.Context, userID int64) (enti
 }
 
 func (r *repository) GetWorkspaceTaskCountsByCategory(ctx context.Context, workspaceID int64, userID int64) (map[string]int64, error) {
-	counts := map[string]int64{
+	byWorkspace, err := r.taskCountsByCategory(ctx, userID, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if counts, ok := byWorkspace[workspaceID]; ok {
+		return counts, nil
+	}
+	return newTaskCategoryCounts(), nil
+}
+
+// GetTaskCountsByWorkspace is GetWorkspaceTaskCountsByCategory for every
+// workspace of the user at once. A workspace with no tasks has no entry.
+func (r *repository) GetTaskCountsByWorkspace(ctx context.Context, userID int64) (map[int64]map[string]int64, error) {
+	return r.taskCountsByCategory(ctx, userID, 0)
+}
+
+func newTaskCategoryCounts() map[string]int64 {
+	return map[string]int64{
 		"ongoing":    0,
 		"notstarted": 0,
 		"scheduled":  0,
 		"completed":  0,
 		"pending":    0,
 	}
+}
+
+// taskCountsByCategory counts the user's tasks by workspace and category, in
+// one workspace or, when workspaceID is 0, in all of them. Categories
+// collapse statuses the way the task feed groups them, and pending counts the
+// tasks whose newest message is a permission request.
+func (r *repository) taskCountsByCategory(ctx context.Context, userID, workspaceID int64) (map[int64]map[string]int64, error) {
+	scope := func() *gorm.DB {
+		q := r.conn(ctx).Model(&model.Task{}).Where("user_id = ?", userID)
+		if workspaceID != 0 {
+			q = q.Where("workspace_id = ?", workspaceID)
+		}
+		return q
+	}
+	byWorkspace := map[int64]map[string]int64{}
+	countsOf := func(id int64) map[string]int64 {
+		if byWorkspace[id] == nil {
+			byWorkspace[id] = newTaskCategoryCounts()
+		}
+		return byWorkspace[id]
+	}
 
 	type statusCount struct {
-		Status string
-		Count  int64
+		WorkspaceID int64
+		Status      string
+		Count       int64
 	}
 	var results []statusCount
-	if err := r.conn(ctx).Model(&model.Task{}).
-		Select("status, count(*) as count").
-		Where("workspace_id = ? AND user_id = ?", workspaceID, userID).
-		Group("status").
+	if err := scope().
+		Select("workspace_id, status, count(*) as count").
+		Group("workspace_id, status").
 		Scan(&results).Error; err != nil {
 		return nil, err
 	}
 
 	for _, res := range results {
+		counts := countsOf(res.WorkspaceID)
 		switch res.Status {
 		case "ongoing", "blocked":
 			counts["ongoing"] += res.Count
@@ -1744,24 +1785,53 @@ func (r *repository) GetWorkspaceTaskCountsByCategory(ctx context.Context, works
 		}
 	}
 
-	// 5. Pending (Action Required)
-	var pending int64
+	// Pending (Action Required)
 	var metadataExpr string
 	if r.conn(ctx).Dialector.Name() == "postgres" {
 		metadataExpr = "metadata @> '{\"type\":\"permission_request\"}'::jsonb"
 	} else {
 		metadataExpr = "metadata LIKE '%\"type\":\"permission_request\"%'"
 	}
-	err := r.conn(ctx).Model(&model.Task{}).
-		Where("workspace_id = ? AND user_id = ?", workspaceID, userID).
+	var pending []statusCount
+	if err := scope().
+		Select("workspace_id, count(*) as count").
 		Where("id IN (SELECT task_id FROM messages m1 WHERE created_at = (SELECT MAX(created_at) FROM messages m2 WHERE m2.task_id = m1.task_id) AND " + metadataExpr + ")").
-		Count(&pending).Error
-	if err != nil {
+		Group("workspace_id").
+		Scan(&pending).Error; err != nil {
 		return nil, err
 	}
-	counts["pending"] = pending
+	for _, res := range pending {
+		countsOf(res.WorkspaceID)["pending"] = res.Count
+	}
 
-	return counts, nil
+	return byWorkspace, nil
+}
+
+// ListTaskPreviews returns up to perWorkspace tasks of every workspace of the
+// user, in the order the workspace page's Active tab lists them: ongoing,
+// blocked, not started in queue order, scheduled, then the most recently
+// finished. Only the columns a preview shows are read, ordered by workspace
+// and then by that rank.
+func (r *repository) ListTaskPreviews(ctx context.Context, userID int64, perWorkspace int) ([]model.Task, error) {
+	// A not-started task's place in the queue, as ListTasks sorts it.
+	queueExpr := "CAST(strftime('%s', created_at) AS REAL)"
+	if r.conn(ctx).Dialector.Name() == "postgres" {
+		queueExpr = "EXTRACT(EPOCH FROM created_at)"
+	}
+	var tasks []model.Task
+	err := r.conn(ctx).Raw(`SELECT tasks.id, tasks.workspace_id, tasks.title, tasks.status, tasks.assignee,
+		tasks.cron_schedule, tasks.created_at, tasks.updated_at
+		FROM tasks JOIN (
+			SELECT id, ROW_NUMBER() OVER (PARTITION BY workspace_id ORDER BY
+				CASE status WHEN 'ongoing' THEN 0 WHEN 'blocked' THEN 1 WHEN 'notstarted' THEN 2 WHEN 'cron' THEN 3 ELSE 4 END,
+				CASE WHEN status = 'notstarted' THEN (CASE WHEN sort_order > 0 THEN sort_order ELSE `+queueExpr+` END) END ASC,
+				updated_at DESC, id DESC) AS rn
+			FROM tasks WHERE user_id = ?
+		) ranked ON ranked.id = tasks.id
+		WHERE ranked.rn <= ?
+		ORDER BY tasks.workspace_id, ranked.rn`, userID, perWorkspace).
+		Scan(&tasks).Error
+	return tasks, err
 }
 
 // ── Push Subscriptions ──────────────────────────────────────────────────────────

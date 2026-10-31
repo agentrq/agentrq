@@ -1007,6 +1007,14 @@ export async function fetchGlobalTaskStats() {
   return res.json();
 }
 
+// Every workspace's task counts and first few Active tasks, in one call: what
+// the workspaces page shows on each card.
+export async function fetchTaskOverview() {
+  const res = await apiFetch(`${API_BASE_URL}/tasks/overview`);
+  if (!res.ok) throw new Error('Failed to fetch the task overview');
+  return res.json();
+}
+
 export async function fetchEvents() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
@@ -1232,6 +1240,8 @@ export const TELEMETRY_UI_TRAJECTORY_VIEW = 'ui_trajectory_view';
 export const TELEMETRY_UI_PLAN_COMMENT = 'ui_plan_comment';
 // A link followed from a task's links panel.
 export const TELEMETRY_UI_TASK_LINK_OPEN = 'ui_task_link_open';
+// A task opened from its workspace's card on the workspaces page.
+export const TELEMETRY_UI_OVERVIEW_TASK_OPEN = 'ui_overview_task_open';
 export const TELEMETRY_UI_SPIN_UP = 'ui_spin_up';
 // A dictation done by a phone's own speech recognition rather than Whisper.
 export const TELEMETRY_UI_DICTATION_END = 'ui_dictation_end';

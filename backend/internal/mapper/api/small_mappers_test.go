@@ -6,6 +6,7 @@ package api
 
 import (
 	"testing"
+	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
@@ -81,5 +82,23 @@ func TestMemoryResponses(t *testing.T) {
 	}
 	if got := string(FromListMemoriesResponseEntityToHTTPResponse(&entity.ListMemoriesResponse{})); got != `{"memories":[]}` {
 		t.Errorf("no memories = %s, want an empty list", got)
+	}
+}
+
+// A preview carries only what a row shows, with every id in base62, and a
+// workspace with no tasks still answers an empty list rather than null.
+func TestFromGetTaskOverviewResponseEntityToHTTPResponse(t *testing.T) {
+	at := time.Date(2026, 10, 31, 1, 0, 0, 0, time.UTC)
+	got := string(FromGetTaskOverviewResponseEntityToHTTPResponse(&entity.GetTaskOverviewResponse{Workspaces: []entity.WorkspaceTaskOverview{
+		{WorkspaceID: 20, Counts: map[string]int64{"ongoing": 1}, Tasks: []entity.TaskPreview{
+			{ID: 30, WorkspaceID: 20, Title: "t", Status: "ongoing", Assignee: "agent", CreatedAt: at, UpdatedAt: at},
+		}},
+		{WorkspaceID: 21, Counts: map[string]int64{"completed": 2}},
+	}}))
+	want := `{"workspaces":[{"workspaceId":"` + b62(20) + `","counts":{"ongoing":1},"tasks":[{"id":"` + b62(30) + `","workspaceId":"` + b62(20) +
+		`","title":"t","status":"ongoing","assignee":"agent","createdAt":"2026-10-31T01:00:00Z","updatedAt":"2026-10-31T01:00:00Z"}]},` +
+		`{"workspaceId":"` + b62(21) + `","counts":{"completed":2},"tasks":[]}]}`
+	if got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
 	}
 }

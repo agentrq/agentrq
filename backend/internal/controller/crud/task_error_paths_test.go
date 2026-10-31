@@ -8,8 +8,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -398,6 +400,44 @@ func TestUpdateMessageMetadata_Failures(t *testing.T) {
 		e.repo.EXPECT().UpdateMessageMetadata(gomock.Any(), int64(10), int64(20), gomock.Any()).Return(errDBDown)
 		wantErrIs(t, "UpdateMessageMetadata", e.controller.UpdateMessageMetadata(context.Background(), req(map[string]any{"a": 1})), errDBDown)
 	})
+}
+
+// The overview pairs every workspace's counts with its previews, in workspace
+// order, and a workspace with counts but no previews still gets its entry.
+func TestGetTaskOverview(t *testing.T) {
+	e := newTestController(t)
+	at := time.Unix(1700000000, 0)
+	e.repo.EXPECT().GetTaskCountsByWorkspace(gomock.Any(), testUserID).Return(map[int64]map[string]int64{
+		9: {"ongoing": 1},
+		3: {"completed": 2},
+	}, nil)
+	e.repo.EXPECT().ListTaskPreviews(gomock.Any(), testUserID, 4).Return([]model.Task{
+		{ID: 90, WorkspaceID: 9, Title: "running", Status: "ongoing", Assignee: "agent", CronSchedule: "", CreatedAt: at, UpdatedAt: at},
+	}, nil)
+	got, err := e.controller.GetTaskOverview(context.Background(), testUserIDStr)
+	if err != nil {
+		t.Fatalf("GetTaskOverview: %v", err)
+	}
+	want := []entity.WorkspaceTaskOverview{
+		{WorkspaceID: 3, Counts: map[string]int64{"completed": 2}},
+		{WorkspaceID: 9, Counts: map[string]int64{"ongoing": 1}, Tasks: []entity.TaskPreview{
+			{ID: 90, WorkspaceID: 9, Title: "running", Status: "ongoing", Assignee: "agent", CreatedAt: at, UpdatedAt: at},
+		}},
+	}
+	if !reflect.DeepEqual(got.Workspaces, want) {
+		t.Errorf("GetTaskOverview = %+v, want %+v", got.Workspaces, want)
+	}
+
+	e = newTestController(t)
+	e.repo.EXPECT().GetTaskCountsByWorkspace(gomock.Any(), testUserID).Return(nil, errDBDown)
+	_, err = e.controller.GetTaskOverview(context.Background(), testUserIDStr)
+	wantErrIs(t, "GetTaskCountsByWorkspace", err, errDBDown)
+
+	e = newTestController(t)
+	e.repo.EXPECT().GetTaskCountsByWorkspace(gomock.Any(), testUserID).Return(map[int64]map[string]int64{}, nil)
+	e.repo.EXPECT().ListTaskPreviews(gomock.Any(), testUserID, 4).Return(nil, errDBDown)
+	_, err = e.controller.GetTaskOverview(context.Background(), testUserIDStr)
+	wantErrIs(t, "ListTaskPreviews", err, errDBDown)
 }
 
 func TestGetGlobalTaskStats(t *testing.T) {

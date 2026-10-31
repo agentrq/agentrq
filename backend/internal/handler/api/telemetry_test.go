@@ -83,21 +83,22 @@ func TestRecordTelemetryAcceptsAnAllowlistedAction(t *testing.T) {
 // frontend sends that dies here is a metric that silently reads zero.
 func TestRecordTelemetryAcceptsEachUIAction(t *testing.T) {
 	for name, want := range map[string]entity.Action{
-		"ui_shortcut_use":    entity.ActionUIShortcutUse,
-		"ui_search":          entity.ActionUISearch,
-		"ui_search_open":     entity.ActionUISearchOpen,
-		"ui_copy_link":       entity.ActionUICopyLink,
-		"ui_copy_markdown":   entity.ActionUICopyMarkdown,
-		"ui_trajectory_view": entity.ActionUITrajectoryView,
-		"ui_copy_code":       entity.ActionUICopyCode,
-		"ui_dictation_end":   entity.ActionUIDictationEnd,
-		"ui_spin_up":         entity.ActionUISpinUp,
-		"ui_side_panel_open": entity.ActionUISidePanelOpen,
-		"ui_side_panel_link": entity.ActionUISidePanelLink,
-		"ui_message_react":   entity.ActionUIMessageReact,
-		"ui_acp_agent_pick":  entity.ActionUIAcpAgentPick,
-		"ui_plan_comment":    entity.ActionUIPlanComment,
-		"ui_task_link_open":  entity.ActionUITaskLinkOpen,
+		"ui_shortcut_use":       entity.ActionUIShortcutUse,
+		"ui_search":             entity.ActionUISearch,
+		"ui_search_open":        entity.ActionUISearchOpen,
+		"ui_copy_link":          entity.ActionUICopyLink,
+		"ui_copy_markdown":      entity.ActionUICopyMarkdown,
+		"ui_trajectory_view":    entity.ActionUITrajectoryView,
+		"ui_copy_code":          entity.ActionUICopyCode,
+		"ui_dictation_end":      entity.ActionUIDictationEnd,
+		"ui_spin_up":            entity.ActionUISpinUp,
+		"ui_side_panel_open":    entity.ActionUISidePanelOpen,
+		"ui_side_panel_link":    entity.ActionUISidePanelLink,
+		"ui_message_react":      entity.ActionUIMessageReact,
+		"ui_acp_agent_pick":     entity.ActionUIAcpAgentPick,
+		"ui_plan_comment":       entity.ActionUIPlanComment,
+		"ui_task_link_open":     entity.ActionUITaskLinkOpen,
+		"ui_overview_task_open": entity.ActionUIOverviewTaskOpen,
 	} {
 		ctrl := &mockTelemetryCrud{}
 		app := newTelemetryApp(ctrl)

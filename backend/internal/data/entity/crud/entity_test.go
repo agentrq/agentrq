@@ -99,6 +99,7 @@ func TestActionString(t *testing.T) {
 		{ActionWorkspaceResetID, "workspace_reset_id"},
 		{ActionUIPlanComment, "ui_plan_comment"},
 		{ActionUITaskLinkOpen, "ui_task_link_open"},
+		{ActionUIOverviewTaskOpen, "ui_overview_task_open"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

@@ -171,6 +171,7 @@ type TaskController interface {
 	UpdateMessageMetadata(ctx context.Context, req entity.UpdateMessageMetadataRequest) error
 	CloseExpiredElicitation(ctx context.Context, req entity.CloseExpiredElicitationRequest) (*entity.CloseExpiredElicitationResponse, error)
 	GetGlobalTaskStats(ctx context.Context, userID string) (*entity.GlobalTaskStatsResponse, error)
+	GetTaskOverview(ctx context.Context, userID string) (*entity.GetTaskOverviewResponse, error)
 	DeleteTask(ctx context.Context, req entity.DeleteTaskRequest) (*entity.DeleteTaskResponse, error)
 	GetAttachment(ctx context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error)
 	GetWorkspaceTaskCounts(ctx context.Context, req entity.GetWorkspaceTaskCountsRequest) (map[string]int64, error)

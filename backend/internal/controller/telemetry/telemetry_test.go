@@ -498,6 +498,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionWorkspaceResetID, model.ActionIDWorkspaceResetID, "workspace reset id"},
 		{entity.ActionUIPlanComment, model.ActionIDUIPlanComment, "ui plan comment"},
 		{entity.ActionUITaskLinkOpen, model.ActionIDUITaskLinkOpen, "ui task link open"},
+		{entity.ActionUIOverviewTaskOpen, model.ActionIDUIOverviewTaskOpen, "ui overview task open"},
 	}
 
 	for _, tc := range cases {

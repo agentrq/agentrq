@@ -801,6 +801,8 @@ const (
 	ActionIDUIPlanComment
 	// A link followed from a task's links panel.
 	ActionIDUITaskLinkOpen
+	// A task opened from its workspace's card on the workspaces page.
+	ActionIDUIOverviewTaskOpen
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

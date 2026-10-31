@@ -5,7 +5,7 @@
 -->
 
 <template>
-  <div class="h-full flex flex-col w-full">
+  <div ref="pageRef" class="h-full flex flex-col w-full">
     <!-- Page Header -->
     <div class="py-2 mb-6 flex flex-col md:flex-row md:items-start justify-between gap-4 px-4">
       <div class="flex-1">
@@ -51,7 +51,7 @@
 
       <div v-else class="space-y-12">
         <!-- Active Workspaces -->
-        <section v-if="filteredActiveWorkspaces.length > 0">
+        <section v-if="activeWorkspaces.length > 0">
           <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div class="flex items-center gap-3">
               <span class="text-[10px] font-black text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Active workspaces</span>
@@ -69,7 +69,9 @@
               </div>
               
               <!-- Archived Toggle -->
+              <!-- Icon-only on a phone; the label is in the tooltip. -->
               <button @click="showArchived = !showArchived"
+                      :title="showArchived ? 'Hide archived' : 'Archived'" :aria-label="showArchived ? 'Hide archived workspaces' : 'Show archived workspaces'"
                       class="px-3 py-2 rounded-sm border transition-all flex items-center gap-2 shrink-0"
                       :class="showArchived ? 'bg-gray-100 dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-black dark:text-white' : 'bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 text-gray-500 dark:text-zinc-400 hover:border-gray-400'">
                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
@@ -77,85 +79,42 @@
               </button>
 
               <!-- Inline New Button -->
-              <button @click="newWorkspace" class="bg-black dark:bg-white text-white dark:text-black px-4 py-2 rounded-sm text-[10px] font-black hover:opacity-80 transition-all flex items-center gap-2 shrink-0 shadow-sm border border-transparent">
+              <button @click="newWorkspace" title="New workspace" aria-label="New workspace" class="bg-black dark:bg-white text-white dark:text-black px-3 sm:px-4 py-2 rounded-sm text-[10px] font-black hover:opacity-80 transition-all flex items-center gap-2 shrink-0 shadow-sm border border-transparent">
                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
-                <span>New</span>
+                <span class="hidden sm:inline">New</span>
               </button>
             </div>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div v-for="p in filteredActiveWorkspaces"
-                 :key="p.id"
-                 class="group relative bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-4 cursor-pointer transition-all duration-300 hover:border-gray-400 dark:hover:border-zinc-600 shadow-sm hover:shadow-md"
-                 @click="goToWorkspace(p.id)">
-
-                 <div class="flex items-center justify-between gap-3">
-                   <div class="flex items-center gap-3 min-w-0">
-                     <!-- Minimal Live Indicator -->
-                     <div class="relative flex items-center justify-center shrink-0">
-                       <div class="w-2 h-2 rounded-full z-10" 
-                            :class="p.agentConnected ? 'bg-green-500' : 'bg-gray-300 dark:bg-zinc-700'"></div>
-                       <div v-if="p.agentConnected" class="absolute w-2 h-2 rounded-full bg-green-500 animate-ping opacity-75"></div>
-                     </div>
-                     
-                     <div class="min-w-0">
-                       <h3 class="font-black text-sm text-gray-800 dark:text-zinc-200 truncate group-hover:text-black dark:group-hover:text-white transition-colors leading-none flex items-center gap-1.5 min-w-0">
-                         <!-- The sidebar's fork mark, so a fork reads as one here too. -->
-                         <ForkIcon v-if="p.forkOfId" class="w-3 h-3 shrink-0 text-gray-500 dark:text-zinc-400" :title="`Fork of ${p.forkOf?.name ?? 'another workspace'}`" data-test="card-fork" />
-                         <span class="truncate">{{ toKebabCase(p.name) }}</span>
-                       </h3>
-                       <!-- The dot already says an agent is live, so when the
-                            workspace can say *what* is live the line spends its
-                            width on that instead of repeating the dot. Falls
-                            back to the plain state whenever nothing is known,
-                            which is every agent that reports nothing about
-                            itself. -->
-                       <div class="flex items-baseline gap-1.5 mt-1 min-w-0" :title="agentSummary(p)">
-                         <template v-if="p.agentConnected && agentDetails(p)">
-                           <span v-if="agentDetails(p).client"
-                                 class="text-[9px] font-black uppercase tracking-wider text-green-600 dark:text-green-500 truncate">
-                             {{ agentDetails(p).client }}
-                           </span>
-                           <!-- Or a choice with nothing chosen yet: an agent
-                                may report models without naming a current one,
-                                which the backend explicitly tolerates. Guarding
-                                on the name alone hid the picker exactly where
-                                it was most needed. -->
-                           <template v-if="agentDetails(p).model || canChooseModel(p)">
-                             <span v-if="agentDetails(p).client" class="text-[9px] font-black text-gray-300 dark:text-zinc-700 shrink-0">·</span>
-                             <!-- The model becomes a control where the agent
-                                  will act on being told to switch, and stays
-                                  plain text everywhere else. The card navigates
-                                  on click, so the picker stops its own clicks
-                                  from reaching it — choosing a model must not
-                                  also leave the page. -->
-                             <AgentModelPicker v-if="canChooseModel(p)" :workspace="p" compact @click.stop />
-                             <span v-else class="text-[9px] font-medium text-gray-500 dark:text-zinc-400 truncate">{{ agentDetails(p).model }}</span>
-                           </template>
-                           <template v-if="canChooseEffort(p)">
-                             <span class="text-[9px] font-black text-gray-300 dark:text-zinc-700 shrink-0">·</span>
-                             <AgentEffortPicker :workspace="p" compact @click.stop />
-                           </template>
-                         </template>
-                         <span v-else class="text-[8px] font-black uppercase tracking-widest transition-colors"
-                               :class="p.agentConnected ? 'text-green-600 dark:text-green-500' : 'text-gray-400 dark:text-zinc-500'">
-                           {{ p.agentConnected ? 'Agent Live' : 'Agent Offline' }}
-                         </span>
-                       </div>
-                     </div>
-                   </div>
-                   
-                   <div class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                     <svg class="w-4 h-4 text-gray-900 dark:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-                   </div>
-                 </div>
-
+          <!-- Two columns where there is room, each workspace with its forks
+               into whichever is shorter (splitIntoColumns). Measured on the
+               list rather than the window, so beside the desktop side panel
+               it is one column like a phone's. -->
+          <div class="grid gap-4 items-start" :class="singleColumn ? 'grid-cols-1' : 'grid-cols-2'">
+            <div v-for="(column, ci) in columns" :key="ci" class="space-y-4 min-w-0" data-test="workspace-column">
+              <div v-for="g in column" :key="g.workspace.id" data-test="workspace-group">
+                <WorkspaceOverviewCard :workspace="g.workspace" :overview="overview.get(g.workspace.id)"
+                                       :dimmed="g.dimmed" :narrow="narrow"
+                                       @open="goToWorkspace(g.workspace.id)" @open-task="openTask" />
+                <!-- A fork hangs under its parent on a rail, as the fork
+                     animation draws it: each elbow reaches up to the card
+                     above, and every fork but the last carries it on. -->
+                <div v-if="g.forks.length" class="pt-3 space-y-3" :class="narrow ? 'ml-2.5 pl-3.5' : 'ml-[18px] pl-[18px]'">
+                  <div v-for="(f, fi) in g.forks" :key="f.id" class="relative" data-test="fork-card">
+                    <span class="absolute -top-3 h-9 border-l-2 border-b-2 rounded-bl-sm border-gray-300 dark:border-zinc-700"
+                          :class="narrow ? '-left-3.5 w-3.5' : '-left-[18px] w-[18px]'"></span>
+                    <span v-if="fi < g.forks.length - 1" class="absolute top-6 -bottom-3 border-l-2 border-gray-300 dark:border-zinc-700"
+                          :class="narrow ? '-left-3.5' : '-left-[18px]'"></span>
+                    <WorkspaceOverviewCard :workspace="f" :overview="overview.get(f.id)" :narrow="narrow"
+                                           @open="goToWorkspace(f.id)" @open-task="openTask" />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
         <!-- Empty State for Search -->
-        <div v-if="filteredActiveWorkspaces.length === 0 && searchQuery && !loadingWorkspaces" class="py-16 text-center border border-dashed border-gray-200 dark:border-zinc-800 rounded-sm bg-gray-50 dark:bg-zinc-900/50">
+        <div v-if="cardGroups.length === 0 && searchQuery && !loadingWorkspaces" class="py-16 text-center border border-dashed border-gray-200 dark:border-zinc-800 rounded-sm bg-gray-50 dark:bg-zinc-900/50">
           <svg class="mx-auto h-12 w-12 text-gray-300 dark:text-zinc-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
           <p class="text-sm font-bold text-gray-800 dark:text-zinc-200">No matches for "{{ searchQuery }}"</p>
           <button @click="searchQuery = ''" class="mt-4 text-xs font-semibold text-gray-600 dark:text-zinc-300 border border-gray-300 dark:border-zinc-600 rounded-sm px-5 py-2 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors shadow-sm">Clear Search</button>
@@ -247,19 +206,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import ForkIcon from '../components/ForkIcon.vue';
-import { unarchiveWorkspace, fetchGlobalTaskStats } from '../api';
+import { unarchiveWorkspace, fetchGlobalTaskStats, fetchTaskOverview, recordTelemetry, TELEMETRY_UI_OVERVIEW_TASK_OPEN } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import { useTooltipStore } from '../stores/tooltipStore';
-import { agentDetails, agentSummary } from '../composables/useAgentSummary';
-import { canChooseModel } from '../composables/useAgentModelPicker';
-import AgentModelPicker from '../components/AgentModelPicker.vue';
-import { canChooseEffort } from '../composables/useAgentEffortPicker';
-import AgentEffortPicker from '../components/AgentEffortPicker.vue';
+import { useEventBus } from '../useEventBus';
+import { useNarrowLayout } from '../composables/useNarrowLayout';
+import { coalesce, filterWorkspaceGroups, groupWorkspaces, indexOverview, splitIntoColumns, workspaceMatches } from '../composables/useWorkspaceOverview';
+import WorkspaceOverviewCard from '../components/WorkspaceOverviewCard.vue';
 import LoadingState from '../components/LoadingState.vue';
 import AccountStats from '../components/AccountStats.vue';
 
@@ -305,22 +262,28 @@ const archivedWorkspaces = computed(() => {
   return workspaces.value.filter(p => !!p.archivedAt);
 });
 
-const filteredActiveWorkspaces = computed(() => {
-  if (!searchQuery.value) return activeWorkspaces.value;
-  const q = searchQuery.value.toLowerCase();
-  return activeWorkspaces.value.filter(p => 
-    p.name.toLowerCase().includes(q) || 
-    (p.description && p.description.toLowerCase().includes(q))
-  );
-});
+// A card per workspace, its forks under it; a search keeps a parent, dimmed,
+// for the forks that match.
+const cardGroups = computed(() => filterWorkspaceGroups(groupWorkspaces(activeWorkspaces.value), searchQuery.value));
 
 const filteredArchivedWorkspaces = computed(() => {
   if (!searchQuery.value) return archivedWorkspaces.value;
-  const q = searchQuery.value.toLowerCase();
-  return archivedWorkspaces.value.filter(p => 
-    p.name.toLowerCase().includes(q) || 
-    (p.description && p.description.toLowerCase().includes(q))
-  );
+  return archivedWorkspaces.value.filter(p => workspaceMatches(p, searchQuery.value));
+});
+
+// Laid out by the page's own width: two columns where two cards fit, one
+// beside the desktop side panel or on a phone, and a phone's card shows less.
+// Measured on the page rather than the list, which is not there until the
+// workspaces load, after the measuring has started.
+const pageRef = ref(null);
+const singleColumn = useNarrowLayout(pageRef, { below: 900 });
+const narrow = useNarrowLayout(pageRef);
+const columns = computed(() => splitIntoColumns(cardGroups.value, singleColumn.value ? 1 : 2));
+
+// Every workspace's counts and first few tasks, by workspace id.
+const overview = ref(new Map());
+const loadOverview = coalesce(async () => {
+  overview.value = indexOverview(await fetchTaskOverview());
 });
 
 async function loadWorkspaces() {
@@ -362,13 +325,28 @@ function goToWorkspace(id) {
   router.push(`/workspaces/${id}`);
 }
 
-// No event stream here on purpose. This view renders the workspace store, and
-// the shell already subscribes once for the whole app and writes agent
-// connection state and workspace metadata into that store. A second
-// subscription would be a second SSE connection per user doing the same work,
-// against a copy of the same list.
+function openTask(task) {
+  recordTelemetry(TELEMETRY_UI_OVERVIEW_TASK_OPEN, task.workspaceId);
+  router.push(`/workspaces/${task.workspaceId}/tasks/${task.id}`);
+}
+
+// The workspaces themselves need no stream here: the shell already writes
+// agent connection state and workspace metadata into the store this view
+// renders. The tasks on the cards are not in any store, so this view follows
+// the user's stream for them, as the task list does, and fetches the overview
+// again on any task change; a burst of changes costs two fetches (coalesce).
+const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false });
+onEvent((event) => {
+  if (event.type === 'task.created' || event.type === 'task.updated' || event.type === 'task.deleted') {
+    loadOverview();
+  }
+});
 
 onMounted(async () => {
+  connect();
+  loadOverview();
   await loadWorkspaces();
 });
+
+onUnmounted(() => disconnect());
 </script>

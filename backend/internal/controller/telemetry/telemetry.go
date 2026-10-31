@@ -287,6 +287,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUIPlanComment
 	case entity.ActionUITaskLinkOpen:
 		action = model.ActionIDUITaskLinkOpen
+	case entity.ActionUIOverviewTaskOpen:
+		action = model.ActionIDUIOverviewTaskOpen
 	default:
 		return
 	}

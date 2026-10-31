@@ -476,6 +476,31 @@ type (
 		Tasks []Task
 	}
 
+	// GetTaskOverviewResponse is, for every workspace of the user that has
+	// tasks, its task counts and the first few tasks of its Active list: what
+	// the workspaces page shows on each workspace's card.
+	GetTaskOverviewResponse struct {
+		Workspaces []WorkspaceTaskOverview
+	}
+
+	WorkspaceTaskOverview struct {
+		WorkspaceID int64
+		Counts      map[string]int64
+		Tasks       []TaskPreview
+	}
+
+	// TaskPreview is the part of a task a list row shows.
+	TaskPreview struct {
+		ID           int64
+		WorkspaceID  int64
+		Title        string
+		Status       string
+		Assignee     string
+		CronSchedule string
+		CreatedAt    time.Time
+		UpdatedAt    time.Time
+	}
+
 	// TaskReplyState is whether a task awaits a reply, as the supervisor
 	// tells it, and the newest message of its conversation.
 	TaskReplyState struct {
@@ -1738,6 +1763,9 @@ const (
 	// A link followed from a task's links panel. Reported by the browser: the
 	// server sees nothing of it.
 	ActionUITaskLinkOpen Action = 108
+	// A task opened from its workspace's card on the workspaces page.
+	// Reported by the browser: the server sees only the task being read.
+	ActionUIOverviewTaskOpen Action = 109
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1784,6 +1812,8 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionUIPlanComment, true
 	case "ui_task_link_open":
 		return ActionUITaskLinkOpen, true
+	case "ui_overview_task_open":
+		return ActionUIOverviewTaskOpen, true
 	}
 	return 0, false
 }
@@ -1950,6 +1980,8 @@ func (a Action) String() string {
 		return "ui_plan_comment"
 	case ActionUITaskLinkOpen:
 		return "ui_task_link_open"
+	case ActionUIOverviewTaskOpen:
+		return "ui_overview_task_open"
 	}
 	return "unknown"
 }

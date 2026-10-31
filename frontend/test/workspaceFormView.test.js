@@ -24,6 +24,10 @@ vi.mock('../src/api', async (importOriginal) => ({
   fetchGlobalTaskStats: async () => ({}),
   fetchGlobalTasks: async () => ({ tasks: [] }),
   fetchUserStats: async () => ({}),
+  fetchTaskOverview: async () => ({ workspaces: [] }),
+}));
+vi.mock('../src/useEventBus', () => ({
+  useEventBus: () => ({ connect: () => {}, disconnect: () => {}, onEvent: () => () => {} }),
 }));
 
 import WorkspaceFormView from '../src/views/WorkspaceFormView.vue';

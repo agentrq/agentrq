@@ -52,6 +52,7 @@ const (
 func (h *handler) registerTaskRoutes() error {
 	h.router.Get("/tasks", h.listTasks())
 	h.router.Get("/tasks/stats", h.getGlobalTaskStats())
+	h.router.Get("/tasks/overview", h.getTaskOverview())
 	h.router.Post(_routePathTasks, h.createTask())
 	h.router.Get(_routePathTasks, h.listTasks())
 	h.router.Get(_routePathCounts, h.getWorkspaceTaskCounts())
@@ -1121,6 +1122,23 @@ func (h *handler) getGlobalTaskStats() fiber.Handler {
 			return c.Send(e)
 		}
 		return c.JSON(rs)
+	}
+}
+
+func (h *handler) getTaskOverview() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		userID := c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		rs, err := h.crud.GetTaskOverview(ctx, userID)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.Send(mapper.FromGetTaskOverviewResponseEntityToHTTPResponse(rs))
 	}
 }
 

@@ -155,6 +155,18 @@ func (m *errPathCrud) GetGlobalTaskStats(context.Context, string) (*entity.Globa
 	return &entity.GlobalTaskStatsResponse{PendingTasks: 4, ScheduledTasks: 2}, nil
 }
 
+func (m *errPathCrud) GetTaskOverview(context.Context, string) (*entity.GetTaskOverviewResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	at := time.Date(2026, 10, 31, 1, 0, 0, 0, time.UTC)
+	return &entity.GetTaskOverviewResponse{Workspaces: []entity.WorkspaceTaskOverview{{
+		WorkspaceID: 5,
+		Counts:      map[string]int64{"ongoing": 1},
+		Tasks:       []entity.TaskPreview{{ID: 7, WorkspaceID: 5, Title: "t", Status: "cron", Assignee: "agent", CronSchedule: "0 9 * * *", CreatedAt: at, UpdatedAt: at}},
+	}}}, nil
+}
+
 func (m *errPathCrud) GetWorkspaceTaskCounts(context.Context, entity.GetWorkspaceTaskCountsRequest) (map[string]int64, error) {
 	if m.err != nil {
 		return nil, m.err
@@ -280,6 +292,7 @@ func TestTaskRoutes_AnswerAControllerFailureWithItsStatus(t *testing.T) {
 		{"delete", http.MethodDelete, task, ""},
 		{"attachment", http.MethodGet, task + "/attachments/att-1", ""},
 		{"global stats", http.MethodGet, "/tasks/stats", ""},
+		{"overview", http.MethodGet, "/tasks/overview", ""},
 		{"counts", http.MethodGet, "/workspaces/" + errPathWorkspace + "/tasks/counts", ""},
 	}
 	errs := []struct {
@@ -445,6 +458,19 @@ func TestTaskStats_AnswerWithTheCounts(t *testing.T) {
 	}
 	if body != `{"pendingTasks":4,"scheduledTasks":2}` {
 		t.Errorf("body = %s", body)
+	}
+}
+
+func TestTaskOverview_AnswerWithEachWorkspace(t *testing.T) {
+	app := errPathTaskApp(&handler{crud: &errPathCrud{}})
+
+	resp, body := errPathDo(t, app, http.MethodGet, "/tasks/overview", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	want := `{"workspaces":[{"workspaceId":"00000000005","counts":{"ongoing":1},"tasks":[{"id":"00000000007","workspaceId":"00000000005","title":"t","status":"cron","assignee":"agent","cronSchedule":"0 9 * * *","createdAt":"2026-10-31T01:00:00Z","updatedAt":"2026-10-31T01:00:00Z"}]}]}`
+	if body != want {
+		t.Errorf("body = %s\nwant   %s", body, want)
 	}
 }
 

@@ -277,6 +277,32 @@ func FromListTasksResponseEntityToHTTPResponse(rs *entity.ListTasksResponse) []b
 	return payload
 }
 
+func FromGetTaskOverviewResponseEntityToHTTPResponse(rs *entity.GetTaskOverviewResponse) []byte {
+	workspaces := make([]view.WorkspaceTaskOverview, len(rs.Workspaces))
+	for i, w := range rs.Workspaces {
+		tasks := make([]view.TaskPreview, len(w.Tasks))
+		for j, t := range w.Tasks {
+			tasks[j] = view.TaskPreview{
+				ID:           monoflake.ID(t.ID).String(),
+				WorkspaceID:  monoflake.ID(t.WorkspaceID).String(),
+				Title:        t.Title,
+				Status:       t.Status,
+				Assignee:     t.Assignee,
+				CronSchedule: t.CronSchedule,
+				CreatedAt:    t.CreatedAt,
+				UpdatedAt:    t.UpdatedAt,
+			}
+		}
+		workspaces[i] = view.WorkspaceTaskOverview{
+			WorkspaceID: monoflake.ID(w.WorkspaceID).String(),
+			Counts:      w.Counts,
+			Tasks:       tasks,
+		}
+	}
+	payload, _ := json.Marshal(view.GetTaskOverviewResponse{Workspaces: workspaces})
+	return payload
+}
+
 func FromHTTPRequestToRespondToTaskRequestEntity(c *fiber.Ctx) *entity.RespondToTaskRequest {
 	var payload view.RespondToTaskRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {

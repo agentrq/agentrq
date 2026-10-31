@@ -909,6 +909,13 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       readOnly: true,
       run: () => api.fetchGlobalTaskStats(),
     }),
+    tool({
+      name: 'getTaskOverview',
+      description:
+        "Every workspace's task counts and its first few active tasks (ongoing, then not started, scheduled and recently finished), as the workspaces page shows them.",
+      readOnly: true,
+      run: () => api.fetchTaskOverview(),
+    }),
 
     // ---- Machines ----------------------------------------------------------
     //

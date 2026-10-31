@@ -71,7 +71,7 @@ func TestClientReportableAction(t *testing.T) {
 		ActionLocalAITitleGenerate, ActionLocalAIRecordingEnd, ActionUIShortcutUse, ActionUISearch, ActionUISearchOpen,
 		ActionUICopyLink, ActionUICopyMarkdown, ActionUITrajectoryView, ActionUICopyCode, ActionUIDictationEnd,
 		ActionUISpinUp, ActionUISidePanelOpen, ActionUISidePanelLink, ActionUIMessageReact, ActionUIAcpAgentPick,
-		ActionUIPlanComment, ActionUITaskLinkOpen,
+		ActionUIPlanComment, ActionUITaskLinkOpen, ActionUIOverviewTaskOpen,
 	}
 	for _, want := range allowed {
 		name := want.String()

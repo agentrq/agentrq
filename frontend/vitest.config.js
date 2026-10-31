@@ -146,6 +146,8 @@ export default defineConfig({
         'src/composables/useAgentLaunch.js',
         'src/composables/useWorkspaceAgentLaunch.js',
         'src/composables/useWorkspaceForks.js',
+        'src/composables/useWorkspaceOverview.js',
+        'src/components/WorkspaceOverviewCard.vue',
         'src/composables/useWorkspaceContextMenu.js',
         'src/composables/useSpinUp.js',
         'src/composables/useLaunchTerminalSize.js',

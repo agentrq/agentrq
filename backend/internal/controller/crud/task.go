@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -1112,6 +1113,40 @@ func (c *controller) GetGlobalTaskStats(ctx context.Context, userID string) (*en
 		return nil, err
 	}
 	return &res, nil
+}
+
+// taskOverviewSize is how many tasks the workspaces page shows on a card.
+const taskOverviewSize = 4
+
+func (c *controller) GetTaskOverview(ctx context.Context, userID string) (*entity.GetTaskOverviewResponse, error) {
+	uid := monoflake.IDFromBase62(userID).Int64()
+	counts, err := c.repository.GetTaskCountsByWorkspace(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := c.repository.ListTaskPreviews(ctx, uid, taskOverviewSize)
+	if err != nil {
+		return nil, err
+	}
+	previews := map[int64][]entity.TaskPreview{}
+	for _, t := range tasks {
+		previews[t.WorkspaceID] = append(previews[t.WorkspaceID], entity.TaskPreview{
+			ID:           t.ID,
+			WorkspaceID:  t.WorkspaceID,
+			Title:        t.Title,
+			Status:       t.Status,
+			Assignee:     t.Assignee,
+			CronSchedule: t.CronSchedule,
+			CreatedAt:    t.CreatedAt,
+			UpdatedAt:    t.UpdatedAt,
+		})
+	}
+	res := &entity.GetTaskOverviewResponse{Workspaces: make([]entity.WorkspaceTaskOverview, 0, len(counts))}
+	for id, n := range counts {
+		res.Workspaces = append(res.Workspaces, entity.WorkspaceTaskOverview{WorkspaceID: id, Counts: n, Tasks: previews[id]})
+	}
+	sort.Slice(res.Workspaces, func(i, j int) bool { return res.Workspaces[i].WorkspaceID < res.Workspaces[j].WorkspaceID })
+	return res, nil
 }
 
 func (c *controller) GetWorkspaceTaskCounts(ctx context.Context, req entity.GetWorkspaceTaskCountsRequest) (map[string]int64, error) {

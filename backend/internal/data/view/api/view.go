@@ -348,6 +348,29 @@ type (
 		LastMessageBy string     `json:"lastMessageBy,omitempty"`
 	}
 
+	// GetTaskOverviewResponse is each workspace's task counts and the first
+	// few tasks of its Active list, for the workspaces page.
+	GetTaskOverviewResponse struct {
+		Workspaces []WorkspaceTaskOverview `json:"workspaces"`
+	}
+
+	WorkspaceTaskOverview struct {
+		WorkspaceID string           `json:"workspaceId"`
+		Counts      map[string]int64 `json:"counts"`
+		Tasks       []TaskPreview    `json:"tasks"`
+	}
+
+	TaskPreview struct {
+		ID           string    `json:"id"`
+		WorkspaceID  string    `json:"workspaceId"`
+		Title        string    `json:"title"`
+		Status       string    `json:"status"`
+		Assignee     string    `json:"assignee"`
+		CronSchedule string    `json:"cronSchedule,omitempty"`
+		CreatedAt    time.Time `json:"createdAt"`
+		UpdatedAt    time.Time `json:"updatedAt"`
+	}
+
 	SupervisorListTasksResponse struct {
 		Tasks []SupervisorTask `json:"tasks"`
 	}

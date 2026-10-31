@@ -1407,6 +1407,47 @@ paths:
                   pendingTasks: { type: integer, format: int64 }
                   scheduledTasks: { type: integer, format: int64 }
 
+  /tasks/overview:
+    get:
+      tags: [Tasks]
+      summary: Each workspace's task counts and first few active tasks
+      description: |
+        For every workspace of the user that has tasks: its counts, by the
+        categories of `/workspaces/{id}/tasks/counts`, and up to 4 tasks in
+        the order the workspace's Active list shows them (ongoing, blocked,
+        not started in queue order, scheduled, then the most recently
+        finished). What the workspaces page shows on each card, in one call.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspaces:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        workspaceId: { type: string }
+                        counts:
+                          type: object
+                          additionalProperties: { type: integer, format: int64 }
+                        tasks:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id: { type: string }
+                              workspaceId: { type: string }
+                              title: { type: string }
+                              status: { type: string }
+                              assignee: { type: string }
+                              cronSchedule: { type: string }
+                              createdAt: { type: string, format: date-time }
+                              updatedAt: { type: string, format: date-time }
+
   /workspaces/{id}/tasks:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
