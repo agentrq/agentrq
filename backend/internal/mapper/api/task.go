@@ -265,6 +265,7 @@ func FromHTTPRequestToListTasksRequestEntity(c *fiber.Ctx) *entity.ListTasksRequ
 		Limit:           limit,
 		Offset:          offset,
 		PreloadMessages: true,
+		PreloadAgents:   true,
 	}
 }
 
@@ -557,6 +558,7 @@ func FromEntityTaskToView(t entity.Task) view.Task {
 		SortOrder:        t.SortOrder,
 		AllowAllCommands: t.AllowAllCommands,
 		ClearContext:     t.ClearContext,
+		Agent:            t.Agent,
 	}
 	if t.ParentID != 0 {
 		res.ParentID = monoflake.ID(t.ParentID).String()

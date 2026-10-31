@@ -346,7 +346,45 @@ func (c *controller) ListTasks(ctx context.Context, req entity.ListTasksRequest)
 	for i, m := range ms {
 		tasks[i] = c.fromModelTaskToEntity(m)
 	}
+	if req.PreloadAgents && len(tasks) > 0 {
+		ids := make([]int64, len(tasks))
+		for i, t := range tasks {
+			ids[i] = t.ID
+		}
+		agents, err := c.LastTaskAgents(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		for i := range tasks {
+			tasks[i].Agent = agents[tasks[i].ID]
+		}
+	}
 	return &entity.ListTasksResponse{Tasks: tasks}, nil
+}
+
+func (c *controller) LastTaskAgents(ctx context.Context, taskIDs []int64) (map[int64]string, error) {
+	if c.taskAgents == nil {
+		return nil, nil
+	}
+	byTask, err := c.repository.ListLastTaskAgents(ctx, taskIDs)
+	if err != nil || len(byTask) == 0 {
+		return nil, err
+	}
+	agentIDs := make([]int64, 0, len(byTask))
+	for _, id := range byTask {
+		agentIDs = append(agentIDs, id)
+	}
+	names, _, err := c.taskAgents.Names(ctx, agentIDs, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]string, len(byTask))
+	for taskID, id := range byTask {
+		if name := names[id]; name != "" {
+			out[taskID] = name
+		}
+	}
+	return out, nil
 }
 
 func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTaskRequest) (*entity.RespondToTaskResponse, error) {

@@ -110,3 +110,80 @@ func TestGetTask_NoTaskAgents(t *testing.T) {
 		t.Fatalf("GetTask = %+v, %v; want the one transition, with no agent name", resp, err)
 	}
 }
+
+// A listing that asks for agents names each task's latest one; the namer is
+// asked once for the whole page, and a task no agent changed has none.
+func TestListTasks_PreloadAgents(t *testing.T) {
+	e := newTestController(t)
+	namer := &stubAgentNamer{agents: map[int64]string{7: "claude-code"}}
+	useAgentNamer(e, namer)
+
+	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{{ID: 10}, {ID: 11}, {ID: 12}}, nil)
+	e.repo.EXPECT().ListLastTaskAgents(gomock.Any(), []int64{10, 11, 12}).Return(map[int64]int64{10: 7, 12: 42}, nil)
+
+	resp, err := e.controller.ListTasks(context.Background(), entity.ListTasksRequest{UserID: testUserIDStr, PreloadAgents: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := []string{resp.Tasks[0].Agent, resp.Tasks[1].Agent, resp.Tasks[2].Agent}; got[0] != "claude-code" || got[1] != "" || got[2] != "" {
+		t.Fatalf("agents = %q, want claude-code on the first task, none on the one no agent changed nor on the one whose agent is unnamed", got)
+	}
+	if len(namer.agentIDs) != 2 || namer.modelIDs != nil {
+		t.Fatalf("namer was asked for agents %v and models %v, want agents 7 and 42 and no models", namer.agentIDs, namer.modelIDs)
+	}
+}
+
+// Without the ask, or with no tasks, nothing is looked up.
+func TestListTasks_NoAgentLookup(t *testing.T) {
+	e := newTestController(t)
+	useAgentNamer(e, &stubAgentNamer{})
+
+	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{{ID: 10}}, nil)
+	if resp, err := e.controller.ListTasks(context.Background(), entity.ListTasksRequest{UserID: testUserIDStr}); err != nil || resp.Tasks[0].Agent != "" {
+		t.Fatalf("ListTasks = %+v, %v; want the task with no agent", resp, err)
+	}
+	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return(nil, nil)
+	if resp, err := e.controller.ListTasks(context.Background(), entity.ListTasksRequest{UserID: testUserIDStr, PreloadAgents: true}); err != nil || len(resp.Tasks) != 0 {
+		t.Fatalf("ListTasks = %+v, %v; want no tasks", resp, err)
+	}
+}
+
+func TestListTasks_PreloadAgentsErrors(t *testing.T) {
+	t.Run("history", func(t *testing.T) {
+		e := newTestController(t)
+		useAgentNamer(e, &stubAgentNamer{})
+		e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{{ID: 10}}, nil)
+		e.repo.EXPECT().ListLastTaskAgents(gomock.Any(), []int64{10}).Return(nil, errors.New("database unavailable"))
+		if _, err := e.controller.ListTasks(context.Background(), entity.ListTasksRequest{UserID: testUserIDStr, PreloadAgents: true}); err == nil {
+			t.Fatal("ListTasks succeeded, want the history lookup's error")
+		}
+	})
+	t.Run("names", func(t *testing.T) {
+		e := newTestController(t)
+		useAgentNamer(e, &stubAgentNamer{err: errors.New("database unavailable")})
+		e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{{ID: 10}}, nil)
+		e.repo.EXPECT().ListLastTaskAgents(gomock.Any(), []int64{10}).Return(map[int64]int64{10: 7}, nil)
+		if _, err := e.controller.ListTasks(context.Background(), entity.ListTasksRequest{UserID: testUserIDStr, PreloadAgents: true}); err == nil {
+			t.Fatal("ListTasks succeeded, want the namer's error")
+		}
+	})
+}
+
+// Without a namer, or with no agent in any history, the names are empty and
+// the namer is never asked.
+func TestLastTaskAgents_Unnamed(t *testing.T) {
+	e := newTestController(t)
+	if got, err := e.controller.LastTaskAgents(context.Background(), []int64{10}); err != nil || got != nil {
+		t.Fatalf("no namer = %v, %v; want nothing", got, err)
+	}
+
+	namer := &stubAgentNamer{}
+	useAgentNamer(e, namer)
+	e.repo.EXPECT().ListLastTaskAgents(gomock.Any(), []int64{10}).Return(map[int64]int64{}, nil)
+	if got, err := e.controller.LastTaskAgents(context.Background(), []int64{10}); err != nil || got != nil {
+		t.Fatalf("no agents = %v, %v; want nothing", got, err)
+	}
+	if namer.agentIDs != nil {
+		t.Fatalf("namer was asked for %v, want it never asked", namer.agentIDs)
+	}
+}

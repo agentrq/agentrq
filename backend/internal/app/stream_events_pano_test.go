@@ -77,7 +77,7 @@ func TestForwardCRUDEvent_PanoNeedsNoWorkspace(t *testing.T) {
 	bus := eventbus.New()
 	ch := bus.Subscribe(0, monoflake.ID(owner).String())
 	// A nil repository: a lookup would panic.
-	forwardCRUDEvent(context.Background(), nil, bus, entity.CRUDEvent{Action: entity.ActionPanoDelete, ResourceType: entity.ResourcePano, UserID: owner, ResourceID: 9})
+	forwardCRUDEvent(context.Background(), nil, nil, bus, entity.CRUDEvent{Action: entity.ActionPanoDelete, ResourceType: entity.ResourcePano, UserID: owner, ResourceID: 9})
 	select {
 	case line := <-ch:
 		if !strings.Contains(string(line), `"pano.changed"`) {

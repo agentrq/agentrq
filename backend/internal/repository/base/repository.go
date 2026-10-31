@@ -182,6 +182,7 @@ type Repository interface {
 	DeleteTaskPlan(ctx context.Context, taskID, workspaceID, userID int64) error
 	GetTaskPlan(ctx context.Context, taskID int64) (model.TaskPlan, error)
 	ListTaskStateTransitions(ctx context.Context, taskID int64) ([]model.TaskStateTransition, error)
+	ListLastTaskAgents(ctx context.Context, taskIDs []int64) (map[int64]int64, error)
 	CreateAgents(ctx context.Context, agents []model.Agent) error
 	CreateAgentModels(ctx context.Context, models []model.AgentModel) error
 	ListAgents(ctx context.Context, ids []int64) ([]model.Agent, error)

@@ -3344,6 +3344,13 @@ components:
           description: |
             The workspace that delegated this task through the supervisor's
             task tool. Absent for a task created any other way.
+        agent:
+          type: string
+          readOnly: true
+          description: |
+            The agent that last changed the task's status, as it named
+            itself: the one working on it, or the one that did. Only in a
+            task list and on the live stream; absent when no agent has.
 
     TaskEnvelope:
       type: object

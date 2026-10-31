@@ -305,6 +305,9 @@ type (
 		// CreatedByWorkspaceID is the workspace that delegated the task through
 		// the supervisor's task tool.
 		CreatedByWorkspaceID string `json:"createdByWorkspaceId,omitempty"`
+		// Agent is the agent that last changed the task's status, as it
+		// named itself: the one working on it, or the one that did.
+		Agent string `json:"agent,omitempty"`
 	}
 
 	// TaskStatusChange is the "task.status" stream event: an agent moving a

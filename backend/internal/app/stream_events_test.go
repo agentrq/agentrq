@@ -7,6 +7,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -165,7 +166,7 @@ func TestForwardCRUDEvent(t *testing.T) {
 			bus := eventbus.New()
 			ch := bus.Subscribe(0, monoflake.ID(memUser).String())
 
-			forwardCRUDEvent(context.Background(), repo, bus, tc.ev)
+			forwardCRUDEvent(context.Background(), repo, nil, bus, tc.ev)
 
 			select {
 			case line := <-ch:
@@ -182,6 +183,75 @@ func TestForwardCRUDEvent(t *testing.T) {
 				if tc.want != "" {
 					t.Fatalf("no event, want %q", tc.want)
 				}
+			}
+		})
+	}
+}
+
+// stubLastAgents answers LastTaskAgents from a fixed map, or with err.
+type stubLastAgents struct {
+	names map[int64]string
+	err   error
+}
+
+func (s stubLastAgents) LastTaskAgents(_ context.Context, _ []int64) (map[int64]string, error) {
+	return s.names, s.err
+}
+
+// A task's event names the agent behind its latest change, so a card names
+// the agent the moment one picks the task up; a failed lookup names nobody.
+func TestForwardCRUDEvent_NamesTheAgent(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{}); err != nil {
+		t.Fatal(err)
+	}
+	const task = int64(101)
+	for _, row := range []any{
+		&model.Workspace{ID: memParent, UserID: memUser, Name: "parent"},
+		&model.Task{ID: task, WorkspaceID: memParent, UserID: memUser, Title: "a task", Status: "ongoing"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo := base.New(sqliteConn{db: db})
+
+	for _, tc := range []struct {
+		name   string
+		agents lastTaskAgents
+		want   string
+	}{
+		{"named", stubLastAgents{names: map[int64]string{task: "claude-code"}}, "claude-code"},
+		{"lookup failed", stubLastAgents{err: errors.New("database unavailable")}, ""},
+		{"no namer", nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bus := eventbus.New()
+			ch := bus.Subscribe(0, monoflake.ID(memUser).String())
+
+			forwardCRUDEvent(context.Background(), repo, tc.agents, bus, entity.CRUDEvent{WorkspaceID: memParent, UserID: memUser, ResourceType: entity.ResourceTask, Action: entity.ActionTaskUpdate, ResourceID: task})
+
+			select {
+			case line := <-ch:
+				var got struct {
+					Payload struct {
+						Agent *string `json:"agent"`
+					} `json:"payload"`
+				}
+				if err := json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(string(line), "data: "))), &got); err != nil {
+					t.Fatal(err)
+				}
+				if tc.want == "" && got.Payload.Agent != nil {
+					t.Fatalf("agent = %q, want the field left out so the page keeps its own", *got.Payload.Agent)
+				}
+				if tc.want != "" && (got.Payload.Agent == nil || *got.Payload.Agent != tc.want) {
+					t.Fatalf("agent = %v, want %q", got.Payload.Agent, tc.want)
+				}
+			default:
+				t.Fatal("no event")
 			}
 		})
 	}

@@ -25,6 +25,27 @@ func (r *repository) ListTaskStateTransitions(ctx context.Context, taskID int64)
 	return rows, err
 }
 
+// ListLastTaskAgents returns, for each of the tasks whose history names an
+// agent, the ID of the agent behind the latest change that names one.
+func (r *repository) ListLastTaskAgents(ctx context.Context, taskIDs []int64) (map[int64]int64, error) {
+	if len(taskIDs) == 0 {
+		return nil, nil
+	}
+	latest := r.conn(ctx).Model(&model.TaskStateTransition{}).
+		Select("MAX(id)").
+		Where("task_id IN ? AND agent_id <> 0", taskIDs).
+		Group("task_id")
+	var rows []model.TaskStateTransition
+	if err := r.conn(ctx).Select("task_id, agent_id").Where("id IN (?)", latest).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[int64]int64, len(rows))
+	for _, row := range rows {
+		out[row.TaskID] = row.AgentID
+	}
+	return out, nil
+}
+
 // CreateAgents files agents' names in one statement. A name already filed is
 // left as it is: the ID is the name's hash, so the row can only ever say the
 // same thing.

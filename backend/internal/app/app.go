@@ -645,7 +645,7 @@ func New(cfg Config) (*App, error) {
 			}
 
 			// Forwarded in the background, so a slow read never holds up the topic.
-			go forwardCRUDEvent(context.Background(), repo, bus, event)
+			go forwardCRUDEvent(context.Background(), repo, crudCtrl, bus, event)
 			go syncPanoAssignees(context.Background(), crudCtrl, bus, event)
 			go notifyTaskListeners(context.Background(), repo, taskListeners, event)
 		}

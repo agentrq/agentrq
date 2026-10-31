@@ -585,3 +585,55 @@ func TestPendingRequestClause_Postgres(t *testing.T) {
 		t.Fatalf("clause = %q", got)
 	}
 }
+
+// A task's agent is the one behind its latest change made by an agent: a later
+// change by a person leaves it, and a task no agent touched has none.
+func TestListLastTaskAgents(t *testing.T) {
+	db := deleteTaskDB(t)
+	repo := New(&mockDB{db: db})
+	now := time.Now()
+	byAgent := func(id int64) context.Context {
+		return entity.WithTaskAgent(context.Background(), entity.TaskAgent{ID: id})
+	}
+	move := func(ctx context.Context, task model.Task, status string) model.Task {
+		t.Helper()
+		task.Status = status
+		task, err := repo.UpdateTask(ctx, task, "Status")
+		if err != nil {
+			t.Fatalf("update: %v", err)
+		}
+		return task
+	}
+	seed := func(id int64) model.Task {
+		t.Helper()
+		task, err := repo.CreateTask(context.Background(), model.Task{ID: id, CreatedAt: now, UpdatedAt: now, WorkspaceID: dtWorkspaceID, UserID: dtUserID, Status: "notstarted"})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		return task
+	}
+
+	handedOn := seed(dtTaskID)
+	handedOn = move(byAgent(7), handedOn, "ongoing")
+	handedOn = move(byAgent(8), handedOn, "blocked")
+	move(context.Background(), handedOn, "completed")
+	move(byAgent(7), seed(dtTaskID+1), "ongoing")
+	move(context.Background(), seed(dtTaskID+2), "ongoing")
+
+	got, err := repo.ListLastTaskAgents(context.Background(), []int64{dtTaskID, dtTaskID + 1, dtTaskID + 2, 999})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(got) != 2 || got[dtTaskID] != 8 || got[dtTaskID+1] != 7 {
+		t.Fatalf("agents = %v, want agent 8 on the first task, 7 on the second and none on the rest", got)
+	}
+
+	if got, err := repo.ListLastTaskAgents(context.Background(), nil); err != nil || got != nil {
+		t.Fatalf("no tasks = %v, %v; want nothing asked", got, err)
+	}
+
+	failOn(t, db, "query", "task_state_transitions")
+	if _, err := repo.ListLastTaskAgents(context.Background(), []int64{dtTaskID}); !errors.Is(err, errInjected) {
+		t.Fatalf("got %v, want the injected failure", err)
+	}
+}

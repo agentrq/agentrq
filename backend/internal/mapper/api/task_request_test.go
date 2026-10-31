@@ -70,18 +70,18 @@ func TestFromHTTPRequestToTaskIDRequestEntities(t *testing.T) {
 func TestFromHTTPRequestToListTasksRequestEntity(t *testing.T) {
 	ws := "/workspaces/" + b62(20) + "/tasks"
 	checkRequest(t, "/workspaces/:id/tasks", FromHTTPRequestToListTasksRequestEntity, []requestCase[entity.ListTasksRequest]{
-		{"ten by default", ws, ``, &entity.ListTasksRequest{WorkspaceID: 20, Limit: 10, PreloadMessages: true}},
+		{"ten by default", ws, ``, &entity.ListTasksRequest{WorkspaceID: 20, Limit: 10, PreloadMessages: true, PreloadAgents: true}},
 		{"every filter", ws + "?status=ongoing,blocked&limit=20&offset=40&filter=pending_approval&created_by=agent", ``,
 			&entity.ListTasksRequest{WorkspaceID: 20, Status: []string{"ongoing", "blocked"}, Limit: 20, Offset: 40,
-				Filter: "pending_approval", CreatedBy: "agent", PreloadMessages: true}},
-		{"a zero limit is the default", ws + "?limit=0", ``, &entity.ListTasksRequest{WorkspaceID: 20, Limit: 10, PreloadMessages: true}},
-		{"a limit that is not a number is the default", ws + "?limit=many", ``, &entity.ListTasksRequest{WorkspaceID: 20, Limit: 10, PreloadMessages: true}},
-		{"at most fifty", ws + "?limit=500", ``, &entity.ListTasksRequest{WorkspaceID: 20, Limit: 50, PreloadMessages: true}},
+				Filter: "pending_approval", CreatedBy: "agent", PreloadMessages: true, PreloadAgents: true}},
+		{"a zero limit is the default", ws + "?limit=0", ``, &entity.ListTasksRequest{WorkspaceID: 20, Limit: 10, PreloadMessages: true, PreloadAgents: true}},
+		{"a limit that is not a number is the default", ws + "?limit=many", ``, &entity.ListTasksRequest{WorkspaceID: 20, Limit: 10, PreloadMessages: true, PreloadAgents: true}},
+		{"at most fifty", ws + "?limit=500", ``, &entity.ListTasksRequest{WorkspaceID: 20, Limit: 50, PreloadMessages: true, PreloadAgents: true}},
 		{"workspace 0", "/workspaces/0/tasks", ``, nil},
 	})
 	// Without a workspace in the route, it lists the account's.
 	checkRequest(t, "/tasks", FromHTTPRequestToListTasksRequestEntity, []requestCase[entity.ListTasksRequest]{
-		{"every workspace", "/tasks?status=cron", ``, &entity.ListTasksRequest{Status: []string{"cron"}, Limit: 10, PreloadMessages: true}},
+		{"every workspace", "/tasks?status=cron", ``, &entity.ListTasksRequest{Status: []string{"cron"}, Limit: 10, PreloadMessages: true, PreloadAgents: true}},
 	})
 }
 

@@ -64,6 +64,10 @@
                     <svg v-if="t.assignee === 'agent'" class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
                     <svg v-else class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                   </span>
+                  <!-- The agent that last moved the card: the one on it now,
+                       or the one that finished it. -->
+                  <span v-if="t.agent" data-test="card-agent" :title="`Agent: ${t.agent}`"
+                        class="shrink-0 text-[10px] font-medium text-gray-500 dark:text-zinc-400">{{ t.agent }}</span>
                   <!-- Across every workspace a card says whose it is, with the
                        same agent dot the sidebar draws beside that workspace. -->
                   <span v-if="isGlobal" data-test="card-workspace" class="flex items-center gap-1.5 min-w-0 text-[10px] font-medium text-gray-500 dark:text-zinc-400">

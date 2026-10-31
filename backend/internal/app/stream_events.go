@@ -20,7 +20,7 @@ import (
 // forwardCRUDEvent puts a CRUD event on the open pages' streams, as the event
 // the web app reacts to. It is the one way a change made by the supervisor's
 // MCP, which has no stream of its own, reaches the screen.
-func forwardCRUDEvent(ctx context.Context, repo base.Repository, bus *eventbus.Bus, ev entity.CRUDEvent) {
+func forwardCRUDEvent(ctx context.Context, repo base.Repository, agents lastTaskAgents, bus *eventbus.Bus, ev entity.CRUDEvent) {
 	if publishWorkspaceListChange(bus, ev) || publishPanoChange(bus, ev) {
 		return
 	}
@@ -60,12 +60,34 @@ func forwardCRUDEvent(ctx context.Context, repo base.Repository, bus *eventbus.B
 	if taskID != 0 && eventType != "" {
 		t, err := taskEventPayload(ctx, repo, taskID)
 		if err == nil {
+			v := mapper.FromModelTaskToView(t)
+			v.Agent = lastTaskAgent(ctx, agents, taskID)
 			bus.Publish(ev.WorkspaceID, ownerID, eventbus.Event{
 				Type:    eventType,
-				Payload: mapper.FromModelTaskToView(t),
+				Payload: v,
 			})
 		}
 	}
+}
+
+// lastTaskAgents is the part of the crud controller that names the agent a
+// task's card shows.
+type lastTaskAgents interface {
+	LastTaskAgents(ctx context.Context, taskIDs []int64) (map[int64]string, error)
+}
+
+// lastTaskAgent names the agent behind the task's latest change made by one,
+// so the card names an agent as soon as one picks the task up. A failed
+// lookup leaves it out, and the page keeps the name it already had.
+func lastTaskAgent(ctx context.Context, agents lastTaskAgents, taskID int64) string {
+	if agents == nil {
+		return ""
+	}
+	names, err := agents.LastTaskAgents(ctx, []int64{taskID})
+	if err != nil {
+		return ""
+	}
+	return names[taskID]
 }
 
 // workspacesChangedEvent tells the web app to read its workspace list again.

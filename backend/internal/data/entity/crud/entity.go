@@ -368,6 +368,9 @@ type (
 		WorkflowDepth         int
 		CompletionTriggerType int16
 		CreatedByWorkspaceID  int64
+		// Agent names the agent behind the task's latest status change made
+		// by one; filled only when the listing asks for it.
+		Agent string
 	}
 
 	CreateTaskRequest struct {
@@ -470,6 +473,8 @@ type (
 		// reads: the pending requests and the conversation's newest message.
 		AwaitingReply        bool
 		PreloadReplyMessages bool
+		// PreloadAgents names each task's latest agent, as Task.Agent.
+		PreloadAgents bool
 	}
 
 	ListTasksResponse struct {
