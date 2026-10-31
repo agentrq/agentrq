@@ -346,6 +346,18 @@ test('the popup is told what the front tab offers and who it is shared with', as
   // A tab whose URL Chrome withholds.
   chrome.tabs.active = { id: 9 }
   assert.equal((await ask()).origin, null)
+
+  // After a worker restart the tab's bridge still holds its tools, and answers when the popup asks.
+  chrome.tabs.active = { id: 11, url: 'https://fresh.com/page' }
+  chrome.tabs.sendMessage = async (tabId, message) => (tabId === 11 && message.type === 'site-tools' ? { type: 'site-tools', tools: [hi] } : null)
+  assert.deepEqual(await ask(), { origin: 'https://fresh.com', url: 'https://fresh.com/page', tools: [hi], toolCount: 1, sharedWith: null, refusal: null })
+
+  // A tab with no bridge listening (e.g. chrome://) rejects sendMessage and offers nothing.
+  chrome.tabs.active = { id: 12, url: 'https://quiet.com/' }
+  chrome.tabs.sendMessage = async () => {
+    throw new Error('Could not establish connection.')
+  }
+  assert.equal((await ask()).origin, null)
 })
 
 test('a website’s page cannot ask for the popup’s state, and a failure to find the front tab answers null', async () => {

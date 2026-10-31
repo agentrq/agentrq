@@ -194,3 +194,17 @@ test('a refused update of a shared site warns, and keeps the way to stop it', as
   assert.equal(text.textContent, 'Shared with Alpha · Its latest tools were refused: too many tools')
   assert.equal(action.textContent, 'Stop sharing')
 })
+
+test('a page that finishes registering its tools while the popup is open brings the strip up, and unloading hides it', async () => {
+  const { chrome, el, text } = await open({ tools: null })
+  assert.equal(el.strip.hidden, true)
+
+  chrome.runtime.onMessage.fire({ type: 'site-tools', tools: [hi, del] }, { tab: { id: 7 }, frameId: 0, url: `${GH}/me`, documentId: 'doc7' })
+  await settle()
+  assert.equal(el.strip.hidden, false)
+  assert.equal(text.textContent, 'github.com offers 2 WebMCP tools · Share with')
+
+  chrome.runtime.onMessage.fire({ type: 'site-gone' }, { tab: { id: 7 }, frameId: 0, documentId: 'doc7' })
+  await settle()
+  assert.equal(el.strip.hidden, true)
+})
