@@ -390,6 +390,7 @@ func TestGetTask_Success(t *testing.T) {
 	task := model.Task{ID: 10, WorkspaceID: 1, Title: "hello", Status: "ongoing"}
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().ListTaskStateTransitions(gomock.Any(), int64(10)).Return(nil, nil)
+	e.repo.EXPECT().ListPanoDocsOfTask(gomock.Any(), testUserID, int64(10), gomock.Any()).Return([]model.PanoDoc{{ID: 5, Title: "Plan"}}, nil)
 
 	resp, err := e.controller.GetTask(context.Background(), entity.GetTaskRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr})
 	if err != nil {
@@ -397,6 +398,21 @@ func TestGetTask_Success(t *testing.T) {
 	}
 	if resp.Task.Title != "hello" {
 		t.Errorf("expected title hello, got %s", resp.Task.Title)
+	}
+	if len(resp.PanoDocs) != 1 || resp.PanoDocs[0].ID != 5 || resp.PanoDocs[0].Title != "Plan" {
+		t.Errorf("PanoDocs = %+v, want the task's doc 5, Plan", resp.PanoDocs)
+	}
+}
+
+func TestGetTask_PanoDocsError(t *testing.T) {
+	e := newTestController(t)
+
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10, WorkspaceID: 1}, nil)
+	e.repo.EXPECT().ListTaskStateTransitions(gomock.Any(), int64(10)).Return(nil, nil)
+	e.repo.EXPECT().ListPanoDocsOfTask(gomock.Any(), testUserID, int64(10), gomock.Any()).Return(nil, errors.New("database unavailable"))
+
+	if _, err := e.controller.GetTask(context.Background(), entity.GetTaskRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr}); err == nil {
+		t.Fatal("GetTask succeeded, want the docs lookup's error")
 	}
 }
 
@@ -432,6 +448,7 @@ func TestGetTask_Full(t *testing.T) {
 	}
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().ListTaskStateTransitions(gomock.Any(), int64(10)).Return(nil, nil)
+	e.repo.EXPECT().ListPanoDocsOfTask(gomock.Any(), testUserID, int64(10), gomock.Any()).Return(nil, nil)
 
 	resp, err := e.controller.GetTask(context.Background(), entity.GetTaskRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr})
 	if err != nil {

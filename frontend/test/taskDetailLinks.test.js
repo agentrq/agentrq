@@ -45,6 +45,7 @@ vi.mock('../src/composables/useCachedTasks', () => ({
 const at = (minute) => new Date(Date.UTC(2026, 9, 15, 10, minute)).toISOString()
 
 let messages
+let panoDocs
 const task = () => ({
   id: 't1',
   title: 'Ship the fix',
@@ -64,7 +65,7 @@ vi.mock('../src/composables/useToasts', () => ({
 
 vi.mock('../src/api', () => ({
   getWorkspace: () => Promise.resolve({ workspace: { id: 'ws1', name: 'Ops', agentConnected: true } }),
-  getTask: () => Promise.resolve({ task: task() }),
+  getTask: () => Promise.resolve({ task: task(), panoDocs }),
   listTaskToolCalls: () => Promise.resolve({ toolCalls: [] }),
   getTaskPlan: () => Promise.resolve(null),
   fetchUser: () => Promise.resolve({ id: 'u1', name: 'Dev' }),
@@ -113,6 +114,7 @@ beforeEach(() => {
   localStorage.clear()
   events.value = []
   messages = [{ id: 'm1', sender: 'agent', text: 'Notes are in [Roadmap](/pano/d1)', createdAt: at(1) }]
+  panoDocs = undefined
   recordTelemetry.mockReset()
   cacheTask.mockClear()
 })
@@ -149,5 +151,25 @@ describe('TaskDetailView and the task links', () => {
     events.value = [...events.value, { type: 'task.updated', payload: task() }]
     await settle()
     expect(summary(el)).toBe('· gh#12 · gh#13 · Roadmap')
+  })
+
+  it('lists the Pano docs linked to the task, and those the agent linked by the next status change', async () => {
+    panoDocs = [{ id: 'd1', title: 'Roadmap doc' }]
+    const el = await mount()
+    expect(summary(el)).toBe('· gh#12 · Roadmap doc')
+
+    panoDocs = [{ id: 'd1', title: 'Roadmap doc' }, { id: 'd7', title: 'Release notes' }]
+    events.value = [...events.value, { type: 'task.updated', payload: { ...task(), status: 'completed' } }]
+    await settle()
+    expect(summary(el)).toBe('· gh#12 · Roadmap doc · Release notes')
+
+    // The bar under the plan, for a narrow view, opens to them too.
+    const bar = el.querySelector('[data-testid="task-links"]')
+    bar.querySelector('[data-testid="task-links-toggle"]').click()
+    await settle()
+    const doc = bar.querySelector('[data-testid="task-links-pano"] a')
+    expect(doc.textContent).toContain('Roadmap doc')
+    doc.click()
+    expect(recordTelemetry).toHaveBeenCalledWith('ui_task_link_open', 'ws1')
   })
 })

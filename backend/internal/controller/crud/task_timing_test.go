@@ -45,6 +45,7 @@ func TestGetTask_StateTransitions(t *testing.T) {
 		{TaskID: 10, FromState: model.TaskStateNone, ToState: model.TaskStateOngoing, CreatedAt: start},
 		{TaskID: 10, FromState: model.TaskStateOngoing, ToState: model.TaskStateCompleted, AgentID: 7, AgentModelID: 9, CreatedAt: start.Add(20 * time.Minute)},
 	}, nil)
+	e.repo.EXPECT().ListPanoDocsOfTask(gomock.Any(), testUserID, int64(10), gomock.Any()).Return(nil, nil)
 
 	resp, err := e.controller.GetTask(context.Background(), entity.GetTaskRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr})
 	if err != nil {
@@ -104,6 +105,7 @@ func TestGetTask_NoTaskAgents(t *testing.T) {
 	e.repo.EXPECT().ListTaskStateTransitions(gomock.Any(), int64(10)).Return([]model.TaskStateTransition{
 		{TaskID: 10, ToState: model.TaskStateOngoing, AgentID: 7},
 	}, nil)
+	e.repo.EXPECT().ListPanoDocsOfTask(gomock.Any(), testUserID, int64(10), gomock.Any()).Return(nil, nil)
 
 	resp, err := e.controller.GetTask(context.Background(), entity.GetTaskRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr})
 	if err != nil || len(resp.StateTransitions) != 1 || resp.StateTransitions[0].Agent != "" {

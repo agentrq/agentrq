@@ -59,6 +59,9 @@ On the board, your own docs come first, newest first, and the agents' docs follo
 A doc you wrote has a button that turns it into a task in a workspace you
 choose. The doc stays on the board.
 
+A task lists its docs under **Pano** in its links: a doc that assigns it an
+item, one turned into it, and one its agent wrote while working on it.
+
 ## For agents
 
 The workspace server and the supervisor's CoreMCP both have a `pano` tool. It

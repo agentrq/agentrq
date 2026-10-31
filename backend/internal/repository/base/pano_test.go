@@ -7,6 +7,7 @@ package base
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -262,6 +263,7 @@ func TestPanoRepository_EveryStatementFailure(t *testing.T) {
 		{"list doc tasks", func(r Repository) error { _, err := r.ListPanoDocTasks(ctx, skUser, []int64{1}); return err }},
 		{"list task statuses", func(r Repository) error { _, err := r.ListPanoTaskStatuses(ctx, skUser, []int64{81}); return err }},
 		{"list docs of a task", func(r Repository) error { _, err := r.ListPanoDocIDsOfTask(ctx, skUser, 81); return err }},
+		{"list the titles of a task's docs", func(r Repository) error { _, err := r.ListPanoDocsOfTask(ctx, skUser, 81, panoNow); return err }},
 		{"list ongoing tasks", func(r Repository) error { _, err := r.ListOngoingAgentTaskIDs(ctx, skUser, 7, 2); return err }},
 		{"set the count", func(r Repository) error { return r.SetPanoChecklistDone(ctx, skUser, 1, 1) }},
 		{"list docs naming tasks", func(r Repository) error { _, err := r.ListPanoDocsNamingTasks(ctx, 0, 10); return err }},
@@ -373,6 +375,49 @@ func TestPanoRepository_DocTaskLinks(t *testing.T) {
 	db.Model(&model.PanoDocTask{}).Where("task_id = ?", 32).Count(&left)
 	if left != 0 {
 		t.Errorf("%d links to the deleted task are left, want none", left)
+	}
+}
+
+// A task's docs are the account's live ones linked to it, the first linked
+// first, each with its title.
+func TestPanoRepository_ListPanoDocsOfTask(t *testing.T) {
+	ctx := context.Background()
+	db, r := panoDB(t)
+	seedPano(t, r)
+	third := model.PanoDoc{ID: 3, UserID: skUser, Title: "third", Markdown: "third", CreatedAt: panoNow, UpdatedAt: panoNow, ExpiresAt: panoNow.Add(time.Hour)}
+	if err := r.SavePanoDoc(ctx, third, true, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.LinkPanoDocTasks(ctx, []model.PanoDocTask{
+		{ID: 41, CreatedAt: panoNow.Add(time.Minute), UserID: skUser, DocID: 1, TaskID: 31, WorkspaceID: 7},
+		{ID: 42, CreatedAt: panoNow, UserID: skUser, DocID: 3, TaskID: 31, WorkspaceID: 7},
+		{ID: 43, CreatedAt: panoNow, UserID: skUser, DocID: 2, TaskID: 31, WorkspaceID: 7},
+		{ID: 44, CreatedAt: panoNow, UserID: skUser, DocID: 1, TaskID: 32, WorkspaceID: 7},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Another account's doc, linked to the same task id, is never this
+	// account's.
+	other := model.PanoDoc{ID: 9, UserID: skUser + 1, Title: "other", Markdown: "other", CreatedAt: panoNow, UpdatedAt: panoNow, ExpiresAt: panoNow.Add(time.Hour)}
+	if err := r.SavePanoDoc(ctx, other, true, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.PanoDocTask{ID: 45, CreatedAt: panoNow, UserID: skUser + 1, DocID: 9, TaskID: 31, WorkspaceID: 7}).Error; err != nil {
+		t.Fatal(err)
+	}
+	docs, err := r.ListPanoDocsOfTask(ctx, skUser, 31, panoNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, d := range docs {
+		got = append(got, fmt.Sprintf("%d %s", d.ID, d.Title))
+	}
+	if want := []string{"3 third", "1 live"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ListPanoDocsOfTask = %v, want %v: the live docs, the first linked first", got, want)
+	}
+	if docs, err := r.ListPanoDocsOfTask(ctx, skUser+1, 31, panoNow); err != nil || len(docs) != 1 || docs[0].ID != 9 {
+		t.Errorf("ListPanoDocsOfTask of the other account = %+v, %v, want only its doc 9", docs, err)
 	}
 }
 

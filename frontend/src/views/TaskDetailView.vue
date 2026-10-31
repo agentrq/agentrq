@@ -179,7 +179,7 @@
 
           <!-- Every link the task mentions. Pinned over the conversation where
                there is room for it; here, under the plan, where there is not. -->
-          <TaskLinksPanel class="mb-1 @min-[48rem]:hidden" :task="task" :task-id="taskId" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
+          <TaskLinksPanel class="mb-1 @min-[48rem]:hidden" :task="task" :task-id="taskId" :pano-docs="panoDocs" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
 
           <!-- Attachments -->
           <div v-if="task.attachments && task.attachments.length > 0" class="mt-8 flex flex-wrap gap-3">
@@ -739,7 +739,7 @@
         </li>
       </ul>
     </div>
-    <TaskLinksPanel pinned class="hidden @min-[48rem]:flex absolute top-0 right-4 z-10 max-h-[calc(100%-0.5rem)] shadow-lg" :task="task" :task-id="taskId" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
+    <TaskLinksPanel pinned class="hidden @min-[48rem]:flex absolute top-0 right-4 z-10 max-h-[calc(100%-0.5rem)] shadow-lg" :task="task" :task-id="taskId" :pano-docs="panoDocs" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
     </div>
 
     <!-- Tool call trajectory (replaces the chat area in place) -->
@@ -1087,6 +1087,8 @@ const task = ref(null);
 const { plan: taskPlan, load: loadTaskPlan, apply: applyTaskPlan } = useTaskPlan();
 // The task's status history, oldest first, from the single-task GET only.
 const stateTransitions = ref([]);
+// The Pano docs linked to the task, for its links.
+const panoDocs = ref([]);
 const user = ref(null);
 
 const titleInput = ref(null);
@@ -1662,6 +1664,7 @@ async function load() {
     task.value = tRes.task;
     isDescriptionCollapsed.value = !tRes.task.body || !!tRes.task.messages?.length;
     stateTransitions.value = tRes.stateTransitions || [];
+    panoDocs.value = tRes.panoDocs || [];
     cacheTask(sharedCache(), tRes.task);
     loadTaskPlan(workspaceId.value, taskId.value);
     connect();
@@ -1697,6 +1700,7 @@ watch(() => route.params.taskId, (newTaskId, oldTaskId) => {
   if (newTaskId && newTaskId !== task.value?.id) {
     disconnect();
     stateTransitions.value = [];
+    panoDocs.value = [];
     load();
   }
 });
@@ -2004,13 +2008,17 @@ function formatDateTime(dateStr) {
 }
 
 // A status change, from whichever side made it, is a new transition: fetch
-// the history again rather than guess the row the server wrote.
+// the history again rather than guess the row the server wrote, and the Pano
+// docs, which the agent may have linked meanwhile.
 watch(() => task.value?.status, async (status, previous) => {
   if (!previous || status === previous) return;
   const forTask = taskId.value;
   try {
     const res = await getTask(workspaceId.value, forTask);
-    if (taskId.value === forTask) stateTransitions.value = res.stateTransitions || [];
+    if (taskId.value === forTask) {
+      stateTransitions.value = res.stateTransitions || [];
+      panoDocs.value = res.panoDocs || [];
+    }
   } catch {
     // The timeline keeps what it had; the next change tries again.
   }

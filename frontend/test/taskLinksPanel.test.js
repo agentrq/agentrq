@@ -14,12 +14,12 @@ const { panelLinkFromEvent } = await import('../src/composables/useMarkdownLinks
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 const mounted = []
 
-function mount(task, { taskId = 't1', pinned = false } = {}) {
-  const state = reactive({ task, followed: 0 })
+function mount(task, { taskId = 't1', pinned = false, panoDocs } = {}) {
+  const state = reactive({ task, panoDocs, followed: 0 })
   const el = document.createElement('div')
   document.body.appendChild(el)
   const app = createApp({
-    render: () => h(TaskLinksPanel, { task: state.task, taskId, pinned, onFollow: () => state.followed++ }),
+    render: () => h(TaskLinksPanel, { task: state.task, taskId, pinned, panoDocs: state.panoDocs, onFollow: () => state.followed++ }),
   })
   app.component('RouterLink', { props: ['to'], setup: (p, { slots }) => () => h('a', { 'data-to': p.to }, slots.default?.()) })
   mounted.push(app)
@@ -120,6 +120,18 @@ describe('TaskLinksPanel', () => {
       document.removeEventListener('click', listen)
     }
     expect(opened).toEqual(['https://github.com/agentrq/agentrq/pull/1099', 'https://example.com/docs'])
+  })
+
+  it('lists the Pano docs linked to the task, though the conversation never names them', async () => {
+    const { q, el, state } = mount({ body: 'nothing to see', messages: [] }, { panoDocs: [{ id: 'd5', title: 'Release plan' }] })
+    await settle()
+    expect(q('task-links-summary').textContent).toBe('· Release plan')
+    q('task-links-toggle').click()
+    await settle()
+    expect(q('task-links-pano').querySelector('a').getAttribute('data-to')).toBe('/pano/d5')
+    state.panoDocs = []
+    await settle()
+    expect(el.querySelector('[data-testid="task-links"]')).toBeNull()
   })
 
   it('counts links to the server as in-app ones in the desktop app, whose page origin is app://', async () => {

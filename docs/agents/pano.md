@@ -31,6 +31,7 @@
 - **A doc's tasks are rows in `pano_doc_tasks`, never markdown**: from an
   assigned item, a `#`-tagged chat (`panoDocId`), or an agent's write while it
   has exactly one ongoing task, since a guess between two would mislink. The
+  task API returns them as `panoDocs`, for its Links panel. The
   write's workspace is the agent's own, not the fork's parent. Every query on
   it is checked for full scans by `pano_doc_tasks_plan_test.go`.
 - **A fork merge moves the fork's links, and rewrites its items** to name and

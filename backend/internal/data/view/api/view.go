@@ -335,6 +335,13 @@ type (
 		Task             Task                  `json:"task"`
 		StateTransitions []TaskStateTransition `json:"stateTransitions"`
 		Timing           TaskTiming            `json:"timing"`
+		PanoDocs         []TaskPanoDoc         `json:"panoDocs,omitempty"`
+	}
+
+	// TaskPanoDoc is a Pano doc linked to a task.
+	TaskPanoDoc struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
 	}
 
 	ListTaskToolCallsResponse struct {

@@ -431,6 +431,29 @@ test('a doc is linked to the chat about it and to the task its agent was on', as
   traffic.expectClean()
 })
 
+// A doc an agent writes while on its one task is in that task's links, by
+// title, though the conversation never names it; the link opens the doc.
+test('a doc an agent writes on its task is in that task\'s links', async ({ page, workspace }) => {
+  const traffic = watchTraffic(page)
+  const call = await agentSession(page, workspace.id)
+  const open = await (await page.request.get(`/api/v1/workspaces/${workspace.id}/tasks?status=ongoing`)).json()
+  for (const t of open.tasks || []) await setTaskStatus(page, workspace.id, t.id, 'completed')
+  const task = await createTask(page, workspace.id, unique('the agent writes a doc on this'), 'ongoing')
+
+  const title = unique('the design for it')
+  const doc = await pano(call, { action: 'save', payload: { title, markdown: '# Design\n\n- [ ] decide' } })
+  await page.goto(`/workspaces/${workspace.id}/tasks/${task.id}`)
+  const link = page.locator('[data-testid="task-links"][data-pinned] [data-testid="task-links-pano"] a')
+  await expect(link).toHaveText(title)
+  await page.screenshot({ path: test.info().outputPath('task-pano-links-light.png'), animations: 'disabled' })
+  await link.click()
+  await expect(page).toHaveURL(`/pano/${doc.id}`)
+  await expect(page.getByTestId('pano-related-task')).toHaveText(task.title)
+  // The workspace is shared: leave it with no ongoing task.
+  await setTaskStatus(page, workspace.id, task.id, 'completed')
+  traffic.expectClean({ allow: ['404 /plan'] })
+})
+
 // P opens the Pano from anywhere, but a P typed into a field stays text.
 test('P opens the Pano, except while typing', async ({ page, workspace }) => {
   const traffic = watchTraffic(page)

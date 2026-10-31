@@ -125,6 +125,7 @@ type Repository interface {
 	ListPanoTaskStatuses(ctx context.Context, userID int64, ids []int64) ([]PanoTaskStatus, error)
 	ClearPanoUnticked(ctx context.Context, userID, taskID int64) error
 	ListPanoDocIDsOfTask(ctx context.Context, userID, taskID int64) ([]int64, error)
+	ListPanoDocsOfTask(ctx context.Context, userID, taskID int64, now time.Time) ([]model.PanoDoc, error)
 	ListOngoingAgentTaskIDs(ctx context.Context, userID, workspaceID int64, limit int) ([]int64, error)
 	SetPanoChecklistDone(ctx context.Context, userID, docID int64, done int) error
 	ListPanoDocsNamingTasks(ctx context.Context, afterID int64, limit int) ([]model.PanoDoc, error)

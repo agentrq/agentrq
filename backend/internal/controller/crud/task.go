@@ -291,10 +291,19 @@ func (c *controller) GetTask(ctx context.Context, req entity.GetTaskRequest) (*e
 			CreatedAt:  r.CreatedAt,
 		}
 	}
+	docs, err := c.repository.ListPanoDocsOfTask(ctx, uid, m.ID, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	panoDocs := make([]entity.PanoDoc, len(docs))
+	for i, d := range docs {
+		panoDocs[i] = entity.PanoDoc{ID: d.ID, Title: d.Title}
+	}
 	return &entity.GetTaskResponse{
 		Task:             c.fromModelTaskToEntity(m),
 		StateTransitions: transitions,
 		Timing:           taskTiming(rows, time.Now()),
+		PanoDocs:         panoDocs,
 	}, nil
 }
 
