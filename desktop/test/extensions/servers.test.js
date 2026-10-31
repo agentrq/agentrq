@@ -88,12 +88,16 @@ describe('SUPERVISOR_TOOLS', () => {
   })
 })
 
-/** `Name struct { Action string `json:"action" jsonschema:"enum: a, b"`` — an action tool's actions. */
-function actionsIn(file, struct) {
-  const re = new RegExp(`${struct} struct \\{\\s*Action\\s+string\\s+\`json:"action" jsonschema:"enum: ([^"]+)"\``)
-  const match = re.exec(readFileSync(join(REPO, file), 'utf-8'))
-  expect(match, `${struct} in ${file}`).not.toBeNull()
-  return match[1].split(', ')
+/**
+ * `func (...) name() []ToolAction { ... NewToolAction("a", ...` — an action
+ * tool's actions, from which Go builds its schema enum, then help.
+ */
+function actionsIn(file, fn) {
+  const source = readFileSync(join(REPO, file), 'utf-8')
+  const start = new RegExp(`func (?:\\([^)]*\\) )?${fn}\\([^)]*\\) \\[\\](?:\\w+\\.)?ToolAction \\{`).exec(source)
+  expect(start, `${fn} in ${file}`).not.toBeNull()
+  const body = source.slice(start.index, source.indexOf('\n}\n', start.index))
+  return [...body.matchAll(/NewToolAction\("(\w+)"/g)].map((m) => m[1]).concat('help')
 }
 
 const WS = 'backend/internal/controller/mcp/'
@@ -101,22 +105,22 @@ const CORE = 'backend/internal/handler/coremcp/'
 
 describe('the action tools', () => {
   it.each([
-    ['workspace', WORKSPACE_ACTIONS, 'task', WS + 'task.go', 'TaskParams'],
-    ['workspace', WORKSPACE_ACTIONS, 'memory', WS + 'tools.go', 'MemoryParams'],
-    ['workspace', WORKSPACE_ACTIONS, 'skills', WS + 'tools.go', 'SkillsParams'],
-    ['workspace', WORKSPACE_ACTIONS, 'workspace', WS + 'tools.go', 'WorkspaceParams'],
-    ['workspace', WORKSPACE_ACTIONS, 'siteTools', WS + 'tools.go', 'SiteToolsParams'],
-    ['workspace', WORKSPACE_ACTIONS, 'pano', WS + 'pano.go', 'PanoParams'],
-    ['supervisor', SUPERVISOR_ACTIONS, 'workspace', CORE + 'tools.go', 'WorkspaceToolParams'],
-    ['supervisor', SUPERVISOR_ACTIONS, 'task', CORE + 'task.go', 'TaskParams'],
-    ['supervisor', SUPERVISOR_ACTIONS, 'memory', CORE + 'tools.go', 'MemoryToolParams'],
-    ['supervisor', SUPERVISOR_ACTIONS, 'skills', CORE + 'tools.go', 'SkillsToolParams'],
-    ['supervisor', SUPERVISOR_ACTIONS, 'events', CORE + 'tools.go', 'EventsToolParams'],
-    ['supervisor', SUPERVISOR_ACTIONS, 'workflows', CORE + 'tools.go', 'WorkflowsToolParams'],
-    ['supervisor', SUPERVISOR_ACTIONS, 'machines', CORE + 'tools.go', 'MachinesToolParams'],
-    ['supervisor', SUPERVISOR_ACTIONS, 'pano', WS + 'pano.go', 'PanoParams'],
-  ])('the %s server\'s %s offers exactly the actions its Go enum does', (_surface, actions, tool, file, struct) => {
-    expect([...actions[tool]]).toEqual(actionsIn(file, struct))
+    ['workspace', WORKSPACE_ACTIONS, 'task', WS + 'task.go', 'taskActions'],
+    ['workspace', WORKSPACE_ACTIONS, 'memory', WS + 'tools.go', 'memoryActions'],
+    ['workspace', WORKSPACE_ACTIONS, 'skills', WS + 'tools.go', 'skillsActions'],
+    ['workspace', WORKSPACE_ACTIONS, 'workspace', WS + 'tools.go', 'workspaceActions'],
+    ['workspace', WORKSPACE_ACTIONS, 'siteTools', WS + 'tools.go', 'siteToolsActions'],
+    ['workspace', WORKSPACE_ACTIONS, 'pano', WS + 'pano.go', 'PanoActions'],
+    ['supervisor', SUPERVISOR_ACTIONS, 'workspace', CORE + 'tools.go', 'workspaceActions'],
+    ['supervisor', SUPERVISOR_ACTIONS, 'task', CORE + 'task.go', 'taskActions'],
+    ['supervisor', SUPERVISOR_ACTIONS, 'memory', CORE + 'tools.go', 'memoryActions'],
+    ['supervisor', SUPERVISOR_ACTIONS, 'skills', CORE + 'tools.go', 'skillsActions'],
+    ['supervisor', SUPERVISOR_ACTIONS, 'events', CORE + 'tools.go', 'eventsActions'],
+    ['supervisor', SUPERVISOR_ACTIONS, 'workflows', CORE + 'tools.go', 'workflowsActions'],
+    ['supervisor', SUPERVISOR_ACTIONS, 'machines', CORE + 'tools.go', 'machinesActions'],
+    ['supervisor', SUPERVISOR_ACTIONS, 'pano', WS + 'pano.go', 'PanoActions'],
+  ])('the %s server\'s %s offers exactly the actions its Go enum does', (_surface, actions, tool, file, fn) => {
+    expect([...actions[tool]]).toEqual(actionsIn(file, fn))
   })
 
   it('are every tool each surface offers, but help', () => {
