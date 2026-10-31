@@ -93,7 +93,8 @@ describe('SUPERVISOR_TOOLS', () => {
  * tool's actions, from which Go builds its schema enum, then help.
  */
 function actionsIn(file, fn) {
-  const source = readFileSync(join(REPO, file), 'utf-8')
+  // A Windows checkout ends lines with CRLF, which would hide the closing brace.
+  const source = readFileSync(join(REPO, file), 'utf-8').replaceAll('\r\n', '\n')
   const start = new RegExp(`func (?:\\([^)]*\\) )?${fn}\\([^)]*\\) \\[\\](?:\\w+\\.)?ToolAction \\{`).exec(source)
   expect(start, `${fn} in ${file}`).not.toBeNull()
   const body = source.slice(start.index, source.indexOf('\n}\n', start.index))
