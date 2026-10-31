@@ -92,7 +92,9 @@ doc checks — and all three stop seeing a tool if anything precedes its name.
 Claude Code keeps only the first 2048 characters of a server's instructions and
 cuts the rest without warning; the skills rule once fell past that point. The
 instruction test holds the text to 1024, so a new rule still fits: shorten an
-old one rather than raise the cap.
+old one rather than raise the cap. It cuts each tool description at 2048 bytes
+too, and `TestToolDescriptionsFitClaudeCode` holds both servers' tools to that;
+pano, with its CLI hint, is the one nearest it.
 
 ## A workspace token reaches that workspace and nothing else
 

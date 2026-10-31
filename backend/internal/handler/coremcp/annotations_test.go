@@ -50,6 +50,16 @@ func toolsOf(t *testing.T, server *mcp.Server) []*mcp.Tool {
 	return listed.Tools
 }
 
+// Claude Code keeps only the first 2048 bytes of a tool's description and cuts
+// the rest without warning.
+func TestToolDescriptionsFitClaudeCode(t *testing.T) {
+	for _, tool := range listedTools(t) {
+		if n := len(tool.Description); n > 2048 {
+			t.Errorf("tool %q's description is %d bytes; keep it within 2048", tool.Name, n)
+		}
+	}
+}
+
 func TestEveryToolIsAnnotated(t *testing.T) {
 	for _, tool := range listedTools(t) {
 		if tool.Annotations == nil {

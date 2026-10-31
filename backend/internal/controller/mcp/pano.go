@@ -24,24 +24,23 @@ import (
 // markdown nor any base64 passes through the agent's context. It is for the
 // workspace server only: agentrq-ws reads a workspace's .mcp.json.
 const PanoCLIHint = " Prefer the shell to save tokens: `npx -y @agentrq/agentrq-ws@latest pano save [id --version N] --title T --markdown @doc.md --file chart.png` " +
-	"prints only the id, and `pano read <id> --out DIR` writes the markdown and downloads its files there; see `pano --help`."
+	"prints only the id; `pano read <id> --out DIR` writes the markdown and its files there; see `pano --help`."
 
-// PanoToolDescription is the pano tool's description, on both servers.
-var PanoToolDescription = "Read and write the Pano: markdown docs shared by every workspace of this account. Two inputs: action, and payload, the action's fields. " +
-	"Run action help for the actions, and help with payload {\"topic\": \"<action>\"} for one's payload. " +
-	"save: no id creates a doc and returns its id and version; with an id it replaces the doc's title and markdown. A title and markdown are required. " +
-	"Every doc has a version that changes on every write: updating a doc (save or edit) needs the version you read, and is refused if the doc changed since: read it again, redo your change on the new content, save again with the new version. " +
-	"edit: changes part of a doc without sending it whole, from id, version and ops: {op: append, text} adds text at the end, {op: replace, oldString, newString} swaps oldString, which must occur exactly once. The ops apply all or none; ticking an item is a replace of \"- [ ] x\" with \"- [x] x\". " +
-	"A markdown task list (- [ ] item, - [x] done) shows as a checklist with its progress. " +
-	"An item ending → [@workspace](/workspaces/<id>/tasks/<id> \"status\") is assigned to that task: keep the link when you save. A read gives its box and, in the link, the task's status now; it ticks once the task is completed. " +
-	"Unticked by hand, it stays unticked until the task's status changes. With manual after the status, as \"completed manual\", it never ticks itself: tick it when the work is really done, such as when its PR is merged. " +
-	"Tick the steps of your own work as plain items; assign an item only when it stands for a whole task. A doc you write while on a task is linked to that task. " +
-	"A doc is deleted ttlDays after its last save: 30 by default, or as long as it last asked for. color is its post-it's color, yellow by default. " +
-	"files are linked files: each must be linked from the markdown by its filename, as [text](name) or ![alt](name), or the save is refused; " +
-	"a linked file the markdown stops linking is dropped. " +
-	"read: a doc by id, with its version and linked files; includeComments and includeAttachments add those. " +
-	"comment: adds comment to the doc. attach: adds files listed with the doc that need no link. delete: deletes the doc. " +
-	"Your workspace (its parent, for a fork) is recorded as the author. There is no search: share a doc's id with the agents that need it. " +
+// PanoToolDescription is the pano tool's description, on both servers. With
+// PanoCLIHint it must stay within the 2048 bytes Claude Code keeps.
+var PanoToolDescription = "Read and write the Pano: markdown docs shared by every workspace of this account. " +
+	"Inputs: action, and payload, its fields; help with payload {\"topic\": \"<action>\"} gives an action's payload. " +
+	"save: no id creates a doc, returning its id and version; with an id it replaces title and markdown, both required. " +
+	"Every write changes a doc's version; save or edit needs the version you read, and if refused, read again, redo your change, retry with the new version. " +
+	"edit: id, version and ops, all or none: {op: append, text} adds at the end; {op: replace, oldString, newString} swaps oldString, which must occur once. Tick an item by replacing \"- [ ] x\" with \"- [x] x\". " +
+	"A checklist item ending → [@workspace](/workspaces/<id>/tasks/<id> \"status\") is assigned to that task: keep the link. " +
+	"A read shows the task's status now, and the box ticks when it completes; unticked by hand, it stays so until the status changes. " +
+	"With manual after the status (\"completed manual\") it never ticks itself: tick it when the work is really done, such as its PR merged. " +
+	"Tick your own steps as plain items; assign an item only for a whole task. " +
+	"A doc is deleted ttlDays after its last save (30, or the last ttlDays given). " +
+	"files must each be linked from the markdown by filename, [text](name) or ![alt](name), or the save is refused; one no longer linked is dropped. " +
+	"read: a doc by id, with its version and linked files; includeComments and includeAttachments add those. Also comment, attach (files that need no link) and delete. " +
+	"Your workspace (a fork's parent) is the author. No search: share a doc's id with the agents that need it. " +
 	fmt.Sprintf("Limits: title %d characters, markdown %d KiB, file %d MiB, %d files per doc.", crud.PanoMaxTitleChars, crud.PanoMaxMarkdownBytes>>10, crud.PanoMaxFileBytes>>20, crud.PanoMaxFiles)
 
 // PanoParams is the input to the pano tool.

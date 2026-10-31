@@ -145,6 +145,16 @@ func TestPanoToolPointsAtTheCLI(t *testing.T) {
 	t.Error("the workspace server offers no pano tool")
 }
 
+// Claude Code keeps only the first 2048 bytes of a tool's description and cuts
+// the rest without warning.
+func TestToolDescriptionsFitClaudeCode(t *testing.T) {
+	for _, tool := range toolsOverTheWire(t) {
+		if d, _ := tool["description"].(string); len(d) > 2048 {
+			t.Errorf("tool %q's description is %d bytes; keep it within 2048", tool["name"], len(d))
+		}
+	}
+}
+
 // The workspace's task tool sends its agent to agentrq-ws for attachments,
 // which keeps their base64 out of the agent's context.
 func TestTaskToolPointsAtTheCLI(t *testing.T) {
