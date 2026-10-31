@@ -33,8 +33,9 @@ var version = "dev"
 const usage = `agentrqd — the AgentRQ machine daemon
 
   agentrqd enroll --server <url> --code <code> [--profile <id>] [--insecure]
-  agentrqd serve [--profile <id>] [--verbose]
+  agentrqd serve [--profile <id>] [--foreground] [--verbose]
                  [--max-per-profile <n>] [--max-per-machine <n>]
+  agentrqd stop
   agentrqd rollback
   agentrqd status
   agentrqd disable --profile <id>
@@ -79,6 +80,8 @@ func run(ctx context.Context, args []string) error {
 		return cmdEnrol(ctx, args[1:])
 	case "serve", "run":
 		return cmdServe(ctx, args[1:])
+	case "stop":
+		return cmdStop()
 	case "rollback":
 		return cmdRollback()
 	case "status":

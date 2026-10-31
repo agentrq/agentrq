@@ -37,7 +37,8 @@ machine with its keystrokes and output travelling both ways.
 ## Running it
 
 ```sh
-agentrqd serve            # every enrolled profile
+agentrqd serve            # every enrolled profile, in the background
+agentrqd serve --foreground
 agentrqd serve --profile work --verbose
 agentrqd serve --max-per-profile 4 --max-per-machine 8
 ```
@@ -63,11 +64,12 @@ machine enrolled with two accounts should still serve the one that still works.
 
 ## Stopping it
 
-Ctrl-C, `SIGTERM`, and closing the terminal it was started in all stop every
-agent on the machine first — the last of those because `agentrqd serve` is
-something people run at a terminal, and an unhandled `SIGHUP` would end the
-process with the agents still running and nothing able to reach them. Run it
-under `nohup` and the hang-up is ignored as you asked, not taken over.
+`agentrqd stop`, Ctrl-C, `SIGTERM`, and closing the terminal a foreground daemon
+was started in all stop every agent on the machine first — the last of those
+because `agentrqd serve --foreground` runs at a terminal, and an unhandled
+`SIGHUP` would end the process with the agents still running and nothing able to
+reach them. Run it under `nohup` and the hang-up is ignored as you asked, not
+taken over.
 
 It logs `shutting down` with the signal that caused it before doing any of that.
 So a log that simply stops, with no such line, was **not** a stop the daemon was

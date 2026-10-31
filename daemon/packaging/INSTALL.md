@@ -86,8 +86,9 @@ makes the code safe to display.
 
 ## 3. Keep it running
 
-Enrolling starts it in the foreground. To keep it running, stop that one
-(Ctrl-C) and install it as a service.
+Enrolling starts it in the background (`agentrqd serve` does the same; pass
+`--foreground` to keep it attached to the terminal). To start it at boot as
+well, install it as a service.
 
 **Linux (systemd user service)** — the supported way:
 
@@ -131,8 +132,14 @@ asking the account that would be doing the watching.
 ## Stopping it
 
 ```sh
+agentrqd stop
+```
+
+stops the running daemon and any agents on this machine. To also remove the
+machine's credential from this computer:
+
+```sh
 agentrqd disable --profile <id>
 ```
 
-removes the machine's credential from this computer. It takes effect
-immediately and does not need the server to agree.
+It takes effect immediately and does not need the server to agree.
