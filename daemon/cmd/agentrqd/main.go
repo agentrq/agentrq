@@ -324,6 +324,9 @@ func printRunning(dir string) {
 	case err != nil:
 		fmt.Printf("Cannot read the local status report: %v\n\n", err)
 		return
+	case !processAlive(f.PID):
+		fmt.Printf("Not running — pid %d has exited. Start it with: agentrqd serve\nLast seen %s:\n",
+			f.PID, f.UpdatedAt.Format(time.RFC3339))
 	default:
 		fmt.Printf("Running as pid %d since %s\n", f.PID, f.StartedAt.Format(time.RFC3339))
 	}

@@ -281,7 +281,9 @@ func runDetached(bin string, args []string, logFile *os.File) (int, error) {
 // startBackground launches the daemon detached from this terminal, writing its
 // logs to `agentrqd.log` inside the config folder.
 func startBackground(dir string, args []string, now time.Time) error {
-	if f, err := localstatus.Read(dir, now); err == nil {
+	// A fresh report is not enough: a daemon killed a minute ago left one
+	// behind, and trusting it refused every start until it went stale.
+	if f, err := localstatus.Read(dir, now); err == nil && processAlive(f.PID) {
 		fmt.Printf("agentrqd is already running (pid %d).\n", f.PID)
 		return nil
 	}
@@ -338,6 +340,13 @@ func stopDaemon(dir string, now time.Time) error {
 	}
 	if err != nil {
 		return err
+	}
+	if !processAlive(f.PID) {
+		// Killed before the report went stale; signalling it fails, and the
+		// report it left behind is what blocks the next start.
+		localstatus.Clear(dir)
+		fmt.Printf("agentrqd is not running (pid %d has exited).\n", f.PID)
+		return nil
 	}
 
 	if err := signalStop(f.PID); err != nil {
