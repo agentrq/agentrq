@@ -1737,13 +1737,18 @@ func newTaskCategoryCounts() map[string]int64 {
 		"scheduled":  0,
 		"completed":  0,
 		"pending":    0,
+		"blocked":    0,
+		"queued":     0,
 	}
 }
 
 // taskCountsByCategory counts the user's tasks by workspace and category, in
 // one workspace or, when workspaceID is 0, in all of them. Categories
 // collapse statuses the way the task feed groups them, and pending counts the
-// tasks whose newest message is a permission request.
+// open tasks whose newest message is a permission request still waiting for
+// an answer. Blocked (also counted in
+// ongoing) and queued, the not started tasks the agent will pick up, are what
+// the sidebar marks a workspace with.
 func (r *repository) taskCountsByCategory(ctx context.Context, userID, workspaceID int64) (map[int64]map[string]int64, error) {
 	scope := func() *gorm.DB {
 		q := r.conn(ctx).Model(&model.Task{}).Where("user_id = ?", userID)
@@ -1763,12 +1768,13 @@ func (r *repository) taskCountsByCategory(ctx context.Context, userID, workspace
 	type statusCount struct {
 		WorkspaceID int64
 		Status      string
+		Assignee    string
 		Count       int64
 	}
 	var results []statusCount
 	if err := scope().
-		Select("workspace_id, status, count(*) as count").
-		Group("workspace_id, status").
+		Select("workspace_id, status, assignee, count(*) as count").
+		Group("workspace_id, status, assignee").
 		Scan(&results).Error; err != nil {
 		return nil, err
 	}
@@ -1776,10 +1782,16 @@ func (r *repository) taskCountsByCategory(ctx context.Context, userID, workspace
 	for _, res := range results {
 		counts := countsOf(res.WorkspaceID)
 		switch res.Status {
-		case "ongoing", "blocked":
+		case "ongoing":
 			counts["ongoing"] += res.Count
+		case "blocked":
+			counts["ongoing"] += res.Count
+			counts["blocked"] += res.Count
 		case "notstarted":
 			counts["notstarted"] += res.Count
+			if res.Assignee == "agent" {
+				counts["queued"] += res.Count
+			}
 		case "cron":
 			counts["scheduled"] += res.Count
 		case "completed", "rejected":
@@ -1790,13 +1802,14 @@ func (r *repository) taskCountsByCategory(ctx context.Context, userID, workspace
 	// Pending (Action Required)
 	var metadataExpr string
 	if r.conn(ctx).Dialector.Name() == "postgres" {
-		metadataExpr = "metadata @> '{\"type\":\"permission_request\"}'::jsonb"
+		metadataExpr = "metadata @> '{\"type\":\"permission_request\",\"status\":\"pending\"}'::jsonb"
 	} else {
-		metadataExpr = "metadata LIKE '%\"type\":\"permission_request\"%'"
+		metadataExpr = "metadata LIKE '%\"type\":\"permission_request\"%' AND metadata LIKE '%\"status\":\"pending\"%'"
 	}
 	var pending []statusCount
 	if err := scope().
 		Select("workspace_id, count(*) as count").
+		Where("status NOT IN ?", []string{"completed", "rejected"}).
 		Where("id IN (SELECT task_id FROM messages m1 WHERE created_at = (SELECT MAX(created_at) FROM messages m2 WHERE m2.task_id = m1.task_id) AND " + metadataExpr + ")").
 		Group("workspace_id").
 		Scan(&pending).Error; err != nil {

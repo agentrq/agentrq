@@ -48,7 +48,8 @@ function isPendingOnHuman(t) {
 }
 
 /**
- * Resolve a task (or a bare status string) to one of the colour keys below.
+ * Resolve a task (or a bare status string, or `pending`) to one of the colour
+ * keys below.
  *
  * @param {object|string} task
  * @returns {'pending'|'ongoing'|'notstarted'|'completed'|'rejected'|'blocked'|'cron'|'unknown'}
@@ -58,6 +59,7 @@ export function taskStatusTone(task) {
 
   const status = typeof task === 'string' ? task : task?.status;
   switch (status) {
+    case 'pending':
     case 'ongoing':
     case 'notstarted':
     case 'completed':

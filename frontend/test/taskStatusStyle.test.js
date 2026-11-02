@@ -27,6 +27,7 @@ describe('taskStatusTone', () => {
 
   it('accepts a bare status string, as the column headers pass one', () => {
     expect(taskStatusTone('blocked')).toBe('blocked')
+    expect(taskStatusTone('pending')).toBe('pending')
   })
 
   it('falls back for a status it has never heard of', () => {

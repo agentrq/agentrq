@@ -45,6 +45,7 @@ import {
   OVERVIEW_TASKS,
   coalesce,
   countChips,
+  sidebarActivity,
   filterWorkspaceGroups,
   groupWorkspaces,
   indexOverview,
@@ -419,5 +420,18 @@ describe('the workspaces page', () => {
     }
     expect($$('[data-test="workspace-column"]')).toHaveLength(1);
     expect(row(el.querySelector('[data-test="preview-task"]'))).toBe('task 1 5m ago');
+  });
+});
+
+describe('sidebarActivity', () => {
+  it('marks the most urgent: waiting on the person, then blocked, then ongoing', () => {
+    expect(sidebarActivity({ pending: 1, blocked: 1, ongoing: 2 })).toEqual({ tone: 'pending', label: 'Waiting on you', queued: 0 });
+    expect(sidebarActivity({ blocked: 1, ongoing: 1 })).toEqual({ tone: 'blocked', label: 'Blocked', queued: 0 });
+    expect(sidebarActivity({ ongoing: 1, queued: 3 })).toEqual({ tone: 'ongoing', label: 'Task ongoing', queued: 3 });
+  });
+
+  it('marks nothing without such tasks', () => {
+    expect(sidebarActivity({ ongoing: 0, notstarted: 2, completed: 4 })).toEqual({ tone: null, label: '', queued: 0 });
+    expect(sidebarActivity()).toEqual({ tone: null, label: '', queued: 0 });
   });
 });

@@ -204,7 +204,7 @@
               <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Workspaces</span>
             </div>
 
-            <SidebarWorkspaces :workspaces="workspaces" :show-tooltip="showTooltip" :hide-tooltip="hideTooltip" />
+            <SidebarWorkspaces :workspaces="workspaces" :overview="taskOverview" :show-tooltip="showTooltip" :hide-tooltip="hideTooltip" />
           </template>
 
           <div v-if="!isCollapsed || isMobileMenuOpen" class="p-2 border-gray-200/50 dark:border-zinc-600/50">
@@ -550,6 +550,7 @@ import { createHiddenTabNotifier, pageUnattended, showSystemNotification } from 
 import Toast from './components/Toast.vue'
 import DeleteModal from './components/DeleteModal.vue'
 import SidebarWorkspaces from './components/SidebarWorkspaces.vue'
+import { coalesce, indexOverview } from './composables/useWorkspaceOverview'
 import DesktopTitleBar from './components/DesktopTitleBar.vue'
 import SidePanel from './components/SidePanel.vue'
 import PanoChatColumn from './components/PanoChatColumn.vue'
@@ -770,6 +771,16 @@ const themeStore = useThemeStore()
 const tooltipStore = useTooltipStore()
 const workspaceStore = useWorkspaceStore()
 const workspaces = computed(() => workspaceStore.workspaces)
+
+// Each workspace's task counts, for the sidebar's activity marks. Fetched again
+// on any task change from the stream below; a burst costs two fetches.
+const taskOverview = ref(new Map())
+const loadTaskOverview = coalesce(async () => {
+  taskOverview.value = indexOverview(await api.fetchTaskOverview())
+})
+const OVERVIEW_EVENTS = new Set(['task.created', 'task.updated', 'task.deleted', 'status.updated', 'respond.ack', 'reply.received'])
+// By the ids, not the count: a profile switch can bring as many workspaces.
+watch(() => workspaces.value.map((w) => w.id).join(), (ids) => { if (ids) loadTaskOverview() }, { immediate: true })
 
 const currentWorkspaceId = computed(() => route.params.id || route.params.workspaceId)
 
@@ -1077,6 +1088,8 @@ onEvent((event) => {
   if (event.type === 'task.deleted') {
     forgetCachedTask(sharedCache(), event.payload?.id)
   }
+  // A permission request arrives as a reply, and its answer as respond.ack.
+  if (OVERVIEW_EVENTS.has(event.type)) loadTaskOverview()
 
   // The rules live in useStreamToasts, tested on their own — this only shows
   // what they decided. See that file for why the sender decides and not the
@@ -1095,7 +1108,10 @@ onEvent((event) => {
 // before the drop, forever. Re-reading the list on every reconnect is what
 // bounds how long the indicator can be wrong to the length of the outage.
 watch(isConnected, (now, before) => {
-  if (now && before === false) workspaceStore.fetchWorkspaces()
+  if (now && before === false) {
+    workspaceStore.fetchWorkspaces()
+    loadTaskOverview()
+  }
 })
 
 // The Extensions screen is the only place an install or an uninstall happens,
