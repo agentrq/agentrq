@@ -7,9 +7,11 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,7 +143,7 @@ func TestStartBackground(t *testing.T) {
 
 	t.Run("leaves a running daemon alone", func(t *testing.T) {
 		dir := t.TempDir()
-		if err := localstatus.Write(dir, localstatus.File{PID: 4242}); err != nil {
+		if err := localstatus.Write(dir, localstatus.File{PID: os.Getpid()}); err != nil {
 			t.Fatal(err)
 		}
 		called := false
@@ -157,6 +159,27 @@ func TestStartBackground(t *testing.T) {
 		}
 		if called {
 			t.Error("startBackground spawned a second daemon beside a running one")
+		}
+	})
+
+	t.Run("starts over a fresh report whose daemon has exited", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := localstatus.Write(dir, localstatus.File{PID: gonePID}); err != nil {
+			t.Fatal(err)
+		}
+		called := false
+		previous := startDetached
+		t.Cleanup(func() { startDetached = previous })
+		startDetached = func(string, []string, *os.File) (int, error) {
+			called = true
+			return 4242, nil
+		}
+
+		if err := startBackground(dir, nil, time.Now()); err != nil {
+			t.Fatalf("startBackground returned error: %v", err)
+		}
+		if !called {
+			t.Error("startBackground refused to start because of a dead daemon's report")
 		}
 	})
 
@@ -265,7 +288,7 @@ func TestCmdServeDetachesByDefaultWhenEnrolled(t *testing.T) {
 func TestStopDaemon(t *testing.T) {
 	t.Run("signals the running daemon and waits for its status report to clear", func(t *testing.T) {
 		dir := t.TempDir()
-		if err := localstatus.Write(dir, localstatus.File{PID: 4242}); err != nil {
+		if err := localstatus.Write(dir, localstatus.File{PID: os.Getpid()}); err != nil {
 			t.Fatal(err)
 		}
 
@@ -292,8 +315,8 @@ func TestStopDaemon(t *testing.T) {
 		if err := stopDaemon(dir, time.Now()); err != nil {
 			t.Fatalf("stopDaemon returned error: %v", err)
 		}
-		if stoppedPID != 4242 {
-			t.Errorf("stopDaemon signalled pid %d, want 4242", stoppedPID)
+		if stoppedPID != os.Getpid() {
+			t.Errorf("stopDaemon signalled pid %d, want %d", stoppedPID, os.Getpid())
 		}
 		if _, err := os.Stat(localstatus.Path(dir)); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("status file still exists after stopDaemon: %v", err)
@@ -302,7 +325,7 @@ func TestStopDaemon(t *testing.T) {
 
 	t.Run("clears the status file after the wait when the process exits without removing it", func(t *testing.T) {
 		dir := t.TempDir()
-		if err := localstatus.Write(dir, localstatus.File{PID: 4242}); err != nil {
+		if err := localstatus.Write(dir, localstatus.File{PID: os.Getpid()}); err != nil {
 			t.Fatal(err)
 		}
 
@@ -334,7 +357,7 @@ func TestStopDaemon(t *testing.T) {
 
 	t.Run("clears a stale report when the daemon was already gone", func(t *testing.T) {
 		dir := t.TempDir()
-		if err := localstatus.Write(dir, localstatus.File{PID: 4242}); err != nil {
+		if err := localstatus.Write(dir, localstatus.File{PID: os.Getpid()}); err != nil {
 			t.Fatal(err)
 		}
 		if err := stopDaemon(dir, time.Now().Add(localstatus.Stale+time.Minute)); err != nil {
@@ -342,6 +365,26 @@ func TestStopDaemon(t *testing.T) {
 		}
 		if _, err := os.Stat(localstatus.Path(dir)); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("stale status file still exists: %v", err)
+		}
+	})
+
+	t.Run("clears a fresh report whose daemon has exited without signalling it", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := localstatus.Write(dir, localstatus.File{PID: gonePID}); err != nil {
+			t.Fatal(err)
+		}
+		previous := signalStop
+		t.Cleanup(func() { signalStop = previous })
+		signalStop = func(int) error {
+			t.Error("stopDaemon signalled a process that has exited")
+			return nil
+		}
+
+		if err := stopDaemon(dir, time.Now()); err != nil {
+			t.Fatalf("stopDaemon returned error for an exited daemon: %v", err)
+		}
+		if _, err := os.Stat(localstatus.Path(dir)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("the exited daemon's report still exists: %v", err)
 		}
 	})
 
@@ -357,7 +400,7 @@ func TestStopDaemon(t *testing.T) {
 
 	t.Run("reports when signalling the daemon fails", func(t *testing.T) {
 		dir := t.TempDir()
-		if err := localstatus.Write(dir, localstatus.File{PID: 4242}); err != nil {
+		if err := localstatus.Write(dir, localstatus.File{PID: os.Getpid()}); err != nil {
 			t.Fatal(err)
 		}
 		previous := signalStop
@@ -389,8 +432,53 @@ func TestCmdStopAndRun(t *testing.T) {
 	}
 }
 
+// gonePID is a pid no test machine is running: Linux allocates from the
+// bottom of a range ending here, and Windows pids are multiples of four.
+const gonePID = 1<<22 - 1
+
 func TestStopProcessReportsMissingPID(t *testing.T) {
-	if err := stopProcess(1<<22 - 1); err == nil {
+	if err := stopProcess(gonePID); err == nil {
 		t.Error("stopProcess succeeded for a non-existent pid")
+	}
+}
+
+func TestProcessAlive(t *testing.T) {
+	if !processAlive(os.Getpid()) {
+		t.Error("processAlive says this test process is not running")
+	}
+	for _, pid := range []int{gonePID, 0, -1} {
+		if processAlive(pid) {
+			t.Errorf("processAlive(%d) = true, want false", pid)
+		}
+	}
+}
+
+// captureStdout returns what fn printed.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = previous }()
+	fn()
+	_ = w.Close()
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+func TestPrintRunningSaysAnExitedDaemonIsNotRunning(t *testing.T) {
+	dir := t.TempDir()
+	if err := localstatus.Write(dir, localstatus.File{PID: gonePID}); err != nil {
+		t.Fatal(err)
+	}
+	out := captureStdout(t, func() { printRunning(dir) })
+	if !strings.Contains(out, "Not running") || strings.Contains(out, "Running as pid") {
+		t.Errorf("status for an exited daemon printed:\n%s", out)
 	}
 }
