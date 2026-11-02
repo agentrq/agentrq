@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AgentRQ",
   "short_name": "AgentRQ",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Task manager for AI agents: orchestrate many agents at once and open Claude Code terminal right in the extension.",
   "homepage_url": "https://agentrq.com",
   "minimum_chrome_version": "116",
