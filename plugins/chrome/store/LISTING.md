@@ -29,6 +29,7 @@ LET YOUR AGENTS USE WEBMCP TOOLS
 • Websites can offer tools to AI agents with WebMCP. Turn on detection and the AgentRQ icon lights up on a site that does.
 • Share that site with a workspace in one click, and its agents can call the site's tools in your own signed-in browser. Anything the site does not mark read-only waits for your approval.
 • Stop sharing from the popup or Options at any time.
+• Needs WebMCP turned on in your browser: search for "WebMCP" in chrome://flags (brave://flags in Brave), enable it and relaunch.
 
 CLAUDE CODE TERMINALS IN THE EXTENSION
 • Open the live Claude Code terminal an agent is working in, right in the popup, to watch it or take over. Works for agents on any machine you have connected with agentrqd, AgentRQ's agent runner.
