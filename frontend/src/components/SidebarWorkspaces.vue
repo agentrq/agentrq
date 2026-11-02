@@ -21,9 +21,13 @@ import { useWorkspaceContextMenu, workspaceMenuItems } from '../composables/useW
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useToasts } from '../composables/useToasts'
 import { useFormat } from '../composables/useFormat'
+import { sidebarActivity } from '../composables/useWorkspaceOverview'
+import { taskDotClass } from '../composables/useTaskStatusStyle'
 
 const props = defineProps({
   workspaces: { type: Array, default: () => [] },
+  // Each workspace's task counts by id, from the task overview.
+  overview: { type: Map, default: () => new Map() },
   showTooltip: { type: Function, default: () => {} },
   hideTooltip: { type: Function, default: () => {} },
 })
@@ -33,6 +37,7 @@ const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const { toKebabCase } = useFormat()
 const workspaces = computed(() => props.workspaces)
+const activityOf = (ws) => sidebarActivity(props.overview.get(ws.id)?.counts)
 
 // Forks nested under their parent, and which parents have them folded away.
 // The fold is a per-browser convenience, remembered like the sidebar's width.
@@ -96,11 +101,19 @@ function onWorkspaceMenuSelect(key) {
               ws.forkOfId ? 'pl-6' : 'pl-2',
               route.path.startsWith(`/workspaces/${ws.id}`) ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white font-semibold' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
             ]">
-          <div class="w-1.5 h-1.5 rounded-full shrink-0"
+          <!-- A task waiting on the person, blocked or running marks the
+               row with that task's status dot; otherwise the agent's state. -->
+          <div v-if="activityOf(ws).tone" class="w-1.5 h-1.5 rounded-full shrink-0"
+               :class="taskDotClass(activityOf(ws).tone)" :title="activityOf(ws).label"
+               data-test="sidebar-activity"></div>
+          <div v-else class="w-1.5 h-1.5 rounded-full shrink-0"
                :class="ws.agentConnected ? 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"
                :title="ws.agentConnected ? 'Agent Online' : 'Agent Offline'"></div>
           <ForkIcon v-if="ws.forkOfId" class="w-3 h-3 shrink-0 -ml-1 opacity-70" />
           <span class="truncate flex-1">{{ toKebabCase(ws.name) }}</span>
+          <span v-if="activityOf(ws).queued" data-test="sidebar-queued"
+                :title="`${activityOf(ws).queued} queued for the agent`"
+                class="shrink-0 min-w-4 px-1 rounded text-[10px] leading-4 text-center font-medium tabular-nums bg-black/5 dark:bg-white/10 text-gray-500 dark:text-zinc-400">{{ activityOf(ws).queued }}</span>
           <button v-if="!ws.forkOfId && group.forks.length > 0" type="button"
                   @click.prevent.stop="toggleGroup(ws.id)"
                   :aria-expanded="!isGroupCollapsed(ws.id)"

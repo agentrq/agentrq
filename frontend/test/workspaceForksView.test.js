@@ -93,6 +93,25 @@ describe('the sidebar', () => {
     expect(fork.querySelector('svg circle')).toBeTruthy()
   })
 
+  it('marks a row by its tasks, and counts those queued for the agent', async () => {
+    const overview = new Map([
+      ['p1', { counts: { pending: 1, ongoing: 1, queued: 2 } }],
+      ['w1', { counts: { blocked: 1, ongoing: 1 } }],
+      ['s1', { counts: { ongoing: 0, queued: 0 } }],
+    ])
+    const { el } = mount(SidebarWorkspaces, { workspaces: [PARENT, WEB, SUPERVISOR], overview }, [PARENT, WEB, SUPERVISOR])
+    await settle()
+    const rows = [...el.querySelectorAll('[data-test=sidebar-workspace]')]
+    const mark = (r) => r.querySelector('[data-test=sidebar-activity]')
+    expect(mark(rows[0]).title).toBe('Waiting on you')
+    expect(mark(rows[0]).className).toMatch(/bg-yellow-400/)
+    expect(text(rows[0].querySelector('[data-test=sidebar-queued]'))).toBe('2')
+    expect(mark(rows[1]).className).toMatch(/bg-red-500/)
+    expect(rows[1].querySelector('[data-test=sidebar-queued]')).toBe(null)
+    expect(mark(rows[2])).toBe(null)
+    expect(rows[2].querySelector('[title="Agent Offline"]')).toBeTruthy()
+  })
+
   it('folds a parent\'s forks away, and remembers it', async () => {
     const { el } = sidebar()
     await settle()

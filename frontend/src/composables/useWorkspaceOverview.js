@@ -104,6 +104,26 @@ const CHIPS = [
   { key: 'scheduled', label: 'Scheduled', short: 'Scheduled', text: 'text-cyan-600 dark:text-cyan-400', dot: 'bg-cyan-400' },
 ];
 
+// The sidebar's mark for a workspace, most urgent first: a task waiting on the
+// person's approval, then a blocked one, then one running.
+const ACTIVITY = [
+  { key: 'pending', label: 'Waiting on you' },
+  { key: 'blocked', label: 'Blocked' },
+  { key: 'ongoing', label: 'Task ongoing' },
+];
+
+/**
+ * A sidebar row's activity: the tone of its bullet (null for none) with its
+ * label, and how many tasks are queued for the agent.
+ *
+ * @param {Record<string, number>} counts  a workspace's overview counts
+ * @returns {{ tone: string|null, label: string, queued: number }}
+ */
+export function sidebarActivity(counts = {}) {
+  const hit = ACTIVITY.find((a) => counts[a.key] > 0);
+  return { tone: hit?.key ?? null, label: hit?.label ?? '', queued: counts.queued > 0 ? counts.queued : 0 };
+}
+
 /**
  * A card's counts, the ones that are not zero, in the Active tab's order with
  * what needs the person first.
