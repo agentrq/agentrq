@@ -778,7 +778,9 @@ const taskOverview = ref(new Map())
 const loadTaskOverview = coalesce(async () => {
   taskOverview.value = indexOverview(await api.fetchTaskOverview())
 })
-watch(() => workspaces.value.length, (n) => { if (n) loadTaskOverview() }, { immediate: true })
+const OVERVIEW_EVENTS = new Set(['task.created', 'task.updated', 'task.deleted', 'status.updated', 'respond.ack', 'reply.received'])
+// By the ids, not the count: a profile switch can bring as many workspaces.
+watch(() => workspaces.value.map((w) => w.id).join(), (ids) => { if (ids) loadTaskOverview() }, { immediate: true })
 
 const currentWorkspaceId = computed(() => route.params.id || route.params.workspaceId)
 
@@ -1086,9 +1088,8 @@ onEvent((event) => {
   if (event.type === 'task.deleted') {
     forgetCachedTask(sharedCache(), event.payload?.id)
   }
-  if (event.type === 'task.created' || event.type === 'task.updated' || event.type === 'task.deleted') {
-    loadTaskOverview()
-  }
+  // A permission request arrives as a reply, and its answer as respond.ack.
+  if (OVERVIEW_EVENTS.has(event.type)) loadTaskOverview()
 
   // The rules live in useStreamToasts, tested on their own — this only shows
   // what they decided. See that file for why the sender decides and not the

@@ -827,9 +827,13 @@ func TestRepository_GetTaskCountsByWorkspace(t *testing.T) {
 		&model.Task{ID: 3, WorkspaceID: crudWS, UserID: crudUser, Status: "cron", CreatedAt: now},
 		&model.Task{ID: 4, WorkspaceID: other, UserID: crudUser, Status: "notstarted", Assignee: "agent", CreatedAt: now},
 		&model.Task{ID: 7, WorkspaceID: other, UserID: crudUser, Status: "notstarted", Assignee: "human", CreatedAt: now},
+		&model.Task{ID: 8, WorkspaceID: other, UserID: crudUser, Status: "notstarted", CreatedAt: now},
 		&model.Task{ID: 5, WorkspaceID: other, UserID: crudUser, Status: "rejected", CreatedAt: now},
 		&model.Task{ID: 6, WorkspaceID: crudWS + 2, UserID: crudOther, Status: "ongoing", CreatedAt: now},
 		&model.Message{ID: 61, TaskID: 1, UserID: crudUser, CreatedAt: now, Metadata: []byte(`{"type":"permission_request","status":"pending"}`)},
+		// An answered request, and one left on a finished task: neither waits on anybody.
+		&model.Message{ID: 62, TaskID: 2, UserID: crudUser, CreatedAt: now, Metadata: []byte(`{"type":"permission_request","status":"allow"}`)},
+		&model.Message{ID: 63, TaskID: 5, UserID: crudUser, CreatedAt: now, Metadata: []byte(`{"type":"permission_request","status":"pending"}`)},
 	)
 
 	got, err := repo.GetTaskCountsByWorkspace(ctx, crudUser)
@@ -838,7 +842,7 @@ func TestRepository_GetTaskCountsByWorkspace(t *testing.T) {
 	}
 	want := map[int64]map[string]int64{
 		crudWS: {"ongoing": 2, "notstarted": 0, "scheduled": 1, "completed": 0, "pending": 1, "blocked": 1, "queued": 0},
-		other:  {"ongoing": 0, "notstarted": 2, "scheduled": 0, "completed": 1, "pending": 0, "blocked": 0, "queued": 1},
+		other:  {"ongoing": 0, "notstarted": 3, "scheduled": 0, "completed": 1, "pending": 0, "blocked": 0, "queued": 1},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("counts = %v, want %v", got, want)
