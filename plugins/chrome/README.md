@@ -45,6 +45,11 @@ only notices what a page registers with Chrome's own `document.modelContext`
 AgentRQ until you share a site, and then only that site's tools, its last
 address, and the results of the calls your agents make.
 
+**It needs WebMCP turned on in the browser.** WebMCP is still experimental: in
+Chrome, Brave and other Chromium browsers, open `chrome://flags` (`brave://flags`
+in Brave), search for **WebMCP**, enable it and relaunch, or start the browser
+with `--enable-features=WebMCPTesting`. Without it no site's tools are detected.
+
 ## How it works
 
 The popup frames your server's own web app, so everything the web app does
