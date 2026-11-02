@@ -1503,6 +1503,8 @@ paths:
       description: |
         Categories collapse several statuses: `ongoing` also counts `blocked`,
         `scheduled` counts `cron`, and `completed` counts `rejected`.
+        `blocked` counts blocked tasks on their own, and `queued` the
+        not started tasks assigned to the agent.
       responses:
         '200':
           description: OK
@@ -1516,6 +1518,9 @@ paths:
                   ongoing: { type: integer, format: int64 }
                   scheduled: { type: integer, format: int64 }
                   completed: { type: integer, format: int64 }
+                  pending: { type: integer, format: int64 }
+                  blocked: { type: integer, format: int64 }
+                  queued: { type: integer, format: int64 }
 
   /workspaces/{id}/tasks/{taskID}:
     parameters:
