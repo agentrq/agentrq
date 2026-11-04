@@ -16,6 +16,11 @@ const ERROR_DURATION = 20000;
 // A burst of status changes must not bury the screen; the oldest go first.
 const MAX_VISIBLE = 4;
 
+// A counter, not Date.now() + Math.random(): near today's timestamp a double
+// holds only ~4096 fractions per millisecond, so two toasts in one millisecond
+// could share an id, and dismissing one removed both.
+let nextId = 0;
+
 export function useToasts() {
   // `link`, when given, is `{ taskId, workspaceId }` — where clicking the
   // toast (not its close button) should navigate. Falsy ids mean no link.
@@ -25,7 +30,7 @@ export function useToasts() {
   // status change, `from`/`to`.
   const addToast = (message, type = 'info', title = null, duration = null, link = null, card = null) => {
     if (duration === null) duration = type === 'error' ? ERROR_DURATION : card ? EVENT_DURATION : DURATION;
-    const id = Date.now() + Math.random();
+    const id = ++nextId;
     // A zero duration means the toast waits to be dismissed; the progress bar
     // is a countdown, so it has nothing to show.
     const toast = { id, message, type, title, duration, persistent: duration <= 0, link, ...card };

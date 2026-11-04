@@ -157,6 +157,21 @@ describe('Toast', () => {
     }
   })
 
+  it('gives toasts added in the same millisecond their own ids', () => {
+    vi.useFakeTimers()
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    try {
+      const { notifyError, notifySuccess, removeToast, toasts } = useToasts()
+      notifyError('Could not move the task')
+      const saved = notifySuccess('Saved')
+      removeToast(saved)
+      expect(toasts.value.map((t) => t.message)).toEqual(['Could not move the task'])
+    } finally {
+      random.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
   it('opens the task from anywhere on the card, not only "View task"', async () => {
     useToasts().notifyError('Agent crashed', 'Agent could not start', { taskId: 't9', workspaceId: 'w2' })
     const el = await mount()
