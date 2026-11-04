@@ -17,7 +17,7 @@
             <div v-for="lane in LANES" :key="lane.key" class="flex gap-[3px] h-2">
               <button v-for="(it, idx) in items" :key="it.id"
                       type="button"
-                      @click="select(it.id)"
+                      @click="pick(it.id)"
                       class="w-1.5 h-2 rounded-[1px] shrink-0 transition-transform"
                       :class="[
                         it.lane === lane.key ? laneDotClass(it) : 'bg-gray-100 dark:bg-zinc-800/60',
@@ -47,18 +47,30 @@
       </div>
 
       <!-- Search -->
-      <div class="px-4 py-2 border-b border-gray-100 dark:border-zinc-800 shrink-0">
-        <div class="relative">
+      <div class="px-4 py-2 border-b border-gray-100 dark:border-zinc-800 shrink-0 flex items-center gap-3">
+        <div class="relative flex-1 min-w-0">
           <svg class="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/></svg>
           <input v-model="query" type="text" placeholder="Search tool calls and messages..."
                  class="w-full pl-8 pr-3 py-1.5 text-[11px] font-medium bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg text-gray-800 dark:text-zinc-200 placeholder:text-gray-400 dark:placeholder:text-zinc-500 outline-none focus:border-gray-400 dark:focus:border-zinc-500 transition-colors" />
         </div>
+        <!-- Follow: the selection keeps up with the stream, a row at a time. -->
+        <label class="shrink-0 flex items-center gap-2 cursor-pointer" title="Show each new entry as it arrives">
+          <span id="trajectory-follow-label" class="text-[9px] font-black uppercase tracking-wider text-gray-500 dark:text-zinc-400">Follow</span>
+          <button type="button" role="switch" data-testid="trajectory-follow" aria-labelledby="trajectory-follow-label"
+                  :aria-checked="following" @click="setFollowing(!following)"
+                  class="relative shrink-0 w-11 h-6 rounded-full border transition-colors"
+                  :class="following ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
+            <span class="absolute top-[3px] w-4 h-4 rounded-full transition-all"
+                  :class="following ? 'left-[23px] bg-white dark:bg-zinc-900' : 'left-[3px] bg-white dark:bg-zinc-300'"></span>
+          </button>
+        </label>
       </div>
 
       <!-- Body -->
       <div class="flex flex-1 min-h-0">
         <!-- List -->
-        <div class="w-2/5 border-r border-gray-100 dark:border-zinc-800 overflow-y-auto custom-scrollbar">
+        <div ref="listEl" data-testid="trajectory-list" tabindex="0" @keydown="onListKeydown"
+             class="w-2/5 border-r border-gray-100 dark:border-zinc-800 overflow-y-auto custom-scrollbar outline-none">
           <button v-if="hasEarlier" type="button" data-testid="trajectory-load-earlier"
                   @click="$emit('load-earlier')" :disabled="loadingEarlier"
                   class="w-full px-3 py-2 border-b border-gray-100 dark:border-zinc-800 text-[9px] font-black uppercase tracking-wider text-gray-500 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors disabled:opacity-60 disabled:cursor-wait">
@@ -68,9 +80,9 @@
             {{ emptyListMessage }}
           </div>
           <button v-for="it in filteredItems" :key="it.id"
-                  type="button"
-                  @click="select(it.id)"
-                  class="w-full text-left flex items-center gap-2 px-3 py-2 border-b border-gray-50 dark:border-zinc-800/60 transition-colors"
+                  type="button" :data-trajectory-id="it.id"
+                  @click="pick(it.id)"
+                  class="w-full text-left flex items-center gap-2 px-3 py-2 border-b border-gray-50 dark:border-zinc-800/60 transition-colors outline-none"
                   :class="selectedId === it.id ? 'bg-gray-100 dark:bg-zinc-800' : 'hover:bg-gray-50 dark:hover:bg-zinc-800/50'">
             <span class="text-[7px] font-black uppercase tracking-wider px-1 py-0.5 rounded shrink-0" :class="laneBadgeClass(it)">{{ it.laneLabel }}</span>
             <span class="text-[11px] text-gray-700 dark:text-zinc-300 truncate flex-1 min-w-0 font-mono">{{ it.preview }}</span>
@@ -145,14 +157,16 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import { renderMarkdown } from '../utils/markdown';
 import {
   TRAJECTORY_LANES,
   buildTrajectory,
   defaultDetailTab,
   filterTrajectory,
+  stepTrajectory,
   trajectoryLaneCounts,
+  useTrajectoryFollow,
 } from '../composables/useTrajectory';
 
 const props = defineProps({
@@ -199,9 +213,34 @@ const emptyListMessage = computed(() => {
 const selectedId = ref(null);
 const selectedItem = computed(() => items.value.find(it => it.id === selectedId.value) || null);
 
-function select(id) {
+// A row the reader chose: they have taken over from Follow.
+function pick(id) {
+  setFollowing(false);
   selectedId.value = id;
 }
+
+const { following, setFollowing } = useTrajectoryFollow(filteredItems, selectedId);
+
+function onListKeydown(e) {
+  const delta = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+  if (!delta) return;
+  e.preventDefault();
+  const id = stepTrajectory(filteredItems.value, selectedId.value, delta);
+  if (id) pick(id);
+}
+
+// Keep the selected row on screen, whoever moved it, and keep the keyboard on
+// it while the reader is in the list.
+const listEl = ref(null);
+watch(selectedId, async (id) => {
+  await nextTick();
+  const list = listEl.value;
+  const row = [...(list?.querySelectorAll('[data-trajectory-id]') ?? [])]
+    .find((el) => el.dataset.trajectoryId === String(id));
+  if (!row) return;
+  if (list.contains(document.activeElement)) row.focus({ preventScroll: true });
+  row.scrollIntoView?.({ block: 'nearest' });
+});
 
 watch(items, (list) => {
   if (!selectedId.value && list.length > 0) {

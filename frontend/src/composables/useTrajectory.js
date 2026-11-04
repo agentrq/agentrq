@@ -20,6 +20,7 @@
  * the project has no component-test harness.
  */
 
+import { onScopeDispose, ref, watch } from 'vue';
 import {
   agentTelemetryKind,
   isAgentTelemetry,
@@ -341,6 +342,74 @@ export function filterTrajectory(items, { lane = null, query = '' } = {}) {
     return [item.label, item.preview, item.raw?.description]
       .some((field) => field?.toLowerCase().includes(needle));
   });
+}
+
+/**
+ * The entry `delta` rows away from `currentId`, stopping at either end. With
+ * nothing selected yet, or the selection filtered out, it starts from the newest.
+ *
+ * @param {Array<object>} items
+ * @param {string|null} currentId
+ * @param {number} delta
+ * @returns {string|null}
+ */
+export function stepTrajectory(items, currentId, delta) {
+  if (!items?.length) return null;
+  const i = items.findIndex((it) => it.id === currentId);
+  if (i < 0) return items[items.length - 1].id;
+  return items[Math.min(items.length - 1, Math.max(0, i + delta))].id;
+}
+
+/** How long Follow leaves each row up before moving to the next one. */
+export const FOLLOW_STEP_MS = 1500;
+
+/**
+ * Follow: the selection keeps up with the stream on its own.
+ *
+ * Turning it on jumps to the newest row. Rows that arrive after that are shown
+ * one at a time, FOLLOW_STEP_MS apart, rather than jumping to the last of a
+ * burst, so each can be read. A pending step is never restarted by new rows,
+ * or a busy stream would hold the selection still.
+ *
+ * @param {import('vue').Ref<Array<object>>} items the visible rows, oldest first
+ * @param {import('vue').Ref<string|null>} selectedId
+ * @param {{delay?: number}} [options]
+ */
+export function useTrajectoryFollow(items, selectedId, { delay = FOLLOW_STEP_MS } = {}) {
+  const following = ref(false);
+  let timer = null;
+
+  function cancel() {
+    clearTimeout(timer);
+    timer = null;
+  }
+
+  function schedule() {
+    if (!following.value) return cancel();
+    if (timer) return;
+    const list = items.value;
+    if (!list.length) return;
+    const last = list[list.length - 1].id;
+    if (selectedId.value === last) return;
+    if (!list.some((it) => it.id === selectedId.value)) {
+      selectedId.value = last;
+      return;
+    }
+    timer = setTimeout(() => {
+      timer = null;
+      if (following.value) selectedId.value = stepTrajectory(items.value, selectedId.value, 1);
+    }, delay);
+  }
+
+  function setFollowing(on) {
+    following.value = on;
+    if (on && items.value.length) selectedId.value = items.value[items.value.length - 1].id;
+  }
+
+  watch([following, items, selectedId], schedule);
+  onScopeDispose(cancel);
+
+  return { following, setFollowing };
 }
 
 /** The input fields worth showing, most telling first. */
