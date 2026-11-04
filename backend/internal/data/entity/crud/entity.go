@@ -1774,6 +1774,9 @@ const (
 	// A task opened from its workspace's card on the workspaces page.
 	// Reported by the browser: the server sees only the task being read.
 	ActionUIOverviewTaskOpen Action = 109
+	// A person allowing an app on the supervisor's consent page with Read
+	// only chosen. A read-write allow is ActionOAuthConsentAllow.
+	ActionOAuthConsentAllowReadOnly Action = 110
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1990,6 +1993,8 @@ func (a Action) String() string {
 		return "ui_task_link_open"
 	case ActionUIOverviewTaskOpen:
 		return "ui_overview_task_open"
+	case ActionOAuthConsentAllowReadOnly:
+		return "oauth_consent_allow_read_only"
 	}
 	return "unknown"
 }
@@ -2222,6 +2227,8 @@ type (
 		UserID      int64
 		WorkspaceID int64
 		Allowed     bool
+		// ReadOnly is an allow with Read only chosen, on the supervisor's page.
+		ReadOnly bool
 	}
 
 	// RecordACPV1Request counts a native ACP v1 connection coming up, (Turn)

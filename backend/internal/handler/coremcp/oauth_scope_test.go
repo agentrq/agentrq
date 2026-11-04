@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/handler/oauthconsent/oauthconsenttest"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -51,8 +53,8 @@ func TestSupervisorMetadata_AdvertisesTheSupervisorScope(t *testing.T) {
 		if err := json.Unmarshal(w.Body.Bytes(), &doc); err != nil {
 			t.Fatalf("%s: decode: %v", name, err)
 		}
-		if len(doc.ScopesSupported) != 1 || doc.ScopesSupported[0] != "supervisor-mcp" {
-			t.Errorf("%s metadata scopes_supported = %v, want [supervisor-mcp]", name, doc.ScopesSupported)
+		if !slices.Equal(doc.ScopesSupported, []string{"supervisor-mcp", "supervisor-mcp:read"}) {
+			t.Errorf("%s metadata scopes_supported = %v, want [supervisor-mcp supervisor-mcp:read]", name, doc.ScopesSupported)
 		}
 	}
 }
@@ -101,5 +103,41 @@ func TestSupervisorAuthorize_AnUnknownScopeStillReachesConsent(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("authorize with an unknown scope answered %d (%s), want the consent page", w.Code, w.Header().Get("Location"))
+	}
+}
+
+// A read-only grant's token response says so.
+func TestSupervisorToken_GrantsTheReadOnlyScope(t *testing.T) {
+	h := &handler{tokenSvc: supervisorTokens}
+	refresh := mintSupervisorToken(t, "user-1", resourceSupervisorReadOnly, "refresh")
+	w := supervisorTokenRequest(h, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}}.Encode())
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["scope"] != "supervisor-mcp:read" {
+		t.Errorf("token response scope = %v, want supervisor-mcp:read", resp["scope"])
+	}
+}
+
+// Asking for the read-only scope opens the page with Read only chosen; any
+// other scope leaves Read and write.
+func TestSupervisorAuthorize_TheReadOnlyScopeChoosesReadOnly(t *testing.T) {
+	for scope, want := range map[string]string{
+		"supervisor-mcp:read":                levelReadOnly,
+		"openid supervisor-mcp:read offline": levelReadOnly,
+		"supervisor-mcp":                     levelReadWrite,
+		"supervisor-mcp:readx":               levelReadWrite,
+	} {
+		h, _ := consentHandler()
+		req := supervisorAuthorizeRequest()
+		q := req.URL.Query()
+		q.Set("scope", scope)
+		req.URL.RawQuery = q.Encode()
+		w := httptest.NewRecorder()
+		h.oauthAuthorizeHandler().ServeHTTP(w, req)
+		if got := oauthconsenttest.Checked(w.Body.String()); got != want {
+			t.Errorf("scope %q opened the page with %q chosen, want %q", scope, got, want)
+		}
 	}
 }

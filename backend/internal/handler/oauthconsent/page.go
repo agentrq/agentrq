@@ -74,6 +74,16 @@ h1 { margin: 0 0 8px; font-size: 24px; line-height: 1.25; font-weight: 900; lett
 .row dt { margin: 0 0 2px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--label); }
 .row dd { margin: 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .hint { margin: 0 0 24px; font-size: 13px; line-height: 1.6; color: var(--muted); text-align: center; }
+.levels { margin: 0 0 20px; padding: 0; border: 0; display: grid; gap: 8px; }
+.levels legend { margin: 0 0 8px; padding: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--label); }
+.level {
+  display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; cursor: pointer;
+  border: 1px solid var(--row-border); border-radius: 16px; background: var(--row);
+}
+.level:has(input:checked) { border-color: var(--text); }
+.level input { margin: 3px 0 0; accent-color: var(--primary); flex: none; }
+.level strong { display: block; font-size: 14px; font-weight: 700; color: var(--text); }
+.level small { display: block; font-size: 13px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
 .actions { display: flex; gap: 12px; }
 button {
   flex: 1; padding: 16px 24px; border-radius: 16px; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
@@ -108,17 +118,26 @@ button:focus-visible { outline: 3px solid var(--muted); outline-offset: 2px; }
   {{end}}
 
   <dl class="rows">
-    <div class="row"><dt>It will be able to</dt><dd data-test="consent-access">{{.Access}}</dd></div>
+    {{if not .Levels}}<div class="row"><dt>It will be able to</dt><dd data-test="consent-access">{{.Access}}</dd></div>{{end}}
     <div class="row"><dt>Sends you back to</dt><dd data-test="consent-destination">{{.Destination}}</dd></div>
     {{if .Email}}<div class="row"><dt>Signed in as</dt><dd data-test="consent-account">{{.Email}}</dd></div>{{end}}
   </dl>
 
-  <p class="hint">Only allow an app you just asked to connect. If you didn’t, deny.</p>
-
-  <form method="post" class="actions">
+  <form method="post">
+    {{if .Levels}}
+    <fieldset class="levels" data-test="consent-levels">
+      <legend>It will be able to</legend>
+      {{range .Levels}}
+      <label class="level"><input type="radio" name="access" value="{{.Value}}"{{if .Checked}} checked{{end}} data-test="consent-level-{{.Value}}"><span><strong>{{.Label}}</strong><small>{{.Access}}</small></span></label>
+      {{end}}
+    </fieldset>
+    {{end}}
+    <p class="hint">Only allow an app you just asked to connect. If you didn’t, deny.</p>
     <input type="hidden" name="consent" value="{{.Token}}">
-    <button type="submit" name="decision" value="deny" class="deny" data-test="consent-deny">Deny</button>
-    <button type="submit" name="decision" value="allow" class="allow" data-test="consent-allow">Allow</button>
+    <div class="actions">
+      <button type="submit" name="decision" value="deny" class="deny" data-test="consent-deny">Deny</button>
+      <button type="submit" name="decision" value="allow" class="allow" data-test="consent-allow">Allow</button>
+    </div>
   </form>
 </main>
 </body>

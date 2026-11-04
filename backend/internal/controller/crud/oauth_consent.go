@@ -21,8 +21,11 @@ func (c *controller) RecordOAuthConsent(ctx context.Context, req entity.RecordOA
 		return
 	}
 	action := entity.ActionOAuthConsentAllow
-	if !req.Allowed {
+	switch {
+	case !req.Allowed:
 		action = entity.ActionOAuthConsentDeny
+	case req.ReadOnly:
+		action = entity.ActionOAuthConsentAllowReadOnly
 	}
 	resourceType, resourceID := entity.ResourceWorkspace, req.WorkspaceID
 	if req.WorkspaceID == 0 {

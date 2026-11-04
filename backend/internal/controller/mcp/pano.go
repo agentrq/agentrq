@@ -274,7 +274,7 @@ func PanoActions(pano crud.PanoController, userID string, workspaceID int64) []T
 				return panoFailure(err, "read"), nil, nil
 			}
 			return jsonResult(panoDocViewOf(rs.Doc)), nil, nil
-		}).WithExample(`{"id": "0kGpezGeuxt", "includeComments": true}`),
+		}).WithExample(`{"id": "0kGpezGeuxt", "includeComments": true}`).ReadOnly(),
 		NewToolAction("comment", "Add a comment to a doc.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoCommentPayload) (*mcp.CallToolResult, any, error) {
 			id, bad := docID(p.ID)
 			if bad != nil {

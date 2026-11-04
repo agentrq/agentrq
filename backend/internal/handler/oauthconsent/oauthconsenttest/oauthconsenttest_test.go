@@ -14,3 +14,12 @@ func TestToken(t *testing.T) {
 		t.Errorf("Token read %q from a page with no form, want nothing", got)
 	}
 }
+
+func TestChecked(t *testing.T) {
+	if got := Checked(`<input type="radio" name="access" value="rw" checked data-test="x">`); got != "rw" {
+		t.Errorf("Checked read %q from the page, want rw", got)
+	}
+	if got := Checked(`<input type="radio" name="access" value="ro" data-test="x">`); got != "" {
+		t.Errorf("Checked read %q from a page with nothing chosen, want nothing", got)
+	}
+}

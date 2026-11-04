@@ -499,6 +499,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionUIPlanComment, model.ActionIDUIPlanComment, "ui plan comment"},
 		{entity.ActionUITaskLinkOpen, model.ActionIDUITaskLinkOpen, "ui task link open"},
 		{entity.ActionUIOverviewTaskOpen, model.ActionIDUIOverviewTaskOpen, "ui overview task open"},
+		{entity.ActionOAuthConsentAllowReadOnly, model.ActionIDOAuthConsentAllowReadOnly, "oauth consent allow read only"},
 	}
 
 	for _, tc := range cases {

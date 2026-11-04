@@ -52,11 +52,11 @@ func newRequest(o *outcome) Request {
 		State:       "state-1",
 		Resource:    "ws1",
 		Access:      "Work as the agent of the workspace “Release notes”.",
-		Issue: func() (string, error) {
+		Issue: func(string) (string, error) {
 			o.issued++
 			return "code-1", nil
 		},
-		Decided: func(allowed bool) { o.decision = append(o.decision, allowed) },
+		Decided: func(allowed bool, _ string) { o.decision = append(o.decision, allowed) },
 	}
 }
 
@@ -441,7 +441,7 @@ func TestAFailedConsentTokenShowsNoPage(t *testing.T) {
 func TestAFailedCodeIsNotCountedAsAllowed(t *testing.T) {
 	var o outcome
 	req := newRequest(&o)
-	req.Issue = func() (string, error) { return "", errSigningKeyUnavailable }
+	req.Issue = func(string) (string, error) { return "", errSigningKeyUnavailable }
 	w := oauthconsenttest.Allow(handlerFor(newTokens(), req), authorizeGET())
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("a failed code answered %d, want 500", w.Code)
@@ -473,6 +473,89 @@ func TestRedirectURL(t *testing.T) {
 	} {
 		if got := RedirectURL(redirectURI, url.Values{"code": {"c"}, "state": {"s"}}); got != want {
 			t.Errorf("RedirectURL(%q) returned %q, want %q", redirectURI, got, want)
+		}
+	}
+}
+
+func withLevels(req Request, issuedAt *string, decidedAt *string) Request {
+	req.Levels = []Level{
+		{Value: "rw", Label: "Read and write", Access: "Change everything."},
+		{Value: "ro", Label: "Read only", Access: "See everything."},
+	}
+	issue := req.Issue
+	req.Issue = func(level string) (string, error) {
+		*issuedAt = level
+		return issue(level)
+	}
+	decided := req.Decided
+	req.Decided = func(allowed bool, level string) {
+		*decidedAt = level
+		decided(allowed, level)
+	}
+	return req
+}
+
+// A page with levels offers each as a choice in place of the one access
+// sentence, the first chosen unless Selected names another.
+func TestConsentPageOffersTheLevels(t *testing.T) {
+	var o outcome
+	var issued, decided string
+	for _, tc := range []struct{ selected, want string }{{"", "rw"}, {"ro", "ro"}, {"nonsense", "rw"}} {
+		req := withLevels(newRequest(&o), &issued, &decided)
+		req.Selected = tc.selected
+		body := showPage(t, newTokens(), req).Body.String()
+
+		if got := oauthconsenttest.Checked(body); got != tc.want {
+			t.Errorf("Selected %q: the page chose %q, want %q", tc.selected, got, tc.want)
+		}
+		for _, want := range []string{`data-test="consent-levels"`, "Read and write", "Change everything.", "Read only", "See everything."} {
+			if !strings.Contains(body, want) {
+				t.Errorf("the page does not show %q", want)
+			}
+		}
+		if strings.Contains(body, `data-test="consent-access"`) {
+			t.Error("the page shows the single access sentence beside its levels")
+		}
+	}
+}
+
+func TestConsentPageWithoutLevelsOffersNoChoice(t *testing.T) {
+	var o outcome
+	if body := showPage(t, newTokens(), newRequest(&o)).Body.String(); strings.Contains(body, `name="access"`) {
+		t.Error("a page with no levels offers a choice")
+	}
+}
+
+// Allow issues the code at the level chosen, and says which.
+func TestAllowIssuesAtTheChosenLevel(t *testing.T) {
+	for _, level := range []string{"rw", "ro"} {
+		var o outcome
+		var issued, decided string
+		w := oauthconsenttest.AllowAs(handlerFor(newTokens(), withLevels(newRequest(&o), &issued, &decided)), authorizeGET(), level)
+		if w.Code != http.StatusFound {
+			t.Fatalf("Allow as %s answered %d: %s", level, w.Code, w.Body.String())
+		}
+		if issued != level || decided != level {
+			t.Errorf("Allow as %s issued at %q and recorded %q", level, issued, decided)
+		}
+	}
+}
+
+// A level the page did not offer, or none, issues nothing.
+func TestAllowRefusesALevelNotOffered(t *testing.T) {
+	for _, level := range []string{"", "admin"} {
+		var o outcome
+		var issued, decided string
+		h := handlerFor(newTokens(), withLevels(newRequest(&o), &issued, &decided))
+		page := httptest.NewRecorder()
+		h.ServeHTTP(page, authorizeGET())
+		form := url.Values{"consent": {oauthconsenttest.Token(page.Body.String())}, "decision": {"allow"}}
+		if level != "" {
+			form.Set("access", level)
+		}
+		w := oauthconsenttest.Post(h, authorizeGET(), form)
+		if w.Code != http.StatusBadRequest || o.issued != 0 || len(o.decision) != 0 {
+			t.Errorf("access %q answered %d, issued %d codes and recorded %v, want 400 and nothing", level, w.Code, o.issued, o.decision)
 		}
 	}
 }
