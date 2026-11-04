@@ -24,6 +24,13 @@ The setup tab's permissions snippet allows this server as `mcp__agentrq__*`,
 so it needs nothing. A new *action* on a tool goes in `SUPERVISOR_ACTIONS`
 beside it, and in `newerActions` (`action_tools_test.go`) with its telemetry name.
 
+**A new action must say whether it only reads** (`.ReadOnly()`, and
+`readActions`/`writeActions` in `read_only_test.go`). A read-only grant
+(`coremcp:read`) runs only marked actions, refused in `mcpevent.RunAction`, the
+one place every tool call (Pano and retired names included) passes; a guard
+anywhere earlier misses Pano. Unmarked is a write, so a forgotten mark refuses a
+read rather than leaking a write.
+
 **Adding a *resource* or *prompt* trips none of the above.** Those parity
 tests match only `mcp.AddTool(s.server, &mcp.Tool{Name: "..."` — an
 `AddResource`/`AddPrompt` call is invisible to them. Cover a new one with its

@@ -637,10 +637,10 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			State:                  state,
 			Resource:               workspaceIDBase62,
 			Access:                 "Work as the agent of " + consentWorkspaceName(workspace.Name, workspaceIDBase62) + ": create and update its tasks, message you, change its memory and skills, and use the websites you shared with it.",
-			Issue: func() (string, error) {
+			Issue: func(string) (string, error) {
 				return h.tokenSvc.CreateOAuthCodeToken(userID, workspaceIDBase62, codeChallenge)
 			},
-			Decided: func(allowed bool) {
+			Decided: func(allowed bool, _ string) {
 				h.crud.RecordOAuthConsent(r.Context(), entity.RecordOAuthConsentRequest{
 					UserID:      workspace.UserID,
 					WorkspaceID: workspaceID,

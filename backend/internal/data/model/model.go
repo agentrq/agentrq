@@ -803,6 +803,8 @@ const (
 	ActionIDUITaskLinkOpen
 	// A task opened from its workspace's card on the workspaces page.
 	ActionIDUIOverviewTaskOpen
+	// An app allowed on the supervisor's consent page, read only.
+	ActionIDOAuthConsentAllowReadOnly
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

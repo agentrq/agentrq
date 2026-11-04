@@ -36,6 +36,15 @@ func TestRecordOAuthConsentForTheSupervisor(t *testing.T) {
 	}
 }
 
+// An allow with Read only chosen is counted apart from a read-write one.
+func TestRecordOAuthConsentReadOnly(t *testing.T) {
+	env := newMachineTelemetryEnv(t)
+	env.controller.RecordOAuthConsent(context.Background(), entity.RecordOAuthConsentRequest{UserID: 7, Allowed: true, ReadOnly: true})
+	if e := env.only(t); e.Action != entity.ActionOAuthConsentAllowReadOnly || e.ResourceType != entity.ResourceUser || e.ResourceID != 7 {
+		t.Errorf("a read-only allow published %+v, want a read-only allow on user 7", e)
+	}
+}
+
 // No user is no one to count for, as with RecordSiteShare.
 func TestRecordOAuthConsentWithoutUser(t *testing.T) {
 	env := newMachineTelemetryEnv(t)

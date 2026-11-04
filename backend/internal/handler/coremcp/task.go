@@ -46,19 +46,23 @@ func (s *WorkspaceServer) taskActions() []mcpevent.ToolAction {
 	return []mcpevent.ToolAction{
 		mcpevent.NewToolAction("list", "List a workspace's tasks.", s.handleListTasks).
 			WithDetails("filter keeps the tasks whose title or body contains it, ignoring case; status, createdBy ('human' or 'agent'), createdByWorkspaceId (the workspace that delegated it through create) and awaitingReply narrow the list further; limit (default 5, at most 50) and offset page through it. " + awaitingReplyHelp).
-			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "status": "blocked", "limit": 10}`),
+			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "status": "blocked", "limit": 10}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("listAll", "List the tasks of every workspace.", s.handleListAllTasks).
 			WithDetails("filter keeps the tasks whose title or body contains it, ignoring case; status, createdBy ('human' or 'agent'), createdByWorkspaceId (the workspace that delegated it through create) and awaitingReply narrow the list further; limit (default 5, at most 50) and offset page through it. " + awaitingReplyHelp).
-			WithExample(`{"status": "ongoing"}`),
+			WithExample(`{"status": "ongoing"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("create", "Create a task in a workspace, assigned to the human unless assignee says otherwise.", s.handleCreateTask).
 			WithDetails("Write the full context into body: the receiving agent has nothing else. cronSchedule makes it a scheduled task: a recurring one runs at most hourly, a one-time one fixes dom and month. The task records the supervisor workspace as its createdByWorkspaceId, which list and listAll filter on.").
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "title": "Release v0.9.20", "body": "Tag main and publish the release notes.", "assignee": "agent", "clearContext": true}`),
 		mcpevent.NewToolAction("get", "Get a task.", s.handleGetTask).
 			WithDetails("The agent's tool calls, most of a busy task's size, are left out unless includeToolCalls is true; toolCallCount says how many there are. messagesSince keeps only the messages created after it. To follow up on a reply, messages is more efficient still. " + awaitingReplyHelp).
-			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "messagesSince": "2026-10-26T09:00:00Z"}`),
+			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "messagesSince": "2026-10-26T09:00:00Z"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("messages", "Read a task's conversation: its text messages, oldest first, with the task's status and updatedAt.", s.handleTaskMessages).
 			WithDetails("Each message has its id, createdAt, sender (human or agent), text and attachment names; an agent's question to the human is one. Tool calls, permission requests and the agent's thoughts, usage and notices are left out. since keeps the messages created after it: pass the createdAt of the last one you read. limit (default 20, at most 100) keeps the newest; total says how many matched.").
-			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "since": "2026-10-26T09:00:00Z"}`),
+			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "since": "2026-10-26T09:00:00Z"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("reply", "Post a message to a task's thread.", s.handleReplyToTask).
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "text": "Looks good, go ahead."}`),
 		mcpevent.NewToolAction("respond", "Answer the permission request a task is waiting on: allow, allow_all, reject, or text to reply without deciding.", s.handleRespondToTask).
@@ -77,7 +81,8 @@ func (s *WorkspaceServer) taskActions() []mcpevent.ToolAction {
 			WithDetails("To stop a scheduled task without losing its history, updateStatus it to rejected instead.").
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ"}`),
 		mcpevent.NewToolAction("getAttachment", "Get an attachment of a task: its public link, or its content as base64 or plain text, and metadata.", s.handleGetAttachment).
-			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "attachmentId": "att-1"}`),
+			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "attachmentId": "att-1"}`).
+			ReadOnly(),
 	}
 }
 

@@ -12,10 +12,12 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/handler/authmd"
 	"github.com/agentrq/agentrq/backend/internal/handler/oauthconsent"
@@ -220,11 +222,75 @@ func oauthIdentityFor(r *http.Request) oauthIdentity {
 	return id
 }
 
-// oauthScope is the only scope: everything the supervisor MCP server offers. Whatever scope a
-// client asks for, it is granted this one and told so in the token response
-// (RFC 6749 §3.3); refusing others would break clients that send a default
-// scope such as openid or offline_access without reading ours.
-const oauthScope = "supervisor-mcp"
+// oauthScope is everything the supervisor MCP server offers, and
+// oauthScopeReadOnly its reads alone. The person chooses between them on the
+// consent page, so a scope asked for only sets the choice the page opens with:
+// it is never refused, and the token response says which was granted (RFC
+// 6749 §3.3). Refusing others would break clients that send a default scope
+// such as openid or offline_access without reading ours.
+const (
+	oauthScope         = "supervisor-mcp"
+	oauthScopeReadOnly = "supervisor-mcp:read"
+)
+
+// requestedLevel is the level a request's scope asks for: read only when it
+// names that scope, else the page's own first choice.
+func requestedLevel(scope string) string {
+	if slices.Contains(strings.Fields(scope), oauthScopeReadOnly) {
+		return levelReadOnly
+	}
+	return ""
+}
+
+// A supervisor token names its resource as one of its audiences: the
+// supervisor, or the supervisor read only. The read-only one is a resource of
+// its own, rather than a mark beside "coremcp", so a check that knows nothing of
+// it refuses the token instead of granting it everything; and its ':' keeps it
+// from ever reading as a base62 workspace ID.
+const (
+	resourceSupervisor         = "coremcp"
+	resourceSupervisorReadOnly = "coremcp:read"
+)
+
+// The kinds of access the consent page offers, read and write first: it is
+// what connecting has always granted, so it is chosen unless the person
+// picks the other.
+const (
+	levelReadWrite = "rw"
+	levelReadOnly  = "ro"
+)
+
+var supervisorLevels = []oauthconsent.Level{
+	{Value: levelReadWrite, Label: "Read and write", Access: "Act as your supervisor across every workspace on this account: create, change and fork workspaces, and read, create, change and delete their tasks."},
+	{Value: levelReadOnly, Label: "Read only", Access: "See every workspace on this account, with its tasks, messages, memory, skills, events, workflows, machines and Pano docs, but change nothing."},
+}
+
+// levelResource is the resource a code is issued for at level.
+func levelResource(level string) string {
+	if level == levelReadOnly {
+		return resourceSupervisorReadOnly
+	}
+	return resourceSupervisor
+}
+
+// resourceScope is the scope a token for resource grants.
+func resourceScope(resource string) string {
+	if resource == resourceSupervisorReadOnly {
+		return oauthScopeReadOnly
+	}
+	return oauthScope
+}
+
+// supervisorResource is the supervisor resource among a token's audiences, ""
+// when there is none.
+func supervisorResource(audience []string) string {
+	for _, aud := range audience {
+		if aud == resourceSupervisor || aud == resourceSupervisorReadOnly {
+			return aud
+		}
+	}
+	return ""
+}
 
 // challengeUnauthorized writes the RFC 9728 §5.1 challenge that tells an
 // unauthenticated client exactly where to find our metadata, instead of making
@@ -376,18 +442,15 @@ func (h *handler) streamableHandler() http.Handler {
 		}
 
 		// Ensure it's a valid coremcp access token
-		hasCoreMCP := false
+		resource := supervisorResource(claims.Audience)
 		hasRestricted := false
 		for _, aud := range claims.Audience {
-			if aud == "coremcp" {
-				hasCoreMCP = true
-			}
 			if aud == "refresh" || aud == "authorization_code" {
 				hasRestricted = true
 			}
 		}
 
-		if !hasCoreMCP || hasRestricted || claims.Subject == "" {
+		if resource == "" || hasRestricted || claims.Subject == "" {
 			challengeUnauthorized(w, r, "unauthorized")
 			return
 		}
@@ -395,6 +458,9 @@ func (h *handler) streamableHandler() http.Handler {
 		userID := claims.Subject
 		ctx := context.WithValue(r.Context(), "user_id", userID)
 		ctx = context.WithValue(ctx, auth.CtxKeyMCPClaims, claims)
+		if resource == resourceSupervisorReadOnly {
+			ctx = mcpevent.WithReadOnly(ctx)
+		}
 
 		zlog.Debug().Str("user_id", userID).Str("method", r.Method).Msg("CoreMCP streamable handler")
 
@@ -426,7 +492,7 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 			"token_endpoint":           tokenEndpoint,
 			"registration_endpoint":    regEndpoint,
 			"response_types_supported": []string{"code"},
-			"scopes_supported":         []string{oauthScope},
+			"scopes_supported":         []string{oauthScope, oauthScopeReadOnly},
 			// Deliberately no client_credentials: every token here is bound to
 			// a specific user's workspace access, and that grant has no user to
 			// bind one to. Clients are also all public (see below), so there
@@ -464,7 +530,7 @@ func (h *handler) oauthProtectedResourceHandler() http.Handler {
 			// .../.well-known/oauth-authorization-server/.well-known/oauth-authorization-server.
 			"authorization_servers":    []string{id.issuer},
 			"bearer_methods_supported": []string{"header"},
-			"scopes_supported":         []string{oauthScope},
+			"scopes_supported":         []string{oauthScope, oauthScopeReadOnly},
 		})
 	})
 }
@@ -547,13 +613,17 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			RegisteredRedirectURIs: registeredRedirectURIs,
 			BaseURL:                h.baseURL,
 			State:                  state,
-			Resource:               "coremcp",
-			Access:                 "Act as your supervisor across every workspace on this account: create, change and fork workspaces, and read, create, change and delete their tasks.",
-			Issue:                  func() (string, error) { return h.tokenSvc.CreateOAuthCodeToken(userID, "coremcp", codeChallenge) },
-			Decided: func(allowed bool) {
+			Resource:               resourceSupervisor,
+			Levels:                 supervisorLevels,
+			Selected:               requestedLevel(r.URL.Query().Get("scope")),
+			Issue: func(level string) (string, error) {
+				return h.tokenSvc.CreateOAuthCodeToken(userID, levelResource(level), codeChallenge)
+			},
+			Decided: func(allowed bool, level string) {
 				h.crud.RecordOAuthConsent(r.Context(), entity.RecordOAuthConsentRequest{
-					UserID:  monoflake.IDFromBase62(userID).Int64(),
-					Allowed: allowed,
+					UserID:   monoflake.IDFromBase62(userID).Int64(),
+					Allowed:  allowed,
+					ReadOnly: level == levelReadOnly,
 				})
 			},
 		})
@@ -592,16 +662,10 @@ func (h *handler) oauthTokenHandler() http.Handler {
 			return
 		}
 
-		// Ensure it was issued for CoreMCP
-		hasCoreMCP := false
-		for _, aud := range claims.Audience {
-			if aud == "coremcp" {
-				hasCoreMCP = true
-				break
-			}
-		}
-
-		if !hasCoreMCP {
+		// Ensure it was issued for CoreMCP. The tokens it mints are for the
+		// same resource, so a refresh never turns read-only into read-write.
+		resource := supervisorResource(claims.Audience)
+		if resource == "" {
 			http.Error(w, `{"error": "invalid_grant"}`, http.StatusUnauthorized)
 			return
 		}
@@ -640,19 +704,19 @@ func (h *handler) oauthTokenHandler() http.Handler {
 
 		userID := claims.Subject
 
-		accessToken, err := h.tokenSvc.CreateMCPToken(userID, "coremcp", "access")
+		accessToken, err := h.tokenSvc.CreateMCPToken(userID, resource, "access")
 		if err != nil {
 			http.Error(w, `{"error": "server_error"}`, http.StatusInternalServerError)
 			return
 		}
 
-		refreshToken, err := h.tokenSvc.CreateMCPToken(userID, "coremcp", "refresh")
+		refreshToken, err := h.tokenSvc.CreateMCPToken(userID, resource, "refresh")
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token":  accessToken,
 			"refresh_token": refreshToken,
 			"token_type":    "bearer",
-			"scope":         oauthScope,
+			"scope":         resourceScope(resource),
 			"expires_in":    2592000, // 30 days
 		})
 	})

@@ -100,17 +100,20 @@ func (s *WorkspaceServer) workspaceActions() []mcpevent.ToolAction {
 	return []mcpevent.ToolAction{
 		mcpevent.NewToolAction("list", "List the account's workspaces, and what each one's agent is doing.", s.handleListWorkspaces).
 			WithDetails("Each comes with only its id, name, forkOfId, workingDirectory and agent unless includeDetails is true. " + agentStateHelp).
-			WithExample(`{"includeArchived": false}`),
+			WithExample(`{"includeArchived": false}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("create", "Create a workspace.", s.handleCreateWorkspace).
 			WithDetails("Check list first for one with the same purpose. A human still has to connect an agent to it, or launch one with machines launchAgent.").
 			WithExample(`{"name": "release-notes", "description": "Writes the release notes for every tag."}`),
 		mcpevent.NewToolAction("get", "Get a workspace, with its mcpUrl and what its agent is doing.", s.handleGetWorkspace).
 			WithDetails(agentStateHelp).
-			WithExample(`{"id": "0ZzhYQG2qtl"}`),
+			WithExample(`{"id": "0ZzhYQG2qtl"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("update", "Update a workspace: only the fields sent change.", s.handleUpdateWorkspace).
 			WithExample(`{"id": "0ZzhYQG2qtl", "description": "Writes and publishes the release notes."}`),
 		mcpevent.NewToolAction("stats", "Get a workspace's statistics over 7 or 30 days.", s.handleGetWorkspaceStats).
-			WithExample(`{"id": "0ZzhYQG2qtl", "range": "7d"}`),
+			WithExample(`{"id": "0ZzhYQG2qtl", "range": "7d"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("fork", "Fork a workspace: its own queue and agent, sharing the parent's settings, memory and skills.", s.handleForkWorkspace).
 			WithDetails("Move tasks into the fork to have a second agent work on them; merge it back with mergeFork when they are done. A fork, the supervisor workspace and an archived workspace cannot be forked.").
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "name": "release-notes-fork"}`),
@@ -123,9 +126,11 @@ func (s *WorkspaceServer) workspaceActions() []mcpevent.ToolAction {
 func (s *WorkspaceServer) memoryActions() []mcpevent.ToolAction {
 	return []mcpevent.ToolAction{
 		mcpevent.NewToolAction("list", "List a workspace's memories: name, size and when each last changed, without content.", s.handleListMemories).
-			WithExample(`{"workspaceId": "0ZzhYQG2qtl"}`),
+			WithExample(`{"workspaceId": "0ZzhYQG2qtl"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("get", "Get one of a workspace's memories in full, by name.", s.handleGetMemory).
-			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "name": "memory.md"}`),
+			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "name": "memory.md"}`).
+			ReadOnly(),
 	}
 }
 
@@ -133,32 +138,39 @@ func (s *WorkspaceServer) skillsActions() []mcpevent.ToolAction {
 	return []mcpevent.ToolAction{
 		mcpevent.NewToolAction("search", "Find the account's skills as a workspace sees them: name, description, source and size, and the total matched.", s.handleSearchSkills).
 			WithDetails("enabled false means turned off for every workspace; workspaceEnabled false means not on in that workspace. Its agent sees only skills with both on. Content is not included: get a file with get.").
-			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "q": "release"}`),
+			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "q": "release"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("get", "Get one file of a skill; skill://<name> alone gets its SKILL.md and the list of its other files.", s.handleGetSkill).
-			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "uri": "skill://release-notes"}`),
+			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "uri": "skill://release-notes"}`).
+			ReadOnly(),
 	}
 }
 
 func (s *WorkspaceServer) eventsActions() []mcpevent.ToolAction {
 	return []mcpevent.ToolAction{
-		mcpevent.NewToolAction("list", "List the account's events.", s.handleListEvents),
+		mcpevent.NewToolAction("list", "List the account's events.", s.handleListEvents).
+			ReadOnly(),
 		mcpevent.NewToolAction("create", "Define a named signal that workspaces publish and triggers react to.", s.handleCreateEvent).
 			WithExample(`{"name": "release_tagged", "payloadGuidelines": "The tag, and the PRs it includes."}`),
 		mcpevent.NewToolAction("get", "Get an event.", s.handleGetEvent).
-			WithExample(`{"eventId": "0kEvt7hQx2M"}`),
+			WithExample(`{"eventId": "0kEvt7hQx2M"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("update", "Revise an event's payload guidelines. Its name is fixed once created.", s.handleUpdateEvent).
 			WithExample(`{"eventId": "0kEvt7hQx2M", "payloadGuidelines": "The tag, its PRs, and the changelog link."}`),
 		mcpevent.NewToolAction("delete", "Delete an event. Its triggers stop firing.", s.handleDeleteEvent).
 			WithExample(`{"eventId": "0kEvt7hQx2M"}`),
 		mcpevent.NewToolAction("listTasks", "List the tasks an event has spawned, to see whether what was wired up is running.", s.handleListEventTasks).
-			WithExample(`{"eventId": "0kEvt7hQx2M"}`),
+			WithExample(`{"eventId": "0kEvt7hQx2M"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("listTriggers", "List an event's triggers: everything that happens when it fires.", s.handleListEventTriggers).
-			WithExample(`{"eventId": "0kEvt7hQx2M"}`),
+			WithExample(`{"eventId": "0kEvt7hQx2M"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("createTrigger", "React to an event: when it fires, create a task in a workspace.", s.handleCreateEventTrigger).
 			WithDetails("The body may carry {{EVENT_PAYLOAD}} and {{EVENT_FAQ}}; the title is used as written. emitEventId chains a second event to the task's completion. A cron schedule is at most hourly.").
 			WithExample(`{"eventId": "0kEvt7hQx2M", "workspaceId": "0ZzhYQG2qtl", "title": "Write the release notes", "body": "{{EVENT_PAYLOAD}}", "emitEventId": "0kEvt9notes"}`),
 		mcpevent.NewToolAction("getTrigger", "Get an event trigger.", s.handleGetEventTrigger).
-			WithExample(`{"triggerId": "0kTrg3aB9cD"}`),
+			WithExample(`{"triggerId": "0kTrg3aB9cD"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("updateTrigger", "Rewrite an event trigger.", s.handleUpdateEventTrigger).
 			WithDetails("Every field is written as given, so send the ones to keep as well.").
 			WithExample(`{"triggerId": "0kTrg3aB9cD", "workspaceId": "0ZzhYQG2qtl", "title": "Write the release notes", "body": "{{EVENT_PAYLOAD}}"}`),
@@ -169,14 +181,17 @@ func (s *WorkspaceServer) eventsActions() []mcpevent.ToolAction {
 
 func (s *WorkspaceServer) workflowsActions() []mcpevent.ToolAction {
 	return []mcpevent.ToolAction{
-		mcpevent.NewToolAction("list", "List the account's workflows.", s.handleListWorkflows),
+		mcpevent.NewToolAction("list", "List the account's workflows.", s.handleListWorkflows).
+			ReadOnly(),
 		mcpevent.NewToolAction("create", "Create a workflow, optionally starting from an event.", s.handleCreateWorkflow).
 			WithExample(`{"name": "Release", "startEventId": "0kEvt7hQx2M"}`),
 		mcpevent.NewToolAction("get", "Get a workflow.", s.handleGetWorkflow).
-			WithExample(`{"workflowId": "0kWfl5mN2pQ"}`),
+			WithExample(`{"workflowId": "0kWfl5mN2pQ"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("getText", "Read a workflow's whole graph as the indented document the UI's text mode edits.", s.handleGetWorkflowText).
 			WithDetails("Steps naming a deleted event or workspace are left out, so the document always parses.").
-			WithExample(`{"workflowId": "0kWfl5mN2pQ"}`),
+			WithExample(`{"workflowId": "0kWfl5mN2pQ"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("update", "Update a workflow: only the fields sent change.", s.handleUpdateWorkflow).
 			WithExample(`{"workflowId": "0kWfl5mN2pQ", "name": "Release train"}`),
 		mcpevent.NewToolAction("delete", "Delete a workflow and its steps.", s.handleDeleteWorkflow).
@@ -185,21 +200,24 @@ func (s *WorkspaceServer) workflowsActions() []mcpevent.ToolAction {
 			WithDetails("Every name is resolved before anything is written, so an unknown one on the last line leaves the workflow untouched.").
 			WithExample(`{"workflowId": "0kWfl5mN2pQ", "text": "- event:release_tagged\n  - agent:release-notes\n    - event:notes_ready"}`),
 		mcpevent.NewToolAction("listSteps", "List a workflow's steps.", s.handleListWorkflowSteps).
-			WithExample(`{"workflowId": "0kWfl5mN2pQ"}`),
+			WithExample(`{"workflowId": "0kWfl5mN2pQ"}`).
+			ReadOnly(),
 		mcpevent.NewToolAction("createStep", "Add a step: when its event fires, create a task in a workspace.", s.handleCreateWorkflowStep).
 			WithDetails("The body may carry {{EVENT_PAYLOAD}} and {{EVENT_FAQ}}; emitEventId hands off to the next step when the task completes.").
 			WithExample(`{"workflowId": "0kWfl5mN2pQ", "eventId": "0kEvt7hQx2M", "workspaceId": "0ZzhYQG2qtl", "title": "Write the release notes", "emitEventId": "0kEvt9notes"}`),
 		mcpevent.NewToolAction("deleteStep", "Delete a workflow step.", s.handleDeleteWorkflowStep).
 			WithExample(`{"workflowId": "0kWfl5mN2pQ", "stepId": "0kStp1xY2zA"}`),
 		mcpevent.NewToolAction("listTasks", "List the tasks a workflow has spawned.", s.handleListWorkflowTasks).
-			WithExample(`{"workflowId": "0kWfl5mN2pQ"}`),
+			WithExample(`{"workflowId": "0kWfl5mN2pQ"}`).
+			ReadOnly(),
 	}
 }
 
 func (s *WorkspaceServer) machinesActions() []mcpevent.ToolAction {
 	return []mcpevent.ToolAction{
 		mcpevent.NewToolAction("list", "List the account's machines: name, OS, agentrqd version, whether each is enabled and online, and its agents.", s.handleListMachines).
-			WithDetails("agents names each agent's workspace and what it is doing. " + agentStateHelp),
+			WithDetails("agents names each agent's workspace and what it is doing. " + agentStateHelp).
+			ReadOnly(),
 		mcpevent.NewToolAction("createEnrolmentCode", "Mint a one-time code for enrolling a new machine with agentrqd.", s.handleCreateEnrolmentCode).
 			WithDetails("It is shown once and expires shortly, so hand it to the human right away; the agentrq://guides/agentrqd-setup resource has the rest of the setup."),
 		mcpevent.NewToolAction("launchAgent", "Start an agent for a workspace on one of the account's machines.", s.handleLaunchAgent).

@@ -402,6 +402,7 @@ func (s *WorkspaceServer) registerTools() {
 	s.registerPanoTools()
 	mcp.AddTool(s.server, &mcp.Tool{Name: "help", Description: helpToolDescription, Annotations: mcphint.Read("How to call these tools")}, s.handleHelpTool)
 	s.server.AddReceivingMiddleware(mcpevent.ActionToolsMiddleware(actionToolNames, legacyTools))
+	s.server.AddReceivingMiddleware(s.readOnlyToolsMiddleware)
 
 	// Resources, prompts and skills — see resources.go, task_resources.go,
 	// prompts.go and skills.go.

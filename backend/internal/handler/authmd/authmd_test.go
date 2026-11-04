@@ -40,6 +40,7 @@ func TestAuthMDDescribesThisServer(t *testing.T) {
 		"`https://selfhosted.example/.well-known/oauth-authorization-server`",
 		"`mcp`",
 		"`supervisor-mcp`",
+		"`supervisor-mcp:read`",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the document does not mention %s", want)

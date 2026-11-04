@@ -15,6 +15,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
@@ -60,10 +61,39 @@ type Request struct {
 	Resource string
 	// Access says, in a sentence, what the app will be able to do.
 	Access string
-	// Issue mints the authorization code once the person allows the app.
-	Issue func() (string, error)
+	// Levels, when set, are the kinds of access the person chooses between,
+	// in place of Access. Selected is the one chosen when the page opens: the
+	// first unless it names another.
+	Levels   []Level
+	Selected string
+	// Issue mints the authorization code once the person allows the app, at
+	// the level they chose: "" when there are no Levels.
+	Issue func(level string) (string, error)
 	// Decided is told what the person chose, after the redirect is written.
-	Decided func(allowed bool)
+	Decided func(allowed bool, level string)
+}
+
+// Level is one kind of access the person may grant.
+type Level struct {
+	// Value is what the form posts as access.
+	Value string
+	Label string
+	// Access says, in a sentence, what the app will be able to do.
+	Access string
+}
+
+// chosenLevel is the level a POST chose: "" when the page offers none, and
+// false when it offers some and the form names none of them.
+func chosenLevel(req Request, posted string) (string, bool) {
+	if len(req.Levels) == 0 {
+		return "", true
+	}
+	for _, l := range req.Levels {
+		if l.Value == posted {
+			return posted, true
+		}
+	}
+	return "", false
 }
 
 const (
@@ -109,17 +139,22 @@ func Serve(w http.ResponseWriter, r *http.Request, tokens auth.TokenService, req
 		}
 		switch r.PostForm.Get("decision") {
 		case DecisionAllow:
-			code, err := req.Issue()
+			level, ok := chosenLevel(req, r.PostForm.Get("access"))
+			if !ok {
+				http.Error(w, "choose the access to allow", http.StatusBadRequest)
+				return
+			}
+			code, err := req.Issue(level)
 			if err != nil {
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
 			http.Redirect(w, r, RedirectURL(redirectURI, url.Values{"code": {code}, "state": {req.State}}), http.StatusFound)
-			decided(req, true)
+			decided(req, true, level)
 		case DecisionDeny:
 			// RFC 6749 §4.1.2.1: the client learns the person said no.
 			http.Redirect(w, r, RedirectURL(redirectURI, url.Values{"error": {"access_denied"}, "state": {req.State}}), http.StatusFound)
-			decided(req, false)
+			decided(req, false, "")
 		default:
 			http.Error(w, "decision must be allow or deny", http.StatusBadRequest)
 		}
@@ -129,9 +164,9 @@ func Serve(w http.ResponseWriter, r *http.Request, tokens auth.TokenService, req
 	}
 }
 
-func decided(req Request, allowed bool) {
+func decided(req Request, allowed bool, level string) {
 	if req.Decided != nil {
-		req.Decided(allowed)
+		req.Decided(allowed, level)
 	}
 }
 
@@ -160,9 +195,16 @@ type page struct {
 	ClientHost  string
 	Destination string
 	Access      string
+	Levels      []pageLevel
 	Email       string
 	Token       string
 	Nonce       string
+}
+
+// pageLevel is a level as the page shows it.
+type pageLevel struct {
+	Level
+	Checked bool
 }
 
 func newPage(req Request, token string) page {
@@ -174,6 +216,12 @@ func newPage(req Request, token string) page {
 		Access:      req.Access,
 		Email:       req.Email,
 		Token:       token,
+	}
+	for _, l := range req.Levels {
+		p.Levels = append(p.Levels, pageLevel{Level: l, Checked: l.Value == req.Selected})
+	}
+	if len(p.Levels) > 0 && !slices.ContainsFunc(p.Levels, func(l pageLevel) bool { return l.Checked }) {
+		p.Levels[0].Checked = true
 	}
 	if req.Client.Kind == ClientMetadataDocument {
 		// The host is the one proven thing about such a client. One the page

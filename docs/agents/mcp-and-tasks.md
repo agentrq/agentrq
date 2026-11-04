@@ -210,9 +210,11 @@ its caller. The page is backend-rendered so no WebMCP tool can press Allow,
 and every value on it is validated first (`auth.ValidateDisplayName`, ASCII
 hosts), not cleaned at display.
 
-Each server has one scope, `mcp` or `supervisor-mcp` (`oauthScope`), and grants
-it whatever was asked for: refusing an unknown scope breaks clients that send
-`openid` or `offline_access` unasked.
+The workspace server has one scope, `mcp`, and grants it whatever was asked
+for: refusing an unknown scope breaks clients that send `openid` or
+`offline_access` unasked. The supervisor's has two, `supervisor-mcp` and
+`supervisor-mcp:read`, chosen by the person on the page; a scope asked for only
+sets the choice the page opens with, and is never refused either.
 
 PKCE is S256 only and optional: a code issued without a challenge is redeemed
 without a verifier, so clients that never sent PKCE keep signing in.

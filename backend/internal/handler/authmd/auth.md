@@ -14,6 +14,7 @@ that connect to one of AgentRQ's two MCP servers on a person's behalf:
 |---|---|---|---|
 | Workspace | `{{BASE}}/mcp/{workspaceId}` | `mcp` | Act inside one workspace: its tasks, messages, memory and skills |
 | Supervisor | `{{BASE}}/mcp` | `supervisor-mcp` | Act across every workspace on the account |
+| Supervisor, read only | `{{BASE}}/mcp` | `supervisor-mcp:read` | See every workspace on the account, and change nothing |
 
 `{workspaceId}` is the workspace's base62 ID, shown in the AgentRQ web app.
 
@@ -62,8 +63,14 @@ The response carries `access_token`, `refresh_token`, `token_type` `bearer`,
 `expires_in` and `scope`. To renew, `POST`
 `grant_type=refresh_token&refresh_token=…` to the same endpoint.
 
-Each server has one scope, listed above. A client may leave `scope` out; any
-scope it asks for is granted as the server's own.
+The workspace server has one scope, listed above. A client may leave `scope`
+out; any scope it asks for is granted as the server's own.
+
+On the supervisor's consent page the person chooses Read and write or Read
+only, and the token response's `scope` says which they granted. Asking for
+`supervisor-mcp:read` opens the page with Read only chosen; the person can
+still change it. A read-only token refuses every action that changes
+something, with an error naming it, and a refresh keeps it read only.
 
 ## Using the credential
 

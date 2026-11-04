@@ -30,6 +30,9 @@ type ToolAction struct {
 	Details string
 	// Example is a payload for it, as JSON, which help prints as a call.
 	Example string
+	// Reads is true for an action that changes nothing, the only kind a
+	// read-only connection may run.
+	Reads bool
 	// payload is the type the payload decodes into, nil when it takes none.
 	payload reflect.Type
 	run     func(ctx context.Context, req *mcp.CallToolRequest, payload map[string]any) (*mcp.CallToolResult, any, error)
@@ -57,6 +60,26 @@ func (a ToolAction) WithExample(payload string) ToolAction {
 func (a ToolAction) WithDetails(details string) ToolAction {
 	a.Details = details
 	return a
+}
+
+// ReadOnly is the action marked as one that changes nothing.
+func (a ToolAction) ReadOnly() ToolAction {
+	a.Reads = true
+	return a
+}
+
+type readOnlyKey struct{}
+
+// WithReadOnly marks a call as made on a read-only connection: RunAction
+// refuses any action not marked ReadOnly.
+func WithReadOnly(ctx context.Context) context.Context {
+	return context.WithValue(ctx, readOnlyKey{}, true)
+}
+
+// IsReadOnly reports whether ctx is a read-only connection's.
+func IsReadOnly(ctx context.Context) bool {
+	ro, _ := ctx.Value(readOnlyKey{}).(bool)
+	return ro
 }
 
 // ActionTool is a tool of actions, as the server-wide help tool lists it.
@@ -125,6 +148,9 @@ func RunAction(ctx context.Context, req *mcp.CallToolRequest, tool string, actio
 	names := make([]string, 0, len(actions)+1)
 	for _, a := range actions {
 		if a.Name == action {
+			if !a.Reads && IsReadOnly(ctx) {
+				return toolError("%s.%s changes something, and this connection is read-only: connect again and choose Read and write to run it", tool, action), nil, nil
+			}
 			return a.run(ctx, req, payload)
 		}
 		names = append(names, a.Name)
