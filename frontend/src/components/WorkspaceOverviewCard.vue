@@ -5,8 +5,8 @@
 -->
 
 <!-- One workspace on the workspaces page: who is live and on what, its task
-     counts, and the first few tasks of its Active list. A click on a task
-     opens the task; anywhere else opens the workspace. -->
+     counts, and, unless simple, the first few tasks of its Active list. A
+     click on a task opens the task; anywhere else opens the workspace. -->
 <template>
   <div data-test="workspace-card"
        class="group relative bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-4 cursor-pointer transition-all duration-300 hover:border-gray-400 dark:hover:border-zinc-600 shadow-sm hover:shadow-md"
@@ -75,7 +75,7 @@
 
     <!-- A fixed height, so every card in a column is the same height whether
          it shows four tasks, two, or none. -->
-    <div class="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800" :class="narrow ? '' : 'h-[142px]'">
+    <div v-if="!simple" class="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800" :class="narrow ? '' : 'h-[142px]'">
       <div v-if="shown.length === 0"
            class="h-full min-h-[60px] flex items-center justify-center border border-dashed border-gray-200 dark:border-zinc-800 rounded-sm text-[11px] font-medium text-gray-500 dark:text-zinc-500">
         No active tasks
@@ -119,6 +119,8 @@ const props = defineProps({
   overview: { type: Object, default: null },
   dimmed: { type: Boolean, default: false },
   narrow: { type: Boolean, default: false },
+  // The Simple tab: the workspace without its tasks.
+  simple: { type: Boolean, default: false },
 });
 defineEmits(['open', 'open-task']);
 

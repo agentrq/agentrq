@@ -184,6 +184,11 @@ const text = (node) => node.textContent.replace(/\s+/g, ' ').trim();
 // The template compiler drops the space between sibling tags, so a row reads
 // as its parts joined.
 const row = (node) => [...node.children].map(text).filter(Boolean).join(' ');
+// The page opens on the Simple tab; the tasks are on the Detailed one.
+const openTab = async (label) => {
+  $$('button').find((b) => text(b) === label).click();
+  await settle();
+};
 const card = (name) => $$('[data-test="workspace-card"]').find((c) => text(c.querySelector('h3')) === name);
 
 const minutesAgo = (n) => new Date(Date.now() - n * 60000).toISOString();
@@ -247,6 +252,17 @@ describe('a workspace card', () => {
     expect($$('[data-test="preview-task"]').map(row)).toEqual(['task 1 5m ago', 'task 2 5m ago', 'task 3 5m ago']);
     expect(text(el.querySelector('[data-test="more-tasks"]'))).toBe('+1 more →');
     expect(text(el)).toContain('Agent Live');
+  });
+
+  it('in the simple view shows the counts but no tasks', async () => {
+    await mountComponent(WorkspaceOverviewCard, {
+      workspace: { id: 'a', name: 'api' },
+      overview: { counts: { ongoing: 1 }, tasks: [task('1', 'ongoing')] },
+      simple: true,
+    });
+    expect($$('[data-test="count-chip"]').map(text)).toEqual(['1Ongoing']);
+    expect($$('[data-test="preview-task"]')).toHaveLength(0);
+    expect(text(el)).not.toContain('No active tasks');
   });
 
   it('says so when a workspace has nothing active, and marks a fork', async () => {
@@ -324,27 +340,47 @@ describe('the workspaces page', () => {
     { id: 'x', name: 'old', archivedAt: '2026-10-01T00:00:00Z' },
   ];
 
-  it('lays the cards out in two columns with the forks under their parent', async () => {
+  it('lays the cards out in three columns with the forks under their parent', async () => {
+    fetchWorkspaces.mockResolvedValue({ workspaces });
+    fetchTaskOverview.mockResolvedValue({ workspaces: [{ workspaceId: 'a', counts: { ongoing: 1 }, tasks: [task('1', 'ongoing')] }] });
+    await mountComponent(WorkspaceView);
+    await openTab('Detailed');
+
+    expect(connected.value).toBe(true);
+    const columns = $$('[data-test="workspace-column"]');
+    expect(columns).toHaveLength(3);
+    const names = (node) => [...node.querySelectorAll('h3')].map(text);
+    // The supervisor leads the list, and each card after it goes into the
+    // shortest column: the parent with two forks beside it, then the next.
+    expect(names(columns[0])).toEqual(['supervisor']);
+    expect(names(columns[1])).toEqual(['api', 'api-docs', 'api-wp10']);
+    expect(names(columns[2])).toEqual(['landing']);
+    expect($$('[data-test="fork-card"]')).toHaveLength(2);
+    expect(text(columns[1])).toContain('task 1');
+  });
+
+  it('opens on the Simple tab, the workspaces without their tasks', async () => {
     fetchWorkspaces.mockResolvedValue({ workspaces });
     fetchTaskOverview.mockResolvedValue({ workspaces: [{ workspaceId: 'a', counts: { ongoing: 1 }, tasks: [task('1', 'ongoing')] }] });
     await mountComponent(WorkspaceView);
 
-    expect(connected.value).toBe(true);
-    const columns = $$('[data-test="workspace-column"]');
-    expect(columns).toHaveLength(2);
-    const names = (node) => [...node.querySelectorAll('h3')].map(text);
-    // The supervisor leads the list, so the parent with two forks goes beside
-    // it, and the next card back under the supervisor, the shorter column.
-    expect(names(columns[0])).toEqual(['supervisor', 'landing']);
-    expect(names(columns[1])).toEqual(['api', 'api-docs', 'api-wp10']);
-    expect($$('[data-test="fork-card"]')).toHaveLength(2);
-    expect(text(columns[1])).toContain('task 1');
+    expect($$('h3').map(text)).toEqual(['supervisor', 'api', 'api-docs', 'api-wp10', 'landing']);
+    expect($$('[data-test="preview-task"]')).toHaveLength(0);
+    expect(text(card('api'))).toContain('1Ongoing');
+
+    await openTab('Detailed');
+    expect($$('[data-test="preview-task"]')).toHaveLength(1);
+    await openTab('Performance');
+    expect($$('[data-test="workspace-card"]')).toHaveLength(0);
+    await openTab('Simple');
+    expect($$('[data-test="workspace-card"]')).toHaveLength(5);
   });
 
   it('opens a task from its card, and counts it against the task\'s workspace', async () => {
     fetchWorkspaces.mockResolvedValue({ workspaces });
     fetchTaskOverview.mockResolvedValue({ workspaces: [{ workspaceId: 'a', counts: { ongoing: 1 }, tasks: [task('1', 'ongoing')] }] });
     await mountComponent(WorkspaceView);
+    await openTab('Detailed');
 
     el.querySelector('[data-test="preview-task"]').click();
     expect(push).toHaveBeenCalledWith('/workspaces/a/tasks/1');
@@ -392,6 +428,7 @@ describe('the workspaces page', () => {
     emit({ type: 'task.updated', payload: {} });
     await settle();
     expect(fetchTaskOverview).toHaveBeenCalledTimes(2);
+    await openTab('Detailed');
     expect(text(card('landing'))).toContain('task 9');
 
     emit({ type: 'task.created', payload: {} });
@@ -402,6 +439,24 @@ describe('the workspaces page', () => {
     app.unmount();
     app = null;
     expect(connected.value).toBe(false);
+  });
+
+  it('shows two columns on a page too narrow for three', async () => {
+    fetchWorkspaces.mockResolvedValue({ workspaces });
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(cb) { this.cb = cb; }
+      observe() { this.cb([{ contentRect: { width: 1000 } }]); }
+      disconnect() {}
+    };
+    try {
+      await mountComponent(WorkspaceView);
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
+    const columns = $$('[data-test="workspace-column"]');
+    expect(columns).toHaveLength(2);
+    expect(columns[0].parentElement.className).toContain('grid-cols-2');
   });
 
   it('shows one column of phone-sized cards on a page too narrow for two', async () => {
@@ -418,6 +473,7 @@ describe('the workspaces page', () => {
     } finally {
       globalThis.ResizeObserver = original;
     }
+    await openTab('Detailed');
     expect($$('[data-test="workspace-column"]')).toHaveLength(1);
     expect(row(el.querySelector('[data-test="preview-task"]'))).toBe('task 1 5m ago');
   });
