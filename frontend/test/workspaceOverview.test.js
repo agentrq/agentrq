@@ -340,7 +340,7 @@ describe('the workspaces page', () => {
     { id: 'x', name: 'old', archivedAt: '2026-10-01T00:00:00Z' },
   ];
 
-  it('lays the cards out in two columns with the forks under their parent', async () => {
+  it('lays the cards out in three columns with the forks under their parent', async () => {
     fetchWorkspaces.mockResolvedValue({ workspaces });
     fetchTaskOverview.mockResolvedValue({ workspaces: [{ workspaceId: 'a', counts: { ongoing: 1 }, tasks: [task('1', 'ongoing')] }] });
     await mountComponent(WorkspaceView);
@@ -348,12 +348,13 @@ describe('the workspaces page', () => {
 
     expect(connected.value).toBe(true);
     const columns = $$('[data-test="workspace-column"]');
-    expect(columns).toHaveLength(2);
+    expect(columns).toHaveLength(3);
     const names = (node) => [...node.querySelectorAll('h3')].map(text);
-    // The supervisor leads the list, so the parent with two forks goes beside
-    // it, and the next card back under the supervisor, the shorter column.
-    expect(names(columns[0])).toEqual(['supervisor', 'landing']);
+    // The supervisor leads the list, and each card after it goes into the
+    // shortest column: the parent with two forks beside it, then the next.
+    expect(names(columns[0])).toEqual(['supervisor']);
     expect(names(columns[1])).toEqual(['api', 'api-docs', 'api-wp10']);
+    expect(names(columns[2])).toEqual(['landing']);
     expect($$('[data-test="fork-card"]')).toHaveLength(2);
     expect(text(columns[1])).toContain('task 1');
   });
@@ -363,7 +364,7 @@ describe('the workspaces page', () => {
     fetchTaskOverview.mockResolvedValue({ workspaces: [{ workspaceId: 'a', counts: { ongoing: 1 }, tasks: [task('1', 'ongoing')] }] });
     await mountComponent(WorkspaceView);
 
-    expect($$('h3').map(text)).toEqual(['supervisor', 'landing', 'api', 'api-docs', 'api-wp10']);
+    expect($$('h3').map(text)).toEqual(['supervisor', 'api', 'api-docs', 'api-wp10', 'landing']);
     expect($$('[data-test="preview-task"]')).toHaveLength(0);
     expect(text(card('api'))).toContain('1Ongoing');
 
@@ -438,6 +439,24 @@ describe('the workspaces page', () => {
     app.unmount();
     app = null;
     expect(connected.value).toBe(false);
+  });
+
+  it('shows two columns on a page too narrow for three', async () => {
+    fetchWorkspaces.mockResolvedValue({ workspaces });
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(cb) { this.cb = cb; }
+      observe() { this.cb([{ contentRect: { width: 1000 } }]); }
+      disconnect() {}
+    };
+    try {
+      await mountComponent(WorkspaceView);
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
+    const columns = $$('[data-test="workspace-column"]');
+    expect(columns).toHaveLength(2);
+    expect(columns[0].parentElement.className).toContain('grid-cols-2');
   });
 
   it('shows one column of phone-sized cards on a page too narrow for two', async () => {

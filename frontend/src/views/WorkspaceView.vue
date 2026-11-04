@@ -85,11 +85,12 @@
               </button>
             </div>
           </div>
-          <!-- Two columns where there is room, each workspace with its forks
-               into whichever is shorter (splitIntoColumns). Measured on the
-               list rather than the window, so beside the desktop side panel
-               it is one column like a phone's. -->
-          <div class="grid gap-4 items-start" :class="singleColumn ? 'grid-cols-1' : 'grid-cols-2'">
+          <!-- Three columns where there is room, two where less, each
+               workspace with its forks into whichever is shortest
+               (splitIntoColumns). Measured on the page rather than the
+               window, so beside the desktop side panel it is one column like
+               a phone's. -->
+          <div class="grid gap-4 items-start" :class="GRID_COLS[columnCount]">
             <div v-for="(column, ci) in columns" :key="ci" class="space-y-4 min-w-0" data-test="workspace-column">
               <div v-for="g in column" :key="g.workspace.id" data-test="workspace-group">
                 <WorkspaceOverviewCard :workspace="g.workspace" :overview="overview.get(g.workspace.id)"
@@ -275,14 +276,18 @@ const filteredArchivedWorkspaces = computed(() => {
   return archivedWorkspaces.value.filter(p => workspaceMatches(p, searchQuery.value));
 });
 
-// Laid out by the page's own width: two columns where two cards fit, one
-// beside the desktop side panel or on a phone, and a phone's card shows less.
-// Measured on the page rather than the list, which is not there until the
-// workspaces load, after the measuring has started.
+// Laid out by the page's own width: three columns where three cards fit, two
+// where two do, one beside the desktop side panel or on a phone, and a phone's
+// card shows less. Measured on the page rather than the list, which is not
+// there until the workspaces load, after the measuring has started.
 const pageRef = ref(null);
 const singleColumn = useNarrowLayout(pageRef, { below: 900 });
+const twoColumns = useNarrowLayout(pageRef, { below: 1100 });
 const narrow = useNarrowLayout(pageRef);
-const columns = computed(() => splitIntoColumns(cardGroups.value, singleColumn.value ? 1 : 2));
+const columnCount = computed(() => (singleColumn.value ? 1 : twoColumns.value ? 2 : 3));
+// Whole class names, so Tailwind finds them in the source.
+const GRID_COLS = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' };
+const columns = computed(() => splitIntoColumns(cardGroups.value, columnCount.value));
 
 // Every workspace's counts and first few tasks, by workspace id.
 const overview = ref(new Map());
