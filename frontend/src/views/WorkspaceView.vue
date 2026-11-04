@@ -39,12 +39,12 @@
       <AccountStats />
     </div>
 
-    <div v-if="error && activeTab === 'workspaces'" class="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-400 px-5 py-3 rounded-sm text-[10px] font-black shadow-sm">
+    <div v-if="error && listing" class="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-400 px-5 py-3 rounded-sm text-[10px] font-black shadow-sm">
       {{ error }}
     </div>
 
     <!-- Workspace list -->
-    <div v-if="activeTab === 'workspaces'" class="flex-1 overflow-y-auto px-4 pb-10 custom-scrollbar">
+    <div v-if="listing" class="flex-1 overflow-y-auto px-4 pb-10 custom-scrollbar">
       <div v-if="loadingWorkspaces" class="py-8">
         <LoadingState label="Loading Workspaces..." />
       </div>
@@ -93,7 +93,7 @@
             <div v-for="(column, ci) in columns" :key="ci" class="space-y-4 min-w-0" data-test="workspace-column">
               <div v-for="g in column" :key="g.workspace.id" data-test="workspace-group">
                 <WorkspaceOverviewCard :workspace="g.workspace" :overview="overview.get(g.workspace.id)"
-                                       :dimmed="g.dimmed" :narrow="narrow"
+                                       :dimmed="g.dimmed" :narrow="narrow" :simple="simple"
                                        @open="goToWorkspace(g.workspace.id)" @open-task="openTask" />
                 <!-- A fork hangs under its parent on a rail, as the fork
                      animation draws it: each elbow reaches up to the card
@@ -104,7 +104,7 @@
                           :class="narrow ? '-left-3.5 w-3.5' : '-left-[18px] w-[18px]'"></span>
                     <span v-if="fi < g.forks.length - 1" class="absolute top-6 -bottom-3 border-l-2 border-gray-300 dark:border-zinc-700"
                           :class="narrow ? '-left-3.5' : '-left-[18px]'"></span>
-                    <WorkspaceOverviewCard :workspace="f" :overview="overview.get(f.id)" :narrow="narrow"
+                    <WorkspaceOverviewCard :workspace="f" :overview="overview.get(f.id)" :narrow="narrow" :simple="simple"
                                            @open="goToWorkspace(f.id)" @open-task="openTask" />
                   </div>
                 </div>
@@ -171,7 +171,7 @@
     </div>
 
     <!-- Bottom Stats -->
-    <div v-if="activeTab === 'workspaces' && !loadingWorkspaces && workspaces.length > 0" class="px-4 pb-4 flex flex-wrap items-center gap-6 border-t border-gray-100 dark:border-zinc-800 pt-3">
+    <div v-if="listing && !loadingWorkspaces && workspaces.length > 0" class="px-4 pb-4 flex flex-wrap items-center gap-6 border-t border-gray-100 dark:border-zinc-800 pt-3">
       <div class="flex items-center gap-1.5 cursor-help" 
            @mouseenter="tooltipStore.show($event, 'Online Agents', 'top')"
            @mouseleave="tooltipStore.hide()">
@@ -221,18 +221,22 @@ import LoadingState from '../components/LoadingState.vue';
 import AccountStats from '../components/AccountStats.vue';
 
 /**
- * The overview screen's tabs. "Workspaces" is the list this page has always
- * been; "Performance" is the account-wide analytics.
+ * The overview screen's tabs. "Simple" lists the workspaces without their
+ * tasks; "Detailed" is the same list with each card's first few tasks;
+ * "Performance" is the account-wide analytics.
  *
  * The tab is local state rather than a route: it is a view of the same
  * overview page, and giving it a URL would mean a second route table entry for
  * something the desktop build would have to mirror.
  */
 const TABS = Object.freeze([
-  { id: 'workspaces', label: 'Workspaces' },
+  { id: 'simple', label: 'Simple' },
+  { id: 'detailed', label: 'Detailed' },
   { id: 'performance', label: 'Performance' },
 ]);
-const activeTab = ref('workspaces');
+const activeTab = ref('simple');
+const listing = computed(() => activeTab.value !== 'performance');
+const simple = computed(() => activeTab.value === 'simple');
 
 const { toKebabCase } = useFormat();
 const tooltipStore = useTooltipStore();
