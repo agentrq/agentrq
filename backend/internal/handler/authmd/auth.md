@@ -68,8 +68,8 @@ out; any scope it asks for is granted as the server's own.
 
 On the supervisor's consent page the person chooses Read and write or Read
 only, and the token response's `scope` says which they granted. Asking for
-`supervisor-mcp:read` opens the page with Read only chosen; the person can
-still change it. A read-only token refuses every action that changes
+`supervisor-mcp:read` without `supervisor-mcp` opens the page with Read only
+chosen; the person can still change it. A read-only token refuses every action that changes
 something, with an error naming it, and a refresh keeps it read only.
 
 ## Using the credential
