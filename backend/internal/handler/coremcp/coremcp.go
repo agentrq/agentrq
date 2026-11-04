@@ -234,9 +234,12 @@ const (
 )
 
 // requestedLevel is the level a request's scope asks for: read only when it
-// names that scope, else the page's own first choice.
+// names that scope and not the whole server's, else the page's own first
+// choice. A client that knows nothing of our scopes asks for every one in
+// scopes_supported, and that is not a request for read only.
 func requestedLevel(scope string) string {
-	if slices.Contains(strings.Fields(scope), oauthScopeReadOnly) {
+	scopes := strings.Fields(scope)
+	if slices.Contains(scopes, oauthScopeReadOnly) && !slices.Contains(scopes, oauthScope) {
 		return levelReadOnly
 	}
 	return ""

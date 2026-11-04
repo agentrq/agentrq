@@ -120,13 +120,17 @@ func TestSupervisorToken_GrantsTheReadOnlyScope(t *testing.T) {
 	}
 }
 
-// Asking for the read-only scope opens the page with Read only chosen; any
-// other scope leaves Read and write.
+// Asking for the read-only scope alone opens the page with Read only chosen;
+// asking for both, as a client listing every scope in scopes_supported does,
+// or for anything else, leaves Read and write.
 func TestSupervisorAuthorize_TheReadOnlyScopeChoosesReadOnly(t *testing.T) {
 	for scope, want := range map[string]string{
 		"supervisor-mcp:read":                levelReadOnly,
 		"openid supervisor-mcp:read offline": levelReadOnly,
 		"supervisor-mcp":                     levelReadWrite,
+		"supervisor-mcp supervisor-mcp:read": levelReadWrite,
+		"supervisor-mcp:read supervisor-mcp": levelReadWrite,
+		"":                                   levelReadWrite,
 		"supervisor-mcp:readx":               levelReadWrite,
 	} {
 		h, _ := consentHandler()
