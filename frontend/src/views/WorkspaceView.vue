@@ -98,12 +98,14 @@
                                        @open="goToWorkspace(g.workspace.id)" @open-task="openTask" />
                 <!-- A fork hangs under its parent on a rail, as the fork
                      animation draws it: each elbow reaches up to the card
-                     above, and every fork but the last carries it on. -->
-                <div v-if="g.forks.length" class="pt-3 space-y-3" :class="narrow ? 'ml-2.5 pl-3.5' : 'ml-[18px] pl-[18px]'">
+                     above, and every fork but the last carries it on. The
+                     gaps match the column's, so a fork lines up with the
+                     cards beside it. -->
+                <div v-if="g.forks.length" class="pt-4 space-y-4" :class="narrow ? 'ml-2.5 pl-3.5' : 'ml-[18px] pl-[18px]'">
                   <div v-for="(f, fi) in g.forks" :key="f.id" class="relative" data-test="fork-card">
-                    <span class="absolute -top-3 h-9 border-l-2 border-b-2 rounded-bl-sm border-gray-300 dark:border-zinc-700"
+                    <span class="absolute -top-4 h-10 border-l-2 border-b-2 rounded-bl-sm border-gray-300 dark:border-zinc-700"
                           :class="narrow ? '-left-3.5 w-3.5' : '-left-[18px] w-[18px]'"></span>
-                    <span v-if="fi < g.forks.length - 1" class="absolute top-6 -bottom-3 border-l-2 border-gray-300 dark:border-zinc-700"
+                    <span v-if="fi < g.forks.length - 1" class="absolute top-6 -bottom-4 border-l-2 border-gray-300 dark:border-zinc-700"
                           :class="narrow ? '-left-3.5' : '-left-[18px]'"></span>
                     <WorkspaceOverviewCard :workspace="f" :overview="overview.get(f.id)" :narrow="narrow" :simple="simple"
                                            @open="goToWorkspace(f.id)" @open-task="openTask" />
