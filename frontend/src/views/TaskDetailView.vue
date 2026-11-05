@@ -771,28 +771,9 @@
         </div>
       </div>
 
-      <!-- The agent's slash commands. Sits above the composer so it never covers
-           what is being typed, and is keyboard-first: the pointer is a
-           convenience, the arrow keys are the interface. -->
-      <div v-if="slashMenu.open.value"
-           class="mb-2 max-h-52 overflow-y-auto rounded-sm border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-sm custom-scrollbar">
-        <ul ref="slashListRef" role="listbox" aria-label="Agent commands">
-          <li v-for="(command, i) in slashMenu.matches.value" :key="command.name"
-              role="option" :aria-selected="i === slashMenu.selected.value"
-              @mouseenter="slashMenu.highlight(i)"
-              @mousedown.prevent="acceptSlashCommand(command)"
-              :class="i === slashMenu.selected.value ? 'bg-gray-105 dark:bg-zinc-700/60' : ''"
-              class="flex items-baseline gap-2 px-3 py-1.5 cursor-pointer transition-colors">
-            <span class="text-[12px] font-bold text-gray-900 dark:text-zinc-100 shrink-0">/{{ command.name }}</span>
-            <span v-if="command.description"
-                  class="text-[11px] font-medium text-gray-500 dark:text-zinc-400 truncate">{{ command.description }}</span>
-            <!-- The argument it expects, kept to the right so the name and what
-                 the command does read as one line. -->
-            <span v-if="command.input?.hint || command.hint"
-                  class="ml-auto pl-3 text-[10px] font-medium text-gray-400 dark:text-zinc-500 shrink-0">{{ command.input?.hint || command.hint }}</span>
-          </li>
-        </ul>
-      </div>
+      <!-- The agent's slash commands and the workspace's skills. Sits above
+           the composer so it never covers what is being typed. -->
+      <SlashCommandMenu :menu="slashMenu" class="mb-2" @accept="acceptSlashCommand" />
 
       <form @submit.prevent="submitReply">
         <input type="file" ref="fileInput" multiple class="hidden" @change="handleFileUpload" />
@@ -1020,7 +1001,8 @@ import { useQueuedMessages } from '../composables/useQueuedMessages';
 import { scrollToBottom as scrollContainerToBottom, shouldScrollOnViewChange } from '../composables/useChatScroll';
 import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
-import { useSlashCommands } from '../composables/useSlashCommands';
+import { mergeCommands, useSkillCommands, useSlashCommands } from '../composables/useSlashCommands';
+import SlashCommandMenu from '../components/SlashCommandMenu.vue';
 import { renderMarkdown } from '../utils/markdown';
 import {
   contextGauge,
@@ -1113,11 +1095,14 @@ function startRename() {
 const descExpanded = ref(false);
 const replyText = ref('');
 
-// The agent's own slash commands, offered as you type `/`. An agent that
-// advertises none — anything that is not an ACP agent — gets no menu at all.
+// The agent's own slash commands and the workspace's skills, offered as you
+// type `/`. An agent's command wins a name a skill also has.
 const agentCommands = computed(() => workspace.value?.agentCommands?.commands ?? []);
-const slashMenu = useSlashCommands({ text: replyText, commands: agentCommands });
-const slashListRef = ref(null);
+const skillCommands = useSkillCommands(workspaceId);
+const slashMenu = useSlashCommands({
+  text: replyText,
+  commands: computed(() => mergeCommands(agentCommands, skillCommands)),
+});
 
 /** Puts the chosen command in the composer, for a click on the menu. */
 function acceptSlashCommand(command) {
@@ -1131,7 +1116,6 @@ function onComposerKeydown(event) {
   if (!claimed) return;
   event.preventDefault();
   if (claimed.text !== null) setReplyText(claimed.text);
-  else keepSelectionInView();
 }
 
 function setReplyText(text) {
@@ -1141,12 +1125,6 @@ function setReplyText(text) {
   });
 }
 
-/** Keeps the highlighted row visible when the list is longer than the menu. */
-function keepSelectionInView() {
-  nextTick(() => {
-    slashListRef.value?.children?.[slashMenu.selected.value]?.scrollIntoView({ block: 'nearest' });
-  });
-}
 const replyAttachments = ref([]);
 // A held message is addressed to the task it was written in, so switching tasks
 // cannot redirect it. See usePendingSend.

@@ -2,13 +2,16 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
 import {
   applyCommand,
   commandQuery,
   matchCommands,
+  mergeCommands,
+  skillCommands,
+  useSkillCommands,
   useSlashCommands,
 } from '../src/composables/useSlashCommands'
 
@@ -273,5 +276,71 @@ describe('useSlashCommands', () => {
     it('leaves ordinary typing alone', () => {
       expect(composer('/i').menu.handleKeydown(key('a'))).toBeNull()
     })
+  })
+})
+
+describe('skills in the menu', () => {
+  const SKILLS = [
+    { name: 'release', description: 'Cut a release', workspaceEnabled: true },
+    { name: 'off-here', workspaceEnabled: false },
+    { name: 'off-account', enabled: false, workspaceEnabled: true },
+    { name: 'bare', workspaceEnabled: true },
+    { name: '', workspaceEnabled: true },
+    null,
+  ]
+
+  it('offers only the skills the workspace\'s agents can load', () => {
+    expect(skillCommands(SKILLS, 'ws1')).toEqual([
+      { name: 'release', description: 'Cut a release', skill: true },
+      { name: 'bare', description: '', skill: true },
+    ])
+    expect(skillCommands(undefined, 'ws1')).toEqual([])
+  })
+
+  it('leaves a space after a chosen skill, for what to do with it', () => {
+    expect(applyCommand({ name: 'release', skill: true })).toBe('/release ')
+  })
+
+  it('merges lists, the first winning a name both have', () => {
+    const agent = ref([{ name: 'review', description: 'agent' }, { name: '' }, null])
+    const skills = [{ name: 'review', skill: true }, { name: 'release', skill: true }]
+    expect(mergeCommands(agent, skills, undefined)).toEqual([
+      { name: 'review', description: 'agent' },
+      { name: 'release', skill: true },
+    ])
+  })
+
+  it('loads the workspace\'s skills, and again when the workspace changes', async () => {
+    const id = ref('ws1')
+    const resolvers = {}
+    const load = (ws) => new Promise((r) => { resolvers[ws] = r })
+    const commands = useSkillCommands(id, { load })
+    id.value = 'ws2'
+    await nextTick()
+    // The older answer arrives last and must not replace the newer one.
+    resolvers.ws2({ skills: [{ name: 'two', workspaceEnabled: true }] })
+    await nextTick()
+    resolvers.ws1({ skills: [{ name: 'one', workspaceEnabled: true }] })
+    await new Promise((r) => setTimeout(r))
+    expect(commands.value.map((c) => c.name)).toEqual(['two'])
+  })
+
+  it('has no skills without a workspace, or when the load fails', async () => {
+    const load = vi.fn().mockRejectedValue(new Error('down'))
+    expect(useSkillCommands(ref(''), { load }).value).toEqual([])
+    expect(load).not.toHaveBeenCalled()
+    const failed = useSkillCommands('ws1', { load })
+    await new Promise((r) => setTimeout(r))
+    expect(failed.value).toEqual([])
+  })
+
+  it('reads them through the workspace by default', async () => {
+    const api = await import('../src/api')
+    const spy = vi.spyOn(api, 'searchWorkspaceSkills').mockResolvedValue({ skills: [{ name: 'x', workspaceEnabled: true }] })
+    const commands = useSkillCommands('ws9')
+    await new Promise((r) => setTimeout(r))
+    expect(spy).toHaveBeenCalledWith('ws9')
+    expect(commands.value.map((c) => c.name)).toEqual(['x'])
+    spy.mockRestore()
   })
 })
