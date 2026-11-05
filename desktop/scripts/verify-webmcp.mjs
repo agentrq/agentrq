@@ -200,20 +200,20 @@ app.whenReady().then(async () => {
     (async () => {
       const find = (label) =>
         [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === label);
-      // Log Out lives inside the user menu, so it has to be opened first —
+      // Log out lives inside the user menu, so it has to be opened first —
       // driving this the way a person does rather than calling the handler,
       // which would prove only that the function exists.
       const menu = find('Q');
       if (!menu) return 'no user menu';
       menu.click();
       await new Promise((r) => setTimeout(r, 300));
-      const logout = find('Logout');
-      if (!logout) return 'no Logout in the open menu';
+      const logout = find('Log out');
+      if (!logout) return 'no Log out in the open menu';
       logout.click();
       return 'clicked';
     })()
   `)
-  record('the Logout control was reachable', clicked === 'clicked', JSON.stringify(clicked))
+  record('the Log out control was reachable', clicked === 'clicked', JSON.stringify(clicked))
   await new Promise((r) => setTimeout(r, 1500))
   const afterLogout = await win.webContents.executeJavaScript(
     '(async () => (await document.modelContext.getTools()).length)()'
