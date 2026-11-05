@@ -232,8 +232,8 @@ describe('a workspace card', () => {
     const rows = $$('[data-test="preview-task"]');
     expect(rows).toHaveLength(OVERVIEW_TASKS);
     expect(row(rows[0])).toBe('task 1 Ongoing 5m ago');
-    expect(row(rows[3])).toMatch(/^task 4 Scheduled In /);
-    expect(text(el.querySelector('[data-test="more-tasks"]'))).toBe('+4 more →');
+    expect(row(rows[2])).toBe('task 3 Not started 5m ago');
+    expect(text(el.querySelector('[data-test="more-tasks"]'))).toBe('+5 more →');
 
     rows[1].click();
     expect(openedTask).toHaveBeenCalledWith(expect.objectContaining({ id: '2' }));

@@ -74,8 +74,8 @@
     </div>
 
     <!-- A fixed height, so every card in a column is the same height whether
-         it shows four tasks, two, or none. -->
-    <div v-if="!simple" class="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800" :class="narrow ? '' : 'h-[142px]'">
+         it shows three tasks, two, or none. -->
+    <div v-if="!simple" class="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800" :class="narrow ? '' : 'h-[112px]'">
       <div v-if="shown.length === 0"
            class="h-full min-h-[60px] flex items-center justify-center border border-dashed border-gray-200 dark:border-zinc-800 rounded-sm text-[11px] font-medium text-gray-500 dark:text-zinc-500">
         No active tasks

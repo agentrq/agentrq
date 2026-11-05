@@ -11,10 +11,10 @@
  * and what a card's counts and "+N more" say.
  */
 
-/** How many tasks a card shows: the server's own cap on a preview. */
-export const OVERVIEW_TASKS = 4;
+/** How many tasks a card shows, one fewer than the server's preview holds. */
+export const OVERVIEW_TASKS = 3;
 
-/** On a phone a card shows one fewer, to keep the list short to scroll. */
+/** On a phone a card shows as many. */
 export const OVERVIEW_TASKS_NARROW = 3;
 
 const FINISHED = new Set(['completed', 'rejected']);
