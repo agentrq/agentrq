@@ -540,5 +540,3 @@ authority: two people can press at once, and only the server sees both.
 and the supervisor's `launchAgent`/`stopAgent` both call. A gate added to the
 handler instead is one the supervisor walks straight past.
 
-The plan, with the decisions and who made them, is `docs/AGENTRQD_PLAN.md`.
-

@@ -5,10 +5,9 @@ to the backend, and supervises agent processes (`claude-code`, `acp-gateway`)
 inside pseudo-terminals it owns — so the control panel can start an agent, kill
 it, and type into its terminal.
 
-The design lives in [`docs/AGENTRQD_PLAN.md`](../docs/AGENTRQD_PLAN.md). Read
-§2 (the trust model) before anything else: **this is remote code execution on
-the user's machine by design**, and the plan says what that does and does not
-bound.
+Read the trust model in [`docs/DAEMON.md`](../docs/DAEMON.md#read-this-before-you-enrol-a-machine)
+before anything else: **this is remote code execution on the user's machine by
+design**, and that document says what it does and does not bound.
 
 ## Status
 
@@ -371,7 +370,7 @@ will be eaten before it arrives**, and nothing in the daemon can fix that.
 
 ## Input is forwarded immediately, never batched
 
-Output is batched on a timer (plan §10) because a progress bar redraws a hundred
+Output is batched on a timer because a progress bar redraws a hundred
 times a second. **Input is the opposite**, for two reasons that hold regardless
 of the above:
 
