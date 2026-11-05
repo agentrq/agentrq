@@ -339,107 +339,111 @@
         </div>
 
         <!-- Sidebar Footer -->
-        <div class="mt-auto" :class="(isCollapsed && !isMobileMenuOpen) ? 'px-2 pt-4' : 'px-4 pt-4'">
+        <div class="mt-auto px-2 pt-4 space-y-0.5">
 
-          <!-- App Version & Docs -->
-          <div v-if="!isCollapsed || isMobileMenuOpen" class="px-2 mb-3 flex items-center justify-between gap-2">
-            <span class="text-[10px] text-gray-400 dark:text-zinc-600 font-mono">v{{ appVersion }}</span>
-            <div class="flex items-center gap-3">
-              <a href="https://agentrq.com/docs" target="_blank" rel="noopener noreferrer"
-                 class="flex items-center gap-1 text-[10px] text-gray-400 dark:text-zinc-600 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors">
-                <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-                </svg>
-                Docs
-              </a>
-            </div>
-          </div>
-
-          <!-- Docs (collapsed) -->
-          <div v-else class="mb-3 flex flex-col items-center gap-1">
-            <a href="https://agentrq.com/docs" target="_blank" rel="noopener noreferrer"
-               @mouseenter="showTooltip($event, 'Docs')" @mouseleave="hideTooltip"
-               class="flex items-center justify-center size-8 rounded-md text-gray-400 dark:text-zinc-600 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-zinc-800 transition-all duration-150">
-              <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-              </svg>
-            </a>
-          </div>
+          <!-- Docs, a row like the nav's own, with the version beside it -->
+          <a href="https://agentrq.com/docs" target="_blank" rel="noopener noreferrer"
+             @mouseenter="(isCollapsed && !isMobileMenuOpen) && showTooltip($event, 'Docs')" @mouseleave="hideTooltip"
+             class="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md text-gray-400 dark:text-zinc-600 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-white transition-colors"
+             :class="(isCollapsed && !isMobileMenuOpen) ? 'justify-center' : ''">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+            </svg>
+            <template v-if="!isCollapsed || isMobileMenuOpen">
+              <span class="flex-1 leading-4">Docs</span>
+              <span class="text-[10px] leading-4 text-gray-400 dark:text-zinc-600 font-mono">v{{ appVersion }}</span>
+            </template>
+          </a>
 
           <!-- User Profile -->
-          <div ref="userMenuRef" class="relative pt-3 border-t border-gray-300/50 dark:border-zinc-600/50 mt-2 overflow-visible">
+          <div ref="userMenuRef" class="relative overflow-visible"
+               :class="(!isCollapsed || isMobileMenuOpen) ? 'mt-2 pt-2 border-t border-gray-300/50 dark:border-zinc-600/50' : ''">
             <!-- User Menu Popover -->
-            <div v-if="isUserMenuOpen"
+            <Transition enter-active-class="transition duration-150 ease-out" enter-from-class="opacity-0 scale-95 translate-y-1"
+                        leave-active-class="transition duration-100 ease-in" leave-to-class="opacity-0 scale-95 translate-y-1">
+            <div v-if="isUserMenuOpen" role="menu"
                  :class="[
-                   'absolute bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm shadow-2xl p-2 z-[110] animate-in fade-in slide-in-from-bottom-2 duration-200',
-                   (isCollapsed && !isMobileMenuOpen) ? 'left-full bottom-0 ml-2 min-w-[200px] origin-bottom-left' : 'bottom-full left-0 right-0 mb-2 origin-bottom'
+                   'absolute bg-white dark:bg-zinc-900 border border-gray-200/80 dark:border-zinc-700/70 rounded-xl shadow-[0_12px_32px_-8px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.6)] p-1 z-[110]',
+                   (isCollapsed && !isMobileMenuOpen) ? 'left-full bottom-0 ml-2 w-64 origin-bottom-left' : 'bottom-full left-0 right-0 mb-2 origin-bottom'
                  ]">
-              <div class="px-3 py-2 border-b border-gray-50 dark:border-zinc-800/50 mb-1">
-                <p class="text-[10px] font-black text-gray-500 dark:text-zinc-500">{{ activeProfile ? activeProfile.label : 'Account' }}</p>
-                <p class="text-xs font-bold text-gray-700 dark:text-zinc-200 truncate mt-0.5" :title="user?.email">{{ user?.name || user?.email || 'Loading...' }}</p>
-                <p v-if="user?.name && user?.email" class="text-[10px] font-medium text-gray-400 dark:text-zinc-500 truncate mt-0.5" :title="user.email">{{ user.email }}</p>
-                <p v-if="activeProfile?.serverUrl" class="text-[10px] font-medium text-gray-400 dark:text-zinc-500 truncate mt-0.5" :title="activeProfile.serverUrl">{{ activeProfile.serverUrl }}</p>
-                <!-- The profile you have just signed in on is the one that
-                     turns out to be the duplicate, so this belongs here as
-                     well as in the list below. -->
-                <p v-if="activeProfile && profileDuplicate(activeProfile)" class="text-[10px] font-bold text-amber-600 dark:text-amber-500 truncate mt-0.5">{{ profileDuplicate(activeProfile) }}</p>
+              <div class="flex items-center gap-2.5 px-[3px] pt-1.5 pb-2.5">
+                <div class="w-8 h-8 shrink-0 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-xs font-semibold text-gray-600 dark:text-zinc-300 overflow-hidden">
+                  <img v-if="user?.picture" :src="user.picture" class="w-full h-full object-cover" alt="" />
+                  <span v-else>{{ user?.name?.charAt(0) || user?.email?.charAt(0) || '?' }}</span>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p class="text-[13px] font-medium text-gray-900 dark:text-zinc-100 truncate" :title="user?.email">{{ user?.name || user?.email || 'Loading...' }}</p>
+                  <p v-if="user?.name && user?.email" class="text-xs text-gray-500 dark:text-zinc-400 truncate" :title="user.email">{{ user.email }}</p>
+                  <p v-if="activeProfile" class="text-[11px] text-gray-400 dark:text-zinc-500 truncate" :title="activeProfile.serverUrl">{{ activeProfile.label }}<template v-if="activeProfile.serverUrl"> · {{ activeProfile.serverUrl }}</template></p>
+                  <!-- The profile you have just signed in on is the one that
+                       turns out to be the duplicate, so this belongs here as
+                       well as in the list below. -->
+                  <p v-if="activeProfile && profileDuplicate(activeProfile)" class="text-[11px] font-medium text-amber-600 dark:text-amber-500 truncate">{{ profileDuplicate(activeProfile) }}</p>
+                </div>
               </div>
 
               <!-- Other profiles. Desktop only: each is a separate session, which
                    a browser tab cannot give us. Not on macOS, where the title
                    bar's profile card switches them instead. -->
-              <ProfileList v-if="showProfiles" class="px-3 py-2 border-b border-gray-50 dark:border-zinc-800/50 mb-1"
-                           :profiles="profiles" :disabled="switchingProfile"
-                           @switch="switchToProfile" @remove="removeProfile" @add="addProfile" />
+              <template v-if="showProfiles">
+                <div class="h-px bg-gray-100 dark:bg-zinc-800 mx-1 my-1"></div>
+                <ProfileList class="py-1.5"
+                             :profiles="profiles" :disabled="switchingProfile"
+                             @switch="switchToProfile" @remove="removeProfile" @add="addProfile" />
+              </template>
 
-              <!-- Theme Selection inside Menu -->
-              <div class="px-3 py-2 border-b border-gray-50 dark:border-zinc-800/50 mb-1">
-                <p class="text-[10px] font-black text-gray-500 dark:text-zinc-500 mb-2">Theme Preference</p>
-                <div class="flex items-center gap-1 bg-gray-50 dark:bg-zinc-800/50 p-1 rounded-sm border border-gray-100 dark:border-zinc-800">
-                  <button @click="themeStore.setTheme('light')" 
-                          :class="['flex-1 flex justify-center py-1.5 rounded-sm transition-all', themeStore.theme === 'light' ? 'bg-white dark:bg-zinc-700 shadow-sm border border-gray-200 dark:border-zinc-600 text-black dark:text-white' : 'text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300']"
+              <div class="h-px bg-gray-100 dark:bg-zinc-800 mx-1 my-1"></div>
+
+              <div class="flex items-center gap-2.5 pl-[3px] pr-1 py-1.5">
+                <svg class="w-4 h-4 shrink-0 text-gray-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M4.098 19.902a3.75 3.75 0 005.304 0l6.401-6.402M6.75 21A3.75 3.75 0 013 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 003.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125v-5.25c0-.621-.504-1.125-1.125-1.125h-4.072M10.5 8.197l2.88-2.88c.438-.439 1.15-.439 1.59 0l3.712 3.713c.44.44.44 1.152 0 1.59l-2.879 2.88M6.75 17.25h.008v.008H6.75v-.008z" /></svg>
+                <span class="flex-1 text-[13px] text-gray-700 dark:text-zinc-200">Theme</span>
+                <div class="flex items-center gap-0.5 bg-gray-100 dark:bg-zinc-800 p-0.5 rounded-lg">
+                  <button @click="themeStore.setTheme('light')"
+                          :class="['flex justify-center p-1 rounded-md transition-colors', themeStore.theme === 'light' ? 'bg-white dark:bg-zinc-600 shadow-sm text-gray-900 dark:text-white' : 'text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200']"
                           title="Light Mode">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
                   </button>
-                  <button @click="themeStore.setTheme('dark')" 
-                          :class="['flex-1 flex justify-center py-1.5 rounded-sm transition-all', themeStore.theme === 'dark' ? 'bg-white dark:bg-zinc-700 shadow-sm border border-gray-200 dark:border-zinc-600 text-black dark:text-white' : 'text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300']"
+                  <button @click="themeStore.setTheme('dark')"
+                          :class="['flex justify-center p-1 rounded-md transition-colors', themeStore.theme === 'dark' ? 'bg-white dark:bg-zinc-600 shadow-sm text-gray-900 dark:text-white' : 'text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200']"
                           title="Dark Mode">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
                   </button>
-                  <button @click="themeStore.setTheme('system')" 
-                          :class="['flex-1 flex justify-center py-1.5 rounded-sm transition-all', themeStore.theme === 'system' ? 'bg-white dark:bg-zinc-700 shadow-sm border border-gray-200 dark:border-zinc-600 text-black dark:text-white' : 'text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300']"
+                  <button @click="themeStore.setTheme('system')"
+                          :class="['flex justify-center p-1 rounded-md transition-colors', themeStore.theme === 'system' ? 'bg-white dark:bg-zinc-600 shadow-sm text-gray-900 dark:text-white' : 'text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200']"
                           title="System Default">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
                   </button>
                 </div>
               </div>
-              <button @click="logout" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-sm text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+
+              <div class="h-px bg-gray-100 dark:bg-zinc-800 mx-1 my-1"></div>
+
+              <button @click="logout" role="menuitem" class="group/logout w-full flex items-center gap-2.5 px-[3px] py-1.5 rounded-lg text-[13px] text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
+                <svg class="w-4 h-4 shrink-0 text-gray-400 dark:text-zinc-500 group-hover/logout:text-gray-600 dark:group-hover/logout:text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
                 </svg>
-                Logout
+                Log out
               </button>
             </div>
+            </Transition>
 
             <!-- User Profile Button -->
-            <button @click="isUserMenuOpen = !isUserMenuOpen"
-                    class="flex items-center gap-3 w-full py-1.5 rounded-sm transition-all duration-200 group outline-none"
-                    :class="(isCollapsed && !isMobileMenuOpen) ? 'justify-center' : 'px-2 hover:bg-gray-100 dark:hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-gray-200 dark:focus-visible:ring-zinc-700'">
-              <!-- Collapsed, a small avatar in a round hover background wider
-                   than the sidebar's column, which is only 32px. -->
-              <div class="relative shrink-0"
-                   :class="(isCollapsed && !isMobileMenuOpen) ? 'size-10 rounded-full flex items-center justify-center transition-colors group-hover:bg-gray-200 dark:group-hover:bg-zinc-800 group-focus-visible:ring-2 group-focus-visible:ring-gray-300 dark:group-focus-visible:ring-zinc-600' : ''">
-                <div class="rounded-full bg-white dark:bg-zinc-900 shadow-sm flex items-center justify-center text-gray-700 dark:text-zinc-200 font-bold overflow-hidden"
-                     :class="(isCollapsed && !isMobileMenuOpen) ? 'w-7 h-7 text-[11px]' : 'w-9 h-9 text-sm border border-gray-200 dark:border-zinc-700'">
-                  <img v-if="user?.picture" :src="user.picture" class="w-full h-full object-cover" alt="Profile" />
-                  <span v-else class="">{{ user?.name?.charAt(0) || user?.email?.charAt(0) || '?' }}</span>
-                </div>
+            <button @click="isUserMenuOpen = !isUserMenuOpen" :aria-expanded="isUserMenuOpen"
+                    class="flex items-center gap-2.5 w-full px-2 py-1.5 rounded-md text-left transition-colors group outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600"
+                    :class="[
+                      (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
+                      isUserMenuOpen ? 'bg-gray-200 dark:bg-zinc-800' : 'hover:bg-gray-200 dark:hover:bg-zinc-700'
+                    ]">
+              <div class="w-4 h-4 shrink-0 text-[8px] rounded-full bg-white dark:bg-zinc-900 shadow-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-gray-700 dark:text-zinc-200 font-bold overflow-hidden">
+                <img v-if="user?.picture" :src="user.picture" class="w-full h-full object-cover" alt="Profile" />
+                <span v-else class="leading-4">{{ user?.name?.charAt(0) || user?.email?.charAt(0) || '?' }}</span>
               </div>
-              <div v-if="!isCollapsed || isMobileMenuOpen" class="flex flex-col items-start overflow-hidden text-left min-w-0 flex-1">
-                <span class="text-sm font-semibold text-gray-700 dark:text-zinc-200 truncate w-full group-hover:text-gray-900 dark:group-hover:text-zinc-50 transition-colors">
+              <template v-if="!isCollapsed || isMobileMenuOpen">
+                <span class="flex-1 min-w-0 text-xs leading-4 font-medium text-gray-700 dark:text-zinc-200 truncate group-hover:text-gray-900 dark:group-hover:text-zinc-50">
                   {{ user?.name || user?.email || 'User' }}
                 </span>
-              </div>
+                <svg class="w-3.5 h-3.5 shrink-0 text-gray-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" /></svg>
+              </template>
             </button>
           </div>
         </div>
