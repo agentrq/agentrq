@@ -87,7 +87,6 @@
           <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="taskDotClass(t)"></span>
           <span class="flex-1 min-w-0 truncate text-[12.5px] font-medium"
                 :class="isFinished(t) ? 'text-gray-500 dark:text-zinc-500' : 'text-gray-700 dark:text-zinc-200 group-hover/t:text-black dark:group-hover/t:text-white'">{{ t.title }}</span>
-          <span v-if="!narrow" class="shrink-0 text-[9px] font-black uppercase tracking-wider text-gray-400 dark:text-zinc-500 w-[76px] text-right">{{ previewStatusLabel(t.status) }}</span>
           <span class="shrink-0 text-[10px] font-medium tabular-nums text-gray-500 dark:text-zinc-400 w-[72px] text-right truncate">{{ when(t) }}</span>
         </div>
       </div>
@@ -107,7 +106,7 @@ import { agentDetails, agentSummary } from '../composables/useAgentSummary';
 import { canChooseModel } from '../composables/useAgentModelPicker';
 import { canChooseEffort } from '../composables/useAgentEffortPicker';
 import { taskDotClass } from '../composables/useTaskStatusStyle';
-import { OVERVIEW_TASKS, OVERVIEW_TASKS_NARROW, countChips, isFinished, previewStatusLabel } from '../composables/useWorkspaceOverview';
+import { OVERVIEW_TASKS, OVERVIEW_TASKS_NARROW, countChips, isFinished } from '../composables/useWorkspaceOverview';
 
 const props = defineProps({
   workspace: { type: Object, required: true },

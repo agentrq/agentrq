@@ -50,7 +50,6 @@ import {
   groupWorkspaces,
   indexOverview,
   isFinished,
-  previewStatusLabel,
   splitIntoColumns,
   workspaceMatches,
 } from '../src/composables/useWorkspaceOverview';
@@ -119,9 +118,7 @@ describe('a card\'s numbers', () => {
     expect(countChips()).toEqual([]);
   });
 
-  it('names each status, and greys only the finished', () => {
-    expect(['ongoing', 'blocked', 'notstarted', 'cron', 'completed', 'rejected', 'odd'].map(previewStatusLabel))
-      .toEqual(['Ongoing', 'Blocked', 'Not started', 'Scheduled', 'Completed', 'Rejected', 'odd']);
+  it('greys only the finished', () => {
     expect(isFinished({ status: 'rejected' })).toBe(true);
     expect(isFinished({ status: 'blocked' })).toBe(false);
   });
@@ -205,7 +202,7 @@ afterEach(() => {
 });
 
 describe('a workspace card', () => {
-  it('shows the counts, the first tasks with their status and time, and no count of the rest', async () => {
+  it('shows the counts, the first tasks with their time, and no count of the rest', async () => {
     const opened = vi.fn();
     const openedTask = vi.fn();
     await mountComponent(WorkspaceOverviewCard, {
@@ -223,8 +220,8 @@ describe('a workspace card', () => {
     expect($$('[data-test="count-chip"]').map(text)).toEqual(['1Action', '2Ongoing', '5To do', '1Scheduled']);
     const rows = $$('[data-test="preview-task"]');
     expect(rows).toHaveLength(OVERVIEW_TASKS);
-    expect(row(rows[0])).toBe('task 1 Ongoing 5m ago');
-    expect(row(rows[2])).toBe('task 3 Not started 5m ago');
+    expect(row(rows[0])).toBe('task 1 5m ago');
+    expect(row(rows[2])).toBe('task 3 5m ago');
     expect(el.querySelector('[data-test="more-tasks"]')).toBeNull();
 
     rows[1].click();

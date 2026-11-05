@@ -132,20 +132,6 @@ export function countChips(counts = {}) {
   return CHIPS.filter((c) => counts[c.key] > 0).map((c) => ({ ...c, count: counts[c.key] }));
 }
 
-const STATUS_LABELS = {
-  ongoing: 'Ongoing',
-  blocked: 'Blocked',
-  notstarted: 'Not started',
-  cron: 'Scheduled',
-  completed: 'Completed',
-  rejected: 'Rejected',
-};
-
-/** The word a preview row puts beside its time. */
-export function previewStatusLabel(status) {
-  return STATUS_LABELS[status] ?? status;
-}
-
 /** Whether a preview row is a finished task, shown greyed. */
 export function isFinished(task) {
   return FINISHED.has(task.status);
