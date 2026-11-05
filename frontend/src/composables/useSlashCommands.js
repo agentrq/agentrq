@@ -3,15 +3,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { computed, ref, toValue, watch } from 'vue';
+import * as api from '../api';
+import { skillSeenByAgents } from './useSkills';
 
 /**
  * The `/` menu in the composer: which of the agent's slash commands a
  * half-typed message is asking for, and what accepting one does to the text.
  *
- * The commands come from the connected agent, not from us — an ACP agent
- * advertises what it accepts (`/init`, `/compact`, `/review`, …) and revises
- * the list as context makes them relevant. A workspace whose agent advertises
- * nothing gets no menu at all, which is every agent that is not an ACP one.
+ * The commands are the connected agent's — an ACP agent advertises what it
+ * accepts (`/init`, `/compact`, `/review`, …) and revises the list as context
+ * makes them relevant — and the workspace's skills, which any agent can load.
+ * With neither there is no menu at all.
  *
  * The logic lives here rather than in the view because the view is a large
  * component wired to a router, a store and network calls, and the project has
@@ -74,7 +76,63 @@ export function matchCommands(commands, query) {
  * and ready to send.
  */
 export function applyCommand(command) {
-  return command?.input?.hint || command?.hint ? `/${command.name} ` : `/${command.name}`;
+  return command?.input?.hint || command?.hint || command?.skill ? `/${command.name} ` : `/${command.name}`;
+}
+
+/**
+ * The workspace's skills as menu entries: only those its agents can load, so
+ * the menu never offers a skill the agent would not find. A skill takes the
+ * rest of the message as what to do with it, hence the trailing space.
+ */
+export function skillCommands(skills, workspaceId) {
+  if (!Array.isArray(skills)) return [];
+  return skills
+    .filter((s) => s && typeof s.name === 'string' && s.name !== '' && skillSeenByAgents(s, workspaceId))
+    .map((s) => ({ name: s.name, description: s.description || '', skill: true }));
+}
+
+/**
+ * Two lists as one menu, the first winning a name both have: an agent's own
+ * command and a skill of the same name are one `/name` to type.
+ */
+export function mergeCommands(...lists) {
+  const seen = new Set();
+  const merged = [];
+  for (const list of lists) {
+    for (const command of toValue(list) || []) {
+      if (!command?.name || seen.has(command.name)) continue;
+      seen.add(command.name);
+      merged.push(command);
+    }
+  }
+  return merged;
+}
+
+/**
+ * The workspace's skills as menu entries, loaded again whenever the workspace
+ * changes. Only the newest load may write, so a quick switch cannot leave the
+ * previous workspace's skills behind. A failed load leaves the menu without
+ * skills rather than reporting it: the composer still works without them.
+ */
+export function useSkillCommands(workspaceId, { load = (id) => api.searchWorkspaceSkills(id) } = {}) {
+  const commands = ref([]);
+  let seq = 0;
+  watch(
+    () => toValue(workspaceId),
+    async (id) => {
+      const mine = ++seq;
+      commands.value = [];
+      if (!id) return;
+      try {
+        const res = await load(id);
+        if (mine === seq) commands.value = skillCommands(res?.skills, id);
+      } catch {
+        // Already empty.
+      }
+    },
+    { immediate: true }
+  );
+  return commands;
 }
 
 /**

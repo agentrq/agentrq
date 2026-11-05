@@ -74,6 +74,9 @@
                     class="w-full px-4 pt-3 pb-2 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-none min-h-[160px] custom-scrollbar"
                     required></textarea>
 
+          <!-- The workspace's skills, offered as the description starts with `/`. -->
+          <SlashCommandMenu :menu="slashMenu" class="mx-4 mb-2" @accept="acceptSlashCommand" />
+
           <!-- Attachments Preview -->
           <TaskAttachmentChips :attachments="opts.attachments.value" @remove="(i) => opts.attachments.value.splice(i, 1)"
                                class="px-4 pb-2 border-t border-gray-50 dark:border-zinc-800/50 pt-2" />
@@ -110,7 +113,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getWorkspace, createTask, updateScheduledTask, getTask, fetchEvents, fetchWorkflows } from '../api';
 import { useToasts } from '../composables/useToasts';
@@ -123,6 +126,8 @@ import { useClearContext } from '../composables/useClearContext';
 import { useEscapeKey } from '../composables/useEscapeKey';
 import TaskOptionsTools from '../components/TaskOptionsTools.vue';
 import TaskAttachmentChips from '../components/TaskAttachmentChips.vue';
+import SlashCommandMenu from '../components/SlashCommandMenu.vue';
+import { useSkillCommands, useSlashCommands } from '../composables/useSlashCommands';
 
 const route = useRoute();
 const router = useRouter();
@@ -176,6 +181,12 @@ const bodyRef = computed({
  * button would have done.
  */
 function onDescriptionKeydown(event) {
+  const claimed = slashMenu.handleKeydown(event);
+  if (claimed) {
+    event.preventDefault();
+    if (claimed.text !== null) setBody(claimed.text);
+    return;
+  }
   if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) return;
   event.preventDefault();
   if (!canSubmit.value) return;
@@ -184,6 +195,19 @@ function onDescriptionKeydown(event) {
 }
 
 const bodyInput = ref(null);
+
+const slashMenu = useSlashCommands({ text: bodyRef, commands: useSkillCommands(workspaceId) });
+
+/** Puts the chosen skill in the description, for a click on the menu. */
+function acceptSlashCommand(command) {
+  const applied = slashMenu.accept(command);
+  if (applied !== null) setBody(applied);
+}
+
+function setBody(text) {
+  bodyRef.value = text;
+  nextTick(() => bodyInput.value?.focus());
+}
 
 // Auto-Title
 const {
