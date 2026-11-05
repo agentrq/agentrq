@@ -8,13 +8,13 @@
  *
  * Kept out of the view so the decisions are plain functions with tests: which
  * card a fork sits under, what a search leaves, which column a card goes in,
- * and what a card's counts and "+N more" say.
+ * and what a card's counts say.
  */
 
-/** How many tasks a card shows: the server's own cap on a preview. */
-export const OVERVIEW_TASKS = 4;
+/** How many tasks a card shows, one fewer than the server's preview holds. */
+export const OVERVIEW_TASKS = 3;
 
-/** On a phone a card shows one fewer, to keep the list short to scroll. */
+/** On a phone a card shows as many. */
 export const OVERVIEW_TASKS_NARROW = 3;
 
 const FINISHED = new Set(['completed', 'rejected']);
@@ -130,30 +130,6 @@ export function sidebarActivity(counts = {}) {
  */
 export function countChips(counts = {}) {
   return CHIPS.filter((c) => counts[c.key] > 0).map((c) => ({ ...c, count: counts[c.key] }));
-}
-
-/**
- * How many of a workspace's active tasks the card leaves out. Finished tasks
- * are only shown to fill the space, so they never count as missing.
- */
-export function moreTasks(counts = {}, tasks = []) {
-  const active = (counts.ongoing ?? 0) + (counts.notstarted ?? 0) + (counts.scheduled ?? 0);
-  const shown = tasks.filter((t) => !FINISHED.has(t.status)).length;
-  return Math.max(0, active - shown);
-}
-
-const STATUS_LABELS = {
-  ongoing: 'Ongoing',
-  blocked: 'Blocked',
-  notstarted: 'Not started',
-  cron: 'Scheduled',
-  completed: 'Completed',
-  rejected: 'Rejected',
-};
-
-/** The word a preview row puts beside its time. */
-export function previewStatusLabel(status) {
-  return STATUS_LABELS[status] ?? status;
 }
 
 /** Whether a preview row is a finished task, shown greyed. */

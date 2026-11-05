@@ -50,8 +50,6 @@ import {
   groupWorkspaces,
   indexOverview,
   isFinished,
-  moreTasks,
-  previewStatusLabel,
   splitIntoColumns,
   workspaceMatches,
 } from '../src/composables/useWorkspaceOverview';
@@ -120,16 +118,7 @@ describe('a card\'s numbers', () => {
     expect(countChips()).toEqual([]);
   });
 
-  it('counts the active tasks left out, never the finished ones shown', () => {
-    const tasks = [{ status: 'ongoing' }, { status: 'cron' }, { status: 'completed' }, { status: 'rejected' }];
-    expect(moreTasks({ ongoing: 3, notstarted: 4, scheduled: 1, completed: 50 }, tasks)).toBe(6);
-    expect(moreTasks({ ongoing: 1, scheduled: 1 }, tasks)).toBe(0);
-    expect(moreTasks()).toBe(0);
-  });
-
-  it('names each status, and greys only the finished', () => {
-    expect(['ongoing', 'blocked', 'notstarted', 'cron', 'completed', 'rejected', 'odd'].map(previewStatusLabel))
-      .toEqual(['Ongoing', 'Blocked', 'Not started', 'Scheduled', 'Completed', 'Rejected', 'odd']);
+  it('greys only the finished', () => {
     expect(isFinished({ status: 'rejected' })).toBe(true);
     expect(isFinished({ status: 'blocked' })).toBe(false);
   });
@@ -213,7 +202,7 @@ afterEach(() => {
 });
 
 describe('a workspace card', () => {
-  it('shows the counts, the first tasks with their status and time, and how many more there are', async () => {
+  it('shows the counts, the first tasks with their time, and no count of the rest', async () => {
     const opened = vi.fn();
     const openedTask = vi.fn();
     await mountComponent(WorkspaceOverviewCard, {
@@ -231,9 +220,9 @@ describe('a workspace card', () => {
     expect($$('[data-test="count-chip"]').map(text)).toEqual(['1Action', '2Ongoing', '5To do', '1Scheduled']);
     const rows = $$('[data-test="preview-task"]');
     expect(rows).toHaveLength(OVERVIEW_TASKS);
-    expect(row(rows[0])).toBe('task 1 Ongoing 5m ago');
-    expect(row(rows[3])).toMatch(/^task 4 Scheduled In /);
-    expect(text(el.querySelector('[data-test="more-tasks"]'))).toBe('+4 more →');
+    expect(row(rows[0])).toBe('task 1 5m ago');
+    expect(row(rows[2])).toBe('task 3 5m ago');
+    expect(el.querySelector('[data-test="more-tasks"]')).toBeNull();
 
     rows[1].click();
     expect(openedTask).toHaveBeenCalledWith(expect.objectContaining({ id: '2' }));
@@ -250,7 +239,6 @@ describe('a workspace card', () => {
     });
     expect($$('[data-test="count-chip"]').map(text)).toEqual(['4']);
     expect($$('[data-test="preview-task"]').map(row)).toEqual(['task 1 5m ago', 'task 2 5m ago', 'task 3 5m ago']);
-    expect(text(el.querySelector('[data-test="more-tasks"]'))).toBe('+1 more →');
     expect(text(el)).toContain('Agent Live');
   });
 
@@ -272,7 +260,6 @@ describe('a workspace card', () => {
     });
     expect(text(el)).toContain('No active tasks');
     expect(el.querySelector('[data-test="card-fork"]').getAttribute('title')).toBe('Fork of api');
-    expect(el.querySelector('[data-test="more-tasks"]')).toBeNull();
     expect(el.querySelector('[data-test="workspace-card"]').className).toContain('opacity-60');
   });
 });
