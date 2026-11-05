@@ -75,7 +75,7 @@
 
     <!-- A fixed height, so every card in a column is the same height whether
          it shows three tasks, two, or none. -->
-    <div v-if="!simple" class="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800" :class="narrow ? '' : 'h-[112px]'">
+    <div v-if="!simple" class="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800" :class="narrow ? '' : 'h-[103px]'">
       <div v-if="shown.length === 0"
            class="h-full min-h-[60px] flex items-center justify-center border border-dashed border-gray-200 dark:border-zinc-800 rounded-sm text-[11px] font-medium text-gray-500 dark:text-zinc-500">
         No active tasks
@@ -90,10 +90,6 @@
           <span v-if="!narrow" class="shrink-0 text-[9px] font-black uppercase tracking-wider text-gray-400 dark:text-zinc-500 w-[76px] text-right">{{ previewStatusLabel(t.status) }}</span>
           <span class="shrink-0 text-[10px] font-medium tabular-nums text-gray-500 dark:text-zinc-400 w-[72px] text-right truncate">{{ when(t) }}</span>
         </div>
-        <span v-if="more > 0" data-test="more-tasks"
-              class="mt-1 self-start text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white">
-          +{{ more }} more →
-        </span>
       </div>
     </div>
   </div>
@@ -111,7 +107,7 @@ import { agentDetails, agentSummary } from '../composables/useAgentSummary';
 import { canChooseModel } from '../composables/useAgentModelPicker';
 import { canChooseEffort } from '../composables/useAgentEffortPicker';
 import { taskDotClass } from '../composables/useTaskStatusStyle';
-import { OVERVIEW_TASKS, OVERVIEW_TASKS_NARROW, countChips, isFinished, moreTasks, previewStatusLabel } from '../composables/useWorkspaceOverview';
+import { OVERVIEW_TASKS, OVERVIEW_TASKS_NARROW, countChips, isFinished, previewStatusLabel } from '../composables/useWorkspaceOverview';
 
 const props = defineProps({
   workspace: { type: Object, required: true },
@@ -130,7 +126,6 @@ const { getNextRunLabel } = useCron();
 const counts = computed(() => props.overview?.counts ?? {});
 const shown = computed(() => (props.overview?.tasks ?? []).slice(0, props.narrow ? OVERVIEW_TASKS_NARROW : OVERVIEW_TASKS));
 const chips = computed(() => countChips(counts.value));
-const more = computed(() => moreTasks(counts.value, shown.value));
 
 // A scheduled task is about when it runs next; anything else, when it last moved.
 function when(t) {

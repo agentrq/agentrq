@@ -8,7 +8,7 @@
  *
  * Kept out of the view so the decisions are plain functions with tests: which
  * card a fork sits under, what a search leaves, which column a card goes in,
- * and what a card's counts and "+N more" say.
+ * and what a card's counts say.
  */
 
 /** How many tasks a card shows, one fewer than the server's preview holds. */
@@ -130,16 +130,6 @@ export function sidebarActivity(counts = {}) {
  */
 export function countChips(counts = {}) {
   return CHIPS.filter((c) => counts[c.key] > 0).map((c) => ({ ...c, count: counts[c.key] }));
-}
-
-/**
- * How many of a workspace's active tasks the card leaves out. Finished tasks
- * are only shown to fill the space, so they never count as missing.
- */
-export function moreTasks(counts = {}, tasks = []) {
-  const active = (counts.ongoing ?? 0) + (counts.notstarted ?? 0) + (counts.scheduled ?? 0);
-  const shown = tasks.filter((t) => !FINISHED.has(t.status)).length;
-  return Math.max(0, active - shown);
 }
 
 const STATUS_LABELS = {
