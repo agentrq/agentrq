@@ -127,9 +127,19 @@ func (ps *WorkspaceServer) checkAutoAllow(toolName, inputPreview string) bool {
 	return false
 }
 
+// substitutions are the forms that run a command inside another one's
+// arguments, where a glob like "git *" would match them as text.
+var substitutions = []string{"$(", "`", "<(", ">("}
+
 // isShellCommandAllowed checks if a command (potentially with shell operators) matches the pattern.
-// Every subcommand (split on &&, ||, ;, |, &) must match the pattern.
+// Every subcommand (split on &&, ||, ;, |, &) must match the pattern, and a
+// command holding a substitution is never allowed: it runs a command no rule named.
 func isShellCommandAllowed(pattern, command string) bool {
+	for _, s := range substitutions {
+		if strings.Contains(command, s) {
+			return false
+		}
+	}
 	subcommands := splitShellOperators(command)
 	for _, sub := range subcommands {
 		if !matchesBashPattern(pattern, sub) {
