@@ -77,10 +77,10 @@ func TestLoadConfigTakesTheEnv(t *testing.T) {
 	}
 	// On by default, with limits a first visit to the web app stays under: about
 	// 160 requests in half a second, with the service worker's precache.
-	if !cfg.Ddos.Enabled || cfg.Ddos.MaxRequestsPerSecond != 300 || cfg.Ddos.BlockDuration != time.Minute {
+	if !cfg.Ddos.Enabled || cfg.Ddos.MaxRequestsPerSecond != 200 || cfg.Ddos.BlockDuration != time.Minute {
 		t.Errorf("ddos = %+v", cfg.Ddos)
 	}
-	if !cfg.Ratelimit.Enabled || cfg.Ratelimit.MaxPerIP != 3000 || cfg.Ratelimit.MaxPerUser != 3000 || cfg.Ratelimit.Window != time.Minute {
+	if !cfg.Ratelimit.Enabled || cfg.Ratelimit.MaxPerIP != 1200 || cfg.Ratelimit.MaxPerUser != 600 || cfg.Ratelimit.Window != time.Minute {
 		t.Errorf("ratelimit = %+v", cfg.Ratelimit)
 	}
 	if cfg.Network.TrustedProxies != "10.0.0.0/8" || cfg.Network.ClientIPHeader != "X-Forwarded-For" || cfg.MCP.OpenAIAppsChallenge != "challenge" {

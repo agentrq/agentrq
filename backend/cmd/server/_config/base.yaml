@@ -82,15 +82,15 @@ webPush:
 # worker's precache, is about 160 requests in under a second.
 ddos:
   enabled: ${AGENTRQ_DDOS_ENABLED:true}
-  maxRequestsPerSecond: ${AGENTRQ_DDOS_MAX_REQ_PER_SEC:300}
+  maxRequestsPerSecond: ${AGENTRQ_DDOS_MAX_REQ_PER_SEC:200}
   blockDuration: ${AGENTRQ_DDOS_BLOCK_DURATION:1m}
 
 # Per client address, and per signed-in user, in each window. Agents' MCP calls
 # from one machine share its address.
 ratelimit:
   enabled: ${AGENTRQ_RATELIMIT_ENABLED:true}
-  maxPerIP: ${AGENTRQ_RATELIMIT_MAX_PER_IP:3000}
-  maxPerUser: ${AGENTRQ_RATELIMIT_MAX_PER_USER:3000}
+  maxPerIP: ${AGENTRQ_RATELIMIT_MAX_PER_IP:1200}
+  maxPerUser: ${AGENTRQ_RATELIMIT_MAX_PER_USER:600}
   window: ${AGENTRQ_RATELIMIT_WINDOW:60s}
 
 # Who the throttles count. The header is believed only from these proxies
