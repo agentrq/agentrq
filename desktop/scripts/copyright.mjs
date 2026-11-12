@@ -48,7 +48,7 @@ if (fix) {
   // The whole block, because a file may be failing on the second line alone.
   console.error(`\nExpected, exactly:\n\n${NOTICE_LINES.map((line) => `    ${line}`).join('\n')}`)
   console.error(`\nand under backend/, desktop/ and frontend/, a third line:\n\n    ${SPDX}`)
-  console.error(`\nor under daemon/ and installers/:\n\n    ${SPDX_APACHE}`)
+  console.error(`\nor under daemon/, installers/ and wasm-hooks/:\n\n    ${SPDX_APACHE}`)
   console.error(`\nRun: node desktop/scripts/copyright.mjs --fix`)
   process.exit(1)
 } else {
