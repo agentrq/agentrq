@@ -8,6 +8,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
@@ -33,53 +34,33 @@ func webApp() fs.FS {
 	return web
 }
 
+// loadConfig reads every block of the server's config. A block left out here
+// is silently its zero value: its env vars do nothing.
+func loadConfig(cfgSvc config.Service) (app.Config, error) {
+	var cfg app.Config
+	for key, dst := range map[string]any{
+		"app": &cfg.App, "auth": &cfg.Auth, "smtp": &cfg.SMTP, "ssl": &cfg.SSL, "slack": &cfg.Slack,
+		"webPush": &cfg.WebPush, "network": &cfg.Network, "storage": &cfg.Storage, "memory": &cfg.Memory,
+		"skills": &cfg.Skills, "pano": &cfg.Pano, "hooks": &cfg.Hooks, "mcp": &cfg.MCP, "acp": &cfg.ACP,
+		"idgen": &cfg.Idgen,
+	} {
+		if err := cfgSvc.Populate(key, dst); err != nil {
+			return app.Config{}, fmt.Errorf("%s: %w", key, err)
+		}
+	}
+	return cfg, nil
+}
+
 func main() {
 	cfgSvc, err := config.NewFS(bundled)
 	if err != nil {
 		zlog.Fatal().Err(err).Msg("config")
 	}
 
-	var cfg app.Config
-	if err := cfgSvc.Populate("app", &cfg.App); err != nil {
-		zlog.Fatal().Err(err).Msg("config app")
+	cfg, err := loadConfig(cfgSvc)
+	if err != nil {
+		zlog.Fatal().Err(err).Msg("config")
 	}
-	if err := cfgSvc.Populate("auth", &cfg.Auth); err != nil {
-		zlog.Fatal().Err(err).Msg("config auth")
-	}
-	if err := cfgSvc.Populate("smtp", &cfg.SMTP); err != nil {
-		zlog.Fatal().Err(err).Msg("config smtp")
-	}
-	if err := cfgSvc.Populate("ssl", &cfg.SSL); err != nil {
-		zlog.Fatal().Err(err).Msg("config ssl")
-	}
-	if err := cfgSvc.Populate("slack", &cfg.Slack); err != nil {
-		zlog.Fatal().Err(err).Msg("config slack")
-	}
-	if err := cfgSvc.Populate("webPush", &cfg.WebPush); err != nil {
-		zlog.Fatal().Err(err).Msg("config webPush")
-	}
-	if err := cfgSvc.Populate("storage", &cfg.Storage); err != nil {
-		zlog.Fatal().Err(err).Msg("config storage")
-	}
-	if err := cfgSvc.Populate("memory", &cfg.Memory); err != nil {
-		zlog.Fatal().Err(err).Msg("config memory")
-	}
-	if err := cfgSvc.Populate("skills", &cfg.Skills); err != nil {
-		zlog.Fatal().Err(err).Msg("config skills")
-	}
-	if err := cfgSvc.Populate("pano", &cfg.Pano); err != nil {
-		zlog.Fatal().Err(err).Msg("config pano")
-	}
-	if err := cfgSvc.Populate("hooks", &cfg.Hooks); err != nil {
-		zlog.Fatal().Err(err).Msg("config hooks")
-	}
-	if err := cfgSvc.Populate("acp", &cfg.ACP); err != nil {
-		zlog.Fatal().Err(err).Msg("config acp")
-	}
-	if err := cfgSvc.Populate("idgen", &cfg.Idgen); err != nil {
-		zlog.Fatal().Err(err).Msg("config idgen")
-	}
-
 	cfg.ConfigSvc = cfgSvc
 	cfg.Web = webApp()
 
