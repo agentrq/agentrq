@@ -6,7 +6,9 @@ package ddos
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -70,6 +72,7 @@ func New(enabled bool, maxRequestsPerSecond int, blockDuration time.Duration) fu
 			if now.Before(info.blockedUntil) {
 				mu.Unlock()
 				zlog.Warn().Str("ip", ip).Msg("[middleware/ddos] blocked request intercepted")
+				w.Header().Set("Retry-After", retryAfter(info.blockedUntil.Sub(now)))
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
 				_ = json.NewEncoder(w).Encode(map[string]any{
@@ -95,6 +98,7 @@ func New(enabled bool, maxRequestsPerSecond int, blockDuration time.Duration) fu
 					Str("ip", ip).
 					Int("requestCount", info.requestCount).
 					Msg("[middleware/ddos] IP blocked due to exceeding request rate limit")
+				w.Header().Set("Retry-After", retryAfter(blockDuration))
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
 				_ = json.NewEncoder(w).Encode(map[string]any{
@@ -110,4 +114,14 @@ func New(enabled bool, maxRequestsPerSecond int, blockDuration time.Duration) fu
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// retryAfter is the Retry-After value for a client that may try again in d:
+// whole seconds, rounded up so it never asks back a moment too soon.
+func retryAfter(d time.Duration) string {
+	s := int64(math.Ceil(d.Seconds()))
+	if s < 1 {
+		s = 1
+	}
+	return strconv.FormatInt(s, 10)
 }

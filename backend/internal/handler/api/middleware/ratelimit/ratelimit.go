@@ -6,6 +6,7 @@ package ratelimit
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -111,6 +112,7 @@ func New(enabled bool, maxPerIP int, maxPerUser int, window time.Duration, token
 			if ipInfo.requestCount > maxPerIP {
 				mu.Unlock()
 				zlog.Warn().Str("key", ipKey).Msg("[middleware/ratelimit] IP ratelimit reached")
+				w.Header().Set("Retry-After", retryAfter(ipInfo.windowStart.Add(window).Sub(now)))
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
 				_ = json.NewEncoder(w).Encode(map[string]any{
@@ -146,6 +148,7 @@ func New(enabled bool, maxPerIP int, maxPerUser int, window time.Duration, token
 					ipInfo.requestCount--
 					mu.Unlock()
 					zlog.Warn().Str("key", userKey).Msg("[middleware/ratelimit] User ratelimit reached")
+					w.Header().Set("Retry-After", retryAfter(userInfo.windowStart.Add(window).Sub(now)))
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusTooManyRequests)
 					_ = json.NewEncoder(w).Encode(map[string]any{
@@ -183,4 +186,14 @@ func New(enabled bool, maxPerIP int, maxPerUser int, window time.Duration, token
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// retryAfter is the Retry-After value for a client that may try again in d:
+// whole seconds, rounded up so it never asks back a moment too soon.
+func retryAfter(d time.Duration) string {
+	s := int64(math.Ceil(d.Seconds()))
+	if s < 1 {
+		s = 1
+	}
+	return strconv.FormatInt(s, 10)
 }

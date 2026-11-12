@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createApp, defineComponent, h, ref } from 'vue'
 
 import { useEventBus } from '../src/useEventBus'
+import { apiBreaker } from '../src/utils/circuitBreaker'
 
 /**
  * A stand-in for the browser's EventSource that lets a test drive the stream:
@@ -337,6 +338,22 @@ describe('useEventBus', () => {
       const before = FakeEventSource.instances.length
       await vi.advanceTimersByTimeAsync(30000)
       expect(FakeEventSource.instances.length).toBe(before + 1)
+    })
+
+    it('waits out the API breaker instead of reconnecting into a busy server', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(apiBreaker, 'retryIn').mockReturnValue(20000)
+      const bus = useEventBus()
+      bus.connect()
+
+      FakeEventSource.last().fail()
+      await vi.advanceTimersByTimeAsync(19999)
+      expect(FakeEventSource.instances).toHaveLength(1)
+      // Nor does it ask the server who is signed in while it is backing off.
+      expect(fetchMock).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(FakeEventSource.instances).toHaveLength(2)
     })
 
     it('resets the backoff once a stream opens again', async () => {

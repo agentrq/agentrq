@@ -4,6 +4,7 @@
 
 import { ref, onUnmounted, unref, getCurrentInstance } from 'vue';
 import { API_BASE_URL } from './api';
+import { apiBreaker } from './utils/circuitBreaker';
 
 // Shared across all useEventBus instances — ensures only one auth check fires at a time
 // regardless of how many SSE connections error simultaneously.
@@ -76,6 +77,15 @@ export function useEventBus(workspaceId, { buffer = true } = {}) {
       isConnected.value = false;
       eventSource.close();
       eventSource = null;
+
+      // While the API is backing off, so does the stream: no auth check, and
+      // no reconnect before the cooldown is over.
+      const busyFor = apiBreaker.retryIn();
+      if (busyFor > 0) {
+        setTimeout(connect, Math.max(reconnectDelay, busyFor));
+        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+        return;
+      }
 
       const status = await checkAuth();
       if (status === 401) {
