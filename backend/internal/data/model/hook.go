@@ -67,12 +67,14 @@ const (
 // HookDelivery is one request to a registration's URL: the queue's row while
 // it waits, and the log's afterwards.
 type HookDelivery struct {
-	// A registration's log is read newest first, by id.
+	// A registration's log is read newest first, by id. Its queued rows are
+	// counted on every request, so that count reads only those, not the
+	// whole retained log.
 	ID             int64     `gorm:"primaryKey;autoIncrement:false;index:idx_hook_deliveries_registration_id_id,priority:2"`
-	RegistrationID int64     `gorm:"not null;index:idx_hook_deliveries_registration_id_id,priority:1"`
+	RegistrationID int64     `gorm:"not null;index:idx_hook_deliveries_registration_id_id,priority:1;index:idx_hook_deliveries_registration_id_status,priority:1"`
 	UserID         int64     `gorm:"not null"`
 	ReceivedAt     time.Time `gorm:"not null;index:idx_hook_deliveries_received_at"`
-	Status         int16     `gorm:"not null;index:idx_hook_deliveries_status_next_attempt_at,priority:1"`
+	Status         int16     `gorm:"not null;index:idx_hook_deliveries_status_next_attempt_at,priority:1;index:idx_hook_deliveries_registration_id_status,priority:2"`
 	Attempts       int16     `gorm:"not null"`
 	// Claims counts every claim, routed ones too, and is never reset, not even
 	// by a replay: a worker's write is fenced on it, not on Attempts.
