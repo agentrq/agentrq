@@ -95,6 +95,9 @@ const (
 	// tokens from its address, too many requests to the registration, or too
 	// many of them waiting.
 	HookThrottled
+	// HookForbidden is an account's own hook while the server does not
+	// allow them.
+	HookForbidden
 )
 
 // HookError is a hook refused, with a message for the person.

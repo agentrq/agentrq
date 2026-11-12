@@ -27,6 +27,7 @@ type fakeRegistrations struct {
 	before      int64
 	limit       int
 	deliveryID  int64
+	allow       bool
 }
 
 func (f *fakeRegistrations) reg(token string) entity.HookRegistration {
@@ -290,5 +291,60 @@ func TestOnlyTheHookURLIsPublic(t *testing.T) {
 	app := publicHookApp(&fakeRegistrations{})
 	if status, _ := hookRequest(t, app, http.MethodGet, "/api/v1/hooks/registrations/"+regIDText+"/deliveries", nil, nil); status != http.StatusUnauthorized {
 		t.Errorf("deliveries without a session = %d", status)
+	}
+}
+
+func (f *fakeRegistrations) AllowsUserHooks() bool { return f.allow }
+
+func (f *fakeRegistrations) CreateOwn(_ context.Context, user int64, wasm []byte) (entity.Hook, error) {
+	f.called, f.user, f.wasm = "CreateOwn", user, wasm
+	return f.hook(), f.err
+}
+
+func (f *fakeRegistrations) UpgradeOwn(_ context.Context, user, id int64, wasm []byte) (entity.Hook, error) {
+	f.called, f.user, f.id, f.wasm = "UpgradeOwn", user, id, wasm
+	return f.hook(), f.err
+}
+
+func (f *fakeRegistrations) DeleteOwn(_ context.Context, user, id int64) error {
+	f.called, f.user, f.id = "DeleteOwn", user, id
+	return f.err
+}
+
+func TestOwnHookRoutes(t *testing.T) {
+	hooks := &fakeRegistrations{allow: true}
+	app := hookApp(hooks)
+	if status, body := hookRequest(t, app, http.MethodGet, "/api/v1/hooks", nil, nil); status != http.StatusOK || !strings.HasSuffix(body, `],"allowUserHooks":true}`) {
+		t.Errorf("list = %d %s", status, body)
+	}
+
+	status, body := hookRequest(t, app, http.MethodPost, "/api/v1/hooks", gzipped([]byte("\x00asm")), map[string]string{"Content-Encoding": "gzip"})
+	if status != http.StatusCreated || hooks.called != "CreateOwn" || hooks.user != 42 || string(hooks.wasm) != "\x00asm" || !strings.Contains(body, `"name":"github"`) {
+		t.Errorf("create = %d %s, %+v", status, body, hooks)
+	}
+	if status, _ = hookRequest(t, app, http.MethodPut, "/api/v1/hooks/"+hookID, []byte("\x00asm2"), nil); status != http.StatusOK || hooks.called != "UpgradeOwn" || hooks.id != 7 || string(hooks.wasm) != "\x00asm2" {
+		t.Errorf("upgrade = %d, %+v", status, hooks)
+	}
+	if status, _ = hookRequest(t, app, http.MethodDelete, "/api/v1/hooks/"+hookID, nil, nil); status != http.StatusNoContent || hooks.called != "DeleteOwn" || hooks.id != 7 {
+		t.Errorf("delete = %d, %+v", status, hooks)
+	}
+
+	for _, r := range []struct{ method, url string }{
+		{http.MethodPost, "/api/v1/hooks"}, {http.MethodPut, "/api/v1/hooks/!"}, {http.MethodPut, "/api/v1/hooks/" + hookID}, {http.MethodDelete, "/api/v1/hooks/!"},
+	} {
+		hooks.called = ""
+		if status, _ := hookRequest(t, app, r.method, r.url, nil, nil); status != http.StatusBadRequest || hooks.called != "" {
+			t.Errorf("%s %s = %d", r.method, r.url, status)
+		}
+	}
+
+	hooks.err = &entity.HookError{Kind: entity.HookForbidden, Message: "not allowed"}
+	for _, r := range []struct {
+		method, url string
+		body        []byte
+	}{{http.MethodPost, "/api/v1/hooks", []byte("x")}, {http.MethodPut, "/api/v1/hooks/" + hookID, []byte("x")}, {http.MethodDelete, "/api/v1/hooks/" + hookID, nil}} {
+		if status, body := hookRequest(t, app, r.method, r.url, r.body, nil); status != http.StatusForbidden || !strings.Contains(body, "not allowed") {
+			t.Errorf("%s %s = %d %s", r.method, r.url, status, body)
+		}
 	}
 }

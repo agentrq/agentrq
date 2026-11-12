@@ -40,7 +40,8 @@ func TestFromHookEntitiesToHTTPResponse(t *testing.T) {
 
 func TestFromErrorToHTTPResponseAnswersAHookError(t *testing.T) {
 	for kind, want := range map[entity.HookErrorKind]int{entity.HookInvalid: http.StatusUnprocessableEntity, entity.HookConflict: http.StatusConflict,
-		entity.HookTooLarge: http.StatusRequestEntityTooLarge, entity.HookThrottled: http.StatusTooManyRequests} {
+		entity.HookTooLarge: http.StatusRequestEntityTooLarge, entity.HookThrottled: http.StatusTooManyRequests,
+		entity.HookForbidden: http.StatusForbidden} {
 		body, status := FromErrorToHTTPResponse(&entity.HookError{Kind: kind, Message: "why"})
 		if status != want || string(body) != `{"error":{"message":"why","code":`+strconv.Itoa(want)+`}}` {
 			t.Errorf("kind %d: %d %s", kind, status, body)
@@ -157,5 +158,14 @@ func TestFromHookDeliveryEntitiesToHTTPResponse(t *testing.T) {
 	}
 	if got := string(FromHookDeliveryIDToHTTPResponse(11)); got != `{"deliveryId":"0000000000B"}` {
 		t.Errorf("id = %s", got)
+	}
+}
+
+func TestFromAvailableHookEntitiesToHTTPResponse(t *testing.T) {
+	if got := string(FromAvailableHookEntitiesToHTTPResponse(nil, false)); got != `{"hooks":[],"allowUserHooks":false}` {
+		t.Errorf("none = %s", got)
+	}
+	if got := string(FromAvailableHookEntitiesToHTTPResponse([]entity.Hook{{ID: 2}}, true)); !strings.HasPrefix(got, `{"hooks":[{"id":"00000000002",`) || !strings.HasSuffix(got, `"allowUserHooks":true}`) {
+		t.Errorf("one = %s", got)
 	}
 }

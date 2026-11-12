@@ -41,6 +41,14 @@ type Controller interface {
 
 	// ListAvailable returns the hooks an account may register.
 	ListAvailable(ctx context.Context, userID int64) ([]entity.Hook, error)
+	// AllowsUserHooks reports whether accounts may add hooks of their own.
+	AllowsUserHooks() bool
+	// CreateOwn, UpgradeOwn and DeleteOwn manage an account's own hooks, as
+	// the built-in ones are managed; all refuse while user hooks are not
+	// allowed.
+	CreateOwn(ctx context.Context, userID int64, wasm []byte) (entity.Hook, error)
+	UpgradeOwn(ctx context.Context, userID, id int64, wasm []byte) (entity.Hook, error)
+	DeleteOwn(ctx context.Context, userID, id int64) error
 	ListRegistrations(ctx context.Context, userID int64) ([]entity.HookRegistration, error)
 	GetRegistration(ctx context.Context, userID, id int64) (entity.HookRegistration, error)
 	// CreateRegistration and RotateToken return the URL with its token, the
@@ -180,6 +188,36 @@ func (c *controller) SetBuiltInEnabled(ctx context.Context, id int64, enabled bo
 
 func (c *controller) DeleteBuiltIn(ctx context.Context, id int64) error {
 	return c.delete(ctx, builtIn, id)
+}
+
+func (c *controller) AllowsUserHooks() bool { return c.allowUserHooks }
+
+func (c *controller) CreateOwn(ctx context.Context, userID int64, wasm []byte) (entity.Hook, error) {
+	if err := c.ownHooksAllowed(); err != nil {
+		return entity.Hook{}, err
+	}
+	return c.create(ctx, userID, wasm)
+}
+
+func (c *controller) UpgradeOwn(ctx context.Context, userID, id int64, wasm []byte) (entity.Hook, error) {
+	if err := c.ownHooksAllowed(); err != nil {
+		return entity.Hook{}, err
+	}
+	return c.upgrade(ctx, userID, id, wasm)
+}
+
+func (c *controller) DeleteOwn(ctx context.Context, userID, id int64) error {
+	if err := c.ownHooksAllowed(); err != nil {
+		return err
+	}
+	return c.delete(ctx, userID, id)
+}
+
+func (c *controller) ownHooksAllowed() error {
+	if !c.allowUserHooks {
+		return &entity.HookError{Kind: entity.HookForbidden, Message: "this server does not allow accounts to add their own hooks"}
+	}
+	return nil
 }
 
 // create stores the module first and the row after: a row never names a

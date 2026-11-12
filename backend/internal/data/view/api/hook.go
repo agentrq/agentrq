@@ -39,6 +39,13 @@ type HookEvent struct {
 	Description string `json:"description,omitempty"`
 }
 
+// AvailableHooksResponse is the hooks an account may register, and whether
+// it may add its own.
+type AvailableHooksResponse struct {
+	Hooks          []Hook `json:"hooks"`
+	AllowUserHooks bool   `json:"allowUserHooks"`
+}
+
 // ListHooksResponse is a list of hooks.
 type ListHooksResponse struct {
 	Hooks []Hook `json:"hooks"`
