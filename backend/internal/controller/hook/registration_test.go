@@ -321,13 +321,13 @@ func TestCreateRegistrationRefuses(t *testing.T) {
 		}, "there is no hook"},
 		"no name": {func(f regFixture) entity.HookRegistrationRequest {
 			return entity.HookRegistrationRequest{HookID: f.github, Name: ptr("  "), Inputs: map[string]any{"webhookSecret": "s"}}
-		}, "a name of 1 to 255"},
+		}, "a name of 1 to 64"},
 		"a name left out": {func(f regFixture) entity.HookRegistrationRequest {
 			return entity.HookRegistrationRequest{HookID: f.github, Inputs: map[string]any{"webhookSecret": "s"}}
-		}, "a name of 1 to 255"},
+		}, "a name of 1 to 64"},
 		"a long name": {func(f regFixture) entity.HookRegistrationRequest {
-			return entity.HookRegistrationRequest{HookID: f.github, Name: ptr(strings.Repeat("é", 256)), Inputs: map[string]any{"webhookSecret": "s"}}
-		}, "a name of 1 to 255"},
+			return entity.HookRegistrationRequest{HookID: f.github, Name: ptr(strings.Repeat("é", 65)), Inputs: map[string]any{"webhookSecret": "s"}}
+		}, "a name of 1 to 64"},
 		"no secret": {func(f regFixture) entity.HookRegistrationRequest {
 			return entity.HookRegistrationRequest{HookID: f.github, Name: ptr("n")}
 		}, `the input "webhookSecret" is required`},
@@ -565,6 +565,35 @@ func TestUpdateRegistrationChecksOnlyWhatItSends(t *testing.T) {
 	}
 	_, err = f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Inputs: map[string]any{"branches": []any{"main"}}})
 	wantHookError(t, err, entity.HookInvalid, `no input "branches"`)
+}
+
+// A name saved under the older 255 cap still lets the registration be
+// toggled; only a name sent is held to the cap.
+func TestUpdateRegistrationKeepsALongerStoredName(t *testing.T) {
+	ctx := context.Background()
+	f := regSetup(t, false)
+	reg := f.create(t)
+	long := strings.Repeat("n", 100)
+	stored := mustGet(t, f, reg.ID)
+	stored.Name = long
+	if err := f.repo.Repository.UpdateHookRegistration(ctx, stored); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Enabled: ptr(false)})
+	if err != nil || got.Name != long || got.Enabled {
+		t.Errorf("toggle off = %+v, %v", got, err)
+	}
+	got, err = f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Enabled: ptr(true)})
+	if err != nil || got.Name != long || !got.Enabled {
+		t.Errorf("toggle on = %+v, %v", got, err)
+	}
+	_, err = f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Name: ptr(long)})
+	wantHookError(t, err, entity.HookInvalid, "a name of 1 to 64")
+	got, err = f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Name: ptr(strings.Repeat("é", 64))})
+	if err != nil || got.Name != strings.Repeat("é", 64) {
+		t.Errorf("rename to 64 = %+v, %v", got, err)
+	}
 }
 
 func mustGet(t *testing.T, f regFixture, id int64) model.HookRegistration {

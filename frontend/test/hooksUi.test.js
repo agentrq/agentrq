@@ -351,7 +351,7 @@ describe('HookRegistrationForm', () => {
   it('asks for a name and a hook before anything else', async () => {
     serve({})
     const { el, onSubmit, onCancel } = await form()
-    expect(q(el, 'reg-name').maxLength).toBe(255) // the server's limit
+    expect(q(el, 'reg-name').maxLength).toBe(64) // the server's limit
     q(el, 'reg-submit').click()
     await flush()
     expect(q(el, 'reg-error').textContent).toBe('A name is required.')

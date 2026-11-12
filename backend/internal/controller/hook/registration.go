@@ -31,7 +31,7 @@ const (
 	tokenLen   = 8
 	tokenChars = "0123456789abcdefghijklmnopqrstuvwxyz"
 
-	maxRegistrationName = 255
+	maxRegistrationName = 64
 	maxInputString      = 4096
 	maxInputItems       = 64
 )
@@ -258,8 +258,12 @@ func (c *controller) apply(ctx context.Context, reg *model.HookRegistration, h m
 	return nil
 }
 
-// applyName sets the name asked for, if any, and checks the result.
+// applyName sets the name asked for, if any, and checks it. A stored name is
+// not re-checked: one saved under an older, longer cap must not stop a toggle.
 func applyName(reg *model.HookRegistration, name *string) error {
+	if name == nil && reg.Name != "" {
+		return nil
+	}
 	if name != nil {
 		reg.Name = strings.TrimSpace(*name)
 	}
