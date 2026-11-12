@@ -527,6 +527,41 @@ func TestUpdateRegistration(t *testing.T) {
 	}
 }
 
+// An update checks only what it sends: a route to an event deleted since, or
+// an input an upgrade dropped, does not stop a toggle or a rename.
+func TestUpdateRegistrationChecksOnlyWhatItSends(t *testing.T) {
+	ctx := context.Background()
+	f := regSetup(t, false)
+	reg := f.create(t)
+
+	f.events.getErr = base.ErrNotFound // both routed events deleted
+	got, err := f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Enabled: ptr(false)})
+	if err != nil || got.Enabled || len(got.Routes) != 2 {
+		t.Errorf("toggle = %+v, %v", got, err)
+	}
+	_, err = f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Routes: map[string]int64{"push": pushed}})
+	wantHookError(t, err, entity.HookInvalid, "is not one of this account's")
+	f.events.getErr = nil
+
+	if _, err := f.c.UpgradeBuiltIn(ctx, f.github, []byte("github-no-branches")); err != nil {
+		t.Fatalf("an upgrade dropping an input = %v", err)
+	}
+	got, err = f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Name: ptr("renamed")})
+	if err != nil || got.Name != "renamed" || got.Inputs["branches"] != nil || !slices.Equal(got.SecretsSet, []string{"webhookSecret"}) {
+		t.Errorf("rename = %+v, %v", got, err)
+	}
+	// A rename keeps the stored inputs; the next full save drops the stale one.
+	if _, err := f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Enabled: ptr(true)}); err != nil {
+		t.Fatalf("turn on = %v", err)
+	}
+	stored, _ := f.c.(*controller).inputsOf(mustGet(t, f, reg.ID))
+	if len(stored) != 1 || stored["webhookSecret"] != "s3cret" {
+		t.Errorf("stored inputs = %v", stored)
+	}
+	_, err = f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Inputs: map[string]any{"branches": []any{"main"}}})
+	wantHookError(t, err, entity.HookInvalid, `no input "branches"`)
+}
+
 func mustGet(t *testing.T, f regFixture, id int64) model.HookRegistration {
 	t.Helper()
 	reg, err := f.repo.Repository.GetHookRegistration(context.Background(), id, user)
@@ -611,7 +646,8 @@ func TestUpdateRegistrationFails(t *testing.T) {
 			f := regSetup(t, false)
 			reg := f.create(t)
 			fail(f)
-			if _, err := f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Enabled: ptr(true)}); err == nil || errors.As(err, new(*entity.HookError)) {
+			req := entity.HookRegistrationRequest{Name: ptr("x"), Routes: map[string]int64{"push": pushed}}
+			if _, err := f.c.UpdateRegistration(ctx, user, reg.ID, req); err == nil || errors.As(err, new(*entity.HookError)) {
 				t.Errorf("err = %v", err)
 			}
 		})

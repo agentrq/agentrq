@@ -115,4 +115,4 @@ GOOS=wasip1 GOARCH=wasm go build -o deploys.wasm .
 - Inputs are `string`, `number`, `boolean` or `array` (with `Items` naming the element type).
 - [`wasm-hooks/generic`](../wasm-hooks/generic/main.go) and [`wasm-hooks/github`](../wasm-hooks/github/main.go) are complete examples, with tests that run the built module.
 
-Uploading a new version of a hook keeps its registrations, unless it would break one: an event someone routes is gone, an input becomes required, or an input changes type or stops being secret. Such an upgrade is refused.
+Uploading a new version of a hook keeps its registrations, unless it would break one: an event someone routes is gone, an input becomes required, or an input changes type or stops being secret. Such an upgrade is refused. An input the new version drops is no longer given to it, and is cleared the next time the registration is saved.

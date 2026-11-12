@@ -390,6 +390,21 @@ func TestDeliveryPublished(t *testing.T) {
 	}
 }
 
+// A hook is given only the inputs it declares: one an upgrade dropped stays
+// stored until the registration is saved, but never reaches the hook.
+func TestDeliveryGivesTheHookOnlyItsInputs(t *testing.T) {
+	ctx := context.Background()
+	f := qSetup(t)
+	if _, err := f.c.UpgradeBuiltIn(ctx, f.github, []byte("github-no-branches")); err != nil {
+		t.Fatal(err)
+	}
+	f.receive(t)
+	f.ctl().drain(ctx)
+	if f.run.calls != 1 || len(f.run.got.Inputs) != 1 || f.run.got.Inputs["webhookSecret"] != "s3cret" {
+		t.Errorf("hook inputs = %v", f.run.got.Inputs)
+	}
+}
+
 func TestDeliveryDecidedByTheHook(t *testing.T) {
 	ctx := context.Background()
 	for name, tc := range map[string]struct {
