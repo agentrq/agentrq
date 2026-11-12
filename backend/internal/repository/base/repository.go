@@ -86,6 +86,16 @@ type Repository interface {
 	ListMemoriesByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Memory, error)
 	DeleteMemory(ctx context.Context, userID, workspaceID int64, name string) error
 
+	// Hook — WebAssembly modules that turn outside requests into events.
+	// UserID 0 is a built-in. The module is in storage, never here.
+	CreateHook(ctx context.Context, h model.Hook) (bool, error)
+	GetHook(ctx context.Context, id, userID int64) (model.Hook, error)
+	ListHooks(ctx context.Context, userID int64) ([]model.Hook, error)
+	ReplaceHookModule(ctx context.Context, h model.Hook) error
+	SetHookEnabled(ctx context.Context, id, userID int64, enabled bool) error
+	DeleteHook(ctx context.Context, id, userID int64) (bool, error)
+	ListHookRegistrationRoutes(ctx context.Context, hookID int64) ([]string, error)
+
 	// Skill — an account's playbooks, each on in some of its workspaces.
 	// Metadata only: file content is in the storage service, and the methods
 	// that drop files return the storage ids the caller must purge once the

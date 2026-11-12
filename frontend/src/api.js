@@ -1297,3 +1297,53 @@ export async function fetchAdminStats() {
   if (!res.ok) throw new Error('Failed to fetch admin stats');
   return res.json();
 }
+
+// The server's answer as an Error, its own message when it gave one.
+async function adminError(res, fallback) {
+  const body = await res.json().catch(() => null);
+  return new Error(body?.error?.message || fallback);
+}
+
+// The built-in hooks every account can register; null once the admin session
+// has ended.
+export async function fetchAdminHooks() {
+  const res = await fetch(`${ADMIN_BASE_URL}/hooks`);
+  if (res.status === 401) return null;
+  if (!res.ok) throw await adminError(res, 'Failed to fetch hooks');
+  return (await res.json()).hooks;
+}
+
+// Adds a built-in hook from its .wasm file, or with an id upgrades that hook.
+// Sent gzipped: a hook built with Go is over the server's request size. The
+// hook as stored, or null once the admin session has ended.
+export async function uploadAdminHook(file, id = '') {
+  const body = await new Response(new Response(file).body.pipeThrough(new CompressionStream('gzip'))).blob();
+  const res = await fetch(`${ADMIN_BASE_URL}/hooks${id ? `/${id}` : ''}`, {
+    method: id ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/wasm', 'Content-Encoding': 'gzip' },
+    body
+  });
+  if (res.status === 401) return null;
+  if (!res.ok) throw await adminError(res, 'Failed to upload the hook');
+  return res.json();
+}
+
+// Turns a built-in hook on or off for every account; null once signed out.
+export async function setAdminHookEnabled(id, enabled) {
+  const res = await fetch(`${ADMIN_BASE_URL}/hooks/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled })
+  });
+  if (res.status === 401) return null;
+  if (!res.ok) throw await adminError(res, 'Failed to update the hook');
+  return res.json();
+}
+
+// Removes a built-in hook nothing registers; false once signed out.
+export async function deleteAdminHook(id) {
+  const res = await fetch(`${ADMIN_BASE_URL}/hooks/${id}`, { method: 'DELETE' });
+  if (res.status === 401) return false;
+  if (!res.ok) throw await adminError(res, 'Failed to delete the hook');
+  return true;
+}

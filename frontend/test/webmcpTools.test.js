@@ -237,6 +237,10 @@ describe('parity with the interface', () => {
     adminLogin: 'takes the root access token; an operator page, not a user capability',
     adminLogout: 'ends the operator session above; the same non-grant',
     fetchAdminStats: 'needs the operator session above; the same non-grant',
+    fetchAdminHooks: 'needs the operator session above; the same non-grant',
+    uploadAdminHook: 'needs the operator session above; the same non-grant',
+    setAdminHookEnabled: 'needs the operator session above; the same non-grant',
+    deleteAdminHook: 'needs the operator session above; the same non-grant',
   };
 
   const apiFunctions = Object.entries(api)

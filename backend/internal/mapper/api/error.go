@@ -27,6 +27,7 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 	var forkErr *entity.ForkError
 	var launchErr *entity.LaunchError
 	var panoErr *entity.PanoError
+	var hookErr *entity.HookError
 	if errors.Is(err, base.ErrNotFound) {
 		code = http.StatusNotFound
 		msg = "not found"
@@ -42,6 +43,12 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 			code = http.StatusConflict
 		}
 		msg = panoErr.Message
+	} else if errors.As(err, &hookErr) {
+		code = http.StatusUnprocessableEntity
+		if hookErr.Kind == entity.HookConflict {
+			code = http.StatusConflict
+		}
+		msg = hookErr.Message
 	} else if errors.Is(err, entity.ErrTaskTitleLocked) {
 		code = http.StatusConflict
 		msg = err.Error()

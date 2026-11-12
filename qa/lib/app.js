@@ -109,6 +109,13 @@ export function nextResponse(page, method, path, params = {}) {
   })
 }
 
+// An address no earlier test has used, to send as X-Real-IP: the admin
+// sign-in allows each client one try every ten minutes.
+export function clientAddress() {
+  const n = Date.now() * 1000 + Math.floor(Math.random() * 1000)
+  return `10.${(n >> 16) & 255}.${(n >> 8) & 255}.${n & 255}`
+}
+
 // A name no earlier run has used, since a reused server keeps its database.
 export function unique(prefix) {
   return `${prefix}-${Date.now().toString(36)}`

@@ -27,3 +27,9 @@ only while `hooks.allowUserHooks` is on.
 - **An `*OutputError` is final, any other run error is retried.** A hook is
   deterministic, so a wrong answer would come back the same; a timeout or a trap
   may not.
+- **A module is kept in the `hooks` store, never a public one.** Skills,
+  attachments and Pano files are public by link; a hook may be an account's
+  own code, with its secrets' checks in it.
+- **A module is uploaded gzipped and unpacked by the handler with a cap.** A Go
+  hook is over the 4 MB body limit; don't raise it, and don't let Fiber decode
+  the body: it has no cap.
