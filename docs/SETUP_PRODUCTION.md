@@ -283,6 +283,18 @@ An attachment's upload type is kept only when a browser cannot run it; anything 
 
 Values are whole numbers. The server refuses to start on anything else, or on a memory size above `131072`.
 
+### Hooks
+
+Hooks turn requests from outside services, such as a failed CI run on GitHub, into the account's events. Built-in hooks are registered by the root user and every account can use them.
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENTRQ_HOOKS_ALLOW_USER_HOOKS` | `false` | Let every account upload its own hooks. Off, only built-in hooks can be registered, and an account's own hooks stop accepting requests. |
+| `AGENTRQ_HOOKS_DELIVERY_RETENTION` | `7d` | How long a request to a hook is kept from its arrival: in its log, for replay when it failed, and to catch a provider's retry of it. Day values (`7d`) or Go durations (`36h`); at least `1d`. |
+| `AGENTRQ_HOOKS_MAX_PAYLOAD_SIZE` | `65536` | Most bytes one event payload written by a hook may hold, from `1024` to `1048576`. |
+
+The server refuses to start on a value outside these.
+
 ### MCP
 
 | Variable | Default | Description |

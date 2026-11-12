@@ -38,7 +38,7 @@ type service struct {
 }
 
 func New(cfg Config) (Service, error) {
-	d, err := parseDuration(cfg.RetentionPeriod)
+	d, err := ParseDuration(cfg.RetentionPeriod)
 	if err != nil {
 		return nil, fmt.Errorf("cleanup: invalid retention period %q: %w", cfg.RetentionPeriod, err)
 	}
@@ -158,8 +158,9 @@ func (s *service) sweepAttachments(cutoff time.Time) int {
 	return deleted
 }
 
-// parseDuration extends time.ParseDuration with a "d" (days) suffix.
-func parseDuration(s string) (time.Duration, error) {
+// ParseDuration extends time.ParseDuration with a "d" (days) suffix, the form
+// every retention setting takes.
+func ParseDuration(s string) (time.Duration, error) {
 	if raw, ok := strings.CutSuffix(s, "d"); ok {
 		days, err := strconv.Atoi(raw)
 		if err != nil || days <= 0 {

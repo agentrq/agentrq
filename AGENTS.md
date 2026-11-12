@@ -82,6 +82,10 @@ Each line says what the note will stop you getting wrong.
   settings but reads its memory, skills and files from the parent. REST and
   CoreMCP share one merge, which stops the fork's agent first. A fork never
   starts on an agentrqd without the `fork` capability, or older than 0.9.3.
+- **[Hooks](docs/agents/hooks.md)** — requests from outside services firing
+  events through WebAssembly hooks. Why a hook URL's id is no credential, why
+  the token is never cached, why a request is answered before its hook runs,
+  and why the server never learns a provider's signature format.
 - **[Telemetry](docs/agents/telemetry.md)** — a new action is four places or it
   reads as zero, and the machine actions carry no workspace on purpose.
 - **[Events](docs/agents/events.md)** — experimental. Named signals that let one

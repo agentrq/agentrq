@@ -124,6 +124,16 @@ pano:
   storage: ${AGENTRQ_PANO_STORAGE:local}
   maxTtlDays: ${AGENTRQ_PANO_MAX_TTL_DAYS:365}
 
+# Hooks turn requests from outside services (a CI, GitHub) into events. Built-in
+# hooks are registered by the root user; allowUserHooks lets every account upload
+# its own. A delivery is kept deliveryRetention from its arrival (7d, 36h; 1d at
+# least), and one event payload a hook writes holds at most maxPayloadSize bytes
+# (1024 to 1048576).
+hooks:
+  allowUserHooks: ${AGENTRQ_HOOKS_ALLOW_USER_HOOKS:false}
+  deliveryRetention: ${AGENTRQ_HOOKS_DELIVERY_RETENTION:7d}
+  maxPayloadSize: ${AGENTRQ_HOOKS_MAX_PAYLOAD_SIZE:65536}
+
 # The token OpenAI gives a plugin submission to prove the MCP server's domain,
 # served at /.well-known/openai-apps-challenge. Empty serves 404.
 mcp:

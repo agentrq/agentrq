@@ -30,18 +30,18 @@ func TestParseDuration(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.input, func(t *testing.T) {
-			got, err := parseDuration(tc.input)
+			got, err := ParseDuration(tc.input)
 			if tc.wantErr {
 				if err == nil {
-					t.Errorf("parseDuration(%q): expected error, got nil", tc.input)
+					t.Errorf("ParseDuration(%q): expected error, got nil", tc.input)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("parseDuration(%q): unexpected error: %v", tc.input, err)
+				t.Fatalf("ParseDuration(%q): unexpected error: %v", tc.input, err)
 			}
 			if got != tc.want {
-				t.Errorf("parseDuration(%q) = %v, want %v", tc.input, got, tc.want)
+				t.Errorf("ParseDuration(%q) = %v, want %v", tc.input, got, tc.want)
 			}
 		})
 	}
