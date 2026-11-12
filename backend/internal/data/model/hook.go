@@ -74,6 +74,9 @@ type HookDelivery struct {
 	ReceivedAt     time.Time `gorm:"not null;index:idx_hook_deliveries_received_at"`
 	Status         int16     `gorm:"not null;index:idx_hook_deliveries_status_next_attempt_at,priority:1"`
 	Attempts       int16     `gorm:"not null"`
+	// Claims counts every claim, routed ones too, and is never reset, not even
+	// by a replay: a worker's write is fenced on it, not on Attempts.
+	Claims int32 `gorm:"not null;default:0"`
 	// NextAttemptAt is when a worker may claim the row: a retry's time while
 	// queued, the lease's end while processing, so a crashed worker's row
 	// is claimed again by the same query.

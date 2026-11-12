@@ -23,7 +23,9 @@ only while `hooks.allowUserHooks` is on.
 - **A queued row's `next_attempt_at` is also its lease.** A claim moves it to the
   lease's end, so a crashed worker's row is claimed again by the same query.
   A slow one's lease can be taken too, so a delivery's outcome is written only
-  while `attempts` is still the one claimed; without that, both route it.
+  while `claims` is still the one claimed; without that, both route it. Never
+  fence on `attempts`: a routed claim doesn't count one and a replay resets it,
+  so a stalled worker's value comes round again.
 - **The raw request is cleared once a delivery is processed**, except a failed
   one, which keeps it until the retention passes so it can be replayed. Replay
   relies on that, not on the column: a nil `[]byte` is stored as an empty blob,

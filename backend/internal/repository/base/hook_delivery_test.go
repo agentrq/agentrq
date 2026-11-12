@@ -239,6 +239,99 @@ func TestHookDeliveryWritesNeedTheLease(t *testing.T) {
 	}
 }
 
+// A replay starts the attempts again but not the claims, so a worker stalled
+// on a claim from before the replay writes nothing after the replayed
+// delivery is claimed again, though the attempts match its own.
+func TestReplayedHookDeliveryFencesAnEarlierClaim(t *testing.T) {
+	ctx := context.Background()
+	for name, r := range deliveryRepos(t) {
+		t.Run(name, func(t *testing.T) {
+			if err := r.CreateHookDelivery(ctx, delivery(60, 1, model.HookDeliveryQueued, t0)); err != nil {
+				t.Fatal(err)
+			}
+			if ok, err := r.ClaimHookDelivery(ctx, 60, t0, t0.Add(time.Minute)); !ok || err != nil {
+				t.Fatalf("claim = %v, %v", ok, err)
+			}
+			stalled, _ := r.GetHookDelivery(ctx, 60)
+			// Its lease ends; the next attempt fails the delivery for good.
+			if ok, err := r.ClaimHookDelivery(ctx, 60, t0.Add(time.Minute), t0.Add(2*time.Minute)); !ok || err != nil {
+				t.Fatalf("second claim = %v, %v", ok, err)
+			}
+			d, _ := r.GetHookDelivery(ctx, 60)
+			d.Status, d.Error = model.HookDeliveryFailed, "its hook is gone or turned off"
+			if err := r.UpdateHookDelivery(ctx, d); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.ReplayHookDelivery(ctx, 60, 1, 7, t0.Add(time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			if ok, err := r.ClaimHookDelivery(ctx, 60, t0.Add(time.Hour), t0.Add(time.Hour+time.Minute)); !ok || err != nil {
+				t.Fatalf("claim after the replay = %v, %v", ok, err)
+			}
+			d, _ = r.GetHookDelivery(ctx, 60)
+			if d.Attempts != stalled.Attempts || d.Claims != 3 {
+				t.Fatalf("replayed and claimed = %+v", d)
+			}
+
+			stalled.Status = model.HookDeliveryRejected
+			if err := r.UpdateHookDelivery(ctx, stalled); !errors.Is(err, ErrLeaseLost) {
+				t.Errorf("stalled update = %v", err)
+			}
+			if _, err := r.RouteHookDelivery(ctx, stalled, []model.HookPendingEvent{{HookEvent: "e", DedupKey: "k"}}); !errors.Is(err, ErrLeaseLost) {
+				t.Errorf("stalled route = %v", err)
+			}
+			if kept, err := r.RouteHookDelivery(ctx, d, []model.HookPendingEvent{{HookEvent: "e", DedupKey: "k"}}); err != nil || len(kept) != 1 {
+				t.Errorf("route = %+v, %v", kept, err)
+			}
+		})
+	}
+}
+
+// A routed claim is not an attempt but is a claim, so a publisher that ran
+// past its lease writes nothing once another worker has claimed the delivery:
+// it neither marks it published nor puts its events back pending.
+func TestRoutedHookDeliveryClaimFencesTheLastPublisher(t *testing.T) {
+	ctx := context.Background()
+	for name, r := range deliveryRepos(t) {
+		t.Run(name, func(t *testing.T) {
+			if err := r.CreateHookDelivery(ctx, delivery(70, 1, model.HookDeliveryQueued, t0)); err != nil {
+				t.Fatal(err)
+			}
+			if ok, err := r.ClaimHookDelivery(ctx, 70, t0, t0.Add(time.Minute)); !ok || err != nil {
+				t.Fatalf("claim = %v, %v", ok, err)
+			}
+			d, _ := r.GetHookDelivery(ctx, 70)
+			if _, err := r.RouteHookDelivery(ctx, d, []model.HookPendingEvent{{HookEvent: "a"}, {HookEvent: "b"}}); err != nil {
+				t.Fatal(err)
+			}
+			slow, _ := r.GetHookDelivery(ctx, 70) // the first publisher's read
+			if ok, err := r.ClaimRoutedHookDelivery(ctx, 70, t0.Add(time.Minute), t0.Add(2*time.Minute)); !ok || err != nil {
+				t.Fatalf("routed claim = %v, %v", ok, err)
+			}
+			next, _ := r.GetHookDelivery(ctx, 70)
+			if next.Attempts != slow.Attempts || next.Claims != slow.Claims+1 {
+				t.Fatalf("routed claim = %+v", next)
+			}
+
+			slow.Status, slow.Pending = model.HookDeliveryPublished, nil
+			if err := r.UpdateHookDelivery(ctx, slow); !errors.Is(err, ErrLeaseLost) {
+				t.Errorf("slow publisher marks published = %v", err)
+			}
+			slow.Status, slow.Pending = model.HookDeliveryRouted, []byte(`[{"hookEvent":"b"}]`)
+			if err := r.UpdateHookDelivery(ctx, slow); !errors.Is(err, ErrLeaseLost) {
+				t.Errorf("slow publisher keeps events pending = %v", err)
+			}
+			next.Status, next.Pending = model.HookDeliveryPublished, nil
+			if err := r.UpdateHookDelivery(ctx, next); err != nil {
+				t.Errorf("publisher holding the lease = %v", err)
+			}
+			if got, _ := r.GetHookDelivery(ctx, 70); got.Status != model.HookDeliveryPublished || got.Pending != nil {
+				t.Errorf("published = %+v", got)
+			}
+		})
+	}
+}
+
 func TestRouteHookDeliveryFails(t *testing.T) {
 	ctx := context.Background()
 	for _, table := range []string{"hook_delivery_keys", "hook_deliveries"} {
@@ -261,7 +354,7 @@ func TestListAndReplayHookDeliveries(t *testing.T) {
 	r := deliveryRepos(t)["sqlite"]
 	for i, status := range []int16{model.HookDeliveryPublished, model.HookDeliveryFailed, model.HookDeliveryRouted, model.HookDeliveryRejected} {
 		d := delivery(int64(40+i), 1, status, t0)
-		d.Pending = []byte("[]")
+		d.Pending, d.Attempts, d.Claims = []byte("[]"), 6, 6
 		if err := r.CreateHookDelivery(ctx, d); err != nil {
 			t.Fatal(err)
 		}
@@ -283,7 +376,7 @@ func TestListAndReplayHookDeliveries(t *testing.T) {
 	if err := r.ReplayHookDelivery(ctx, 41, 1, 7, t0.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if d, _ := r.GetHookDelivery(ctx, 41); d.Status != model.HookDeliveryQueued || d.Attempts != 0 || !d.NextAttemptAt.Equal(t0.Add(time.Hour)) {
+	if d, _ := r.GetHookDelivery(ctx, 41); d.Status != model.HookDeliveryQueued || d.Attempts != 0 || d.Claims != 6 || !d.NextAttemptAt.Equal(t0.Add(time.Hour)) {
 		t.Errorf("replayed = %+v", d)
 	}
 	for _, tc := range []struct{ id, reg, user int64 }{{41, 1, 7}, {40, 1, 7}, {42, 1, 7}, {43, 1, 7}, {50, 1, 7}, {41, 2, 7}} {

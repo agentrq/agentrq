@@ -58,16 +58,17 @@ func (r *repository) ListDueHookDeliveries(ctx context.Context, now time.Time, l
 func (r *repository) ClaimHookDelivery(ctx context.Context, id int64, now, leaseUntil time.Time) (bool, error) {
 	res := r.conn(ctx).Model(&model.HookDelivery{}).
 		Where("id = ? AND status IN ? AND next_attempt_at <= ?", id, []int16{model.HookDeliveryQueued, model.HookDeliveryProcessing}, now).
-		Updates(map[string]any{"status": model.HookDeliveryProcessing, "next_attempt_at": leaseUntil, "attempts": gorm.Expr("attempts + 1")})
+		Updates(map[string]any{"status": model.HookDeliveryProcessing, "next_attempt_at": leaseUntil, "attempts": gorm.Expr("attempts + 1"), "claims": gorm.Expr("claims + 1")})
 	return res.RowsAffected == 1, res.Error
 }
 
 // ClaimRoutedHookDelivery takes a routed delivery whose lease has ended, to
-// publish its pending events, until leaseUntil.
+// publish its pending events, until leaseUntil. It is not another attempt,
+// but it is another claim, so the worker whose lease ended writes nothing.
 func (r *repository) ClaimRoutedHookDelivery(ctx context.Context, id int64, now, leaseUntil time.Time) (bool, error) {
 	res := r.conn(ctx).Model(&model.HookDelivery{}).
 		Where("id = ? AND status = ? AND next_attempt_at <= ?", id, model.HookDeliveryRouted, now).
-		Update("next_attempt_at", leaseUntil)
+		Updates(map[string]any{"next_attempt_at": leaseUntil, "claims": gorm.Expr("claims + 1")})
 	return res.RowsAffected == 1, res.Error
 }
 
@@ -88,11 +89,11 @@ func (r *repository) UpdateHookDelivery(ctx context.Context, d model.HookDeliver
 	return saveHookDelivery(r.conn(ctx), d)
 }
 
-// saveHookDelivery writes d only while its attempt is still the latest: every
-// claim of a queued or processing delivery counts one, so a worker whose
-// lease ended and was claimed again writes nothing.
+// saveHookDelivery writes d only while its claim is still the latest: every
+// claim counts one and none is ever undone, so a worker whose lease ended
+// and was claimed again writes nothing.
 func saveHookDelivery(db *gorm.DB, d model.HookDelivery) error {
-	res := db.Model(&model.HookDelivery{ID: d.ID}).Where("attempts = ?", d.Attempts).
+	res := db.Model(&model.HookDelivery{ID: d.ID}).Where("claims = ?", d.Claims).
 		Select("status", "next_attempt_at", "request", "pending", "event_names", "error", "duration_ms").
 		Updates(&d)
 	if res.Error == nil && res.RowsAffected == 0 {
@@ -157,9 +158,10 @@ func (r *repository) ListHookDeliveries(ctx context.Context, registrationID, use
 	return ds, err
 }
 
-// ReplayHookDelivery queues a failed delivery again, due at now, and returns
-// ErrNotFound when there is none to replay. A failed delivery keeps its
-// request until the retention deletes it.
+// ReplayHookDelivery queues a failed delivery again, due at now, with its
+// attempts back to none but its claims kept, and returns ErrNotFound when
+// there is none to replay. A failed delivery keeps its request until the
+// retention deletes it.
 func (r *repository) ReplayHookDelivery(ctx context.Context, id, registrationID, userID int64, now time.Time) error {
 	res := r.conn(ctx).Model(&model.HookDelivery{}).
 		Where("id = ? AND registration_id = ? AND user_id = ? AND status = ?", id, registrationID, userID, model.HookDeliveryFailed).
