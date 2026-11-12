@@ -99,18 +99,25 @@ func (e *events) ListAllowAllCommandsEventIDs(_ context.Context, _ int64, ids []
 	return out, nil
 }
 
-// publisher records what is published; eventsErr fails the events topic.
+// publisher records what is published; eventsErr fails the events topic
+// once eventsOK publishes to it have passed.
 type publisher struct {
 	mu        sync.Mutex
 	got       []pubsub.PublishRequest
 	eventsErr error
+	eventsOK  int
 }
 
 func (p *publisher) Publish(_ context.Context, req pubsub.PublishRequest) (*pubsub.PublishResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.got = append(p.got, req)
-	if req.PubSubID == entity.PubSubTopicEvents {
+	if req.PubSubID == entity.PubSubTopicEvents && p.eventsErr != nil {
+		if p.eventsOK > 0 {
+			p.eventsOK--
+			return nil, nil
+		}
+		p.got = p.got[:len(p.got)-1] // not published
 		return nil, p.eventsErr
 	}
 	return nil, nil

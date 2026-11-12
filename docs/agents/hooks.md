@@ -33,7 +33,8 @@ only while `hooks.allowUserHooks` is on.
   and refuses replay; otherwise they fire for up to the 2h backoff.
 - **A routed delivery's events wait in `pending` until they are published.**
   The events topic is in memory: committing the events and then publishing them
-  is what lets a lease's end republish them after a crash.
+  is what lets a lease's end republish them after a crash. A failed publish
+  keeps the events not yet fired, and only those, so none is lost or sent twice.
 - **The validation lives in the hook, not the server.** A new signing scheme is
   a new hook; never teach the server a provider's format.
 - **A hook runs in a fresh instance for every request**, with no filesystem,
