@@ -390,6 +390,11 @@ func TestDeliveryFailsAtOnce(t *testing.T) {
 				panic(err)
 			}
 		}, "its hook is gone or turned off"},
+		"its registration off": {func(f qFixture) {
+			if _, err := f.c.UpdateRegistration(ctx, user, f.reg.ID, entity.HookRegistrationRequest{Enabled: ptr(false)}); err != nil {
+				panic(err)
+			}
+		}, "its registration is turned off"},
 		"its inputs unreadable": {func(f qFixture) { f.ctl().tokenKey = strings.Repeat("k", 32) }, "its inputs cannot be read"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -406,6 +411,61 @@ func TestDeliveryFailsAtOnce(t *testing.T) {
 				t.Errorf("listed = %+v, %v", ds, err)
 			}
 		})
+	}
+}
+
+func TestDeliveryWaitingOnARetryFailsOnceItsRegistrationIsOff(t *testing.T) {
+	ctx := context.Background()
+	f := qSetup(t)
+	f.run.err = errBoom
+	id := f.receive(t)
+	f.ctl().drain(ctx)
+	if d := f.delivery(t, id); d.Status != model.HookDeliveryQueued || d.Attempts != 1 {
+		t.Fatalf("first attempt = %+v", d)
+	}
+	if _, err := f.c.UpdateRegistration(ctx, user, f.reg.ID, entity.HookRegistrationRequest{Enabled: ptr(false)}); err != nil {
+		t.Fatal(err)
+	}
+	f.run.err = nil
+	calls := f.run.calls
+	*f.clock = f.clock.Add(backoff[0])
+	f.ctl().drain(ctx)
+	d := f.delivery(t, id)
+	if d.Status != model.HookDeliveryFailed || d.Error != "its registration is turned off" || d.Attempts != 2 || d.Request == nil {
+		t.Errorf("after turning it off = %+v", d)
+	}
+	if f.run.calls != calls {
+		t.Error("the hook ran for a turned-off registration")
+	}
+	if events, _ := f.published(); len(events) != 0 {
+		t.Errorf("published %v", events)
+	}
+}
+
+func TestReplayRefusedWhileTheRegistrationIsOff(t *testing.T) {
+	ctx := context.Background()
+	f := qSetup(t)
+	f.run.err = &hookrunner.OutputError{}
+	id := f.receive(t)
+	f.ctl().drain(ctx)
+	if _, err := f.c.UpdateRegistration(ctx, user, f.reg.ID, entity.HookRegistrationRequest{Enabled: ptr(false)}); err != nil {
+		t.Fatal(err)
+	}
+	err := f.c.ReplayDelivery(ctx, user, f.reg.ID, id)
+	wantHookError(t, err, entity.HookConflict, "turned off")
+	if d := f.delivery(t, id); d.Status != model.HookDeliveryFailed || d.Attempts != 1 {
+		t.Errorf("refused replay changed the delivery: %+v", d)
+	}
+	if err := f.c.ReplayDelivery(ctx, user+1, f.reg.ID, id); !errors.Is(err, base.ErrNotFound) {
+		t.Errorf("another account's registration = %v", err)
+	}
+
+	// Turned on again, it replays.
+	if _, err := f.c.UpdateRegistration(ctx, user, f.reg.ID, entity.HookRegistrationRequest{Enabled: ptr(true)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.c.ReplayDelivery(ctx, user, f.reg.ID, id); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -177,8 +177,16 @@ func (c *controller) ListDeliveries(ctx context.Context, userID, registrationID,
 	return out, nil
 }
 
-// ReplayDelivery queues a failed delivery again.
+// ReplayDelivery queues a failed delivery again, unless its registration is
+// turned off.
 func (c *controller) ReplayDelivery(ctx context.Context, userID, registrationID, id int64) error {
+	reg, err := c.repo.GetHookRegistration(ctx, registrationID, userID)
+	if err != nil {
+		return err
+	}
+	if !reg.Enabled {
+		return &entity.HookError{Kind: entity.HookConflict, Message: "the registration is turned off; turn it on to replay its deliveries"}
+	}
 	if err := c.repo.ReplayHookDelivery(ctx, id, registrationID, userID, c.now()); err != nil {
 		return err
 	}
@@ -284,6 +292,10 @@ func (c *controller) process(ctx context.Context, id int64) {
 	if err != nil {
 		// A registration deleted takes its deliveries with it.
 		c.retry(ctx, d, start, err)
+		return
+	}
+	if !reg.Enabled {
+		c.fail(ctx, d, start, "its registration is turned off")
 		return
 	}
 	h, err := c.usableHook(ctx, reg.UserID, reg.HookID, false)
