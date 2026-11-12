@@ -7,18 +7,26 @@
  *
  * Retrying into a struggling server makes it worse, and retrying into the
  * throttle is what earns an address the DDoS block. So after 3 failures in a
- * row, or at once on a 429, calls fail fast without touching the server for a
- * cooldown: 5s, doubling on each re-trip, at most 60s, unless the server's
- * Retry-After says otherwise. Then one probe call goes through; its success
- * closes the breaker, its failure re-opens it for longer.
+ * row, or at once on a throttle's 429, calls fail fast without touching the
+ * server for a cooldown: 5s, doubling on each re-trip, at most 60s, unless the
+ * server's Retry-After says otherwise. Then one probe call goes through; its
+ * success closes the breaker, its failure re-opens it for longer. A slow probe
+ * holds the others back for 5s at most; after that the next call probes too.
  *
- * Only 429, 502/503/504 and network errors count. Any other status is the
- * server answering, so it is not a reason to stop asking.
+ * Only 502/503/504, network errors and a 429 with Retry-After count: that 429
+ * is the address throttle's. A 429 without one is a per-user quota on one kind
+ * of call, and any other status is the server answering, so neither is a
+ * reason to stop asking.
+ *
+ * An answer to a call sent before the breaker last tripped or closed is
+ * ignored: it reports on the server as it was then, so it must not close a
+ * fresh trip, nor double the cooldown again for the same overload.
  */
 
 const THRESHOLD = 3;
 const BASE_MS = 5000;
 const MAX_MS = 60000;
+const PROBE_HOLD_MS = 5000;
 
 const OVERLOAD = new Set([502, 503, 504]);
 
@@ -54,9 +62,15 @@ export function createCircuitBreaker({ now = () => Date.now() } = {}) {
   let failures = 0;
   let trips = 0;
   let openUntil = 0;
-  let probing = false;
+  let generation = 0;
+  let probes = 0;
+  let probeHeldUntil = 0;
 
+  // A trip or a close starts a new generation, and drops the hold of a probe
+  // from the last one.
   function trip(overrideMs) {
+    generation += 1;
+    probeHeldUntil = 0;
     trips += 1;
     failures = 0;
     const cooldown = overrideMs ?? Math.min(BASE_MS * 2 ** (trips - 1), MAX_MS);
@@ -64,6 +78,8 @@ export function createCircuitBreaker({ now = () => Date.now() } = {}) {
   }
 
   function close() {
+    if (trips > 0) generation += 1;
+    probeHeldUntil = 0;
     failures = 0;
     trips = 0;
     openUntil = 0;
@@ -78,26 +94,30 @@ export function createCircuitBreaker({ now = () => Date.now() } = {}) {
   function wrap(fetchImpl) {
     return async function breakerFetch(input, init) {
       const wait = retryIn();
+      const held = probeHeldUntil - now();
       // After a trip the first call is the probe; the rest wait for it.
-      if (wait > 0 || probing) return busyResponse(wait || BASE_MS);
+      if (wait > 0 || held > 0) return busyResponse(Math.max(wait, held));
+      const sent = generation;
       const probe = trips > 0;
-      probing = probe;
+      const mine = probe ? ++probes : 0;
+      if (probe) probeHeldUntil = now() + PROBE_HOLD_MS;
 
       let res;
       try {
         res = await fetchImpl(input, init);
       } catch (err) {
         // A call the app cancelled says nothing about the server.
-        if (err?.name !== 'AbortError') {
+        if (err?.name !== 'AbortError' && sent === generation) {
           if (probe) trip();
           else if (++failures >= THRESHOLD) trip();
         }
         throw err;
       } finally {
-        if (probe) probing = false;
+        if (mine === probes) probeHeldUntil = 0;
       }
 
-      if (res.status === 429) {
+      if (sent !== generation) return res;
+      if (res.status === 429 && res.headers?.get?.('Retry-After')) {
         trip(retryAfterMs(res, now()));
       } else if (OVERLOAD.has(res.status)) {
         if (probe || ++failures >= THRESHOLD) trip(retryAfterMs(res, now()));
