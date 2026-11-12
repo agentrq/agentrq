@@ -170,6 +170,8 @@ func New(p Params) (Handler, error) {
 	// has only its code. Registered here, before the middleware below, because
 	// registration order is what makes a route public.
 	h.registerPublicMachineRoutes()
+	// A hook URL carries its own credential, its token; see registerPublicHookRoutes.
+	h.registerPublicHookRoutes()
 	// A public link carries its own credential; see registerPublicFileRoutes.
 	if p.Root != nil {
 		h.registerPublicFileRoutes(p.Root)

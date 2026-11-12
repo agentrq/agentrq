@@ -101,6 +101,18 @@ type Repository interface {
 	UpdateHookRegistration(ctx context.Context, reg model.HookRegistration) error
 	SetHookRegistrationTokenHash(ctx context.Context, id, userID int64, hash string) error
 	DeleteHookRegistration(ctx context.Context, id, userID int64) error
+	GetHookRegistrationByID(ctx context.Context, id int64) (model.HookRegistration, error)
+	CreateHookDelivery(ctx context.Context, d model.HookDelivery) error
+	CountQueuedHookDeliveries(ctx context.Context, registrationID int64) (int64, error)
+	ListDueHookDeliveries(ctx context.Context, now time.Time, limit int) ([]model.HookDelivery, error)
+	ClaimHookDelivery(ctx context.Context, id int64, now, leaseUntil time.Time) (bool, error)
+	ClaimRoutedHookDelivery(ctx context.Context, id int64, now, leaseUntil time.Time) (bool, error)
+	GetHookDelivery(ctx context.Context, id int64) (model.HookDelivery, error)
+	UpdateHookDelivery(ctx context.Context, d model.HookDelivery) error
+	RouteHookDelivery(ctx context.Context, d model.HookDelivery, events []model.HookPendingEvent) ([]model.HookPendingEvent, error)
+	ListHookDeliveries(ctx context.Context, registrationID, userID, beforeID int64, limit int) ([]model.HookDelivery, error)
+	ReplayHookDelivery(ctx context.Context, id, registrationID, userID int64, now time.Time) error
+	DeleteHookDeliveriesBefore(ctx context.Context, before time.Time) error
 
 	// Skill — an account's playbooks, each on in some of its workspaces.
 	// Metadata only: file content is in the storage service, and the methods

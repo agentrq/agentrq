@@ -84,3 +84,26 @@ type HookRegistrationRequest struct {
 	Inputs  map[string]any    `json:"inputs"`
 	Routes  map[string]string `json:"routes"`
 }
+
+// HookDelivery is one request to a registration's URL, as its log shows it.
+type HookDelivery struct {
+	ID             string    `json:"id"`
+	RegistrationID string    `json:"registrationId"`
+	ReceivedAt     time.Time `json:"receivedAt"`
+	Status         string    `json:"status"`
+	Attempts       int       `json:"attempts"`
+	EventNames     []string  `json:"eventNames"`
+	Error          string    `json:"error"`
+	DurationMs     int       `json:"durationMs"`
+	Replayable     bool      `json:"replayable"`
+}
+
+// ListHookDeliveriesResponse is a page of a registration's log.
+type ListHookDeliveriesResponse struct {
+	Deliveries []HookDelivery `json:"deliveries"`
+}
+
+// HookReceivedResponse answers a request to a hook URL that was queued.
+type HookReceivedResponse struct {
+	DeliveryID string `json:"deliveryId"`
+}

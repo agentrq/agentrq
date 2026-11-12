@@ -385,10 +385,12 @@ func New(cfg Config) (*App, error) {
 		Events:     repo,
 		PubSub:     pubsubSvc,
 		// Off, an account's own hooks can be neither registered nor run.
-		AllowUserHooks: hookSettings.AllowUserHooks,
-		TokenKey:       cfg.Auth.WorkspaceTokenKey,
-		BaseURL:        cfg.App.BaseURL,
+		AllowUserHooks:    hookSettings.AllowUserHooks,
+		TokenKey:          cfg.Auth.WorkspaceTokenKey,
+		BaseURL:           cfg.App.BaseURL,
+		DeliveryRetention: hookSettings.DeliveryRetention,
 	})
+	hookCtrl.Start(appCtx)
 	moveLegacySkills(context.Background(), crudCtrl)
 	startPanoSweep(appCtx, crudCtrl, panoSweepInterval, sweepJitter)
 	startMachineSweep(appCtx, crudCtrl, machineSweepInterval, sweepJitter)

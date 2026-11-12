@@ -23,6 +23,10 @@ type fakeRegistrations struct {
 	user, regID int64
 	req         entity.HookRegistrationRequest
 	called      string
+	in          entity.HookIncoming
+	before      int64
+	limit       int
+	deliveryID  int64
 }
 
 func (f *fakeRegistrations) reg(token string) entity.HookRegistration {
@@ -171,5 +175,120 @@ func TestHookRegistrationRoutesAnswerTheControllersError(t *testing.T) {
 				t.Errorf("%s: %s %s = %d %s", name, r.method, r.url, status, body)
 			}
 		}
+	}
+}
+
+func (f *fakeRegistrations) Receive(_ context.Context, in entity.HookIncoming) (int64, error) {
+	f.called, f.in = "Receive", in
+	return 11, f.err
+}
+
+func (f *fakeRegistrations) ListDeliveries(_ context.Context, user, regID, before int64, limit int) ([]entity.HookDelivery, error) {
+	f.called, f.user, f.regID, f.before, f.limit = "ListDeliveries", user, regID, before, limit
+	return []entity.HookDelivery{{ID: 11, RegistrationID: regID, Status: "failed", Replayable: true}}, f.err
+}
+
+func (f *fakeRegistrations) ReplayDelivery(_ context.Context, user, regID, id int64) error {
+	f.called, f.user, f.regID, f.deliveryID = "ReplayDelivery", user, regID, id
+	return f.err
+}
+
+// publicHookApp serves the hook URL as the server does: before, and so
+// without, the session check.
+func publicHookApp(hooks *fakeRegistrations) *fiber.App {
+	app := fiber.New()
+	h := &handler{router: app.Group("/api/v1"), hooks: hooks}
+	h.registerPublicHookRoutes()
+	h.router.Use(func(c *fiber.Ctx) error { return c.SendStatus(http.StatusUnauthorized) })
+	h.registerHookRoutes()
+	return app
+}
+
+var deliveryText = monoflake.ID(11).String()
+
+func TestReceiveHookRequest(t *testing.T) {
+	hooks := &fakeRegistrations{}
+	app := publicHookApp(hooks)
+	url := "/api/v1/hooks/in/" + regIDText + "?agentrq_hook_token=abcd1234&ref=main&ref=dev"
+	status, body := hookRequest(t, app, http.MethodPost, url, []byte(`{"action":"completed"}`),
+		map[string]string{"X-GitHub-Event": "workflow_run", "Cookie": "at=session", "Content-Type": "application/json"})
+	if status != http.StatusAccepted || body != `{"deliveryId":"`+deliveryText+`"}` {
+		t.Fatalf("= %d %s", status, body)
+	}
+	in := hooks.in
+	if in.RegistrationID != 9 || in.Token != "abcd1234" || in.Method != http.MethodPost || in.Path != "/api/v1/hooks/in/"+regIDText ||
+		string(in.Body) != `{"action":"completed"}` || in.Peer == "" {
+		t.Errorf("incoming = %+v", in)
+	}
+	if len(in.Query) != 1 || strings.Join(in.Query["ref"], ",") != "main,dev" {
+		t.Errorf("query = %v, the token must not be in it", in.Query)
+	}
+	if in.Headers["x-github-event"][0] != "workflow_run" || in.Headers["cookie"] != nil || in.Headers["X-GitHub-Event"] != nil {
+		t.Errorf("headers = %v", in.Headers)
+	}
+}
+
+func TestReceiveHookRequestRefusals(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err    error
+		url    string
+		status int
+	}{
+		"no id":     {nil, "/api/v1/hooks/in/!", http.StatusNotFound},
+		"not found": {base.ErrNotFound, "/api/v1/hooks/in/" + regIDText, http.StatusNotFound},
+		"too large": {&entity.HookError{Kind: entity.HookTooLarge, Message: "big"}, "/api/v1/hooks/in/" + regIDText, http.StatusRequestEntityTooLarge},
+		"throttled": {&entity.HookError{Kind: entity.HookThrottled, Message: "slow down"}, "/api/v1/hooks/in/" + regIDText, http.StatusTooManyRequests},
+	} {
+		hooks := &fakeRegistrations{fakeHooks: fakeHooks{err: tc.err}}
+		if status, body := hookRequest(t, publicHookApp(hooks), http.MethodPost, tc.url, nil, nil); status != tc.status {
+			t.Errorf("%s: %d %s", name, status, body)
+		}
+	}
+}
+
+func TestHookDeliveryRoutes(t *testing.T) {
+	hooks := &fakeRegistrations{}
+	app := hookApp(hooks)
+	path := "/api/v1/hooks/registrations/" + regIDText + "/deliveries"
+
+	status, body := hookRequest(t, app, http.MethodGet, path, nil, nil)
+	if status != http.StatusOK || !strings.Contains(body, `{"deliveries":[{"id":"`+deliveryText+`","registrationId":"`+regIDText+`"`) ||
+		hooks.user != 42 || hooks.regID != 9 || hooks.before != 0 || hooks.limit != 50 {
+		t.Errorf("list = %d %s, %+v", status, body, hooks)
+	}
+	if status, _ = hookRequest(t, app, http.MethodGet, path+"?limit=200&before="+deliveryText, nil, nil); status != http.StatusOK || hooks.before != 11 || hooks.limit != 200 {
+		t.Errorf("page = %d, before %d, limit %d", status, hooks.before, hooks.limit)
+	}
+	if status, _ = hookRequest(t, app, http.MethodPost, path+"/"+deliveryText+"/replay", nil, nil); status != http.StatusNoContent || hooks.called != "ReplayDelivery" || hooks.deliveryID != 11 {
+		t.Errorf("replay = %d, %+v", status, hooks)
+	}
+
+	for _, url := range []string{
+		"/api/v1/hooks/registrations/!/deliveries", path + "?limit=0", path + "?limit=201", path + "?before=!",
+	} {
+		if status, _ := hookRequest(t, app, http.MethodGet, url, nil, nil); status != http.StatusBadRequest {
+			t.Errorf("GET %s = %d", url, status)
+		}
+	}
+	for _, url := range []string{"/api/v1/hooks/registrations/!/deliveries/" + deliveryText + "/replay", path + "/!/replay"} {
+		if status, _ := hookRequest(t, app, http.MethodPost, url, nil, nil); status != http.StatusBadRequest {
+			t.Errorf("POST %s = %d", url, status)
+		}
+	}
+
+	hooks.err = base.ErrNotFound
+	if status, _ := hookRequest(t, app, http.MethodGet, path, nil, nil); status != http.StatusNotFound {
+		t.Errorf("list of none = %d", status)
+	}
+	if status, _ := hookRequest(t, app, http.MethodPost, path+"/"+deliveryText+"/replay", nil, nil); status != http.StatusNotFound {
+		t.Errorf("replay of none = %d", status)
+	}
+}
+
+// The hook URL is public; the deliveries are not.
+func TestOnlyTheHookURLIsPublic(t *testing.T) {
+	app := publicHookApp(&fakeRegistrations{})
+	if status, _ := hookRequest(t, app, http.MethodGet, "/api/v1/hooks/registrations/"+regIDText+"/deliveries", nil, nil); status != http.StatusUnauthorized {
+		t.Errorf("deliveries without a session = %d", status)
 	}
 }

@@ -103,8 +103,15 @@ func (b *blobs) Save(id, data string) error {
 	b.m[id] = raw
 	return nil
 }
-func (b *blobs) Load(string) (string, error)      { return "", errBoom }
-func (b *blobs) LoadRaw(string) ([]byte, error)   { return nil, errBoom }
+func (b *blobs) Load(string) (string, error) { return "", errBoom }
+func (b *blobs) LoadRaw(id string) ([]byte, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if raw, ok := b.m[id]; ok {
+		return raw, nil
+	}
+	return nil, errBoom
+}
 func (b *blobs) keys() []string                   { return slices.Sorted(maps.Keys(b.m)) }
 func (b *blobs) has(key string, wasm string) bool { return string(b.m[key]) == wasm }
 func (b *blobs) Delete(id string) error {
@@ -117,6 +124,11 @@ func (b *blobs) Delete(id string) error {
 
 // inspector answers with the manifest registered for a module's bytes.
 type inspector map[string]hookrunner.Manifest
+
+// Handle is never reached by the registration tests; see fakeRunner.
+func (inspector) Handle(context.Context, hookrunner.Module, hookrunner.Manifest, hookrunner.HandleInput) (hookrunner.Result, error) {
+	return hookrunner.Result{}, errBoom
+}
 
 func (in inspector) Inspect(_ context.Context, wasm []byte) (hookrunner.Manifest, [32]byte, error) {
 	sum := sha256.Sum256(wasm)
@@ -168,6 +180,10 @@ func setup(t *testing.T) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Every pooled connection to ":memory:" is a database of its own, and
+	// the queue's workers run at once: one connection.
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(&model.Hook{}, &model.HookRegistration{}); err != nil {
 		t.Fatal(err)
 	}

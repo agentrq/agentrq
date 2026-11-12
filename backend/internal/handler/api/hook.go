@@ -7,6 +7,7 @@ package api
 import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/gofiber/fiber/v2"
 	"github.com/mustafaturan/monoflake"
 )
@@ -21,7 +22,78 @@ func (h *handler) registerHookRoutes() {
 	r.Patch("/registrations/:id", h.updateHookRegistration())
 	r.Delete("/registrations/:id", h.deleteHookRegistration())
 	r.Post("/registrations/:id/rotateToken", h.rotateHookToken())
+	r.Get("/registrations/:id/deliveries", h.listHookDeliveries())
+	r.Post("/registrations/:id/deliveries/:deliveryId/replay", h.replayHookDelivery())
 }
+
+// registerPublicHookRoutes adds the URL outside services send requests to.
+// It takes no session: the registration's token, in the query, is the
+// credential, and a wrong one answers as an unknown id does.
+func (h *handler) registerPublicHookRoutes() {
+	h.router.Post("/hooks/in/:id", h.receiveHookRequest())
+}
+
+func (h *handler) receiveHookRequest() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		in := mapper.FromHTTPRequestToHookIncomingRequestEntity(c)
+		if in == nil {
+			return hookError(c, base.ErrNotFound)
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		id, err := h.hooks.Receive(ctx, *in)
+		if err != nil {
+			return hookError(c, err)
+		}
+		c.Set(_headerContentType, _mimeJSON)
+		return c.Status(fiber.StatusAccepted).Send(mapper.FromHookDeliveryIDToHTTPResponse(id))
+	}
+}
+
+func (h *handler) listHookDeliveries() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		id := monoflake.IDFromBase62(c.Params("id")).Int64()
+		limit := c.QueryInt("limit", defaultDeliveryPage)
+		if id == 0 || limit < 1 || limit > maxDeliveryPage {
+			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
+		}
+		var before int64
+		if s := c.Query("before"); s != "" {
+			if before = monoflake.IDFromBase62(s).Int64(); before == 0 {
+				return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
+			}
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		ds, err := h.hooks.ListDeliveries(ctx, sessionUser(c), id, before, limit)
+		if err != nil {
+			return hookError(c, err)
+		}
+		c.Set(_headerContentType, _mimeJSON)
+		return c.Send(mapper.FromHookDeliveryEntitiesToHTTPResponse(ds))
+	}
+}
+
+func (h *handler) replayHookDelivery() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		id := monoflake.IDFromBase62(c.Params("id")).Int64()
+		deliveryID := monoflake.IDFromBase62(c.Params("deliveryId")).Int64()
+		if id == 0 || deliveryID == 0 {
+			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		if err := h.hooks.ReplayDelivery(ctx, sessionUser(c), id, deliveryID); err != nil {
+			return hookError(c, err)
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	}
+}
+
+const (
+	defaultDeliveryPage = 50
+	maxDeliveryPage     = 200
+)
 
 func sessionUser(c *fiber.Ctx) int64 {
 	return monoflake.IDFromBase62(c.Locals("user_id").(string)).Int64()

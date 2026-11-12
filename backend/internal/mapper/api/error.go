@@ -44,9 +44,15 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 		}
 		msg = panoErr.Message
 	} else if errors.As(err, &hookErr) {
-		code = http.StatusUnprocessableEntity
-		if hookErr.Kind == entity.HookConflict {
+		switch hookErr.Kind {
+		case entity.HookConflict:
 			code = http.StatusConflict
+		case entity.HookTooLarge:
+			code = http.StatusRequestEntityTooLarge
+		case entity.HookThrottled:
+			code = http.StatusTooManyRequests
+		default:
+			code = http.StatusUnprocessableEntity
 		}
 		msg = hookErr.Message
 	} else if errors.Is(err, entity.ErrTaskTitleLocked) {

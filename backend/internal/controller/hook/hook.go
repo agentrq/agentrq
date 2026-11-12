@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -48,6 +49,16 @@ type Controller interface {
 	UpdateRegistration(ctx context.Context, userID, id int64, req entity.HookRegistrationRequest) (entity.HookRegistration, error)
 	DeleteRegistration(ctx context.Context, userID, id int64) error
 	RotateToken(ctx context.Context, userID, id int64) (entity.HookRegistration, error)
+
+	// Receive checks a request to a hook URL and queues it, returning the
+	// delivery's id.
+	Receive(ctx context.Context, in entity.HookIncoming) (int64, error)
+	// ListDeliveries returns a page of a registration's log, newest first.
+	ListDeliveries(ctx context.Context, userID, registrationID, beforeID int64, limit int) ([]entity.HookDelivery, error)
+	// ReplayDelivery queues a failed delivery again.
+	ReplayDelivery(ctx context.Context, userID, registrationID, id int64) error
+	// Start runs this instance's queue workers until ctx ends.
+	Start(ctx context.Context)
 }
 
 // Repository is what the controller reads and writes.
@@ -65,11 +76,24 @@ type Repository interface {
 	UpdateHookRegistration(ctx context.Context, reg model.HookRegistration) error
 	SetHookRegistrationTokenHash(ctx context.Context, id, userID int64, hash string) error
 	DeleteHookRegistration(ctx context.Context, id, userID int64) error
+	GetHookRegistrationByID(ctx context.Context, id int64) (model.HookRegistration, error)
+	CreateHookDelivery(ctx context.Context, d model.HookDelivery) error
+	CountQueuedHookDeliveries(ctx context.Context, registrationID int64) (int64, error)
+	ListDueHookDeliveries(ctx context.Context, now time.Time, limit int) ([]model.HookDelivery, error)
+	ClaimHookDelivery(ctx context.Context, id int64, now, leaseUntil time.Time) (bool, error)
+	ClaimRoutedHookDelivery(ctx context.Context, id int64, now, leaseUntil time.Time) (bool, error)
+	GetHookDelivery(ctx context.Context, id int64) (model.HookDelivery, error)
+	UpdateHookDelivery(ctx context.Context, d model.HookDelivery) error
+	RouteHookDelivery(ctx context.Context, d model.HookDelivery, events []model.HookPendingEvent) ([]model.HookPendingEvent, error)
+	ListHookDeliveries(ctx context.Context, registrationID, userID, beforeID int64, limit int) ([]model.HookDelivery, error)
+	ReplayHookDelivery(ctx context.Context, id, registrationID, userID int64, now time.Time) error
+	DeleteHookDeliveriesBefore(ctx context.Context, before time.Time) error
 }
 
-// Inspector reads a module's manifest; hookrunner.Service is one.
-type Inspector interface {
+// Runner reads a module's manifest and runs it; hookrunner.Service is one.
+type Runner interface {
 	Inspect(ctx context.Context, wasm []byte) (hookrunner.Manifest, [32]byte, error)
+	Handle(ctx context.Context, mod hookrunner.Module, m hookrunner.Manifest, in hookrunner.HandleInput) (hookrunner.Result, error)
 }
 
 // Params are a controller's dependencies.
@@ -78,10 +102,10 @@ type Params struct {
 	// Storage keeps the modules. It must not be served: a hook may be the
 	// account's own.
 	Storage storage.Service
-	Runner  Inspector
+	Runner  Runner
 	IDGen   idgen.Service
 	Events  Events
-	// PubSub carries telemetry; nil sends none.
+	// PubSub carries the events deliveries fire, and telemetry.
 	PubSub Publisher
 	// AllowUserHooks lets an account register its own hooks.
 	AllowUserHooks bool
@@ -89,26 +113,38 @@ type Params struct {
 	TokenKey string
 	// BaseURL is the server's, which hook URLs start with.
 	BaseURL string
+	// DeliveryRetention is how long a delivery is kept.
+	DeliveryRetention time.Duration
+	// Now is the clock; nil is time.Now.
+	Now func() time.Time
 }
 
 type controller struct {
 	repo           Repository
 	blobs          storage.Service
-	runner         Inspector
+	runner         Runner
 	ids            idgen.Service
 	events         Events
 	pubsub         Publisher
 	allowUserHooks bool
 	tokenKey       string
 	baseURL        string
+	retention      time.Duration
+	now            func() time.Time
+	q              *queue
 }
 
 // New returns a hooks controller.
 func New(p Params) Controller {
-	return &controller{
+	c := &controller{
 		repo: p.Repository, blobs: p.Storage, runner: p.Runner, ids: p.IDGen, events: p.Events, pubsub: p.PubSub,
 		allowUserHooks: p.AllowUserHooks, tokenKey: p.TokenKey, baseURL: p.BaseURL,
+		retention: p.DeliveryRetention, now: p.Now, q: newQueue(),
 	}
+	if c.now == nil {
+		c.now = time.Now
+	}
+	return c
 }
 
 func (c *controller) ListBuiltIns(ctx context.Context) ([]entity.Hook, error) {

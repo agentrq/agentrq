@@ -5,7 +5,9 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"strings"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
@@ -107,6 +109,57 @@ func FromHookRegistrationEntitiesToHTTPResponse(es []entity.HookRegistration) []
 	out := view.ListHookRegistrationsResponse{Registrations: make([]view.HookRegistration, len(es))}
 	for i, e := range es {
 		out.Registrations[i] = FromHookRegistrationEntityToHookRegistrationView(e)
+	}
+	b, _ := json.Marshal(out)
+	return b
+}
+
+// FromHTTPRequestToHookIncomingRequestEntity reads a request to a hook URL:
+// its token out of the query, which the hook never sees, and its headers
+// lowercased, without its cookies. nil when the id is not one.
+func FromHTTPRequestToHookIncomingRequestEntity(c *fiber.Ctx) *entity.HookIncoming {
+	id := monoflake.IDFromBase62(c.Params("id")).Int64()
+	if id == 0 {
+		return nil
+	}
+	in := &entity.HookIncoming{
+		RegistrationID: id, Peer: c.Context().RemoteIP().String(), Method: c.Method(), Path: c.Path(),
+		Query: map[string][]string{}, Headers: map[string][]string{}, Body: bytes.Clone(c.Body()),
+	}
+	c.Context().QueryArgs().VisitAll(func(k, v []byte) {
+		if key := string(k); key == entity.HookTokenParam {
+			in.Token = string(v)
+		} else {
+			in.Query[key] = append(in.Query[key], string(v))
+		}
+	})
+	c.Request().Header.VisitAll(func(k, v []byte) {
+		if key := strings.ToLower(string(k)); key != "cookie" {
+			in.Headers[key] = append(in.Headers[key], string(v))
+		}
+	})
+	return in
+}
+
+// FromHookDeliveryIDToHTTPResponse answers a queued request.
+func FromHookDeliveryIDToHTTPResponse(id int64) []byte {
+	b, _ := json.Marshal(view.HookReceivedResponse{DeliveryID: monoflake.ID(id).String()})
+	return b
+}
+
+// FromHookDeliveryEntitiesToHTTPResponse renders a page of a registration's
+// log; none is an empty list.
+func FromHookDeliveryEntitiesToHTTPResponse(es []entity.HookDelivery) []byte {
+	out := view.ListHookDeliveriesResponse{Deliveries: make([]view.HookDelivery, len(es))}
+	for i, e := range es {
+		names := e.EventNames
+		if names == nil {
+			names = []string{}
+		}
+		out.Deliveries[i] = view.HookDelivery{
+			ID: monoflake.ID(e.ID).String(), RegistrationID: monoflake.ID(e.RegistrationID).String(), ReceivedAt: e.ReceivedAt,
+			Status: e.Status, Attempts: e.Attempts, EventNames: names, Error: e.Error, DurationMs: e.DurationMs, Replayable: e.Replayable,
+		}
 	}
 	b, _ := json.Marshal(out)
 	return b
