@@ -190,6 +190,7 @@ func New(p Params) (Handler, error) {
 	h.registerEventRoutes()
 	h.registerMachineRoutes()
 	h.registerPanoRoutes()
+	h.registerHookRoutes()
 	h.registerSessionRoutes()
 	h.registerAgentLaunchRoutes()
 	h.registerBrowserRoutes()

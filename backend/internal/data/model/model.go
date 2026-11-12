@@ -805,6 +805,8 @@ const (
 	ActionIDUIOverviewTaskOpen
 	// An app allowed on the supervisor's consent page, read only.
 	ActionIDOAuthConsentAllowReadOnly
+	// A hook registered in an account, emitted by the backend.
+	ActionIDHookRegister
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

@@ -291,6 +291,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUIOverviewTaskOpen
 	case entity.ActionOAuthConsentAllowReadOnly:
 		action = model.ActionIDOAuthConsentAllowReadOnly
+	case entity.ActionHookRegister:
+		action = model.ActionIDHookRegister
 	default:
 		return
 	}

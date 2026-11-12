@@ -37,6 +37,17 @@ type Controller interface {
 	SetBuiltInEnabled(ctx context.Context, id int64, enabled bool) (entity.Hook, error)
 	// DeleteBuiltIn removes a built-in hook that nothing registers.
 	DeleteBuiltIn(ctx context.Context, id int64) error
+
+	// ListAvailable returns the hooks an account may register.
+	ListAvailable(ctx context.Context, userID int64) ([]entity.Hook, error)
+	ListRegistrations(ctx context.Context, userID int64) ([]entity.HookRegistration, error)
+	GetRegistration(ctx context.Context, userID, id int64) (entity.HookRegistration, error)
+	// CreateRegistration and RotateToken return the URL with its token, the
+	// only time it is shown: only its bcrypt hash is kept.
+	CreateRegistration(ctx context.Context, userID int64, req entity.HookRegistrationRequest) (entity.HookRegistration, error)
+	UpdateRegistration(ctx context.Context, userID, id int64, req entity.HookRegistrationRequest) (entity.HookRegistration, error)
+	DeleteRegistration(ctx context.Context, userID, id int64) error
+	RotateToken(ctx context.Context, userID, id int64) (entity.HookRegistration, error)
 }
 
 // Repository is what the controller reads and writes.
@@ -48,6 +59,12 @@ type Repository interface {
 	SetHookEnabled(ctx context.Context, id, userID int64, enabled bool) error
 	DeleteHook(ctx context.Context, id, userID int64) (bool, error)
 	ListHookRegistrationRoutes(ctx context.Context, hookID int64) ([]string, error)
+	CreateHookRegistration(ctx context.Context, reg model.HookRegistration) error
+	GetHookRegistration(ctx context.Context, id, userID int64) (model.HookRegistration, error)
+	ListHookRegistrations(ctx context.Context, userID int64) ([]model.HookRegistration, error)
+	UpdateHookRegistration(ctx context.Context, reg model.HookRegistration) error
+	SetHookRegistrationTokenHash(ctx context.Context, id, userID int64, hash string) error
+	DeleteHookRegistration(ctx context.Context, id, userID int64) error
 }
 
 // Inspector reads a module's manifest; hookrunner.Service is one.
@@ -63,18 +80,35 @@ type Params struct {
 	Storage storage.Service
 	Runner  Inspector
 	IDGen   idgen.Service
+	Events  Events
+	// PubSub carries telemetry; nil sends none.
+	PubSub Publisher
+	// AllowUserHooks lets an account register its own hooks.
+	AllowUserHooks bool
+	// TokenKey seals registrations' inputs: 32 bytes.
+	TokenKey string
+	// BaseURL is the server's, which hook URLs start with.
+	BaseURL string
 }
 
 type controller struct {
-	repo   Repository
-	blobs  storage.Service
-	runner Inspector
-	ids    idgen.Service
+	repo           Repository
+	blobs          storage.Service
+	runner         Inspector
+	ids            idgen.Service
+	events         Events
+	pubsub         Publisher
+	allowUserHooks bool
+	tokenKey       string
+	baseURL        string
 }
 
 // New returns a hooks controller.
 func New(p Params) Controller {
-	return &controller{repo: p.Repository, blobs: p.Storage, runner: p.Runner, ids: p.IDGen}
+	return &controller{
+		repo: p.Repository, blobs: p.Storage, runner: p.Runner, ids: p.IDGen, events: p.Events, pubsub: p.PubSub,
+		allowUserHooks: p.AllowUserHooks, tokenKey: p.TokenKey, baseURL: p.BaseURL,
+	}
 }
 
 func (c *controller) ListBuiltIns(ctx context.Context) ([]entity.Hook, error) {

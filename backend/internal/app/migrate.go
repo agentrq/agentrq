@@ -7,6 +7,8 @@ package app
 import (
 	"fmt"
 
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+
 	zlog "github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
@@ -63,5 +65,14 @@ func migrateSchema(conn *gorm.DB) error {
 	// and covers every query the task_id index served.
 	_ = conn.Exec("DROP INDEX IF EXISTS idx_tool_calls_task_id").Error
 
-	return conn.AutoMigrate(migratedModels()...)
+	if err := conn.AutoMigrate(migratedModels()...); err != nil {
+		return err
+	}
+	// hook_registrations.token held the plain token before it was hashed, and
+	// is NOT NULL: left in place, every new registration would fail to insert.
+	// No release had it, so nothing in it is worth keeping.
+	if m := conn.Migrator(); m.HasColumn(&model.HookRegistration{}, "token") {
+		return m.DropColumn(&model.HookRegistration{}, "token")
+	}
+	return nil
 }

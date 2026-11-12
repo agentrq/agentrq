@@ -5,9 +5,11 @@
 package app
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
@@ -57,5 +59,37 @@ func TestHookIndexesCoverTheirColumns(t *testing.T) {
 		if !strings.HasSuffix(ddl, cols) {
 			t.Errorf("%s = %q, want it on %s", name, ddl, cols)
 		}
+	}
+}
+
+// A database migrated before the token was hashed has a NOT NULL token
+// column no insert fills; migrating drops it, and keeps the rest.
+func TestMigrateDropsThePlainHookToken(t *testing.T) {
+	// A file: every pooled connection to ":memory:" is a database of its own.
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "a.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The table as the release before the hash made it.
+	type legacy struct {
+		model.HookRegistration
+		Token string `gorm:"type:char(8);not null"`
+	}
+	if err := db.Table("hook_registrations").AutoMigrate(&legacy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	m := db.Migrator()
+	if m.HasColumn(&model.HookRegistration{}, "token") || !m.HasColumn(&model.HookRegistration{}, "token_hash") {
+		t.Error("the plain token column is still there, or the hash is missing")
+	}
+	if err := db.Create(&model.HookRegistration{ID: 1, Name: "n", TokenHash: "h"}).Error; err != nil {
+		t.Errorf("insert after migrating: %v", err)
+	}
+	// A second run finds nothing to drop.
+	if err := migrateSchema(db); err != nil {
+		t.Fatal(err)
 	}
 }

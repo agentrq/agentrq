@@ -1466,6 +1466,7 @@ const (
 	ResourceSession
 	ResourceSkill
 	ResourcePano
+	ResourceHookRegistration
 )
 
 func (r ResourceType) String() string {
@@ -1486,6 +1487,8 @@ func (r ResourceType) String() string {
 		return "skill"
 	case ResourcePano:
 		return "pano"
+	case ResourceHookRegistration:
+		return "hook_registration"
 	}
 	return "unknown"
 }
@@ -1777,6 +1780,10 @@ const (
 	// A person allowing an app on the supervisor's consent page with Read
 	// only chosen. A read-write allow is ActionOAuthConsentAllow.
 	ActionOAuthConsentAllowReadOnly Action = 110
+	// A hook registered in an account, which gives it a URL outside services
+	// fire its events through. Emitted by the backend; workspace 0, since a
+	// registration belongs to the account.
+	ActionHookRegister Action = 111
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1995,6 +2002,8 @@ func (a Action) String() string {
 		return "ui_overview_task_open"
 	case ActionOAuthConsentAllowReadOnly:
 		return "oauth_consent_allow_read_only"
+	case ActionHookRegister:
+		return "hook_register"
 	}
 	return "unknown"
 }

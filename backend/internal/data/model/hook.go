@@ -41,9 +41,10 @@ type HookRegistration struct {
 	HookID    int64  `gorm:"not null;index:idx_hook_registrations_hook_id"`
 	Name      string `gorm:"type:varchar(255);not null"`
 	Enabled   bool   `gorm:"not null"`
-	// Token is the agentrq_hook_token the URL carries: 8 base36 characters,
-	// rotatable. A registration is reached by its id, so it is not indexed.
-	Token string `gorm:"type:char(8);not null"`
+	// TokenHash is the bcrypt hash of the agentrq_hook_token the URL carries:
+	// 8 base36 characters, rotatable, shown once. A registration is reached
+	// by its id, so it is not indexed.
+	TokenHash string `gorm:"type:varchar(60);not null"`
 	// Inputs holds the values for the inputs the hook declares, encrypted.
 	Inputs string `gorm:"type:text;not null"`
 	// Routes maps the hook's event names to the account's event ids, as JSON.

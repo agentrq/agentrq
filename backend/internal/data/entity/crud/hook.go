@@ -40,6 +40,45 @@ type HookEvent struct {
 	Description string
 }
 
+// HookRegistration is one use of a hook in an account, with its own URL.
+type HookRegistration struct {
+	ID       int64
+	HookID   int64
+	HookName string
+	// HookAvailable is false once its hook is deleted, turned off, or an
+	// account's own while user hooks are not allowed: requests are refused.
+	HookAvailable bool
+	Name          string
+	Enabled       bool
+	// Inputs holds the values of the hook's inputs that are not secret;
+	// SecretsSet names the secret ones that have a value, never shown.
+	Inputs     map[string]any
+	SecretsSet []string
+	// Routes maps the hook's event names to the account's event ids.
+	Routes map[string]int64
+	// URL is the registration's address without its token; URLWithToken is
+	// the whole of it, given only when the token is made.
+	URL          string
+	URLWithToken string
+	// AllowAllCommandsEvents are the routed hook events whose event has a
+	// trigger that runs every command without asking.
+	AllowAllCommandsEvents []string
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+}
+
+// HookRegistrationRequest is what a person sets on a registration. On an
+// update a nil field is left as it is, and a secret input left out of Inputs
+// keeps its value.
+type HookRegistrationRequest struct {
+	HookID  int64
+	Name    *string
+	Enabled *bool
+	Inputs  map[string]any
+	// Routes maps the hook's event names to the account's event ids.
+	Routes map[string]int64
+}
+
 // HookErrorKind says why a hook was refused.
 type HookErrorKind uint8
 

@@ -136,7 +136,7 @@ func hookModule(c *fiber.Ctx) ([]byte, bool) {
 func hookError(c *fiber.Ctx, err error) error {
 	b, status := mapper.FromErrorToHTTPResponse(err)
 	if status >= fiber.StatusInternalServerError {
-		zlog.Error().Err(err).Msg("admin hooks")
+		zlog.Error().Err(err).Msg("hooks")
 	}
 	c.Set(_headerContentType, _mimeJSON)
 	return c.Status(status).Send(b)
