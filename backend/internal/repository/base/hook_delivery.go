@@ -83,16 +83,30 @@ func (r *repository) GetHookDelivery(ctx context.Context, id int64) (model.HookD
 
 // UpdateHookDelivery saves what processing a delivery decided: its status,
 // next attempt, request, pending events, event names, error and duration.
+// It returns ErrLeaseLost when the delivery has been claimed since d was read.
 func (r *repository) UpdateHookDelivery(ctx context.Context, d model.HookDelivery) error {
-	return r.conn(ctx).Model(&model.HookDelivery{ID: d.ID}).
+	return saveHookDelivery(r.conn(ctx), d)
+}
+
+// saveHookDelivery writes d only while its attempt is still the latest: every
+// claim of a queued or processing delivery counts one, so a worker whose
+// lease ended and was claimed again writes nothing.
+func saveHookDelivery(db *gorm.DB, d model.HookDelivery) error {
+	res := db.Model(&model.HookDelivery{ID: d.ID}).Where("attempts = ?", d.Attempts).
 		Select("status", "next_attempt_at", "request", "pending", "event_names", "error", "duration_ms").
-		Updates(&d).Error
+		Updates(&d)
+	if res.Error == nil && res.RowsAffected == 0 {
+		return ErrLeaseLost
+	}
+	return res.Error
 }
 
 // RouteHookDelivery commits a delivery's events in one transaction: it marks
 // each dedup key, keeping only the events whose key is new or that have
 // none, stores those as pending and clears the request. The delivery is
-// routed, or a duplicate when nothing is kept. It returns the events kept.
+// routed, or a duplicate when nothing is kept. It returns the events kept,
+// or ErrLeaseLost, keeping no dedup key, when another worker has claimed the
+// delivery since d was read.
 func (r *repository) RouteHookDelivery(ctx context.Context, d model.HookDelivery, events []model.HookPendingEvent) ([]model.HookPendingEvent, error) {
 	kept := []model.HookPendingEvent{}
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
@@ -122,9 +136,7 @@ func (r *repository) RouteHookDelivery(ctx context.Context, d model.HookDelivery
 		}
 		b, _ := json.Marshal(names)
 		d.EventNames = string(b)
-		return tx.Model(&model.HookDelivery{ID: d.ID}).
-			Select("status", "next_attempt_at", "request", "pending", "event_names", "error", "duration_ms").
-			Updates(&d).Error
+		return saveHookDelivery(tx, d)
 	})
 	if err != nil {
 		return nil, err

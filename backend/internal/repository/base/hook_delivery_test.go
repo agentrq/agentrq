@@ -123,7 +123,7 @@ func TestHookDeliveryQueue(t *testing.T) {
 			if ok, _ := r.ClaimHookDelivery(ctx, 10, lease, lease.Add(time.Minute)); !ok {
 				t.Error("an ended lease was not claimed")
 			}
-			if d, _ := r.GetHookDelivery(ctx, 10); d.Attempts != 2 {
+			if d, _ = r.GetHookDelivery(ctx, 10); d.Attempts != 2 {
 				t.Errorf("attempts = %d", d.Attempts)
 			}
 
@@ -199,6 +199,41 @@ func TestRouteHookDelivery(t *testing.T) {
 			d, _ = r.GetHookDelivery(ctx, 22)
 			if kept, err = r.RouteHookDelivery(ctx, d, events[:1]); err != nil || len(kept) != 1 {
 				t.Errorf("another registration = %+v, %v", kept, err)
+			}
+		})
+	}
+}
+
+// A worker whose delivery was claimed again since it read it writes nothing,
+// and keeps no dedup key.
+func TestHookDeliveryWritesNeedTheLease(t *testing.T) {
+	ctx := context.Background()
+	for name, r := range deliveryRepos(t) {
+		t.Run(name, func(t *testing.T) {
+			if err := r.CreateHookDelivery(ctx, delivery(40, 1, model.HookDeliveryQueued, t0)); err != nil {
+				t.Fatal(err)
+			}
+			if ok, err := r.ClaimHookDelivery(ctx, 40, t0, t0.Add(time.Minute)); !ok || err != nil {
+				t.Fatalf("claim = %v, %v", ok, err)
+			}
+			stale, _ := r.GetHookDelivery(ctx, 40)
+			if ok, err := r.ClaimHookDelivery(ctx, 40, t0.Add(time.Minute), t0.Add(2*time.Minute)); !ok || err != nil {
+				t.Fatalf("claim after the lease = %v, %v", ok, err)
+			}
+			stale.Status = model.HookDeliveryRejected
+			if err := r.UpdateHookDelivery(ctx, stale); !errors.Is(err, ErrLeaseLost) {
+				t.Errorf("update = %v", err)
+			}
+			if _, err := r.RouteHookDelivery(ctx, stale, []model.HookPendingEvent{{HookEvent: "e", DedupKey: "k"}}); !errors.Is(err, ErrLeaseLost) {
+				t.Errorf("route = %v", err)
+			}
+			// The worker holding the lease still routes it, and its key is new.
+			d, _ := r.GetHookDelivery(ctx, 40)
+			if d.Status != model.HookDeliveryProcessing || d.Attempts != 2 {
+				t.Errorf("delivery = %+v", d)
+			}
+			if kept, err := r.RouteHookDelivery(ctx, d, []model.HookPendingEvent{{HookEvent: "e", DedupKey: "k"}}); err != nil || len(kept) != 1 {
+				t.Errorf("route = %+v, %v", kept, err)
 			}
 		})
 	}

@@ -99,6 +99,9 @@ type fakeRunner struct {
 	calls int
 	got   hookrunner.HandleInput
 	wasm  []byte
+	// during runs once, inside the first call, as a slow run would let
+	// another worker act.
+	during func()
 }
 
 func (f *fakeRunner) Handle(ctx context.Context, mod hookrunner.Module, _ hookrunner.Manifest, in hookrunner.HandleInput) (hookrunner.Result, error) {
@@ -109,6 +112,10 @@ func (f *fakeRunner) Handle(ctx context.Context, mod hookrunner.Module, _ hookru
 		return hookrunner.Result{}, err
 	}
 	f.wasm = wasm
+	if during := f.during; during != nil {
+		f.during = nil
+		during()
+	}
 	return f.res, f.err
 }
 
@@ -523,6 +530,44 @@ func TestDeliveryRetriedOnAnInstanceError(t *testing.T) {
 			f.ctl().drain(ctx)
 			if d := f.delivery(t, id); d.Status != model.HookDeliveryQueued || d.Attempts != 1 || d.Error != "boom" || d.Request == nil {
 				t.Errorf("delivery = %+v", d)
+			}
+		})
+	}
+}
+
+// A run that outlasts its lease loses the delivery to the worker that claims
+// it next: its outcome is not written, and its events are not published again.
+func TestDeliveryOutlastingItsLease(t *testing.T) {
+	ctx := context.Background()
+	for name, tc := range map[string]struct {
+		res hookrunner.Result
+		err error
+	}{
+		"routed":  {res: hookrunner.Result{Accept: true, Events: []hookrunner.EventOut{{Name: "push", Payload: "p"}}}},
+		"decided": {res: hookrunner.Result{Reason: "bad signature"}},
+		"retried": {err: errBoom},
+		"failed":  {err: &hookrunner.OutputError{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := qSetup(t)
+			f.run.res, f.run.err = tc.res, tc.err
+			id := f.receive(t)
+			// Another worker claims it once the lease is over, and routes it.
+			f.run.during = func() {
+				*f.clock = f.clock.Add(lease)
+				res, err := f.run.res, f.run.err
+				f.run.res, f.run.err = hookrunner.Result{Accept: true, Events: []hookrunner.EventOut{{Name: "push", Payload: "p"}}}, nil
+				f.ctl().drain(ctx)
+				f.run.res, f.run.err = res, err
+			}
+			f.ctl().drain(ctx)
+
+			d := f.delivery(t, id)
+			if d.Status != model.HookDeliveryPublished || d.Attempts != 2 || d.Error != "" {
+				t.Errorf("delivery = %+v", d)
+			}
+			if events, _ := f.published(); len(events) != 1 {
+				t.Errorf("published %d times", len(events))
 			}
 		})
 	}
