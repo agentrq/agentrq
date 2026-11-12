@@ -89,13 +89,13 @@ AGENTRQ_WEBPUSH_SUBSCRIBER=mailto:hi@example.com
 
 # ── DDoS Protection ─────────────────────────────────────
 AGENTRQ_DDOS_ENABLED=true
-AGENTRQ_DDOS_MAX_REQ_PER_SEC=20
-AGENTRQ_DDOS_BLOCK_DURATION=5m
+AGENTRQ_DDOS_MAX_REQ_PER_SEC=300
+AGENTRQ_DDOS_BLOCK_DURATION=1m
 
 # ── Rate Limiting ───────────────────────────────────────
 AGENTRQ_RATELIMIT_ENABLED=true
-AGENTRQ_RATELIMIT_MAX_PER_IP=60
-AGENTRQ_RATELIMIT_MAX_PER_USER=100
+AGENTRQ_RATELIMIT_MAX_PER_IP=3000
+AGENTRQ_RATELIMIT_MAX_PER_USER=3000
 AGENTRQ_RATELIMIT_WINDOW=60s
 AGENTRQ_TRUSTED_PROXIES=
 AGENTRQ_CLIENT_IP_HEADER=X-Real-IP
@@ -407,11 +407,11 @@ docker logs --tail 100 agentrq
 | `AGENTRQ_WEBPUSH_VAPID_PRIVATE_KEY` | No | — | VAPID private key for Web Push (keep secret) |
 | `AGENTRQ_WEBPUSH_SUBSCRIBER` | No | `mailto:hi@example.com` | Contact URI sent to push services (required by VAPID spec) |
 | `AGENTRQ_DDOS_ENABLED` | No | `true` | Enable DDoS protection |
-| `AGENTRQ_DDOS_MAX_REQ_PER_SEC` | No | `20` | Max requests per second before blocking |
-| `AGENTRQ_DDOS_BLOCK_DURATION` | No | `5m` | How long to block offending IPs |
+| `AGENTRQ_DDOS_MAX_REQ_PER_SEC` | No | `300` | Max requests per second per address before blocking |
+| `AGENTRQ_DDOS_BLOCK_DURATION` | No | `1m` | How long to block offending IPs |
 | `AGENTRQ_RATELIMIT_ENABLED` | No | `true` | Enable rate limiting |
-| `AGENTRQ_RATELIMIT_MAX_PER_IP` | No | `60` | Max requests per window per IP |
-| `AGENTRQ_RATELIMIT_MAX_PER_USER` | No | `100` | Max requests per window per user |
+| `AGENTRQ_RATELIMIT_MAX_PER_IP` | No | `3000` | Max requests per window per IP |
+| `AGENTRQ_RATELIMIT_MAX_PER_USER` | No | `3000` | Max requests per window per user |
 | `AGENTRQ_RATELIMIT_WINDOW` | No | `60s` | Rate limit window duration |
 | `AGENTRQ_TRUSTED_PROXIES` | No | *(empty)* | Proxies whose client-address header is believed, as comma-separated CIDRs or addresses. Empty believes none, and every client is the address that connected |
 | `AGENTRQ_CLIENT_IP_HEADER` | No | `X-Real-IP` | The header a trusted proxy names the client in: `X-Real-IP`, `X-Forwarded-For` (read from the right) or `CF-Connecting-IP` |

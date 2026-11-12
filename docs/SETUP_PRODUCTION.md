@@ -138,8 +138,8 @@ cp .env .env.backup
 ### 5. Network Security
 
 - Place behind a reverse proxy (Nginx, Traefik, Cloudflare)
-- Enable rate limiting (default: 60 req/IP, 100 req/user per minute)
-- Enable DDoS protection (default: 20 req/sec)
+- Rate limiting is on by default: 3000 requests per minute per address, and per user
+- DDoS protection is on by default: more than 300 requests in a second blocks an address for a minute
 - Behind a proxy, set `AGENTRQ_TRUSTED_PROXIES` (see [Client addresses](#client-addresses))
 - Use firewall rules to restrict non-HTTP(S) traffic
 

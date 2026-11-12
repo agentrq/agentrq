@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/app"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
@@ -25,14 +26,6 @@ func TestTheBinaryCarriesTheWebAppAndConfig(t *testing.T) {
 			t.Errorf("config: %v", err)
 		}
 	}
-}
-
-// notLoaded are the blocks loadConfig leaves out on purpose, and why.
-var notLoaded = map[string]string{
-	// Never loaded since they were added, so both have always been off. Turning
-	// them on with their defaults throttles every user; that is its own change.
-	"ddos":      "off until turning it on is decided",
-	"ratelimit": "off until turning it on is decided",
 }
 
 // recorder notes the blocks read.
@@ -59,7 +52,7 @@ func TestLoadConfigReadsEveryBlock(t *testing.T) {
 		if key == "" || key == "-" {
 			continue
 		}
-		if _, skip := notLoaded[key]; !r.keys[key] && !skip {
+		if !r.keys[key] {
 			t.Errorf("the %q block is never loaded", key)
 		}
 		delete(r.keys, key)
@@ -81,6 +74,14 @@ func TestLoadConfigTakesTheEnv(t *testing.T) {
 	cfg, err := loadConfig(svc)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// On by default, with limits a first visit to the web app stays under: about
+	// 160 requests in half a second, with the service worker's precache.
+	if !cfg.Ddos.Enabled || cfg.Ddos.MaxRequestsPerSecond != 300 || cfg.Ddos.BlockDuration != time.Minute {
+		t.Errorf("ddos = %+v", cfg.Ddos)
+	}
+	if !cfg.Ratelimit.Enabled || cfg.Ratelimit.MaxPerIP != 3000 || cfg.Ratelimit.MaxPerUser != 3000 || cfg.Ratelimit.Window != time.Minute {
+		t.Errorf("ratelimit = %+v", cfg.Ratelimit)
 	}
 	if cfg.Network.TrustedProxies != "10.0.0.0/8" || cfg.Network.ClientIPHeader != "X-Forwarded-For" || cfg.MCP.OpenAIAppsChallenge != "challenge" {
 		t.Errorf("network = %+v, mcp = %+v", cfg.Network, cfg.MCP)

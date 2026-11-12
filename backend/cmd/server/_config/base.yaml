@@ -77,15 +77,20 @@ webPush:
   vapidPrivateKey: ${AGENTRQ_WEBPUSH_VAPID_PRIVATE_KEY:}
   subscriber: ${AGENTRQ_WEBPUSH_SUBSCRIBER:mailto:hi@example.com}
 
+# Per client address: past maxRequestsPerSecond in one second, every request is
+# refused for blockDuration. A first visit to the web app, with its service
+# worker's precache, is about 160 requests in under a second.
 ddos:
   enabled: ${AGENTRQ_DDOS_ENABLED:true}
-  maxRequestsPerSecond: ${AGENTRQ_DDOS_MAX_REQ_PER_SEC:20}
-  blockDuration: ${AGENTRQ_DDOS_BLOCK_DURATION:5m}
+  maxRequestsPerSecond: ${AGENTRQ_DDOS_MAX_REQ_PER_SEC:300}
+  blockDuration: ${AGENTRQ_DDOS_BLOCK_DURATION:1m}
 
+# Per client address, and per signed-in user, in each window. Agents' MCP calls
+# from one machine share its address.
 ratelimit:
   enabled: ${AGENTRQ_RATELIMIT_ENABLED:true}
-  maxPerIP: ${AGENTRQ_RATELIMIT_MAX_PER_IP:60}
-  maxPerUser: ${AGENTRQ_RATELIMIT_MAX_PER_USER:100}
+  maxPerIP: ${AGENTRQ_RATELIMIT_MAX_PER_IP:3000}
+  maxPerUser: ${AGENTRQ_RATELIMIT_MAX_PER_USER:3000}
   window: ${AGENTRQ_RATELIMIT_WINDOW:60s}
 
 # Who the throttles count. The header is believed only from these proxies

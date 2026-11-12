@@ -144,6 +144,7 @@ function startServer(bin, port, dir) {
       AGENTRQ_AUTH_ROOT_ACCESS_TOKEN: 'agentrq',
       AGENTRQ_SQLITE_DSN: join(dir, 'agentrq.db'),
       AGENTRQ_RATELIMIT_ENABLED: 'false',
+      AGENTRQ_DDOS_ENABLED: 'false',
     },
   })
   child.stdout.on('data', (d) => log.push(String(d)))
