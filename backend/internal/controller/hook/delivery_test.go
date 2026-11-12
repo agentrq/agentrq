@@ -614,10 +614,9 @@ func TestRoutedDeliveryRecovered(t *testing.T) {
 	}
 }
 
-func TestPublishSkipsAnEventGoneAndLogsAFailedPublish(t *testing.T) {
+func TestPublishSkipsAnEventGone(t *testing.T) {
 	ctx := context.Background()
 	f := qSetup(t)
-	f.pub.eventsErr = errBoom
 	f.run.res = hookrunner.Result{Accept: true, Events: []hookrunner.EventOut{{Name: "push", Payload: "p"}}}
 	id := f.receive(t)
 	// The event is deleted after it was routed.
@@ -632,6 +631,73 @@ func TestPublishSkipsAnEventGoneAndLogsAFailedPublish(t *testing.T) {
 	if d = f.delivery(t, id); d.Status != model.HookDeliveryPublished || len(events) != 1 || events[0].EventID != pushed {
 		t.Errorf("delivery = %+v, published %+v", d, events)
 	}
+}
+
+func TestAFailedPublishKeepsTheEventsNotYetPublished(t *testing.T) {
+	ctx := context.Background()
+	f := qSetup(t)
+	f.pub.eventsErr, f.pub.eventsOK = errBoom, 1
+	f.run.res = hookrunner.Result{Accept: true, Events: []hookrunner.EventOut{
+		{Name: "push", Payload: "1"}, {Name: "push", Payload: "2"}, {Name: "push", Payload: "3"},
+	}}
+	id := f.receive(t)
+	f.ctl().drain(ctx)
+	d := f.delivery(t, id)
+	var pending []model.HookPendingEvent
+	_ = json.Unmarshal(d.Pending, &pending)
+	if d.Status != model.HookDeliveryRouted || len(pending) != 2 || pending[0].Payload != "2" || pending[1].Payload != "3" {
+		t.Fatalf("delivery = %+v, pending %+v", d, pending)
+	}
+	if events, actions := f.published(); len(events) != 1 || slices.Index(actions, entity.ActionHookPublish) >= 0 {
+		t.Fatalf("published %+v, telemetry %v", events, actions)
+	}
+	// Not before the lease ends.
+	f.pub.eventsErr = nil
+	f.ctl().drain(ctx)
+	if events, _ := f.published(); len(events) != 1 {
+		t.Fatalf("republished in the lease: %+v", events)
+	}
+	// After it, only the two left are published, once each.
+	*f.clock = f.clock.Add(lease)
+	f.ctl().drain(ctx)
+	events, actions := f.published()
+	payloads := make([]string, len(events))
+	for i, e := range events {
+		payloads[i] = e.Payload
+	}
+	if d = f.delivery(t, id); d.Status != model.HookDeliveryPublished || d.Pending != nil ||
+		!slices.Equal(payloads, []string{"1", "2", "3"}) || slices.Index(actions, entity.ActionHookPublish) < 0 {
+		t.Errorf("delivery = %+v, published %v, telemetry %v", d, payloads, actions)
+	}
+}
+
+func TestAFailedPublishThatCannotBeSavedIsRetriedWhole(t *testing.T) {
+	ctx := context.Background()
+	f := qSetup(t)
+	f.pub.eventsErr = errBoom
+	f.run.res = hookrunner.Result{Accept: true, Events: []hookrunner.EventOut{{Name: "push", Payload: "p"}}}
+	id := f.receive(t)
+	calls := 0
+	f.ctl().repo = &failNthUpdate{Repository: f.repo, n: 1, calls: &calls}
+	f.ctl().drain(ctx)
+	if d := f.delivery(t, id); d.Status != model.HookDeliveryRouted || d.Pending == nil {
+		t.Errorf("delivery = %+v", d)
+	}
+}
+
+// failNthUpdate fails the nth UpdateHookDelivery.
+type failNthUpdate struct {
+	Repository
+	n     int
+	calls *int
+}
+
+func (f *failNthUpdate) UpdateHookDelivery(ctx context.Context, d model.HookDelivery) error {
+	*f.calls++
+	if *f.calls == f.n {
+		return errBoom
+	}
+	return f.Repository.UpdateHookDelivery(ctx, d)
 }
 
 func TestDrainSurvivesTheRepository(t *testing.T) {

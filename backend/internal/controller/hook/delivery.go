@@ -371,8 +371,9 @@ func (c *controller) process(ctx context.Context, id int64) {
 }
 
 // publish fires a routed delivery's pending events, then marks it published.
-// Every event is resolved before any is fired, so a failure leaves nothing
-// half done for the lease's end to repeat.
+// Every event is resolved before any is fired, so a failed read leaves
+// nothing half done for the lease's end to repeat. A failed publish keeps
+// the events not yet fired pending, and only those, for the lease's end.
 func (c *controller) publish(ctx context.Context, id int64) {
 	d, err := c.repo.GetHookDelivery(ctx, id)
 	if err != nil {
@@ -381,6 +382,7 @@ func (c *controller) publish(ctx context.Context, id int64) {
 	}
 	var pending []model.HookPendingEvent
 	_ = json.Unmarshal(d.Pending, &pending) // written by RouteHookDelivery
+	kept := make([]model.HookPendingEvent, 0, len(pending))
 	payloads := make([]entity.EventPublishedPayload, 0, len(pending))
 	for _, e := range pending {
 		ev, err := c.events.GetEvent(ctx, e.EventID, d.UserID)
@@ -395,11 +397,17 @@ func (c *controller) publish(ctx context.Context, id int64) {
 		for i, f := range e.FAQ {
 			faq[i] = entity.EventFAQ{Q: f.Q, A: f.A}
 		}
+		kept = append(kept, e)
 		payloads = append(payloads, entity.EventPublishedPayload{EventID: ev.ID, Name: ev.Name, Payload: e.Payload, FAQ: faq})
 	}
-	for _, p := range payloads {
+	for i, p := range payloads {
 		if _, err := c.pubsub.Publish(ctx, pubsub.PublishRequest{PubSubID: entity.PubSubTopicEvents, Event: p}); err != nil {
 			zlog.Error().Err(err).Int64("delivery", id).Msg("hooks: publish event")
+			d.Pending, _ = json.Marshal(kept[i:]) // plain structs
+			if err := c.repo.UpdateHookDelivery(ctx, d); err != nil {
+				zlog.Error().Err(err).Int64("delivery", id).Msg("hooks: keep unpublished events")
+			}
+			return
 		}
 	}
 	d.Status, d.Pending = model.HookDeliveryPublished, nil
