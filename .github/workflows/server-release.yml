@@ -59,6 +59,19 @@ jobs:
           rm -rf ../backend/cmd/server/public
           cp -r dist ../backend/cmd/server/public
 
+      # The built-in hooks, for the root user to register: one file each, in
+      # dist before the server's targets so the checksums cover them too.
+      - name: Build the built-in hooks
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          make wasm-hooks
+          mkdir -p backend/dist
+          for h in wasm-hooks/dist/*.wasm; do
+            cp "$h" "backend/dist/agentrq-hook-$(basename "$h" .wasm)_${VERSION}.wasm"
+          done
+
       # Named apart from checksums.txt, which the daemon's assets use and the
       # agentrqd installer reads.
       - name: Build every target

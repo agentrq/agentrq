@@ -82,8 +82,8 @@ describe('noticeLinesFor', () => {
     expect(SPDX).toBe('SPDX-License-Identifier: AGPL-3.0-only')
   })
 
-  it('adds the Apache licence line on the daemon and the installers', () => {
-    for (const path of ['daemon/cmd/agentrqd/main.go', 'installers/test/install-agentrqd.test.js']) {
+  it('adds the Apache licence line on the daemon, the installers and the built-in hooks', () => {
+    for (const path of ['daemon/cmd/agentrqd/main.go', 'installers/test/install-agentrqd.test.js', 'wasm-hooks/github/main.go']) {
       expect(noticeLinesFor(path), path).toEqual([...NOTICE_LINES, SPDX_APACHE])
     }
     expect(SPDX_APACHE).toBe('SPDX-License-Identifier: Apache-2.0')

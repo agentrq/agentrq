@@ -1,0 +1,51 @@
+name: Built-in hooks
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'wasm-hooks/**'
+      - 'backend/internal/service/hookrunner/**'
+      - '.github/workflows/wasm-hooks.yml'
+  pull_request:
+    paths:
+      - 'wasm-hooks/**'
+      - 'backend/internal/service/hookrunner/**'
+      - '.github/workflows/wasm-hooks.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test and build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: wasm-hooks/go.mod
+          cache-dependency-path: |
+            wasm-hooks/go.mod
+            backend/go.sum
+
+      - name: Vet
+        working-directory: wasm-hooks
+        run: go vet ./...
+
+      - name: Test
+        working-directory: wasm-hooks
+        run: go test ./...
+
+      - name: Build for wasip1
+        run: make wasm-hooks
+
+      # The hooks are what the server runs, so they are also put through the
+      # server's own runner: its manifest checks, and a signed delivery.
+      - name: Run them on the server's runner
+        working-directory: backend
+        run: go test -run TestBuiltInHooksRunOnTheServer ./internal/service/hookrunner/

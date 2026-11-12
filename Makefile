@@ -1,4 +1,4 @@
-.PHONY: dev backend frontend desktop desktop-dev install stop mocks test fmt hooks remote-claude remote-agy plugin-deepseek
+.PHONY: dev backend frontend desktop desktop-dev install stop mocks test fmt hooks remote-claude remote-agy plugin-deepseek wasm-hooks
 
 remote-claude:
 	claude --name agentrq-code --autocompact 400k --dangerously-load-development-channels server:agentrq-0ZzhYQG2qtl
@@ -131,3 +131,12 @@ plugin-deepseek:
 		npm run typecheck && \
 		npm test && \
 		npm run build
+
+# Build the built-in event hooks (WebAssembly, for the root user to register)
+# into wasm-hooks/dist. Not to be confused with `hooks`, the git hooks above.
+wasm-hooks:
+	@mkdir -p wasm-hooks/dist
+	@cd wasm-hooks && for h in generic github; do \
+		GOOS=wasip1 GOARCH=wasm go build -trimpath -ldflags "-s -w" -o dist/$$h.wasm ./$$h || exit 1; \
+		echo "wasm-hooks/dist/$$h.wasm"; \
+	done
