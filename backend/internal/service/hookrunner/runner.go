@@ -137,14 +137,16 @@ func (s *service) Inspect(ctx context.Context, wasm []byte) (Manifest, [32]byte,
 	}
 	ent, err := s.acquire(ctx, Module{SHA256: sum, Load: func(context.Context) ([]byte, error) { return wasm, nil }})
 	if err != nil {
-		var invalid *InvalidModuleError
-		if errors.As(err, &invalid) {
-			return Manifest{}, sum, err
-		}
-		return Manifest{}, sum, invalidModule("%v", err)
+		// An *InvalidModuleError, or the request's own deadline or
+		// cancellation, which a retry may pass: never a 422.
+		return Manifest{}, sum, err
 	}
 	defer s.release(ctx, ent)
 	out, err := s.run(ctx, ent, "manifest", nil)
+	if err != nil && ctx.Err() != nil {
+		// The request gave up, not the module: it may pass on a retry.
+		return Manifest{}, sum, ctx.Err()
+	}
 	if err != nil {
 		return Manifest{}, sum, invalidModule("manifest: %v", err)
 	}
