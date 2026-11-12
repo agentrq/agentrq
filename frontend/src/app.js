@@ -112,7 +112,8 @@ export const routes = [
 export const adminRoutes = [
   { path: '/admin', redirect: '/admin/stats' },
   { path: '/admin/login', component: () => import('./views/LoginView.vue'), props: { admin: true }, meta: { public: true } },
-  { path: '/admin/stats', component: () => import('./views/AdminStatsView.vue'), meta: { public: true } }
+  { path: '/admin/stats', component: () => import('./views/AdminStatsView.vue'), meta: { public: true } },
+  { path: '/admin/hooks', component: () => import('./views/AdminHooksView.vue'), meta: { public: true } }
 ]
 
 /**

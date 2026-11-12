@@ -55,6 +55,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/cleanup"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/hookrunner"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/image"
 	"github.com/agentrq/agentrq/backend/internal/service/kv"
@@ -204,7 +205,8 @@ func New(cfg Config) (*App, error) {
 	if err := applyLimits(cfg); err != nil {
 		return nil, err
 	}
-	if _, err := cfg.Hooks.Settings(); err != nil {
+	hookSettings, err := cfg.Hooks.Settings()
+	if err != nil {
 		return nil, err
 	}
 	if cfg.App.DrainDelay < 0 {
@@ -302,6 +304,11 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("pano storage: %w", err)
 	}
 
+	hookStorageSvc, err := newHookStorage(cfg.ConfigSvc, filepath.Join(cfg.Storage.StorageDir, hookStorageDir))
+	if err != nil {
+		return nil, fmt.Errorf("hook storage: %w", err)
+	}
+
 	cleanupSvc, err := cleanup.New(cfg.Storage)
 	if err != nil {
 		return nil, fmt.Errorf("cleanup: %w", err)
@@ -369,6 +376,12 @@ func New(cfg Config) (*App, error) {
 		Limiter:      rateLimiter,
 		SkillImport:  skillimport.New(),
 		TaskAgents:   taskAgentCtrl,
+	})
+	hookCtrl := hook.New(hook.Params{
+		Repository: repo,
+		Storage:    hookStorageSvc,
+		Runner:     hookrunner.New(appCtx, hookrunner.Config{MaxPayloadSize: hookSettings.MaxPayloadSize}),
+		IDGen:      ids,
 	})
 	moveLegacySkills(context.Background(), crudCtrl)
 	startPanoSweep(appCtx, crudCtrl, panoSweepInterval, sweepJitter)
@@ -759,6 +772,7 @@ func New(cfg Config) (*App, error) {
 		Root:             fiberApp,
 		SlackCtrl:        slackCtrl,
 		PushCtrl:         pushCtrl,
+		Hooks:            hookCtrl,
 	}); err != nil {
 		return nil, fmt.Errorf("api handler: %w", err)
 	}

@@ -1249,6 +1249,7 @@ watch(() => route.fullPath, (fullPath) => {
   else if (path === '/login') document.title = 'Login | AgentRQ';
   else if (path === '/admin/login') document.title = 'Admin | AgentRQ';
   else if (path === '/admin/stats') document.title = 'Admin stats | AgentRQ';
+  else if (path === '/admin/hooks') document.title = 'Admin hooks | AgentRQ';
   else if (path === '/kanban') document.title = 'Kanban | AgentRQ';
   else if (path.startsWith('/events')) document.title = 'Events | AgentRQ';
   else if (path.startsWith('/workflows')) document.title = 'Workflows | AgentRQ';

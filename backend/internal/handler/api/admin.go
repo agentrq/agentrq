@@ -82,6 +82,7 @@ func (h *handler) registerAdminRoutes(root fiber.Router) {
 
 	r := root.Group("/admin/v1", h.adminMiddleware())
 	r.Get("/stats", h.getAdminStats())
+	h.registerAdminHookRoutes(r)
 }
 
 // adminMiddleware refuses a request without an admin session.

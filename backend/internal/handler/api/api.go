@@ -19,6 +19,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	hookctrl "github.com/agentrq/agentrq/backend/internal/controller/hook"
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	pushctrl "github.com/agentrq/agentrq/backend/internal/controller/push"
@@ -67,6 +68,7 @@ type (
 		Root      fiber.Router
 		SlackCtrl slackctrl.Controller // optional; nil = Slack disabled
 		PushCtrl  pushctrl.Controller  // optional; nil = push disabled
+		Hooks     hookctrl.Controller
 	}
 
 	Handler interface{}
@@ -108,6 +110,7 @@ type (
 		router           fiber.Router
 		slackCtrl        slackctrl.Controller
 		pushCtrl         pushctrl.Controller
+		hooks            hookctrl.Controller
 	}
 )
 
@@ -154,6 +157,7 @@ func New(p Params) (Handler, error) {
 		router:           p.Router,
 		slackCtrl:        p.SlackCtrl,
 		pushCtrl:         p.PushCtrl,
+		hooks:            p.Hooks,
 	}
 	hosts, err := redirectHosts(p.RedirectDomains)
 	if err != nil {

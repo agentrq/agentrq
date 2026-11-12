@@ -128,8 +128,10 @@ pano:
 # hooks are registered by the root user; allowUserHooks lets every account upload
 # its own. A delivery is kept deliveryRetention from its arrival (7d, 36h; 1d at
 # least), and one event payload a hook writes holds at most maxPayloadSize bytes
-# (1024 to 1048576).
+# (1024 to 1048576). Modules are kept in <storage dir>/hooks, or in S3 under hooks/
+# with storage: s3, and are never public.
 hooks:
+  storage: ${AGENTRQ_HOOKS_STORAGE:local}
   allowUserHooks: ${AGENTRQ_HOOKS_ALLOW_USER_HOOKS:false}
   deliveryRetention: ${AGENTRQ_HOOKS_DELIVERY_RETENTION:7d}
   maxPayloadSize: ${AGENTRQ_HOOKS_MAX_PAYLOAD_SIZE:65536}

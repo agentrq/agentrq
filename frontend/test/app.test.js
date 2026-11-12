@@ -254,7 +254,7 @@ describe('createAgentRQApp', () => {
   })
 
   it("adds the operator's pages, public and lazy-loaded, in the web build only", async () => {
-    expect(adminRoutes.map((r) => r.path)).toEqual(['/admin', '/admin/login', '/admin/stats'])
+    expect(adminRoutes.map((r) => r.path)).toEqual(['/admin', '/admin/login', '/admin/stats', '/admin/hooks'])
     expect(adminRoutes[0].redirect).toBe('/admin/stats')
     for (const route of adminRoutes.slice(1)) {
       expect(route.meta.public).toBe(true)

@@ -289,11 +289,24 @@ Hooks turn requests from outside services, such as a failed CI run on GitHub, in
 
 | Variable | Default | Description |
 |---|---|---|
+| `AGENTRQ_HOOKS_STORAGE` | `local` | `local` (`<AGENTRQ_STORAGE_DIR>/hooks`) or `s3` (the bucket, under `hooks/`), for the hooks' WebAssembly modules. Never public: no link reads them, and the bucket need not allow public reads under `hooks/`. |
 | `AGENTRQ_HOOKS_ALLOW_USER_HOOKS` | `false` | Let every account upload its own hooks. Off, only built-in hooks can be registered, and an account's own hooks stop accepting requests. |
 | `AGENTRQ_HOOKS_DELIVERY_RETENTION` | `7d` | How long a request to a hook is kept from its arrival: in its log, for replay when it failed, and to catch a provider's retry of it. Day values (`7d`) or Go durations (`36h`); at least `1d`. |
 | `AGENTRQ_HOOKS_MAX_PAYLOAD_SIZE` | `65536` | Most bytes one event payload written by a hook may hold, from `1024` to `1048576`. |
 
 The server refuses to start on a value outside these.
+
+To add a built-in hook, sign in to `<AGENTRQ_BASE_URL>/admin/login` with the root access token and upload it on the admin page's **Hooks** tab, or send it from a script. The server's release attaches the built-in hooks as `agentrq-hook-<name>_<version>.wasm`. A module is sent gzipped, since one built with Go is larger than a request may be. Sign-in is allowed once every 10 minutes per address, and its token lasts 30 minutes:
+
+```bash
+TOKEN=$(curl -s -X POST "$AGENTRQ_BASE_URL/auth/admin/login" \
+  -H 'Content-Type: application/json' -d "{\"rootToken\":\"$AGENTRQ_AUTH_ROOT_ACCESS_TOKEN\"}" | jq -r .token)
+gzip -c agentrq-hook-github_1.0.0.wasm | curl -s "$AGENTRQ_BASE_URL/admin/v1/hooks" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/wasm' \
+  -H 'Content-Encoding: gzip' --data-binary @-
+```
+
+`PUT /admin/v1/hooks/<id>` upgrades one with a new version of the same hook. That is refused when it would break a registration: an event someone routes is gone, an input becomes required, or an input changes type or stops being secret. `PATCH` with `{"enabled": false}` turns a hook off for every account, and `DELETE` removes one that nothing registers.
 
 ### MCP
 

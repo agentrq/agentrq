@@ -66,6 +66,9 @@ export default defineConfig({
         AGENTRQ_SQLITE_DSN: join(dataDir, 'agentrq.db'),
         AGENTRQ_STORAGE_DIR: dataDir,
         AGENTRQ_RATELIMIT_ENABLED: 'false',
+        // The admin sign-in allows one try per client every ten minutes; each
+        // test names a client of its own with X-Real-IP, believed from here.
+        AGENTRQ_TRUSTED_PROXIES: '127.0.0.1,::1',
         // Public file links are made from it, so they point at this server.
         AGENTRQ_BASE_URL: `http://localhost:${apiPort}`,
       },

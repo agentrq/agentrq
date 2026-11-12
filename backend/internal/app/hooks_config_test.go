@@ -5,6 +5,7 @@
 package app
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -65,5 +66,29 @@ func TestNewRefusesBadHooksSettings(t *testing.T) {
 	_, err := New(cfg)
 	if err == nil || !strings.Contains(err.Error(), "hooks.deliveryRetention") {
 		t.Fatalf("New = %v, want a hooks.deliveryRetention error", err)
+	}
+}
+
+func TestNewRefusesAnUnknownHooksStorage(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ENV", "development")
+	t.Setenv("AGENTRQ_AUTH_JWT_SECRET", "hooks-test-secret")
+	t.Setenv("AGENTRQ_SQLITE_DSN", filepath.Join(dir, "agentrq.db"))
+	t.Setenv("AGENTRQ_STORAGE_DIR", dir)
+	t.Setenv("AGENTRQ_HOOKS_STORAGE", "gcs")
+	t.Chdir("../../cmd/server")
+	svc, err := config.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg Config
+	for key, dst := range map[string]any{"app": &cfg.App, "auth": &cfg.Auth, "storage": &cfg.Storage, "idgen": &cfg.Idgen} {
+		if err := svc.Populate(key, dst); err != nil {
+			t.Fatalf("config %s: %v", key, err)
+		}
+	}
+	cfg.ConfigSvc = svc
+	if _, err := New(cfg); err == nil || !strings.Contains(err.Error(), `hook storage: unknown hooks storage "gcs"`) {
+		t.Fatalf("New = %v, want the hooks storage refused", err)
 	}
 }

@@ -1,0 +1,50 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package api
+
+import "time"
+
+// Hook is a WebAssembly hook as its manifest describes it.
+type Hook struct {
+	ID          string      `json:"id"`
+	BuiltIn     bool        `json:"builtIn"`
+	Name        string      `json:"name"`
+	Version     string      `json:"version"`
+	Description string      `json:"description"`
+	SHA256      string      `json:"sha256"`
+	SizeBytes   int64       `json:"sizeBytes"`
+	ABIVersion  int         `json:"abiVersion"`
+	Inputs      []HookInput `json:"inputs"`
+	Events      []HookEvent `json:"events"`
+	Enabled     bool        `json:"enabled"`
+	CreatedAt   time.Time   `json:"createdAt"`
+	UpdatedAt   time.Time   `json:"updatedAt"`
+}
+
+// HookInput is a value each registration of a hook provides.
+type HookInput struct {
+	Name     string `json:"name"`
+	Label    string `json:"label,omitempty"`
+	Type     string `json:"type"`
+	Items    string `json:"items,omitempty"`
+	Secret   bool   `json:"secret"`
+	Required bool   `json:"required"`
+}
+
+// HookEvent is one kind of event a hook writes.
+type HookEvent struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// ListHooksResponse is a list of hooks.
+type ListHooksResponse struct {
+	Hooks []Hook `json:"hooks"`
+}
+
+// SetHookEnabledRequest turns a hook on or off.
+type SetHookEnabledRequest struct {
+	Enabled *bool `json:"enabled"`
+}
