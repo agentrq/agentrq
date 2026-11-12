@@ -162,6 +162,7 @@ var modules = inspector{
 	"generic-1": manifest("generic", "1.0.0", []hookrunner.Input{secret()}, "request.received"),
 	// An upgrade any registration keeps working with.
 	"github-2":            manifest("github", "2.0.0", []hookrunner.Input{secret(), {Name: "branches", Type: hookrunner.InputArray, Items: hookrunner.InputString}, {Name: "label", Type: hookrunner.InputString}}, "ci.failed", "push", "release.published"),
+	"github-no-branches":  manifest("github", "3.0.0", []hookrunner.Input{secret()}, "ci.failed", "push"),
 	"github-no-push":      manifest("github", "3.0.0", []hookrunner.Input{secret()}, "ci.failed"),
 	"github-needs-label":  manifest("github", "3.0.0", []hookrunner.Input{secret(), {Name: "label", Type: hookrunner.InputString, Required: true}}, "ci.failed", "push"),
 	"github-branches-num": manifest("github", "3.0.0", []hookrunner.Input{secret(), {Name: "branches", Type: hookrunner.InputArray, Items: hookrunner.InputNumber}}, "ci.failed", "push"),

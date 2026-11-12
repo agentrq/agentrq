@@ -335,7 +335,7 @@ func (c *controller) process(ctx context.Context, id int64) {
 	res, err := c.runner.Handle(ctx, hookrunner.Module{SHA256: sum, Load: func(context.Context) ([]byte, error) {
 		return c.blobs.LoadRaw(h.BlobKey)
 	}}, manifestOf(h), hookrunner.HandleInput{
-		RegistrationID: monoflake.ID(reg.ID).String(), Request: req, Inputs: inputs, Now: start,
+		RegistrationID: monoflake.ID(reg.ID).String(), Request: req, Inputs: declaredInputs(manifestOf(h), inputs), Now: start,
 	})
 	var outErr *hookrunner.OutputError
 	var invalid *hookrunner.InvalidModuleError

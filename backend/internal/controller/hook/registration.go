@@ -120,7 +120,7 @@ func (c *controller) CreateRegistration(ctx context.Context, userID int64, req e
 	if err != nil {
 		return entity.HookRegistration{}, err
 	}
-	reg := model.HookRegistration{ID: c.ids.NextID(), UserID: userID, HookID: h.ID, Enabled: true}
+	reg := model.HookRegistration{ID: c.ids.NextID(), UserID: userID, HookID: h.ID, Enabled: true, Routes: "{}"}
 	if req.Enabled != nil {
 		reg.Enabled = *req.Enabled
 	}
@@ -169,11 +169,10 @@ func (c *controller) UpdateRegistration(ctx context.Context, userID, id int64, r
 	if req.Enabled != nil {
 		reg.Enabled = *req.Enabled
 	}
-	if req.Routes == nil {
-		req.Routes = routesOf(reg)
-	}
+	// Inputs not sent are kept, but not one an upgrade dropped; routes not
+	// sent are kept unchecked, though their event may be deleted since.
 	if req.Inputs == nil {
-		req.Inputs = old
+		req.Inputs = declaredInputs(manifestOf(h), old)
 	}
 	if err := c.apply(ctx, &reg, h, req, old); err != nil {
 		return entity.HookRegistration{}, err
@@ -224,8 +223,8 @@ func (c *controller) usableHook(ctx context.Context, userID, hookID int64, anySt
 }
 
 // apply checks the name, inputs and routes asked for against the hook and
-// the account's events, and sets them on reg. old is the inputs stored
-// before, whose secrets an update may leave out.
+// the account's events, and sets them on reg; nil routes leave reg's as they
+// are. old is the inputs stored before, whose secrets an update may leave out.
 func (c *controller) apply(ctx context.Context, reg *model.HookRegistration, h model.Hook, req entity.HookRegistrationRequest, old map[string]any) error {
 	if err := applyName(reg, req.Name); err != nil {
 		return err
@@ -241,6 +240,9 @@ func (c *controller) apply(ctx context.Context, reg *model.HookRegistration, h m
 		return fmt.Errorf("hook: seal inputs: %w", err)
 	}
 	reg.Inputs = nonce + ":" + sealed
+	if req.Routes == nil {
+		return nil
+	}
 	for name, eventID := range req.Routes {
 		if !m.Declares(name) {
 			return invalid("the hook %q writes no event %q", h.Name, name)
@@ -327,6 +329,18 @@ func checkValue(def hookrunner.Input, v any) error {
 	return invalid("the input %q must be a %s", def.Name, def.Type)
 }
 
+// declaredInputs keeps the inputs m declares. An upgrade may drop an input;
+// its stored value stays until the registration is saved again.
+func declaredInputs(m hookrunner.Manifest, inputs map[string]any) map[string]any {
+	out := make(map[string]any, len(inputs))
+	for _, def := range m.Inputs {
+		if v, ok := inputs[def.Name]; ok {
+			out[def.Name] = v
+		}
+	}
+	return out
+}
+
 // inputsOf opens a registration's stored inputs.
 func (c *controller) inputsOf(reg model.HookRegistration) (map[string]any, error) {
 	nonce, sealed, _ := strings.Cut(reg.Inputs, ":")
@@ -403,6 +417,10 @@ func (c *controller) toRegistration(reg model.HookRegistration, h model.Hook, to
 		secret[def.Name] = def.Secret
 	}
 	for name, v := range inputs {
+		// An input an upgrade dropped stays stored until the next full save.
+		if _, declared := secret[name]; !declared && h.ID != 0 {
+			continue
+		}
 		if secret[name] {
 			e.SecretsSet = append(e.SecretsSet, name)
 		} else {
