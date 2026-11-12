@@ -338,8 +338,9 @@ func (c *controller) process(ctx context.Context, id int64) {
 		RegistrationID: monoflake.ID(reg.ID).String(), Request: req, Inputs: inputs, Now: start,
 	})
 	var outErr *hookrunner.OutputError
+	var invalid *hookrunner.InvalidModuleError
 	switch {
-	case errors.As(err, &outErr):
+	case errors.As(err, &outErr), errors.As(err, &invalid):
 		c.fail(ctx, d, start, err.Error())
 		return
 	case err != nil:

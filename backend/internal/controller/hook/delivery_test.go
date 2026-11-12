@@ -426,7 +426,8 @@ func TestDeliveryFailsAtOnce(t *testing.T) {
 		setup  func(f qFixture)
 		reason string
 	}{
-		"a wrong answer": {func(f qFixture) { f.run.err = &hookrunner.OutputError{} }, "hook output"},
+		"a wrong answer":          {func(f qFixture) { f.run.err = &hookrunner.OutputError{} }, "hook output"},
+		"a module that can't run": {func(f qFixture) { f.run.err = &hookrunner.InvalidModuleError{} }, "invalid hook"},
 		"its hook off": {func(f qFixture) {
 			if _, err := f.c.SetBuiltInEnabled(ctx, f.github, false); err != nil {
 				panic(err)

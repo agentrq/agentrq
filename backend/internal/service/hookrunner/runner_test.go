@@ -195,12 +195,24 @@ func TestHandleRefusesAnInputThatIsNotJSON(t *testing.T) {
 func TestHandleRefusesAModuleThatIsNotTheRegisteredOne(t *testing.T) {
 	s := newService(t)
 	mod := Module{SHA256: sha256.Sum256([]byte("other")), Load: func(context.Context) ([]byte, error) { return fixture, nil }}
-	if _, err := s.Handle(context.Background(), mod, fixtureManifest, HandleInput{}); err == nil || !strings.Contains(err.Error(), "digest") {
-		t.Errorf("err = %v", err)
+	var invalid *InvalidModuleError
+	if _, err := s.Handle(context.Background(), mod, fixtureManifest, HandleInput{}); !errors.As(err, &invalid) || !strings.Contains(err.Error(), "digest") {
+		t.Errorf("err = %v, want an InvalidModuleError naming the digest", err)
 	}
+	// Storage may come back: that one is retried.
 	mod.Load = func(context.Context) ([]byte, error) { return nil, errors.New("storage down") }
-	if _, err := s.Handle(context.Background(), mod, fixtureManifest, HandleInput{}); err == nil || !strings.Contains(err.Error(), "storage down") {
-		t.Errorf("err = %v", err)
+	if _, err := s.Handle(context.Background(), mod, fixtureManifest, HandleInput{}); errors.As(err, &invalid) || !strings.Contains(err.Error(), "storage down") {
+		t.Errorf("err = %v, want a retryable error", err)
+	}
+}
+
+func TestHandleRefusesAStoredModuleThatDoesNotCompile(t *testing.T) {
+	wasm := []byte("hello")
+	mod := Module{SHA256: sha256.Sum256(wasm), Load: func(context.Context) ([]byte, error) { return wasm, nil }}
+	_, err := newService(t).Handle(context.Background(), mod, fixtureManifest, HandleInput{})
+	var invalid *InvalidModuleError
+	if !errors.As(err, &invalid) || !strings.Contains(err.Error(), "does not compile") {
+		t.Errorf("err = %v, want an InvalidModuleError", err)
 	}
 }
 
