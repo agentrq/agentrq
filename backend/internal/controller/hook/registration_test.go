@@ -518,8 +518,57 @@ func TestUpdateRegistrationRefuses(t *testing.T) {
 	if _, err := f.c.SetBuiltInEnabled(ctx, f.github, false); err != nil {
 		t.Fatal(err)
 	}
-	_, err := f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Name: ptr("x")})
-	wantHookError(t, err, entity.HookInvalid, "delete this registration instead")
+	for name, req := range map[string]entity.HookRegistrationRequest{
+		"turning it on":       {Enabled: ptr(true)},
+		"changing its inputs": {Inputs: map[string]any{"branches": []any{"dev"}}},
+		"changing its routes": {Routes: map[string]int64{"push": pushed}},
+	} {
+		_, err := f.c.UpdateRegistration(ctx, user, reg.ID, req)
+		if err == nil || !strings.Contains(err.Error(), "delete this registration instead") {
+			t.Errorf("%s = %v", name, err)
+		}
+	}
+}
+
+// A registration whose hook is turned off, or no longer allowed, can still be
+// turned off and renamed, keeping its inputs, routes and delivery log.
+func TestUpdateRegistrationWithoutAUsableHook(t *testing.T) {
+	ctx := context.Background()
+	for name, off := range map[string]func(f regFixture, reg entity.HookRegistration) int64{
+		"a built-in turned off": func(f regFixture, reg entity.HookRegistration) int64 {
+			if _, err := f.c.SetBuiltInEnabled(ctx, f.github, false); err != nil {
+				t.Fatal(err)
+			}
+			return reg.ID
+		},
+		"user hooks switched off": func(f regFixture, _ entity.HookRegistration) int64 {
+			own, err := f.c.CreateRegistration(ctx, user, entity.HookRegistrationRequest{
+				HookID: f.own, Name: ptr("mine"), Inputs: map[string]any{"webhookSecret": "s"}, Routes: map[string]int64{"x": pushed}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.c.(*controller).allowUserHooks = false
+			return own.ID
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := regSetup(t, true)
+			id := off(f, f.create(t))
+			before := mustGet(t, f, id)
+			got, err := f.c.UpdateRegistration(ctx, user, id, entity.HookRegistrationRequest{Enabled: ptr(false), Name: ptr(" kept ")})
+			if err != nil || got.Enabled || got.Name != "kept" {
+				t.Fatalf("turn off = %+v, %v", got, err)
+			}
+			after := mustGet(t, f, id)
+			if after.Inputs != before.Inputs || after.Routes != before.Routes {
+				t.Errorf("inputs or routes changed: %+v, was %+v", after, before)
+			}
+			_, err = f.c.UpdateRegistration(ctx, user, id, entity.HookRegistrationRequest{Name: ptr(" ")})
+			wantHookError(t, err, entity.HookInvalid, "a name of 1 to")
+			_, err = f.c.UpdateRegistration(ctx, user, id, entity.HookRegistrationRequest{Enabled: ptr(true)})
+			wantHookError(t, err, entity.HookInvalid, "delete this registration instead")
+		})
+	}
 }
 
 func TestUpdateRegistrationFails(t *testing.T) {
@@ -534,10 +583,17 @@ func TestUpdateRegistrationFails(t *testing.T) {
 			f := regSetup(t, false)
 			reg := f.create(t)
 			fail(f)
-			if _, err := f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Name: ptr("x")}); err == nil || errors.As(err, new(*entity.HookError)) {
+			if _, err := f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Enabled: ptr(true)}); err == nil || errors.As(err, new(*entity.HookError)) {
 				t.Errorf("err = %v", err)
 			}
 		})
+	}
+	// A rename stores without the hook, and fails alike.
+	f := regSetup(t, false)
+	reg := f.create(t)
+	f.repo.fail["UpdateHookRegistration"] = errBoom
+	if _, err := f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Name: ptr("x")}); !errors.Is(err, errBoom) {
+		t.Errorf("rename err = %v", err)
 	}
 }
 
