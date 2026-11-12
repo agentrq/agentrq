@@ -23,6 +23,9 @@ only while `hooks.allowUserHooks` is on.
   one, which keeps it until the retention passes so it can be replayed. Replay
   relies on that, not on the column: a nil `[]byte` is stored as an empty blob,
   so `request IS NULL` finds nothing.
+- **The worker checks `Enabled` again, not just `Receive`.** A registration
+  turned off (say, its URL leaked) fails its queued and retrying deliveries,
+  and refuses replay; otherwise they fire for up to the 2h backoff.
 - **A routed delivery's events wait in `pending` until they are published.**
   The events topic is in memory: committing the events and then publishing them
   is what lets a lease's end republish them after a crash.
