@@ -79,6 +79,16 @@ func newQueue() *queue {
 	}
 }
 
+// compareHash is bcrypt's compare; a test counts its calls.
+var compareHash = bcrypt.CompareHashAndPassword
+
+// dummyHash is what a request to no live registration is compared with, at the
+// tokens' own cost.
+var dummyHash = sync.OnceValue(func() []byte {
+	h, _ := bcrypt.GenerateFromPassword([]byte("agentrq-no-registration"), bcrypt.DefaultCost)
+	return h
+})
+
 func throttled(format string, a ...any) error {
 	return &entity.HookError{Kind: entity.HookThrottled, Message: fmt.Sprintf(format, a...)}
 }
@@ -98,7 +108,13 @@ func (c *controller) Receive(ctx context.Context, in entity.HookIncoming) (int64
 	if err != nil && !errors.Is(err, base.ErrNotFound) {
 		return 0, err
 	}
-	if err != nil || !reg.Enabled || !c.tokenMatches(reg.TokenHash, in.Token) {
+	if err != nil || !reg.Enabled {
+		// The compare a live id would cost, so the time tells nothing either.
+		_ = compareHash(dummyHash(), []byte(in.Token))
+		c.q.failures.add(in.Peer, now)
+		return 0, base.ErrNotFound
+	}
+	if !c.tokenMatches(reg.TokenHash, in.Token) {
 		c.q.failures.add(in.Peer, now)
 		return 0, base.ErrNotFound
 	}
@@ -136,7 +152,7 @@ func (c *controller) tokenMatches(hash, token string) bool {
 	if ok {
 		return true
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(token)) != nil {
+	if compareHash([]byte(hash), []byte(token)) != nil {
 		return false
 	}
 	c.q.mu.Lock()

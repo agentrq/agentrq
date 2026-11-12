@@ -11,6 +11,9 @@ only while `hooks.allowUserHooks` is on.
 - **The URL's id is a monoflake, so it is guessable.** The credentials are the
   registration's `agentrq_hook_token` and the hook's own check of a secret
   input, which every hook must declare. Never let a hook without one register.
+- **A request to no live registration is still bcrypt-compared, with a dummy
+  hash.** Without it a 404 comes back ~1000× sooner for an unknown id, which
+  tells a guesser which ids are live.
 - **The token is stored only as its bcrypt hash**, and shown once, on create
   and on rotation. A lost token is rotated; never add a way to read it back.
 - **The token is checked against a fresh read of the registration, never a
