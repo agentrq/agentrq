@@ -43,6 +43,12 @@ func (h *handler) createEvent() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.CreateEvent(ctx, *rq)
 		if err != nil {
+			// A malformed name is the user's input, not a server fault; answer
+			// with the rule so the form can show what is actually allowed.
+			if errors.Is(err, _crud.ErrInvalidEventName) {
+				c.Status(http.StatusUnprocessableEntity)
+				return c.Send(mapper.FromMessageToHTTPResponse(err.Error(), http.StatusUnprocessableEntity))
+			}
 			// A taken name is the user's input, not a server fault. It used to
 			// surface as a bare 500, which made a collision impossible to tell
 			// apart from a real failure.

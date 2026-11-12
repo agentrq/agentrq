@@ -6,6 +6,7 @@ package crud
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -70,10 +71,10 @@ func TestCreateEvent_InvalidName(t *testing.T) {
 	e := newTestController(t)
 	_, err := e.controller.CreateEvent(context.Background(), entity.CreateEventRequest{
 		UserID: testUserIDStr,
-		Name:   "InvalidName",
+		Name:   "invalid-name",
 	})
-	if err == nil {
-		t.Error("expected error for invalid event name")
+	if !errors.Is(err, ErrInvalidEventName) {
+		t.Errorf("expected ErrInvalidEventName, got %v", err)
 	}
 }
 
