@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -213,5 +214,40 @@ func TestQuotaResetsAfterTheWindow(t *testing.T) {
 	}
 	if w := serve(u, "203.0.113.8:4000", bearer); w.Code != http.StatusOK {
 		t.Fatalf("user's first request of the next window: got %d, want 200", w.Code)
+	}
+}
+
+// A limited client is told when its window resets, whether it hit the
+// address's limit or the user's.
+func TestTellsALimitedClientWhenToRetry(t *testing.T) {
+	inWindow := func(v string) bool {
+		n, err := strconv.Atoi(v)
+		return err == nil && n >= 59 && n <= 60
+	}
+
+	h := newHandler(1, 100)
+	if w := serve(h, "203.0.113.7:4000", nil); w.Header().Get("Retry-After") != "" {
+		t.Fatalf("an allowed request should carry no Retry-After, got %q", w.Header().Get("Retry-After"))
+	}
+	if got := serve(h, "203.0.113.7:4000", nil).Header().Get("Retry-After"); !inWindow(got) {
+		t.Fatalf("address limit: Retry-After %q, want the rest of the minute", got)
+	}
+
+	u := newHandler(100, 1)
+	bearer := map[string]string{"Authorization": "Bearer tok-alice"}
+	serve(u, "203.0.113.8:4000", bearer)
+	if got := serve(u, "203.0.113.9:4000", bearer).Header().Get("Retry-After"); !inWindow(got) {
+		t.Fatalf("user limit: Retry-After %q, want the rest of the minute", got)
+	}
+}
+
+func TestRetryAfterRoundsUpToAWholeSecond(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		1500 * time.Millisecond: "2",
+		0:                       "1",
+	} {
+		if got := retryAfter(d); got != want {
+			t.Errorf("retryAfter(%v) = %q, want %q", d, got, want)
+		}
 	}
 }

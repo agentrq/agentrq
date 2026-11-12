@@ -130,3 +130,39 @@ func TestCountResetsEachSecond(t *testing.T) {
 		t.Fatalf("first request of the next second: got %d, want 200", code)
 	}
 }
+
+// A blocked peer is told how long the block lasts, so a well-behaved client
+// waits it out instead of retrying into it.
+func TestTellsABlockedPeerWhenToRetry(t *testing.T) {
+	h := New(true, 1, 90*time.Second)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	call := func() *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = "203.0.113.7:4000"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if w := call(); w.Header().Get("Retry-After") != "" {
+		t.Fatalf("an allowed request should carry no Retry-After, got %q", w.Header().Get("Retry-After"))
+	}
+	if got := call().Header().Get("Retry-After"); got != "90" {
+		t.Fatalf("the request that trips the block: Retry-After %q, want 90", got)
+	}
+	got := call().Header().Get("Retry-After")
+	if got != "90" && got != "89" {
+		t.Fatalf("a request while blocked: Retry-After %q, want the rest of the block", got)
+	}
+}
+
+func TestRetryAfterRoundsUpToAWholeSecond(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		1500 * time.Millisecond: "2",
+		time.Millisecond:        "1",
+		0:                       "1",
+		-time.Second:            "1",
+	} {
+		if got := retryAfter(d); got != want {
+			t.Errorf("retryAfter(%v) = %q, want %q", d, got, want)
+		}
+	}
+}

@@ -8,6 +8,7 @@ export const API_BASE_URL = `${cleanBase}/api/v1`;
 export const ADMIN_BASE_URL = `${cleanBase}/admin/v1`;
 
 import { createAuthedFetch } from './composables/useAuthedFetch';
+import { apiBreaker } from './utils/circuitBreaker';
 
 /**
  * Every call in this module goes through here rather than through fetch.
@@ -15,9 +16,13 @@ import { createAuthedFetch } from './composables/useAuthedFetch';
  * An expired access token comes back as a 401, which this renews once and
  * replays — so a session that is still valid does not drop the user at the
  * login screen just because the short-lived half of it aged out.
+ *
+ * Underneath, the breaker backs off a server that is overloaded or throttling
+ * the app, so every call here — the session renewal included — waits it out
+ * rather than hammering it.
  */
 const apiFetch = createAuthedFetch({
-  fetchImpl: (input, init) => fetch(input, init),
+  fetchImpl: apiBreaker.wrap((input, init) => fetch(input, init)),
   refreshUrl: `${API_BASE_URL}/auth/refresh`,
 });
 
