@@ -99,8 +99,6 @@ func TestInspectReadsTheManifest(t *testing.T) {
 }
 
 func TestInspectRefusesWhatCannotBeRegistered(t *testing.T) {
-	cancelled, cancel := context.WithCancel(context.Background())
-	cancel()
 	for _, tc := range []struct {
 		name string
 		ctx  context.Context
@@ -111,13 +109,55 @@ func TestInspectRefusesWhatCannotBeRegistered(t *testing.T) {
 		{"too large", context.Background(), make([]byte, MaxModuleSize+1), "at most"},
 		{"prints no manifest", context.Background(), tiny(1), "manifest is not JSON"},
 		{"traps on manifest", context.Background(), tiny(2, unreachable), "manifest:"},
-		{"cancelled", cancelled, tiny(3), "context canceled"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, err := newService(t).Inspect(tc.ctx, tc.wasm)
 			var invalid *InvalidModuleError
 			if !errors.As(err, &invalid) || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want an InvalidModuleError naming %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// A request that ends before its module is inspected says nothing of the
+// module: its error comes back as it is, for a retry, never as invalid.
+func TestInspectReturnsTheRequestsOwnEnd(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, tc := range []struct {
+		name  string
+		ctx   context.Context
+		setup func(s *service, wasm []byte)
+		want  error
+	}{
+		{"cancelled", cancelled, func(*service, []byte) {}, context.Canceled},
+		{"deadline while it compiles", nil, func(s *service, wasm []byte) {
+			// A compile that never ends.
+			s.inflight[sha256.Sum256(wasm)] = &compileCall{done: make(chan struct{})}
+		}, context.DeadlineExceeded},
+		{"deadline while it waits for a slot", nil, func(s *service, wasm []byte) {
+			if _, _, err := s.Inspect(context.Background(), wasm); err != nil {
+				t.Fatal(err)
+			}
+			for range cap(s.slots) {
+				s.slots <- struct{}{}
+			}
+		}, context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newService(t)
+			tc.setup(s, fixture)
+			ctx := tc.ctx
+			if ctx == nil {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
+				defer cancel()
+			}
+			_, _, err := s.Inspect(ctx, fixture)
+			var invalid *InvalidModuleError
+			if !errors.Is(err, tc.want) || errors.As(err, &invalid) {
+				t.Errorf("err = %v, want %v and not an InvalidModuleError", err, tc.want)
 			}
 		})
 	}
