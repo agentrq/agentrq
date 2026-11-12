@@ -92,7 +92,7 @@ const heading = 'block text-[11px] font-bold text-gray-500 dark:text-zinc-400 up
   <form class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-5 space-y-5" @submit.prevent="submit">
     <div>
       <label :class="heading" for="hook-reg-name">Name <span class="text-red-500">*</span></label>
-      <input id="hook-reg-name" v-model="name" data-test="reg-name" type="text" maxlength="100"
+      <input id="hook-reg-name" v-model="name" data-test="reg-name" type="text" maxlength="255"
         placeholder="agentrq/agentrq CI" :class="field" />
     </div>
 

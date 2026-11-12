@@ -558,6 +558,11 @@ func TestUpdateRegistrationChecksOnlyWhatItSends(t *testing.T) {
 	if len(stored) != 1 || stored["webhookSecret"] != "s3cret" {
 		t.Errorf("stored inputs = %v", stored)
 	}
+	// Re-routing alone, after the drop, needs no inputs restated either.
+	got, err = f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Routes: map[string]int64{"push": pushed}})
+	if err != nil || len(got.Routes) != 1 {
+		t.Errorf("re-route = %+v, %v", got, err)
+	}
 	_, err = f.c.UpdateRegistration(ctx, user, reg.ID, entity.HookRegistrationRequest{Inputs: map[string]any{"branches": []any{"main"}}})
 	wantHookError(t, err, entity.HookInvalid, `no input "branches"`)
 }
