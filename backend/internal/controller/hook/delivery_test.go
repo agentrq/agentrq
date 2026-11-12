@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"golang.org/x/crypto/bcrypt"
 	"slices"
 	"strings"
 	"testing"
@@ -231,6 +232,40 @@ func TestReceiveAnswersEveryRefusalAlike(t *testing.T) {
 	big.Body = make([]byte, MaxRequestBodySize+1)
 	_, err := f.c.Receive(ctx, big)
 	wantHookError(t, err, entity.HookTooLarge, "over 1048576 bytes")
+}
+
+func TestReceiveComparesAHashForEveryRefusal(t *testing.T) {
+	ctx := context.Background()
+	f := qSetup(t)
+	var hashes [][]byte
+	compareHash = func(hash, token []byte) error {
+		hashes = append(hashes, hash)
+		return bcrypt.CompareHashAndPassword(hash, token)
+	}
+	t.Cleanup(func() { compareHash = bcrypt.CompareHashAndPassword })
+
+	unknown := f.incoming(f.token)
+	unknown.RegistrationID = 999
+	_, _ = f.c.Receive(ctx, unknown)
+	_, _ = f.c.Receive(ctx, f.incoming("wrongtkn"))
+	if _, err := f.c.UpdateRegistration(ctx, user, f.reg.ID, entity.HookRegistrationRequest{Enabled: ptr(false)}); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.c.Receive(ctx, f.incoming(f.token))
+
+	stored := mustGet(t, f.regFixture, f.reg.ID).TokenHash
+	want := []string{string(dummyHash()), stored, string(dummyHash())}
+	if len(hashes) != len(want) {
+		t.Fatalf("%d compares, want %d", len(hashes), len(want))
+	}
+	for i, h := range hashes {
+		if string(h) != want[i] {
+			t.Errorf("compare %d used the wrong hash", i)
+		}
+	}
+	if cost, err := bcrypt.Cost(dummyHash()); err != nil || cost != bcrypt.DefaultCost {
+		t.Errorf("dummy hash cost = %d, %v", cost, err)
+	}
 }
 
 func TestReceiveThrottlesWrongTokens(t *testing.T) {
