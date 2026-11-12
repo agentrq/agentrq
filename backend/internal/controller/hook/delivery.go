@@ -357,6 +357,10 @@ func (c *controller) process(ctx context.Context, id int64) {
 	}
 	d.Error, d.DurationMs = "", c.since(start)
 	kept, err := c.repo.RouteHookDelivery(ctx, d, events)
+	if errors.Is(err, base.ErrLeaseLost) {
+		zlog.Warn().Int64("delivery", d.ID).Msg("hooks: lease lost before routing")
+		return
+	}
 	if err != nil {
 		c.retry(ctx, d, start, err)
 		return

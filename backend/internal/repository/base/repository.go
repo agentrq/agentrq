@@ -29,6 +29,9 @@ var (
 	ErrVersionConflict = errors.New("version conflict")
 	// ErrMemoryTooLarge is a memory over model.MaxMemoryContentBytes.
 	ErrMemoryTooLarge = errors.New("memory too large")
+	// ErrLeaseLost is a write to a hook delivery that another worker has
+	// claimed since.
+	ErrLeaseLost = errors.New("another worker claimed the delivery")
 )
 
 type Repository interface {
