@@ -148,6 +148,10 @@ describe('the catalogue as a whole', () => {
       [
         'deleteEvent',
         'deleteEventTrigger',
+        'deleteHook',
+        'deleteHookRegistration',
+        // Not a delete, but the URL a provider was given stops working.
+        'rotateHookToken',
         'deleteMachine',
         'deleteTask',
         'deleteWorkflow',
@@ -553,6 +557,20 @@ describe('each tool calls the interface the way the UI does', () => {
   });
 });
 
+describe('uploadHook', () => {
+  it('sends the base64 module as a wasm file, with the hook to upgrade', async () => {
+    const { stub, calls } = recordingApi();
+    const upload = build({ api: stub }).find((t) => t.name === 'uploadHook');
+
+    await upload.execute({ data: 'AGFzbQ==', hookId: 'own1' }, {});
+
+    const [file, id] = calls[0].args;
+    expect(id).toBe('own1');
+    expect(file.type).toBe('application/wasm');
+    expect([...new Uint8Array(await file.arrayBuffer())]).toEqual([0, 0x61, 0x73, 0x6d]);
+  });
+});
+
 describe('the tools that only WebMCP can offer', () => {
   it('reports where the user is, so "this task" can be resolved', async () => {
     const page = { path: '/workspaces/ws1/tasks/t1', params: { id: 'ws1', taskId: 't1' }, query: {} };
@@ -646,6 +664,7 @@ describe('the page every write tool shows', () => {
     expect(by('forkTask').after({ workspaceId: 'w1', taskId: 't1' }, { task: { id: 't9' } })).toBe('/workspaces/w1/tasks/t9');
     expect(by('createEvent').after({}, { event: { id: 'e9' } })).toBe('/events/e9');
     expect(by('createWorkflow').after({}, { workflow: { id: 'wf9' } })).toBe('/workflows/wf9');
+    expect(by('createHookRegistration').after({}, { id: 'r9' })).toBe('/events/hooks/r9');
   });
 
   it('falls back to where the thing lives when the result names nothing', () => {
@@ -659,6 +678,7 @@ describe('the page every write tool shows', () => {
     expect(by('forkTask').after({ workspaceId: 'w1', taskId: 't1' }, {})).toBe('/workspaces/w1/tasks/t1');
     expect(by('createEvent').after({}, {})).toBe('/events');
     expect(by('createWorkflow').after({}, {})).toBe('/workflows');
+    expect(by('createHookRegistration').after({}, {})).toBe('/events/hooks');
   });
 
   it('opens the Pano doc a change is about, or the board for a delete', () => {

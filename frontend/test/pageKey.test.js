@@ -28,6 +28,7 @@ describe('pageKey', () => {
     expect(remounted).toEqual([
       '/workspaces/:id/tasks/new',
       '/workspaces/:id/tasks/:taskId/edit',
+      '/events/hooks/:id',
       '/events/:id',
       '/machines/:id',
       '/pano/new',
