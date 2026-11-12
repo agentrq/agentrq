@@ -28,6 +28,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	eventctrl "github.com/agentrq/agentrq/backend/internal/controller/event"
 	"github.com/agentrq/agentrq/backend/internal/controller/forkmerge"
+	"github.com/agentrq/agentrq/backend/internal/controller/hook"
 	"github.com/agentrq/agentrq/backend/internal/controller/machine"
 	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/controller/notification"
@@ -156,7 +157,9 @@ type (
 		Pano struct {
 			MaxTTLDays int `yaml:"maxTtlDays"`
 		} `yaml:"pano"`
-		MCP struct {
+		// Hooks turn requests from outside services into events.
+		Hooks hook.Config `yaml:"hooks"`
+		MCP   struct {
 			// OpenAI's domain verification token for a plugin submission.
 			OpenAIAppsChallenge string `yaml:"openaiAppsChallenge"`
 		} `yaml:"mcp"`
@@ -199,6 +202,9 @@ func New(cfg Config) (*App, error) {
 		return nil, errors.New("auth: JWT secret must be configured")
 	}
 	if err := applyLimits(cfg); err != nil {
+		return nil, err
+	}
+	if _, err := cfg.Hooks.Settings(); err != nil {
 		return nil, err
 	}
 	if cfg.App.DrainDelay < 0 {
@@ -1405,6 +1411,10 @@ func migratedModels() []any {
 		&model.HourlyTaskLatency{},
 		&model.DailyTaskLatency{},
 		&model.MonthlyTaskLatency{},
+		&model.Hook{},
+		&model.HookRegistration{},
+		&model.HookDelivery{},
+		&model.HookDeliveryKey{},
 	}
 }
 
