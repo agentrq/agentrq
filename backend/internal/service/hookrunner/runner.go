@@ -55,7 +55,9 @@ type Service interface {
 	// module's digest. An *InvalidModuleError means it cannot be registered.
 	Inspect(ctx context.Context, wasm []byte) (Manifest, [32]byte, error)
 	// Handle runs a hook on one request. An *OutputError is final: the hook
-	// answered wrongly and would again. Any other error may pass on a retry.
+	// answered wrongly and would again. So is an *InvalidModuleError: the
+	// stored module does not compile or is not the one registered. Any other
+	// error may pass on a retry.
 	Handle(ctx context.Context, mod Module, m Manifest, in HandleInput) (Result, error)
 	Close(ctx context.Context) error
 }
@@ -291,7 +293,7 @@ func (s *service) load(ctx context.Context, mod Module) (*entry, error) {
 	// The digest names the module the hook was registered with; anything
 	// else in its place is not run.
 	if sha256.Sum256(wasm) != mod.SHA256 {
-		return nil, errors.New("hookrunner: the stored module does not match its digest")
+		return nil, invalidModule("the stored module does not match its digest")
 	}
 	compiled, err := s.rt.CompileModule(ctx, wasm)
 	if err != nil {
