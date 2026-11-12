@@ -16,6 +16,9 @@ import (
 func (h *handler) registerHookRoutes() {
 	r := h.router.Group("/hooks")
 	r.Get("", h.listAvailableHooks())
+	r.Post("", h.createOwnHook())
+	r.Put("/:id", h.upgradeOwnHook())
+	r.Delete("/:id", h.deleteOwnHook())
 	r.Get("/registrations", h.listHookRegistrations())
 	r.Post("/registrations", h.createHookRegistration())
 	r.Get("/registrations/:id", h.getHookRegistration())
@@ -108,7 +111,59 @@ func (h *handler) listAvailableHooks() fiber.Handler {
 			return hookError(c, err)
 		}
 		c.Set(_headerContentType, _mimeJSON)
-		return c.Send(mapper.FromHookEntitiesToHTTPResponse(hooks))
+		return c.Send(mapper.FromAvailableHookEntitiesToHTTPResponse(hooks, h.hooks.AllowsUserHooks()))
+	}
+}
+
+// createOwnHook adds an account's own hook from its module, sent as the
+// admin upload is: application/wasm, gzipped when large.
+func (h *handler) createOwnHook() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		wasm, ok := hookModule(c)
+		if !ok {
+			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		hook, err := h.hooks.CreateOwn(ctx, sessionUser(c), wasm)
+		if err != nil {
+			return hookError(c, err)
+		}
+		c.Set(_headerContentType, _mimeJSON)
+		return c.Status(fiber.StatusCreated).Send(mapper.FromHookEntityToHTTPResponse(hook))
+	}
+}
+
+func (h *handler) upgradeOwnHook() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		id := monoflake.IDFromBase62(c.Params("id")).Int64()
+		wasm, ok := hookModule(c)
+		if id == 0 || !ok {
+			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		hook, err := h.hooks.UpgradeOwn(ctx, sessionUser(c), id, wasm)
+		if err != nil {
+			return hookError(c, err)
+		}
+		c.Set(_headerContentType, _mimeJSON)
+		return c.Send(mapper.FromHookEntityToHTTPResponse(hook))
+	}
+}
+
+func (h *handler) deleteOwnHook() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		id := monoflake.IDFromBase62(c.Params("id")).Int64()
+		if id == 0 {
+			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		if err := h.hooks.DeleteOwn(ctx, sessionUser(c), id); err != nil {
+			return hookError(c, err)
+		}
+		return c.SendStatus(fiber.StatusNoContent)
 	}
 }
 

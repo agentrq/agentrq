@@ -2224,6 +2224,67 @@ paths:
                   hooks:
                     type: array
                     items: { $ref: '#/components/schemas/Hook' }
+                  allowUserHooks:
+                    type: boolean
+                    description: Whether the account may add hooks of its own (`hooks.allowUserHooks`).
+    post:
+      tags: [Hooks]
+      summary: Add a hook of the account's own
+      description: |
+        The module, `application/wasm`. Send it with `Content-Encoding: gzip`: a Go
+        hook is over the 4 MB request limit, and is unpacked to at most 16 MiB.
+        Refused (403) while the server does not allow accounts' own hooks.
+      requestBody:
+        required: true
+        content:
+          application/wasm:
+            schema: { type: string, format: binary }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Hook' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '403': { $ref: '#/components/responses/AccessDenied' }
+        '409': { description: The account already has a hook of this name. }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /hooks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+        description: One of the account's own hooks (base62).
+    put:
+      tags: [Hooks]
+      summary: Upgrade one of the account's own hooks
+      description: A new version of the same hook, sent as on create. Refused when it would break a registration.
+      requestBody:
+        required: true
+        content:
+          application/wasm:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Hook' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '403': { $ref: '#/components/responses/AccessDenied' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The upgrade would break a registration. }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+    delete:
+      tags: [Hooks]
+      summary: Delete one of the account's own hooks
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/AccessDenied' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: A registration still uses it. }
 
   /hooks/registrations:
     get:

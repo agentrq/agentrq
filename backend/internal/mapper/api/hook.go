@@ -164,3 +164,14 @@ func FromHookDeliveryEntitiesToHTTPResponse(es []entity.HookDelivery) []byte {
 	b, _ := json.Marshal(out)
 	return b
 }
+
+// FromAvailableHookEntitiesToHTTPResponse renders the hooks an account may
+// register; none is an empty list.
+func FromAvailableHookEntitiesToHTTPResponse(es []entity.Hook, allowUserHooks bool) []byte {
+	out := view.AvailableHooksResponse{Hooks: make([]view.Hook, len(es)), AllowUserHooks: allowUserHooks}
+	for i, e := range es {
+		out.Hooks[i] = FromHookEntityToHookView(e)
+	}
+	b, _ := json.Marshal(out)
+	return b
+}

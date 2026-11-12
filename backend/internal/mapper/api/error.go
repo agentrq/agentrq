@@ -51,6 +51,8 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 			code = http.StatusRequestEntityTooLarge
 		case entity.HookThrottled:
 			code = http.StatusTooManyRequests
+		case entity.HookForbidden:
+			code = http.StatusForbidden
 		default:
 			code = http.StatusUnprocessableEntity
 		}

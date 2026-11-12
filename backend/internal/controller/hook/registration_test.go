@@ -608,3 +608,43 @@ func TestNewTokenIsUniform(t *testing.T) {
 		}
 	}
 }
+
+func TestOwnHooks(t *testing.T) {
+	ctx := context.Background()
+
+	off := regSetup(t, false)
+	if off.c.AllowsUserHooks() {
+		t.Error("allows user hooks while off")
+	}
+	_, err := off.c.CreateOwn(ctx, user, []byte("generic-1"))
+	wantHookError(t, err, entity.HookForbidden, "does not allow")
+	_, err = off.c.UpgradeOwn(ctx, user, off.own, []byte("generic-1"))
+	wantHookError(t, err, entity.HookForbidden, "does not allow")
+	wantHookError(t, off.c.DeleteOwn(ctx, user, off.own), entity.HookForbidden, "does not allow")
+
+	f := regSetup(t, true)
+	if !f.c.AllowsUserHooks() {
+		t.Error("does not allow user hooks while on")
+	}
+	// The account's own "github" is not the built-in's name: names are per owner.
+	h, err := f.c.CreateOwn(ctx, user, []byte("github-1"))
+	if err != nil || h.BuiltIn || h.Name != "github" {
+		t.Fatalf("create = %+v, %v", h, err)
+	}
+	if !f.blobs.has(BlobKey(user, h.ID, digest("github-1")), "github-1") {
+		t.Errorf("stored under %v", f.blobs.keys())
+	}
+	if h, err = f.c.UpgradeOwn(ctx, user, h.ID, []byte("github-2")); err != nil || h.Version != "2.0.0" {
+		t.Errorf("upgrade = %+v, %v", h, err)
+	}
+	// Another account's hook is not this one's to change.
+	if _, err := f.c.UpgradeOwn(ctx, user+1, h.ID, []byte("github-2")); !errors.Is(err, base.ErrNotFound) {
+		t.Errorf("another account's upgrade = %v", err)
+	}
+	if err := f.c.DeleteOwn(ctx, user+1, h.ID); !errors.Is(err, base.ErrNotFound) {
+		t.Errorf("another account's delete = %v", err)
+	}
+	if err := f.c.DeleteOwn(ctx, user, h.ID); err != nil {
+		t.Errorf("delete = %v", err)
+	}
+}
