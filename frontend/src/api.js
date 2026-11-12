@@ -71,12 +71,18 @@ export async function getWorkspace(id) {
   return res.json();
 }
 
+// The server's answer as an Error, its own message when it gave one. Every
+// reader of the API's error shape goes through here.
+async function responseError(res, fallback) {
+  const body = await res.json().catch(() => null);
+  return new Error(body?.error?.message || fallback);
+}
+
 // A refusal that says why — a parent that still has forks, a fork that is
 // merged rather than deleted — is worth showing as the server wrote it. A 5xx
 // says only "internal server error", which is worth less than the fallback.
 async function refusal(res, fallback) {
-  const body = res.status < 500 ? await res.json().catch(() => null) : null;
-  return new Error(body?.error?.message || fallback);
+  return res.status < 500 ? responseError(res, fallback) : new Error(fallback);
 }
 
 export async function deleteWorkspace(id) {
@@ -827,8 +833,7 @@ const encodePath = (path) => String(path).split('/').map(encodeURIComponent).joi
 // taken — and is worth showing as it is.
 // The status travels with it, so a missing skill can be told from a failure.
 async function skillError(res, fallback) {
-  const body = await res.json().catch(() => ({}));
-  return Object.assign(new Error(body?.error?.message || fallback), { status: res.status });
+  return Object.assign(await responseError(res, fallback), { status: res.status });
 }
 
 // q (at least 3 characters) matches a skill's name or description; with no
@@ -1109,15 +1114,9 @@ export async function deleteEventTrigger(eventId, triggerId) {
 // A hook turns a request from an outside service into the account's events; a
 // registration is one use of a hook, with its own URL.
 
-// The server's answer as an Error, its own message when it gave one.
-async function hookError(res, fallback) {
-  const body = await res.json().catch(() => null);
-  return new Error(body?.error?.message || fallback);
-}
-
 async function hookJSON(path, init, fallback) {
   const res = await apiFetch(`${API_BASE_URL}/hooks${path}`, init);
-  if (!res.ok) throw await hookError(res, fallback);
+  if (!res.ok) throw await responseError(res, fallback);
   return res.status === 204 ? true : res.json();
 }
 
@@ -1384,18 +1383,12 @@ export async function fetchAdminStats() {
   return res.json();
 }
 
-// The server's answer as an Error, its own message when it gave one.
-async function adminError(res, fallback) {
-  const body = await res.json().catch(() => null);
-  return new Error(body?.error?.message || fallback);
-}
-
 // The built-in hooks every account can register; null once the admin session
 // has ended.
 export async function fetchAdminHooks() {
   const res = await fetch(`${ADMIN_BASE_URL}/hooks`);
   if (res.status === 401) return null;
-  if (!res.ok) throw await adminError(res, 'Failed to fetch hooks');
+  if (!res.ok) throw await responseError(res, 'Failed to fetch hooks');
   return (await res.json()).hooks;
 }
 
@@ -1410,7 +1403,7 @@ export async function uploadAdminHook(file, id = '') {
     body
   });
   if (res.status === 401) return null;
-  if (!res.ok) throw await adminError(res, 'Failed to upload the hook');
+  if (!res.ok) throw await responseError(res, 'Failed to upload the hook');
   return res.json();
 }
 
@@ -1422,7 +1415,7 @@ export async function setAdminHookEnabled(id, enabled) {
     body: JSON.stringify({ enabled })
   });
   if (res.status === 401) return null;
-  if (!res.ok) throw await adminError(res, 'Failed to update the hook');
+  if (!res.ok) throw await responseError(res, 'Failed to update the hook');
   return res.json();
 }
 
@@ -1430,6 +1423,6 @@ export async function setAdminHookEnabled(id, enabled) {
 export async function deleteAdminHook(id) {
   const res = await fetch(`${ADMIN_BASE_URL}/hooks/${id}`, { method: 'DELETE' });
   if (res.status === 401) return false;
-  if (!res.ok) throw await adminError(res, 'Failed to delete the hook');
+  if (!res.ok) throw await responseError(res, 'Failed to delete the hook');
   return true;
 }
