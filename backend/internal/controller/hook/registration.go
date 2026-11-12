@@ -137,12 +137,26 @@ func (c *controller) UpdateRegistration(ctx context.Context, userID, id int64, r
 	if err != nil {
 		return entity.HookRegistration{}, err
 	}
-	h, err := c.usableHook(ctx, userID, reg.HookID, false)
-	if errors.Is(err, base.ErrNotFound) {
-		return entity.HookRegistration{}, invalid("its hook is gone or turned off; delete this registration instead")
-	}
-	if err != nil {
+	h, err := c.usableHook(ctx, userID, reg.HookID, true)
+	if err != nil && !errors.Is(err, base.ErrNotFound) {
 		return entity.HookRegistration{}, err
+	}
+	// Turning a registration off or renaming it needs no usable hook, so it
+	// keeps its delivery log; turning it on or changing inputs or routes does.
+	if (req.Enabled == nil || !*req.Enabled) && req.Inputs == nil && req.Routes == nil {
+		if req.Enabled != nil {
+			reg.Enabled = false
+		}
+		if err := applyName(&reg, req.Name); err != nil {
+			return entity.HookRegistration{}, err
+		}
+		if err := c.repo.UpdateHookRegistration(ctx, reg); err != nil {
+			return entity.HookRegistration{}, err
+		}
+		return c.toRegistration(ctx, reg, h, "")
+	}
+	if !h.Enabled {
+		return entity.HookRegistration{}, invalid("its hook is gone or turned off; delete this registration instead")
 	}
 	old, err := c.inputsOf(reg)
 	if err != nil {
@@ -209,11 +223,8 @@ func (c *controller) usableHook(ctx context.Context, userID, hookID int64, anySt
 // the account's events, and sets them on reg. old is the inputs stored
 // before, whose secrets an update may leave out.
 func (c *controller) apply(ctx context.Context, reg *model.HookRegistration, h model.Hook, req entity.HookRegistrationRequest, old map[string]any) error {
-	if req.Name != nil {
-		reg.Name = strings.TrimSpace(*req.Name)
-	}
-	if reg.Name == "" || utf8.RuneCountInString(reg.Name) > maxRegistrationName {
-		return invalid("a name of 1 to %d characters is required", maxRegistrationName)
+	if err := applyName(reg, req.Name); err != nil {
+		return err
 	}
 	m := manifestOf(h)
 	inputs, err := checkInputs(m, req.Inputs, old)
@@ -238,6 +249,17 @@ func (c *controller) apply(ctx context.Context, reg *model.HookRegistration, h m
 	}
 	b, _ = json.Marshal(req.Routes)
 	reg.Routes = string(b)
+	return nil
+}
+
+// applyName sets the name asked for, if any, and checks the result.
+func applyName(reg *model.HookRegistration, name *string) error {
+	if name != nil {
+		reg.Name = strings.TrimSpace(*name)
+	}
+	if reg.Name == "" || utf8.RuneCountInString(reg.Name) > maxRegistrationName {
+		return invalid("a name of 1 to %d characters is required", maxRegistrationName)
+	}
 	return nil
 }
 
