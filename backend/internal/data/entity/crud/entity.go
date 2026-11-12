@@ -1453,6 +1453,9 @@ const (
 	// Appended, never inserted — the value is stored on every telemetry row, so
 	// renumbering would silently reinterpret history.
 	ActorExtension Actor = 3
+	// ActorHook is a request from an outside service through a hook URL: no
+	// person did it, and no agent.
+	ActorHook Actor = 4
 )
 
 const (
@@ -1784,6 +1787,13 @@ const (
 	// fire its events through. Emitted by the backend; workspace 0, since a
 	// registration belongs to the account.
 	ActionHookRegister Action = 111
+	// A request to a hook URL with the right token, queued. Emitted by the
+	// backend, like the two below; workspace 0, like a registration.
+	ActionHookReceive Action = 112
+	// A queued request the hook refused, such as for a wrong signature.
+	ActionHookReject Action = 113
+	// A request whose events were published.
+	ActionHookPublish Action = 114
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2004,6 +2014,12 @@ func (a Action) String() string {
 		return "oauth_consent_allow_read_only"
 	case ActionHookRegister:
 		return "hook_register"
+	case ActionHookReceive:
+		return "hook_receive"
+	case ActionHookReject:
+		return "hook_reject"
+	case ActionHookPublish:
+		return "hook_publish"
 	}
 	return "unknown"
 }

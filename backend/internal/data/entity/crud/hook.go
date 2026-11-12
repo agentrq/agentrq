@@ -89,6 +89,12 @@ const (
 	// of a name, an upgrade that breaks a registration, deleting a hook that
 	// is registered.
 	HookConflict
+	// HookTooLarge is a request to a hook URL over the size it accepts.
+	HookTooLarge
+	// HookThrottled is a request to a hook URL past a limit: too many wrong
+	// tokens from its address, too many requests to the registration, or too
+	// many of them waiting.
+	HookThrottled
 )
 
 // HookError is a hook refused, with a message for the person.
@@ -98,3 +104,35 @@ type HookError struct {
 }
 
 func (e *HookError) Error() string { return e.Message }
+
+// HookTokenParam is the query parameter a hook URL carries its token in.
+const HookTokenParam = "agentrq_hook_token"
+
+// HookIncoming is a request to a hook URL. Header names are lowercase.
+type HookIncoming struct {
+	RegistrationID int64
+	Token          string
+	// Peer is the client's address, as middleware/clientip set it.
+	Peer    string
+	Method  string
+	Path    string
+	Query   map[string][]string
+	Headers map[string][]string
+	Body    []byte
+}
+
+// HookDelivery is one request to a registration's URL, as its log shows it.
+type HookDelivery struct {
+	ID             int64
+	RegistrationID int64
+	ReceivedAt     time.Time
+	// Status is queued, processing, routed, published, rejected, ignored,
+	// duplicate or failed.
+	Status     string
+	Attempts   int
+	EventNames []string
+	Error      string
+	DurationMs int
+	// Replayable is a failed delivery, which keeps its request.
+	Replayable bool
+}

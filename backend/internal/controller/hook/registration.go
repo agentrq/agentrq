@@ -27,7 +27,7 @@ import (
 
 const (
 	// TokenParam is the query parameter a hook URL carries its token in.
-	TokenParam = "agentrq_hook_token"
+	TokenParam = entity.HookTokenParam
 	tokenLen   = 8
 	tokenChars = "0123456789abcdefghijklmnopqrstuvwxyz"
 
@@ -128,7 +128,7 @@ func (c *controller) CreateRegistration(ctx context.Context, userID int64, req e
 	if err := c.repo.CreateHookRegistration(ctx, reg); err != nil {
 		return entity.HookRegistration{}, err
 	}
-	c.emit(ctx, userID, reg.ID)
+	c.emitAction(ctx, entity.ActionHookRegister, entity.ActorHuman, userID, reg.ID)
 	return c.toRegistration(ctx, reg, h, token)
 }
 
@@ -362,7 +362,8 @@ func (c *controller) toRegistration(ctx context.Context, reg model.HookRegistrat
 	return e, nil
 }
 
-func (c *controller) emit(ctx context.Context, userID, registrationID int64) {
+// emitAction sends a registration's telemetry; nil PubSub sends none.
+func (c *controller) emitAction(ctx context.Context, action entity.Action, actor entity.Actor, userID, registrationID int64) {
 	if c.pubsub == nil {
 		return
 	}
@@ -371,8 +372,8 @@ func (c *controller) emit(ctx context.Context, userID, registrationID int64) {
 		origin = entity.OriginAPI
 	}
 	_, _ = c.pubsub.Publish(ctx, pubsub.PublishRequest{PubSubID: entity.PubSubTopicCRUD, Event: entity.CRUDEvent{
-		Action: entity.ActionHookRegister, UserID: userID, ResourceType: entity.ResourceHookRegistration,
-		ResourceID: registrationID, Actor: entity.ActorHuman, Origin: origin,
+		Action: action, UserID: userID, ResourceType: entity.ResourceHookRegistration,
+		ResourceID: registrationID, Actor: actor, Origin: origin,
 	}})
 }
 

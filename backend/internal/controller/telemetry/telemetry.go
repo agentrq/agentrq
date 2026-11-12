@@ -293,6 +293,12 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDOAuthConsentAllowReadOnly
 	case entity.ActionHookRegister:
 		action = model.ActionIDHookRegister
+	case entity.ActionHookReceive:
+		action = model.ActionIDHookReceive
+	case entity.ActionHookReject:
+		action = model.ActionIDHookReject
+	case entity.ActionHookPublish:
+		action = model.ActionIDHookPublish
 	default:
 		return
 	}

@@ -501,6 +501,9 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionUIOverviewTaskOpen, model.ActionIDUIOverviewTaskOpen, "ui overview task open"},
 		{entity.ActionOAuthConsentAllowReadOnly, model.ActionIDOAuthConsentAllowReadOnly, "oauth consent allow read only"},
 		{entity.ActionHookRegister, model.ActionIDHookRegister, "hook register"},
+		{entity.ActionHookReceive, model.ActionIDHookReceive, "hook receive"},
+		{entity.ActionHookReject, model.ActionIDHookReject, "hook reject"},
+		{entity.ActionHookPublish, model.ActionIDHookPublish, "hook publish"},
 	}
 
 	for _, tc := range cases {

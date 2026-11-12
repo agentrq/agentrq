@@ -2312,6 +2312,85 @@ paths:
               schema: { $ref: '#/components/schemas/HookRegistration' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /hooks/registrations/{id}/deliveries:
+    parameters:
+      - $ref: '#/components/parameters/HookRegistrationId'
+    get:
+      tags: [Hooks]
+      summary: A registration's deliveries, newest first
+      description: Deliveries are kept for `hooks.deliveryRetention`. A delivery's request is never returned.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 50, minimum: 1, maximum: 200 }
+        - name: before
+          in: query
+          required: false
+          schema: { type: string }
+          description: A delivery id; the page starts after it.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deliveries:
+                    type: array
+                    items: { $ref: '#/components/schemas/HookDelivery' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /hooks/registrations/{id}/deliveries/{deliveryId}/replay:
+    parameters:
+      - $ref: '#/components/parameters/HookRegistrationId'
+      - name: deliveryId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Hooks]
+      summary: Queue a failed delivery again
+      responses:
+        '204': { description: Queued }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /hooks/in/{id}:
+    parameters:
+      - $ref: '#/components/parameters/HookRegistrationId'
+      - name: agentrq_hook_token
+        in: query
+        required: true
+        schema: { type: string, pattern: '^[0-9a-z]{8}$' }
+        description: The registration's token. It is removed before the request is stored, so the hook never sees it.
+    post:
+      tags: [Hooks]
+      summary: Send a request to a hook
+      description: |
+        The URL an outside service calls. It takes no session: the token is the
+        credential. The request is checked and queued, then answered; the hook runs
+        afterwards, so a request the hook refuses (a wrong signature, say) is still
+        202 here and shows as rejected in the registration's deliveries.
+      security: []
+      requestBody:
+        content:
+          '*/*':
+            schema: { type: string, format: binary, maxLength: 1048576 }
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deliveryId: { type: string }
+        '404': { description: 'No such registration, turned off, or a wrong token: the three answer alike.' }
+        '413': { description: The body is over 1 MiB. }
+        '429': { description: 'Too many wrong tokens from this address, too many requests to this URL in a minute, or too many waiting.' }
+
   # ── Workflows ───────────────────────────────────────────────────────────────
   /workflows:
     get:
@@ -3679,6 +3758,22 @@ components:
           description: Routed events with a trigger that allows every command.
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+
+    HookDelivery:
+      type: object
+      properties:
+        id: { type: string }
+        registrationId: { type: string }
+        receivedAt: { type: string, format: date-time }
+        status: { type: string, enum: [queued, processing, routed, published, rejected, ignored, duplicate, failed] }
+        attempts: { type: integer }
+        eventNames:
+          type: array
+          items: { type: string }
+          description: The hook's events the delivery routed.
+        error: { type: string, description: 'Why it was rejected, ignored or failed, or why its last attempt failed.' }
+        durationMs: { type: integer }
+        replayable: { type: boolean, description: A failed delivery keeps its request and can be queued again. }
 
     HookRegistrationRequest:
       type: object

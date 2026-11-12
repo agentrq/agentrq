@@ -39,7 +39,8 @@ func TestFromHookEntitiesToHTTPResponse(t *testing.T) {
 }
 
 func TestFromErrorToHTTPResponseAnswersAHookError(t *testing.T) {
-	for kind, want := range map[entity.HookErrorKind]int{entity.HookInvalid: http.StatusUnprocessableEntity, entity.HookConflict: http.StatusConflict} {
+	for kind, want := range map[entity.HookErrorKind]int{entity.HookInvalid: http.StatusUnprocessableEntity, entity.HookConflict: http.StatusConflict,
+		entity.HookTooLarge: http.StatusRequestEntityTooLarge, entity.HookThrottled: http.StatusTooManyRequests} {
 		body, status := FromErrorToHTTPResponse(&entity.HookError{Kind: kind, Message: "why"})
 		if status != want || string(body) != `{"error":{"message":"why","code":`+strconv.Itoa(want)+`}}` {
 			t.Errorf("kind %d: %d %s", kind, status, body)
@@ -105,5 +106,56 @@ func TestFromHTTPRequestToHookRegistrationRequestEntity(t *testing.T) {
 		if rq := parse(body); rq != nil {
 			t.Errorf("%s = %+v", body, rq)
 		}
+	}
+}
+
+func TestFromHTTPRequestToHookIncomingRequestEntity(t *testing.T) {
+	parse := func(url string, header map[string]string) *entity.HookIncoming {
+		app := fiber.New()
+		var in *entity.HookIncoming
+		app.Post("/in/:id", func(c *fiber.Ctx) error {
+			in = FromHTTPRequestToHookIncomingRequestEntity(c)
+			return nil
+		})
+		req := httptest.NewRequest(http.MethodPost, url, strings.NewReader("body"))
+		for k, v := range header {
+			req.Header.Set(k, v)
+		}
+		if _, err := app.Test(req); err != nil {
+			t.Fatal(err)
+		}
+		return in
+	}
+	in := parse("/in/00000000009?agentrq_hook_token=abcd1234&a=1&a=2", map[string]string{"X-Hub-Signature-256": "sha256=x", "Cookie": "at=s"})
+	if in == nil || in.RegistrationID != 9 || in.Token != "abcd1234" || in.Method != "POST" || in.Path != "/in/00000000009" || string(in.Body) != "body" {
+		t.Fatalf("in = %+v", in)
+	}
+	if len(in.Query) != 1 || len(in.Query["a"]) != 2 || in.Headers["x-hub-signature-256"][0] != "sha256=x" || in.Headers["cookie"] != nil || in.Peer != "0.0.0.0" {
+		t.Errorf("query %v, headers %v, peer %q", in.Query, in.Headers, in.Peer)
+	}
+	if in := parse("/in/00000000009", nil); in == nil || in.Token != "" || len(in.Query) != 0 {
+		t.Errorf("no token = %+v", in)
+	}
+	if in := parse("/in/!", nil); in != nil {
+		t.Errorf("no id = %+v", in)
+	}
+}
+
+func TestFromHookDeliveryEntitiesToHTTPResponse(t *testing.T) {
+	at := time.Date(2026, 11, 12, 7, 0, 0, 0, time.UTC)
+	got := string(FromHookDeliveryEntitiesToHTTPResponse([]entity.HookDelivery{
+		{ID: 11, RegistrationID: 9, ReceivedAt: at, Status: "failed", Attempts: 6, EventNames: []string{"push"}, Error: "boom", DurationMs: 3, Replayable: true},
+		{ID: 12, RegistrationID: 9, ReceivedAt: at, Status: "queued"},
+	}))
+	want := `{"deliveries":[{"id":"0000000000B","registrationId":"00000000009","receivedAt":"2026-11-12T07:00:00Z","status":"failed","attempts":6,"eventNames":["push"],"error":"boom","durationMs":3,"replayable":true},` +
+		`{"id":"0000000000C","registrationId":"00000000009","receivedAt":"2026-11-12T07:00:00Z","status":"queued","attempts":0,"eventNames":[],"error":"","durationMs":0,"replayable":false}]}`
+	if got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+	if got := string(FromHookDeliveryEntitiesToHTTPResponse(nil)); got != `{"deliveries":[]}` {
+		t.Errorf("none = %s", got)
+	}
+	if got := string(FromHookDeliveryIDToHTTPResponse(11)); got != `{"deliveryId":"0000000000B"}` {
+		t.Errorf("id = %s", got)
 	}
 }

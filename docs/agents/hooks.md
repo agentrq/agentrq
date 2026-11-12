@@ -20,7 +20,12 @@ only while `hooks.allowUserHooks` is on.
 - **A queued row's `next_attempt_at` is also its lease.** A claim moves it to the
   lease's end, so a crashed worker's row is claimed again by the same query.
 - **The raw request is cleared once a delivery is processed**, except a failed
-  one, which keeps it until the retention passes so it can be replayed.
+  one, which keeps it until the retention passes so it can be replayed. Replay
+  relies on that, not on the column: a nil `[]byte` is stored as an empty blob,
+  so `request IS NULL` finds nothing.
+- **A routed delivery's events wait in `pending` until they are published.**
+  The events topic is in memory: committing the events and then publishing them
+  is what lets a lease's end republish them after a crash.
 - **The validation lives in the hook, not the server.** A new signing scheme is
   a new hook; never teach the server a provider's format.
 - **A hook runs in a fresh instance for every request**, with no filesystem,

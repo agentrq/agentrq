@@ -82,8 +82,12 @@ type HookDelivery struct {
 	// the retention passes for a failed one.
 	Request    []byte
 	BodySHA256 string `gorm:"type:char(64);not null"`
-	// EventNames lists the events published, as JSON.
+	// EventNames lists the hook's events the delivery routed, as JSON.
 	EventNames string `gorm:"type:text;not null"`
+	// Pending holds the events committed but not yet published, as JSON
+	// HookPendingEvents, so a crash between the two cannot lose them.
+	// Cleared once they are published.
+	Pending    []byte
 	Error      string `gorm:"type:text;not null"`
 	DurationMs int32  `gorm:"not null"`
 }
@@ -95,4 +99,21 @@ type HookDeliveryKey struct {
 	RegistrationID int64     `gorm:"primaryKey;autoIncrement:false"`
 	DedupKey       string    `gorm:"type:varchar(255);primaryKey"`
 	CreatedAt      time.Time `gorm:"not null;index:idx_hook_delivery_keys_created_at"`
+}
+
+// HookPendingEvent is one event a delivery routed to one of the account's
+// events, kept until it is published.
+type HookPendingEvent struct {
+	// HookEvent is the name the hook gave it; EventID the event it fires.
+	HookEvent string           `json:"hookEvent"`
+	EventID   int64            `json:"eventId"`
+	DedupKey  string           `json:"dedupKey,omitempty"`
+	Payload   string           `json:"payload"`
+	FAQ       []HookPendingFAQ `json:"faq,omitempty"`
+}
+
+// HookPendingFAQ is a question about an event, answered up front.
+type HookPendingFAQ struct {
+	Q string `json:"q"`
+	A string `json:"a"`
 }

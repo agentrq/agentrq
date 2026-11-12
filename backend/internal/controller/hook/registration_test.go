@@ -7,9 +7,11 @@ package hook
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -76,7 +78,7 @@ func (e *events) GetEvent(_ context.Context, id, userID int64) (model.Event, err
 	if userID != user || (id != ciFailed && id != pushed) {
 		return model.Event{}, base.ErrNotFound
 	}
-	return model.Event{ID: id, UserID: userID}, nil
+	return model.Event{ID: id, UserID: userID, Name: fmt.Sprintf("event-%d", id)}, nil
 }
 
 func (e *events) ListEventTriggersByEvent(_ context.Context, id, _ int64) ([]model.EventTrigger, error) {
@@ -86,10 +88,20 @@ func (e *events) ListEventTriggersByEvent(_ context.Context, id, _ int64) ([]mod
 	return []model.EventTrigger{{AllowAllCommands: false}, {AllowAllCommands: id == pushed}}, nil
 }
 
-type publisher struct{ got []pubsub.PublishRequest }
+// publisher records what is published; eventsErr fails the events topic.
+type publisher struct {
+	mu        sync.Mutex
+	got       []pubsub.PublishRequest
+	eventsErr error
+}
 
 func (p *publisher) Publish(_ context.Context, req pubsub.PublishRequest) (*pubsub.PublishResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.got = append(p.got, req)
+	if req.PubSubID == entity.PubSubTopicEvents {
+		return nil, p.eventsErr
+	}
 	return nil, nil
 }
 

@@ -807,6 +807,11 @@ const (
 	ActionIDOAuthConsentAllowReadOnly
 	// A hook registered in an account, emitted by the backend.
 	ActionIDHookRegister
+	// A request to a hook URL queued, refused by its hook, or published;
+	// emitted by the backend.
+	ActionIDHookReceive
+	ActionIDHookReject
+	ActionIDHookPublish
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or
