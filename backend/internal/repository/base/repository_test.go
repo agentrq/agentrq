@@ -766,6 +766,21 @@ func TestRepository_EventTrigger_CRUD(t *testing.T) {
 		t.Errorf("expected 2 triggers for user 1 on event, got %d", len(list))
 	}
 
+	// ListAllowAllCommandsEventIDs — user-scoped, only the ids asked for
+	_ = db.Create(&model.EventTrigger{ID: 1003, EventID: eventID, UserID: userID, AllowAllCommands: true})
+	_ = db.Create(&model.EventTrigger{ID: 1004, EventID: eventID, UserID: userID, AllowAllCommands: true})
+	_ = db.Create(&model.EventTrigger{ID: 1005, EventID: 501, UserID: otherUserID, AllowAllCommands: true})
+	_ = db.Create(&model.EventTrigger{ID: 1006, EventID: 502, UserID: userID, AllowAllCommands: true})
+	_ = db.Create(&model.EventTrigger{ID: 1007, EventID: 503, UserID: userID})
+	allowAll, err := repo.ListAllowAllCommandsEventIDs(ctx, userID, []int64{eventID, 501, 503})
+	if err != nil || len(allowAll) != 1 || allowAll[0] != eventID {
+		t.Errorf("ListAllowAllCommandsEventIDs = %v, %v", allowAll, err)
+	}
+	if none, err := repo.ListAllowAllCommandsEventIDs(ctx, userID, nil); err != nil || none == nil || len(none) != 0 {
+		t.Errorf("ListAllowAllCommandsEventIDs of none = %v, %v", none, err)
+	}
+	_ = db.Delete(&model.EventTrigger{}, []int64{1003, 1004, 1005, 1006, 1007})
+
 	// SystemListEventTriggersByEventID — cross-user
 	all, err := repo.SystemListEventTriggersByEventID(ctx, eventID)
 	if err != nil {

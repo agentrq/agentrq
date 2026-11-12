@@ -39,7 +39,7 @@ const (
 // Events is what the controller reads of the account's events.
 type Events interface {
 	GetEvent(ctx context.Context, id int64, userID int64) (model.Event, error)
-	ListEventTriggersByEvent(ctx context.Context, eventID int64, userID int64) ([]model.EventTrigger, error)
+	ListAllowAllCommandsEventIDs(ctx context.Context, userID int64, eventIDs []int64) ([]int64, error)
 }
 
 // Publisher carries the telemetry a registration emits.
@@ -75,6 +75,10 @@ func (c *controller) ListRegistrations(ctx context.Context, userID int64) ([]ent
 	if err != nil {
 		return nil, err
 	}
+	allowAll, err := c.allowAllCommandsEvents(ctx, userID, regs...)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]entity.HookRegistration, 0, len(regs))
 	hooks := map[int64]model.Hook{}
 	for _, reg := range regs {
@@ -85,7 +89,7 @@ func (c *controller) ListRegistrations(ctx context.Context, userID int64) ([]ent
 			}
 			hooks[reg.HookID] = h
 		}
-		e, err := c.toRegistration(ctx, reg, h, "")
+		e, err := c.toRegistration(reg, h, "", allowAll)
 		if err != nil {
 			return nil, err
 		}
@@ -103,7 +107,7 @@ func (c *controller) GetRegistration(ctx context.Context, userID, id int64) (ent
 	if err != nil && !errors.Is(err, base.ErrNotFound) {
 		return entity.HookRegistration{}, err
 	}
-	return c.toRegistration(ctx, reg, h, "")
+	return c.toRegistrationOf(ctx, reg, h, "")
 }
 
 // CreateRegistration registers a hook in the account. The result carries the
@@ -129,7 +133,7 @@ func (c *controller) CreateRegistration(ctx context.Context, userID int64, req e
 		return entity.HookRegistration{}, err
 	}
 	c.emitAction(ctx, entity.ActionHookRegister, entity.ActorHuman, userID, reg.ID)
-	return c.toRegistration(ctx, reg, h, token)
+	return c.toRegistrationOf(ctx, reg, h, token)
 }
 
 func (c *controller) UpdateRegistration(ctx context.Context, userID, id int64, req entity.HookRegistrationRequest) (entity.HookRegistration, error) {
@@ -153,7 +157,7 @@ func (c *controller) UpdateRegistration(ctx context.Context, userID, id int64, r
 		if err := c.repo.UpdateHookRegistration(ctx, reg); err != nil {
 			return entity.HookRegistration{}, err
 		}
-		return c.toRegistration(ctx, reg, h, "")
+		return c.toRegistrationOf(ctx, reg, h, "")
 	}
 	if !h.Enabled {
 		return entity.HookRegistration{}, invalid("its hook is gone or turned off; delete this registration instead")
@@ -177,7 +181,7 @@ func (c *controller) UpdateRegistration(ctx context.Context, userID, id int64, r
 	if err := c.repo.UpdateHookRegistration(ctx, reg); err != nil {
 		return entity.HookRegistration{}, err
 	}
-	return c.toRegistration(ctx, reg, h, "")
+	return c.toRegistrationOf(ctx, reg, h, "")
 }
 
 func (c *controller) DeleteRegistration(ctx context.Context, userID, id int64) error {
@@ -199,7 +203,7 @@ func (c *controller) RotateToken(ctx context.Context, userID, id int64) (entity.
 	if err != nil && !errors.Is(err, base.ErrNotFound) {
 		return entity.HookRegistration{}, err
 	}
-	return c.toRegistration(ctx, reg, h, token)
+	return c.toRegistrationOf(ctx, reg, h, token)
 }
 
 // usableHook returns a hook the account may use: a built-in, or its own while
@@ -341,9 +345,46 @@ func routesOf(reg model.HookRegistration) map[string]int64 {
 	return routes
 }
 
+// allowAllCommandsEvents returns which events the registrations route to
+// have a trigger that runs every command without asking: one query for all.
+func (c *controller) allowAllCommandsEvents(ctx context.Context, userID int64, regs ...model.HookRegistration) (map[int64]bool, error) {
+	seen := map[int64]bool{}
+	var ids []int64
+	for _, reg := range regs {
+		for _, eventID := range routesOf(reg) {
+			if !seen[eventID] {
+				seen[eventID] = true
+				ids = append(ids, eventID)
+			}
+		}
+	}
+	allowAll := map[int64]bool{}
+	if len(ids) == 0 {
+		return allowAll, nil
+	}
+	found, err := c.events.ListAllowAllCommandsEventIDs(ctx, userID, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range found {
+		allowAll[id] = true
+	}
+	return allowAll, nil
+}
+
+// toRegistrationOf renders one registration, reading its events' triggers.
+func (c *controller) toRegistrationOf(ctx context.Context, reg model.HookRegistration, h model.Hook, token string) (entity.HookRegistration, error) {
+	allowAll, err := c.allowAllCommandsEvents(ctx, reg.UserID, reg)
+	if err != nil {
+		return entity.HookRegistration{}, err
+	}
+	return c.toRegistration(reg, h, token, allowAll)
+}
+
 // toRegistration renders a registration: its secret inputs only as set, and
-// its URL with the token only when token is given.
-func (c *controller) toRegistration(ctx context.Context, reg model.HookRegistration, h model.Hook, token string) (entity.HookRegistration, error) {
+// its URL with the token only when token is given. allowAll is the events
+// with a trigger that runs every command without asking.
+func (c *controller) toRegistration(reg model.HookRegistration, h model.Hook, token string, allowAll map[int64]bool) (entity.HookRegistration, error) {
 	inputs, err := c.inputsOf(reg)
 	if err != nil {
 		return entity.HookRegistration{}, err
@@ -372,11 +413,7 @@ func (c *controller) toRegistration(ctx context.Context, reg model.HookRegistrat
 	// A trigger that runs every command without asking, fed by text whoever
 	// can send the webhook writes, is worth a warning.
 	for name, eventID := range e.Routes {
-		triggers, err := c.events.ListEventTriggersByEvent(ctx, eventID, reg.UserID)
-		if err != nil {
-			return entity.HookRegistration{}, err
-		}
-		if slices.ContainsFunc(triggers, func(t model.EventTrigger) bool { return t.AllowAllCommands }) {
+		if allowAll[eventID] {
 			e.AllowAllCommandsEvents = append(e.AllowAllCommandsEvents, name)
 		}
 	}
