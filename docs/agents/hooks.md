@@ -21,3 +21,9 @@ only while `hooks.allowUserHooks` is on.
   one, which keeps it until the retention passes so it can be replayed.
 - **The validation lives in the hook, not the server.** A new signing scheme is
   a new hook; never teach the server a provider's format.
+- **A hook runs in a fresh instance for every request**, with no filesystem,
+  network or environment; only its compiled form is cached, by digest. Reusing
+  an instance would let one request, or one account, read another's.
+- **An `*OutputError` is final, any other run error is retried.** A hook is
+  deterministic, so a wrong answer would come back the same; a timeout or a trap
+  may not.
