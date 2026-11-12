@@ -38,6 +38,11 @@ type EventTriggerController interface {
 	ListTasksFromEvent(ctx context.Context, req entity.ListTasksFromEventRequest) (*entity.ListTasksFromEventResponse, error)
 }
 
+// ErrInvalidEventName is returned when an event name breaks the shared
+// identifier convention. Exported so the handler can answer 422 with the rule
+// itself rather than a generic failure.
+var ErrInvalidEventName = fmt.Errorf("invalid event name: must match ^[a-z][a-z0-9_]{0,128}$")
+
 // ── Events ────────────────────────────────────────────────────────────────────
 
 func (c *controller) CreateEvent(ctx context.Context, req entity.CreateEventRequest) (*entity.CreateEventResponse, error) {
@@ -46,7 +51,7 @@ func (c *controller) CreateEvent(ctx context.Context, req entity.CreateEventRequ
 		return nil, fmt.Errorf("invalid userID")
 	}
 	if !isValidResourceName(req.Name) {
-		return nil, fmt.Errorf("invalid event name: must match ^[a-z][a-z0-9_]{0,128}$")
+		return nil, ErrInvalidEventName
 	}
 
 	now := time.Now()

@@ -45,6 +45,28 @@ func TestCreateEvent_DuplicateNameConflict(t *testing.T) {
 	}
 }
 
+// A malformed name is the user's input, so it is a 422 that states the rule,
+// not a 500.
+func TestCreateEvent_InvalidNameUnprocessable(t *testing.T) {
+	ctrl := &mockEventCrud{}
+	ctrl.createEventFunc = func(_ context.Context, _ entity.CreateEventRequest) (*entity.CreateEventResponse, error) {
+		return nil, crud.ErrInvalidEventName
+	}
+	app := newEventApp(ctrl)
+
+	req := httptest.NewRequest(http.MethodPost, "/events", bytes.NewReader([]byte(`{"name":"deploy-done"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req)
+
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "^[a-z][a-z0-9_]{0,128}$") {
+		t.Errorf("the error should state the naming rule, got %s", body)
+	}
+}
+
 func TestListEvents_ControllerError(t *testing.T) {
 	ctrl := &mockEventCrud{}
 	ctrl.listEventsFunc = func(_ context.Context, _ entity.ListEventsRequest) (*entity.ListEventsResponse, error) {
