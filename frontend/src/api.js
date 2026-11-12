@@ -1105,6 +1105,92 @@ export async function deleteEventTrigger(eventId, triggerId) {
   return true;
 }
 
+// ── Hooks ──────────────────────────────────────────────────────────────────
+// A hook turns a request from an outside service into the account's events; a
+// registration is one use of a hook, with its own URL.
+
+// The server's answer as an Error, its own message when it gave one.
+async function hookError(res, fallback) {
+  const body = await res.json().catch(() => null);
+  return new Error(body?.error?.message || fallback);
+}
+
+async function hookJSON(path, init, fallback) {
+  const res = await apiFetch(`${API_BASE_URL}/hooks${path}`, init);
+  if (!res.ok) throw await hookError(res, fallback);
+  return res.status === 204 ? true : res.json();
+}
+
+function jsonInit(method, body) {
+  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+}
+
+// The hooks the account may register, and whether it may add its own.
+export async function fetchAvailableHooks() {
+  return hookJSON('', undefined, 'Failed to fetch hooks');
+}
+
+// Adds one of the account's own hooks from its .wasm file, or with an id
+// upgrades that hook. Sent gzipped: a hook built with Go is over the server's
+// request size.
+export async function uploadHook(file, id = '') {
+  const body = await new Response(new Response(file).body.pipeThrough(new CompressionStream('gzip'))).blob();
+  return hookJSON(id ? `/${id}` : '', {
+    method: id ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/wasm', 'Content-Encoding': 'gzip' },
+    body
+  }, 'Failed to upload the hook');
+}
+
+// Deletes one of the account's own hooks that nothing registers.
+export async function deleteHook(id) {
+  return hookJSON(`/${id}`, { method: 'DELETE' }, 'Failed to delete the hook');
+}
+
+export async function fetchHookRegistrations() {
+  return hookJSON('/registrations', undefined, 'Failed to fetch hook registrations');
+}
+
+export async function getHookRegistration(id) {
+  return hookJSON(`/registrations/${id}`, undefined, 'Failed to fetch the hook registration');
+}
+
+// Registers a hook. The answer's urlWithToken is the only time the token is
+// shown. inputs maps each of the hook's inputs to its value; routes maps each
+// of the hook's events to the id of the account's event it fires.
+export async function createHookRegistration({ hookId, name, enabled = true, inputs = {}, routes = {} }) {
+  return hookJSON('/registrations', jsonInit('POST', { hookId, name, enabled, inputs, routes }), 'Failed to register the hook');
+}
+
+// Changes a registration. A field left out is kept, and so is a secret input
+// left out of inputs.
+export async function updateHookRegistration(id, changes) {
+  return hookJSON(`/registrations/${id}`, jsonInit('PATCH', changes), 'Failed to update the hook registration');
+}
+
+export async function deleteHookRegistration(id) {
+  return hookJSON(`/registrations/${id}`, { method: 'DELETE' }, 'Failed to delete the hook registration');
+}
+
+// Gives a registration a new token: the old URL stops working at once. The
+// answer's urlWithToken is the only time the new one is shown.
+export async function rotateHookToken(id) {
+  return hookJSON(`/registrations/${id}/rotateToken`, { method: 'POST' }, 'Failed to rotate the token');
+}
+
+// A page of a registration's deliveries, newest first; before is the last id
+// of the page already shown.
+export async function fetchHookDeliveries(id, { before = '', limit = 50 } = {}) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (before) query.set('before', before);
+  return hookJSON(`/registrations/${id}/deliveries?${query}`, undefined, 'Failed to fetch deliveries');
+}
+
+// Queues a failed delivery again.
+export async function replayHookDelivery(id, deliveryId) {
+  return hookJSON(`/registrations/${id}/deliveries/${deliveryId}/replay`, { method: 'POST' }, 'Failed to replay the delivery');
+}
+
 export async function fetchEventTasks(eventId) {
   const res = await apiFetch(`${API_BASE_URL}/events/${eventId}/tasks`);
   if (!res.ok) throw new Error('Failed to fetch event tasks');

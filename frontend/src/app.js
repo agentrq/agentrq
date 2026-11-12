@@ -60,6 +60,10 @@ export const routes = [
   { path: '/kanban', component: () => import('./views/KanbanView.vue') },
 
   { path: '/events', component: () => import('./views/EventsView.vue') },
+  // The Hooks tab, ranked above an event's own page by its static segment.
+  { path: '/events/hooks', component: () => import('./views/HooksView.vue') },
+  { path: '/events/hooks/new', component: () => import('./views/HookNewView.vue') },
+  { path: '/events/hooks/:id', component: () => import('./views/HookRegistrationView.vue'), meta: { remount: true } },
   { path: '/events/:id', component: () => import('./views/EventDetailView.vue'), meta: { remount: true } },
 
   // Desktop-only in practice — the view renders nothing without the bridge, and

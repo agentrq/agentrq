@@ -40,6 +40,9 @@ describe('routes', () => {
       '/workspaces/:id/tasks/:taskId/edit',
       '/kanban',
       '/events',
+      '/events/hooks',
+      '/events/hooks/new',
+      '/events/hooks/:id',
       '/events/:id',
       // Desktop-only in practice, but it lives in the one route table like
       // everything else — the desktop build mounts exactly this list.
@@ -59,6 +62,14 @@ describe('routes', () => {
       '/workflows/:id',
       '/login',
     ])
+  })
+
+  it('opens the Hooks tab at /events/hooks, not an event with the id "hooks"', () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    expect(router.resolve('/events/hooks').matched[0].path).toBe('/events/hooks')
+    expect(router.resolve('/events/hooks/new').matched[0].path).toBe('/events/hooks/new')
+    expect(router.resolve('/events/hooks/abc').matched[0].path).toBe('/events/hooks/:id')
+    expect(router.resolve('/events/abc').matched[0].path).toBe('/events/:id')
   })
 
   it('opens the create form at /workspaces/new, not a workspace with the id "new"', () => {

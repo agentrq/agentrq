@@ -76,6 +76,7 @@ const settingsPage = (tab) => ({ workspaceId }) => `/workspaces/${seg(workspaceI
 const taskPage = ({ workspaceId, taskId }) => `/workspaces/${seg(workspaceId)}/tasks/${seg(taskId)}`
 const machinePage = ({ machineId }) => `/machines/${seg(machineId)}`
 const eventPage = ({ eventId }) => `/events/${seg(eventId)}`
+const hookPage = ({ registrationId }) => `/events/hooks/${seg(registrationId)}`
 const workflowPage = ({ workflowId }) => `/workflows/${seg(workflowId)}`
 const skillPage = ({ name }) => `/skills/${seg(name)}`
 const panoDocPage = ({ id }) => `/pano/${seg(id)}`
@@ -134,21 +135,21 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Take the user to an in-app path, ' +
-        'optionally ?query; IDs from getCurrentPage or list tools. Pages:\n' +
+        'Go to an in-app path, ' +
+        'optionally ?query; IDs from getCurrentPage or list tools.\n' +
         '- "/" every workspace, "/workspaces/new" creates one.\n' +
         '- "/kanban" or "/tasks/<filter>" tasks in all workspaces; <filter> is active, notstarted, pending ' +
-        '(on the user), ongoing, completed or scheduled. Add "/<workspaceId>/<taskId>" to ' +
+        '(on the user), ongoing, completed, scheduled. Add "/<workspaceId>/<taskId>" to ' +
         'open one beside it, then "/instances" for its runs.\n' +
         '- "/workspaces/<workspaceId>" its tasks ("?filter=" as above); under it "/board", ' +
         '"/analytics", "/settings", "/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
         '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +
         'skills, slack, input, storage or danger.\n' +
-        '- "/events", "/workflows", "/pano", each plus "/<id>"; "/skills", "/skills/<name>", "/pano/new", ' +
+        '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/skills", "/skills/<name>", "/{pano,events/hooks}/new", ' +
         '"/pano/[<id>/]chat/<workspaceId>/<taskId>".\n' +
         '- "/machines", "/machines/<id>", "/sessions/<id>" (a terminal).\n' +
         '- "/extensions", "/extensions/<name>/<pageId>" (desktop).\n' +
-        'Others are refused. Returns the page reached.',
+        'Others are refused. Returns the page.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
       required: ['path'],
       run: async ({ path }) => {
@@ -1185,6 +1186,125 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       required: ['eventId'],
       readOnly: true,
       run: ({ eventId }) => api.fetchEventTasks(eventId),
+    }),
+
+    // ---- Hooks -------------------------------------------------------------
+    tool({
+      name: 'listHooks',
+      description:
+        'The hooks this account may register. A hook is a WebAssembly module that checks a request from an ' +
+        'outside service (GitHub, a CI job) and turns it into events; its manifest lists the inputs a ' +
+        'registration fills and the events it writes. Also says whether the account may upload its own.',
+      readOnly: true,
+      run: () => api.fetchAvailableHooks(),
+    }),
+    tool({
+      name: 'uploadHook',
+      description:
+        'Upload one of the account\'s own hooks, a .wasm module, or with hookId upgrade it. Only when listHooks ' +
+        'says allowUserHooks. The module must declare a required secret input.',
+      properties: { data: str('The .wasm file, base64.'), hookId: str('One of the account\'s own hooks, to upgrade it.') },
+      required: ['data'],
+      screen: before(() => '/events/hooks'),
+      run: ({ data, hookId = '' }) =>
+        api.uploadHook(new Blob([Uint8Array.from(atob(data || ''), (c) => c.charCodeAt(0))], { type: 'application/wasm' }), hookId),
+    }),
+    tool({
+      name: 'deleteHook',
+      description: 'Delete one of the account\'s own hooks. Refused while a registration uses it.',
+      properties: { hookId: str('The hook ID.') },
+      required: ['hookId'],
+      destructive: true,
+      screen: before(() => '/events/hooks'),
+      run: ({ hookId }) => api.deleteHook(hookId),
+    }),
+    tool({
+      name: 'listHookRegistrations',
+      description: 'The account\'s hook registrations: each is a hook with its own URL, inputs and routes.',
+      readOnly: true,
+      run: () => api.fetchHookRegistrations(),
+    }),
+    tool({
+      name: 'getHookRegistration',
+      description: 'One hook registration. Secret inputs are never returned, only named in secretsSet.',
+      properties: { registrationId: str('The registration ID.') },
+      required: ['registrationId'],
+      readOnly: true,
+      run: ({ registrationId }) => api.getHookRegistration(registrationId),
+    }),
+    tool({
+      name: 'createHookRegistration',
+      description:
+        'Register a hook, giving it a URL to paste into the outside service. The answer\'s urlWithToken is ' +
+        'the only time the token is shown. Fill the hook\'s inputs (every required one, secrets included) and ' +
+        'route each of its events you want to one of the account\'s events, by id.',
+      properties: {
+        hookId: str('The hook to register, from listHooks.'),
+        name: str('A name for this registration, such as the repository it is for.'),
+        inputs: { type: 'object', description: 'The hook\'s inputs by name: strings, numbers, booleans or lists.' },
+        routes: { type: 'object', description: 'Hook event name to the account\'s event id, e.g. {"ci.failed": "<eventId>"}.' },
+      },
+      required: ['hookId', 'name'],
+      screen: after((_, r) => (r?.id ? `/events/hooks/${seg(r.id)}` : '/events/hooks')),
+      run: ({ hookId, name, inputs = {}, routes = {} }) => api.createHookRegistration({ hookId, name, inputs, routes }),
+    }),
+    tool({
+      name: 'updateHookRegistration',
+      description:
+        'Change a hook registration. A field left out is kept, and so is a secret input left out of inputs; ' +
+        'routes, when given, replace them all.',
+      properties: {
+        registrationId: str('The registration ID.'),
+        name: str('A new name.'),
+        enabled: bool('Turn its URL on or off.'),
+        inputs: { type: 'object', description: 'The hook\'s inputs by name.' },
+        routes: { type: 'object', description: 'Hook event name to the account\'s event id.' },
+      },
+      required: ['registrationId'],
+      screen: before(hookPage),
+      run: ({ registrationId, ...changes }) => api.updateHookRegistration(registrationId, changes),
+    }),
+    tool({
+      name: 'rotateHookToken',
+      description:
+        'Give a registration a new token. The old URL stops working at once, so the outside service must be ' +
+        'given the new urlWithToken, shown only in this answer.',
+      properties: { registrationId: str('The registration ID.') },
+      required: ['registrationId'],
+      destructive: true,
+      screen: before(hookPage),
+      run: ({ registrationId }) => api.rotateHookToken(registrationId),
+    }),
+    tool({
+      name: 'deleteHookRegistration',
+      description: 'Delete a hook registration and its deliveries; its URL stops working. Cannot be undone.',
+      properties: { registrationId: str('The registration ID.') },
+      required: ['registrationId'],
+      destructive: true,
+      screen: before(() => '/events/hooks'),
+      run: ({ registrationId }) => api.deleteHookRegistration(registrationId),
+    }),
+    tool({
+      name: 'listHookDeliveries',
+      description:
+        'A registration\'s deliveries, newest first: the requests its URL received and what became of each ' +
+        '(queued, processing, routed, published, rejected, ignored, duplicate, failed).',
+      properties: {
+        registrationId: str('The registration ID.'),
+        before: str('The last delivery ID of the page already read.'),
+        limit: int('At most this many, 1 to 200; 50 by default.'),
+      },
+      required: ['registrationId'],
+      readOnly: true,
+      run: ({ registrationId, before = '', limit = 50 }) => api.fetchHookDeliveries(registrationId, { before, limit }),
+    }),
+    tool({
+      name: 'replayHookDelivery',
+      description: 'Queue a failed delivery again; only failed ones keep their request.',
+      properties: { registrationId: str('The registration ID.'), deliveryId: str('The delivery ID.') },
+      required: ['registrationId', 'deliveryId'],
+      screen: before(hookPage),
+      run: ({ registrationId, deliveryId }) => api.replayHookDelivery(registrationId, deliveryId),
     }),
 
     // ---- Workflows ---------------------------------------------------------
