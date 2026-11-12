@@ -42,7 +42,7 @@ func loadConfig(cfgSvc config.Service) (app.Config, error) {
 		"app": &cfg.App, "auth": &cfg.Auth, "smtp": &cfg.SMTP, "ssl": &cfg.SSL, "slack": &cfg.Slack,
 		"webPush": &cfg.WebPush, "network": &cfg.Network, "storage": &cfg.Storage, "memory": &cfg.Memory,
 		"skills": &cfg.Skills, "pano": &cfg.Pano, "hooks": &cfg.Hooks, "mcp": &cfg.MCP, "acp": &cfg.ACP,
-		"idgen": &cfg.Idgen,
+		"idgen": &cfg.Idgen, "ddos": &cfg.Ddos, "ratelimit": &cfg.Ratelimit,
 	} {
 		if err := cfgSvc.Populate(key, dst); err != nil {
 			return app.Config{}, fmt.Errorf("%s: %w", key, err)
