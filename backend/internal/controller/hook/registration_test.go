@@ -69,6 +69,9 @@ func (r *repo) SetHookRegistrationTokenHash(ctx context.Context, id, userID int6
 // pushed that allows every command.
 type events struct {
 	getErr, triggersErr error
+	// triggerQueries counts the trigger reads; asked, the event ids of each.
+	triggerQueries int
+	asked          [][]int64
 }
 
 func (e *events) GetEvent(_ context.Context, id, userID int64) (model.Event, error) {
@@ -81,11 +84,19 @@ func (e *events) GetEvent(_ context.Context, id, userID int64) (model.Event, err
 	return model.Event{ID: id, UserID: userID, Name: fmt.Sprintf("event-%d", id)}, nil
 }
 
-func (e *events) ListEventTriggersByEvent(_ context.Context, id, _ int64) ([]model.EventTrigger, error) {
+func (e *events) ListAllowAllCommandsEventIDs(_ context.Context, _ int64, ids []int64) ([]int64, error) {
+	e.triggerQueries++
+	e.asked = append(e.asked, slices.Clone(ids))
 	if e.triggersErr != nil {
 		return nil, e.triggersErr
 	}
-	return []model.EventTrigger{{AllowAllCommands: false}, {AllowAllCommands: id == pushed}}, nil
+	var out []int64
+	for _, id := range ids {
+		if id == pushed {
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 // publisher records what is published; eventsErr fails the events topic.
@@ -417,6 +428,16 @@ func TestGetAndListRegistrations(t *testing.T) {
 	regs, err := f.c.ListRegistrations(ctx, user)
 	if err != nil || len(regs) != 2 || regs[0].ID != second.ID || regs[1].ID != first.ID || regs[0].URLWithToken != "" {
 		t.Errorf("list = %+v, %v", regs, err)
+	}
+	// The whole list reads its triggers in one query, over each event once.
+	f.events.triggerQueries, f.events.asked = 0, nil
+	if regs, err = f.c.ListRegistrations(ctx, user); err != nil || f.events.triggerQueries != 1 || len(f.events.asked[0]) != 2 {
+		t.Errorf("list read triggers %d times, for %v: %v", f.events.triggerQueries, f.events.asked, err)
+	}
+	for _, reg := range regs {
+		if !slices.Equal(reg.AllowAllCommandsEvents, []string{"push"}) {
+			t.Errorf("allow all = %v", reg.AllowAllCommandsEvents)
+		}
 	}
 
 	// Its hook turned off, or gone: still listed, as not available.

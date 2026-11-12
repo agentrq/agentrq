@@ -289,6 +289,7 @@ type Repository interface {
 	GetEventTrigger(ctx context.Context, id int64, userID int64) (model.EventTrigger, error)
 	ListEventTriggersByEvent(ctx context.Context, eventID int64, userID int64) ([]model.EventTrigger, error)
 	SystemListEventTriggersByEventID(ctx context.Context, eventID int64) ([]model.EventTrigger, error)
+	ListAllowAllCommandsEventIDs(ctx context.Context, userID int64, eventIDs []int64) ([]int64, error)
 	UpdateEventTrigger(ctx context.Context, id int64, userID int64, t model.EventTrigger) (model.EventTrigger, error)
 	DeleteEventTrigger(ctx context.Context, id int64, userID int64) error
 	// SystemDeleteOrphanedEventRouting deletes the triggers and workflow steps
@@ -2119,6 +2120,19 @@ func (r *repository) ListEventTriggersByEvent(ctx context.Context, eventID int64
 	var triggers []model.EventTrigger
 	err := r.conn(ctx).Where("event_id = ? AND user_id = ?", eventID, userID).Order("created_at desc").Find(&triggers).Error
 	return triggers, err
+}
+
+// ListAllowAllCommandsEventIDs returns which of eventIDs have a trigger of
+// the account's that runs every command without asking, in one query.
+func (r *repository) ListAllowAllCommandsEventIDs(ctx context.Context, userID int64, eventIDs []int64) ([]int64, error) {
+	ids := []int64{}
+	if len(eventIDs) == 0 {
+		return ids, nil
+	}
+	err := r.conn(ctx).Model(&model.EventTrigger{}).
+		Where("user_id = ? AND event_id IN ? AND allow_all_commands = ?", userID, eventIDs, true).
+		Distinct().Pluck("event_id", &ids).Error
+	return ids, err
 }
 
 func (r *repository) SystemListEventTriggersByEventID(ctx context.Context, eventID int64) ([]model.EventTrigger, error) {
