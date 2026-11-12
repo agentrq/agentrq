@@ -46,6 +46,19 @@ export function useEventBus(workspaceId, { buffer = true } = {}) {
   const handlers = new Set();
   let eventSource = null;
   let reconnectDelay = 1000;
+  // Set between connect() and disconnect(): a reconnect is only scheduled,
+  // and a scheduled one only kept, while the caller still wants the stream.
+  let wanted = false;
+  let reconnectTimer = null;
+
+  function reconnectIn(ms) {
+    if (!wanted) return;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, ms);
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+  }
 
   /**
    * Call `fn` for each event from now on. Returns an unsubscribe function; the
@@ -59,6 +72,9 @@ export function useEventBus(workspaceId, { buffer = true } = {}) {
   }
 
   function connect() {
+    wanted = true;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
     if (eventSource) return;
 
     events.value = [];
@@ -82,8 +98,7 @@ export function useEventBus(workspaceId, { buffer = true } = {}) {
       // no reconnect before the cooldown is over.
       const busyFor = apiBreaker.retryIn();
       if (busyFor > 0) {
-        setTimeout(connect, Math.max(reconnectDelay, busyFor));
-        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+        reconnectIn(Math.max(reconnectDelay, busyFor));
         return;
       }
 
@@ -98,8 +113,7 @@ export function useEventBus(workspaceId, { buffer = true } = {}) {
         return;
       }
 
-      setTimeout(connect, reconnectDelay);
-      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+      reconnectIn(reconnectDelay);
     };
 
     eventSource.onmessage = (e) => {
@@ -123,6 +137,9 @@ export function useEventBus(workspaceId, { buffer = true } = {}) {
   }
 
   function disconnect() {
+    wanted = false;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
     if (eventSource) {
       eventSource.close();
       eventSource = null;

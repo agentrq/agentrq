@@ -356,6 +356,74 @@ describe('useEventBus', () => {
       expect(FakeEventSource.instances).toHaveLength(2)
     })
 
+    it('cancels a back-off reconnect on disconnect', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(apiBreaker, 'retryIn').mockReturnValue(20000)
+      const bus = useEventBus()
+      bus.connect()
+
+      FakeEventSource.last().fail()
+      bus.disconnect()
+      await vi.advanceTimersByTimeAsync(60000)
+      expect(FakeEventSource.instances).toHaveLength(1)
+    })
+
+    it('cancels an ordinary reconnect on disconnect', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const bus = useEventBus()
+      bus.connect()
+
+      FakeEventSource.last().fail()
+      await vi.advanceTimersByTimeAsync(0)
+      bus.disconnect()
+      await vi.advanceTimersByTimeAsync(60000)
+      expect(FakeEventSource.instances).toHaveLength(1)
+    })
+
+    it('schedules nothing when it is disconnected during the auth check', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      let answer
+      fetchMock.mockReturnValue(new Promise((resolve) => { answer = resolve }))
+      const bus = useEventBus()
+      bus.connect()
+
+      FakeEventSource.last().fail()
+      bus.disconnect()
+      answer({ status: 200 })
+      await vi.advanceTimersByTimeAsync(60000)
+      expect(FakeEventSource.instances).toHaveLength(1)
+    })
+
+    // The workspace page unmounts while the API is backing off: the old
+    // workspace's stream must not come back after it is gone.
+    it('does not reopen the stream after its component unmounts', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(apiBreaker, 'retryIn').mockReturnValue(20000)
+      const app = createApp(defineComponent({
+        setup() { useEventBus('0ZzhYQG2qtl').connect() },
+        render: () => h('div'),
+      }))
+      app.mount(document.createElement('div'))
+
+      FakeEventSource.last().fail()
+      app.unmount()
+      await vi.advanceTimersByTimeAsync(60000)
+      expect(FakeEventSource.instances).toHaveLength(1)
+    })
+
+    it('connects at once when asked during a wait, and only once', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(apiBreaker, 'retryIn').mockReturnValue(20000)
+      const bus = useEventBus()
+      bus.connect()
+
+      FakeEventSource.last().fail()
+      bus.connect()
+      expect(FakeEventSource.instances).toHaveLength(2)
+      await vi.advanceTimersByTimeAsync(60000)
+      expect(FakeEventSource.instances).toHaveLength(2)
+    })
+
     it('resets the backoff once a stream opens again', async () => {
       vi.spyOn(console, 'error').mockImplementation(() => {})
       const bus = useEventBus()
