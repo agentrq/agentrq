@@ -34,6 +34,7 @@ tags:
   - name: Tasks
   - name: Attachments
   - name: Events
+  - name: Hooks
   - name: Workflows
   - name: Skills
   - name: Pano
@@ -2206,6 +2207,111 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/TaskList' }
 
+  # ── Hooks ───────────────────────────────────────────────────────────────────
+  /hooks:
+    get:
+      tags: [Hooks]
+      summary: List the hooks this account can register
+      description: The enabled built-in hooks, and the account's own when the server allows them.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hooks:
+                    type: array
+                    items: { $ref: '#/components/schemas/Hook' }
+
+  /hooks/registrations:
+    get:
+      tags: [Hooks]
+      summary: List the account's hook registrations
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  registrations:
+                    type: array
+                    items: { $ref: '#/components/schemas/HookRegistration' }
+    post:
+      tags: [Hooks]
+      summary: Register a hook
+      description: The answer carries `urlWithToken`, the only time the token is shown.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HookRegistrationRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HookRegistration' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /hooks/registrations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/HookRegistrationId'
+    get:
+      tags: [Hooks]
+      summary: Get a hook registration
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HookRegistration' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Hooks]
+      summary: Change a hook registration
+      description: A field left out is kept, and so is a secret input left out of `inputs`. The hook cannot change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HookRegistrationRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HookRegistration' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+    delete:
+      tags: [Hooks]
+      summary: Delete a hook registration, and its deliveries
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /hooks/registrations/{id}/rotateToken:
+    parameters:
+      - $ref: '#/components/parameters/HookRegistrationId'
+    post:
+      tags: [Hooks]
+      summary: Replace a registration's token
+      description: The old URL stops working; the answer carries the new `urlWithToken`, shown only this once.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HookRegistration' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   # ── Workflows ───────────────────────────────────────────────────────────────
   /workflows:
     get:
@@ -2675,6 +2781,12 @@ components:
       required: true
       schema: { type: string }
       description: Event ID (base62).
+    HookRegistrationId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: Hook registration ID (base62).
     WorkflowId:
       name: id
       in: path
@@ -3502,6 +3614,82 @@ components:
             otherwise. Set by the server; ignored on the way in. Absent for an
             attachment saved before links existed; the download route works
             either way.
+
+    Hook:
+      type: object
+      properties:
+        id: { type: string }
+        builtIn: { type: boolean }
+        name: { type: string }
+        version: { type: string }
+        description: { type: string }
+        sha256: { type: string }
+        sizeBytes: { type: integer, format: int64 }
+        abiVersion: { type: integer }
+        inputs:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              label: { type: string }
+              type: { type: string, enum: [string, number, boolean, array] }
+              items: { type: string }
+              secret: { type: boolean }
+              required: { type: boolean }
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              description: { type: string }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    HookRegistration:
+      type: object
+      properties:
+        id: { type: string }
+        hookId: { type: string }
+        hookName: { type: string }
+        hookAvailable:
+          type: boolean
+          description: False while the hook is disabled, or no longer one the account may use.
+        name: { type: string }
+        enabled: { type: boolean }
+        inputs:
+          type: object
+          additionalProperties: true
+          description: The values of the inputs that are not secret.
+        secretsSet:
+          type: array
+          items: { type: string }
+          description: The secret inputs that have a value; a secret is never returned.
+        routes:
+          type: object
+          additionalProperties: { type: string }
+          description: The id of the event each of the hook's events fires.
+        url: { type: string, description: 'The URL to give the outside service, without its `agentrq_hook_token`.' }
+        urlWithToken: { type: string, description: Given only on create and on rotating the token. }
+        allowAllCommandsEvents:
+          type: array
+          items: { type: string }
+          description: Routed events with a trigger that allows every command.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    HookRegistrationRequest:
+      type: object
+      properties:
+        hookId: { type: string, description: Required on create; refused on update. }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        enabled: { type: boolean }
+        inputs: { type: object, additionalProperties: true }
+        routes:
+          type: object
+          additionalProperties: { type: string }
 
     Event:
       type: object

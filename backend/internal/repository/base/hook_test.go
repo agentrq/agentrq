@@ -21,7 +21,7 @@ func hookRepo(t *testing.T) Repository {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Hook{}, &model.HookRegistration{}); err != nil {
+	if err := db.AutoMigrate(&model.Hook{}, &model.HookRegistration{}, &model.HookDelivery{}, &model.HookDeliveryKey{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return New(&mockDB{db: db})
@@ -97,8 +97,8 @@ func TestDeleteHookOnlyWhileNothingRegistersIt(t *testing.T) {
 		}
 	}
 	regs := []model.HookRegistration{
-		{ID: 11, UserID: 7, HookID: 1, Name: "a", Token: "t", Inputs: "", Routes: `{"ci.failed":5}`},
-		{ID: 10, UserID: 8, HookID: 1, Name: "b", Token: "t", Inputs: "", Routes: `{"push":6}`},
+		{ID: 11, UserID: 7, HookID: 1, Name: "a", TokenHash: "t", Inputs: "", Routes: `{"ci.failed":5}`},
+		{ID: 10, UserID: 8, HookID: 1, Name: "b", TokenHash: "t", Inputs: "", Routes: `{"push":6}`},
 	}
 	if err := db.Create(&regs).Error; err != nil {
 		t.Fatal(err)
@@ -122,5 +122,96 @@ func TestDeleteHookOnlyWhileNothingRegistersIt(t *testing.T) {
 	}
 	if _, err := r.GetHook(ctx, 1, 0); err != nil {
 		t.Errorf("the registered hook is gone: %v", err)
+	}
+}
+
+func TestHookRegistrations(t *testing.T) {
+	r, ctx := hookRepo(t), context.Background()
+	db := r.(*repository).db.Conn(ctx)
+	for _, reg := range []model.HookRegistration{
+		{ID: 1, UserID: 7, HookID: 3, Name: "ci", Enabled: true, TokenHash: "h1", Inputs: "i", Routes: "{}"},
+		{ID: 2, UserID: 7, HookID: 3, Name: "prs", Enabled: true, TokenHash: "h2", Inputs: "i", Routes: "{}"},
+		{ID: 3, UserID: 8, HookID: 3, Name: "other", TokenHash: "h3", Inputs: "i", Routes: "{}"},
+	} {
+		if err := r.CreateHookRegistration(ctx, reg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	regs, err := r.ListHookRegistrations(ctx, 7)
+	if err != nil || len(regs) != 2 || regs[0].ID != 2 {
+		t.Fatalf("list = %+v, %v", regs, err)
+	}
+	if _, err := r.GetHookRegistration(ctx, 3, 7); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another account's: err = %v", err)
+	}
+
+	up := model.HookRegistration{ID: 1, UserID: 7, Name: "ci2", Enabled: false, Inputs: "i2", Routes: `{"push":5}`, TokenHash: "ignored"}
+	if err := r.UpdateHookRegistration(ctx, up); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetHookRegistrationTokenHash(ctx, 1, 7, "h9"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.GetHookRegistration(ctx, 1, 7)
+	if err != nil || got.Name != "ci2" || got.Enabled || got.Inputs != "i2" || got.Routes != `{"push":5}` || got.TokenHash != "h9" || got.HookID != 3 {
+		t.Errorf("updated = %+v, %v", got, err)
+	}
+	up.UserID = 8
+	if err := r.UpdateHookRegistration(ctx, up); !errors.Is(err, ErrNotFound) {
+		t.Errorf("update of another account's: err = %v", err)
+	}
+	if err := r.SetHookRegistrationTokenHash(ctx, 1, 8, "x"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("token of another account's: err = %v", err)
+	}
+
+	// Deleting takes the deliveries and dedup keys with it, and only its own.
+	for _, d := range []model.HookDelivery{{ID: 1, RegistrationID: 1}, {ID: 2, RegistrationID: 2}} {
+		if err := db.Create(&d).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, k := range []model.HookDeliveryKey{{RegistrationID: 1, DedupKey: "a"}, {RegistrationID: 2, DedupKey: "a"}} {
+		if err := db.Create(&k).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := r.DeleteHookRegistration(ctx, 1, 8); !errors.Is(err, ErrNotFound) {
+		t.Errorf("delete of another account's: err = %v", err)
+	}
+	if err := r.DeleteHookRegistration(ctx, 1, 7); err != nil {
+		t.Fatal(err)
+	}
+	var deliveries, keys int64
+	db.Model(&model.HookDelivery{}).Count(&deliveries)
+	db.Model(&model.HookDeliveryKey{}).Count(&keys)
+	if deliveries != 1 || keys != 1 {
+		t.Errorf("left %d deliveries and %d keys, want 1 and 1", deliveries, keys)
+	}
+}
+
+func TestDeleteHookRegistrationFails(t *testing.T) {
+	ctx := context.Background()
+	for _, table := range []string{"hook_deliveries", "hook_delivery_keys"} {
+		r := hookRepo(t)
+		db := r.(*repository).db.Conn(ctx)
+		if err := r.CreateHookRegistration(ctx, model.HookRegistration{ID: 1, UserID: 7, Name: "n"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Migrator().DropTable(table); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.DeleteHookRegistration(ctx, 1, 7); err == nil {
+			t.Errorf("without %s: no error", table)
+		}
+		if _, err := r.GetHookRegistration(ctx, 1, 7); err != nil {
+			t.Errorf("without %s: the registration went anyway: %v", table, err)
+		}
+	}
+	r := hookRepo(t)
+	if err := r.(*repository).db.Conn(ctx).Migrator().DropTable("hook_registrations"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.DeleteHookRegistration(ctx, 1, 7); err == nil || errors.Is(err, ErrNotFound) {
+		t.Errorf("without the table: err = %v", err)
 	}
 }

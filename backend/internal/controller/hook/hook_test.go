@@ -194,7 +194,7 @@ var regID int64
 func (f fixture) register(t *testing.T, hookID int64, routes string) {
 	t.Helper()
 	regID++
-	reg := model.HookRegistration{ID: regID, UserID: 7, HookID: hookID, Name: "r", Token: "t", Routes: routes}
+	reg := model.HookRegistration{ID: regID, UserID: 7, HookID: hookID, Name: "r", TokenHash: "t", Routes: routes}
 	if err := f.repo.db.Create(&reg).Error; err != nil {
 		t.Fatal(err)
 	}

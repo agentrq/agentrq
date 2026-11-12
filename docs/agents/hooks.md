@@ -11,6 +11,8 @@ only while `hooks.allowUserHooks` is on.
 - **The URL's id is a monoflake, so it is guessable.** The credentials are the
   registration's `agentrq_hook_token` and the hook's own check of a secret
   input, which every hook must declare. Never let a hook without one register.
+- **The token is stored only as its bcrypt hash**, and shown once, on create
+  and on rotation. A lost token is rotated; never add a way to read it back.
 - **The token is checked against a fresh read of the registration, never a
   cache.** A rotated token has to stop working on every instance at once.
 - **A request is saved and answered 202 before any hook runs.** The provider

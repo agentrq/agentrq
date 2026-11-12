@@ -48,3 +48,39 @@ type ListHooksResponse struct {
 type SetHookEnabledRequest struct {
 	Enabled *bool `json:"enabled"`
 }
+
+// HookRegistration is one use of a hook in an account.
+type HookRegistration struct {
+	ID            string `json:"id"`
+	HookID        string `json:"hookId"`
+	HookName      string `json:"hookName"`
+	HookAvailable bool   `json:"hookAvailable"`
+	Name          string `json:"name"`
+	Enabled       bool   `json:"enabled"`
+	// Inputs holds the values that are not secret; SecretsSet names the
+	// secret inputs that have one.
+	Inputs     map[string]any    `json:"inputs"`
+	SecretsSet []string          `json:"secretsSet"`
+	Routes     map[string]string `json:"routes"`
+	URL        string            `json:"url"`
+	// URLWithToken is given once, when the token is made.
+	URLWithToken           string    `json:"urlWithToken,omitempty"`
+	AllowAllCommandsEvents []string  `json:"allowAllCommandsEvents"`
+	CreatedAt              time.Time `json:"createdAt"`
+	UpdatedAt              time.Time `json:"updatedAt"`
+}
+
+// ListHookRegistrationsResponse is an account's registrations.
+type ListHookRegistrationsResponse struct {
+	Registrations []HookRegistration `json:"registrations"`
+}
+
+// HookRegistrationRequest creates or changes a registration; a field left out
+// of an update is kept.
+type HookRegistrationRequest struct {
+	HookID  string            `json:"hookId"`
+	Name    *string           `json:"name"`
+	Enabled *bool             `json:"enabled"`
+	Inputs  map[string]any    `json:"inputs"`
+	Routes  map[string]string `json:"routes"`
+}

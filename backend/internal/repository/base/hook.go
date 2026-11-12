@@ -82,3 +82,67 @@ func (r *repository) ListHookRegistrationRoutes(ctx context.Context, hookID int6
 		Order("id asc").Pluck("routes", &routes).Error
 	return routes, err
 }
+
+// CreateHookRegistration stores a registration.
+func (r *repository) CreateHookRegistration(ctx context.Context, reg model.HookRegistration) error {
+	return r.conn(ctx).Create(&reg).Error
+}
+
+// GetHookRegistration returns one of an account's registrations, or
+// ErrNotFound.
+func (r *repository) GetHookRegistration(ctx context.Context, id, userID int64) (model.HookRegistration, error) {
+	var reg model.HookRegistration
+	err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&reg).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.HookRegistration{}, ErrNotFound
+	}
+	return reg, err
+}
+
+// ListHookRegistrations returns an account's registrations, newest first.
+func (r *repository) ListHookRegistrations(ctx context.Context, userID int64) ([]model.HookRegistration, error) {
+	var regs []model.HookRegistration
+	err := r.conn(ctx).Where("user_id = ?", userID).Order("id desc").Find(&regs).Error
+	return regs, err
+}
+
+// UpdateHookRegistration saves a registration's name, switch, inputs and
+// routes, and returns ErrNotFound when it is gone. The token is changed only
+// by SetHookRegistrationTokenHash.
+func (r *repository) UpdateHookRegistration(ctx context.Context, reg model.HookRegistration) error {
+	res := r.conn(ctx).Model(&model.HookRegistration{}).Where("id = ? AND user_id = ?", reg.ID, reg.UserID).
+		Updates(map[string]any{"name": reg.Name, "enabled": reg.Enabled, "inputs": reg.Inputs, "routes": reg.Routes})
+	if res.Error == nil && res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return res.Error
+}
+
+// SetHookRegistrationTokenHash replaces a registration's token, and returns
+// ErrNotFound when it is gone.
+func (r *repository) SetHookRegistrationTokenHash(ctx context.Context, id, userID int64, hash string) error {
+	res := r.conn(ctx).Model(&model.HookRegistration{}).Where("id = ? AND user_id = ?", id, userID).
+		Update("token_hash", hash)
+	if res.Error == nil && res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return res.Error
+}
+
+// DeleteHookRegistration removes a registration with its deliveries and
+// dedup keys, and returns ErrNotFound when there is none.
+func (r *repository) DeleteHookRegistration(ctx context.Context, id, userID int64) error {
+	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("id = ? AND user_id = ?", id, userID).Delete(&model.HookRegistration{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		if err := tx.Where("registration_id = ?", id).Delete(&model.HookDelivery{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("registration_id = ?", id).Delete(&model.HookDeliveryKey{}).Error
+	})
+}

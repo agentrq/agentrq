@@ -382,6 +382,12 @@ func New(cfg Config) (*App, error) {
 		Storage:    hookStorageSvc,
 		Runner:     hookrunner.New(appCtx, hookrunner.Config{MaxPayloadSize: hookSettings.MaxPayloadSize}),
 		IDGen:      ids,
+		Events:     repo,
+		PubSub:     pubsubSvc,
+		// Off, an account's own hooks can be neither registered nor run.
+		AllowUserHooks: hookSettings.AllowUserHooks,
+		TokenKey:       cfg.Auth.WorkspaceTokenKey,
+		BaseURL:        cfg.App.BaseURL,
 	})
 	moveLegacySkills(context.Background(), crudCtrl)
 	startPanoSweep(appCtx, crudCtrl, panoSweepInterval, sweepJitter)

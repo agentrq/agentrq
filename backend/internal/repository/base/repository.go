@@ -95,6 +95,12 @@ type Repository interface {
 	SetHookEnabled(ctx context.Context, id, userID int64, enabled bool) error
 	DeleteHook(ctx context.Context, id, userID int64) (bool, error)
 	ListHookRegistrationRoutes(ctx context.Context, hookID int64) ([]string, error)
+	CreateHookRegistration(ctx context.Context, reg model.HookRegistration) error
+	GetHookRegistration(ctx context.Context, id, userID int64) (model.HookRegistration, error)
+	ListHookRegistrations(ctx context.Context, userID int64) ([]model.HookRegistration, error)
+	UpdateHookRegistration(ctx context.Context, reg model.HookRegistration) error
+	SetHookRegistrationTokenHash(ctx context.Context, id, userID int64, hash string) error
+	DeleteHookRegistration(ctx context.Context, id, userID int64) error
 
 	// Skill — an account's playbooks, each on in some of its workspaces.
 	// Metadata only: file content is in the storage service, and the methods

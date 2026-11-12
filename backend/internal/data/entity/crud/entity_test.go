@@ -101,6 +101,7 @@ func TestActionString(t *testing.T) {
 		{ActionUITaskLinkOpen, "ui_task_link_open"},
 		{ActionUIOverviewTaskOpen, "ui_overview_task_open"},
 		{ActionOAuthConsentAllowReadOnly, "oauth_consent_allow_read_only"},
+		{ActionHookRegister, "hook_register"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},
