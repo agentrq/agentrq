@@ -24,6 +24,7 @@ require (
 	github.com/rs/zerolog v1.35.1
 	github.com/slack-go/slack v0.29.0
 	github.com/stretchr/testify v1.12.1
+	github.com/tetratelabs/wazero v1.12.0
 	golang.org/x/image v0.46.0
 	golang.org/x/net v0.62.0
 	golang.org/x/oauth2 v0.37.0
