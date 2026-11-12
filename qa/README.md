@@ -32,6 +32,8 @@ under `CI`.
 | `forks.spec.js` | Fork a workspace from the sidebar menu. Merge is refused while a task is unfinished, both in the menu and by the server (409). Then the fork merges, and its task moves to the parent. |
 | `workspaces.spec.js` | A workspace created, renamed and deleted through the API, and a fork made and merged that way (in `forks.spec.js`), change the open page's sidebar without a reload. |
 | `tasks.spec.js` | Dragging a card into Done completes the task. Deleting from the task list removes the row. A delete the server refuses (the task was deleted elsewhere) is reported. |
+| `admin-hooks.spec.js` | The operator adds the built-in hooks on the admin page, upgrades one, is refused a module that is another hook, turns one off and deletes one. |
+| `hooks.spec.js` | A registration of the generic hook made on the Events page, routed to an event. A request to its URL with the right token and secret becomes a task, once: a resend is a duplicate. A wrong secret is taken and then rejected; no token, a wrong token or a deleted registration is 404. The delivery log shows each. |
 | `skills.spec.js` | The skills tab lists the account's skills, with the workspace ticked for an import. An import the server refuses shows the server's own reason. The sidebar's Skills link opens the account's Skills page. |
 
 Every test also fails if the page made an API call that failed, or logged a

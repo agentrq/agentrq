@@ -51,7 +51,7 @@ Give any task a launch date, or a recurring cadence — every 15 minutes, hourly
 
 ### Events
 
-Events are named signals — `qa_passed`, `deploy_finished`, `blog_published` — that any task can fire when it completes. Wire one to a workspace and that workspace gets a new task automatically, no polling and no glue code.
+Events are named signals — `qa_passed`, `deploy_finished`, `blog_published` — that any task can fire when it completes. Wire one to a workspace and that workspace gets a new task automatically, no polling and no glue code. Outside services fire them too: point a GitHub webhook, or any `curl`, at a hook URL, and a failed CI run becomes a task. [How hooks work →](docs/HOOKS.md)
 
 </td>
 <td width="50%" valign="middle">

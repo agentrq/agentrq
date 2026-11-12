@@ -285,7 +285,9 @@ Values are whole numbers. The server refuses to start on anything else, or on a 
 
 ### Hooks
 
-Hooks turn requests from outside services, such as a failed CI run on GitHub, into the account's events. Built-in hooks are registered by the root user and every account can use them.
+Hooks turn requests from outside services, such as a failed CI run on GitHub, into the account's events. Built-in hooks are registered by the root user and every account can use them. [HOOKS.md](HOOKS.md) covers using and writing them.
+
+A hook URL is `<AGENTRQ_BASE_URL>/api/v1/hooks/in/<id>`, taking `POST` with no sign-in, so `AGENTRQ_BASE_URL` must be an address the outside services can reach, and a proxy must pass that path through.
 
 | Variable | Default | Description |
 |---|---|---|
