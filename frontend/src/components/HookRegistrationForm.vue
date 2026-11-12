@@ -13,7 +13,7 @@
  */
 import { computed, reactive, ref, watch } from 'vue'
 import { fetchEventTriggers } from '../api'
-import { generateSecret, inputText, inputValue } from '../utils/hooks'
+import { generateSecret, inputText, inputValue, notANumber } from '../utils/hooks'
 
 const props = defineProps({
   hooks: { type: Array, default: () => [] },
@@ -70,6 +70,11 @@ function submit() {
   const inputs = {}
   for (const input of hook.value.inputs) {
     const v = inputValue(input, values[input.name])
+    // A number field holding text gives the page an empty value: badInput says so.
+    if (notANumber(v) || document.getElementById(`hook-in-${input.name}`)?.validity?.badInput) {
+      error.value = `${label(input)} must be ${input.type === 'array' ? 'numbers, separated by commas' : 'a number'}.`
+      return
+    }
     if (v !== undefined) inputs[input.name] = v
   }
   const picked = {}

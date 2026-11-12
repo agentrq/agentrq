@@ -43,6 +43,12 @@ export function inputValue(input, text) {
   return s
 }
 
+// Whether a value from inputValue holds text that was not a number: JSON
+// would send it as null, which the server takes for a field left out.
+export function notANumber(value) {
+  return [].concat(value).some((n) => typeof n === 'number' && !Number.isFinite(n))
+}
+
 // A random secret, 32 hex characters, for a provider's webhook secret.
 export function generateSecret() {
   const bytes = crypto.getRandomValues(new Uint8Array(16))

@@ -25,7 +25,7 @@ import {
 import { useToasts } from '../src/composables/useToasts'
 import { notifyWebMCPChange } from '../src/composables/useWebMCPChanges'
 import {
-  generateSecret, inputText, inputValue, plural, rememberTokenUrl, statusStyle, takeTokenUrl,
+  generateSecret, inputText, inputValue, notANumber, plural, rememberTokenUrl, statusStyle, takeTokenUrl,
 } from '../src/utils/hooks'
 import EventsTabs from '../src/components/EventsTabs.vue'
 import HookRegistrationForm from '../src/components/HookRegistrationForm.vue'
@@ -197,6 +197,13 @@ describe('the hook helpers', () => {
     expect(inputValue(num, null)).toBeUndefined()
     expect(inputValue(bool, '')).toBe(false)
     expect(inputValue({ type: 'string' }, ' s ')).toBe('s')
+    expect(notANumber(inputValue(num, '10s'))).toBe(true)
+    expect(notANumber(inputValue(num, '1e999'))).toBe(true)
+    expect(notANumber(inputValue({ ...list, items: 'number' }, '1, x'))).toBe(true)
+    expect(notANumber(inputValue({ ...list, items: 'number' }, '1, 2'))).toBe(false)
+    expect(notANumber(inputValue(num, '7'))).toBe(false)
+    expect(notANumber(inputValue(num, ''))).toBe(false)
+    expect(notANumber(inputValue(list, 'a'))).toBe(false)
   })
 
   it('makes a secret, styles a status, counts', () => {
@@ -354,6 +361,41 @@ describe('HookRegistrationForm', () => {
     expect(onSubmit).not.toHaveBeenCalled()
     q(el, 'reg-cancel').click()
     expect(onCancel).toHaveBeenCalled()
+  })
+
+  it('says a number field holding text is not a number, and sends nothing', async () => {
+    serve({})
+    const hook = github({ inputs: [
+      { name: 'maxRuns', label: 'Max runs', type: 'number', secret: false, required: false },
+      { name: 'ids', type: 'array', items: 'number', secret: false, required: false },
+    ] })
+    const { el, onSubmit } = await form({ hooks: [hook] })
+    type(q(el, 'reg-name'), 'CI')
+    const radio = q(el, 'reg-hook').querySelector('input')
+    radio.checked = true
+    radio.dispatchEvent(new Event('change'))
+    await flush()
+
+    // A browser keeps "10s" out of a number field's value and flags it.
+    const max = q(el, 'reg-input-maxRuns')
+    Object.defineProperty(max, 'validity', { value: { badInput: true }, configurable: true })
+    q(el, 'reg-submit').click()
+    await flush()
+    expect(q(el, 'reg-error').textContent).toBe('Max runs must be a number.')
+
+    Object.defineProperty(max, 'validity', { value: { badInput: false }, configurable: true })
+    type(q(el, 'reg-input-ids'), '1, x')
+    q(el, 'reg-submit').click()
+    await flush()
+    expect(q(el, 'reg-error').textContent).toBe('ids must be numbers, separated by commas.')
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    type(q(el, 'reg-input-ids'), '1, 2')
+    type(max, '10')
+    q(el, 'reg-submit').click()
+    await flush()
+    expect(q(el, 'reg-error')).toBeNull()
+    expect(onSubmit).toHaveBeenCalledWith({ hookId: 'gh1', name: 'CI', inputs: { maxRuns: 10, ids: [1, 2] }, routes: {} })
   })
 
   it('says when no hook is available', async () => {
