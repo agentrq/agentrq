@@ -15,6 +15,9 @@ import (
 type Event struct {
 	Type    string `json:"type"` // "task.created" | "reply.received" | "respond.ack"
 	Payload any    `json:"payload"`
+	// TeamID is the team a teammate's task event is shown in, on their own
+	// account stream.
+	TeamID string `json:"teamId,omitempty"`
 }
 
 type Bus struct {
@@ -42,6 +45,25 @@ func (b *Bus) Subscribe(workspaceID int64, userID string) chan []byte {
 	}
 	b.mu.Unlock()
 	return ch
+}
+
+// AnyUserSubscribed reports whether any account stream is open here.
+func (b *Bus) AnyUserSubscribed() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for _, subs := range b.userSubs {
+		if len(subs) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// UserSubscribed reports whether the user has an account stream open here.
+func (b *Bus) UserSubscribed(userID string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.userSubs[userID]) > 0
 }
 
 // Unsubscribe removes the channel and closes it.

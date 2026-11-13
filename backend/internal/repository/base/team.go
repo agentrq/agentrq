@@ -457,9 +457,10 @@ func (r *repository) DeleteWorkspaceShare(ctx context.Context, workspaceID, team
 	return res.Error
 }
 
-// sharedInTeam joins a workspace to its team's share: its own, or its
-// parent's for a fork, and only while the shared workspace is not archived.
-const sharedInTeam = "JOIN workspace_shares ON workspace_shares.team_id = ? AND " +
+// sharedWorkspace joins a workspace to its shares with teams: its own, or
+// its parent's for a fork, and only while the shared workspace is not
+// archived. A team's reads add workspace_shares.team_id = ?.
+const sharedWorkspace = "JOIN workspace_shares ON " +
 	"(workspace_shares.workspace_id = workspaces.id OR workspace_shares.workspace_id = workspaces.fork_of_id) " +
 	"JOIN workspaces AS shared ON shared.id = workspace_shares.workspace_id AND shared.archived_at IS NULL"
 
@@ -469,7 +470,8 @@ const sharedInTeam = "JOIN workspace_shares ON workspace_shares.team_id = ? AND 
 func (r *repository) CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error) {
 	var n int64
 	err := r.conn(ctx).Model(&model.Workspace{}).
-		Joins(sharedInTeam, teamID).
+		Joins(sharedWorkspace).
+		Where("workspace_shares.team_id = ?", teamID).
 		Joins("JOIN team_members ON team_members.team_id = workspace_shares.team_id AND team_members.user_id = ?", userID).
 		Where("workspaces.id = ? AND workspaces.archived_at IS NULL", workspaceID).
 		Count(&n).Error
@@ -483,10 +485,11 @@ func (r *repository) ListTeamWorkspaces(ctx context.Context, teamID int64) ([]Te
 	err := r.conn(ctx).Model(&model.Workspace{}).
 		Select("workspaces.id, workspaces.name, workspaces.fork_of_id, workspaces.user_id, workspace_shares.group_name, "+
 			"users.name AS owner_name, users.picture AS owner_picture").
-		Joins(sharedInTeam, teamID).
+		Joins(sharedWorkspace).
+		Where("workspace_shares.team_id = ?", teamID).
 		Joins("LEFT JOIN users ON users.id = workspaces.user_id").
 		Where("workspaces.archived_at IS NULL").
-		Order("workspace_shares.group_name ASC, workspaces.name ASC, workspaces.id ASC").
+		Order("LOWER(workspace_shares.group_name) ASC, workspaces.name ASC, workspaces.id ASC").
 		Scan(&rows).Error
 	return rows, err
 }
