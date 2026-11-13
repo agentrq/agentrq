@@ -4,12 +4,11 @@
   SPDX-License-Identifier: AGPL-3.0-only
 -->
 
-<!-- Across the top of every page in team mode: a thin accent bar and whose
-     work this is, so nobody mistakes a teammate's workspace for their own.
+<!-- Across the top of every page in team mode: whose work this is, so
+     nobody mistakes a teammate's workspace for their own.
      Right after joining (?joined=1), once, the offer to share yours. -->
 <template>
   <div data-test="team-mode-bar" class="shrink-0">
-    <div class="h-0.5 bg-indigo-500 dark:bg-indigo-400"></div>
     <div class="flex items-center gap-2 px-4 py-1.5 text-[11px] text-gray-600 dark:text-zinc-300 border-b border-gray-100 dark:border-zinc-800">
       <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 dark:bg-indigo-400 shrink-0"></span>
       <span class="truncate">Viewing <span class="font-semibold text-gray-900 dark:text-white">{{ name }}</span> (read-only)</span>
