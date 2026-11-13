@@ -130,6 +130,16 @@ const TEAM_READS = (api) => ({
   myInvitations: () => api.listMyInvitations(),
   preview: ({ token }) => api.previewInvitation(token),
   shares: ({ workspaceId }) => api.listWorkspaceShares(workspaceId),
+  workspaces: ({ teamId }) => api.fetchTeamWorkspaces(teamId),
+  tasks: ({ teamId, status = '', group = '', member = '', limit = 10, offset = 0 }) =>
+    api.fetchTeamTasks(teamId, { status, group, member, limit, offset }),
+  task: ({ teamId, taskId }) => api.getTeamTask(teamId, taskId),
+  analytics: ({ teamId, range = '7d', group = '' }) => api.fetchTeamStats(teamId, range, 0, 0, group),
+  memory: ({ teamId }) => api.getTeamMemory(teamId),
+  memoryIndex: ({ teamId }) => api.fetchTeamMemoryIndex(teamId),
+  memberMemory: ({ teamId, workspaceId, name }) => api.getTeamMemberMemory(teamId, workspaceId, name),
+  skills: ({ teamId }) => api.fetchTeamSkills(teamId),
+  skill: ({ teamId, name }) => api.getTeamSkill(teamId, name),
 })
 
 const TEAM_WRITES = (api) => ({
@@ -144,12 +154,16 @@ const TEAM_WRITES = (api) => ({
   decline: ({ invitationId }) => api.declineInvitation(invitationId),
   share: ({ workspaceId, teamId, group = '' }) => api.shareWorkspace(workspaceId, teamId, group),
   unshare: ({ workspaceId, teamId }) => api.unshareWorkspace(workspaceId, teamId),
+  saveMemory: ({ teamId, content, baseUpdatedAt = '' }) => api.saveTeamMemory(teamId, content, baseUpdatedAt),
+  addSkill: ({ teamId, name, workspaceIds = [] }) => api.addTeamSkill(teamId, name, workspaceIds),
 })
 
 /** Where a manageTeam action shows: the page that holds what it changes. */
 function teamWritePage(input = {}) {
   if (input.action === 'share' || input.action === 'unshare') return sharingPage(input)
   if (input.action === 'accept' || input.action === 'decline') return '/invitations'
+  if (input.action === 'saveMemory') return `/team/memory?team=${seg(input.teamId)}`
+  if (input.action === 'addSkill') return `/skills?team=${seg(input.teamId)}`
   return teamPage(input)
 }
 
@@ -1484,10 +1498,20 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       name: 'readTeams',
       description:
         'Read teams. action: list (your teams and role), get, members, invitations (a team\'s pending ones), ' +
-        'myInvitations (addressed to you), preview (a link\'s invitation, by token), shares (the teams a workspace is shared with).',
+        'myInvitations (addressed to you), preview (a link\'s invitation, by token), shares (the teams a workspace is shared with). ' +
+        'A team\'s shared work, read-only: workspaces, tasks (status, group, member), task (taskId), analytics (range, group), ' +
+        'memory, memoryIndex, memberMemory (workspaceId, name), skills, skill (name).',
       properties: {
         action: { type: 'string', enum: Object.keys(TEAM_READS({})), description: 'What to read.' },
         ...TEAM_FIELDS,
+        taskId: TASK_ID,
+        status: str('Comma-separated task statuses to keep, e.g. "ongoing,blocked".'),
+        group: str('A group name, as the workspaces action reports it.'),
+        member: str('A member\'s user ID: only their tasks.'),
+        limit: int('Page size. Defaults to 10.'),
+        offset: int('How many to skip. Defaults to 0.'),
+        range: str('Analytics range: 24h, 7d, 30d or 90d. Defaults to 7d.'),
+        name: str('A memory or skill name.'),
       },
       required: ['action'],
       readOnly: true,
@@ -1510,11 +1534,15 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description:
         'Change a team. action: rename (name), delete (owner only), setRole/removeMember (userId, role), leave, ' +
         'invite (email, role; at most a few per team per day, 429 past it), revokeInvitation, accept (token or invitationId), ' +
-        'decline, share/unshare (workspaceId, teamId; share takes group, its "show in team as" name; owner only).',
+        'decline, share/unshare (workspaceId, teamId; share takes group, its "show in team as" name; owner only), ' +
+        'saveMemory (content, baseUpdatedAt: the team\'s memory.md), addSkill (name, workspaceIds: copy a teammate\'s skill into your account).',
       properties: {
         action: { type: 'string', enum: Object.keys(TEAM_WRITES({})), description: 'What to change.' },
         ...TEAM_FIELDS,
-        name: str('The team\'s new name, for rename.'),
+        name: str('The team\'s new name, for rename; the skill\'s, for addSkill.'),
+        content: str('The team memory\'s full markdown, for saveMemory.'),
+        baseUpdatedAt: str('The updatedAt the memory was read at; a newer save is refused (409).'),
+        workspaceIds: { type: 'array', items: { type: 'string' }, description: 'Your workspaces to turn an added skill on in.' },
         email: str('The email to invite.'),
         role: { type: 'string', enum: ['member', 'admin', 'owner'], description: 'A member\'s role. Invitations default to member.' },
         group: str('The group a shared workspace shows in, in the team. Defaults to the workspace name.'),
@@ -1523,6 +1551,20 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       destructive: true,
       screen: before(teamWritePage),
       run: dispatch(TEAM_WRITES(api), 'manageTeam'),
+    }),
+    tool({
+      name: 'cloneTeamTask',
+      description:
+        'Copy a teammate\'s task, from a team you are in, into one of your own workspaces, with a note linking back to it.',
+      properties: {
+        teamId: TEAM_ID,
+        taskId: TASK_ID,
+        workspaceId: str('Your workspace to clone it into.'),
+        status: { type: 'string', enum: ['notstarted', 'ongoing'], description: 'The clone\'s status. Defaults to notstarted.' },
+      },
+      required: ['teamId', 'taskId', 'workspaceId'],
+      screen: after(({ workspaceId }, result) => (result?.task?.id ? taskPage({ workspaceId, taskId: result.task.id }) : workspacePage({ workspaceId }))),
+      run: ({ teamId, taskId, workspaceId, status = 'notstarted' }) => api.cloneTeamTask(teamId, taskId, workspaceId, status),
     }),
   ]
 }
