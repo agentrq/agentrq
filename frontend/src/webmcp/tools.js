@@ -204,21 +204,20 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Go to an in-app path, ' +
-        'optionally ?query; IDs from getCurrentPage or list tools.\n' +
-        '- "/" every workspace, "/workspaces/new" creates one.\n' +
-        '- "/kanban" or "/tasks/<filter>" tasks in all workspaces; <filter> is active, notstarted, pending ' +
-        '(on the user), ongoing, completed, scheduled. Add "/<workspaceId>/<taskId>" to ' +
-        'open one beside it, then "/instances" for its runs.\n' +
-        '- "/workspaces/<workspaceId>" its tasks ("?filter=" as above); under it "/board", ' +
-        '"/analytics", "/settings", "/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
-        '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +
-        'skills, slack, input, storage or danger.\n' +
-        '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/skills", "/skills/<name>", "/{pano,events/hooks}/new", ' +
+        'Go to an in-app path (?query allowed); IDs from getCurrentPage or list tools.\n' +
+        '- "/" workspaces, "/workspaces/new".\n' +
+        '- "/kanban" or "/tasks/<filter>" (active, notstarted, pending, ongoing, completed, scheduled) of all ' +
+        'workspaces; add "/<workspaceId>/<taskId>" to open one, then "/instances".\n' +
+        '- "/workspaces/<workspaceId>" ("?filter=" as above); under it "/board", "/analytics", "/settings", ' +
+        '"/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", plus "/instances" or "/edit". Its ' +
+        '"?tab=" general, setup, automations, notifications, memories, skills, sharing, slack, input, storage or danger.\n' +
+        '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/skills[/<name>]", "/{pano,events/hooks}/new", ' +
         '"/pano/[<id>/]chat/<workspaceId>/<taskId>".\n' +
-        '- "/machines", "/machines/<id>", "/sessions/<id>" (a terminal).\n' +
-        '- "/extensions", "/extensions/<name>/<pageId>" (desktop).\n' +
-        'Others are refused. Returns the page.',
+        '- "/machines[/<id>]", "/sessions/<id>" (a terminal).\n' +
+        '- "/extensions[/<name>/<pageId>]" (desktop).\n' +
+        '- "/team/new", "/invitations"; "?team=<id>" on "/tasks/*", "/kanban", "/skills", ' +
+        '"/team/{settings,analytics,memory}" is a team, read-only.\n' +
+        'Others are refused.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
       required: ['path'],
       run: async ({ path }) => {
