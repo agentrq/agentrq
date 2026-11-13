@@ -72,6 +72,7 @@ type teamMode struct {
 	db         *gorm.DB
 	attachTask string // Alice's task in 100 with a file
 	attachment string
+	html, svg  string // two more of its files, a browser would run
 }
 
 var (
@@ -170,11 +171,17 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 	// Alice's task with a file, a message and a plan.
 	rs, err := crudCtrl.CreateTask(ctx, entity.CreateTaskRequest{UserID: aliceID, Task: entity.Task{
 		WorkspaceID: 100, Title: "ship it", Body: "the body", Status: "notstarted", Assignee: "human", CreatedBy: "human",
-		Attachments: []entity.Attachment{{Filename: "notes.txt", MimeType: "text/plain", Data: base64.StdEncoding.EncodeToString([]byte("file bytes"))}},
+		Attachments: []entity.Attachment{
+			{Filename: "notes.txt", MimeType: "text/plain", Data: base64.StdEncoding.EncodeToString([]byte("file bytes"))},
+			{Filename: "page.html", MimeType: "text/html", Data: base64.StdEncoding.EncodeToString([]byte("<script>alert(document.cookie)</script>"))},
+			{Filename: "pic.svg", MimeType: "image/svg+xml", Data: base64.StdEncoding.EncodeToString([]byte(`<svg onload="alert(1)"/>`))},
+		},
 	}})
 	must(err)
-	m := &teamMode{db: db, attachTask: monoflake.ID(rs.Task.ID).String(), attachment: rs.Task.Attachments[0].ID}
-	must(db.Create(&model.Message{ID: 41, TaskID: rs.Task.ID, UserID: 1, Sender: "agent", Text: "on it", CreatedAt: now}).Error)
+	m := &teamMode{db: db, attachTask: monoflake.ID(rs.Task.ID).String(), attachment: rs.Task.Attachments[0].ID,
+		html: rs.Task.Attachments[1].ID, svg: rs.Task.Attachments[2].ID}
+	must(db.Create(&model.Message{ID: 41, TaskID: rs.Task.ID, UserID: 1, Sender: "agent", Text: "on it", CreatedAt: now,
+		Attachments: []byte(`[{"id":"m1","filename":"log.txt","mimeType":"text/plain","url":"/storage/artifacts/w-1/x/m1"}]`)}).Error)
 	must(db.Create(&model.TaskPlan{ID: rs.Task.ID, Content: "1. ship", Version: 1, CreatedAt: now, UpdatedAt: now}).Error)
 	// A doc of Alice's Pano about the task, which her teammates never see.
 	must(db.Create(&model.PanoDoc{ID: 51, UserID: 1, Title: "private", TTLDays: 30, CreatedAt: now, UpdatedAt: now, ExpiresAt: now.Add(24 * time.Hour)}).Error)
@@ -206,6 +213,7 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 	h := &handler{router: app.Group("/api/v1"), teams: teams, teamView: tv, crud: crudCtrl, mcpManager: &fakeMCPManager{server: &fakeWorkspaceServer{}}}
 	h.registerTeamRoutes()
 	h.registerTeamViewRoutes()
+	must(h.registerTaskRoutes())
 	m.app = app
 	return m
 }
@@ -283,6 +291,9 @@ func (m *teamMode) tasks(t *testing.T) {
 		if owner["name"] != "Alice" || first["group"] != "Backend" || first["title"] != "ship it" {
 			t.Errorf("the first task reads %v", first)
 		}
+		if got, want := fileLinks(first), m.teamLinks(); got != want {
+			t.Errorf("the listed task links its files to %q, want the team's route %q", got, want)
+		}
 	}
 	for q, want := range map[string][]string{
 		"?status=completed":                 {task2000},
@@ -320,6 +331,15 @@ func (m *teamMode) task(t *testing.T) {
 	if msgs, _ := task["messages"].([]any); len(msgs) != 1 {
 		t.Errorf("the task's messages are %v", task["messages"])
 	}
+	want := m.teamLinks()
+	if got := fileLinks(task); got != want {
+		t.Errorf("the task links its files to %q, want the team's route %q", got, want)
+	}
+	// The link is one the reader can follow.
+	link := strings.Fields(want)[0]
+	if status, _, b := m.raw(t, bobID, strings.TrimPrefix(link, "/api/v1")); status != http.StatusOK || b != "file bytes" {
+		t.Errorf("following %s answered %d %q", link, status, b)
+	}
 	if docs, ok := body["panoDocs"].([]any); ok && len(docs) > 0 {
 		t.Errorf("a teammate sees the owner's Pano docs %v", docs)
 	}
@@ -347,6 +367,33 @@ func (m *teamMode) task(t *testing.T) {
 	expectStatus(t, "a task id that is not one", status, http.StatusBadRequest, body)
 }
 
+// teamLinks is team 10's links to the files of Alice's task, its own then
+// its message's.
+func (m *teamMode) teamLinks() string {
+	base := "/api/v1/teams/" + teamTen + "/tasks/" + m.attachTask + "/attachments/"
+	return base + m.attachment + " " + base + m.html + " " + base + m.svg + " " + base + "m1"
+}
+
+// fileLinks is the url of every file of task, its own then its messages'.
+func fileLinks(task map[string]any) string {
+	var out []string
+	add := func(list any) {
+		items, _ := list.([]any)
+		for _, it := range items {
+			a, _ := it.(map[string]any)
+			u, _ := a["url"].(string)
+			out = append(out, u)
+		}
+	}
+	add(task["attachments"])
+	msgs, _ := task["messages"].([]any)
+	for _, it := range msgs {
+		msg, _ := it.(map[string]any)
+		add(msg["attachments"])
+	}
+	return strings.Join(out, " ")
+}
+
 // raw is a GET as user, undecoded.
 func (m *teamMode) raw(t *testing.T, user, path string) (int, http.Header, string) {
 	t.Helper()
@@ -366,6 +413,23 @@ func (m *teamMode) attachmentRoute(t *testing.T) {
 	status, hdr, body := m.raw(t, bobID, path)
 	if status != http.StatusOK || body != "file bytes" || hdr.Get("Content-Type") != "text/plain" || !strings.Contains(hdr.Get("Content-Disposition"), "notes.txt") {
 		t.Errorf("Bob reading Alice's file answered %d %v %q", status, hdr, body)
+	}
+	// A file a browser would run is served as one it cannot, on the team's
+	// route and the owner's alike, and a plain one is sandboxed too.
+	for _, f := range []struct{ user, path, disposition string }{
+		{bobID, path, "inline"},
+		{bobID, "/teams/" + teamTen + "/tasks/" + m.attachTask + "/attachments/" + m.html, "attachment"},
+		{bobID, "/teams/" + teamTen + "/tasks/" + m.attachTask + "/attachments/" + m.svg, "attachment"},
+		{aliceID, "/workspaces/" + ws100 + "/tasks/" + m.attachTask + "/attachments/" + m.attachment, "inline"},
+		{aliceID, "/workspaces/" + ws100 + "/tasks/" + m.attachTask + "/attachments/" + m.html, "attachment"},
+		{aliceID, "/workspaces/" + ws100 + "/tasks/" + m.attachTask + "/attachments/" + m.svg, "attachment"},
+	} {
+		status, hdr, _ := m.raw(t, f.user, f.path)
+		ct := map[string]string{"inline": "text/plain", "attachment": "application/octet-stream"}[f.disposition]
+		if status != http.StatusOK || hdr.Get("Content-Type") != ct || hdr.Get("X-Content-Type-Options") != "nosniff" ||
+			!strings.HasSuffix(hdr.Get("Content-Security-Policy"), "; sandbox") || !strings.HasPrefix(hdr.Get("Content-Disposition"), f.disposition+"; filename=") {
+			t.Errorf("%s answered %d %v, want %s as %s, nosniff, sandboxed", f.path, status, hdr, f.disposition, ct)
+		}
 	}
 	status, _, _ = m.raw(t, daveID, path)
 	if status != http.StatusNotFound {
@@ -433,8 +497,9 @@ func (m *teamMode) clone(t *testing.T) {
 	if clone.WorkspaceID != 201 || clone.UserID != 2 || clone.Status != "ongoing" || clone.Title != "ship it" || clone.Body != note || clone.Assignee != "agent" {
 		t.Errorf("the clone is %+v", clone)
 	}
-	if !strings.Contains(string(clone.Attachments), "notes.txt") {
-		t.Errorf("the clone's files are %s", clone.Attachments)
+	if got := string(clone.Attachments); !strings.Contains(got, "notes.txt") || !strings.Contains(got, "page.html") ||
+		strings.Contains(got, "text/html") || strings.Contains(got, "image/svg") {
+		t.Errorf("the clone's files are %s: want all three, none typed as one a browser runs", got)
 	}
 
 	status, body = call(t, m.app, bobID, http.MethodPost, "/teams/"+teamTen+"/tasks/"+task2000+"/clone", `{"workspaceId":"`+ws201+`"}`)
@@ -466,7 +531,14 @@ func (m *teamMode) memory(t *testing.T) {
 	if status != http.StatusOK || body["content"] != "first" || body["conflict"] != false || first == "" {
 		t.Fatalf("Alice's save answered %d %v", status, body)
 	}
-	status, body = call(t, m.app, bobID, http.MethodPut, path, `{"content":"second","baseUpdatedAt":"`+first+`"}`)
+	// Bob loaded the memory empty, before Alice's first save: his save,
+	// with no base, replaces hers and says so.
+	status, body = call(t, m.app, bobID, http.MethodPut, path, `{"content":"bob's first"}`)
+	raced, _ := body["updatedAt"].(string)
+	if status != http.StatusOK || body["content"] != "bob's first" || body["conflict"] != true || raced == "" {
+		t.Fatalf("Bob's first save over Alice's answered %d %v, want it saved with conflict", status, body)
+	}
+	status, body = call(t, m.app, bobID, http.MethodPut, path, `{"content":"second","baseUpdatedAt":"`+raced+`"}`)
 	by, _ := body["updatedBy"].(map[string]any)
 	if status != http.StatusOK || body["conflict"] != false || by["name"] != "Bob" {
 		t.Errorf("Bob's save on what he read answered %d %v", status, body)
@@ -586,7 +658,8 @@ func (m *teamMode) unshareAndRemove(t *testing.T) {
 	if status != http.StatusNoContent && status != http.StatusOK {
 		t.Fatalf("Alice removing Bob answered %d %v", status, body)
 	}
-	for _, p := range []string{"/tasks", "/tasks/" + m.attachTask, "/workspaces", "/memory", "/skills", "/analytics", "/memory/index"} {
+	for _, p := range []string{"/tasks", "/tasks/" + m.attachTask, "/tasks/" + m.attachTask + "/attachments/" + m.attachment,
+		"/workspaces", "/memory", "/skills", "/analytics", "/memory/index"} {
 		status, body := m.get(t, bobID, "/teams/"+teamTen+p)
 		expectStatus(t, "Bob, just removed, reading "+p, status, http.StatusNotFound, body)
 	}

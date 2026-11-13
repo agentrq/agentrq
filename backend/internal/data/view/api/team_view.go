@@ -105,7 +105,7 @@ type CloneTeamTaskRequest struct {
 }
 
 // TeamMemory is a team's memory.md. updatedAt and updatedBy are null before
-// anyone saved it; conflict says a save replaced a newer one.
+// anyone saved it; conflict says a save replaced one its writer had not read.
 type TeamMemory struct {
 	Content   string     `json:"content"`
 	UpdatedAt *time.Time `json:"updatedAt"`
@@ -114,7 +114,8 @@ type TeamMemory struct {
 }
 
 // SaveTeamMemoryRequest saves a team's memory; baseUpdatedAt is the
-// updatedAt the writer read, empty when there was none.
+// updatedAt the writer read, empty when there was none. A save with none
+// that replaces a memory reports a conflict.
 type SaveTeamMemoryRequest struct {
 	Content       string `json:"content"`
 	BaseUpdatedAt string `json:"baseUpdatedAt"`

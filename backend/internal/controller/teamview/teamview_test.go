@@ -7,6 +7,7 @@ package teamview
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +29,8 @@ type fake struct {
 	memRows   []base.WorkspaceMemoryRow
 	skillRows []base.WorkspaceSkillRow
 	published []entity.CRUDEvent
+	missing   string                   // the attachment whose file is gone
+	created   entity.CreateTaskRequest // the last task created
 }
 
 func (f *fake) err(name string) error {
@@ -53,13 +56,17 @@ func (f *fake) GetTask(context.Context, entity.GetTaskRequest) (*entity.GetTaskR
 func (f *fake) GetTaskPlan(context.Context, entity.GetTaskPlanRequest) (*entity.GetTaskPlanResponse, error) {
 	return &entity.GetTaskPlanResponse{}, f.err("GetTaskPlan")
 }
-func (f *fake) GetAttachment(context.Context, entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error) {
+func (f *fake) GetAttachment(_ context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error) {
+	if req.AttachmentID == f.missing {
+		return nil, base.ErrNotFound
+	}
 	return &entity.GetAttachmentResponse{Data: []byte("x")}, f.err("GetAttachment")
 }
 func (f *fake) GetMemory(context.Context, entity.GetMemoryRequest) (*entity.GetMemoryResponse, error) {
 	return &entity.GetMemoryResponse{}, f.err("GetMemory")
 }
-func (f *fake) CreateTask(context.Context, entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+func (f *fake) CreateTask(_ context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+	f.created = req
 	return &entity.CreateTaskResponse{Task: entity.Task{ID: 9}}, f.err("CreateTask")
 }
 func (f *fake) SystemListTasksInWorkspaces(context.Context, entity.ListTasksRequest, []int64) (*entity.ListTasksResponse, error) {
@@ -142,7 +149,6 @@ func TestFailures(t *testing.T) {
 		}},
 		{"SystemGetTask", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
 		{"GetTeam", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
-		{"GetAttachment", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
 		{"CreateTask", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
 		{"GetTeam", func(c Controller) error { _, err := c.GetMemory(ctx, 2, 10); return err }},
 		{"GetTeamMemory", func(c Controller) error { _, err := c.GetMemory(ctx, 2, 10); return err }},
@@ -245,9 +251,28 @@ func TestOptionalReads(t *testing.T) {
 	f.fail = ""
 
 	f.task.Attachments = []byte(`not json`)
-	f.fail = "GetAttachment" // would surface if read
-	if _, err := c.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201}); err != nil {
-		t.Errorf("a clone of a task whose attachments are not JSON: %v", err)
+	if _, err := c.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201}); err != nil || f.created.Task.Attachments != nil {
+		t.Errorf("a clone of a task whose attachments are not JSON: %v, files %+v", err, f.created.Task.Attachments)
+	}
+}
+
+// A clone carries no file a browser could run as a page, and leaves out a
+// file that is gone rather than failing.
+func TestCloneFiles(t *testing.T) {
+	f, c := newFake()
+	f.task.Attachments = []byte(`[{"id":"a","filename":"a.html","mimeType":"text/html"},{"id":"gone","filename":"g.txt","mimeType":"text/plain"},` +
+		`{"id":"s","filename":"s.svg","mimeType":"image/svg+xml"},{"id":"p","filename":"p.png","mimeType":"image/png"}]`)
+	f.missing = "gone"
+	if _, err := c.CloneTask(context.Background(), entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201}); err != nil {
+		t.Fatalf("a clone with a file gone: %v", err)
+	}
+	var got []string
+	for _, a := range f.created.Task.Attachments {
+		got = append(got, a.Filename+" "+a.MimeType+" "+a.Data)
+	}
+	want := []string{"a.html application/octet-stream eA==", "s.svg application/octet-stream eA==", "p.png image/png eA=="}
+	if strings.Join(got, ", ") != strings.Join(want, ", ") {
+		t.Errorf("the clone's files are %q, want %q", got, want)
 	}
 }
 

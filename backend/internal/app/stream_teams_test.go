@@ -108,7 +108,10 @@ func TestForwardCRUDEvent_Teams(t *testing.T) {
 				&model.TeamMember{ID: 25, TeamID: 20, UserID: 5, Role: "member"},
 				&model.WorkspaceShare{ID: 31, TeamID: 10, WorkspaceID: 100, UserID: 1, GroupName: "Backend"},
 				&model.WorkspaceShare{ID: 32, TeamID: 20, WorkspaceID: 100, UserID: 1, GroupName: "Services"},
-				&model.Task{ID: 1000, WorkspaceID: 100, UserID: 1, Title: "shared", Status: "ongoing"},
+				&model.Task{ID: 1000, WorkspaceID: 100, UserID: 1, Title: "shared", Status: "ongoing",
+					Attachments: []byte(`[{"id":"f1","filename":"a.html","mimeType":"text/html","url":"/storage/artifacts/w-1/1000/f1"}]`)},
+				&model.Message{ID: 900, TaskID: 1000, UserID: 1, Sender: "agent", Text: "see",
+					Attachments: []byte(`[{"id":"f2","filename":"b.svg","mimeType":"image/svg+xml","url":"/storage/artifacts/w-1/1000/f2"}]`)},
 				&model.Task{ID: 1010, WorkspaceID: 101, UserID: 1, Title: "forked", Status: "ongoing"},
 				&model.Task{ID: 1020, WorkspaceID: 102, UserID: 1, Title: "secret", Status: "ongoing"},
 			} {
@@ -136,18 +139,59 @@ func TestForwardCRUDEvent_Teams(t *testing.T) {
 			}
 
 			update(100, 1000)
-			expect("Alice, the owner, in both teams", alice, "task.updated@ team.task.updated@"+ten+" team.task.updated@"+twenty)
+			// A teammate's links to the task's files go through the team's
+			// route, which ends with the share; the owner keeps hers.
+			files := func(e streamEvent) string {
+				var out []string
+				for _, list := range []any{e.Payload["attachments"], e.Payload["messages"]} {
+					items, _ := list.([]any)
+					for _, it := range items {
+						o, _ := it.(map[string]any)
+						if atts, ok := o["attachments"].([]any); ok {
+							for _, a := range atts {
+								out = append(out, a.(map[string]any)["url"].(string))
+							}
+						} else {
+							out = append(out, o["url"].(string))
+						}
+					}
+				}
+				return strings.Join(out, " ")
+			}
+			teamFiles := func(team string) string {
+				base := "/api/v1/teams/" + team + "/tasks/" + monoflake.ID(1000).String() + "/attachments/"
+				return base + "f1 " + base + "f2"
+			}
+			for _, e := range expect("Alice, the owner, in both teams", alice, "task.updated@ team.task.updated@"+ten+" team.task.updated@"+twenty) {
+				want := map[string]string{"": "/storage/artifacts/w-1/1000/f1 /storage/artifacts/w-1/1000/f2", ten: teamFiles(ten), twenty: teamFiles(twenty)}[e.TeamID]
+				if got := files(e); got != want {
+					t.Errorf("Alice's %s@%s links to %q, want %q", e.Type, e.TeamID, got, want)
+				}
+			}
 			es := expect("Bob, in team 10", bob, "team.task.updated@"+ten)
 			if len(es) == 1 {
 				owner, _ := es[0].Payload["owner"].(map[string]any)
 				if es[0].Payload["id"] != monoflake.ID(1000).String() || es[0].Payload["group"] != "Backend" || owner["name"] != "Alice" {
 					t.Errorf("Bob's event carries %v", es[0].Payload)
 				}
+				if got := files(es[0]); got != teamFiles(ten) {
+					t.Errorf("Bob's event links to %q", got)
+				}
 			}
 			if es := expect("Erin, in team 20", erin, "team.task.updated@"+twenty); len(es) == 1 && es[0].Payload["group"] != "Services" {
 				t.Errorf("Erin's event is in group %v, want her team's", es[0].Payload["group"])
 			}
 			expect("Dave, in no team", dave, "")
+
+			// An event naming a shared workspace for a task that is now in
+			// an unshared one reaches the owner alone.
+			update(100, 1020)
+			expect("Bob, for a task moved out of the shared workspace", bob, "")
+			expect("Alice, for a task moved out of the shared workspace", alice, "task.updated@")
+			update(102, 1000)
+			expect("Bob, for an event of an unshared workspace whose task is now in a shared one", bob, "")
+			drain(t, alice)
+			drain(t, erin)
 
 			update(101, 1010)
 			expect("Bob, for the fork of a shared workspace", bob, "team.task.updated@"+ten)
