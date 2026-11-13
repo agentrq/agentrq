@@ -186,6 +186,9 @@ describe('the catalogue as a whole', () => {
         // Not a delete either, but every agent connected with the old MCP URL
         // stops working, and every link to the workspace changes.
         'resetWorkspaceId',
+        // Teams' changes, grouped in one tool: it deletes a team, removes
+        // members, and unshares workspaces from teammates.
+        'manageTeam',
       ].sort()
     );
   });
@@ -270,8 +273,19 @@ describe('parity with the interface', () => {
     });
     const drive = (input) =>
       Promise.all(catalogue.map((t) => Promise.resolve().then(() => t.execute(input, {})).catch(() => {})));
+    // A grouped tool (readTeams, manageTeam) calls one function per action,
+    // so it is driven once with each action it lists.
+    const driveActions = () =>
+      Promise.all(
+        catalogue.flatMap((t) =>
+          (t.inputSchema.properties.action?.enum || []).map((action) =>
+            Promise.resolve().then(() => t.execute({ ...EVERY_FIELD, action }, {})).catch(() => {})
+          )
+        )
+      );
     return drive(EVERY_FIELD)
       .then(() => drive({}))
+      .then(driveActions)
       .then(() => new Set(calls.map((c) => c.method)));
   })();
 
@@ -544,6 +558,29 @@ describe('each tool calls the interface the way the UI does', () => {
       'launchAgent',
       ['ws1', { machineId: 'm1', kind: 'acp-gateway', model: '', effort: '', autocompact: '', agent: 'codex-acp', acpVersion: '1', cols: 0, rows: 0 }],
     ],
+
+    ['readTeams', { action: 'list' }, 'listTeams', []],
+    ['readTeams', { action: 'get', teamId: 'tm1' }, 'getTeam', ['tm1']],
+    ['readTeams', { action: 'members', teamId: 'tm1' }, 'listTeamMembers', ['tm1']],
+    ['readTeams', { action: 'invitations', teamId: 'tm1' }, 'listTeamInvitations', ['tm1']],
+    ['readTeams', { action: 'myInvitations' }, 'listMyInvitations', []],
+    ['readTeams', { action: 'preview', token: 'tok' }, 'previewInvitation', ['tok']],
+    ['readTeams', { action: 'shares', workspaceId: 'ws1' }, 'listWorkspaceShares', ['ws1']],
+    ['createTeam', { name: 'Core' }, 'createTeam', ['Core']],
+    ['manageTeam', { action: 'rename', teamId: 'tm1', name: 'Infra' }, 'renameTeam', ['tm1', 'Infra']],
+    ['manageTeam', { action: 'delete', teamId: 'tm1' }, 'deleteTeam', ['tm1']],
+    ['manageTeam', { action: 'setRole', teamId: 'tm1', userId: 'u1', role: 'admin' }, 'setTeamMemberRole', ['tm1', 'u1', 'admin']],
+    ['manageTeam', { action: 'removeMember', teamId: 'tm1', userId: 'u1' }, 'removeTeamMember', ['tm1', 'u1']],
+    ['manageTeam', { action: 'leave', teamId: 'tm1' }, 'leaveTeam', ['tm1']],
+    ['manageTeam', { action: 'invite', teamId: 'tm1', email: 'b@acme.com' }, 'createTeamInvitation', ['tm1', 'b@acme.com', 'member']],
+    ['manageTeam', { action: 'invite', teamId: 'tm1', email: 'b@acme.com', role: 'admin' }, 'createTeamInvitation', ['tm1', 'b@acme.com', 'admin']],
+    ['manageTeam', { action: 'revokeInvitation', teamId: 'tm1', invitationId: 'i1' }, 'revokeTeamInvitation', ['tm1', 'i1']],
+    ['manageTeam', { action: 'accept', token: 'tok' }, 'acceptInvitation', [{ token: 'tok', invitationId: undefined }]],
+    ['manageTeam', { action: 'accept', invitationId: 'i1' }, 'acceptInvitation', [{ token: undefined, invitationId: 'i1' }]],
+    ['manageTeam', { action: 'decline', invitationId: 'i1' }, 'declineInvitation', ['i1']],
+    ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1' }, 'shareWorkspace', ['ws1', 'tm1', '']],
+    ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', group: 'backend' }, 'shareWorkspace', ['ws1', 'tm1', 'backend']],
+    ['manageTeam', { action: 'unshare', workspaceId: 'ws1', teamId: 'tm1' }, 'unshareWorkspace', ['ws1', 'tm1']],
   ];
 
   it.each(CASES)('%s(%o) calls %s', async (toolName, input, method, args) => {
@@ -554,6 +591,34 @@ describe('each tool calls the interface the way the UI does', () => {
     await found.execute(input, { signal: undefined });
 
     expect(calls).toEqual([{ method, args }]);
+  });
+});
+
+describe('the grouped team tools', () => {
+  it.each(['readTeams', 'manageTeam'])('%s refuses an action it does not list, naming the ones it does', (name) => {
+    const found = build().find((t) => t.name === name);
+
+    expect(() => found.execute({ action: 'explode' }, {})).toThrow(/takes an action of .*list|takes an action of .*rename/);
+    expect(() => found.execute(undefined, {})).toThrow('not undefined');
+  });
+
+  it('shows each change on the page that holds it', () => {
+    const page = (input) => build().find((t) => t.name === 'manageTeam').screen.before(input);
+
+    expect(page({ action: 'share', workspaceId: 'ws1', teamId: 'tm1' })).toBe('/workspaces/ws1/settings?tab=sharing');
+    expect(page({ action: 'unshare', workspaceId: 'ws1', teamId: 'tm1' })).toBe('/workspaces/ws1/settings?tab=sharing');
+    expect(page({ action: 'accept', token: 'tok' })).toBe('/invitations');
+    expect(page({ action: 'decline', invitationId: 'i1' })).toBe('/invitations');
+    expect(page({ action: 'invite', teamId: 't/1' })).toBe('/team/settings?team=t%2F1');
+    expect(page(undefined)).toBe('/team/settings?team=');
+  });
+
+  it('opens a new team\'s settings, or the create form when the answer names none', () => {
+    const after = build().find((t) => t.name === 'createTeam').screen.after;
+
+    expect(after({ name: 'Core' }, { team: { id: 'tm9' } })).toBe('/team/settings?team=tm9');
+    expect(after({ name: 'Core' }, { id: 'tm8', name: 'Core' })).toBe('/team/settings?team=tm8');
+    expect(after({ name: 'Core' }, {})).toBe('/team/new');
   });
 });
 
