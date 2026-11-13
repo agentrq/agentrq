@@ -8,6 +8,7 @@ import (
 	"regexp"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -57,18 +58,25 @@ func (h *handler) getPublicFile() fiber.Handler {
 			// The same answer for a bad link and a missing file, so a link cannot be probed.
 			return c.Status(fiber.StatusNotFound).SendString("Not Found")
 		}
-		// Only ever a harmless type (see storage.SafeContentType), never sniffed
-		// into something else, and in a sandbox that runs no script even so.
-		c.Set(fiber.HeaderContentType, res.ContentType)
-		c.Set(fiber.HeaderXContentTypeOptions, "nosniff")
-		c.Set(fiber.HeaderContentSecurityPolicy, "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox")
-		if res.ContentType == "application/octet-stream" {
-			c.Set(fiber.HeaderContentDisposition, "attachment")
-		} else {
-			c.Set(fiber.HeaderContentDisposition, "inline")
-		}
+		c.Set(fiber.HeaderContentDisposition, sandboxFile(c, res.ContentType))
 		// A blob is never rewritten, only replaced under a new key.
 		c.Set(fiber.HeaderCacheControl, "public, max-age=86400, immutable")
 		return c.Send(res.Data)
 	}
+}
+
+// sandboxFile sets the headers every route serving a stored file sends, and
+// returns the disposition to send it with. The file is only ever a harmless
+// type (see storage.SafeContentType), never sniffed into something else, and
+// in a sandbox that runs no script even so: a file is uploaded by whoever
+// wrote the task, and is read on the app's origin with the reader's session.
+func sandboxFile(c *fiber.Ctx, contentType string) string {
+	ct := storage.SafeContentType(contentType)
+	c.Set(fiber.HeaderContentType, ct)
+	c.Set(fiber.HeaderXContentTypeOptions, "nosniff")
+	c.Set(fiber.HeaderContentSecurityPolicy, "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox")
+	if ct == "application/octet-stream" {
+		return "attachment"
+	}
+	return "inline"
 }
