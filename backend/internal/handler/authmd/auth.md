@@ -78,6 +78,10 @@ Send it as `Authorization: Bearer <access_token>` on every request to the MCP
 endpoint. A token works only on the server, and for a workspace token the
 workspace, it was issued for.
 
+To learn whose a supervisor access token is, `GET` `/oauth2/userinfo` under the
+supervisor's path with the same header. It answers `sub`, `id` (both the user's
+ID), `email`, `name` and `picture`, and `401` for any other credential.
+
 ## Not supported
 
 - Agent self-registration (`agent_auth`: anonymous, verified email or

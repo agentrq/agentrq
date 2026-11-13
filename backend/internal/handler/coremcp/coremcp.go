@@ -129,6 +129,7 @@ func New(p Params) (Handler, error) {
 	p.Mux.Handle("/mcp/oauth2/authorize", h.oauthAuthorizeHandler())
 	p.Mux.Handle("/mcp/oauth2/token", corsWrapper(h.oauthTokenHandler()))
 	p.Mux.Handle("/mcp/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
+	p.Mux.Handle("/mcp/oauth2/userinfo", corsWrapper(h.oauthUserInfoHandler()))
 	// Covers the workspace servers too; it lives here because the mcp. host
 	// below answers every other path with this server's endpoint.
 	authMD := authmd.Handler(p.BaseURL)
@@ -146,6 +147,7 @@ func New(p Params) (Handler, error) {
 		p.Mux.Handle(hostPattern+"/oauth2/authorize", h.oauthAuthorizeHandler())
 		p.Mux.Handle(hostPattern+"/oauth2/token", corsWrapper(h.oauthTokenHandler()))
 		p.Mux.Handle(hostPattern+"/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
+		p.Mux.Handle(hostPattern+"/oauth2/userinfo", corsWrapper(h.oauthUserInfoHandler()))
 		p.Mux.Handle(hostPattern+"/auth.md", authMD)
 		p.Mux.Handle(hostPattern+manifestPath, manifest)
 		p.Mux.Handle(hostPattern+openAIChallengePath, openAIChallenge)
@@ -444,16 +446,8 @@ func (h *handler) streamableHandler() http.Handler {
 			return
 		}
 
-		// Ensure it's a valid coremcp access token
-		resource := supervisorResource(claims.Audience)
-		hasRestricted := false
-		for _, aud := range claims.Audience {
-			if aud == "refresh" || aud == "authorization_code" {
-				hasRestricted = true
-			}
-		}
-
-		if resource == "" || hasRestricted || claims.Subject == "" {
+		resource := accessResource(claims)
+		if resource == "" {
 			challengeUnauthorized(w, r, "unauthorized")
 			return
 		}
@@ -488,12 +482,14 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 		authEndpoint := baseURL + pathPrefix + "/oauth2/authorize"
 		tokenEndpoint := baseURL + pathPrefix + "/oauth2/token"
 		regEndpoint := baseURL + pathPrefix + "/oauth2/register"
+		userInfoEndpoint := baseURL + pathPrefix + "/oauth2/userinfo"
 
 		metadata := map[string]interface{}{
 			"issuer":                   id.issuer,
 			"authorization_endpoint":   authEndpoint,
 			"token_endpoint":           tokenEndpoint,
 			"registration_endpoint":    regEndpoint,
+			"userinfo_endpoint":        userInfoEndpoint,
 			"response_types_supported": []string{"code"},
 			"scopes_supported":         []string{oauthScope, oauthScopeReadOnly},
 			// Deliberately no client_credentials: every token here is bound to

@@ -219,6 +219,10 @@ sets the choice the page opens with, and is never refused either.
 PKCE is S256 only and optional: a code issued without a challenge is redeemed
 without a verifier, so clients that never sent PKCE keep signing in.
 
+The supervisor's `/oauth2/userinfo` takes a supervisor access token from the
+header only, checked by the endpoint's own `accessResource`; a cookie or
+`?token=` is no grant to the client asking.
+
 A signed-out person goes to the app's `/login` (`oauthconsent.LoginURL`), never
 a provider's login route: that one provider would be their only way in, which
 locks out GitHub and root-token accounts.
