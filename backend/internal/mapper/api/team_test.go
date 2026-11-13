@@ -53,8 +53,8 @@ func TestTeamEntitiesRender(t *testing.T) {
 			EmailSent:  true,
 		})), `{"invitation":{"id":"00000000003","teamId":"00000000001","teamName":"core","email":"d@x.io","role":"member","invitedBy":"00000000002",` +
 			`"invitedByName":"Bob","createdAt":"2026-11-13T12:00:00Z","expiresAt":"2026-11-13T12:00:00Z"},"emailSent":true}`},
-		"a preview": {string(FromTeamInvitationPreviewEntityToHTTPResponse(entity.TeamInvitationPreview{TeamName: "core", Role: "member", InvitedByName: "Bob", Email: "d***@x.io", EmailMatches: true, ExpiresAt: at})),
-			`{"teamName":"core","role":"member","invitedByName":"Bob","email":"d***@x.io","emailMatches":true,"expiresAt":"2026-11-13T12:00:00Z"}`},
+		"a preview": {string(FromTeamInvitationPreviewEntityToHTTPResponse(entity.TeamInvitationPreview{TeamID: 1, TeamName: "core", Role: "member", InvitedByName: "Bob", Email: "d***@x.io", EmailMatches: true, ExpiresAt: at})),
+			`{"teamId":"00000000001","teamName":"core","role":"member","invitedByName":"Bob","email":"d***@x.io","emailMatches":true,"expiresAt":"2026-11-13T12:00:00Z"}`},
 		"a share": {string(FromWorkspaceShareEntityToHTTPResponse(entity.WorkspaceShare{TeamID: 1, TeamName: "core", WorkspaceID: 4, Group: "g", CreatedAt: at, UpdatedAt: at})),
 			`{"teamId":"00000000001","teamName":"core","workspaceId":"00000000004","group":"g","createdAt":"2026-11-13T12:00:00Z","updatedAt":"2026-11-13T12:00:00Z"}`},
 	} {
