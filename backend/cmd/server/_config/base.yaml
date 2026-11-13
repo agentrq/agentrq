@@ -141,6 +141,12 @@ hooks:
   deliveryRetention: ${AGENTRQ_HOOKS_DELIVERY_RETENTION:7d}
   maxPayloadSize: ${AGENTRQ_HOOKS_MAX_PAYLOAD_SIZE:65536}
 
+# Teams let accounts read the workspaces their members share with them. A team may
+# create at most maxInvitesPerDay invitations in any 24 hours, revoked ones included;
+# 0 turns invitations off.
+teams:
+  maxInvitesPerDay: ${AGENTRQ_TEAMS_MAX_INVITES_PER_DAY:10}
+
 # The token OpenAI gives a plugin submission to prove the MCP server's domain,
 # served at /.well-known/openai-apps-challenge. Empty serves 404.
 mcp:
