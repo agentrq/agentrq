@@ -40,28 +40,61 @@ func FromTeamWorkspaceEntitiesToHTTPResponse(ws []entity.TeamWorkspace) []byte {
 	return b
 }
 
-// FromTaskViewToTeamTaskView is a task as a team sees it, in w.
-func FromTaskViewToTeamTaskView(t view.Task, w entity.TeamWorkspace) view.TeamTask {
-	return view.TeamTask{Task: t, Owner: FromTeamWorkspaceEntityToOwnerView(w), Group: w.Group}
+// FromTaskViewToTeamTaskView is a task as team teamID sees it, in w.
+func FromTaskViewToTeamTaskView(t view.Task, w entity.TeamWorkspace, teamID int64) view.TeamTask {
+	return view.TeamTask{Task: teamTaskFiles(t, teamID), Owner: FromTeamWorkspaceEntityToOwnerView(w), Group: w.Group}
 }
 
-// FromTeamTaskEntitiesToHTTPResponse renders a page of a team's tasks.
-func FromTeamTaskEntitiesToHTTPResponse(ts []entity.TeamTask) []byte {
+// teamTaskFiles is t with the link of every file, its own and its messages',
+// replaced by team teamID's route to it. That route checks the reader's
+// session and the share on every read, so a teammate loses the file with the
+// share; the public link would keep working. t's own slices are left as they
+// are: one event's task is sent to several teams.
+func teamTaskFiles(t view.Task, teamID int64) view.Task {
+	base := "/api/v1/teams/" + id62(teamID) + "/tasks/" + t.ID + "/attachments/"
+	t.Attachments = teamFileLinks(t.Attachments, base)
+	if len(t.Messages) > 0 {
+		msgs := make([]view.Message, len(t.Messages))
+		for i, m := range t.Messages {
+			m.Attachments = teamFileLinks(m.Attachments, base)
+			msgs[i] = m
+		}
+		t.Messages = msgs
+	}
+	return t
+}
+
+func teamFileLinks(as []view.Attachment, base string) []view.Attachment {
+	if len(as) == 0 {
+		return as
+	}
+	out := make([]view.Attachment, len(as))
+	for i, a := range as {
+		a.URL = base + a.ID
+		out[i] = a
+	}
+	return out
+}
+
+// FromTeamTaskEntitiesToHTTPResponse renders a page of team teamID's tasks.
+func FromTeamTaskEntitiesToHTTPResponse(ts []entity.TeamTask, teamID int64) []byte {
 	out := make([]view.TeamTask, len(ts))
 	for i, t := range ts {
-		out[i] = FromTaskViewToTeamTaskView(FromEntityTaskToView(t.Task), t.Workspace)
+		out[i] = FromTaskViewToTeamTaskView(FromEntityTaskToView(t.Task), t.Workspace, teamID)
 	}
 	b, _ := json.Marshal(view.ListTeamTasksResponse{Tasks: out})
 	return b
 }
 
-// FromTeamTaskDetailEntityToHTTPResponse renders a teammate's task.
-func FromTeamTaskDetailEntityToHTTPResponse(d entity.TeamTaskDetail) []byte {
+// FromTeamTaskDetailEntityToHTTPResponse renders a teammate's task, as team
+// teamID reads it.
+func FromTeamTaskDetailEntityToHTTPResponse(d entity.TeamTaskDetail, teamID int64) []byte {
 	v := view.GetTeamTaskResponse{
 		GetTaskResponse: fromGetTaskResponseEntityToView(&d.Detail),
 		Workspace:       FromTeamWorkspaceEntityToView(d.Workspace),
 		Owner:           FromTeamWorkspaceEntityToOwnerView(d.Workspace),
 	}
+	v.Task = teamTaskFiles(v.Task, teamID)
 	if p := d.Plan; p != nil {
 		v.Plan = &view.TaskPlan{ID: id62(p.ID), Content: p.Content, Version: p.Version, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
 	}

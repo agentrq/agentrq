@@ -66,7 +66,12 @@ func forwardCRUDEvent(ctx context.Context, repo base.Repository, agents lastTask
 			v.Agent = lastTaskAgent(ctx, agents, taskID)
 			evt := eventbus.Event{Type: eventType, Payload: v}
 			bus.Publish(ev.WorkspaceID, ownerID, evt)
-			publishToTeams(ctx, repo, bus, ev.WorkspaceID, evt)
+			// The payload is the task as it is now. Moved since the event,
+			// as a fork's merge moves one, it is no longer the business of
+			// the readers of the workspace the event names.
+			if t.WorkspaceID == ev.WorkspaceID {
+				publishToTeams(ctx, repo, bus, t.WorkspaceID, evt)
+			}
 		}
 	}
 }
@@ -175,7 +180,7 @@ func publishToTeams(ctx context.Context, repo teamReaders, bus *eventbus.Bus, wo
 					OwnerID: row.UserID, OwnerName: row.OwnerName, OwnerPicture: row.OwnerPicture}
 				shown[rd.TeamID] = w
 			}
-			payload = mapper.FromTaskViewToTeamTaskView(task, w)
+			payload = mapper.FromTaskViewToTeamTaskView(task, w, rd.TeamID)
 		}
 		bus.Publish(0, userID, eventbus.Event{Type: teamEventPrefix + evt.Type, Payload: payload, TeamID: monoflake.ID(rd.TeamID).String()})
 	}

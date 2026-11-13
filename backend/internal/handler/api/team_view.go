@@ -75,7 +75,7 @@ func (h *handler) listTeamTasks() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		tasks, err := h.teamView.ListTasks(ctx, rq)
-		return mapper.FromTeamTaskEntitiesToHTTPResponse(tasks), err
+		return mapper.FromTeamTaskEntitiesToHTTPResponse(tasks, ids[0]), err
 	})
 }
 
@@ -84,7 +84,7 @@ func (h *handler) getTeamTask() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		d, err := h.teamView.GetTask(ctx, sessionUser(c), ids[0], ids[1])
-		return mapper.FromTeamTaskDetailEntityToHTTPResponse(d), err
+		return mapper.FromTeamTaskDetailEntityToHTTPResponse(d, ids[0]), err
 	})
 }
 
@@ -102,8 +102,7 @@ func (h *handler) getTeamAttachment() fiber.Handler {
 		if err != nil {
 			return teamError(c, err)
 		}
-		c.Set("Content-Type", res.MimeType)
-		c.Set("Content-Disposition", contentDisposition(res.Filename))
+		c.Set(fiber.HeaderContentDisposition, contentDisposition(sandboxFile(c, res.MimeType), res.Filename))
 		return c.Send(res.Data)
 	}
 }

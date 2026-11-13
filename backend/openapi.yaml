@@ -2872,7 +2872,8 @@ paths:
         teams, as `team.task.created`, `team.task.updated`,
         `team.task.deleted`, `team.status.updated` and `team.reply.received`,
         each with the `teamId` it is shown in; a task in one comes as the
-        team's task list shows it, with `owner` and `group`. Who reads a
+        team's task list shows it, with `owner` and `group`, its files linked
+        through the team's attachment route. Who reads a
         workspace is checked at every event, so they stop as soon as it is
         unshared or archived, or you leave the team.
 
@@ -3319,7 +3320,8 @@ paths:
     get:
       tags: [Team mode]
       summary: Download an attachment of a teammate's task
-      description: The raw bytes, as the owner's own attachment route serves them.
+      description: >-
+        The raw bytes, as the owner's own attachment route serves them. Every file of a task in team mode is linked here, never by its public link, so a teammate's access ends with the share. A type a browser could run (HTML, SVG…) comes as `application/octet-stream` with `Content-Disposition: attachment`; every file is sent with `X-Content-Type-Options: nosniff` and a sandbox CSP.
       responses:
         '200':
           description: OK
@@ -3418,7 +3420,7 @@ paths:
     put:
       tags: [Team mode]
       summary: Save a team's memory.md
-      description: Any member. The last save wins; `conflict` is true when it replaced one saved after `baseUpdatedAt`, the `updatedAt` its writer read. Capped like a workspace's memory (422).
+      description: Any member. The last save wins; `conflict` is true when it replaced one saved after `baseUpdatedAt`, the `updatedAt` its writer read, or replaced any with no `baseUpdatedAt`. Send the `updatedAt` you loaded, every time. Capped like a workspace's memory (422).
       requestBody:
         required: true
         content:
@@ -3427,7 +3429,7 @@ paths:
               type: object
               properties:
                 content: { type: string }
-                baseUpdatedAt: { type: string, format: date-time, description: Empty when the writer read none. }
+                baseUpdatedAt: { type: string, format: date-time, description: The updatedAt the writer loaded; empty only when it loaded none. }
       responses:
         '200':
           description: OK
@@ -3693,6 +3695,7 @@ components:
         owner: { $ref: '#/components/schemas/TeamOwner' }
         forkOfId: { type: string, description: The parent, for a fork. }
     TeamTask:
+      description: A task in team mode. The `url` of each of its files, and of its messages' files, is the team's attachment route.
       allOf:
         - $ref: '#/components/schemas/Task'
         - type: object
@@ -3735,7 +3738,7 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/TeamOwner'
-        conflict: { type: boolean, description: On a save, whether it replaced one saved after baseUpdatedAt. }
+        conflict: { type: boolean, description: "On a save, whether it replaced one saved after baseUpdatedAt, or any when baseUpdatedAt was empty." }
     TeamMemoryIndexEntry:
       type: object
       properties:

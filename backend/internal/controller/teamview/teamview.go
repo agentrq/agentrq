@@ -36,7 +36,9 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/mustafaturan/monoflake"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // MemoryName is the team's one memory file.
@@ -292,10 +294,6 @@ func (c *controller) CloneTask(ctx context.Context, req entity.CloneTeamTaskRequ
 	if err != nil {
 		return nil, err
 	}
-	atts, err := c.cloneAttachments(ctx, t, w)
-	if err != nil {
-		return nil, err
-	}
 	rs, err := c.owner.CreateTask(ctx, entity.CreateTaskRequest{
 		UserID: monoflake.ID(req.UserID).String(),
 		Task: entity.Task{
@@ -305,7 +303,7 @@ func (c *controller) CloneTask(ctx context.Context, req entity.CloneTeamTaskRequ
 			Status:      status,
 			Assignee:    "agent",
 			CreatedBy:   "human",
-			Attachments: atts,
+			Attachments: c.cloneAttachments(ctx, t, w),
 		},
 	})
 	if err != nil {
@@ -328,21 +326,24 @@ func cloneBody(t model.Task, w entity.TeamWorkspace, team entity.Team) string {
 }
 
 // cloneAttachments reads the files attached to the task itself, as its
-// owner, for the clone to store as its own.
-func (c *controller) cloneAttachments(ctx context.Context, t model.Task, w entity.TeamWorkspace) ([]entity.Attachment, error) {
+// owner, for the clone to store as its own, each typed as one a browser cannot
+// run. A file that can no longer be read — attachments are cleaned up after a
+// while — is left out rather than failing the clone, as a fork does.
+func (c *controller) cloneAttachments(ctx context.Context, t model.Task, w entity.TeamWorkspace) []entity.Attachment {
 	var atts []entity.Attachment
 	if len(t.Attachments) == 0 || json.Unmarshal(t.Attachments, &atts) != nil {
-		return nil, nil
+		return nil
 	}
 	out := make([]entity.Attachment, 0, len(atts))
 	for _, a := range atts {
 		f, err := c.owner.GetAttachment(ctx, entity.GetAttachmentRequest{WorkspaceID: t.WorkspaceID, TaskID: t.ID, AttachmentID: a.ID, UserID: ownerID(w)})
 		if err != nil {
-			return nil, err
+			zlog.Warn().Err(err).Str("attachmentID", a.ID).Msg("[teams] clone: attachment file missing, skipped")
+			continue
 		}
-		out = append(out, entity.Attachment{Filename: a.Filename, MimeType: a.MimeType, Data: base64.StdEncoding.EncodeToString(f.Data)})
+		out = append(out, entity.Attachment{Filename: a.Filename, MimeType: storage.SafeContentType(a.MimeType), Data: base64.StdEncoding.EncodeToString(f.Data)})
 	}
-	return out, nil
+	return out
 }
 
 // teamMemory is the stored memory as the team reads it, with its writer.
@@ -385,7 +386,9 @@ func (c *controller) SaveMemory(ctx context.Context, req entity.SaveTeamMemoryRe
 		return entity.TeamMemory{}, err
 	}
 	out := c.teamMemory(ctx, m)
-	out.Conflict = found && !req.BaseUpdatedAt.IsZero() && prev.UpdatedAt.After(req.BaseUpdatedAt)
+	// A save with no base replaced one it never loaded, as a first save
+	// does when another member saved first.
+	out.Conflict = found && (req.BaseUpdatedAt.IsZero() || prev.UpdatedAt.After(req.BaseUpdatedAt))
 	c.emit(ctx, entity.ActionTeamMemorySave, req.UserID, 0, req.TeamID)
 	return out, nil
 }
