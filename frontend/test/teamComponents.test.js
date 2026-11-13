@@ -55,7 +55,7 @@ import * as api from '../src/api';
 import { useTeamStore, rememberedTeam, rememberTeam } from '../src/stores/teamStore';
 import { useWorkspaceStore } from '../src/stores/workspaceStore';
 import { useToasts } from '../src/composables/useToasts';
-import { inviterName, joinedHome, teamOf, teamOwners, teamLanding } from '../src/composables/useTeamMode';
+import { inviterName, joinedHome, teamOwners, teamLanding } from '../src/composables/useTeamMode';
 import TeamSwitcher from '../src/components/TeamSwitcher.vue';
 import TeamSidebar from '../src/components/TeamSidebar.vue';
 import TeamModeBar from '../src/components/TeamModeBar.vue';
@@ -137,12 +137,6 @@ afterEach(() => {
 describe('the rest of the team helpers', () => {
   it('lands a new member on the team with its welcome', () => {
     expect(joinedHome(7)).toEqual({ path: '/tasks/active', query: { team: '7', joined: '1' } });
-  });
-
-  it('reads a team answer either way', () => {
-    expect(teamOf({ team: { id: 't' } })).toEqual({ id: 't' });
-    expect(teamOf({ id: 't' })).toEqual({ id: 't' });
-    expect(teamOf(undefined)).toBe(null);
   });
 
   it('lists owners by name, unnamed ones first', () => {

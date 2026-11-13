@@ -168,7 +168,7 @@ import {
 } from '../api';
 import { useTeamStore, rememberTeam } from '../stores/teamStore';
 import { useToasts } from '../composables/useToasts';
-import { assignableRoles, canManage, expiresIn, inviteError, inviterName, lostTeam, teamOf, useTeamMode } from '../composables/useTeamMode';
+import { assignableRoles, canManage, expiresIn, inviteError, inviterName, lostTeam, useTeamMode } from '../composables/useTeamMode';
 import DeleteModal from '../components/DeleteModal.vue';
 import InviteLinkModal from '../components/InviteLinkModal.vue';
 import OwnerAvatar from '../components/OwnerAvatar.vue';
@@ -227,7 +227,7 @@ function failed(err) {
 async function load() {
   try {
     me.value = await fetchUser();
-    store.upsert(teamOf(await getTeam(teamId.value)));
+    store.upsert(await getTeam(teamId.value));
     members.value = (await listTeamMembers(teamId.value))?.members || [];
     invitations.value = manage.value ? (await listTeamInvitations(teamId.value))?.invitations || [] : [];
   } catch (err) {
@@ -304,7 +304,7 @@ async function removeMember() {
 
 async function rename() {
   try {
-    store.upsert(teamOf(await renameTeam(teamId.value, newName.value.trim())));
+    store.upsert(await renameTeam(teamId.value, newName.value.trim()));
     notifySuccess('Team renamed');
   } catch (err) {
     failed(err);

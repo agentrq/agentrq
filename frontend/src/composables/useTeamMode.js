@@ -139,9 +139,6 @@ export function inviterName(invitation, members = []) {
   return members.find((m) => String(m.userId) === String(by))?.name || by || '';
 }
 
-/** The team in an answer: `{ team }`, or the team itself. */
-export const teamOf = (res) => res?.team ?? res ?? null;
-
 /** A team answer that means you can no longer see it: removed, or it is gone. */
 export const lostTeam = (err) => err?.status === 404 || err?.status === 403;
 

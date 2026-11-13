@@ -10,11 +10,10 @@
 <template>
   <div data-test="team-mode-bar" class="shrink-0">
     <div class="flex items-center gap-2 px-4 py-1.5 text-[11px] text-gray-600 dark:text-zinc-300 border-b border-gray-100 dark:border-zinc-800">
-      <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 dark:bg-indigo-400 shrink-0"></span>
       <span class="truncate">Viewing <span class="font-semibold text-gray-900 dark:text-white">{{ name }}</span> (read-only)</span>
       <router-link to="/" @click="rememberTeam('')" class="ml-auto shrink-0 font-semibold text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white">Back to Me</router-link>
     </div>
-    <div v-if="joined" data-test="joined-banner" class="flex items-center gap-3 px-4 py-2 text-[12px] bg-indigo-50 dark:bg-indigo-500/10 text-gray-800 dark:text-zinc-100 border-b border-indigo-100 dark:border-indigo-500/20">
+    <div v-if="joined" data-test="joined-banner" class="flex items-center gap-3 px-4 py-2 text-[12px] bg-gray-50 dark:bg-zinc-900 text-gray-800 dark:text-zinc-100 border-b border-gray-100 dark:border-zinc-800">
       <span class="flex-1 min-w-0">You joined <span class="font-semibold">{{ name }}</span>. Share your workspaces?</span>
       <router-link :to="{ path: '/team/settings', query: { team: teamId, tab: 'workspaces' } }" class="shrink-0 font-bold underline">Share</router-link>
       <button type="button" @click="dismiss" aria-label="Dismiss" class="shrink-0 text-gray-500 hover:text-gray-900 dark:hover:text-white">

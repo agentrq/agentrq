@@ -48,6 +48,7 @@ const EVERY_FIELD = {
   emitEventId: 'e2',
   includeArchived: true,
   range: '30d',
+  token: 'tok',
 };
 
 /** An API stand-in that records what the catalogue asked of it. */
@@ -275,12 +276,14 @@ describe('parity with the interface', () => {
     const drive = (input) =>
       Promise.all(catalogue.map((t) => Promise.resolve().then(() => t.execute(input, {})).catch(() => {})));
     // A grouped tool (readTeams, manageTeam) calls one function per action,
-    // so it is driven once with each action it lists.
+    // so it is driven with each action it lists, with every field and none.
     const driveActions = () =>
       Promise.all(
         catalogue.flatMap((t) =>
-          (t.inputSchema.properties.action?.enum || []).map((action) =>
-            Promise.resolve().then(() => t.execute({ ...EVERY_FIELD, action }, {})).catch(() => {})
+          (t.inputSchema.properties.action?.enum || []).flatMap((action) =>
+            [{ ...EVERY_FIELD, action }, { action }].map((input) =>
+              Promise.resolve().then(() => t.execute(input, {})).catch(() => {})
+            )
           )
         )
       );
@@ -576,8 +579,8 @@ describe('each tool calls the interface the way the UI does', () => {
     ['manageTeam', { action: 'invite', teamId: 'tm1', email: 'b@acme.com' }, 'createTeamInvitation', ['tm1', 'b@acme.com', 'member']],
     ['manageTeam', { action: 'invite', teamId: 'tm1', email: 'b@acme.com', role: 'admin' }, 'createTeamInvitation', ['tm1', 'b@acme.com', 'admin']],
     ['manageTeam', { action: 'revokeInvitation', teamId: 'tm1', invitationId: 'i1' }, 'revokeTeamInvitation', ['tm1', 'i1']],
-    ['manageTeam', { action: 'accept', token: 'tok' }, 'acceptInvitation', [{ token: 'tok', invitationId: undefined }]],
-    ['manageTeam', { action: 'accept', invitationId: 'i1' }, 'acceptInvitation', [{ token: undefined, invitationId: 'i1' }]],
+    ['manageTeam', { action: 'accept', token: 'tok' }, 'acceptInvitation', ['tok']],
+    ['manageTeam', { action: 'accept', invitationId: 'i1' }, 'acceptInvitationById', ['i1']],
     ['manageTeam', { action: 'decline', invitationId: 'i1' }, 'declineInvitation', ['i1']],
     ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1' }, 'shareWorkspace', ['ws1', 'tm1', '']],
     ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', group: 'backend' }, 'shareWorkspace', ['ws1', 'tm1', 'backend']],
@@ -641,7 +644,6 @@ describe('the grouped team tools', () => {
   it('opens a new team\'s settings, or the create form when the answer names none', () => {
     const after = build().find((t) => t.name === 'createTeam').screen.after;
 
-    expect(after({ name: 'Core' }, { team: { id: 'tm9' } })).toBe('/team/settings?team=tm9');
     expect(after({ name: 'Core' }, { id: 'tm8', name: 'Core' })).toBe('/team/settings?team=tm8');
     expect(after({ name: 'Core' }, {})).toBe('/team/new');
   });

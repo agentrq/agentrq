@@ -1013,7 +1013,7 @@ const closeOverlaysOnEscape = (e) => {
 // Handled per event rather than by watching the buffer. Reacting to a
 // transition means seeing every event, and a watcher only ever showed the
 // handler the last one in the flush.
-const { connect, disconnect, isConnected, onEvent } = useEventBus(undefined, { buffer: false })
+const { connect, disconnect, isConnected, onEvent } = useEventBus(undefined, { buffer: false, isPublicPage: () => isLoginPage.value })
 
 // A stream toast names the workspace it happened in, as the card's eyebrow.
 const showStreamToast = (toast) => notifyEvent(toast, workspaceStore.getWorkspace(toast.workspaceId)?.name ?? '')
