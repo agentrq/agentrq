@@ -38,6 +38,7 @@ import (
 	slackctrl "github.com/agentrq/agentrq/backend/internal/controller/slack"
 	"github.com/agentrq/agentrq/backend/internal/controller/taskagent"
 	"github.com/agentrq/agentrq/backend/internal/controller/team"
+	"github.com/agentrq/agentrq/backend/internal/controller/teamview"
 	"github.com/agentrq/agentrq/backend/internal/controller/telemetry"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -404,6 +405,14 @@ func New(cfg Config) (*App, error) {
 		Mailer:           teamMailer(cfg.SMTP, smtpSvc),
 		BaseURL:          cfg.App.BaseURL,
 		MaxInvitesPerDay: cfg.Teams.MaxInvitesPerDay,
+	})
+	teamViewCtrl := teamview.New(teamview.Params{
+		Teams:          teamCtrl,
+		Owner:          crudCtrl,
+		Repository:     repo,
+		IDGen:          ids,
+		PubSub:         pubsubSvc,
+		MaxMemoryBytes: mcp.MaxMemoryBytes,
 	})
 	moveLegacySkills(context.Background(), crudCtrl)
 	startPanoSweep(appCtx, crudCtrl, panoSweepInterval, sweepJitter)
@@ -796,6 +805,7 @@ func New(cfg Config) (*App, error) {
 		PushCtrl:         pushCtrl,
 		Hooks:            hookCtrl,
 		Teams:            teamCtrl,
+		TeamView:         teamViewCtrl,
 	}); err != nil {
 		return nil, fmt.Errorf("api handler: %w", err)
 	}

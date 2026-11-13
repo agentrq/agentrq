@@ -269,25 +269,9 @@ func (c *controller) GetSkillFile(ctx context.Context, req entity.GetSkillFileRe
 	if err != nil {
 		return nil, err
 	}
-	name, err := skillName(req.Name)
+	s, f, content, err := c.loadSkillFile(ctx, uid, req.Name, req.Path)
 	if err != nil {
 		return nil, err
-	}
-	path, err := skill.CleanPath(req.Path)
-	if err != nil {
-		return nil, skillErr(SkillInvalid, "%v", err)
-	}
-	s, err := c.repository.GetSkill(ctx, uid, name)
-	if err != nil {
-		return nil, err
-	}
-	f, err := c.repository.GetSkillFile(ctx, s.ID, path)
-	if err != nil {
-		return nil, err
-	}
-	content, err := c.skillStorage.LoadRaw(f.StorageID)
-	if err != nil {
-		return nil, fmt.Errorf("load skill file content: %w", err)
 	}
 	e, err := c.skillWithWorkspaces(ctx, s, scope)
 	if err != nil {
@@ -298,6 +282,31 @@ func (c *controller) GetSkillFile(ctx context.Context, req entity.GetSkillFileRe
 		Skill: e,
 		File:  entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, Content: string(content), URL: storage.PublicURL(c.skillStorage, f.StorageID)},
 	}, nil
+}
+
+// loadSkillFile reads one file of the account's skill, with its content.
+func (c *controller) loadSkillFile(ctx context.Context, uid int64, name, path string) (model.Skill, model.SkillFile, []byte, error) {
+	name, err := skillName(name)
+	if err != nil {
+		return model.Skill{}, model.SkillFile{}, nil, err
+	}
+	path, err = skill.CleanPath(path)
+	if err != nil {
+		return model.Skill{}, model.SkillFile{}, nil, skillErr(SkillInvalid, "%v", err)
+	}
+	s, err := c.repository.GetSkill(ctx, uid, name)
+	if err != nil {
+		return model.Skill{}, model.SkillFile{}, nil, err
+	}
+	f, err := c.repository.GetSkillFile(ctx, s.ID, path)
+	if err != nil {
+		return model.Skill{}, model.SkillFile{}, nil, err
+	}
+	content, err := c.skillStorage.LoadRaw(f.StorageID)
+	if err != nil {
+		return model.Skill{}, model.SkillFile{}, nil, fmt.Errorf("load skill file content: %w", err)
+	}
+	return s, f, content, nil
 }
 
 // SaveSkillFile writes one file of a skill. Saving SKILL.md creates the skill

@@ -98,18 +98,24 @@ func (h *handler) createTask() fiber.Handler {
 			return c.Send(e)
 		}
 
-		// If human created the task, notify the LLM via MCP channel
-		// ONLY if status is NOT 'cron' (don't notify for template creation)
-		// and the task is assigned to the agent: a task the human made for
-		// themselves is theirs to do, and pushing it started the agent on it.
-		if rq.Task.CreatedBy == "human" && rs.Task.Assignee == "agent" && rs.Task.Status != "cron" {
-			if h.agentHasRoom(ctx, rq.Task.WorkspaceID, rq.UserID, rs.Task.ID) {
-				h.pushTaskToAgent(ctx, rq.UserID, rs.Task)
-			}
+		if rq.Task.CreatedBy == "human" {
+			h.offerHumanTask(ctx, rq.UserID, rs.Task)
 		}
 
 		c.Status(http.StatusCreated)
 		return c.Send(mapper.FromCreateTaskResponseEntityToHTTPResponse(rs))
+	}
+}
+
+// offerHumanTask hands a task a person just created to the workspace's agent
+// via the MCP channel, ONLY if status is NOT 'cron' (don't notify for template
+// creation) and the task is assigned to the agent: a task the human made for
+// themselves is theirs to do, and pushing it started the agent on it.
+func (h *handler) offerHumanTask(ctx context.Context, userID string, t entity.Task) {
+	if t.Assignee == "agent" && t.Status != "cron" {
+		if h.agentHasRoom(ctx, t.WorkspaceID, userID, t.ID) {
+			h.pushTaskToAgent(ctx, userID, t)
+		}
 	}
 }
 

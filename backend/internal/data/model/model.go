@@ -818,6 +818,11 @@ const (
 	ActionIDTeamInvite
 	ActionIDTeamJoin
 	ActionIDWorkspaceShare
+	// A teammate's task cloned, the team's memory saved, and a teammate's
+	// skill added to the account, in team mode; emitted by the backend.
+	ActionIDTeamTaskClone
+	ActionIDTeamMemorySave
+	ActionIDTeamSkillAdd
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or
