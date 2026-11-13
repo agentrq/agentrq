@@ -12,6 +12,7 @@ import (
 	zlog "github.com/rs/zerolog/log"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
@@ -29,7 +30,8 @@ func forwardCRUDEvent(ctx context.Context, repo base.Repository, agents lastTask
 		return
 	}
 	ownerID := monoflake.ID(ws.UserID).String()
-	if publishTaskDelete(bus, ev, ownerID) {
+	if evt, ok := publishTaskDelete(bus, ev, ownerID); ok {
+		publishToTeams(ctx, repo, bus, ev.WorkspaceID, evt)
 		return
 	}
 
@@ -62,10 +64,9 @@ func forwardCRUDEvent(ctx context.Context, repo base.Repository, agents lastTask
 		if err == nil {
 			v := mapper.FromModelTaskToView(t)
 			v.Agent = lastTaskAgent(ctx, agents, taskID)
-			bus.Publish(ev.WorkspaceID, ownerID, eventbus.Event{
-				Type:    eventType,
-				Payload: v,
-			})
+			evt := eventbus.Event{Type: eventType, Payload: v}
+			bus.Publish(ev.WorkspaceID, ownerID, evt)
+			publishToTeams(ctx, repo, bus, ev.WorkspaceID, evt)
 		}
 	}
 }
@@ -115,19 +116,69 @@ func publishWorkspaceListChange(bus *eventbus.Bus, ev entity.CRUDEvent) bool {
 	return true
 }
 
-// publishTaskDelete puts a deleted task on the stream, and reports whether ev
-// was a delete. It is sent from here, not by the REST handler, so a delete by
-// the supervisor's MCP removes the task from open pages too. The task row is
-// gone, so the event carries only its id.
-func publishTaskDelete(bus *eventbus.Bus, ev entity.CRUDEvent, ownerID string) bool {
+// publishTaskDelete puts a deleted task on the stream, and returns the event
+// when ev was a delete. It is sent from here, not by the REST handler, so a
+// delete by the supervisor's MCP removes the task from open pages too. The
+// task row is gone, so the event carries only its id.
+func publishTaskDelete(bus *eventbus.Bus, ev entity.CRUDEvent, ownerID string) (eventbus.Event, bool) {
 	if ev.ResourceType != entity.ResourceTask || ev.Action != entity.ActionTaskDelete {
-		return false
+		return eventbus.Event{}, false
 	}
-	bus.Publish(ev.WorkspaceID, ownerID, eventbus.Event{
+	evt := eventbus.Event{
 		Type:    "task.deleted",
 		Payload: map[string]string{"id": monoflake.ID(ev.ResourceID).String()},
-	})
-	return true
+	}
+	bus.Publish(ev.WorkspaceID, ownerID, evt)
+	return evt, true
+}
+
+// teamEventPrefix starts the type of a task event a team member is sent for
+// a workspace shared with the team: "team.task.created" and so on. A type of
+// its own keeps it out of the pages that list the account's own tasks.
+const teamEventPrefix = "team."
+
+// teamReaders is what publishToTeams reads.
+type teamReaders interface {
+	ListTeamReaders(ctx context.Context, workspaceID int64) ([]base.TeamReader, error)
+	TeamWorkspaceInfo(ctx context.Context, teamID, workspaceID int64) (base.TeamWorkspaceRow, error)
+}
+
+// publishToTeams sends a task event of the workspace to every member of a
+// team who reads it there and has their account stream open, tagged with the
+// team. Who reads it is asked at every event, so a share withdrawn, a member
+// gone or a workspace archived stops the events at once. A task is sent as
+// the team's task list shows it, with its owner and group.
+func publishToTeams(ctx context.Context, repo teamReaders, bus *eventbus.Bus, workspaceID int64, evt eventbus.Event) {
+	if !bus.AnyUserSubscribed() {
+		return
+	}
+	readers, err := repo.ListTeamReaders(ctx, workspaceID)
+	if err != nil {
+		zlog.Warn().Err(err).Int64("workspace", workspaceID).Msg("[teams] failed to list a workspace's team readers")
+		return
+	}
+	shown := map[int64]entity.TeamWorkspace{}
+	for _, rd := range readers {
+		userID := monoflake.ID(rd.UserID).String()
+		if !bus.UserSubscribed(userID) {
+			continue
+		}
+		payload := evt.Payload
+		if task, ok := payload.(view.Task); ok {
+			w, ok := shown[rd.TeamID]
+			if !ok {
+				row, err := repo.TeamWorkspaceInfo(ctx, rd.TeamID, workspaceID)
+				if err != nil {
+					continue
+				}
+				w = entity.TeamWorkspace{ID: row.ID, Name: row.Name, ForkOfID: row.ForkOfID, Group: row.GroupName,
+					OwnerID: row.UserID, OwnerName: row.OwnerName, OwnerPicture: row.OwnerPicture}
+				shown[rd.TeamID] = w
+			}
+			payload = mapper.FromTaskViewToTeamTaskView(task, w)
+		}
+		bus.Publish(0, userID, eventbus.Event{Type: teamEventPrefix + evt.Type, Payload: payload, TeamID: monoflake.ID(rd.TeamID).String()})
+	}
 }
 
 // panoChangedEvent tells an open Pano board to read the Pano again.
