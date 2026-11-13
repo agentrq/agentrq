@@ -88,12 +88,12 @@ type Repository interface {
 	ListTeamsForUser(ctx context.Context, userID int64) ([]base.TeamWithRole, error)
 	CountTeamMembers(ctx context.Context, teamID int64) (int64, error)
 	RenameTeam(ctx context.Context, id int64, name string) error
-	DeleteTeam(ctx context.Context, id int64) error
+	DeleteTeam(ctx context.Context, id, callerID int64) error
 	GetTeamMember(ctx context.Context, teamID, userID int64) (model.TeamMember, error)
 	ListTeamMembers(ctx context.Context, teamID int64) ([]base.TeamMemberWithUser, error)
 	TeamHasMemberWithEmail(ctx context.Context, teamID int64, email string) (bool, error)
-	SetTeamMemberRole(ctx context.Context, teamID, userID int64, role string) error
-	RemoveTeamMember(ctx context.Context, teamID, userID int64) error
+	SetTeamMemberRole(ctx context.Context, teamID, callerID, userID int64, role string) error
+	RemoveTeamMember(ctx context.Context, teamID, callerID, userID int64) error
 	CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, since time.Time, limit int64) error
 	ListTeamInvitations(ctx context.Context, teamID int64, now time.Time) ([]model.TeamInvitation, error)
 	ListInvitationsForEmail(ctx context.Context, email string, now time.Time) ([]model.TeamInvitation, error)
@@ -101,7 +101,7 @@ type Repository interface {
 	GetTeamInvitationByTokenHash(ctx context.Context, tokenHash string) (model.TeamInvitation, error)
 	RevokeTeamInvitation(ctx context.Context, teamID, id int64, now time.Time) error
 	AcceptTeamInvitation(ctx context.Context, id int64, member model.TeamMember, now time.Time) error
-	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare) (model.WorkspaceShare, error)
+	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare) (base.WorkspaceShareWithTeam, error)
 	ListWorkspaceShares(ctx context.Context, workspaceID, userID int64) ([]base.WorkspaceShareWithTeam, error)
 	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID int64) error
 	CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
@@ -126,7 +126,7 @@ type Params struct {
 	// MaxInvitesPerDay is how many invitations a team may create in any 24
 	// hours; 0 turns invitations off.
 	MaxInvitesPerDay int
-	// Now is the clock; nil is time.Now.
+	// Now is the clock; nil is time.Now in UTC.
 	Now func() time.Time
 }
 
@@ -147,7 +147,7 @@ func New(p Params) Controller {
 		baseURL: strings.TrimRight(p.BaseURL, "/"), maxInvite: p.MaxInvitesPerDay, now: p.Now,
 	}
 	if c.now == nil {
-		c.now = time.Now
+		c.now = func() time.Time { return time.Now().UTC() }
 	}
 	return c
 }
@@ -163,8 +163,11 @@ var (
 
 // fromRepo turns the repository's refusals into the person's messages.
 func fromRepo(err error) error {
-	if errors.Is(err, base.ErrLastTeamOwner) {
+	switch {
+	case errors.Is(err, base.ErrLastTeamOwner):
 		return errLastOwner
+	case errors.Is(err, base.ErrTeamRoleForbidden):
+		return errForbidden
 	}
 	return err
 }
@@ -277,14 +280,7 @@ func (c *controller) RenameTeam(ctx context.Context, userID, teamID int64, name 
 }
 
 func (c *controller) DeleteTeam(ctx context.Context, userID, teamID int64) error {
-	role, err := c.role(ctx, userID, teamID)
-	if err != nil {
-		return err
-	}
-	if role != model.TeamRoleOwner {
-		return errForbidden
-	}
-	return c.repo.DeleteTeam(ctx, teamID)
+	return fromRepo(c.repo.DeleteTeam(ctx, teamID, userID))
 }
 
 func (c *controller) ListMembers(ctx context.Context, userID, teamID int64) ([]entity.TeamMember, error) {
@@ -302,42 +298,21 @@ func (c *controller) ListMembers(ctx context.Context, userID, teamID int64) ([]e
 	return out, nil
 }
 
+// SetMemberRole leaves the role rules to the repository, which reads both
+// roles under the team's lock.
 func (c *controller) SetMemberRole(ctx context.Context, userID, teamID, memberID int64, role string) error {
-	mine, err := c.manager(ctx, userID, teamID)
-	if err != nil {
-		return err
-	}
 	if !validRole(role) {
 		return teamErr(entity.TeamInvalid, "a role is owner, admin or member")
 	}
-	target, err := c.repo.GetTeamMember(ctx, teamID, memberID)
-	if err != nil {
-		return err
-	}
-	if (role == model.TeamRoleOwner || target.Role == model.TeamRoleOwner) && mine != model.TeamRoleOwner {
-		return errForbidden
-	}
-	return fromRepo(c.repo.SetTeamMemberRole(ctx, teamID, memberID, role))
+	return fromRepo(c.repo.SetTeamMemberRole(ctx, teamID, userID, memberID, role))
 }
 
+// RemoveMember leaves the role rules to the repository, which reads both
+// roles under the team's lock.
 func (c *controller) RemoveMember(ctx context.Context, userID, teamID, memberID int64) error {
-	if memberID == userID {
-		return c.LeaveTeam(ctx, userID, teamID)
-	}
-	mine, err := c.manager(ctx, userID, teamID)
-	if err != nil {
-		return err
-	}
-	target, err := c.repo.GetTeamMember(ctx, teamID, memberID)
-	if err != nil {
-		return err
-	}
-	if target.Role == model.TeamRoleOwner && mine != model.TeamRoleOwner {
-		return errForbidden
-	}
-	return fromRepo(c.repo.RemoveTeamMember(ctx, teamID, memberID))
+	return fromRepo(c.repo.RemoveTeamMember(ctx, teamID, userID, memberID))
 }
 
 func (c *controller) LeaveTeam(ctx context.Context, userID, teamID int64) error {
-	return fromRepo(c.repo.RemoveTeamMember(ctx, teamID, userID))
+	return c.RemoveMember(ctx, userID, teamID, userID)
 }

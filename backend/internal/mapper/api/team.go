@@ -79,7 +79,10 @@ func FromCreateTeamInvitationEntityToHTTPResponse(e entity.CreateTeamInvitationR
 // FromTeamInvitationPreviewEntityToHTTPResponse renders an invitation link's
 // preview.
 func FromTeamInvitationPreviewEntityToHTTPResponse(e entity.TeamInvitationPreview) []byte {
-	b, _ := json.Marshal(view.TeamInvitationPreview(e))
+	b, _ := json.Marshal(view.TeamInvitationPreview{
+		TeamID: id62(e.TeamID), TeamName: e.TeamName, Role: e.Role, InvitedByName: e.InvitedByName,
+		Email: e.Email, EmailMatches: e.EmailMatches, ExpiresAt: e.ExpiresAt,
+	})
 	return b
 }
 

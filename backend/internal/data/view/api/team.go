@@ -85,6 +85,7 @@ type TeamInvitationTokenRequest struct {
 // TeamInvitationPreview is what an invitation link's page shows; email is
 // the invited address, masked.
 type TeamInvitationPreview struct {
+	TeamID        string    `json:"teamId"`
 	TeamName      string    `json:"teamName"`
 	Role          string    `json:"role"`
 	InvitedByName string    `json:"invitedByName"`
