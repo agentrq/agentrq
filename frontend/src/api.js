@@ -1550,3 +1550,80 @@ export function shareWorkspace(workspaceId, teamId, group) {
 export function unshareWorkspace(workspaceId, teamId) {
   return teamCall(`/workspaces/${enc(workspaceId)}/shares/${enc(teamId)}`, 'Failed to stop sharing the workspace', { method: 'DELETE' });
 }
+
+// ── Team mode ───────────────────────────────────────────────────────────────
+// A team's shared work, read-only: the workspaces its members shared, their
+// tasks, analytics, memory and skills. Unknown or no-longer-shared answers 404.
+
+// { workspaces: [{ id, name, group, owner: { userId, name, picture }, forkOfId }] }
+export function fetchTeamWorkspaces(teamId) {
+  return teamCall(`/teams/${enc(teamId)}/workspaces`, 'Failed to load the team\'s workspaces');
+}
+
+// Newest activity first; each task carries `owner` and `group`.
+export function fetchTeamTasks(teamId, { status = '', group = '', member = '', limit = 10, offset = 0 } = {}) {
+  const params = new URLSearchParams();
+  if (status) params.append('status', status);
+  if (group) params.append('group', group);
+  if (member) params.append('member', member);
+  params.append('limit', limit);
+  params.append('offset', offset);
+  return teamCall(`/teams/${enc(teamId)}/tasks?${params.toString()}`, 'Failed to load the team\'s tasks');
+}
+
+// { task, workspace, owner, stateTransitions }
+export function getTeamTask(teamId, taskId) {
+  return teamCall(`/teams/${enc(teamId)}/tasks/${enc(taskId)}`, 'Failed to load the task');
+}
+
+export function getTeamAttachmentUrl(teamId, taskId, attachmentId) {
+  return `${API_BASE_URL}/teams/${enc(teamId)}/tasks/${enc(taskId)}/attachments/${enc(attachmentId)}`;
+}
+
+// The workspace analytics, summed for the team or one group, plus `byMember`.
+export function fetchTeamStats(teamId, range = '7d', from = 0, to = 0, group = '') {
+  const params = new URLSearchParams();
+  params.append('range', range);
+  if (from) params.append('from', from);
+  if (to) params.append('to', to);
+  if (group) params.append('group', group);
+  return teamCall(`/teams/${enc(teamId)}/analytics?${params.toString()}`, 'Failed to load the team\'s analytics');
+}
+
+// Copies a teammate's task into one of your own workspaces: { task }.
+export function cloneTeamTask(teamId, taskId, workspaceId, status = 'notstarted') {
+  return teamCall(`/teams/${enc(teamId)}/tasks/${enc(taskId)}/clone`, 'Failed to clone the task', { method: 'POST', body: { workspaceId, status } });
+}
+
+// The team's own memory.md: { content, updatedAt }.
+export function getTeamMemory(teamId) {
+  return teamCall(`/teams/${enc(teamId)}/memory`, 'Failed to load the team\'s memory');
+}
+
+// Last write wins; 409 when someone saved since `baseUpdatedAt`.
+export function saveTeamMemory(teamId, content, baseUpdatedAt = '') {
+  return teamCall(`/teams/${enc(teamId)}/memory`, 'Failed to save the team\'s memory', { method: 'PUT', body: { content, baseUpdatedAt } });
+}
+
+// Members' workspace memories: { memories: [{ workspaceId, workspaceName, group, owner, names }] }.
+export function fetchTeamMemoryIndex(teamId) {
+  return teamCall(`/teams/${enc(teamId)}/memory/index`, 'Failed to load the members\' memory');
+}
+
+export function getTeamMemberMemory(teamId, workspaceId, name) {
+  return teamCall(`/teams/${enc(teamId)}/workspaces/${enc(workspaceId)}/memory/${enc(name)}`, 'Failed to load the memory');
+}
+
+// Skills on in shared workspaces, one per name with who has it: { skills }.
+export function fetchTeamSkills(teamId) {
+  return teamCall(`/teams/${enc(teamId)}/skills`, 'Failed to load the team\'s skills');
+}
+
+export function getTeamSkill(teamId, name) {
+  return teamCall(`/teams/${enc(teamId)}/skills/${enc(name)}`, 'Failed to load the skill');
+}
+
+// Copies a teammate's skill into your account, on in the workspaces given.
+export function addTeamSkill(teamId, name, workspaceIds = []) {
+  return teamCall(`/teams/${enc(teamId)}/skills/${enc(name)}/add`, 'Failed to add the skill', { method: 'POST', body: { workspaceIds } });
+}
