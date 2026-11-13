@@ -5,7 +5,7 @@
 -->
 
 <script setup>
-defineProps({
+const props = defineProps({
   show: Boolean,
   title: {
     type: String,
@@ -22,19 +22,30 @@ defineProps({
   confirmLabel: {
     type: String,
     default: 'Delete'
+  },
+  // When set, the confirm button waits until this is typed: for what cannot
+  // be undone and takes others' work with it, like deleting a team.
+  confirmText: {
+    type: String,
+    default: ''
   }
 })
 
+import { ref, watch } from 'vue';
 import { useFormat } from '../composables/useFormat';
 const { toKebabCase } = useFormat();
 
 const emit = defineEmits(['close', 'confirm'])
+const typed = ref('')
+// Empty each time it opens, so a name typed once is not still there.
+watch(() => props.show, () => { typed.value = '' })
 
 const closeModal = () => {
   emit('close')
 }
 
 const confirmDelete = () => {
+  if (props.confirmText && typed.value !== props.confirmText) return
   emit('confirm')
 }
 </script>
@@ -70,14 +81,19 @@ const confirmDelete = () => {
                     <p v-else class="text-[14px] leading-relaxed text-gray-500 dark:text-zinc-400 font-medium">
                       Are you sure you want to delete <span class="text-black dark:text-white font-semibold">{{ toKebabCase(taskTitle) }}</span>? This action cannot be undone.
                     </p>
+                    <label v-if="confirmText" class="block mt-4">
+                      <span class="block text-[12px] text-gray-500 dark:text-zinc-400 font-medium mb-1.5">Type <span class="font-semibold text-gray-900 dark:text-white">{{ confirmText }}</span> to confirm.</span>
+                      <input v-model="typed" data-test="confirm-text" type="text" autocomplete="off" spellcheck="false" :aria-label="`Type ${confirmText} to confirm`"
+                             class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-700 rounded-sm px-3 py-2 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none text-gray-900 dark:text-zinc-100" />
+                    </label>
                   </div>
                 </div>
               </div>
             </div>
 
             <div class="bg-gray-50/50 dark:bg-zinc-800/50 px-6 py-5 sm:px-8 sm:flex sm:flex-row-reverse gap-3 border-t border-gray-100 dark:border-zinc-800">
-              <button type="button" @click="confirmDelete"
-                class="w-full inline-flex justify-center rounded-sm px-6 py-2.5 bg-red-600 text-[10px] font-semibold text-white hover:bg-red-700 transition-all duration-200 sm:w-auto">
+              <button type="button" @click="confirmDelete" :disabled="!!confirmText && typed !== confirmText"
+                class="w-full inline-flex justify-center rounded-sm px-6 py-2.5 bg-red-600 text-[10px] font-semibold text-white hover:bg-red-700 transition-all duration-200 sm:w-auto disabled:opacity-40 disabled:cursor-not-allowed">
                 {{ confirmLabel }}
               </button>
 
