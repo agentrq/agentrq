@@ -1195,6 +1195,119 @@ export async function replayHookDelivery(id, deliveryId) {
   return hookJSON(`/registrations/${id}/deliveries/${deliveryId}/replay`, { method: 'POST' }, 'Failed to replay the delivery');
 }
 
+// ── Teams ──────────────────────────────────────────────────────────────────
+// A team is people who read each other's shared workspaces. An id of a team,
+// invitation or member the account cannot see answers 404, as if it did not
+// exist; a refusal says why in the server's words.
+
+async function teamJSON(path, init, fallback) {
+  const res = await apiFetch(`${API_BASE_URL}${path}`, init);
+  if (!res.ok) throw await refusal(res, fallback);
+  return res.status === 204 ? true : res.json();
+}
+
+// The account's teams, each with its role in it and its member count.
+export async function fetchTeams() {
+  return teamJSON('/teams', undefined, 'Failed to fetch teams');
+}
+
+// Creates a team, with the account as its owner.
+export async function createTeam(name) {
+  return teamJSON('/teams', jsonInit('POST', { name }), 'Failed to create the team');
+}
+
+export async function getTeam(teamId) {
+  return teamJSON(`/teams/${teamId}`, undefined, 'Failed to fetch the team');
+}
+
+// Owners and admins only.
+export async function renameTeam(teamId, name) {
+  return teamJSON(`/teams/${teamId}`, jsonInit('PATCH', { name }), 'Failed to rename the team');
+}
+
+// Owners only: deletes its members, invitations and shares with it.
+export async function deleteTeam(teamId) {
+  return teamJSON(`/teams/${teamId}`, { method: 'DELETE' }, 'Failed to delete the team');
+}
+
+export async function fetchTeamMembers(teamId) {
+  return teamJSON(`/teams/${teamId}/members`, undefined, 'Failed to fetch the members');
+}
+
+// owner, admin or member. Only an owner makes an owner, and a team always
+// keeps one.
+export async function setTeamMemberRole(teamId, userId, role) {
+  return teamJSON(`/teams/${teamId}/members/${userId}`, jsonInit('PATCH', { role }), 'Failed to change the role');
+}
+
+// Removes a member and what they shared with the team; the account's own id
+// leaves it.
+export async function removeTeamMember(teamId, userId) {
+  return teamJSON(`/teams/${teamId}/members/${userId}`, { method: 'DELETE' }, 'Failed to remove the member');
+}
+
+// Leaves a team, taking back what the account shared with it. The last owner
+// cannot.
+export async function leaveTeam(teamId) {
+  return teamJSON(`/teams/${teamId}/leave`, { method: 'POST' }, 'Failed to leave the team');
+}
+
+// The team's open invitations; owners and admins only.
+export async function fetchTeamInvitations(teamId) {
+  return teamJSON(`/teams/${teamId}/invitations`, undefined, 'Failed to fetch invitations');
+}
+
+// Invites an email address. The answer says whether it was emailed; when it
+// was not, its link is the only time the invitation's token is shown. A team
+// may create only so many a day, and the refusal names the limit.
+export async function createTeamInvitation(teamId, { email, role = 'member' }) {
+  return teamJSON(`/teams/${teamId}/invitations`, jsonInit('POST', { email, role }), 'Failed to send the invitation');
+}
+
+export async function revokeTeamInvitation(teamId, invitationId) {
+  return teamJSON(`/teams/${teamId}/invitations/${invitationId}`, { method: 'DELETE' }, 'Failed to revoke the invitation');
+}
+
+// Open invitations to the account's own email address.
+export async function fetchMyInvitations() {
+  return teamJSON('/invitations', undefined, 'Failed to fetch invitations');
+}
+
+// What an invitation link is for, before accepting it: the team, the role,
+// who sent it and whether it is for this account.
+export async function previewTeamInvitation(token) {
+  return teamJSON('/invitations/preview', jsonInit('POST', { token }), 'Failed to read the invitation');
+}
+
+// Accepts an invitation by the token of its link; the answer is the team.
+export async function acceptTeamInvitation(token) {
+  return teamJSON('/invitations/accept', jsonInit('POST', { token }), 'Failed to accept the invitation');
+}
+
+// Accepts one of fetchMyInvitations' invitations; the answer is the team.
+export async function acceptTeamInvitationById(invitationId) {
+  return teamJSON(`/invitations/${invitationId}/accept`, { method: 'POST' }, 'Failed to accept the invitation');
+}
+
+export async function declineTeamInvitation(invitationId) {
+  return teamJSON(`/invitations/${invitationId}/decline`, { method: 'POST' }, 'Failed to decline the invitation');
+}
+
+// The teams one of the account's workspaces is shared with.
+export async function fetchWorkspaceShares(workspaceId) {
+  return teamJSON(`/workspaces/${workspaceId}/shares`, undefined, 'Failed to fetch the shares');
+}
+
+// Shares a workspace with a team the account is in, under a group; the group
+// defaults to the workspace's name. Sharing again changes the group.
+export async function shareWorkspace(workspaceId, teamId, group = '') {
+  return teamJSON(`/workspaces/${workspaceId}/shares/${teamId}`, jsonInit('PUT', { group }), 'Failed to share the workspace');
+}
+
+export async function unshareWorkspace(workspaceId, teamId) {
+  return teamJSON(`/workspaces/${workspaceId}/shares/${teamId}`, { method: 'DELETE' }, 'Failed to stop sharing the workspace');
+}
+
 export async function fetchEventTasks(eventId) {
   const res = await apiFetch(`${API_BASE_URL}/events/${eventId}/tasks`);
   if (!res.ok) throw new Error('Failed to fetch event tasks');

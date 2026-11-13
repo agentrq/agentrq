@@ -12,17 +12,18 @@ import (
 
 func TestResourceTypeString(t *testing.T) {
 	for r, want := range map[ResourceType]string{
-		ResourceUser:                 "user",
-		ResourceWorkspace:            "workspace",
-		ResourceTask:                 "task",
-		ResourceMessage:              "message",
-		ResourceMachine:              "machine",
-		ResourceSession:              "session",
-		ResourceSkill:                "skill",
-		ResourcePano:                 "pano",
-		ResourceHookRegistration:     "hook_registration",
-		0:                            "unknown",
-		ResourceHookRegistration + 1: "unknown",
+		ResourceUser:             "user",
+		ResourceWorkspace:        "workspace",
+		ResourceTask:             "task",
+		ResourceMessage:          "message",
+		ResourceMachine:          "machine",
+		ResourceSession:          "session",
+		ResourceSkill:            "skill",
+		ResourcePano:             "pano",
+		ResourceHookRegistration: "hook_registration",
+		ResourceTeam:             "team",
+		0:                        "unknown",
+		ResourceTeam + 1:         "unknown",
 	} {
 		if got := r.String(); got != want {
 			t.Errorf("ResourceType(%d) = %q, want %q", r, got, want)

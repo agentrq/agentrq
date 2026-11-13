@@ -299,6 +299,14 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDHookReject
 	case entity.ActionHookPublish:
 		action = model.ActionIDHookPublish
+	case entity.ActionTeamCreate:
+		action = model.ActionIDTeamCreate
+	case entity.ActionTeamInvite:
+		action = model.ActionIDTeamInvite
+	case entity.ActionTeamJoin:
+		action = model.ActionIDTeamJoin
+	case entity.ActionWorkspaceShare:
+		action = model.ActionIDWorkspaceShare
 	default:
 		return
 	}
