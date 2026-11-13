@@ -48,6 +48,13 @@ const EVERY_FIELD = {
   emitEventId: 'e2',
   includeArchived: true,
   range: '30d',
+  teamId: 'tm1',
+  userId: 'u1',
+  invitationId: 'inv1',
+  email: 'dave@example.com',
+  role: 'admin',
+  group: 'Backend',
+  token: 'tok1',
 };
 
 /** An API stand-in that records what the catalogue asked of it. */
@@ -186,6 +193,14 @@ describe('the catalogue as a whole', () => {
         // Not a delete either, but every agent connected with the old MCP URL
         // stops working, and every link to the workspace changes.
         'resetWorkspaceId',
+        'deleteTeam',
+        // Not deletes, but each takes away what people relied on: a member
+        // removed, or leaving, loses the team's workspaces and takes back
+        // their own; a revoked invitation's link stops working; an unshared
+        // workspace disappears from the team.
+        'removeTeamMember',
+        'revokeTeamInvitation',
+        'unshareWorkspace',
       ].sort()
     );
   });
@@ -544,6 +559,26 @@ describe('each tool calls the interface the way the UI does', () => {
       'launchAgent',
       ['ws1', { machineId: 'm1', kind: 'acp-gateway', model: '', effort: '', autocompact: '', agent: 'codex-acp', acpVersion: '1', cols: 0, rows: 0 }],
     ],
+    ['listTeams', {}, 'fetchTeams', []],
+    ['saveTeam', { name: 'Core' }, 'createTeam', ['Core']],
+    ['saveTeam', { teamId: 'tm1', name: 'Core' }, 'renameTeam', ['tm1', 'Core']],
+    ['deleteTeam', { teamId: 'tm1' }, 'deleteTeam', ['tm1']],
+    ['setTeamMemberRole', { teamId: 'tm1', userId: 'u1', role: 'admin' }, 'setTeamMemberRole', ['tm1', 'u1', 'admin']],
+    ['removeTeamMember', { teamId: 'tm1', userId: 'u1' }, 'removeTeamMember', ['tm1', 'u1']],
+    ['removeTeamMember', { teamId: 'tm1' }, 'leaveTeam', ['tm1']],
+    ['listTeamInvitations', {}, 'fetchMyInvitations', []],
+    ['listTeamInvitations', { teamId: 'tm1' }, 'fetchTeamInvitations', ['tm1']],
+    ['inviteToTeam', { teamId: 'tm1', email: 'd@x.io' }, 'createTeamInvitation', ['tm1', { email: 'd@x.io', role: 'member' }]],
+    ['inviteToTeam', { teamId: 'tm1', email: 'd@x.io', role: 'admin' }, 'createTeamInvitation', ['tm1', { email: 'd@x.io', role: 'admin' }]],
+    ['revokeTeamInvitation', { teamId: 'tm1', invitationId: 'inv1' }, 'revokeTeamInvitation', ['tm1', 'inv1']],
+    ['previewTeamInvitation', { token: 'tok1' }, 'previewTeamInvitation', ['tok1']],
+    ['acceptTeamInvitation', { token: 'tok1', invitationId: 'inv1' }, 'acceptTeamInvitation', ['tok1']],
+    ['acceptTeamInvitation', { invitationId: 'inv1' }, 'acceptTeamInvitationById', ['inv1']],
+    ['declineTeamInvitation', { invitationId: 'inv1' }, 'declineTeamInvitation', ['inv1']],
+    ['listWorkspaceShares', { workspaceId: 'ws1' }, 'fetchWorkspaceShares', ['ws1']],
+    ['shareWorkspace', { workspaceId: 'ws1', teamId: 'tm1' }, 'shareWorkspace', ['ws1', 'tm1', '']],
+    ['shareWorkspace', { workspaceId: 'ws1', teamId: 'tm1', group: 'Backend' }, 'shareWorkspace', ['ws1', 'tm1', 'Backend']],
+    ['unshareWorkspace', { workspaceId: 'ws1', teamId: 'tm1' }, 'unshareWorkspace', ['ws1', 'tm1']],
   ];
 
   it.each(CASES)('%s(%o) calls %s', async (toolName, input, method, args) => {
@@ -554,6 +589,20 @@ describe('each tool calls the interface the way the UI does', () => {
     await found.execute(input, { signal: undefined });
 
     expect(calls).toEqual([{ method, args }]);
+  });
+});
+
+describe('listTeams', () => {
+  it('reads one team together with its members', async () => {
+    const api = {
+      getTeam: vi.fn().mockResolvedValue({ id: 'tm1', name: 'Core', role: 'owner' }),
+      fetchTeamMembers: vi.fn().mockResolvedValue({ members: [{ userId: 'u1' }] }),
+    };
+    const listTeams = build({ api }).find((t) => t.name === 'listTeams');
+
+    expect(await listTeams.execute({ teamId: 'tm1' }, {})).toEqual({ id: 'tm1', name: 'Core', role: 'owner', members: [{ userId: 'u1' }] });
+    expect(api.getTeam).toHaveBeenCalledWith('tm1');
+    expect(api.fetchTeamMembers).toHaveBeenCalledWith('tm1');
   });
 });
 
