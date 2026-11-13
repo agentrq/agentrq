@@ -98,6 +98,61 @@ const PANO_DOC = {
   files: PANO_FILES('Linked files: each must be linked from the markdown by its filename, as [text](name) or ![alt](name).'),
 }
 
+// ---- Teams --------------------------------------------------------------
+// Grouped by action rather than a tool per call: the catalogue must stay
+// under the 128 tools a shared site may announce, and teams alone are ~30
+// calls. Each action is one `api.js` function; `run` picks it.
+const TEAM_ID = str('The team ID, as listTeams reports it.')
+const teamPage = ({ teamId }) => `/team/settings?team=${seg(teamId)}`
+const sharingPage = ({ workspaceId }) => `/workspaces/${seg(workspaceId)}/settings?tab=sharing`
+const TEAM_FIELDS = {
+  teamId: TEAM_ID,
+  workspaceId: WORKSPACE_ID,
+  userId: str('A member\'s user ID, as the members action reports it.'),
+  invitationId: str('An invitation ID, as the invitations actions report it.'),
+  token: str('The token from an invitation link (its ?token= value).'),
+}
+
+/** One action of a grouped tool: its `api.js` call, and what it needs. */
+function dispatch(actions, toolName) {
+  return (input = {}) => {
+    const action = actions[input.action]
+    if (!action) throw new Error(`${toolName} takes an action of ${Object.keys(actions).join(', ')}, not ${JSON.stringify(input.action)}`)
+    return action(input)
+  }
+}
+
+const TEAM_READS = (api) => ({
+  list: () => api.listTeams(),
+  get: ({ teamId }) => api.getTeam(teamId),
+  members: ({ teamId }) => api.listTeamMembers(teamId),
+  invitations: ({ teamId }) => api.listTeamInvitations(teamId),
+  myInvitations: () => api.listMyInvitations(),
+  preview: ({ token }) => api.previewInvitation(token),
+  shares: ({ workspaceId }) => api.listWorkspaceShares(workspaceId),
+})
+
+const TEAM_WRITES = (api) => ({
+  rename: ({ teamId, name }) => api.renameTeam(teamId, name),
+  delete: ({ teamId }) => api.deleteTeam(teamId),
+  setRole: ({ teamId, userId, role }) => api.setTeamMemberRole(teamId, userId, role),
+  removeMember: ({ teamId, userId }) => api.removeTeamMember(teamId, userId),
+  leave: ({ teamId }) => api.leaveTeam(teamId),
+  invite: ({ teamId, email, role = 'member' }) => api.createTeamInvitation(teamId, email, role),
+  revokeInvitation: ({ teamId, invitationId }) => api.revokeTeamInvitation(teamId, invitationId),
+  accept: ({ token, invitationId }) => api.acceptInvitation({ token, invitationId }),
+  decline: ({ invitationId }) => api.declineInvitation(invitationId),
+  share: ({ workspaceId, teamId, group = '' }) => api.shareWorkspace(workspaceId, teamId, group),
+  unshare: ({ workspaceId, teamId }) => api.unshareWorkspace(workspaceId, teamId),
+})
+
+/** Where a manageTeam action shows: the page that holds what it changes. */
+function teamWritePage(input = {}) {
+  if (input.action === 'share' || input.action === 'unshare') return sharingPage(input)
+  if (input.action === 'accept' || input.action === 'decline') return '/invitations'
+  return teamPage(input)
+}
+
 /**
  * The page a write tool acts on, so the person sees what the agent did.
  *
@@ -1423,6 +1478,51 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       destructive: true,
       screen: before(workflowPage),
       run: ({ workflowId, text }) => api.replaceWorkflowFromText(workflowId, text),
+    }),
+    // ---- Teams -------------------------------------------------------------
+    tool({
+      name: 'readTeams',
+      description:
+        'Read teams. action: list (your teams and role), get, members, invitations (a team\'s pending ones), ' +
+        'myInvitations (addressed to you), preview (a link\'s invitation, by token), shares (the teams a workspace is shared with).',
+      properties: {
+        action: { type: 'string', enum: Object.keys(TEAM_READS({})), description: 'What to read.' },
+        ...TEAM_FIELDS,
+      },
+      required: ['action'],
+      readOnly: true,
+      run: dispatch(TEAM_READS(api), 'readTeams'),
+    }),
+    tool({
+      name: 'createTeam',
+      description: 'Create a team, with you as its owner. Then invite members with manageTeam.',
+      properties: { name: str('The team\'s name.') },
+      required: ['name'],
+      screen: after((_input, result) => {
+        // The server answers with the team, or with { team }.
+        const id = (result?.team ?? result)?.id
+        return id ? teamPage({ teamId: id }) : '/team/new'
+      }),
+      run: ({ name }) => api.createTeam(name),
+    }),
+    tool({
+      name: 'manageTeam',
+      description:
+        'Change a team. action: rename (name), delete (owner only), setRole/removeMember (userId, role), leave, ' +
+        'invite (email, role; at most a few per team per day, 429 past it), revokeInvitation, accept (token or invitationId), ' +
+        'decline, share/unshare (workspaceId, teamId; share takes group, its "show in team as" name; owner only).',
+      properties: {
+        action: { type: 'string', enum: Object.keys(TEAM_WRITES({})), description: 'What to change.' },
+        ...TEAM_FIELDS,
+        name: str('The team\'s new name, for rename.'),
+        email: str('The email to invite.'),
+        role: { type: 'string', enum: ['member', 'admin', 'owner'], description: 'A member\'s role. Invitations default to member.' },
+        group: str('The group a shared workspace shows in, in the team. Defaults to the workspace name.'),
+      },
+      required: ['action'],
+      destructive: true,
+      screen: before(teamWritePage),
+      run: dispatch(TEAM_WRITES(api), 'manageTeam'),
     }),
   ]
 }
