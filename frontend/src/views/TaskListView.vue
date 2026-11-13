@@ -44,6 +44,7 @@
          :class="{'hidden @min-[40rem]:flex': selectedTaskId}">
       <div class="flex flex-col min-w-0 flex-1">
         <h1 class="text-lg @min-[48rem]:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">{{ title }}</h1>
+        <p v-if="isTeamMode && teamGroup" class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5 truncate">{{ teamGroup }}</p>
       </div>
 
 
@@ -71,8 +72,8 @@
         <div v-if="showMobileFilters || !isMobile" 
              class="p-0.5 bg-gray-100 dark:bg-zinc-800 rounded-md border border-gray-200 dark:border-zinc-700/50 shadow-inner flex overflow-x-auto no-scrollbar"
              :class="[showMobileFilters ? 'fixed top-[70px] right-4 z-50 flex shadow-xl border-gray-900 dark:border-white animate-in fade-in slide-in-from-top-2' : 'hidden @min-[48rem]:flex']">
-          <button v-for="f in filters" :key="f.id"
-                  @click="router.push(`/tasks/${f.id}`); isMobile && (showMobileFilters = false)"
+          <button v-for="f in shownFilters" :key="f.id"
+                  @click="router.push(link({ path: `/tasks/${f.id}`, query: teamFilterQuery })); isMobile && (showMobileFilters = false)"
                   @mouseenter="tooltipStore.show($event, f.label, 'bottom')"
                   @mouseleave="tooltipStore.hide()"
                   :class="[filterType === f.id ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300']"
@@ -83,8 +84,23 @@
           </button>
         </div>
 
-        <div class="w-px h-4 bg-gray-200 dark:bg-zinc-800"></div>
-        <NewTaskButton />
+        <!-- Team mode: whose, and which group. In the URL, so a link keeps them. -->
+        <template v-if="isTeamMode">
+          <select :value="teamMember" @change="setTeamFilter('member', $event.target.value)" data-test="team-filter-member" aria-label="Member"
+                  class="h-8 max-w-[9rem] bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-2 text-xs text-gray-700 dark:text-zinc-200 outline-none">
+            <option value="">All members</option>
+            <option v-for="o in teamOwnerList" :key="o.userId" :value="String(o.userId)">{{ o.name || o.email }}</option>
+          </select>
+          <select :value="teamGroup" @change="setTeamFilter('group', $event.target.value)" data-test="team-filter-group" aria-label="Group"
+                  class="h-8 max-w-[9rem] bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-2 text-xs text-gray-700 dark:text-zinc-200 outline-none">
+            <option value="">All groups</option>
+            <option v-for="g in teamGroupList" :key="g.name" :value="g.name">{{ g.name }}</option>
+          </select>
+        </template>
+        <template v-else>
+          <div class="w-px h-4 bg-gray-200 dark:bg-zinc-800"></div>
+          <NewTaskButton />
+        </template>
       </div>
     </div>
 
@@ -99,6 +115,13 @@
           <LoadingState label="Loading tasks..." />
         </div>
         
+        <!-- A team with nothing shared yet (§9): say how it fills up. -->
+        <div v-else-if="teamIsEmpty" data-test="team-empty" class="mx-4 py-6 px-4 border border-dashed border-gray-200 dark:border-zinc-800 rounded-xl text-[12px] text-gray-500 dark:text-zinc-400 font-medium space-y-3">
+          <p>Nothing shared yet. Members choose which workspaces to share.</p>
+          <router-link :to="{ path: '/team/settings', query: { team: teamId, tab: 'workspaces' } }"
+                       class="inline-flex px-3 py-1.5 rounded-lg bg-black dark:bg-white text-white dark:text-black text-[10px] font-black uppercase tracking-widest">Share your workspaces</router-link>
+        </div>
+
         <div v-else class="space-y-6 pb-20 @min-[48rem]:pb-0 overflow-y-auto custom-scrollbar px-4">
           <div v-for="grp in displayGroups" :key="grp.title" class="mb-4 @min-[48rem]:last:mb-0">
             <div class="mb-3 flex items-center gap-3">
@@ -128,7 +151,7 @@
                     </div>
                     <div class="flex items-center gap-2 relative">
                        <!-- Action Menu (Visible on mobile, hover on desktop), as in a workspace's list -->
-                       <div class="opacity-100 @min-[48rem]:opacity-0 @min-[48rem]:group-hover:opacity-100 flex items-center gap-1 mr-2 transition-opacity duration-150">
+                       <div v-if="!isTeamMode" class="opacity-100 @min-[48rem]:opacity-0 @min-[48rem]:group-hover:opacity-100 flex items-center gap-1 mr-2 transition-opacity duration-150">
                           <template v-if="filterType === 'notstarted' && !isArchived(task)">
                             <button @click.stop="reorderTask(grp.tasks, task, -1)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Move Up">
                               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg>
@@ -156,9 +179,12 @@
                                  'text-gray-700 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-white font-semibold' ]">
                     {{ task.title }}
                   </h3>
+
+                  <!-- Whose task it is, in team mode. -->
+                  <OwnerAvatar v-if="isTeamMode && task.owner" :owner="task.owner" label class="mt-2 max-w-full" data-test="task-owner" />
                   
                   <!-- Quick actions for Pending -->
-                  <div v-if="filterType === 'pending'" class="mt-3" @click.stop>
+                  <div v-if="filterType === 'pending' && !isTeamMode" class="mt-3" @click.stop>
                     <div class="flex flex-wrap gap-2" v-if="isAgentConnected(task.workspaceId)">
                       <template v-if="requiresAllowDeny(task)">
                         <button @click="handleAction(task, 'allow')" class="px-2.5 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-gray-100 transition-all shadow-sm">
@@ -213,7 +239,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchGlobalTasks, sendPermissionVerdict, updateTaskAssignee, updateTaskStatus, updateTaskOrder, deleteTask, moveTask } from '../api';
+import { fetchGlobalTasks, fetchTeamTasks, sendPermissionVerdict, updateTaskAssignee, updateTaskStatus, updateTaskOrder, deleteTask, moveTask } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useCron } from '../composables/useCron';
@@ -236,6 +262,9 @@ import { menuItemsFor, parseSelection } from '../composables/useTaskContextMenu'
 import { useExtensionSurfaces } from '../composables/useExtensionSurfaces';
 import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
 import { readAllCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
+import OwnerAvatar from '../components/OwnerAvatar.vue';
+import { useTeamStore } from '../stores/teamStore';
+import { lostTeam, teamGroups, teamOwners, useTeamMode } from '../composables/useTeamMode';
 
 const { getNextRunLabel, getNextRunDateTime, getNextRunDate } = useCron();
 const route = useRoute();
@@ -248,6 +277,25 @@ const isNarrow = useNarrowLayout(layoutRef);
 const isMobile = computed(() => isMobileWindow.value || isNarrow.value);
 
 const tasks = ref([]);
+
+// Team mode: the team's shared tasks, read-only, filtered by member and group.
+const { teamId, isTeamMode, link, leaveTeam } = useTeamMode();
+const teamStore = useTeamStore();
+const teamMember = computed(() => (isTeamMode.value && typeof route.query.member === 'string' ? route.query.member : ''));
+const teamGroup = computed(() => (isTeamMode.value && typeof route.query.group === 'string' ? route.query.group : ''));
+const teamFilterQuery = computed(() => ({
+  ...(teamMember.value && { member: teamMember.value }),
+  ...(teamGroup.value && { group: teamGroup.value }),
+}));
+const teamWorkspaces = computed(() => teamStore.workspacesOf(teamId.value));
+const teamOwnerList = computed(() => teamOwners(teamWorkspaces.value));
+const teamGroupList = computed(() => teamGroups(teamWorkspaces.value));
+const teamIsEmpty = computed(() => isTeamMode.value && teamId.value in teamStore.workspacesByTeam && teamWorkspaces.value.length === 0);
+function setTeamFilter(key, value) {
+  const query = { ...route.query, [key]: value };
+  if (!value) delete query[key];
+  router.push({ path: `/tasks/${filterType.value}`, query });
+}
 // Read, never written: the shell keeps the store's agentConnected current from
 // the event stream, so the per-row dots below follow an agent coming and going
 // instead of freezing at whatever was true when this list was fetched.
@@ -321,6 +369,9 @@ const filters = [
   { id: 'scheduled', label: 'Scheduled', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' }
 ];
 
+// "Pending on Me" is about you, so a team has no such list.
+const shownFilters = computed(() => (isTeamMode.value ? filters.filter((f) => f.id !== 'pending') : filters));
+
 const displayGroups = computed(() =>
   buildTaskGroups(tasks.value, filterType.value, { nextRunAt: getNextRunDate })
 );
@@ -384,7 +435,7 @@ watch(() => extensions.error.value, (reason) => {
 // and why a late answer for an earlier right-click is dropped.
 let contextMenuRequest = 0;
 const openContextMenu = async (event, task) => {
-  if (isArchived(task)) return;
+  if (isTeamMode.value || isArchived(task)) return;
   contextMenu.value = { show: true, x: event.clientX, y: event.clientY, task };
   extensionItems.value = [];
   const request = (contextMenuRequest += 1);
@@ -414,7 +465,9 @@ const onExtensionAction = (action) => {
   extensions.invoke({ owner: panel.owner, id: panel.id, surface: 'task-menu' }, { ...task, action });
 };
 
-const getWorkspaceName = (workspaceId) => workspaceStore.getWorkspace(workspaceId)?.name || '...';
+const getWorkspaceName = (workspaceId) => (isTeamMode.value
+  ? teamWorkspaces.value.find((w) => String(w.id) === String(workspaceId))?.name
+  : workspaceStore.getWorkspace(workspaceId)?.name) || '...';
 
 const isAgentConnected = (workspaceId) => workspaceStore.isAgentConnected(workspaceId);
 
@@ -494,7 +547,8 @@ const fetchInitial = async () => {
   // Stale first, then true — and before any request, including the one for the
   // workspace list. Reading the cache needs no server round trip, so putting one
   // in front of it would defeat the point.
-  const cached = await readAllCachedTasks(sharedCache(), { limit });
+  // Never in team mode: the local cache holds your own tasks, not the team's.
+  const cached = isTeamMode.value ? [] : await readAllCachedTasks(sharedCache(), { limit });
   if (gen !== generation) return;
   if (shouldPaintCache(tasks.value, cached)) {
     tasks.value = cached;
@@ -506,10 +560,14 @@ const fetchInitial = async () => {
     // task event, and re-fetching a list the store keeps live from the event
     // stream would be a request per event plus a re-render everywhere it is
     // rendered.
-    if (workspaceStore.workspaces.length === 0) await workspaceStore.fetchWorkspaces();
+    if (isTeamMode.value) {
+      if (!(teamId.value in teamStore.workspacesByTeam)) await teamStore.loadWorkspaces(teamId.value);
+    } else if (workspaceStore.workspaces.length === 0) await workspaceStore.fetchWorkspaces();
 
     await fetchNext();
   } catch (err) {
+    // Removed from the team while looking at it: back to Me (§9).
+    if (isTeamMode.value && lostTeam(err)) return leaveTeam();
     console.error('Failed to fetch tasks:', err);
   } finally {
     loading.value = false;
@@ -523,7 +581,9 @@ const fetchNext = async () => {
   
   const gen = generation;
   try {
-    const res = await fetchGlobalTasks(params);
+    const res = isTeamMode.value
+      ? await fetchTeamTasks(teamId.value, { ...params, member: teamMember.value, group: teamGroup.value })
+      : await fetchGlobalTasks(params);
     if (gen !== generation) return;
     const newTasks = res.tasks || [];
     
@@ -538,8 +598,9 @@ const fetchNext = async () => {
     offset.value += newTasks.length;
     // Write-through: the server just told us about these, so the local copy is
     // brought up to date with the same answer the view is rendering.
-    cacheTasks(sharedCache(), newTasks);
+    if (!isTeamMode.value) cacheTasks(sharedCache(), newTasks);
   } catch (err) {
+    if (isTeamMode.value && lostTeam(err)) return leaveTeam();
     console.error('Failed to load more tasks:', err);
   }
 };
@@ -569,10 +630,11 @@ const getBackendParams = (filter) => {
 const selectedTaskId = computed(() => route.params.taskId);
 
 const openTask = (task) => {
-  if (task.status === 'cron') {
+  const query = isTeamMode.value ? { ...route.query } : {};
+  if (task.status === 'cron' && !isTeamMode.value) {
     router.push(`/tasks/${filterType.value}/${task.workspaceId}/${task.id}/instances`);
   } else {
-    router.push(`/tasks/${filterType.value}/${task.workspaceId}/${task.id}`);
+    router.push({ path: `/tasks/${filterType.value}/${task.workspaceId}/${task.id}`, query });
   }
 };
 
@@ -646,8 +708,8 @@ const getTaskLabel = (status) => {
   return status;
 };
 
-watch(() => route.params.filter, () => {
-  fetchInitial();
+watch(() => [route.params.filter, teamId.value, teamMember.value, teamGroup.value], (now, before) => {
+  if (now.some((v, i) => v !== before[i])) fetchInitial();
 });
 
 onMounted(() => {
