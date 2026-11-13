@@ -49,6 +49,7 @@ type CreateTeamInvitationResponse struct {
 // TeamInvitationPreview is what an invitation link's page shows before it is
 // accepted. Email is the invited address, masked.
 type TeamInvitationPreview struct {
+	TeamID        int64
 	TeamName      string
 	Role          string
 	InvitedByName string

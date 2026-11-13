@@ -35,13 +35,11 @@ func (c *controller) ListShares(ctx context.Context, userID, workspaceID int64) 
 
 // ShareWorkspace shares the account's workspace with a team it is in, shown
 // there in group, the workspace's name when empty. Sharing it again changes
-// the group.
+// the group. The repository checks the account is in the team, under the
+// team's lock.
 func (c *controller) ShareWorkspace(ctx context.Context, userID, workspaceID, teamID int64, group string) (entity.WorkspaceShare, error) {
 	ws, err := c.repo.GetWorkspace(ctx, workspaceID, userID)
 	if err != nil {
-		return entity.WorkspaceShare{}, err
-	}
-	if _, err := c.role(ctx, userID, teamID); err != nil {
 		return entity.WorkspaceShare{}, err
 	}
 	if ws.ForkOfID != 0 {
@@ -56,10 +54,6 @@ func (c *controller) ShareWorkspace(ctx context.Context, userID, workspaceID, te
 	if group, err = cleanName(group, "group"); err != nil {
 		return entity.WorkspaceShare{}, err
 	}
-	team, err := c.repo.GetTeam(ctx, teamID)
-	if err != nil {
-		return entity.WorkspaceShare{}, err
-	}
 	now := c.now()
 	s, err := c.repo.SetWorkspaceShare(ctx, model.WorkspaceShare{
 		ID: c.ids.NextID(), TeamID: teamID, WorkspaceID: workspaceID, UserID: userID, GroupName: group, CreatedAt: now, UpdatedAt: now,
@@ -68,7 +62,7 @@ func (c *controller) ShareWorkspace(ctx context.Context, userID, workspaceID, te
 		return entity.WorkspaceShare{}, err
 	}
 	c.emit(ctx, entity.ActionWorkspaceShare, userID, workspaceID, teamID)
-	return shareEntity(s, team.Name), nil
+	return shareEntity(s.WorkspaceShare, s.TeamName), nil
 }
 
 func (c *controller) UnshareWorkspace(ctx context.Context, userID, workspaceID, teamID int64) error {

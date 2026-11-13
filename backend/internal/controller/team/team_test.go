@@ -478,7 +478,7 @@ func TestAcceptingByLink(t *testing.T) {
 		tok := token(rs.Link)
 
 		p := must(f.c.PreviewInvitation(f.ctx, eve, tok))
-		if p.TeamName != "core" || p.Role != model.TeamRoleAdmin || p.InvitedByName != "Bob" || p.Email != "d***@example.com" || p.EmailMatches {
+		if p.TeamID != f.team || p.TeamName != "core" || p.Role != model.TeamRoleAdmin || p.InvitedByName != "Bob" || p.Email != "d***@example.com" || p.EmailMatches {
 			t.Errorf("Eve previews %+v, want core, admin, from Bob, for d***@example.com, not hers", p)
 		}
 		if p := must(f.c.PreviewInvitation(f.ctx, dave, tok)); !p.EmailMatches {
@@ -659,6 +659,7 @@ func TestSharingAWorkspace(t *testing.T) {
 		expectNotFound(t, "Carol sharing Alice's workspace", errOf(f.c.ShareWorkspace(f.ctx, carol, 100, f.team, "")))
 		expectNotFound(t, "Alice sharing with a team she is not in", errOf(f.c.ShareWorkspace(f.ctx, alice, 100, other.ID, "")))
 		expectNotFound(t, "sharing an unknown workspace", errOf(f.c.ShareWorkspace(f.ctx, alice, 424242, f.team, "")))
+		expectNotFound(t, "sharing with an unknown team", errOf(f.c.ShareWorkspace(f.ctx, alice, 100, 424242, "")))
 		expectKind(t, "sharing a fork", errOf(f.c.ShareWorkspace(f.ctx, alice, 101, f.team, "")), entity.TeamInvalid)
 		expectKind(t, "sharing an archived workspace", errOf(f.c.ShareWorkspace(f.ctx, alice, 102, f.team, "")), entity.TeamInvalid)
 		expectKind(t, "a group too long", errOf(f.c.ShareWorkspace(f.ctx, alice, 100, f.team, strings.Repeat("g", 129))), entity.TeamInvalid)
@@ -713,4 +714,57 @@ func TestTheTeamReadCheck(t *testing.T) {
 			t.Error("Bob still reads Carol's workspace after she left")
 		}
 	})
+}
+
+// An invitation grants a role only while its inviter may still grant it:
+// demoted, removed or gone, their pending invitations are no longer valid.
+func TestAnInvitationNeedsAnInviterWhoMayStillGrantItsRole(t *testing.T) {
+	each(t, func(f *fixture) {
+		admin := must(f.c.CreateInvitation(f.ctx, bob, f.team, "dave@example.com", model.TeamRoleAdmin))
+		member := must(f.c.CreateInvitation(f.ctx, bob, f.team, "eve@example.com", ""))
+		expectOK(t, "Alice making Bob a member", f.c.SetMemberRole(f.ctx, alice, f.team, bob, model.TeamRoleMember))
+		for name, err := range map[string]error{
+			"previewing a demoted admin's invitation":     errOf(f.c.PreviewInvitation(f.ctx, dave, token(admin.Link))),
+			"accepting it by link":                        errOf(f.c.AcceptInvitation(f.ctx, dave, token(admin.Link))),
+			"accepting it from the inbox":                 errOf(f.c.AcceptInvitationByID(f.ctx, dave, admin.Invitation.ID)),
+			"accepting a member's invitation of a member": errOf(f.c.AcceptInvitation(f.ctx, eve, token(member.Link))),
+		} {
+			expectKind(t, name, err, entity.TeamGone)
+		}
+		// Made an admin again, Bob's invitations hold again.
+		expectOK(t, "Alice making Bob an admin", f.c.SetMemberRole(f.ctx, alice, f.team, bob, model.TeamRoleAdmin))
+		expectOK(t, "accepting once Bob is an admin again", errOf(f.c.AcceptInvitation(f.ctx, dave, token(admin.Link))))
+		// Removed, nothing he sent is valid.
+		expectOK(t, "Alice removing Bob", f.c.RemoveMember(f.ctx, alice, f.team, bob))
+		expectKind(t, "previewing a removed admin's invitation", errOf(f.c.PreviewInvitation(f.ctx, eve, token(member.Link))), entity.TeamGone)
+		expectKind(t, "accepting a removed admin's invitation", errOf(f.c.AcceptInvitationByID(f.ctx, eve, member.Invitation.ID)), entity.TeamGone)
+	})
+}
+
+// An owner making a member an owner while an admin removes them: the admin
+// never removes an owner.
+func TestAnAdminNeverRemovesAnOwnerMadeAtTheSameTime(t *testing.T) {
+	each(t, func(f *fixture) {
+		for round := range 10 {
+			var wg sync.WaitGroup
+			var promoted, removed error
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				promoted = f.c.SetMemberRole(f.ctx, alice, f.team, carol, model.TeamRoleOwner)
+			}()
+			go func() { defer wg.Done(); removed = f.c.RemoveMember(f.ctx, bob, f.team, carol) }()
+			wg.Wait()
+			switch {
+			case promoted == nil && removed == nil:
+				t.Fatalf("round %d: Carol was made an owner and removed by Bob, an admin", round)
+			case promoted == nil:
+				expectKind(t, "Bob removing Carol, an owner by then", removed, entity.TeamForbidden)
+				expectOK(t, "Alice making Carol a member again", f.c.SetMemberRole(f.ctx, alice, f.team, carol, model.TeamRoleMember))
+			default:
+				expectNotFound(t, "Alice promoting Carol, removed by then", promoted)
+				f.join(carol, "carol@example.com", model.TeamRoleMember)
+			}
+		}
+	}, withCap(100))
 }

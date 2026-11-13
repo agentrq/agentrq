@@ -235,6 +235,16 @@ func (c *controller) open(inv model.TeamInvitation) error {
 	return nil
 }
 
+// inviterMayGrant is errGone when the inviter is no longer in the team with
+// a role that may grant the invited one, as accepting would find.
+func (c *controller) inviterMayGrant(ctx context.Context, inv model.TeamInvitation) error {
+	m, err := c.repo.GetTeamMember(ctx, inv.TeamID, inv.InvitedBy)
+	if errors.Is(err, base.ErrNotFound) || (err == nil && !base.CanGrantTeamRole(m.Role, inv.Role)) {
+		return errGone
+	}
+	return err
+}
+
 // byToken is the invitation the token belongs to; base.ErrNotFound when none
 // does.
 func (c *controller) byToken(ctx context.Context, token string) (model.TeamInvitation, error) {
@@ -252,6 +262,9 @@ func (c *controller) PreviewInvitation(ctx context.Context, userID int64, token 
 	if err := c.open(inv); err != nil {
 		return entity.TeamInvitationPreview{}, err
 	}
+	if err := c.inviterMayGrant(ctx, inv); err != nil {
+		return entity.TeamInvitationPreview{}, err
+	}
 	team, err := c.repo.GetTeam(ctx, inv.TeamID)
 	if err != nil {
 		return entity.TeamInvitationPreview{}, err
@@ -261,7 +274,7 @@ func (c *controller) PreviewInvitation(ctx context.Context, userID int64, token 
 		return entity.TeamInvitationPreview{}, err
 	}
 	return entity.TeamInvitationPreview{
-		TeamName: team.Name, Role: inv.Role, InvitedByName: c.userName(ctx, inv.InvitedBy),
+		TeamID: team.ID, TeamName: team.Name, Role: inv.Role, InvitedByName: c.userName(ctx, inv.InvitedBy),
 		Email: maskEmail(inv.Email), EmailMatches: email == inv.Email, ExpiresAt: inv.ExpiresAt,
 	}, nil
 }

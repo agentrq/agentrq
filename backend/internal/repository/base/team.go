@@ -25,9 +25,18 @@ var (
 	// invitation for.
 	ErrInvitationPending = errors.New("a pending invitation for the address exists")
 	// ErrInvitationNotPending is an invitation already accepted, revoked or
-	// expired.
+	// expired, or one its inviter may no longer grant.
 	ErrInvitationNotPending = errors.New("invitation no longer pending")
+	// ErrTeamRoleForbidden is a change the caller's role in the team does
+	// not allow.
+	ErrTeamRoleForbidden = errors.New("the caller's team role does not allow the change")
 )
+
+// CanGrantTeamRole reports whether a member with role may give someone
+// granted: an owner any role, an admin admin or member, a member none.
+func CanGrantTeamRole(role, granted string) bool {
+	return role == model.TeamRoleOwner || (role == model.TeamRoleAdmin && granted != model.TeamRoleOwner)
+}
 
 // TeamWithRole is a team, a member's role in it and how many members it has.
 type TeamWithRole struct {
@@ -139,19 +148,24 @@ func (r *repository) RenameTeam(ctx context.Context, id int64, name string) erro
 }
 
 // DeleteTeam deletes a team with its members, invitations, shares and
-// memories.
-func (r *repository) DeleteTeam(ctx context.Context, id int64) error {
+// memories, if the caller is one of its owners: ErrNotFound when they are
+// not in it, ErrTeamRoleForbidden when they are not an owner. The team is
+// locked first, so no invitation, member or share is added to it meanwhile.
+func (r *repository) DeleteTeam(ctx context.Context, id, callerID int64) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		caller, err := lockedMember(tx, id, callerID)
+		if err != nil {
+			return err
+		}
+		if caller.Role != model.TeamRoleOwner {
+			return ErrTeamRoleForbidden
+		}
 		for _, m := range []any{&model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamMemory{}} {
 			if err := tx.Where("team_id = ?", id).Delete(m).Error; err != nil {
 				return err
 			}
 		}
-		res := tx.Where("id = ?", id).Delete(&model.Team{})
-		if res.Error == nil && res.RowsAffected == 0 {
-			return ErrNotFound
-		}
-		return res.Error
+		return tx.Where("id = ?", id).Delete(&model.Team{}).Error
 	})
 }
 
@@ -183,46 +197,98 @@ func (r *repository) TeamHasMemberWithEmail(ctx context.Context, teamID int64, e
 	return n > 0, err
 }
 
-// memberAndOwners locks the team and returns the member and how many owners
-// the team has; ErrNotFound when either is missing.
-func memberAndOwners(tx *gorm.DB, teamID, userID int64) (model.TeamMember, int64, error) {
-	if err := lockTeam(tx, teamID); err != nil {
-		return model.TeamMember{}, 0, err
-	}
-	m, err := first[model.TeamMember](tx.Where("team_id = ? AND user_id = ?", teamID, userID))
-	if err != nil {
-		return m, 0, err
-	}
-	var owners int64
-	err = tx.Model(&model.TeamMember{}).Where("team_id = ? AND role = ?", teamID, model.TeamRoleOwner).Count(&owners).Error
-	return m, owners, err
+// member is the user's membership of the team; ErrNotFound when they are
+// not in it.
+func member(tx *gorm.DB, teamID, userID int64) (model.TeamMember, error) {
+	return first[model.TeamMember](tx.Where("team_id = ? AND user_id = ?", teamID, userID))
 }
 
-// SetTeamMemberRole changes a member's role; ErrLastTeamOwner when that
-// demotes the team's only owner.
-func (r *repository) SetTeamMemberRole(ctx context.Context, teamID, userID int64, role string) error {
+// lockedMember locks the team and returns the user's membership of it, read
+// under the lock; ErrNotFound when there is no team or they are not in it.
+func lockedMember(tx *gorm.DB, teamID, userID int64) (model.TeamMember, error) {
+	if err := lockTeam(tx, teamID); err != nil {
+		return model.TeamMember{}, err
+	}
+	return member(tx, teamID, userID)
+}
+
+// keepsAnOwner is ErrLastTeamOwner when the team has one owner or none, so
+// an owner may not step down or go.
+func keepsAnOwner(tx *gorm.DB, teamID int64) error {
+	var owners int64
+	if err := tx.Model(&model.TeamMember{}).Where("team_id = ? AND role = ?", teamID, model.TeamRoleOwner).Count(&owners).Error; err != nil {
+		return err
+	}
+	if owners <= 1 {
+		return ErrLastTeamOwner
+	}
+	return nil
+}
+
+// managesTeam reports whether a role renames the team and changes its
+// members: owners and admins.
+func managesTeam(role string) bool {
+	return role == model.TeamRoleOwner || role == model.TeamRoleAdmin
+}
+
+// SetTeamMemberRole is the caller changing a member's role. Both roles are
+// read under the team's lock, so a change committed meanwhile is seen: the
+// caller must be an owner or admin, and an owner to make or change an owner
+// (ErrTeamRoleForbidden). ErrNotFound when the caller or the member is not
+// in the team; ErrLastTeamOwner when it demotes the only owner.
+func (r *repository) SetTeamMemberRole(ctx context.Context, teamID, callerID, userID int64, role string) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		m, owners, err := memberAndOwners(tx, teamID, userID)
+		caller, err := lockedMember(tx, teamID, callerID)
 		if err != nil {
 			return err
 		}
-		if m.Role == model.TeamRoleOwner && role != model.TeamRoleOwner && owners <= 1 {
-			return ErrLastTeamOwner
+		if !managesTeam(caller.Role) {
+			return ErrTeamRoleForbidden
+		}
+		m, err := member(tx, teamID, userID)
+		if err != nil {
+			return err
+		}
+		if (role == model.TeamRoleOwner || m.Role == model.TeamRoleOwner) && caller.Role != model.TeamRoleOwner {
+			return ErrTeamRoleForbidden
+		}
+		if m.Role == model.TeamRoleOwner && role != model.TeamRoleOwner {
+			if err := keepsAnOwner(tx, teamID); err != nil {
+				return err
+			}
 		}
 		return tx.Model(&model.TeamMember{}).Where("id = ?", m.ID).Updates(map[string]any{"role": role}).Error
 	})
 }
 
-// RemoveTeamMember removes a member and unshares their workspaces from the
-// team; ErrLastTeamOwner when they are its only owner.
-func (r *repository) RemoveTeamMember(ctx context.Context, teamID, userID int64) error {
+// RemoveTeamMember is the caller removing a member, or leaving when the
+// member is the caller, and unsharing the member's workspaces from the team.
+// Anyone may leave. Removing someone else takes an owner or admin, and
+// removing an owner takes an owner (ErrTeamRoleForbidden); both roles are
+// read under the team's lock. ErrNotFound when the caller or the member is
+// not in the team; ErrLastTeamOwner when the member is its only owner.
+func (r *repository) RemoveTeamMember(ctx context.Context, teamID, callerID, userID int64) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		m, owners, err := memberAndOwners(tx, teamID, userID)
+		caller, err := lockedMember(tx, teamID, callerID)
 		if err != nil {
 			return err
 		}
-		if m.Role == model.TeamRoleOwner && owners <= 1 {
-			return ErrLastTeamOwner
+		m := caller
+		if userID != callerID {
+			if !managesTeam(caller.Role) {
+				return ErrTeamRoleForbidden
+			}
+			if m, err = member(tx, teamID, userID); err != nil {
+				return err
+			}
+			if m.Role == model.TeamRoleOwner && caller.Role != model.TeamRoleOwner {
+				return ErrTeamRoleForbidden
+			}
+		}
+		if m.Role == model.TeamRoleOwner {
+			if err := keepsAnOwner(tx, teamID); err != nil {
+				return err
+			}
 		}
 		if err := tx.Where("id = ?", m.ID).Delete(&model.TeamMember{}).Error; err != nil {
 			return err
@@ -301,45 +367,79 @@ func (r *repository) RevokeTeamInvitation(ctx context.Context, teamID, id int64,
 }
 
 // AcceptTeamInvitation marks the invitation accepted by the member's account
-// and adds them to its team, keeping the role of one already there. Of two
-// accepts at once only one changes the invitation; the other, like one of an
-// invitation accepted, revoked or expired at now, gets
-// ErrInvitationNotPending.
-func (r *repository) AcceptTeamInvitation(ctx context.Context, id int64, member model.TeamMember, now time.Time) error {
+// and adds them to the member's team, keeping the role of one already there.
+// The team is locked first: ErrNotFound when it is gone, or the invitation is
+// not of it. ErrInvitationNotPending when the invitation was accepted,
+// revoked or expired at now, by another accept meanwhile too, or its inviter
+// is no longer in the team with a role that may grant the invited one.
+func (r *repository) AcceptTeamInvitation(ctx context.Context, id int64, m model.TeamMember, now time.Time) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&model.TeamInvitation{}).
-			Where("id = ? AND expires_at > ? AND "+pendingInvitation, id, now).
-			Updates(map[string]any{"accepted_at": now, "accepted_by": member.UserID})
-		if res.Error != nil {
-			return res.Error
+		if err := lockTeam(tx, m.TeamID); err != nil {
+			return err
 		}
-		if res.RowsAffected == 0 {
+		inv, err := first[model.TeamInvitation](tx.Where("id = ? AND team_id = ?", id, m.TeamID))
+		if err != nil {
+			return err
+		}
+		if inv.AcceptedAt != nil || inv.RevokedAt != nil || !now.Before(inv.ExpiresAt) {
 			return ErrInvitationNotPending
 		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&member).Error
+		inviter, err := member(tx, inv.TeamID, inv.InvitedBy)
+		if errors.Is(err, ErrNotFound) || (err == nil && !CanGrantTeamRole(inviter.Role, inv.Role)) {
+			return ErrInvitationNotPending
+		}
+		if err != nil {
+			return err
+		}
+		err = tx.Model(&model.TeamInvitation{}).Where("id = ?", id).
+			Updates(map[string]any{"accepted_at": now, "accepted_by": m.UserID}).Error
+		if err != nil {
+			return err
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&m).Error
 	})
 }
 
+// sharesWithTeams selects shares with their team's name.
+func sharesWithTeams(tx *gorm.DB) *gorm.DB {
+	return tx.Model(&model.WorkspaceShare{}).
+		Select("workspace_shares.id, workspace_shares.created_at, workspace_shares.updated_at, workspace_shares.team_id, " +
+			"workspace_shares.workspace_id, workspace_shares.user_id, workspace_shares.group_name, teams.name AS team_name").
+		Joins("JOIN teams ON teams.id = workspace_shares.team_id")
+}
+
 // SetWorkspaceShare shares a workspace with a team, or changes the group of
-// its share, and returns the share.
-func (r *repository) SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare) (model.WorkspaceShare, error) {
-	err := r.conn(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "team_id"}, {Name: "workspace_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"group_name", "updated_at"}),
-	}).Create(&s).Error
-	if err != nil {
-		return model.WorkspaceShare{}, err
-	}
-	return first[model.WorkspaceShare](r.conn(ctx).Where("team_id = ? AND workspace_id = ?", s.TeamID, s.WorkspaceID))
+// its share, and returns the share. The team is locked and the sharer's
+// membership read under the lock, so a removal committed meanwhile is seen
+// and no share outlives it: ErrNotFound when the team is gone or the sharer
+// is not in it.
+func (r *repository) SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare) (WorkspaceShareWithTeam, error) {
+	var out WorkspaceShareWithTeam
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := lockedMember(tx, s.TeamID, s.UserID); err != nil {
+			return err
+		}
+		err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "team_id"}, {Name: "workspace_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"group_name", "updated_at"}),
+		}).Create(&s).Error
+		if err != nil {
+			return err
+		}
+		var rows []WorkspaceShareWithTeam
+		if err := sharesWithTeams(tx).Where("workspace_shares.team_id = ? AND workspace_shares.workspace_id = ?", s.TeamID, s.WorkspaceID).Scan(&rows).Error; err != nil {
+			return err
+		}
+		out = rows[0]
+		return nil
+	})
+	return out, err
 }
 
 // ListWorkspaceShares returns the owner's shares of a workspace, by team name.
 func (r *repository) ListWorkspaceShares(ctx context.Context, workspaceID, userID int64) ([]WorkspaceShareWithTeam, error) {
 	rows := []WorkspaceShareWithTeam{}
-	err := r.conn(ctx).Model(&model.WorkspaceShare{}).
-		Select("workspace_shares.id, workspace_shares.created_at, workspace_shares.updated_at, workspace_shares.team_id, "+
-			"workspace_shares.workspace_id, workspace_shares.user_id, workspace_shares.group_name, teams.name AS team_name").
-		Joins("JOIN teams ON teams.id = workspace_shares.team_id").
+	err := sharesWithTeams(r.conn(ctx)).
 		Where("workspace_shares.workspace_id = ? AND workspace_shares.user_id = ?", workspaceID, userID).
 		Order("teams.name ASC, teams.id ASC").
 		Scan(&rows).Error

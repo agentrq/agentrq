@@ -3103,7 +3103,7 @@ paths:
     post:
       tags: [Teams]
       summary: Show what an invitation link is for
-      description: The token is the part of the link after `#`.
+      description: The token is the part of the link after `#`. Gone (410) as accepting it would be.
       requestBody:
         required: true
         content:
@@ -3123,7 +3123,7 @@ paths:
     post:
       tags: [Teams]
       summary: Accept an invitation by its link's token
-      description: The account's email must be the invited address, ignoring case (403). Works once, within 7 days (410).
+      description: The account's email must be the invited address, ignoring case (403). Works once, within 7 days, and only while the inviter is still in the team with a role that may grant the invited one (410).
       requestBody:
         required: true
         content:
@@ -3146,6 +3146,7 @@ paths:
     post:
       tags: [Teams]
       summary: Accept one of the account's invitations
+      description: Works once, within 7 days, and only while the inviter is still in the team with a role that may grant the invited one (410).
       responses:
         '200':
           description: OK
@@ -4321,6 +4322,7 @@ components:
     TeamInvitationPreview:
       type: object
       properties:
+        teamId: { type: string }
         teamName: { type: string }
         role: { type: string, enum: [owner, admin, member] }
         invitedByName: { type: string }

@@ -169,7 +169,7 @@ func TestTeamsListedForAMemberWithRoleAndCount(t *testing.T) {
 		if err := r.RenameTeam(ctx, 99, "x"); !errors.Is(err, ErrNotFound) {
 			t.Errorf("RenameTeam of an unknown team returned %v, want ErrNotFound", err)
 		}
-		if err := r.DeleteTeam(ctx, 99); !errors.Is(err, ErrNotFound) {
+		if err := r.DeleteTeam(ctx, 99, 10); !errors.Is(err, ErrNotFound) {
 			t.Errorf("DeleteTeam of an unknown team returned %v, want ErrNotFound", err)
 		}
 	})
@@ -186,7 +186,14 @@ func TestDeleteTeamTakesEverythingOfTheTeam(t *testing.T) {
 		}
 		// Another team's rows stay.
 		db.Create(&model.TeamMember{ID: 9, TeamID: 2, UserID: 11, Role: model.TeamRoleOwner})
-		if err := r.DeleteTeam(ctx, 1); err != nil {
+		if err := r.DeleteTeam(ctx, 1, 12); !errors.Is(err, ErrNotFound) {
+			t.Errorf("deleting a team the caller is not in returned %v, want ErrNotFound", err)
+		}
+		db.Model(&model.TeamMember{}).Where("id = 2").Update("role", model.TeamRoleAdmin)
+		if err := r.DeleteTeam(ctx, 1, 11); !errors.Is(err, ErrTeamRoleForbidden) {
+			t.Errorf("an admin deleting the team returned %v, want ErrTeamRoleForbidden", err)
+		}
+		if err := r.DeleteTeam(ctx, 1, 10); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := r.GetTeam(ctx, 1); !errors.Is(err, ErrNotFound) {
@@ -222,32 +229,41 @@ func TestMembersAndTheLastOwner(t *testing.T) {
 		if in, _ := r.TeamHasMemberWithEmail(ctx, 1, "eve@example.com"); in {
 			t.Error("TeamHasMemberWithEmail found eve, who is in no team")
 		}
-		if err := r.SetTeamMemberRole(ctx, 1, 10, model.TeamRoleAdmin); !errors.Is(err, ErrLastTeamOwner) {
+		if err := r.SetTeamMemberRole(ctx, 1, 10, 10, model.TeamRoleAdmin); !errors.Is(err, ErrLastTeamOwner) {
 			t.Errorf("demoting the only owner returned %v, want ErrLastTeamOwner", err)
 		}
-		if err := r.RemoveTeamMember(ctx, 1, 10); !errors.Is(err, ErrLastTeamOwner) {
-			t.Errorf("removing the only owner returned %v, want ErrLastTeamOwner", err)
+		if err := r.RemoveTeamMember(ctx, 1, 10, 10); !errors.Is(err, ErrLastTeamOwner) {
+			t.Errorf("the only owner leaving returned %v, want ErrLastTeamOwner", err)
 		}
-		if err := r.SetTeamMemberRole(ctx, 1, 10, model.TeamRoleOwner); err != nil {
+		if err := r.SetTeamMemberRole(ctx, 1, 10, 10, model.TeamRoleOwner); err != nil {
 			t.Errorf("keeping the only owner an owner returned %v", err)
 		}
-		if err := r.SetTeamMemberRole(ctx, 1, 11, model.TeamRoleOwner); err != nil {
+		if err := r.SetTeamMemberRole(ctx, 1, 10, 11, model.TeamRoleOwner); err != nil {
 			t.Fatal(err)
 		}
-		if err := r.SetTeamMemberRole(ctx, 1, 10, model.TeamRoleMember); err != nil {
+		if err := r.SetTeamMemberRole(ctx, 1, 10, 10, model.TeamRoleMember); err != nil {
 			t.Errorf("demoting one of two owners returned %v", err)
 		}
-		if err := r.SetTeamMemberRole(ctx, 1, 99, model.TeamRoleMember); !errors.Is(err, ErrNotFound) {
+		if err := r.SetTeamMemberRole(ctx, 1, 11, 99, model.TeamRoleMember); !errors.Is(err, ErrNotFound) {
 			t.Errorf("changing a stranger's role returned %v, want ErrNotFound", err)
 		}
-		if err := r.SetTeamMemberRole(ctx, 99, 10, model.TeamRoleMember); !errors.Is(err, ErrNotFound) {
+		if err := r.SetTeamMemberRole(ctx, 1, 99, 10, model.TeamRoleMember); !errors.Is(err, ErrNotFound) {
+			t.Errorf("a stranger changing a role returned %v, want ErrNotFound", err)
+		}
+		if err := r.SetTeamMemberRole(ctx, 99, 11, 10, model.TeamRoleMember); !errors.Is(err, ErrNotFound) {
 			t.Errorf("changing a role in an unknown team returned %v, want ErrNotFound", err)
+		}
+		if err := r.RemoveTeamMember(ctx, 1, 11, 99); !errors.Is(err, ErrNotFound) {
+			t.Errorf("removing a stranger returned %v, want ErrNotFound", err)
+		}
+		if err := r.RemoveTeamMember(ctx, 1, 99, 10); !errors.Is(err, ErrNotFound) {
+			t.Errorf("a stranger removing a member returned %v, want ErrNotFound", err)
 		}
 		// Removing a member takes their shares with this team, and only those.
 		db.Create(&model.WorkspaceShare{ID: 1, TeamID: 1, WorkspaceID: 5, UserID: 10, GroupName: "g"})
 		db.Create(&model.WorkspaceShare{ID: 2, TeamID: 2, WorkspaceID: 5, UserID: 10, GroupName: "g"})
 		db.Create(&model.WorkspaceShare{ID: 3, TeamID: 1, WorkspaceID: 6, UserID: 11, GroupName: "g"})
-		if err := r.RemoveTeamMember(ctx, 1, 10); err != nil {
+		if err := r.RemoveTeamMember(ctx, 1, 11, 10); err != nil {
 			t.Fatal(err)
 		}
 		var ids []int64
@@ -270,7 +286,7 @@ func TestOwnersDemotingEachOtherAtOnceKeepOne(t *testing.T) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					errs[i] = r.SetTeamMemberRole(context.Background(), 1, uid, model.TeamRoleMember)
+					errs[i] = r.SetTeamMemberRole(context.Background(), 1, uid, uid, model.TeamRoleMember)
 				}()
 			}
 			wg.Wait()
@@ -564,9 +580,16 @@ func TestWorkspaceShares(t *testing.T) {
 	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
 		ctx := context.Background()
 		db.Create(&model.Team{ID: 2, Name: "alpha"})
+		db.Create(&model.TeamMember{ID: 2, TeamID: 2, UserID: 10, Role: model.TeamRoleMember})
 		s, err := r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 1, TeamID: 1, WorkspaceID: 100, UserID: 10, GroupName: "one", CreatedAt: teamT0, UpdatedAt: teamT0})
-		if err != nil || s.GroupName != "one" || s.ID != 1 {
-			t.Fatalf("first share is %+v (%v)", s, err)
+		if err != nil || s.GroupName != "one" || s.ID != 1 || s.TeamName != "core" {
+			t.Fatalf("first share is %+v (%v), want share 1 in core", s, err)
+		}
+		if _, err := r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 4, TeamID: 1, WorkspaceID: 101, UserID: 11, GroupName: "g"}); !errors.Is(err, ErrNotFound) {
+			t.Errorf("sharing with a team the sharer is not in returned %v, want ErrNotFound", err)
+		}
+		if _, err := r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 5, TeamID: 99, WorkspaceID: 100, UserID: 10, GroupName: "g"}); !errors.Is(err, ErrNotFound) {
+			t.Errorf("sharing with an unknown team returned %v, want ErrNotFound", err)
 		}
 		later := teamT0.Add(time.Hour)
 		s, err = r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 2, TeamID: 1, WorkspaceID: 100, UserID: 10, GroupName: "two", CreatedAt: later, UpdatedAt: later})
@@ -619,25 +642,29 @@ func TestTeamStatementFailures(t *testing.T) {
 		{"reading a team", "query", "teams", 0, nil, func(r Repository) error { _, err := r.GetTeam(ctx, 1); return err }},
 		{"counting members", "query", "team_members", 0, nil, func(r Repository) error { _, err := r.CountTeamMembers(ctx, 1); return err }},
 		{"renaming a team", "update", "teams", 0, nil, func(r Repository) error { return r.RenameTeam(ctx, 1, "y") }},
-		{"deleting a team's rows", "delete", "team_members", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1) }},
-		{"deleting a team", "delete", "teams", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1) }},
+		{"reading the deleter", "query", "team_members", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10) }},
+		{"deleting a team's rows", "delete", "team_members", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10) }},
+		{"deleting a team", "delete", "teams", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10) }},
 		{"listing members", "row", "team_members", 0, nil, func(r Repository) error { _, err := r.ListTeamMembers(ctx, 1); return err }},
 		{"finding a member by email", "query", "team_members", 0, nil, func(r Repository) error { _, err := r.TeamHasMemberWithEmail(ctx, 1, "a@x.io"); return err }},
-		{"locking the team", "raw", "", 0, nil, func(r Repository) error { return r.SetTeamMemberRole(ctx, 1, 10, model.TeamRoleOwner) }},
-		{"reading the member to change", "query", "team_members", 0, nil, func(r Repository) error {
-			return r.SetTeamMemberRole(ctx, 1, 10, model.TeamRoleOwner)
+		{"locking the team", "raw", "", 0, nil, func(r Repository) error { return r.SetTeamMemberRole(ctx, 1, 10, 10, model.TeamRoleOwner) }},
+		{"reading the caller's role", "query", "team_members", 0, nil, func(r Repository) error {
+			return r.SetTeamMemberRole(ctx, 1, 10, 11, model.TeamRoleAdmin)
 		}},
-		{"counting owners", "query", "team_members", 1, nil, func(r Repository) error {
-			return r.SetTeamMemberRole(ctx, 1, 10, model.TeamRoleOwner)
+		{"reading the member to change", "query", "team_members", 1, nil, func(r Repository) error {
+			return r.SetTeamMemberRole(ctx, 1, 10, 11, model.TeamRoleAdmin)
+		}},
+		{"counting owners", "query", "team_members", 2, nil, func(r Repository) error {
+			return r.SetTeamMemberRole(ctx, 1, 10, 10, model.TeamRoleAdmin)
 		}},
 		{"changing a role", "update", "team_members", 0, nil, func(r Repository) error {
-			return r.SetTeamMemberRole(ctx, 1, 10, model.TeamRoleOwner)
+			return r.SetTeamMemberRole(ctx, 1, 10, 11, model.TeamRoleAdmin)
 		}},
-		{"removing a member", "delete", "team_members", 0, func(r Repository) { _ = r.SetTeamMemberRole(ctx, 1, 10, model.TeamRoleOwner) }, func(r Repository) error {
-			return r.RemoveTeamMember(ctx, 1, 11)
-		}},
-		{"removing a member's shares", "delete", "workspace_shares", 0, nil, func(r Repository) error { return r.RemoveTeamMember(ctx, 1, 11) }},
-		{"removing an unknown member", "query", "team_members", 0, nil, func(r Repository) error { return r.RemoveTeamMember(ctx, 1, 11) }},
+		{"removing a member", "delete", "team_members", 0, nil, func(r Repository) error { return r.RemoveTeamMember(ctx, 1, 10, 11) }},
+		{"removing a member's shares", "delete", "workspace_shares", 0, nil, func(r Repository) error { return r.RemoveTeamMember(ctx, 1, 10, 11) }},
+		{"reading the remover's role", "query", "team_members", 0, nil, func(r Repository) error { return r.RemoveTeamMember(ctx, 1, 10, 11) }},
+		{"reading the member to remove", "query", "team_members", 1, nil, func(r Repository) error { return r.RemoveTeamMember(ctx, 1, 10, 11) }},
+		{"counting owners as one leaves", "query", "team_members", 1, nil, func(r Repository) error { return r.RemoveTeamMember(ctx, 1, 10, 10) }},
 		{"counting invitations", "query", "team_invitations", 0, nil, func(r Repository) error {
 			return r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10)
 		}},
@@ -647,13 +674,23 @@ func TestTeamStatementFailures(t *testing.T) {
 		{"storing an invitation", "create", "team_invitations", 0, nil, func(r Repository) error {
 			return r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10)
 		}},
-		{"marking an invitation accepted", "update", "team_invitations", 0, nil, func(r Repository) error {
+		{"locking the team to accept", "raw", "", 0, nil, func(r Repository) error { return r.AcceptTeamInvitation(ctx, 1, member, teamT0) }},
+		{"reading the invitation to accept", "query", "team_invitations", 0, nil, func(r Repository) error {
 			return r.AcceptTeamInvitation(ctx, 1, member, teamT0)
 		}},
+		{"reading the inviter", "query", "team_members", 0, func(r Repository) {
+			_ = r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10)
+		}, func(r Repository) error { return r.AcceptTeamInvitation(ctx, 1, member, teamT0) }},
+		{"marking an invitation accepted", "update", "team_invitations", 0, func(r Repository) {
+			_ = r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10)
+		}, func(r Repository) error { return r.AcceptTeamInvitation(ctx, 1, member, teamT0) }},
 		{"adding the accepted member", "create", "team_members", 0, func(r Repository) {
 			_ = r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10)
 		}, func(r Repository) error { return r.AcceptTeamInvitation(ctx, 1, member, teamT0) }},
+		{"locking the team to share", "raw", "", 0, nil, func(r Repository) error { _, err := r.SetWorkspaceShare(ctx, share); return err }},
+		{"reading the sharer's membership", "query", "team_members", 0, nil, func(r Repository) error { _, err := r.SetWorkspaceShare(ctx, share); return err }},
 		{"storing a share", "create", "workspace_shares", 0, nil, func(r Repository) error { _, err := r.SetWorkspaceShare(ctx, share); return err }},
+		{"reading the share back", "row", "workspace_shares", 0, nil, func(r Repository) error { _, err := r.SetWorkspaceShare(ctx, share); return err }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

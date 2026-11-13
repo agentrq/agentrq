@@ -118,18 +118,20 @@ type Repository interface {
 	DeleteHookDeliveriesBefore(ctx context.Context, before time.Time) error
 
 	// Teams: groups of accounts that read the workspaces their members share
-	// with them. Nothing here checks who may do what; controller/team does.
+	// with them. controller/team checks who may do what, except the rules a
+	// change committed meanwhile could break: those are checked here, under
+	// the team's lock.
 	CreateTeam(ctx context.Context, team model.Team, owner model.TeamMember) error
 	GetTeam(ctx context.Context, id int64) (model.Team, error)
 	ListTeamsForUser(ctx context.Context, userID int64) ([]TeamWithRole, error)
 	CountTeamMembers(ctx context.Context, teamID int64) (int64, error)
 	RenameTeam(ctx context.Context, id int64, name string) error
-	DeleteTeam(ctx context.Context, id int64) error
+	DeleteTeam(ctx context.Context, id, callerID int64) error
 	GetTeamMember(ctx context.Context, teamID, userID int64) (model.TeamMember, error)
 	ListTeamMembers(ctx context.Context, teamID int64) ([]TeamMemberWithUser, error)
 	TeamHasMemberWithEmail(ctx context.Context, teamID int64, email string) (bool, error)
-	SetTeamMemberRole(ctx context.Context, teamID, userID int64, role string) error
-	RemoveTeamMember(ctx context.Context, teamID, userID int64) error
+	SetTeamMemberRole(ctx context.Context, teamID, callerID, userID int64, role string) error
+	RemoveTeamMember(ctx context.Context, teamID, callerID, userID int64) error
 	CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, since time.Time, limit int64) error
 	ListTeamInvitations(ctx context.Context, teamID int64, now time.Time) ([]model.TeamInvitation, error)
 	ListInvitationsForEmail(ctx context.Context, email string, now time.Time) ([]model.TeamInvitation, error)
@@ -137,7 +139,7 @@ type Repository interface {
 	GetTeamInvitationByTokenHash(ctx context.Context, tokenHash string) (model.TeamInvitation, error)
 	RevokeTeamInvitation(ctx context.Context, teamID, id int64, now time.Time) error
 	AcceptTeamInvitation(ctx context.Context, id int64, member model.TeamMember, now time.Time) error
-	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare) (model.WorkspaceShare, error)
+	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare) (WorkspaceShareWithTeam, error)
 	ListWorkspaceShares(ctx context.Context, workspaceID, userID int64) ([]WorkspaceShareWithTeam, error)
 	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID int64) error
 	CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
@@ -599,6 +601,9 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 		return err
 	}
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.SiteShare{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.WorkspaceShare{}).Error; err != nil {
 		return err
 	}
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.ForkFolder{}).Error; err != nil {

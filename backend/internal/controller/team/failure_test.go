@@ -105,11 +105,18 @@ func (f failing) ListWorkspaceShares(ctx context.Context, workspaceID, userID in
 	return f.Repository.ListWorkspaceShares(ctx, workspaceID, userID)
 }
 
-func (f failing) SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare) (model.WorkspaceShare, error) {
+func (f failing) SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare) (base.WorkspaceShareWithTeam, error) {
 	if f.method == "SetWorkspaceShare" {
-		return model.WorkspaceShare{}, errDB
+		return base.WorkspaceShareWithTeam{}, errDB
 	}
 	return f.Repository.SetWorkspaceShare(ctx, s)
+}
+
+func (f failing) GetTeamMember(ctx context.Context, teamID, userID int64) (model.TeamMember, error) {
+	if f.method == "GetTeamMember" {
+		return model.TeamMember{}, errDB
+	}
+	return f.Repository.GetTeamMember(ctx, teamID, userID)
 }
 
 func (f failing) ListTeamWorkspaces(ctx context.Context, teamID int64) ([]base.TeamWorkspaceRow, error) {
@@ -171,6 +178,11 @@ func TestRepositoryFailuresReachTheCaller(t *testing.T) {
 			return errOf(f.c.ListMyInvitations(f.ctx, dave))
 		}},
 		{"listing the account's invitations", "ListInvitationsForEmail", func(f *fixture) error { return errOf(f.c.ListMyInvitations(f.ctx, dave)) }},
+		{"reading the inviter of a previewed invitation", "", func(f *fixture) error {
+			rs := must(f.c.CreateInvitation(f.ctx, alice, f.team, "dave@example.com", ""))
+			f.c.(*controller).repo = failing{f.repo, "GetTeamMember"}
+			return errOf(f.c.PreviewInvitation(f.ctx, dave, token(rs.Link)))
+		}},
 		{"reading the team of a previewed invitation", "", func(f *fixture) error {
 			rs := must(f.c.CreateInvitation(f.ctx, alice, f.team, "dave@example.com", ""))
 			f.c.(*controller).repo = failing{f.repo, "GetTeam"}
@@ -184,10 +196,6 @@ func TestRepositoryFailuresReachTheCaller(t *testing.T) {
 		{"listing a workspace's shares", "ListWorkspaceShares", func(f *fixture) error {
 			f.db.Create(&model.Workspace{ID: 100, UserID: alice, Name: "w"})
 			return errOf(f.c.ListShares(f.ctx, alice, 100))
-		}},
-		{"reading the team to share with", "GetTeam", func(f *fixture) error {
-			f.db.Create(&model.Workspace{ID: 100, UserID: alice, Name: "w"})
-			return errOf(f.c.ShareWorkspace(f.ctx, alice, 100, f.team, ""))
 		}},
 		{"storing a share", "SetWorkspaceShare", func(f *fixture) error {
 			f.db.Create(&model.Workspace{ID: 100, UserID: alice, Name: "w"})
@@ -238,8 +246,8 @@ func TestAnInviterWithoutAnAccountHasNoName(t *testing.T) {
 
 func TestNewDefaultsTheClockAndNeedsNoPublisher(t *testing.T) {
 	c := New(Params{}).(*controller)
-	if c.now == nil || time.Since(c.now()) > time.Minute {
-		t.Error("New left the clock unset, or it is not the wall clock")
+	if c.now == nil || time.Since(c.now()) > time.Minute || c.now().Location() != time.UTC {
+		t.Error("New left the clock unset, or it is not the wall clock in UTC")
 	}
 	c.emit(context.Background(), 0, alice, 0, 1) // no publisher: nothing to do, no panic
 }
