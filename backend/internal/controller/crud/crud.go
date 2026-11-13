@@ -63,6 +63,7 @@ type (
 		WorkflowStepController
 		WorkflowTextController
 		TelemetryController
+		TeamReadController
 		MachineController
 		MachineManageController
 		SessionController

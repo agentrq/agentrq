@@ -5,6 +5,9 @@
 package api
 
 import (
+	"errors"
+
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/gofiber/fiber/v2"
@@ -41,8 +44,14 @@ func (h *handler) registerTeamRoutes() {
 	h.router.Delete("/workspaces/:id/shares/:teamId", h.unshareWorkspace())
 }
 
-// teamError answers a refused team request.
+// teamError answers a refused team request. A skill refused in team mode
+// is answered as the skills routes answer it.
 func teamError(c *fiber.Ctx, err error) error {
+	c.Set(_headerContentType, _mimeJSON)
+	var se *crud.SkillError
+	if errors.As(err, &se) {
+		return sendSkillError(c, err)
+	}
 	b, status := mapper.FromErrorToHTTPResponse(err)
 	if status >= fiber.StatusInternalServerError {
 		zlog.Error().Err(err).Msg("teams")
