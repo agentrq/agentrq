@@ -51,9 +51,10 @@ func sweepPano(ctx context.Context, p panoSweeper) {
 }
 
 // The claim the backfill of doc-task links runs under: once per deployment,
-// by whichever instance claims it first.
+// by whichever instance claims it first. The claim type must fit
+// telemetry_aggregations' varchar(16), which only Postgres enforces.
 const (
-	panoBackfillClaim = "pano_doc_tasks_backfill"
+	panoBackfillClaim = "pano_doc_tasks"
 	panoBackfillKey   = "v1"
 )
 

@@ -59,3 +59,50 @@ jobs:
       - name: Test
         run: go test ./internal/...
         working-directory: backend
+
+  postgres:
+    # SQLite ignores a varchar's length; Postgres refuses the row. The app's
+    # start-up work (such as the claim a one-off backfill runs under) is tested
+    # here against a real server, where tests read AGENTRQ_TEST_POSTGRES_DSN.
+    name: Test on Postgres
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agentrq
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Install mockgen
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          go install "github.com/golang/mock/mockgen@$(go list -m -f '{{.Version}}' github.com/golang/mock)"
+        working-directory: backend
+
+      - name: Generate mocks
+        run: make mocks
+
+      - name: Test
+        run: go test ./internal/app/
+        working-directory: backend
+        env:
+          AGENTRQ_TEST_POSTGRES_DSN: host=localhost port=5432 user=postgres password=postgres dbname=agentrq sslmode=disable
