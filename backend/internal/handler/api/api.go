@@ -24,6 +24,7 @@ import (
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	pushctrl "github.com/agentrq/agentrq/backend/internal/controller/push"
 	slackctrl "github.com/agentrq/agentrq/backend/internal/controller/slack"
+	teamctrl "github.com/agentrq/agentrq/backend/internal/controller/team"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
@@ -69,6 +70,7 @@ type (
 		SlackCtrl slackctrl.Controller // optional; nil = Slack disabled
 		PushCtrl  pushctrl.Controller  // optional; nil = push disabled
 		Hooks     hookctrl.Controller
+		Teams     teamctrl.Controller
 	}
 
 	Handler interface{}
@@ -111,6 +113,7 @@ type (
 		slackCtrl        slackctrl.Controller
 		pushCtrl         pushctrl.Controller
 		hooks            hookctrl.Controller
+		teams            teamctrl.Controller
 	}
 )
 
@@ -158,6 +161,7 @@ func New(p Params) (Handler, error) {
 		slackCtrl:        p.SlackCtrl,
 		pushCtrl:         p.PushCtrl,
 		hooks:            p.Hooks,
+		teams:            p.Teams,
 	}
 	hosts, err := redirectHosts(p.RedirectDomains)
 	if err != nil {
@@ -193,6 +197,7 @@ func New(p Params) (Handler, error) {
 	h.registerMachineRoutes()
 	h.registerPanoRoutes()
 	h.registerHookRoutes()
+	h.registerTeamRoutes()
 	h.registerSessionRoutes()
 	h.registerAgentLaunchRoutes()
 	h.registerBrowserRoutes()

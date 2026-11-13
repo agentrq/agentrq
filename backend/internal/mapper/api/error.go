@@ -13,6 +13,15 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 )
 
+// teamErrorStatus is the answer to each way a team request is refused.
+var teamErrorStatus = map[entity.TeamErrorKind]int{
+	entity.TeamInvalid:   http.StatusUnprocessableEntity,
+	entity.TeamForbidden: http.StatusForbidden,
+	entity.TeamConflict:  http.StatusConflict,
+	entity.TeamGone:      http.StatusGone,
+	entity.TeamThrottled: http.StatusTooManyRequests,
+}
+
 type httpError struct {
 	Error struct {
 		Message string `json:"message"`
@@ -28,6 +37,7 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 	var launchErr *entity.LaunchError
 	var panoErr *entity.PanoError
 	var hookErr *entity.HookError
+	var teamErr *entity.TeamError
 	if errors.Is(err, base.ErrNotFound) {
 		code = http.StatusNotFound
 		msg = "not found"
@@ -57,6 +67,9 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 			code = http.StatusUnprocessableEntity
 		}
 		msg = hookErr.Message
+	} else if errors.As(err, &teamErr) {
+		code = teamErrorStatus[teamErr.Kind]
+		msg = teamErr.Message
 	} else if errors.Is(err, entity.ErrTaskTitleLocked) {
 		code = http.StatusConflict
 		msg = err.Error()

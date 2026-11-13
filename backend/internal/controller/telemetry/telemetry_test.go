@@ -504,6 +504,10 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionHookReceive, model.ActionIDHookReceive, "hook receive"},
 		{entity.ActionHookReject, model.ActionIDHookReject, "hook reject"},
 		{entity.ActionHookPublish, model.ActionIDHookPublish, "hook publish"},
+		{entity.ActionTeamCreate, model.ActionIDTeamCreate, "team create"},
+		{entity.ActionTeamInvite, model.ActionIDTeamInvite, "team invite"},
+		{entity.ActionTeamJoin, model.ActionIDTeamJoin, "team join"},
+		{entity.ActionWorkspaceShare, model.ActionIDWorkspaceShare, "workspace share"},
 	}
 
 	for _, tc := range cases {

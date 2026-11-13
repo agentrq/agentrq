@@ -1470,6 +1470,7 @@ const (
 	ResourceSkill
 	ResourcePano
 	ResourceHookRegistration
+	ResourceTeam
 )
 
 func (r ResourceType) String() string {
@@ -1492,6 +1493,8 @@ func (r ResourceType) String() string {
 		return "pano"
 	case ResourceHookRegistration:
 		return "hook_registration"
+	case ResourceTeam:
+		return "team"
 	}
 	return "unknown"
 }
@@ -1794,6 +1797,16 @@ const (
 	ActionHookReject Action = 113
 	// A request whose events were published.
 	ActionHookPublish Action = 114
+	// A team created. Emitted by the backend, like the three below; workspace
+	// 0, since a team belongs to no workspace.
+	ActionTeamCreate Action = 115
+	// An invitation to a team created.
+	ActionTeamInvite Action = 116
+	// An invitation to a team accepted.
+	ActionTeamJoin Action = 117
+	// A workspace shared with a team, or its group changed; it carries the
+	// workspace.
+	ActionWorkspaceShare Action = 118
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2020,6 +2033,14 @@ func (a Action) String() string {
 		return "hook_reject"
 	case ActionHookPublish:
 		return "hook_publish"
+	case ActionTeamCreate:
+		return "team_create"
+	case ActionTeamInvite:
+		return "team_invite"
+	case ActionTeamJoin:
+		return "team_join"
+	case ActionWorkspaceShare:
+		return "workspace_share"
 	}
 	return "unknown"
 }

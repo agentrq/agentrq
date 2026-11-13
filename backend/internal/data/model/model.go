@@ -812,6 +812,12 @@ const (
 	ActionIDHookReceive
 	ActionIDHookReject
 	ActionIDHookPublish
+	// A team created, an invitation to one created or accepted, and a
+	// workspace shared with one; emitted by the backend.
+	ActionIDTeamCreate
+	ActionIDTeamInvite
+	ActionIDTeamJoin
+	ActionIDWorkspaceShare
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

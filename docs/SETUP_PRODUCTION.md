@@ -310,6 +310,16 @@ gzip -c agentrq-hook-github_1.0.0.wasm | curl -s "$AGENTRQ_BASE_URL/admin/v1/hoo
 
 `PUT /admin/v1/hooks/<id>` upgrades one with a new version of the same hook. That is refused when it would break a registration: an event someone routes is gone, an input becomes required, or an input changes type or stops being secret. `PATCH` with `{"enabled": false}` turns a hook off for every account, and `DELETE` removes one that nothing registers.
 
+### Teams
+
+A team's members read the workspaces they share with it. Invitations go by email when SMTP is set up (`AGENTRQ_SMTP_HOST`); otherwise the inviter is given the link to send. A link is `<AGENTRQ_BASE_URL>/invite#<token>` and works once, for the invited address, for 7 days.
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENTRQ_TEAMS_MAX_INVITES_PER_DAY` | `10` | Most invitations one team may create in any 24 hours, revoked and declined ones included. `0` turns invitations off. |
+
+The server refuses to start on a negative value.
+
 ### MCP
 
 | Variable | Default | Description |

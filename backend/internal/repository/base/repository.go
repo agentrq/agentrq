@@ -117,6 +117,32 @@ type Repository interface {
 	ReplayHookDelivery(ctx context.Context, id, registrationID, userID int64, now time.Time) error
 	DeleteHookDeliveriesBefore(ctx context.Context, before time.Time) error
 
+	// Teams: groups of accounts that read the workspaces their members share
+	// with them. Nothing here checks who may do what; controller/team does.
+	CreateTeam(ctx context.Context, team model.Team, owner model.TeamMember) error
+	GetTeam(ctx context.Context, id int64) (model.Team, error)
+	ListTeamsForUser(ctx context.Context, userID int64) ([]TeamWithRole, error)
+	CountTeamMembers(ctx context.Context, teamID int64) (int64, error)
+	RenameTeam(ctx context.Context, id int64, name string) error
+	DeleteTeam(ctx context.Context, id int64) error
+	GetTeamMember(ctx context.Context, teamID, userID int64) (model.TeamMember, error)
+	ListTeamMembers(ctx context.Context, teamID int64) ([]TeamMemberWithUser, error)
+	TeamHasMemberWithEmail(ctx context.Context, teamID int64, email string) (bool, error)
+	SetTeamMemberRole(ctx context.Context, teamID, userID int64, role string) error
+	RemoveTeamMember(ctx context.Context, teamID, userID int64) error
+	CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, since time.Time, limit int64) error
+	ListTeamInvitations(ctx context.Context, teamID int64, now time.Time) ([]model.TeamInvitation, error)
+	ListInvitationsForEmail(ctx context.Context, email string, now time.Time) ([]model.TeamInvitation, error)
+	GetTeamInvitation(ctx context.Context, id int64) (model.TeamInvitation, error)
+	GetTeamInvitationByTokenHash(ctx context.Context, tokenHash string) (model.TeamInvitation, error)
+	RevokeTeamInvitation(ctx context.Context, teamID, id int64, now time.Time) error
+	AcceptTeamInvitation(ctx context.Context, id int64, member model.TeamMember, now time.Time) error
+	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare) (model.WorkspaceShare, error)
+	ListWorkspaceShares(ctx context.Context, workspaceID, userID int64) ([]WorkspaceShareWithTeam, error)
+	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID int64) error
+	CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
+	ListTeamWorkspaces(ctx context.Context, teamID int64) ([]TeamWorkspaceRow, error)
+
 	// Skill — an account's playbooks, each on in some of its workspaces.
 	// Metadata only: file content is in the storage service, and the methods
 	// that drop files return the storage ids the caller must purge once the
@@ -605,7 +631,7 @@ var workspaceIDTables = []any{
 	&model.HourlyTaskLatency{}, &model.DailyTaskLatency{}, &model.MonthlyTaskLatency{},
 	&model.Memory{}, &model.Skill{}, &model.WorkspaceSkill{}, &model.EventTrigger{}, &model.WorkflowStep{},
 	&model.PanoFile{}, &model.PanoComment{}, &model.PanoDocTask{}, &model.Session{}, &model.ForkFolder{},
-	&model.SiteShare{}, &model.SlackWorkspaceLink{}, &model.SlackTaskThread{}, &model.PushSubscription{},
+	&model.SiteShare{}, &model.SlackWorkspaceLink{}, &model.SlackTaskThread{}, &model.PushSubscription{}, &model.WorkspaceShare{},
 	&model.Telemetry{}, &model.HourlyTelemetry{}, &model.DailyTelemetry{}, &model.MonthlyTelemetry{},
 }
 
