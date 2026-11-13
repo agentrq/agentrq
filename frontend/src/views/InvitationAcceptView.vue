@@ -4,10 +4,10 @@
   SPDX-License-Identifier: AGPL-3.0-only
 -->
 
-<!-- An invitation link, /invitations/accept?token= (§3 of the flows). Public,
-     since it may be opened signed out: then it offers the sign-in and comes
-     back here after it. An invitation for another email, or one no longer
-     valid, says so and offers no Accept. -->
+<!-- An invitation link, /invite#<token> (§3 of the flows). Public, since it
+     may be opened signed out: then it offers the sign-in and comes back here
+     after it. An invitation for another email, or one no longer valid, says
+     so and offers no Accept. -->
 <template>
   <div class="grow flex items-center justify-center p-4 bg-zinc-50 dark:bg-zinc-950">
     <div class="w-full max-w-md bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-5" data-test="accept-card" :data-state="state">
@@ -41,7 +41,8 @@
       <template v-else-if="state === 'wrongEmail'">
         <h1 class="text-xl font-black text-gray-900 dark:text-white leading-tight">This invitation is for another account</h1>
         <p data-test="accept-wrong-email" class="text-sm text-gray-500 dark:text-zinc-400">
-          This invitation is for <span class="font-semibold text-gray-900 dark:text-white">{{ preview?.email || err?.email || 'another email' }}</span>. Sign in with that account.
+          <template v-if="err">{{ err.message }}</template>
+          <template v-else>This invitation is for <span class="font-semibold text-gray-900 dark:text-white">{{ preview.email || 'another email' }}</span>. Sign in with that account.</template>
         </p>
         <router-link to="/" class="inline-flex text-[11px] font-black uppercase tracking-widest text-gray-700 dark:text-zinc-200 underline">Go to AgentRQ</router-link>
       </template>
@@ -49,7 +50,8 @@
       <template v-else-if="state === 'invalid'">
         <h1 class="text-xl font-black text-gray-900 dark:text-white leading-tight">Invitation not valid</h1>
         <p data-test="accept-invalid" class="text-sm text-gray-500 dark:text-zinc-400">
-          This invitation is no longer valid. Ask {{ preview?.invitedByName || 'whoever invited you' }} for a new one.
+          <template v-if="err?.status === 410">{{ err.message }}</template>
+          <template v-else>This invitation is no longer valid. Ask {{ preview?.invitedByName || 'whoever invited you' }} for a new one.</template>
         </p>
         <router-link to="/" class="inline-flex text-[11px] font-black uppercase tracking-widest text-gray-700 dark:text-zinc-200 underline">Go to AgentRQ</router-link>
       </template>
@@ -65,17 +67,37 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { acceptInvitation, fetchUser, previewInvitation } from '../api';
 import { useTeamStore, rememberTeam } from '../stores/teamStore';
-import { invitationState, joinedHome, teamOf } from '../composables/useTeamMode';
+import { invitationState, joinedHome } from '../composables/useTeamMode';
 
 const route = useRoute();
 const router = useRouter();
 const store = useTeamStore();
 
-const token = computed(() => (typeof route.query.token === 'string' ? route.query.token : ''));
+// The token is the link's #fragment, which no server is sent. It is kept in
+// this tab's sessionStorage, not the address bar, so it survives the sign-in
+// without going through its redirect_url, which the server does see.
+const TOKEN_KEY = 'agentrq:invite-token';
+const token = ref('');
+
+function storage(fn) {
+  try {
+    return fn(window.sessionStorage);
+  } catch {
+    return null;
+  }
+}
+
+function takeToken() {
+  const fromLink = route.hash.slice(1);
+  if (!fromLink) return storage((s) => s.getItem(TOKEN_KEY)) || '';
+  storage((s) => s.setItem(TOKEN_KEY, fromLink));
+  router.replace({ path: route.path, query: route.query });
+  return fromLink;
+}
 const signedIn = ref(null);
 const preview = ref(null);
 const err = ref(null);
@@ -89,7 +111,7 @@ const state = computed(() => {
 
 // The login page sends you back to a same-origin redirect_url once signed in.
 // Both through the router, so a server under a base path keeps it.
-const signInHref = computed(() => router.resolve({ path: '/login', query: { redirect_url: router.resolve(route.fullPath).href } }).href);
+const signInHref = computed(() => router.resolve({ path: '/login', query: { redirect_url: router.resolve('/invite').href } }).href);
 
 async function load() {
   err.value = null;
@@ -110,7 +132,8 @@ async function load() {
 async function accept() {
   busy.value = true;
   try {
-    const team = { id: preview.value.teamId, name: preview.value.teamName, ...teamOf(await acceptInvitation({ token: token.value })) };
+    const team = await acceptInvitation(token.value);
+    storage((s) => s.removeItem(TOKEN_KEY));
     await store.load();
     store.upsert(team);
     rememberTeam(String(team.id));
@@ -122,5 +145,12 @@ async function accept() {
   }
 }
 
-onMounted(load);
+function open() {
+  token.value = takeToken();
+  return load();
+}
+
+onMounted(open);
+// Another link pasted into this tab changes only the fragment.
+watch(() => route.hash, (hash) => hash && open());
 </script>
