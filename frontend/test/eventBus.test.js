@@ -488,6 +488,21 @@ describe('useEventBus', () => {
       expect(href).not.toHaveBeenCalled()
     })
 
+    it('stays on a public page, which offers its own sign-in', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      fetchMock.mockResolvedValue({ status: 401 })
+      const href = vi.fn()
+      vi.stubGlobal('location', { pathname: '/invite', set href(v) { href(v) } })
+
+      useEventBus(undefined, { isPublicPage: () => true }).connect()
+      FakeEventSource.last().fail()
+      await vi.advanceTimersByTimeAsync(60000)
+
+      expect(href).not.toHaveBeenCalled()
+      expect(FakeEventSource.instances).toHaveLength(1)
+    })
+
     it('keeps retrying when the auth check itself cannot be reached', async () => {
       vi.spyOn(console, 'error').mockImplementation(() => {})
       fetchMock.mockRejectedValue(new Error('offline'))

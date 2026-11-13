@@ -48,7 +48,6 @@ import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { createTeam } from '../api';
 import { useTeamStore, rememberTeam } from '../stores/teamStore';
-import { teamOf } from '../composables/useTeamMode';
 
 const router = useRouter();
 const store = useTeamStore();
@@ -64,8 +63,8 @@ async function create() {
   busy.value = true;
   error.value = '';
   try {
-    const team = teamOf(await createTeam(name.value.trim()));
-    store.upsert({ role: 'owner', memberCount: 1, ...team });
+    const team = await createTeam(name.value.trim());
+    store.upsert(team);
     rememberTeam(String(team.id));
     // Members, with the invite box focused: the next thing to do.
     await router.push({ path: '/team/settings', query: { team: String(team.id), tab: 'members', welcome: '1' } });

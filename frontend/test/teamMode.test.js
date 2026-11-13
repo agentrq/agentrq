@@ -235,9 +235,9 @@ describe('landing on the home page', () => {
     const { router } = createAgentRQApp({ history: createMemoryHistory() });
 
     // Public, so the sign-in check lets it through without a server.
-    await router.push('/invitations/accept?token=t');
+    await router.push('/invite#t');
 
-    expect(router.currentRoute.value.path).toBe('/invitations/accept');
+    expect(router.currentRoute.value.path).toBe('/invite');
   });
 });
 
@@ -420,7 +420,7 @@ describe('useTeamMode', () => {
 describe('the team routes', () => {
   it('are in the one route table', () => {
     const paths = routes.map((r) => r.path);
-    for (const p of ['/team/new', '/team/settings', '/team/analytics', '/team/memory', '/invitations', '/invitations/accept']) {
+    for (const p of ['/team/new', '/team/settings', '/team/analytics', '/team/memory', '/invitations', '/invite']) {
       expect(paths).toContain(p);
     }
   });

@@ -110,7 +110,7 @@ const TEAM_FIELDS = {
   workspaceId: WORKSPACE_ID,
   userId: str('A member\'s user ID, as the members action reports it.'),
   invitationId: str('An invitation ID, as the invitations actions report it.'),
-  token: str('The token from an invitation link (its ?token= value).'),
+  token: str('The token from an invitation link: what follows "#" in /invite#<token>.'),
 }
 
 /** One action of a grouped tool: its `api.js` call, and what it needs. */
@@ -150,7 +150,7 @@ const TEAM_WRITES = (api) => ({
   leave: ({ teamId }) => api.leaveTeam(teamId),
   invite: ({ teamId, email, role = 'member' }) => api.createTeamInvitation(teamId, email, role),
   revokeInvitation: ({ teamId, invitationId }) => api.revokeTeamInvitation(teamId, invitationId),
-  accept: ({ token, invitationId }) => api.acceptInvitation({ token, invitationId }),
+  accept: ({ token, invitationId }) => (token ? api.acceptInvitation(token) : api.acceptInvitationById(invitationId)),
   decline: ({ invitationId }) => api.declineInvitation(invitationId),
   share: ({ workspaceId, teamId, group = '' }) => api.shareWorkspace(workspaceId, teamId, group),
   unshare: ({ workspaceId, teamId }) => api.unshareWorkspace(workspaceId, teamId),
@@ -1521,11 +1521,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description: 'Create a team, with you as its owner. Then invite members with manageTeam.',
       properties: { name: str('The team\'s name.') },
       required: ['name'],
-      screen: after((_input, result) => {
-        // The server answers with the team, or with { team }.
-        const id = (result?.team ?? result)?.id
-        return id ? teamPage({ teamId: id }) : '/team/new'
-      }),
+      screen: after((_input, result) => (result?.id ? teamPage({ teamId: result.id }) : '/team/new')),
       run: ({ name }) => api.createTeam(name),
     }),
     tool({

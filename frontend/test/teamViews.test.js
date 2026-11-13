@@ -33,6 +33,7 @@ vi.mock('../src/api', async (importOriginal) => ({
   revokeTeamInvitation: vi.fn(),
   previewInvitation: vi.fn(),
   acceptInvitation: vi.fn(),
+  acceptInvitationById: vi.fn(),
   declineInvitation: vi.fn(),
 }));
 
@@ -73,7 +74,7 @@ async function mount(path) {
       { path: '/team/new', component: TeamNewView },
       { path: '/team/settings', component: TeamSettingsView },
       { path: '/invitations', component: InvitationsView },
-      { path: '/invitations/accept', component: InvitationAcceptView },
+      { path: '/invite', component: InvitationAcceptView },
     ],
   });
   await router.push(path);
@@ -125,6 +126,7 @@ const dialog = (title) => [...document.querySelectorAll('[role=dialog]')].find((
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   vi.clearAllMocks();
   useToasts().toasts.value = [];
   api.listTeams.mockResolvedValue({ teams: [] });
@@ -161,7 +163,7 @@ describe('creating a team', () => {
   });
 
   it('makes you its owner and opens its members, with the invite box', async () => {
-    api.createTeam.mockResolvedValue({ id: 'tm1', name: 'Core' });
+    api.createTeam.mockResolvedValue({ id: 'tm1', name: 'Core', role: 'owner', memberCount: 1 });
     await mount('/team/new');
     store.upsert({ id: 'tm0', name: 'Alpha', role: 'member' });
     await nextTick();
@@ -199,7 +201,7 @@ const invitations = () => [
 
 function asTeam(role = 'owner', name = 'Core') {
   api.fetchUser.mockResolvedValue(ME);
-  api.getTeam.mockResolvedValue({ team: { id: 'tm1', name, role } });
+  api.getTeam.mockResolvedValue({ id: 'tm1', name, role, memberCount: 2 });
   api.listTeamMembers.mockResolvedValue({ members: members() });
   api.listTeamInvitations.mockResolvedValue({ invitations: invitations() });
 }
@@ -325,12 +327,12 @@ describe('a team\'s settings', () => {
 
     it('hands over the link when no email carried it', async () => {
       asTeam('owner');
-      api.createTeamInvitation.mockResolvedValue({ emailSent: false, link: 'https://agentrq.test/invitations/accept?token=t1' });
+      api.createTeamInvitation.mockResolvedValue({ emailSent: false, link: 'https://agentrq.test/invite#t1' });
       await mount('/team/settings?team=tm1');
       await type($('#invite-email'), 'new@acme.com');
       await submit($('[data-test=invite-form]'));
       const modal = document.querySelector('[data-test=invite-link-modal]');
-      expect(modal.querySelector('[data-test=invite-link]').value).toBe('https://agentrq.test/invitations/accept?token=t1');
+      expect(modal.querySelector('[data-test=invite-link]').value).toBe('https://agentrq.test/invite#t1');
       expect(text(modal)).toContain('Send this to new@acme.com. It works once, for that email, for 7 days.');
       expect($$('[data-test=invitation-row]')).toHaveLength(2);
       await click(button('Done', modal));
@@ -646,8 +648,8 @@ describe('the invitation link dialog', () => {
 });
 
 const inbox = () => [
-  { id: 'i1', teamId: 'tm1', teamName: 'Core', role: 'member', invitedBy: 'Ann', expiresAt: soon() },
-  { id: 'i2', teamId: 'tm2', teamName: 'Ops', role: 'admin', invitedBy: '', expiresAt: soon() },
+  { id: 'i1', teamId: 'tm1', teamName: 'Core', role: 'member', invitedBy: 'u9', invitedByName: 'Ann', expiresAt: soon() },
+  { id: 'i2', teamId: 'tm2', teamName: 'Ops', role: 'admin', invitedBy: 'u8', invitedByName: '', expiresAt: soon() },
 ];
 
 describe('the invitations inbox', () => {
@@ -668,28 +670,20 @@ describe('the invitations inbox', () => {
 
   it('accepts one and switches to that team, with its welcome', async () => {
     api.listMyInvitations.mockResolvedValue({ invitations: inbox() });
-    api.acceptInvitation.mockResolvedValue({ team: { id: 'tm1', name: 'Core', memberCount: 3 } });
+    api.acceptInvitationById.mockResolvedValue({ id: 'tm1', name: 'Core', role: 'member', memberCount: 3 });
     await mount('/invitations');
     await click($('[data-test=invitation-accept]'));
-    expect(api.acceptInvitation).toHaveBeenCalledWith({ invitationId: 'i1' });
+    expect(api.acceptInvitationById).toHaveBeenCalledWith('i1');
+    expect(api.acceptInvitation).not.toHaveBeenCalled();
     expect(store.invitations.map((i) => i.id)).toEqual(['i2']);
     expect(store.getTeam('tm1')).toMatchObject({ name: 'Core', role: 'member', memberCount: 3 });
     expect(rememberedTeam()).toBe('tm1');
     expect(router.currentRoute.value.fullPath).toBe('/tasks/active?team=tm1&joined=1');
   });
 
-  it('takes an accept with no body', async () => {
-    api.listMyInvitations.mockResolvedValue({ invitations: inbox() });
-    api.acceptInvitation.mockResolvedValue(undefined);
-    await mount('/invitations');
-    await click($$('[data-test=invitation-accept]')[1]);
-    expect(store.getTeam('tm2')).toMatchObject({ name: 'Ops', role: 'admin' });
-    expect(router.currentRoute.value.fullPath).toBe('/tasks/active?team=tm2&joined=1');
-  });
-
   it('says why an accept failed, and reads the list again', async () => {
     api.listMyInvitations.mockResolvedValue({ invitations: inbox() });
-    api.acceptInvitation.mockRejectedValue(fail(410, 'This invitation is no longer valid'));
+    api.acceptInvitationById.mockRejectedValue(fail(410, 'This invitation is no longer valid'));
     await mount('/invitations');
     api.listMyInvitations.mockResolvedValue({ invitations: [inbox()[1]] });
     await click($('[data-test=invitation-accept]'));
@@ -720,13 +714,14 @@ describe('the invitations inbox', () => {
 
 describe('the invitation link', () => {
   const card = () => $('[data-test=accept-card]');
-  const preview = (over = {}) => ({ teamId: 'tm1', teamName: 'Core', invitedByName: 'Ann', role: 'admin', emailMatches: true, ...over });
+  const preview = (over = {}) => ({ teamId: 'tm1', teamName: 'Core', invitedByName: 'Ann', role: 'admin', email: 'm***@acme.com', emailMatches: true, ...over });
+  const kept = () => sessionStorage.getItem('agentrq:invite-token');
 
   it('reads the invitation, and says so meanwhile', async () => {
     api.fetchUser.mockResolvedValue(ME);
     let answer;
     api.previewInvitation.mockReturnValue(new Promise((r) => { answer = r; }));
-    await mount('/invitations/accept?token=t1');
+    await mount('/invite#t1');
     expect(card().dataset.state).toBe('loading');
     expect(text(card())).toContain('Reading the invitation…');
     answer(preview());
@@ -734,106 +729,143 @@ describe('the invitation link', () => {
     expect(card().dataset.state).toBe('ready');
   });
 
+  it('takes the token out of the address bar, keeping it for this tab', async () => {
+    api.fetchUser.mockResolvedValue(ME);
+    api.previewInvitation.mockResolvedValue(preview());
+    await mount('/invite?x=1#t1');
+    expect(api.previewInvitation).toHaveBeenCalledWith('t1');
+    expect(router.currentRoute.value.fullPath).toBe('/invite?x=1');
+    expect(kept()).toBe('t1');
+  });
+
   it('offers the sign-in, coming back here after it, when signed out', async () => {
     api.fetchUser.mockResolvedValue(null);
-    await mount('/invitations/accept?token=t1');
+    await mount('/invite#t1');
     expect(card().dataset.state).toBe('signedOut');
-    expect($('[data-test=accept-sign-in]').getAttribute('href'))
-      .toBe('/login?redirect_url=/invitations/accept?token=t1');
+    // The token never rides on redirect_url, which the server sees.
+    expect($('[data-test=accept-sign-in]').getAttribute('href')).toBe('/login?redirect_url=/invite');
     expect(api.previewInvitation).not.toHaveBeenCalled();
+    expect(kept()).toBe('t1');
+  });
+
+  it('reads another link opened in the same tab', async () => {
+    api.fetchUser.mockResolvedValue(ME);
+    api.previewInvitation.mockResolvedValue(preview());
+    await mount('/invite#t1');
+    api.previewInvitation.mockResolvedValue(preview({ teamName: 'Ops' }));
+    await router.push('/invite#t2');
+    await flush();
+    expect(api.previewInvitation).toHaveBeenLastCalledWith('t2');
+    expect(router.currentRoute.value.fullPath).toBe('/invite');
+    expect(text(card())).toContain('Ann invited you to Ops');
+  });
+
+  it('picks the token up again after the sign-in', async () => {
+    sessionStorage.setItem('agentrq:invite-token', 't1');
+    api.fetchUser.mockResolvedValue(ME);
+    api.previewInvitation.mockResolvedValue(preview());
+    await mount('/invite');
+    expect(api.previewInvitation).toHaveBeenCalledWith('t1');
+    expect(card().dataset.state).toBe('ready');
+  });
+
+  it('works with no sessionStorage, from the link alone', async () => {
+    const get = vi.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => { throw new Error('denied'); });
+    api.fetchUser.mockResolvedValue(ME);
+    api.previewInvitation.mockResolvedValue(preview());
+    await mount('/invite#t1');
+    expect(api.previewInvitation).toHaveBeenCalledWith('t1');
+    get.mockRestore();
   });
 
   it('treats a failed sign-in check as signed out', async () => {
     api.fetchUser.mockRejectedValue(fail(401));
-    await mount('/invitations/accept?token=t1');
+    await mount('/invite#t1');
     expect(card().dataset.state).toBe('signedOut');
   });
 
   it('accepts, and lands in the team with its welcome', async () => {
     api.fetchUser.mockResolvedValue(ME);
     api.previewInvitation.mockResolvedValue(preview());
-    api.acceptInvitation.mockResolvedValue({ id: 'tm1', name: 'Core', role: 'admin' });
-    await mount('/invitations/accept?token=t1');
-    expect(api.previewInvitation).toHaveBeenCalledWith('t1');
+    api.acceptInvitation.mockResolvedValue({ id: 'tm1', name: 'Core', role: 'admin', memberCount: 2 });
+    await mount('/invite#t1');
     expect(text(card())).toContain('Ann invited you to Core');
     expect(text(card())).toContain('As admin.');
     await click($('[data-test=accept-button]'));
-    expect(api.acceptInvitation).toHaveBeenCalledWith({ token: 't1' });
-    expect(store.getTeam('tm1')).toMatchObject({ name: 'Core', role: 'admin' });
+    expect(api.acceptInvitation).toHaveBeenCalledWith('t1');
+    expect(store.getTeam('tm1')).toMatchObject({ name: 'Core', role: 'admin', memberCount: 2 });
     expect(rememberedTeam()).toBe('tm1');
+    expect(kept()).toBe(null);
     expect(router.currentRoute.value.fullPath).toBe('/tasks/active?team=tm1&joined=1');
   });
 
-  it('accepts an invitation that names no sender or role, with an empty answer', async () => {
+  it('accepts an invitation that names no sender or role', async () => {
     api.fetchUser.mockResolvedValue(ME);
     api.previewInvitation.mockResolvedValue(preview({ invitedByName: '', role: '' }));
-    api.acceptInvitation.mockResolvedValue(undefined);
-    await mount('/invitations/accept?token=t1');
+    api.acceptInvitation.mockResolvedValue({ id: 'tm1', name: 'Core', role: 'member', memberCount: 2 });
+    await mount('/invite#t1');
     expect(text(card())).toContain('Someone invited you to Core');
     expect(text(card())).toContain('As member.');
     await click($('[data-test=accept-button]'));
     expect(store.getTeam('tm1')).toMatchObject({ name: 'Core' });
-    expect(router.currentRoute.value.fullPath).toBe('/tasks/active?team=tm1&joined=1');
   });
 
-  it('shows what the accept refused', async () => {
+  it('shows the server\'s words when the accept finds it used or expired', async () => {
     api.fetchUser.mockResolvedValue(ME);
     api.previewInvitation.mockResolvedValue(preview());
-    api.acceptInvitation.mockRejectedValue(fail(410));
-    await mount('/invitations/accept?token=t1');
+    api.acceptInvitation.mockRejectedValue(fail(410, 'This invitation is no longer valid: ask for a new one'));
+    await mount('/invite#t1');
     await click($('[data-test=accept-button]'));
     expect(card().dataset.state).toBe('invalid');
-    expect(text($('[data-test=accept-invalid]'))).toBe('This invitation is no longer valid. Ask Ann for a new one.');
+    expect(text($('[data-test=accept-invalid]'))).toBe('This invitation is no longer valid: ask for a new one');
+    expect(kept()).toBe('t1');
   });
 
   it('says an invitation for another email is not yours, by the preview', async () => {
     api.fetchUser.mockResolvedValue(ME);
     api.previewInvitation.mockResolvedValue(preview({ emailMatches: false, email: 'b***@acme.com' }));
-    await mount('/invitations/accept?token=t1');
+    await mount('/invite#t1');
     expect(card().dataset.state).toBe('wrongEmail');
     expect(text($('[data-test=accept-wrong-email]'))).toBe('This invitation is for b***@acme.com. Sign in with that account.');
     expect($('[data-test=accept-button]')).toBe(null);
   });
 
-  it('says an invitation for another email is not yours, by the refusal', async () => {
+  it('says "another email" when the preview names none', async () => {
     api.fetchUser.mockResolvedValue(ME);
-    api.previewInvitation.mockRejectedValue(Object.assign(fail(403), { email: 'c***@acme.com' }));
-    await mount('/invitations/accept?token=t1');
-    expect(text($('[data-test=accept-wrong-email]'))).toBe('This invitation is for c***@acme.com. Sign in with that account.');
-  });
-
-  it('says "another email" when nobody names it', async () => {
-    api.fetchUser.mockResolvedValue(ME);
-    api.previewInvitation.mockRejectedValue(fail(403));
-    await mount('/invitations/accept?token=t1');
+    api.previewInvitation.mockResolvedValue(preview({ emailMatches: false, email: '' }));
+    await mount('/invite#t1');
     expect(text($('[data-test=accept-wrong-email]'))).toBe('This invitation is for another email. Sign in with that account.');
   });
 
-  it.each([404, 410])('says an invitation answered %s is no longer valid', async (status) => {
+  it('shows the refusal, which names the masked address', async () => {
     api.fetchUser.mockResolvedValue(ME);
-    api.previewInvitation.mockRejectedValue(fail(status));
-    await mount('/invitations/accept?token=t1');
+    api.previewInvitation.mockResolvedValue(preview());
+    api.acceptInvitation.mockRejectedValue(fail(403, 'This invitation is for c***@acme.com: sign in with that account'));
+    await mount('/invite#t1');
+    await click($('[data-test=accept-button]'));
+    expect(card().dataset.state).toBe('wrongEmail');
+    expect(text($('[data-test=accept-wrong-email]'))).toBe('This invitation is for c***@acme.com: sign in with that account');
+  });
+
+  it('says an unknown invitation is no longer valid', async () => {
+    api.fetchUser.mockResolvedValue(ME);
+    api.previewInvitation.mockRejectedValue(fail(404, 'Not found'));
+    await mount('/invite#t1');
     expect(card().dataset.state).toBe('invalid');
     expect(text($('[data-test=accept-invalid]'))).toBe('This invitation is no longer valid. Ask whoever invited you for a new one.');
   });
 
   it('says a link with no token is not valid, and reads nothing', async () => {
     api.fetchUser.mockResolvedValue(ME);
-    await mount('/invitations/accept');
+    await mount('/invite');
     expect(card().dataset.state).toBe('invalid');
     expect(api.previewInvitation).not.toHaveBeenCalled();
-  });
-
-  it('ignores a token given twice', async () => {
-    api.fetchUser.mockResolvedValue(ME);
-    await mount('/invitations/accept?token=a&token=b');
-    expect(card().dataset.state).toBe('invalid');
   });
 
   it('shows any other failure, and tries again', async () => {
     api.fetchUser.mockResolvedValue(ME);
     api.previewInvitation.mockRejectedValueOnce(fail(500, 'Server down')).mockResolvedValueOnce(preview());
-    await mount('/invitations/accept?token=t1');
+    await mount('/invite#t1');
     expect(card().dataset.state).toBe('error');
     expect(text($('[data-test=accept-error]'))).toBe('Server down');
     await click(button('Try again'));

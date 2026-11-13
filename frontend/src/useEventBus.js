@@ -37,10 +37,13 @@ async function checkAuth() {
  * array nobody reads would grow without bound, making every deep watcher over
  * it a little slower for every event that had ever arrived.
  *
+ * `isPublicPage` keeps a signed-out visitor on a page that offers its own
+ * sign-in (an invitation link) instead of sending them to the login page.
+ *
  * @param {string | import('vue').Ref<string>} [workspaceId]  scope to one workspace; omit for the user-wide stream
- * @param {{ buffer?: boolean }} [options]
+ * @param {{ buffer?: boolean, isPublicPage?: () => boolean }} [options]
  */
-export function useEventBus(workspaceId, { buffer = true } = {}) {
+export function useEventBus(workspaceId, { buffer = true, isPublicPage = () => false } = {}) {
   const events = ref([]);
   const isConnected = ref(false);
   const handlers = new Set();
@@ -107,7 +110,7 @@ export function useEventBus(workspaceId, { buffer = true } = {}) {
         console.warn('Not authenticated. Stopping EventSource reconnection and redirecting to login.');
         const cleanBase = (window.__AGENTRQ_BASE_PATH__ || '').replace(/\/$/, '');
         const loginPath = cleanBase ? `${cleanBase}/login` : '/login';
-        if (window.location.pathname !== loginPath) {
+        if (window.location.pathname !== loginPath && !isPublicPage()) {
           window.location.href = loginPath;
         }
         return;
