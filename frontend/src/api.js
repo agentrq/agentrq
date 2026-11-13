@@ -1438,12 +1438,11 @@ export async function deleteAdminHook(id) {
 // them apart: 429 is the team's daily invitation cap, 410 an invitation that
 // is no longer valid, 403 one addressed to another email.
 
-// The server's answer as an Error with its status: its own message when it
-// gave one, in either error shape the API uses.
+// The server's answer, { error: { message, code } }, as an Error with its
+// status, in the server's own words.
 async function teamError(res, fallback) {
   const body = await res.json().catch(() => null);
-  const message = typeof body?.error === 'string' ? body.error : body?.error?.message;
-  const err = new Error(message || fallback);
+  const err = new Error(body?.error?.message || fallback);
   err.status = res.status;
   return err;
 }
@@ -1466,7 +1465,7 @@ export function listTeams() {
   return teamCall('/teams', 'Failed to load teams');
 }
 
-// A new team, with the caller as its owner: { team }.
+// A new team, with the caller as its owner: { id, name, role, memberCount, createdAt }.
 export function createTeam(name) {
   return teamCall('/teams', 'Failed to create the team', { method: 'POST', body: { name } });
 }
@@ -1527,17 +1526,21 @@ export function previewInvitation(token) {
   return teamCall('/invitations/preview', 'Failed to read the invitation', { method: 'POST', body: { token } });
 }
 
-// By the link's token, or by id from the inbox: { team }.
-export function acceptInvitation({ token = '', invitationId = '' } = {}) {
-  const body = token ? { token } : { invitationId };
-  return teamCall('/invitations/accept', 'Failed to accept the invitation', { method: 'POST', body });
+// By the link's token: the team joined. 403 when it is for another email.
+export function acceptInvitation(token) {
+  return teamCall('/invitations/accept', 'Failed to accept the invitation', { method: 'POST', body: { token } });
+}
+
+// One addressed to you, from the inbox: the team joined.
+export function acceptInvitationById(invitationId) {
+  return teamCall(`/invitations/${enc(invitationId)}/accept`, 'Failed to accept the invitation', { method: 'POST' });
 }
 
 export function declineInvitation(invitationId) {
   return teamCall(`/invitations/${enc(invitationId)}/decline`, 'Failed to decline the invitation', { method: 'POST' });
 }
 
-// The teams a workspace is shared with: { shares: [{ teamId, teamName, group }] }.
+// The teams a workspace is shared with: { shares: [{ teamId, teamName, workspaceId, group, createdAt, updatedAt }] }.
 export function listWorkspaceShares(workspaceId) {
   return teamCall(`/workspaces/${enc(workspaceId)}/shares`, 'Failed to load sharing');
 }

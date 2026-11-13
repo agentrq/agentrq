@@ -114,7 +114,7 @@ export const routes = [
   { path: '/invitations', component: () => import('./views/InvitationsView.vue') },
   // An invitation link. Public, because it may be opened signed out: the page
   // itself offers the sign-in, and comes back here after it.
-  { path: '/invitations/accept', component: () => import('./views/InvitationAcceptView.vue'), meta: { public: true } },
+  { path: '/invite', component: () => import('./views/InvitationAcceptView.vue'), meta: { public: true } },
 
   // A session's terminal. Addressed by session rather than by machine: a
   // session is what a person is watching, and it outlives the page they

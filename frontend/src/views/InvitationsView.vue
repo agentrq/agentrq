@@ -24,7 +24,7 @@
            class="p-4 rounded-xl border border-gray-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col sm:flex-row sm:items-center gap-3">
         <div class="flex-1 min-w-0">
           <p class="text-sm text-gray-700 dark:text-zinc-200">
-            <span class="font-semibold">{{ i.invitedBy || 'Someone' }}</span> invited you to
+            <span class="font-semibold">{{ i.invitedByName || 'Someone' }}</span> invited you to
             <span class="font-bold text-gray-900 dark:text-white">{{ i.teamName }}</span> as {{ i.role }}
           </p>
           <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">Expires {{ expiresIn(i.expiresAt) }}</p>
@@ -43,10 +43,10 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { acceptInvitation, declineInvitation } from '../api';
+import { acceptInvitationById, declineInvitation } from '../api';
 import { useTeamStore, rememberTeam } from '../stores/teamStore';
 import { useToasts } from '../composables/useToasts';
-import { expiresIn, joinedHome, teamOf } from '../composables/useTeamMode';
+import { expiresIn, joinedHome } from '../composables/useTeamMode';
 
 const router = useRouter();
 const store = useTeamStore();
@@ -68,9 +68,8 @@ async function answer(i, work) {
 }
 
 async function accept(i) {
-  const res = await answer(i, async () => (await acceptInvitation({ invitationId: i.id })) ?? {});
-  if (!res) return;
-  const team = { id: i.teamId, name: i.teamName, role: i.role, ...teamOf(res) };
+  const team = await answer(i, () => acceptInvitationById(i.id));
+  if (!team) return;
   store.dropInvitation(i.id);
   store.upsert(team);
   rememberTeam(String(team.id));

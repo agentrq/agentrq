@@ -63,7 +63,7 @@ describe('routes', () => {
       '/team/analytics',
       '/team/memory',
       '/invitations',
-      '/invitations/accept',
+      '/invite',
       '/sessions/:id',
       '/workflows',
       '/workflows/:id',
@@ -91,7 +91,7 @@ describe('routes', () => {
   // itself and comes back to the link after it.
   it('marks only the login route and the invitation link public', () => {
     const publicRoutes = routes.filter((r) => r.meta?.public).map((r) => r.path)
-    expect(publicRoutes).toEqual(['/invitations/accept', '/login'])
+    expect(publicRoutes).toEqual(['/invite', '/login'])
   })
 
   it('rebuilds a team page when the team in its query changes', () => {
