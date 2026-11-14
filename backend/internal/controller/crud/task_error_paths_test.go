@@ -341,6 +341,9 @@ func TestReplyToTask_FromSlack(t *testing.T) {
 	if resp.Task.Title != "written" {
 		t.Errorf("task = %+v, want the one written", resp.Task)
 	}
+	if resp.MessageID != 101 {
+		t.Errorf("message id = %d, want 101, the message the reply posted", resp.MessageID)
+	}
 	if msg.Sender != "slack" {
 		t.Errorf("sender = %q, want slack", msg.Sender)
 	}

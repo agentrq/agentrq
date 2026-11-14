@@ -847,9 +847,9 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	uid = monoflake.IDFromBase62(req.UserID).Int64()
 	latest, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
-		return &entity.ReplyToTaskResponse{Task: c.fromModelTaskToEntity(updated)}, nil
+		return &entity.ReplyToTaskResponse{Task: c.fromModelTaskToEntity(updated), MessageID: msg.ID}, nil
 	}
-	return &entity.ReplyToTaskResponse{Task: c.fromModelTaskToEntity(latest)}, nil
+	return &entity.ReplyToTaskResponse{Task: c.fromModelTaskToEntity(latest), MessageID: msg.ID}, nil
 }
 
 func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskRequest) (*entity.DeleteTaskResponse, error) {

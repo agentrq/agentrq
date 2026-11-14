@@ -281,6 +281,7 @@ type CreateTaskParams struct {
 	CronSchedule string `json:"cronSchedule,omitempty" jsonschema:"A 5-field cron schedule (minute hour dom month dow) to run the task on. A recurring task is at most hourly: a single minute 0-59, e.g. '30 * * * *'. A one-time task fixes dom and month, e.g. '30 14 25 4 *'."`
 	ParentID     string `json:"parentId,omitempty" jsonschema:"The task this one belongs under (base62)."`
 	ClearContext bool   `json:"clearContext,omitempty" jsonschema:"Ask for a clean slate: /clear is sent to the agent's terminal before this task is handed over, so it starts without the previous task's context. Ignored when the target workspace has no running Claude Code session. Defaults to the target workspace's own setting."`
+	Verbose      bool   `json:"verbose,omitempty" jsonschema:"true answers with the whole task, its body, messages and tool calls included; by default only its id, workspaceId, title, status, assignee and updatedAt."`
 }
 
 type GetTaskParams struct {
@@ -301,14 +302,16 @@ type RespondToTaskParams struct {
 	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
 	TaskID      string `json:"taskId" jsonschema:"The task's ID (base62)."`
 	// Must match crud.ValidTaskResponseActions. `reject`, not `deny`.
-	Action string `json:"action" jsonschema:"enum: allow, allow_all, reject, text"`
-	Text   string `json:"text,omitempty" jsonschema:"With action text, the reply to post."`
+	Action  string `json:"action" jsonschema:"enum: allow, allow_all, reject, text"`
+	Text    string `json:"text,omitempty" jsonschema:"With action text, the reply to post."`
+	Verbose bool   `json:"verbose,omitempty" jsonschema:"true answers with the whole task, its body, messages and tool calls included; by default only its id, workspaceId, title, status, assignee and updatedAt."`
 }
 
 type ReplyToTaskParams struct {
 	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
 	TaskID      string `json:"taskId" jsonschema:"The task's ID (base62)."`
 	Text        string `json:"text" jsonschema:"The message's text."`
+	Verbose     bool   `json:"verbose,omitempty" jsonschema:"true answers with the whole task, its body, messages and tool calls included; by default only its id, workspaceId, title, status, assignee and updatedAt."`
 }
 
 type UpdateTaskStatusParams struct {
@@ -316,25 +319,29 @@ type UpdateTaskStatusParams struct {
 	TaskID      string `json:"taskId" jsonschema:"The task's ID (base62)."`
 	// Must match crud.ValidTaskStatuses — a struct tag cannot be built from that
 	// slice, so a test compares them instead.
-	Status string `json:"status" jsonschema:"enum: notstarted, ongoing, blocked, completed, rejected, cron"`
+	Status  string `json:"status" jsonschema:"enum: notstarted, ongoing, blocked, completed, rejected, cron"`
+	Verbose bool   `json:"verbose,omitempty" jsonschema:"true answers with the whole task, its body, messages and tool calls included; by default only its id, workspaceId, title, status, assignee and updatedAt."`
 }
 
 type UpdateTaskOrderParams struct {
 	WorkspaceID string  `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
 	TaskID      string  `json:"taskId" jsonschema:"The task's ID (base62)."`
 	SortOrder   float64 `json:"sortOrder" jsonschema:"The task's new sort order: tasks are listed in ascending order."`
+	Verbose     bool    `json:"verbose,omitempty" jsonschema:"true answers with the whole task, its body, messages and tool calls included; by default only its id, workspaceId, title, status, assignee and updatedAt."`
 }
 
 type UpdateTaskAssigneeParams struct {
 	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
 	TaskID      string `json:"taskId" jsonschema:"The task's ID (base62)."`
 	Assignee    string `json:"assignee" jsonschema:"enum: agent, human"`
+	Verbose     bool   `json:"verbose,omitempty" jsonschema:"true answers with the whole task, its body, messages and tool calls included; by default only its id, workspaceId, title, status, assignee and updatedAt."`
 }
 
 type UpdateTaskAllowAllParams struct {
 	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
 	TaskID      string `json:"taskId" jsonschema:"The task's ID (base62)."`
 	AllowAll    bool   `json:"allowAll" jsonschema:"Whether the task's agent may run every command without asking."`
+	Verbose     bool   `json:"verbose,omitempty" jsonschema:"true answers with the whole task, its body, messages and tool calls included; by default only its id, workspaceId, title, status, assignee and updatedAt."`
 }
 
 type UpdateScheduledTaskParams struct {
@@ -344,6 +351,7 @@ type UpdateScheduledTaskParams struct {
 	Body         string `json:"body,omitempty" jsonschema:"The task's new body."`
 	CronSchedule string `json:"cronSchedule,omitempty" jsonschema:"The task's new 5-field cron schedule."`
 	IsOneTime    bool   `json:"isOneTime,omitempty" jsonschema:"Ignored: the schedule says whether it is one-time."`
+	Verbose      bool   `json:"verbose,omitempty" jsonschema:"true answers with the whole task, its body, messages and tool calls included; by default only its id, workspaceId, title, status, assignee and updatedAt."`
 }
 
 // DeleteTaskParams removes a task outright, attachments and messages with it.
@@ -694,8 +702,7 @@ func (s *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToo
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromCreateTaskResponseEntityToHTTPResponse(res)
-	return textResponse(string(b)), nil, nil
+	return taskChanged(args.Verbose, res.Task, 0, func() []byte { return apiMapper.FromCreateTaskResponseEntityToHTTPResponse(res) }), nil, nil
 }
 
 func (s *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolRequest, args GetTaskParams) (*mcp.CallToolResult, any, error) {
@@ -766,8 +773,7 @@ func (s *WorkspaceServer) handleRespondToTask(ctx context.Context, req *mcp.Call
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromRespondToTaskResponseEntityToHTTPResponse(res)
-	return textResponse(string(b)), nil, nil
+	return taskChanged(args.Verbose, res.Task, 0, func() []byte { return apiMapper.FromRespondToTaskResponseEntityToHTTPResponse(res) }), nil, nil
 }
 
 func (s *WorkspaceServer) handleReplyToTask(ctx context.Context, req *mcp.CallToolRequest, args ReplyToTaskParams) (*mcp.CallToolResult, any, error) {
@@ -783,8 +789,7 @@ func (s *WorkspaceServer) handleReplyToTask(ctx context.Context, req *mcp.CallTo
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromReplyToTaskResponseEntityToHTTPResponse(res)
-	return textResponse(string(b)), nil, nil
+	return taskChanged(args.Verbose, res.Task, res.MessageID, func() []byte { return apiMapper.FromReplyToTaskResponseEntityToHTTPResponse(res) }), nil, nil
 }
 
 func (s *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.CallToolRequest, args UpdateTaskStatusParams) (*mcp.CallToolResult, any, error) {
@@ -800,8 +805,7 @@ func (s *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.C
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromUpdateTaskStatusResponseEntityToHTTPResponse(res)
-	return textResponse(string(b)), nil, nil
+	return taskChanged(args.Verbose, res.Task, 0, func() []byte { return apiMapper.FromUpdateTaskStatusResponseEntityToHTTPResponse(res) }), nil, nil
 }
 
 func (s *WorkspaceServer) handleUpdateTaskOrder(ctx context.Context, req *mcp.CallToolRequest, args UpdateTaskOrderParams) (*mcp.CallToolResult, any, error) {
@@ -817,8 +821,7 @@ func (s *WorkspaceServer) handleUpdateTaskOrder(ctx context.Context, req *mcp.Ca
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromUpdateTaskOrderResponseEntityToHTTPResponse(res)
-	return textResponse(string(b)), nil, nil
+	return taskChanged(args.Verbose, res.Task, 0, func() []byte { return apiMapper.FromUpdateTaskOrderResponseEntityToHTTPResponse(res) }), nil, nil
 }
 
 func (s *WorkspaceServer) handleUpdateTaskAssignee(ctx context.Context, req *mcp.CallToolRequest, args UpdateTaskAssigneeParams) (*mcp.CallToolResult, any, error) {
@@ -834,8 +837,7 @@ func (s *WorkspaceServer) handleUpdateTaskAssignee(ctx context.Context, req *mcp
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromUpdateTaskAssigneeResponseEntityToHTTPResponse(res)
-	return textResponse(string(b)), nil, nil
+	return taskChanged(args.Verbose, res.Task, 0, func() []byte { return apiMapper.FromUpdateTaskAssigneeResponseEntityToHTTPResponse(res) }), nil, nil
 }
 
 func (s *WorkspaceServer) handleUpdateTaskAllowAll(ctx context.Context, req *mcp.CallToolRequest, args UpdateTaskAllowAllParams) (*mcp.CallToolResult, any, error) {
@@ -851,8 +853,7 @@ func (s *WorkspaceServer) handleUpdateTaskAllowAll(ctx context.Context, req *mcp
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromUpdateTaskAllowAllCommandsResponseEntityToHTTPResponse(res)
-	return textResponse(string(b)), nil, nil
+	return taskChanged(args.Verbose, res.Task, 0, func() []byte { return apiMapper.FromUpdateTaskAllowAllCommandsResponseEntityToHTTPResponse(res) }), nil, nil
 }
 
 func (s *WorkspaceServer) handleUpdateScheduledTask(ctx context.Context, req *mcp.CallToolRequest, args UpdateScheduledTaskParams) (*mcp.CallToolResult, any, error) {
@@ -870,8 +871,7 @@ func (s *WorkspaceServer) handleUpdateScheduledTask(ctx context.Context, req *mc
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromUpdateScheduledTaskResponseEntityToHTTPResponse(res)
-	return textResponse(string(b)), nil, nil
+	return taskChanged(args.Verbose, res.Task, 0, func() []byte { return apiMapper.FromUpdateScheduledTaskResponseEntityToHTTPResponse(res) }), nil, nil
 }
 
 func (s *WorkspaceServer) handleDeleteTask(ctx context.Context, req *mcp.CallToolRequest, args DeleteTaskParams) (*mcp.CallToolResult, any, error) {

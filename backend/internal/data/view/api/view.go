@@ -399,6 +399,23 @@ type (
 		Messages  []TaskMessage `json:"messages"`
 	}
 
+	// TaskSummaryResponse is how the supervisor's task tool answers an action
+	// that changed a task, unless the call asked for verbose: messageId is the
+	// message a reply posted.
+	TaskSummaryResponse struct {
+		Task      TaskSummary `json:"task"`
+		MessageID string      `json:"messageId,omitempty"`
+	}
+
+	TaskSummary struct {
+		ID          string    `json:"id"`
+		WorkspaceID string    `json:"workspaceId"`
+		Title       string    `json:"title"`
+		Status      string    `json:"status"`
+		Assignee    string    `json:"assignee"`
+		UpdatedAt   time.Time `json:"updatedAt"`
+	}
+
 	// TaskResource is a task as the supervisor's task resource reads it: its
 	// state and the end of its conversation, what a change notice sends it to.
 	TaskResource struct {

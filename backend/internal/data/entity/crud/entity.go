@@ -622,7 +622,8 @@ type (
 	}
 
 	ReplyToTaskResponse struct {
-		Task Task
+		Task      Task
+		MessageID int64
 	}
 
 	DeleteTaskRequest struct {

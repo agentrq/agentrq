@@ -14,6 +14,7 @@ import (
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -25,6 +26,7 @@ const taskToolDescription = "Hand out, follow and steer the work of every worksp
 	"create (workspaceId, title, body) adds a task, assigned to the human unless assignee says agent, once or on a cronSchedule; get reads a task in full; " +
 	"messages reads only a task's conversation, far smaller than get, to follow up on a task; reply posts to it; " +
 	"respond answers the permission request a task is waiting on; updateStatus, updateSortingOrder, updateAssignee, updateAllowAll and updateSchedule change one thing about a task; " +
+	"those and create answer only the task's id, workspaceId, title, status, assignee and updatedAt, and reply the messageId it posted; verbose: true in their payload answers the whole task. " +
 	"getAttachment gets a task's attachment. delete removes a task with its messages and attachments and cannot be undone: to stop a scheduled task without losing its history, updateStatus it to rejected instead."
 
 // awaitingReplyHelp is the rule replyState follows, as list, listAll and get
@@ -88,6 +90,17 @@ func (s *WorkspaceServer) taskActions() []mcpevent.ToolAction {
 
 func (s *WorkspaceServer) handleTask(ctx context.Context, req *mcp.CallToolRequest, p TaskParams) (*mcp.CallToolResult, any, error) {
 	return s.runTool(ctx, req, "task", s.taskActions(), p.Action, p.Payload)
+}
+
+// taskChanged answers an action that changed task t: with verbose, the whole
+// task as full renders it; otherwise only what says which task it is and where
+// it stands, a busy task's full answer being tens of thousands of tokens.
+// messageID, when not 0, is the message a reply posted.
+func taskChanged(verbose bool, t entity.Task, messageID int64, full func() []byte) *mcp.CallToolResult {
+	if verbose {
+		return textResponse(string(full()))
+	}
+	return textResponse(string(apiMapper.FromTaskEntityToTaskSummaryMCPResponse(t, messageID)))
 }
 
 // How many messages the task tool's messages action returns by default, and
