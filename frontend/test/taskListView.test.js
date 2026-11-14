@@ -440,6 +440,20 @@ describe('the team\'s task list (?team=)', () => {
     expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending/tw1/t1', query: { team: 'tm1', workspace: 'Backend' } })
   })
 
+  it('opens the analytics of the team workspace on screen, or of the whole team', async () => {
+    let el = await mount(TaskListView)
+    el.querySelector('[data-test=team-analytics]').click()
+    expect(push).toHaveBeenLastCalledWith({ path: '/team/analytics', query: { team: 'tm1', workspace: 'Backend' } })
+    route.query = { team: 'tm1' }
+    el = await mount(TaskListView)
+    el.querySelector('[data-test=team-analytics]').click()
+    expect(push).toHaveBeenLastCalledWith({ path: '/team/analytics', query: { team: 'tm1' } })
+    // Your own workspaces each have theirs, on the workspace's page.
+    route.query = {}
+    el = await mount(TaskListView)
+    expect(el.querySelector('[data-test=team-analytics]')).toBe(null)
+  })
+
   it('reads the list again on the team\'s events, and only those', async () => {
     await mount(TaskListView)
     const calls = fetchTeamTasks.mock.calls.length

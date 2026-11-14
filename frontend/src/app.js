@@ -105,6 +105,9 @@ export const routes = [
   // managed in a dialog over them, `?manage=<tab>`. Creating one, and the
   // invitations addressed to you, need none.
   { path: '/team/new', component: () => import('./views/TeamNewView.vue') },
+  // A team's analytics, or one team workspace's (?workspace=); a team page, so
+  // with no team there is nothing to show.
+  { path: '/team/analytics', component: () => import('./views/TeamAnalyticsView.vue'), beforeEnter: (to) => (to.query.team ? true : '/') },
   // The settings page the dialog replaced: an old link opens the dialog.
   { path: '/team/settings', redirect: (to) => (to.query.team ? withManage(teamHome(to.query.team), 'members') : '/') },
   { path: '/invitations', component: () => import('./views/InvitationsView.vue') },

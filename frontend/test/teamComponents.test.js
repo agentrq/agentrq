@@ -26,11 +26,30 @@ vi.mock('../src/api', async (importOriginal) => ({
   shareWorkspace: vi.fn(),
   unshareWorkspace: vi.fn(),
   cloneTeamTask: vi.fn(),
+  fetchTeamStats: vi.fn(),
   fetchTeamSkills: vi.fn(),
   getTeamSkill: vi.fn(),
   addTeamSkill: vi.fn(),
   searchSkills: vi.fn(),
 }));
+
+// The panels' own drawing is tested with them; here, only what they emit.
+vi.mock('../src/components/StatsPanels.vue', async () => {
+  const { defineComponent: dc, h: hh } = await import('vue');
+  return {
+    default: dc({
+      props: ['stats', 'loading', 'activeRange', 'customFrom', 'customTo'],
+      emits: ['update:activeRange', 'update:customFrom', 'update:customTo', 'apply'],
+      setup(props, { emit }) {
+        return () => hh('div', { 'data-test': 'stats-panels', 'data-range': props.activeRange }, [
+          hh('button', { 'data-test': 'range-custom', onClick: () => emit('update:activeRange', 'custom') }),
+          hh('button', { 'data-test': 'custom-from', onClick: () => emit('update:customFrom', '2026-01-01') }),
+          hh('button', { 'data-test': 'custom-to', onClick: () => emit('update:customTo', '2026-01-31') }),
+        ]);
+      },
+    }),
+  };
+});
 
 import * as api from '../src/api';
 import { useTeamStore, rememberedTeam, rememberTeam } from '../src/stores/teamStore';
@@ -48,6 +67,7 @@ import OwnerAvatar from '../src/components/OwnerAvatar.vue';
 import WorkspaceSharing from '../src/components/WorkspaceSharing.vue';
 import CloneTaskModal from '../src/components/CloneTaskModal.vue';
 import TeamSkills from '../src/components/TeamSkills.vue';
+import TeamAnalyticsView from '../src/views/TeamAnalyticsView.vue';
 
 const alice = { userId: 'u1', name: 'Alice', picture: 'https://x/a.png' };
 const bob = { userId: 'u2', name: 'Bob' };
@@ -1024,6 +1044,45 @@ describe('cloning a teammate\'s task', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await flush();
     expect(closed).not.toHaveBeenCalled();
+  });
+});
+
+describe('a team\'s analytics', () => {
+  it('reads the whole team\'s numbers, or one team workspace\'s, and goes back to its tasks', async () => {
+    api.fetchTeamStats.mockResolvedValue({ summary: { tasksCompleted: 3 } });
+    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
+    expect(api.fetchTeamStats).toHaveBeenCalledWith('tm1', '7d', 0, 0, '');
+    expect(text($('[data-test=team-analytics-scope]'))).toBe('All workspaces');
+    await click($('[data-test=team-analytics-tasks]'));
+    expect(here().fullPath).toBe('/tasks/active?team=tm1');
+
+    await router.push('/team/analytics?team=tm1&workspace=Backend');
+    await flush();
+    expect(api.fetchTeamStats).toHaveBeenLastCalledWith('tm1', '7d', 0, 0, 'Backend');
+    expect(text($('[data-test=team-analytics-scope]'))).toBe('Backend');
+    await click($('[data-test=team-analytics-tasks]'));
+    expect(here().fullPath).toBe('/tasks/active?workspace=Backend&team=tm1');
+  });
+
+  it('loads a custom range once both ends are set', async () => {
+    api.fetchTeamStats.mockResolvedValue({ summary: {} });
+    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
+    await click($('[data-test=range-custom]'));
+    const calls = api.fetchTeamStats.mock.calls.length;
+    await click($('[data-test=custom-from]'));
+    expect(api.fetchTeamStats.mock.calls.length).toBe(calls);
+    await click($('[data-test=custom-to]'));
+    expect(api.fetchTeamStats.mock.calls.length).toBe(calls + 1);
+  });
+
+  it('goes back to Me without the team, and says other failures', async () => {
+    api.fetchTeamStats.mockRejectedValueOnce(failure(500, 'Stats down'));
+    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
+    expect(toasts()).toContain('Stats down');
+    app.unmount();
+    api.fetchTeamStats.mockRejectedValueOnce(failure(404));
+    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
+    expect(here().path).toBe('/');
   });
 });
 

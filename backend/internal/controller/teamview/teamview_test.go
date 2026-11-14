@@ -29,8 +29,9 @@ type fake struct {
 	tasks     []entity.Task // what a task list returns
 	listedIn  []int64       // the workspaces the last list read
 	published []entity.CRUDEvent
-	missing   string                   // the attachment whose file is gone
-	created   entity.CreateTaskRequest // the last task created
+	missing   string                              // the attachment whose file is gone
+	created   entity.CreateTaskRequest            // the last task created
+	statsReq  *entity.GetStatsOfWorkspacesRequest // the last statistics asked for
 }
 
 func (f *fake) err(name string) error {
@@ -69,6 +70,10 @@ func (f *fake) CreateTask(_ context.Context, req entity.CreateTaskRequest) (*ent
 func (f *fake) SystemListTasksInWorkspaces(_ context.Context, _ entity.ListTasksRequest, ids []int64) (*entity.ListTasksResponse, error) {
 	f.listedIn = ids
 	return &entity.ListTasksResponse{Tasks: f.tasks}, f.err("SystemListTasksInWorkspaces")
+}
+func (f *fake) SystemGetDetailedStatsOfWorkspaces(_ context.Context, req entity.GetStatsOfWorkspacesRequest) (*entity.GetDetailedWorkspaceStatsResponse, error) {
+	f.statsReq = &req
+	return &entity.GetDetailedWorkspaceStatsResponse{Summary: entity.WorkspaceStatsSummary{TasksCompleted: 3}}, f.err("SystemGetDetailedStatsOfWorkspaces")
 }
 func (f *fake) SystemGetSkillFile(context.Context, entity.SystemGetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
 	return &entity.GetSkillFileResponse{}, f.err("SystemGetSkillFile")
@@ -127,6 +132,14 @@ func TestFailures(t *testing.T) {
 			return err
 		}},
 		{"GetAttachment", func(c Controller) error { _, err := c.GetAttachment(ctx, 2, 10, 1000, "a"); return err }},
+		{"ListTeamWorkspaces", func(c Controller) error {
+			_, err := c.GetStats(ctx, entity.GetTeamStatsRequest{UserID: 2, TeamID: 10})
+			return err
+		}},
+		{"SystemGetDetailedStatsOfWorkspaces", func(c Controller) error {
+			_, err := c.GetStats(ctx, entity.GetTeamStatsRequest{UserID: 2, TeamID: 10})
+			return err
+		}},
 		{"SystemGetTask", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
 		{"GetTeam", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
 		{"CreateTask", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
@@ -315,6 +328,31 @@ func TestListTasksFilters(t *testing.T) {
 	got, err = c.ListTasks(ctx, entity.ListTeamTasksRequest{UserID: 2, TeamID: 10, Workspace: "none"})
 	if err != nil || got == nil || len(got) != 0 || f.listedIn != nil {
 		t.Errorf("no workspace left: %v, %v, read %v", got, err, f.listedIn)
+	}
+}
+
+// Statistics sum the team's workspaces, or one team workspace's by its
+// shared name, over the window asked for.
+func TestGetStatsScope(t *testing.T) {
+	ctx := context.Background()
+	f, c := newFake()
+	f.visible = []entity.TeamWorkspace{
+		{ID: 1, SharedName: "API", OwnerID: 7},
+		{ID: 2, SharedName: " api ", OwnerID: 8},
+		{ID: 3, SharedName: "docs", OwnerID: 7},
+	}
+	rs, err := c.GetStats(ctx, entity.GetTeamStatsRequest{UserID: 2, TeamID: 10, Workspace: "Api", Range: "custom", From: 5, To: 9})
+	if err != nil || rs.Summary.TasksCompleted != 3 {
+		t.Fatalf("by workspace: %+v, %v", rs, err)
+	}
+	if got := *f.statsReq; len(got.WorkspaceIDs) != 2 || got.WorkspaceIDs[0] != 1 || got.WorkspaceIDs[1] != 2 || got.Range != "custom" || got.From != 5 || got.To != 9 {
+		t.Errorf("by workspace: asked for %+v", got)
+	}
+	if _, err := c.GetStats(ctx, entity.GetTeamStatsRequest{UserID: 2, TeamID: 10}); err != nil || len(f.statsReq.WorkspaceIDs) != 3 {
+		t.Errorf("whole team: asked for %+v, %v", f.statsReq, err)
+	}
+	if _, err := c.GetStats(ctx, entity.GetTeamStatsRequest{UserID: 2, TeamID: 10, Workspace: "none"}); err != nil || f.statsReq.WorkspaceIDs == nil || len(f.statsReq.WorkspaceIDs) != 0 {
+		t.Errorf("no workspace left: asked for %+v, %v", f.statsReq, err)
 	}
 }
 

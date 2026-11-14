@@ -46,6 +46,8 @@ describe('the team API', () => {
     ['fetchTeamTasks', ['tm1', { status: 'ongoing', workspace: 'Back end', member: 'u1', limit: 5, offset: 5 }], 'GET',
       '/teams/tm1/tasks?status=ongoing&workspace=Back+end&member=u1&limit=5&offset=5'],
     ['getTeamTask', ['tm1', 't1'], 'GET', '/teams/tm1/tasks/t1'],
+    ['fetchTeamStats', ['tm1'], 'GET', '/teams/tm1/analytics?range=7d'],
+    ['fetchTeamStats', ['tm1', 'custom', 5, 9, 'Back end'], 'GET', '/teams/tm1/analytics?range=custom&from=5&to=9&workspace=Back+end'],
     ['cloneTeamTask', ['tm1', 't1', 'ws1'], 'POST', '/teams/tm1/tasks/t1/clone', { workspaceId: 'ws1', assignee: 'human' }],
     ['cloneTeamTask', ['tm1', 't1', 'ws1', 'agent'], 'POST', '/teams/tm1/tasks/t1/clone', { workspaceId: 'ws1', assignee: 'agent' }],
     ['fetchTeamSkills', ['tm1'], 'GET', '/teams/tm1/skills'],
