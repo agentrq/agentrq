@@ -500,6 +500,71 @@ func TestTheLastMemberLeavingDeletesTheTeam(t *testing.T) {
 	})
 }
 
+// exclusions lists every memory exclusion as owner>excluded, ordered.
+func exclusions(db *gorm.DB) string {
+	var rows []model.MemoryExclusion
+	db.Order("user_id, excluded_user_id").Find(&rows)
+	out := []string{}
+	for _, e := range rows {
+		out = append(out, fmt.Sprintf("%d>%d", e.UserID, e.ExcludedUserID))
+	}
+	return fmt.Sprint(out)
+}
+
+// Leaving or being removed drops the memory exclusions between the member and
+// anyone they no longer share a team with, both ways, so a teammate who comes
+// back starts included; a pair still together in another team keeps theirs.
+func TestLeavingDropsTheMemoryExclusionsOfFormerTeammates(t *testing.T) {
+	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
+		ctx := context.Background()
+		db.Create(&model.TeamMember{ID: 2, TeamID: 1, UserID: 11})
+		db.Create(&model.TeamMember{ID: 3, TeamID: 1, UserID: 12})
+		db.Create(&model.Team{ID: 2, Name: "other", Version: 1})
+		db.Create(&model.TeamMember{ID: 4, TeamID: 2, UserID: 10})
+		db.Create(&model.TeamMember{ID: 5, TeamID: 2, UserID: 12})
+		for _, e := range [][2]int64{{10, 11}, {11, 10}, {12, 11}, {10, 12}, {12, 10}, {13, 14}} {
+			db.Create(&model.MemoryExclusion{WorkspaceID: 100 + e[0], UserID: e[0], ExcludedUserID: e[1]})
+		}
+		if _, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0); err != nil {
+			t.Fatal(err)
+		}
+		if got := exclusions(db); got != "[10>12 12>10 13>14]" {
+			t.Errorf("after removing 11 the exclusions are %v, want every one naming 11 gone", got)
+		}
+		if _, _, err := r.RemoveTeamMember(ctx, 1, 12, 12, 2, act(), 0); err != nil {
+			t.Fatal(err)
+		}
+		if got := exclusions(db); got != "[10>12 12>10 13>14]" {
+			t.Errorf("after 12 left team 1 the exclusions are %v, want 10 and 12 kept: they share team 2", got)
+		}
+		members, err := r.ListTeamMembers(ctx, 1)
+		if err != nil || len(members) != 1 || members[0].UserID != 10 {
+			t.Errorf("team 1's members are %+v (%v), want only 10", members, err)
+		}
+	})
+}
+
+// Deleting a team drops the exclusions between its members who share no other
+// team.
+func TestDeletingATeamDropsTheMemoryExclusionsOfFormerTeammates(t *testing.T) {
+	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
+		db.Create(&model.TeamMember{ID: 2, TeamID: 1, UserID: 11})
+		db.Create(&model.TeamMember{ID: 3, TeamID: 1, UserID: 12})
+		db.Create(&model.Team{ID: 2, Name: "other", Version: 1})
+		db.Create(&model.TeamMember{ID: 4, TeamID: 2, UserID: 10})
+		db.Create(&model.TeamMember{ID: 5, TeamID: 2, UserID: 12})
+		for _, e := range [][2]int64{{10, 11}, {11, 12}, {10, 12}, {13, 14}} {
+			db.Create(&model.MemoryExclusion{WorkspaceID: 100 + e[0], UserID: e[0], ExcludedUserID: e[1]})
+		}
+		if err := r.DeleteTeam(context.Background(), 1, 10, 1, act()); err != nil {
+			t.Fatal(err)
+		}
+		if got := exclusions(db); got != "[10>12 13>14]" {
+			t.Errorf("after deleting team 1 the exclusions are %v, want 10>12 (team 2) and the stranger's", got)
+		}
+	})
+}
+
 func TestInvitationsPendingAcceptedRevokedAndDeclined(t *testing.T) {
 	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
 		ctx := context.Background()
@@ -1216,7 +1281,9 @@ func TestTeamStatementFailures(t *testing.T) {
 		{"renaming a team", "update", "teams", 0, nil, func(r Repository) error { _, err := r.RenameTeam(ctx, 1, 10, 1, "y", act()); return err }},
 		{"recording a rename", "create", "team_management_activities", 0, nil, func(r Repository) error { _, err := r.RenameTeam(ctx, 1, 10, 1, "y", act()); return err }},
 		{"reading the team to delete", "query", "teams", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
+		{"reading a deleted team's members", "query", "team_members", 1, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
 		{"deleting a team's members", "delete", "team_members", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
+		{"dropping a deleted team's exclusions", "delete", "memory_exclusions", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
 		{"deleting a team's invitations", "delete", "team_invitations", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
 		{"deleting a team's shares", "delete", "workspace_shares", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
 		{"deleting a team", "delete", "teams", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
@@ -1232,6 +1299,10 @@ func TestTeamStatementFailures(t *testing.T) {
 			return err
 		}},
 		{"removing a member's shares", "delete", "workspace_shares", 0, nil, func(r Repository) error {
+			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0)
+			return err
+		}},
+		{"dropping a removed member's exclusions", "delete", "memory_exclusions", 0, nil, func(r Repository) error {
 			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0)
 			return err
 		}},

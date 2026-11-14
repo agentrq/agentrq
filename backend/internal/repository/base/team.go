@@ -248,17 +248,38 @@ func (r *repository) RenameTeam(ctx context.Context, teamID, callerID, version i
 	return next, err
 }
 
+// dropStaleExclusions deletes the memory exclusions between any of the users
+// and someone they no longer share a team with, so a teammate who comes back
+// starts included. Run it after the memberships are gone.
+func dropStaleExclusions(tx *gorm.DB, userIDs []int64) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	return tx.Where("(user_id IN ? OR excluded_user_id IN ?) AND NOT EXISTS ("+
+		"SELECT 1 FROM team_members AS a JOIN team_members AS b ON b.team_id = a.team_id "+
+		"WHERE a.user_id = memory_exclusions.user_id AND b.user_id = memory_exclusions.excluded_user_id)", userIDs, userIDs).
+		Delete(&model.MemoryExclusion{}).Error
+}
+
 // deleteTeamRows deletes a team with its members, invitations and shares,
-// and records it. Its activities stay.
+// and the memory exclusions between members who share no other team, and
+// records it. Its activities stay.
 func deleteTeamRows(tx *gorm.DB, teamID int64, act model.TeamManagementActivity) error {
 	t, err := first[model.Team](tx.Where("id = ?", teamID))
 	if err != nil {
+		return err
+	}
+	var members []int64
+	if err := tx.Model(&model.TeamMember{}).Where("team_id = ?", teamID).Pluck("user_id", &members).Error; err != nil {
 		return err
 	}
 	for _, m := range []any{&model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}} {
 		if err := tx.Where("team_id = ?", teamID).Delete(m).Error; err != nil {
 			return err
 		}
+	}
+	if err := dropStaleExclusions(tx, members); err != nil {
+		return err
 	}
 	if err := tx.Where("id = ?", teamID).Delete(&model.Team{}).Error; err != nil {
 		return err
@@ -316,7 +337,8 @@ func member(tx *gorm.DB, teamID, userID int64) (model.TeamMember, error) {
 
 // RemoveTeamMember is the caller, from version, removing a member, or leaving
 // when the member is the caller, and unsharing the member's workspaces from
-// the team. The last member to go deletes the team (deleted), recorded as
+// the team, and dropping the memory exclusions between the member and anyone
+// they no longer share a team with. The last member to go deletes the team (deleted), recorded as
 // activity deletedID. ErrNotFound when the caller or the member is not in
 // the team.
 func (r *repository) RemoveTeamMember(ctx context.Context, teamID, callerID, userID, version int64, act model.TeamManagementActivity, deletedID int64) (next int64, deleted bool, err error) {
@@ -333,6 +355,9 @@ func (r *repository) RemoveTeamMember(ctx context.Context, teamID, callerID, use
 			return err
 		}
 		if err := tx.Where("team_id = ? AND user_id = ?", teamID, userID).Delete(&model.WorkspaceShare{}).Error; err != nil {
+			return err
+		}
+		if err := dropStaleExclusions(tx, []int64{userID}); err != nil {
 			return err
 		}
 		act.TeamID, act.ActorUserID, act.Action = teamID, callerID, model.TeamActivityMemberLeft
