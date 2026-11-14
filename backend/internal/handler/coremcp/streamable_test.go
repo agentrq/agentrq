@@ -20,7 +20,7 @@ var supervisorTokens = auth.NewTokenService(auth.TokenConfig{JWTSecret: "supervi
 
 func mintSupervisorToken(t *testing.T, userID, resource, tokenType string) string {
 	t.Helper()
-	tok, err := supervisorTokens.CreateMCPToken(userID, resource, tokenType)
+	tok, err := supervisorTokens.CreateSupervisorToken(userID, resource, tokenType)
 	if err != nil {
 		t.Fatalf("minting a %s %s token: %v", resource, tokenType, err)
 	}

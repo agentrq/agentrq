@@ -26,7 +26,7 @@ func (mintFailingTokens) CreateClientRegistrationToken([]string, string) (string
 	return "", errors.New("signing key unavailable")
 }
 
-func (mintFailingTokens) CreateMCPToken(string, string, string) (string, error) {
+func (mintFailingTokens) CreateSupervisorToken(string, string, string) (string, error) {
 	return "", errors.New("signing key unavailable")
 }
 

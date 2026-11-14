@@ -5,6 +5,7 @@
 package auth
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -601,4 +602,35 @@ func TestOAuthConsentToken(t *testing.T) {
 			t.Errorf("the consent token expires in %v, want about %v", left, OAuthConsentTTL)
 		}
 	})
+}
+
+// A supervisor token is short lived; a workspace token keeps its year.
+func TestMCPTokenLifetimes(t *testing.T) {
+	s := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+	for name, tc := range map[string]struct {
+		mint     func() (string, error)
+		audience []string
+		want     time.Duration
+	}{
+		"supervisor access":           {func() (string, error) { return s.CreateSupervisorToken("user-1", "coremcp", "access") }, []string{"coremcp", "access"}, 8 * time.Hour},
+		"supervisor read-only access": {func() (string, error) { return s.CreateSupervisorToken("user-1", "coremcp:read", "access") }, []string{"coremcp:read", "access"}, 8 * time.Hour},
+		"supervisor refresh":          {func() (string, error) { return s.CreateSupervisorToken("user-1", "coremcp", "refresh") }, []string{"coremcp", "refresh"}, 7 * 24 * time.Hour},
+		"workspace access":            {func() (string, error) { return s.CreateMCPToken("user-1", "ws1", "access") }, []string{"ws1", "access"}, 365 * 24 * time.Hour},
+		"workspace refresh":           {func() (string, error) { return s.CreateMCPToken("user-1", "ws1", "refresh") }, []string{"ws1", "refresh"}, 365 * 24 * time.Hour},
+	} {
+		tok, err := tc.mint()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		claims, err := s.ValidateToken(tok)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if left := time.Until(claims.ExpiresAt.Time); left > tc.want || left < tc.want-5*time.Second {
+			t.Errorf("%s token expires in %v, want %v", name, left, tc.want)
+		}
+		if claims.Subject != "user-1" || !slices.Equal(claims.Audience, tc.audience) {
+			t.Errorf("%s token is for %s %v, want user-1 %v", name, claims.Subject, claims.Audience, tc.audience)
+		}
+	}
 }

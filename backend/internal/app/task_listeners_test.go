@@ -124,7 +124,7 @@ func TestShutdownCompletesTaskListensBeforeTheDrain(t *testing.T) {
 // one at a time.
 func openAppListen(t *testing.T, srv *httptest.Server, user int64, uri string) func() string {
 	t.Helper()
-	token, err := auth.NewTokenService(auth.TokenConfig{JWTSecret: "acp-test-secret"}).CreateMCPToken(monoflake.ID(user).String(), "coremcp", "access")
+	token, err := auth.NewTokenService(auth.TokenConfig{JWTSecret: "acp-test-secret"}).CreateSupervisorToken(monoflake.ID(user).String(), "coremcp", "access")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -295,6 +295,17 @@ func supervisorResource(audience []string) string {
 	return ""
 }
 
+// clockSkew allows for the instance that minted a token running its clock
+// ahead of this one.
+const clockSkew = time.Minute
+
+// outlivesTTL reports whether a token expires later than one minted now with
+// ttl would: one signed before the supervisor's lifetimes were shortened, or
+// one with no expiry at all.
+func outlivesTTL(claims *auth.Claims, ttl time.Duration) bool {
+	return claims.ExpiresAt == nil || time.Until(claims.ExpiresAt.Time) > ttl+clockSkew
+}
+
 // challengeUnauthorized writes the RFC 9728 §5.1 challenge that tells an
 // unauthenticated client exactly where to find our metadata, instead of making
 // it guess well-known paths.
@@ -453,7 +464,7 @@ func (h *handler) streamableHandler() http.Handler {
 			}
 		}
 
-		if resource == "" || hasRestricted || claims.Subject == "" {
+		if resource == "" || hasRestricted || claims.Subject == "" || outlivesTTL(claims, auth.SupervisorAccessTokenTTL) {
 			challengeUnauthorized(w, r, "unauthorized")
 			return
 		}
@@ -699,7 +710,7 @@ func (h *handler) oauthTokenHandler() http.Handler {
 					break
 				}
 			}
-			if !hasRefresh {
+			if !hasRefresh || outlivesTTL(claims, auth.SupervisorRefreshTokenTTL) {
 				http.Error(w, `{"error": "invalid_grant"}`, http.StatusUnauthorized)
 				return
 			}
@@ -707,20 +718,20 @@ func (h *handler) oauthTokenHandler() http.Handler {
 
 		userID := claims.Subject
 
-		accessToken, err := h.tokenSvc.CreateMCPToken(userID, resource, "access")
+		accessToken, err := h.tokenSvc.CreateSupervisorToken(userID, resource, "access")
 		if err != nil {
 			http.Error(w, `{"error": "server_error"}`, http.StatusInternalServerError)
 			return
 		}
 
-		refreshToken, err := h.tokenSvc.CreateMCPToken(userID, resource, "refresh")
+		refreshToken, err := h.tokenSvc.CreateSupervisorToken(userID, resource, "refresh")
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token":  accessToken,
 			"refresh_token": refreshToken,
 			"token_type":    "bearer",
 			"scope":         resourceScope(resource),
-			"expires_in":    2592000, // 30 days
+			"expires_in":    int(auth.SupervisorAccessTokenTTL.Seconds()),
 		})
 	})
 }
