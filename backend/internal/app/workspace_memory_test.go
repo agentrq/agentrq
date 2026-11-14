@@ -84,30 +84,39 @@ func TestAForksMemoryIsItsParents(t *testing.T) {
 	}
 	parent, fork := memoryOf(memParent), memoryOf(memFork)
 
-	if err := parent.save(ctx, "MEMORY.md", "# Index"); err != nil {
-		t.Fatal(err)
+	if version, err := parent.save(ctx, "MEMORY.md", "# Index", 0); err != nil || version != 1 {
+		t.Fatalf("creating memory.md returned version %d, %v; want version 1", version, err)
 	}
-	if got, found, err := fork.load(ctx, "MEMORY.md"); err != nil || !found || got != "# Index" {
-		t.Fatalf("the fork's loadMemory: %q, %v, %v; want the parent's", got, found, err)
+	got, version, found, err := fork.load(ctx, "MEMORY.md")
+	if err != nil || !found || got != "# Index" || version != 1 {
+		t.Fatalf("the fork's loadMemory: %q at version %d, %v, %v; want the parent's at version 1", got, version, found, err)
+	}
+	// The fork's agent saving on the version it read moves the parent's
+	// memory on, so the parent's agent saving on that version is refused.
+	if version, err := fork.save(ctx, "MEMORY.md", "# Index\n- fork", 1); err != nil || version != 2 {
+		t.Fatalf("the fork saving version 1 returned version %d, %v; want version 2", version, err)
+	}
+	if _, err := parent.save(ctx, "MEMORY.md", "# Index\n- parent", 1); err != base.ErrVersionConflict {
+		t.Fatalf("the parent saving version 1 after the fork returned %v, want a version conflict", err)
 	}
 
-	if err := fork.save(ctx, "deploys.md", "how we ship"); err != nil {
+	if _, err := fork.save(ctx, "deploys.md", "how we ship", 0); err != nil {
 		t.Fatal(err)
 	}
-	if got, found, _ := parent.load(ctx, "deploys.md"); !found || got != "how we ship" {
+	if got, _, found, _ := parent.load(ctx, "deploys.md"); !found || got != "how we ship" {
 		t.Fatalf("the parent reads what the fork saved: %q, %v", got, found)
 	}
 
 	if deleted, err := fork.delete(ctx, "deploys.md"); err != nil || !deleted {
 		t.Fatalf("the fork's deleteMemory: %v, %v", deleted, err)
 	}
-	if _, found, _ := parent.load(ctx, "deploys.md"); found {
+	if _, _, found, _ := parent.load(ctx, "deploys.md"); found {
 		t.Fatal("deleted from the fork, the parent still has it")
 	}
 	if deleted, err := fork.delete(ctx, "deploys.md"); err != nil || deleted {
 		t.Fatalf("deleting it again: %v, %v; want nothing to delete", deleted, err)
 	}
-	if _, found, err := fork.load(ctx, "never.md"); err != nil || found {
+	if _, _, found, err := fork.load(ctx, "never.md"); err != nil || found {
 		t.Fatalf("a memory never written: %v, %v", found, err)
 	}
 }
@@ -119,7 +128,7 @@ func TestWorkspaceMemoryReportsStorageFailures(t *testing.T) {
 	ctx := context.Background()
 
 	repo.EXPECT().GetMemory(gomock.Any(), memUser, memParent, "MEMORY.md").Return(model.Memory{}, errRepo)
-	if _, _, err := m.load(ctx, "MEMORY.md"); err != errRepo {
+	if _, _, _, err := m.load(ctx, "MEMORY.md"); err != errRepo {
 		t.Errorf("load: %v", err)
 	}
 	repo.EXPECT().DeleteMemory(gomock.Any(), memUser, memParent, "MEMORY.md").Return(errRepo)

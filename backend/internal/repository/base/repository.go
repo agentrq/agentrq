@@ -24,7 +24,7 @@ import (
 
 var (
 	ErrNotFound = errors.New("not found")
-	// ErrVersionConflict is a write made on a version of a doc that has
+	// ErrVersionConflict is a write made on a version of a doc or memory that has
 	// since changed.
 	ErrVersionConflict = errors.New("version conflict")
 	// ErrMemoryTooLarge is a memory over model.MaxMemoryContentBytes.
@@ -85,7 +85,7 @@ type Repository interface {
 	// Memory — the workspace's own notes, written by agents through the MCP
 	// memory tools. Keyed per (owner, workspace, name); see model.Memory.
 	GetMemory(ctx context.Context, userID, workspaceID int64, name string) (model.Memory, error)
-	UpsertMemory(ctx context.Context, m model.Memory) (model.Memory, error)
+	SaveMemory(ctx context.Context, m model.Memory) (model.Memory, error)
 	ListMemoriesByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Memory, error)
 	DeleteMemory(ctx context.Context, userID, workspaceID int64, name string) error
 
@@ -1931,30 +1931,46 @@ func (r *repository) GetMemory(ctx context.Context, userID, workspaceID int64, n
 	return m, err
 }
 
-// UpsertMemory writes a memory, replacing whatever was stored under that name.
+// SaveMemory writes a memory only if it is still at m.Version, the version its
+// writer read, and moves it to the next; a Version of 0 creates it at 1. Two
+// agents sharing a workspace otherwise overwrite each other's learnings: a
+// memory another writer got to first, or created first, is ErrVersionConflict,
+// and one deleted since it was read is ErrNotFound.
 //
-// Overwriting is the whole semantic of saveMemory, so this is one statement
-// rather than a read followed by a write: two agents saving the same memory at
-// once would otherwise race, and the loser's insert would fail against the
-// unique key rather than simply being overwritten.
-//
-// The caller supplies a fresh ID for the insert case. On conflict the stored
-// row keeps the ID it already had — only the content and the timestamp move —
-// so a memory's identity survives being rewritten.
-func (r *repository) UpsertMemory(ctx context.Context, m model.Memory) (model.Memory, error) {
+// The caller supplies a fresh ID for the create case. An update keeps the ID
+// the row already had, so a memory's identity survives being rewritten.
+func (r *repository) SaveMemory(ctx context.Context, m model.Memory) (model.Memory, error) {
 	if len(m.Content) > model.MaxMemoryContentBytes {
 		return model.Memory{}, fmt.Errorf("%w: %d bytes; the limit is %d", ErrMemoryTooLarge, len(m.Content), model.MaxMemoryContentBytes)
 	}
-	err := r.conn(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}, {Name: "workspace_id"}, {Name: "name"}},
-		DoUpdates: clause.AssignmentColumns([]string{"content", "updated_at"}),
-	}).Create(&m).Error
-	if err != nil {
-		return model.Memory{}, err
+	if m.Version == 0 {
+		m.Version = 1
+		res := r.conn(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&m)
+		if res.Error != nil {
+			return model.Memory{}, res.Error
+		}
+		if res.RowsAffected == 0 {
+			return model.Memory{}, ErrVersionConflict
+		}
+		return m, nil
 	}
-	// Read back rather than returning the struct that went in: on the update
-	// path the row's ID and creation time are the ones it already had, not the
-	// ones this call generated.
+	res := r.conn(ctx).Model(&model.Memory{}).
+		Where("user_id = ? AND workspace_id = ? AND name = ? AND version = ?", m.UserID, m.WorkspaceID, m.Name, m.Version).
+		Updates(map[string]any{
+			"content":    m.Content,
+			"updated_at": m.UpdatedAt,
+			"version":    gorm.Expr("version + 1"),
+		})
+	if res.Error != nil {
+		return model.Memory{}, res.Error
+	}
+	if res.RowsAffected == 0 {
+		if _, err := r.GetMemory(ctx, m.UserID, m.WorkspaceID, m.Name); err != nil {
+			return model.Memory{}, err
+		}
+		return model.Memory{}, ErrVersionConflict
+	}
+	// Read back: the row keeps the ID and creation time it already had.
 	return r.GetMemory(ctx, m.UserID, m.WorkspaceID, m.Name)
 }
 

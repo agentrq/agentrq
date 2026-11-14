@@ -112,6 +112,9 @@ it, any workspace's token could post into any task.
   the *workspace's* memory, so every agent working there shares it. Keying it to
   the connecting client would make it per-agent memory wearing a workspace's
   name.
+- **A save carries the version its agent loaded**, and no version only creates.
+  Agents sharing a workspace read, edit and save the same `memory.md`; letting a
+  save without a version overwrite would bring back the lost-learnings race.
 - `memory.md` is the default for both tools and is meant to stay an index of the
   other named memories, linking them as `memory://<name>`. The server
   instructions tell connecting agents to load it first.

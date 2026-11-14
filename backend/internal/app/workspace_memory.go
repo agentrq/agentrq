@@ -40,22 +40,22 @@ type workspaceMemory struct {
 
 func (m workspaceMemory) uid() int64 { return monoflake.IDFromBase62(m.userID).Int64() }
 
-func (m workspaceMemory) load(ctx context.Context, name string) (string, bool, error) {
+func (m workspaceMemory) load(ctx context.Context, name string) (string, int64, bool, error) {
 	mem, err := m.repo.GetMemory(ctx, m.uid(), m.workspaceID, name)
 	if errors.Is(err, base.ErrNotFound) {
 		// A memory nobody has written yet: the ordinary state of a
 		// fresh workspace, and not a failure to report.
-		return "", false, nil
+		return "", 0, false, nil
 	}
 	if err != nil {
-		return "", false, err
+		return "", 0, false, err
 	}
-	return mem.Content, true, nil
+	return mem.Content, mem.Version, true, nil
 }
 
-func (m workspaceMemory) save(ctx context.Context, name string, content string) error {
+func (m workspaceMemory) save(ctx context.Context, name string, content string, version int64) (int64, error) {
 	now := time.Now()
-	_, err := m.repo.UpsertMemory(ctx, model.Memory{
+	mem, err := m.repo.SaveMemory(ctx, model.Memory{
 		ID:          m.ids.NextID(),
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -63,8 +63,9 @@ func (m workspaceMemory) save(ctx context.Context, name string, content string) 
 		WorkspaceID: m.workspaceID,
 		Name:        name,
 		Content:     content,
+		Version:     version,
 	})
-	return err
+	return mem.Version, err
 }
 
 func (m workspaceMemory) delete(ctx context.Context, name string) (bool, error) {

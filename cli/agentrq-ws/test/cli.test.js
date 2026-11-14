@@ -243,7 +243,7 @@ test('stdin reaches a command that asks for it', async () => {
     }),
   })
   assert.equal(code, 0)
-  assert.deepEqual(seen, { action: 'save', payload: { name: 'notes.md', content: 'remembered' } })
+  assert.deepEqual(seen, { action: 'save', payload: { name: 'notes.md', content: 'remembered', version: undefined } })
 })
 
 test('--server picks between several configured servers', async () => {
@@ -348,4 +348,35 @@ test('findGroup matches only a real family prefix', async () => {
   assert.equal(findGroup(['nonsense']), null)
   assert.equal(findGroup(['--help']), null)
   assert.equal(findGroup([]), null)
+})
+
+test("a command's own --version is its flag, not the CLI's version", async () => {
+  const calls = []
+  const { code, out } = await cli(['memory', 'save', 'notes.md', '--content', 'x', '--version', '3'], {
+    createClient: clientSaying('Saved', (name, args) => calls.push([name, args])),
+  })
+  assert.equal(code, 0)
+  assert.equal(out, 'Saved\n')
+  assert.deepEqual(calls, [['memory', { action: 'save', payload: { name: 'notes.md', content: 'x', version: 3 } }]])
+})
+
+test('memory load prints the memory on stdout and its version on stderr', async () => {
+  const blocks = [
+    { type: 'text', text: '# Index' },
+    { type: 'text', text: 'Version 4: send "version": 4 with memory save.' },
+  ]
+  const createClient = () => ({
+    async callAction() {
+      return { text: blocks.map((b) => b.text).join('\n'), result: { content: blocks } }
+    },
+    async close() {},
+  })
+  const { code, out, err } = await cli(['memory', 'load'], { createClient })
+  assert.equal(code, 0)
+  assert.equal(out, '# Index\n')
+  assert.equal(err, 'Version 4: send "version": 4 with memory save.\n')
+
+  const json = await cli(['memory', 'load', '--json'], { createClient })
+  assert.deepEqual(JSON.parse(json.out), { content: blocks })
+  assert.equal(json.err, '')
 })

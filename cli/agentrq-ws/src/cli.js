@@ -100,7 +100,9 @@ export async function run({
       write(stdout, commandHelp(command))
       return 0
     }
-    if (values.version) {
+    // A command's own --version (pano save's, memory save's) is a string:
+    // only the global flag is true.
+    if (values.version === true) {
       write(stdout, VERSION)
       return 0
     }
@@ -120,6 +122,7 @@ export async function run({
     } else if (outcome.text) {
       write(stdout, outcome.text)
     }
+    if (outcome.note && !values.json) write(stderr, outcome.note)
     return 0
   } catch (err) {
     if (err instanceof UserError || err instanceof ServerError) {

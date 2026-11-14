@@ -231,6 +231,9 @@ type (
 		WorkspaceID int64  `gorm:"index:idx_memories_workspace_id;uniqueIndex:uk_user_id_workspace_id_name,priority:2"`
 		Name        string `gorm:"type:varchar(32);uniqueIndex:uk_user_id_workspace_id_name,priority:3"`
 		Content     string `gorm:"type:text"`
+		// Version counts the memory's writes, from 1: a save must send the one
+		// it read, so two agents cannot overwrite each other's learnings.
+		Version int64 `gorm:"not null;default:1"`
 	}
 
 	// Skill is an account's playbook for a kind of task: a SKILL.md and the

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
 	"github.com/golang/mock/gomock"
@@ -21,6 +22,8 @@ import (
 // load that follows it exercise the same path a real agent takes.
 type memoryStore struct {
 	saved      map[string]string
+	versions   map[string]int64
+	saveIn     int64
 	loadErr    error
 	saveErr    error
 	deleteErr  error
@@ -39,24 +42,29 @@ func newMemoryServer(t *testing.T, store *memoryStore) *WorkspaceServer {
 	if store.saved == nil {
 		store.saved = map[string]string{}
 	}
+	if store.versions == nil {
+		store.versions = map[string]int64{}
+	}
 	return &WorkspaceServer{
 		workspaceID: 100,
 		pubsub:      pubsubMock,
-		loadMemory: func(ctx context.Context, name string) (string, bool, error) {
+		loadMemory: func(ctx context.Context, name string) (string, int64, bool, error) {
 			store.loadName = name
 			if store.loadErr != nil {
-				return "", false, store.loadErr
+				return "", 0, false, store.loadErr
 			}
 			content, ok := store.saved[name]
-			return content, ok, nil
+			return content, store.versions[name], ok, nil
 		},
-		saveMemory: func(ctx context.Context, name, content string) error {
+		saveMemory: func(ctx context.Context, name, content string, version int64) (int64, error) {
 			store.saveName = name
+			store.saveIn = version
 			if store.saveErr != nil {
-				return store.saveErr
+				return 0, store.saveErr
 			}
 			store.saved[name] = content
-			return nil
+			store.versions[name]++
+			return store.versions[name], nil
 		},
 		deleteMemory: func(ctx context.Context, name string) (bool, error) {
 			store.deleteName = name
@@ -546,5 +554,72 @@ func TestConfiguredLimitsAreEnforcedAndAdvertised(t *testing.T) {
 		if text := resultText(t, res); !strings.Contains(text, w) {
 			t.Errorf("help for %s %q should contain %q", topic, text, w)
 		}
+	}
+}
+
+// load shows the version beside the memory, in a block of its own so the
+// first block is the memory exactly as saved.
+func TestLoadMemoryShowsItsVersion(t *testing.T) {
+	store := &memoryStore{saved: map[string]string{"memory.md": "# Index"}, versions: map[string]int64{"memory.md": 7}}
+	ps := newMemoryServer(t, store)
+
+	res, _, err := ps.handleLoadMemory(context.Background(), &mcp.CallToolRequest{}, LoadMemoryParams{})
+	if err != nil {
+		t.Fatalf("loadMemory: %v", err)
+	}
+	if got := resultText(t, res); got != "# Index" {
+		t.Errorf("the first block is %q, want the memory alone", got)
+	}
+	if len(res.Content) != 2 {
+		t.Fatalf("load returned %d blocks, want the memory and its version", len(res.Content))
+	}
+	if got := res.Content[1].(*mcp.TextContent).Text; got != `Version 7: send "version": 7 with memory save.` {
+		t.Errorf("the version block is %q", got)
+	}
+}
+
+// save hands on the version the agent read, and says the new one.
+func TestSaveMemorySendsTheVersionItRead(t *testing.T) {
+	store := &memoryStore{saved: map[string]string{"memory.md": "old"}, versions: map[string]int64{"memory.md": 3}}
+	ps := newMemoryServer(t, store)
+
+	res, _, err := ps.handleSaveMemory(context.Background(), &mcp.CallToolRequest{}, SaveMemoryParams{Content: "new", Version: 3})
+	if err != nil {
+		t.Fatalf("saveMemory: %v", err)
+	}
+	if store.saveIn != 3 {
+		t.Errorf("the store was asked to save on version %d, want 3", store.saveIn)
+	}
+	if got := resultText(t, res); got != `Saved "memory.md" (3 bytes), now at version 4.` {
+		t.Errorf("save answered %q", got)
+	}
+}
+
+// A refused save tells the agent what happened and how to keep both agents'
+// learnings: load again, merge, retry.
+func TestSaveMemoryExplainsARefusal(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		err     error
+		version int64
+		want    string
+	}{
+		{"changed since it was read", base.ErrVersionConflict, 2, `memory "memory.md" has changed since version 2, probably saved by another agent. Load it again, merge your change into what is there now, and save with the new version.`},
+		{"created by another agent first", base.ErrVersionConflict, 0, `memory "memory.md" already exists. Load it, merge your change into what is there, and save with the version load shows.`},
+		{"deleted since it was read", base.ErrNotFound, 2, `memory "memory.md" was deleted since you read it. Save it without a version to create it again.`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ps := newMemoryServer(t, &memoryStore{saveErr: tc.err})
+			res, _, err := ps.handleSaveMemory(context.Background(), &mcp.CallToolRequest{}, SaveMemoryParams{Content: "x", Version: tc.version})
+			if err != nil {
+				t.Fatalf("saveMemory: %v", err)
+			}
+			if !res.IsError {
+				t.Error("a refused save was not reported as an error")
+			}
+			if got := resultText(t, res); got != tc.want {
+				t.Errorf("save answered %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
