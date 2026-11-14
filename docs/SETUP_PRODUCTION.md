@@ -314,7 +314,7 @@ gzip -c agentrq-hook-github_1.0.0.wasm | curl -s "$AGENTRQ_BASE_URL/admin/v1/hoo
 
 ### Teams
 
-A team's members read the workspaces they share with it. Invitations go by email when SMTP is set up (`AGENTRQ_SMTP_HOST`); otherwise the inviter is given the link to send. A link is `<AGENTRQ_BASE_URL>/invite#<token>` and works once, for the invited address, for 7 days.
+A team's members read the workspaces they share with it. Invitations go by email when SMTP is set up (`AGENTRQ_SMTP_HOST`); either way the inviter is given the link to share, which is the only way in without SMTP. A link is `<AGENTRQ_BASE_URL>/invite#<token>` and works once, for the invited address, for 7 days.
 
 | Variable | Default | Description |
 |---|---|---|
