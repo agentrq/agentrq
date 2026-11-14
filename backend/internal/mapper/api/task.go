@@ -147,6 +147,32 @@ func FromListTasksResponseEntityToMCPResponse(rs *entity.ListTasksResponse, stat
 	return payload
 }
 
+// FromListTasksResponseEntityToTaskListMCPResponse answers the supervisor's
+// task list and listAll unless they ask for includeBody: each task's state,
+// without its body; states[i] is rs.Tasks[i]'s.
+func FromListTasksResponseEntityToTaskListMCPResponse(rs *entity.ListTasksResponse, states []entity.TaskReplyState) []byte {
+	tasks := make([]view.SupervisorTaskListItem, len(rs.Tasks))
+	for i, t := range rs.Tasks {
+		tasks[i] = view.SupervisorTaskListItem{
+			ID:            monoflake.ID(t.ID).String(),
+			WorkspaceID:   monoflake.ID(t.WorkspaceID).String(),
+			Title:         t.Title,
+			Status:        t.Status,
+			Assignee:      t.Assignee,
+			CreatedAt:     t.CreatedAt,
+			UpdatedAt:     t.UpdatedAt,
+			LastMessageBy: states[i].LastMessageBy,
+			AwaitingReply: states[i].AwaitingReply,
+			CronSchedule:  t.CronSchedule,
+		}
+		if !states[i].LastMessageAt.IsZero() {
+			tasks[i].LastMessageAt = &states[i].LastMessageAt
+		}
+	}
+	payload, _ := json.Marshal(view.SupervisorTaskListResponse{Tasks: tasks})
+	return payload
+}
+
 func fromTaskEntityToSupervisorView(t entity.Task, state entity.TaskReplyState) view.SupervisorTask {
 	v := view.SupervisorTask{
 		Task:          FromEntityTaskToView(t),

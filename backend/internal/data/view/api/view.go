@@ -385,6 +385,28 @@ type (
 		Tasks []SupervisorTask `json:"tasks"`
 	}
 
+	// SupervisorTaskListResponse is how the supervisor's task list and listAll
+	// answer unless the call asks for includeBody: a task's body is most of
+	// its size, and a supervisor checking on its tasks needs only where each
+	// stands.
+	SupervisorTaskListResponse struct {
+		Tasks []SupervisorTaskListItem `json:"tasks"`
+	}
+
+	SupervisorTaskListItem struct {
+		ID            string     `json:"id"`
+		WorkspaceID   string     `json:"workspaceId"`
+		Title         string     `json:"title"`
+		Status        string     `json:"status"`
+		Assignee      string     `json:"assignee"`
+		CreatedAt     time.Time  `json:"createdAt"`
+		UpdatedAt     time.Time  `json:"updatedAt"`
+		LastMessageAt *time.Time `json:"lastMessageAt,omitempty"`
+		LastMessageBy string     `json:"lastMessageBy,omitempty"`
+		AwaitingReply bool       `json:"awaitingReply"`
+		CronSchedule  string     `json:"cronSchedule,omitempty"`
+	}
+
 	SupervisorGetTaskResponse struct {
 		GetTaskResponse
 		Task SupervisorTask `json:"task"`
