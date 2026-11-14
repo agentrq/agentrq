@@ -91,6 +91,9 @@ test('a team workspace\'s analytics sum each member\'s workspace in it', async (
   await owner.getByTestId('team-analytics-tasks').click()
   await expect(owner).toHaveURL(new RegExp(`/tasks/active\\?.*workspace=`))
   await owner.screenshot({ path: test.info().outputPath('team-tasks-button.png'), animations: 'disabled' })
+  // As high as the pickers beside it.
+  const height = async (locator) => (await locator.boundingBox()).height
+  expect(await height(owner.getByTestId('team-analytics'))).toBe(await height(owner.getByTestId('team-filter-workspace')))
   await owner.goto(`/tasks/active?team=${team.id}`)
   const all = nextResponse(owner, 'GET', `/teams/${team.id}/analytics`)
   await owner.getByTestId('team-analytics').click()
@@ -104,6 +107,10 @@ test('a team workspace\'s analytics sum each member\'s workspace in it', async (
   await bea.goto(`/team/analytics?team=${team.id}&workspace=${encodeURIComponent(workspace.name)}`)
   expect((await (await beas).json()).summary.tasksCompleted).toBe(summary.tasksCompleted)
   await bea.screenshot({ path: test.info().outputPath('team-analytics-phone.png'), animations: 'disabled' })
+  await bea.goto(`/tasks/active?team=${team.id}&workspace=${encodeURIComponent(workspace.name)}`)
+  await expect(bea.getByTestId('team-analytics')).toBeVisible()
+  expect(await height(bea.getByTestId('team-analytics'))).toBe(await height(bea.getByTestId('team-filter-workspace')))
+  await bea.screenshot({ path: test.info().outputPath('team-tasks-phone.png'), animations: 'disabled' })
 
   traffic.expectClean()
   await beaContext.close()
