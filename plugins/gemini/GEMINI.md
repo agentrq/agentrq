@@ -38,7 +38,10 @@ one action's payload with an example.
    `since` (the id of the last message you read) returns only the newer messages, far
    more efficient than another `get`; it sends the newest 5 unless `limit` says more,
    `before` pages back, and `maxChars` cuts long messages to skim.
-   Poll with `task.list`/`task.listAll` and `task.messages`, never `get`: a listed task
+   To follow tasks up, call `task.changes` with the `now` of your last call as `since`: it
+   lists only the tasks whose status or conversation changed, a short line each, and an
+   empty list when nothing did; then `task.messages` only for those with `newMessages`.
+   Poll with `task.changes`, `task.list`/`task.listAll` and `task.messages`, never `get`: a listed task
    is a summary of where it stands, its body only with `includeBody: true`.
    An agent waiting on an answer often leaves its task `ongoing`: `task.listAll` with
    `awaitingReply: true` finds the tasks whose agent asked something nobody answered.

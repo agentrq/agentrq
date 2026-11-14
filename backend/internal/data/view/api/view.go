@@ -423,6 +423,28 @@ type (
 		Messages  []TaskMessage `json:"messages"`
 	}
 
+	// TaskChangesResponse is how the supervisor's task changes answers: the
+	// tasks that changed after the time asked about, and now, the time to ask
+	// about next. hasMore says the limit cut the list, now being where it
+	// stopped.
+	TaskChangesResponse struct {
+		Now     time.Time    `json:"now"`
+		HasMore bool         `json:"hasMore,omitempty"`
+		Changes []TaskChange `json:"changes"`
+	}
+
+	TaskChange struct {
+		TaskID             string     `json:"taskId"`
+		WorkspaceID        string     `json:"workspaceId"`
+		Title              string     `json:"title"`
+		Status             string     `json:"status"`
+		StatusChangedAt    *time.Time `json:"statusChangedAt,omitempty"`
+		NewMessages        int        `json:"newMessages"`
+		LastMessageBy      string     `json:"lastMessageBy,omitempty"`
+		LastMessagePreview string     `json:"lastMessagePreview,omitempty"`
+		AwaitingReply      bool       `json:"awaitingReply"`
+	}
+
 	// TaskSummaryResponse is how the supervisor's task tool answers an action
 	// that changed a task, unless the call asked for verbose: messageId is the
 	// message a reply posted.

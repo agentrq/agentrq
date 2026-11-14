@@ -72,6 +72,9 @@ type Repository interface {
 	GetTaskRow(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error)
 	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
 	CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error)
+	ListTaskChanges(ctx context.Context, req entity.ListTaskChangesRequest, userID int64) ([]model.Task, error)
+	CountNewMessages(ctx context.Context, taskIDs []int64, since time.Time) (map[int64]int, error)
+	ListStatusChanges(ctx context.Context, taskIDs []int64, since time.Time) (map[int64]time.Time, error)
 	// UpdateTask writes only the columns of t it names, and UpdatedAt.
 	UpdateTask(ctx context.Context, t model.Task, columns ...string) (model.Task, error)
 	DeleteTask(ctx context.Context, workspaceID, taskID int64, userID int64) error

@@ -14,6 +14,7 @@ import (
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	"github.com/gofiber/fiber/v2"
 	"github.com/mustafaturan/monoflake"
+	"time"
 )
 
 func FromHTTPRequestToCreateTaskRequestEntity(c *fiber.Ctx) *entity.CreateTaskRequest {
@@ -243,6 +244,30 @@ func FromTaskEntityToTaskMessagesMCPResponse(t entity.Task, msgs []entity.Messag
 		Total:     total,
 		HasMore:   total > len(msgs),
 		Messages:  fromMessageEntitiesToTaskMessageViews(msgs),
+	}
+	payload, _ := json.Marshal(res)
+	return payload
+}
+
+// FromTaskChangeEntitiesToTaskChangesMCPResponse answers the supervisor's
+// task changes: changes, and now, the time to ask about next; hasMore says
+// the limit cut the list.
+func FromTaskChangeEntitiesToTaskChangesMCPResponse(now time.Time, hasMore bool, changes []entity.TaskChange) []byte {
+	res := view.TaskChangesResponse{Now: now, HasMore: hasMore, Changes: make([]view.TaskChange, len(changes))}
+	for i, c := range changes {
+		res.Changes[i] = view.TaskChange{
+			TaskID:             monoflake.ID(c.TaskID).String(),
+			WorkspaceID:        monoflake.ID(c.WorkspaceID).String(),
+			Title:              c.Title,
+			Status:             c.Status,
+			NewMessages:        c.NewMessages,
+			LastMessageBy:      c.LastMessageBy,
+			LastMessagePreview: c.LastMessagePreview,
+			AwaitingReply:      c.AwaitingReply,
+		}
+		if !c.StatusChangedAt.IsZero() {
+			res.Changes[i].StatusChangedAt = &c.StatusChangedAt
+		}
 	}
 	payload, _ := json.Marshal(res)
 	return payload

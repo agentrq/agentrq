@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -344,5 +345,22 @@ func TestFromModelTaskToView(t *testing.T) {
 	wantBare := view.Task{ID: b62(102), Messages: []view.Message{}, ToolCalls: []view.ToolCall{}}
 	if !reflect.DeepEqual(got, wantBare) {
 		t.Errorf("got  %+v\nwant %+v", got, wantBare)
+	}
+}
+
+func TestTaskChangesMCPResponse(t *testing.T) {
+	changed := at.Add(time.Minute)
+	raw := FromTaskChangeEntitiesToTaskChangesMCPResponse(at, true, []entity.TaskChange{
+		{TaskID: 101, WorkspaceID: 7, Title: "Release", Status: "blocked", StatusChangedAt: changed, NewMessages: 2, LastMessageBy: "agent", LastMessagePreview: "Which branch?", AwaitingReply: true},
+		{TaskID: 102, WorkspaceID: 7, Title: "Docs", Status: "ongoing"},
+	})
+	assertCamelCase(t, raw)
+	checkResponse(t, raw, view.TaskChangesResponse{Now: at, HasMore: true, Changes: []view.TaskChange{
+		{TaskID: b62(101), WorkspaceID: b62(7), Title: "Release", Status: "blocked", StatusChangedAt: &changed, NewMessages: 2, LastMessageBy: "agent", LastMessagePreview: "Which branch?", AwaitingReply: true},
+		{TaskID: b62(102), WorkspaceID: b62(7), Title: "Docs", Status: "ongoing"},
+	}})
+	// Nothing changed is a few bytes.
+	if got := string(FromTaskChangeEntitiesToTaskChangesMCPResponse(at, false, nil)); got != `{"now":"2026-10-30T09:00:00Z","changes":[]}` {
+		t.Errorf("no changes = %s", got)
 	}
 }

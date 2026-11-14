@@ -1,0 +1,8 @@
+# Following tasks up
+
+To follow tasks you delegated, loop: `changes` with the last `now`, then `messages` only for the tasks it lists with `newMessages`. Never poll with `get`.
+
+- `changes`: the tasks changed after `since` (RFC3339, required), the least recently changed first. Answers `now`, the next call's `since`, and `changes`, one line per task: `taskId`, `workspaceId`, `title`, `status`, `statusChangedAt` if its status changed, `newMessages`, `lastMessageBy`, `lastMessagePreview` (the newest new message's start), `awaitingReply`. Nothing changed: an empty list. Narrow with `workspaceId` or `createdByWorkspaceId` (your own, for what you delegated); `limit` (default 20, at most 100). `hasMore: true`: call again with `now` for the rest.
+- `list` a workspace's tasks, or `listAll` across workspaces: each one's ids, `title`, `status`, `assignee`, times, `cronSchedule`, `awaitingReply`, `lastMessageBy`; `includeBody: true` adds bodies. Filter by `filter` (title, body), `status`, `createdBy`, `createdByWorkspaceId`, `awaitingReply`; page with `limit`/`offset`.
+- `awaitingReply`: a question or permission request is pending, or the agent's last message is an open "?". An agent may wait while `ongoing`: check it.
+- `messages`: a task's conversation, oldest first, with `status`, `updatedAt`, `total`, `hasMore`; each message's `id`, `createdAt`, `sender`, `text`, file names. `limit` (default 5, at most 100) keeps the newest. `since`/`before` (message id or RFC3339) keep later/earlier ones: the last `id` read, or the oldest to page back. `maxChars` cuts each text.

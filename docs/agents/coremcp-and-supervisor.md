@@ -85,6 +85,11 @@ supervisor invisible until a reload — which is how forks and task deletes were
 fields, `awaitingReplyClause` in SQL for the filter, so paging holds. Change
 both, and the shared cases in both tests, or list and filter disagree.
 
+**`task.changes` orders by change time in SQL (`pgTaskChangedAt`) and sets a
+cut list's `now` from the same rule in Go**: change both, or a page skips tasks.
+Its `now` trails the clock by `changesLag` so a write committed after the read
+is not skipped; a message never bumps `tasks.updated_at`, hence the UNION.
+
 **A task listen hears only what the app's CRUD forwarder tells it**
 (`notifyTaskListeners` → `TaskListeners`), so a change that publishes no CRUD
 event never reaches the supervisor, and the in-process pubsub means a listen

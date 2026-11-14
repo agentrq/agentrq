@@ -21,7 +21,7 @@ import (
 // other here, so a write never reaches a read-only connection by default.
 var readActions = map[string][]string{
 	"workspace": {"list", "get", "stats"},
-	"task":      {"list", "listAll", "get", "messages", "getAttachment"},
+	"task":      {"list", "listAll", "get", "messages", "changes", "getAttachment"},
 	"memory":    {"list", "get"},
 	"skills":    {"search", "get"},
 	"events":    {"list", "get", "listTasks", "listTriggers", "getTrigger"},

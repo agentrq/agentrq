@@ -366,6 +366,29 @@ func (c *controller) ListTasks(ctx context.Context, req entity.ListTasksRequest)
 	return &entity.ListTasksResponse{Tasks: tasks}, nil
 }
 
+func (c *controller) ListTaskChanges(ctx context.Context, req entity.ListTaskChangesRequest) (*entity.ListTaskChangesResponse, error) {
+	ms, err := c.repository.ListTaskChanges(ctx, req, monoflake.IDFromBase62(req.UserID).Int64())
+	if err != nil {
+		return nil, err
+	}
+	if len(ms) == 0 {
+		return &entity.ListTaskChangesResponse{}, nil
+	}
+	ids := make([]int64, len(ms))
+	res := &entity.ListTaskChangesResponse{Tasks: make([]entity.Task, len(ms))}
+	for i, m := range ms {
+		ids[i] = m.ID
+		res.Tasks[i] = c.fromModelTaskToEntity(m)
+	}
+	if res.NewMessages, err = c.repository.CountNewMessages(ctx, ids, req.Since); err != nil {
+		return nil, err
+	}
+	if res.StatusChangedAt, err = c.repository.ListStatusChanges(ctx, ids, req.Since); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
 func (c *controller) LastTaskAgents(ctx context.Context, taskIDs []int64) (map[int64]string, error) {
 	if c.taskAgents == nil {
 		return nil, nil
