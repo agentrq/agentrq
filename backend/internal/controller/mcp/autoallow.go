@@ -7,6 +7,7 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 
@@ -55,7 +56,9 @@ func extractBaseCommand(command string) string {
 	return base
 }
 
-// buildAutoAllowRule creates the rule string to persist for a given tool + params.
+// buildAutoAllowRule creates the rule string to persist for a given tool + params,
+// or "" when no rule may ever allow the command: one saved for it would never
+// match it again.
 //
 // Rules are stored as:
 //   - MCP tools:   "mcp_servername_toolname"  (exact match)
@@ -72,8 +75,12 @@ func (ps *WorkspaceServer) buildAutoAllowRule(toolName string, params *agentlink
 	if isShellTool(toolName) {
 		if params != nil {
 			if cmd, ok := extractCommandFromPreview(params.InputPreview); ok {
-				// Split on shell operators and use the first subcommand's base command
-				subcommands := splitShellOperators(cmd)
+				shell := parseShellCommand(cmd)
+				if shell.unsafe {
+					return ""
+				}
+				// Use the first subcommand's base command
+				subcommands := shell.subcommands
 				if len(subcommands) > 0 {
 					base := extractBaseCommand(subcommands[0])
 					if base != "" {
@@ -98,6 +105,15 @@ func (ps *WorkspaceServer) buildAutoAllowRule(toolName string, params *agentlink
 //  2. Shell tools (Bash, shell_execute, execute_command): command-aware pattern matching
 //  3. Other tools: direct tool name match
 func (ps *WorkspaceServer) checkAutoAllow(toolName, inputPreview string) bool {
+	// The command is parsed once, not once per stored rule.
+	var shell shellCommand
+	hasCommand := false
+	if isShellTool(toolName) {
+		if cmd, ok := extractCommandFromPreview(inputPreview); ok {
+			shell, hasCommand = parseShellCommand(cmd), true
+		}
+	}
+
 	for _, pattern := range ps.autoAllowedTools {
 		// 1. MCP tools: exact name match
 		if isMCPTool(toolName) {
@@ -109,12 +125,8 @@ func (ps *WorkspaceServer) checkAutoAllow(toolName, inputPreview string) bool {
 
 		// 2. Shell tools: command-aware matching
 		if isShellTool(toolName) && strings.HasPrefix(pattern, toolName+":") {
-			cmdPattern := strings.TrimPrefix(pattern, toolName+":")
-
-			if cmd, ok := extractCommandFromPreview(inputPreview); ok {
-				if isShellCommandAllowed(cmdPattern, cmd) {
-					return true
-				}
+			if hasCommand && shell.allowedBy(strings.TrimPrefix(pattern, toolName+":")) {
+				return true
 			}
 			continue // Shell patterns only apply to shell tools
 		}
@@ -127,11 +139,28 @@ func (ps *WorkspaceServer) checkAutoAllow(toolName, inputPreview string) bool {
 	return false
 }
 
-// isShellCommandAllowed checks if a command (potentially with shell operators) matches the pattern.
-// Every subcommand (split on &&, ||, ;, |, &) must match the pattern.
-func isShellCommandAllowed(pattern, command string) bool {
+// shellCommand is a command as the rules see it: the commands it runs, and
+// whether it does something that no "<base> *" rule's text can show.
+type shellCommand struct {
+	subcommands []string
+	unsafe      bool
+}
+
+func parseShellCommand(command string) shellCommand {
 	subcommands := splitShellOperators(command)
-	for _, sub := range subcommands {
+	return shellCommand{subcommands: subcommands, unsafe: runsUnnamedCode(command, subcommands)}
+}
+
+// allowedBy reports whether every subcommand matches pattern. Only the
+// catch-all "*" covers an unsafe command: that user allowed everything.
+func (c shellCommand) allowedBy(pattern string) bool {
+	if pattern == "*" {
+		return true
+	}
+	if c.unsafe {
+		return false
+	}
+	for _, sub := range c.subcommands {
 		if !matchesBashPattern(pattern, sub) {
 			return false
 		}
@@ -139,9 +168,186 @@ func isShellCommandAllowed(pattern, command string) bool {
 	return true
 }
 
+// isShellCommandAllowed checks if a command (potentially with shell operators) matches the pattern.
+func isShellCommandAllowed(pattern, command string) bool {
+	return parseShellCommand(command).allowedBy(pattern)
+}
+
+// substitutions run a command inside another one's arguments: bash's $( ` <( >(
+// and zsh's =(. Quoted text holding one is refused too; telling the two apart
+// needs a shell parser.
+var substitutions = []string{"$(", "`", "<(", ">(", "=("}
+
+// zshExecQualifier matches a zsh glob qualifier that runs code, *(e:'cmd':) or
+// *(+func). It must touch the word before it, so "fix (scope)" is not caught.
+var zshExecQualifier = regexp.MustCompile(`[^\s(]\([^)]*(?:e[^\w\s)]|\+\w)`)
+
+// runsUnnamedCode reports whether command runs, or plants, code that a rule
+// matching its text never named.
+func runsUnnamedCode(command string, subcommands []string) bool {
+	for _, s := range substitutions {
+		if strings.Contains(command, s) {
+			return true
+		}
+	}
+	if zshExecQualifier.MatchString(command) || writesFile(command) {
+		return true
+	}
+	for _, sub := range subcommands {
+		if hasExecOption(sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// writesFile reports whether command redirects output into a file: one written
+// that way (a git hook, ~/.bashrc) runs later, unprompted. Duplicating a
+// descriptor (2>&1, >&2, 2>&-) and discarding into /dev/null are fine.
+func writesFile(command string) bool {
+	for i := 0; i < len(command); i++ {
+		if command[i] != '>' {
+			continue
+		}
+		i++
+		if i < len(command) && (command[i] == '>' || command[i] == '|') {
+			i++
+		}
+		if i < len(command) && command[i] == '&' {
+			j := i + 1
+			for j < len(command) && (command[j] >= '0' && command[j] <= '9' || command[j] == '-') {
+				j++
+			}
+			if j > i+1 {
+				i = j - 1
+				continue
+			}
+			i++ // ">&file" writes to file, as "&>file" does
+		}
+		for i < len(command) && (command[i] == ' ' || command[i] == '\t') {
+			i++
+		}
+		start := i
+		for i < len(command) && !strings.ContainsRune(" \t\r\n;&|<>)", rune(command[i])) {
+			i++
+		}
+		if strings.Trim(command[start:i], `'"`) != "/dev/null" {
+			return true
+		}
+		i--
+	}
+	return false
+}
+
+// hasExecOption reports whether a subcommand hands its program an option that
+// runs a command or changes what will run, which "git *" or "find *" would
+// otherwise let through.
+func hasExecOption(subcommand string) bool {
+	fields := strings.Fields(subcommand)
+	for len(fields) > 1 && strings.Contains(fields[0], "=") {
+		fields = fields[1:]
+	}
+	switch path.Base(fields[0]) { // subcommands are trimmed and never empty
+	case "git":
+		return gitHasExecOption(fields[1:])
+	case "find":
+		for _, a := range fields[1:] {
+			switch a {
+			case "-exec", "-execdir", "-ok", "-okdir", "-delete", "-fls", "-fprint", "-fprint0", "-fprintf":
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// gitHasExecOption covers git's own ways to run a command: config it reads (-c,
+// a config write, another --git-dir), helpers it starts (--upload-pack, rebase
+// --exec, bisect run…) and files it writes (--output, another --work-tree).
+func gitHasExecOption(args []string) bool {
+	i := 0
+	for ; i < len(args) && strings.HasPrefix(args[i], "-"); i++ {
+		for _, p := range []string{"-c", "--config-env", "--exec-path", "--git-dir", "--work-tree"} {
+			if strings.HasPrefix(args[i], p) {
+				return true
+			}
+		}
+		switch args[i] {
+		case "-C", "--namespace", "--super-prefix", "--attr-source", "--list-cmds":
+			i++ // takes a value
+		}
+	}
+	if i >= len(args) {
+		return false
+	}
+	sub, rest := args[i], args[i+1:]
+	for _, a := range rest {
+		if a == "--output" {
+			return true
+		}
+		for _, p := range []string{"--upload-pack", "--receive-pack", "--exec", "--output=", "--extcmd", "--open-files-in-pager"} {
+			if strings.HasPrefix(a, p) {
+				return true
+			}
+		}
+	}
+	switch sub {
+	case "config":
+		return !gitConfigOnlyReads(rest)
+	case "filter-branch", "instaweb", "send-email":
+		return true
+	case "bisect":
+		return len(rest) > 0 && rest[0] == "run"
+	case "submodule":
+		for _, a := range rest {
+			if a == "foreach" {
+				return true
+			}
+		}
+	case "rebase", "difftool":
+		return hasShortFlag(rest, 'x')
+	case "grep":
+		return hasShortFlag(rest, 'O')
+	case "clone":
+		return hasShortFlag(rest, 'u')
+	}
+	return false
+}
+
+// hasShortFlag reports whether args hold the short option -flag, alone or in a
+// cluster such as -ix.
+func hasShortFlag(args []string, flag byte) bool {
+	for _, a := range args {
+		if len(a) > 1 && a[0] == '-' && a[1] != '-' && strings.IndexByte(a[1:], flag) >= 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// gitConfigOnlyReads reports whether git config only reads. A write (core.pager,
+// alias.x=!cmd) is a command the next git runs.
+func gitConfigOnlyReads(args []string) bool {
+	if len(args) > 0 && (args[0] == "get" || args[0] == "list") {
+		return true
+	}
+	plain := 0
+	for _, a := range args {
+		switch a {
+		case "--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l":
+			return true
+		}
+		if !strings.HasPrefix(a, "-") {
+			plain++
+		}
+	}
+	return plain == 1
+}
+
 // shellOperators matches every token that can separate two commands, plus the
-// redirect forms that merely contain an ampersand.
-var shellOperators = regexp.MustCompile(`[0-9]*>&[0-9-]*|&>>?|&&|\|\||;|\||&`)
+// redirect forms that merely contain an ampersand. A newline is a separator in
+// its own right, not merely something the glob's "." fails to match.
+var shellOperators = regexp.MustCompile(`[0-9]*>&[0-9-]*|&>>?|&&|\|\||;|\||&|[\r\n]+`)
 
 // isShellSeparator reports whether a token matched by shellOperators ends a
 // command, as opposed to being a redirect that happens to contain an ampersand.
@@ -150,11 +356,11 @@ func isShellSeparator(token string) bool {
 	case "&&", "||", ";", "|", "&":
 		return true
 	}
-	return false
+	return strings.Trim(token, "\r\n") == ""
 }
 
 // splitShellOperators splits a command string into the commands it actually
-// runs, cutting on &&, ||, ;, | and &, and leaving redirects intact.
+// runs, cutting on &&, ||, ;, |, & and newlines, and leaving redirects intact.
 func splitShellOperators(command string) []string {
 	var subcommands []string
 	start := 0

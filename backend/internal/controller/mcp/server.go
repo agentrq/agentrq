@@ -2549,9 +2549,11 @@ func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, reques
 		reqParams := ps.requestParams[requestID]
 		ps.requestParamsMu.RUnlock()
 
+		rule := ""
 		if toolName != "" {
-			rule := ps.buildAutoAllowRule(toolName, reqParams)
-
+			rule = ps.buildAutoAllowRule(toolName, reqParams)
+		}
+		if rule != "" {
 			ps.autoAllowedToolsMu.Lock()
 			exists := false
 			for _, t := range ps.autoAllowedTools {
