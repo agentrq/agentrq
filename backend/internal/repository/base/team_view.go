@@ -8,10 +8,6 @@ import (
 	"context"
 	"time"
 
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-
-	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 )
 
@@ -19,22 +15,6 @@ import (
 // it. Who may see a workspace is decided by CanReadWorkspaceInTeam and
 // ListTeamWorkspaces alone; the reads below take the workspaces those
 // allowed, and never decide it again.
-
-// TeamMemberStatsRow is one owner's share of a team's statistics.
-type TeamMemberStatsRow struct {
-	UserID         int64
-	Name           string
-	Picture        string
-	TasksCompleted int64
-	Messages       int64
-}
-
-// WorkspaceMemoryRow names one memory of a workspace.
-type WorkspaceMemoryRow struct {
-	WorkspaceID int64
-	Name        string
-	UpdatedAt   time.Time
-}
 
 // WorkspaceSkillRow is a skill on in a workspace, as its owner has it.
 type WorkspaceSkillRow struct {
@@ -52,87 +32,32 @@ type TeamReader struct {
 	UserID int64
 }
 
-// TeamWorkspaceInfo is the workspace with its owner, and its group in the
-// team: the share of it, or of the parent it is a fork of. It decides
-// nothing: the caller has already checked the workspace with
+// TeamWorkspaceInfo is the workspace with its owner, and the name of the
+// shared workspace it shows under: its own, or its parent's for a fork. It
+// decides nothing: the caller has already checked the workspace with
 // CanReadWorkspaceInTeam.
-func (r *repository) TeamWorkspaceInfo(ctx context.Context, teamID, workspaceID int64) (TeamWorkspaceRow, error) {
+func (r *repository) TeamWorkspaceInfo(ctx context.Context, workspaceID int64) (TeamWorkspaceRow, error) {
 	return first[TeamWorkspaceRow](r.conn(ctx).Model(&model.Workspace{}).
 		Select("workspaces.id, workspaces.name, workspaces.fork_of_id, workspaces.user_id, "+
-			"COALESCE(workspace_shares.group_name, '') AS group_name, users.name AS owner_name, users.picture AS owner_picture").
-		Joins("LEFT JOIN workspace_shares ON workspace_shares.team_id = ? AND "+
-			"(workspace_shares.workspace_id = workspaces.id OR workspace_shares.workspace_id = workspaces.fork_of_id)", teamID).
+			"COALESCE(parent.name, workspaces.name) AS shared_name, users.name AS owner_name, users.picture AS owner_picture").
+		Joins("LEFT JOIN workspaces AS parent ON parent.id = workspaces.fork_of_id").
 		Joins("LEFT JOIN users ON users.id = workspaces.user_id").
 		Where("workspaces.id = ?", workspaceID))
 }
 
-// GetDetailedStatsOfWorkspaces is GetDetailedUserStats over the given
-// workspaces, whoever owns them, with the breakdown by owner.
-func (r *repository) GetDetailedStatsOfWorkspaces(ctx context.Context, workspaceIDs []int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, []TeamMemberStatsRow, error) {
-	res, err := r.detailedStats(ctx, "workspace_id IN ?", workspaceIDs, startTime, endTime)
-	if err != nil {
-		return res, nil, err
-	}
-	members := make([]TeamMemberStatsRow, 0)
-	err = r.conn(ctx).Model(&model.Telemetry{}).
-		Select(
-			"telemetries.user_id AS user_id, COALESCE(users.name, '') AS name, COALESCE(users.picture, '') AS picture,"+
-				" SUM(CASE WHEN telemetries.action = ? THEN 1 ELSE 0 END) AS tasks_completed,"+
-				" SUM(CASE WHEN telemetries.action = ? THEN 1 ELSE 0 END) AS messages",
-			model.ActionIDTaskComplete, model.ActionIDMessageCreate).
-		Joins("LEFT JOIN users ON users.id = telemetries.user_id").
-		Where("telemetries.workspace_id IN ?", workspaceIDs).
-		Where("telemetries.occurred_at >= ? AND telemetries.occurred_at <= ?", startTime, endTime).
-		Group("telemetries.user_id, users.name, users.picture").
-		Having(
-			"SUM(CASE WHEN telemetries.action = ? THEN 1 ELSE 0 END) > 0"+
-				" OR SUM(CASE WHEN telemetries.action = ? THEN 1 ELSE 0 END) > 0",
-			model.ActionIDTaskComplete, model.ActionIDMessageCreate).
-		Order("tasks_completed DESC, messages DESC, telemetries.user_id ASC").
-		Scan(&members).Error
-	return res, members, err
-}
-
-// GetTeamMemory is a team's memory; ErrNotFound when none was saved.
-func (r *repository) GetTeamMemory(ctx context.Context, teamID int64, name string) (model.TeamMemory, error) {
-	return first[model.TeamMemory](r.conn(ctx).Where("team_id = ? AND name = ?", teamID, name))
-}
-
-// SaveTeamMemory writes a team's memory if mem.UpdatedBy is still in the
-// team, read under the team's lock (ErrNotFound when not), and returns the
-// one it replaced, if any (found).
-func (r *repository) SaveTeamMemory(ctx context.Context, mem model.TeamMemory) (prev model.TeamMemory, found bool, err error) {
-	err = r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err := lockedMember(tx, mem.TeamID, mem.UpdatedBy); err != nil {
-			return err
-		}
-		switch p, err := first[model.TeamMemory](tx.Where("team_id = ? AND name = ?", mem.TeamID, mem.Name)); err {
-		case nil:
-			prev, found = p, true
-		case ErrNotFound:
-		default:
-			return err
-		}
-		return tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "team_id"}, {Name: "name"}},
-			DoUpdates: clause.AssignmentColumns([]string{"content", "updated_at", "updated_by"}),
-		}).Create(&mem).Error
-	})
-	return prev, found, err
-}
-
-// ListWorkspaceMemoryNames names the memories of the given workspaces, filed
-// under each one's owner, by name.
-func (r *repository) ListWorkspaceMemoryNames(ctx context.Context, workspaceIDs []int64) ([]WorkspaceMemoryRow, error) {
-	rows := []WorkspaceMemoryRow{}
-	if len(workspaceIDs) == 0 {
-		return rows, nil
-	}
-	err := r.conn(ctx).Model(&model.Memory{}).
-		Select("memories.workspace_id, memories.name, memories.updated_at").
-		Joins("JOIN workspaces ON workspaces.id = memories.workspace_id AND workspaces.user_id = memories.user_id").
-		Where("memories.workspace_id IN ?", workspaceIDs).
-		Order("memories.workspace_id ASC, memories.name ASC").
+// ListTeamPeerWorkspaces is every workspace shared, unarchived, with a team
+// the workspace is shared with, itself included, with its owner's name: the
+// candidates for its team workspace, which the caller narrows by name.
+func (r *repository) ListTeamPeerWorkspaces(ctx context.Context, workspaceID int64) ([]TeamWorkspacePeer, error) {
+	rows := []TeamWorkspacePeer{}
+	err := r.conn(ctx).Table("workspace_shares AS mine").
+		Select("peer_shares.team_id, peers.id AS workspace_id, peers.user_id, peers.name, COALESCE(users.name, '') AS owner_name").
+		Joins("JOIN workspaces AS me ON me.id = mine.workspace_id AND me.archived_at IS NULL").
+		Joins("JOIN workspace_shares AS peer_shares ON peer_shares.team_id = mine.team_id").
+		Joins("JOIN workspaces AS peers ON peers.id = peer_shares.workspace_id AND peers.archived_at IS NULL").
+		Joins("LEFT JOIN users ON users.id = peers.user_id").
+		Where("mine.workspace_id = ?", workspaceID).
+		Order("peer_shares.team_id ASC, peers.id ASC").
 		Scan(&rows).Error
 	return rows, err
 }

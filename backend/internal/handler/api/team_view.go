@@ -16,7 +16,7 @@ import (
 )
 
 // registerTeamViewRoutes adds team mode: a team's shared work, read-only,
-// and the three writes it allows. Each answers 404 to anyone not in the
+// and the two writes it allows. Each answers 404 to anyone not in the
 // team, and for anything in a workspace the team no longer reads.
 func (h *handler) registerTeamViewRoutes() {
 	r := h.router.Group("/teams/:teamId")
@@ -25,20 +25,12 @@ func (h *handler) registerTeamViewRoutes() {
 	r.Get("/tasks/:taskId", h.getTeamTask())
 	r.Get("/tasks/:taskId/attachments/:attachmentId", h.getTeamAttachment())
 	r.Post("/tasks/:taskId/clone", h.cloneTeamTask())
-	r.Get("/analytics", h.getTeamStats())
-	r.Get("/memory", h.getTeamMemory())
-	r.Put("/memory", h.saveTeamMemory())
-	r.Get("/memory/index", h.getTeamMemoryIndex())
-	r.Get("/workspaces/:workspaceId/memory/:name", h.getTeamMemberMemory())
 	r.Get("/skills", h.listTeamSkills())
 	r.Get("/skills/:name", h.getTeamSkill())
 	r.Post("/skills/:name/add", h.addTeamSkill())
 }
 
-var (
-	teamPathTask          = []string{"teamId", "taskId"}
-	teamPathTeamWorkspace = []string{"teamId", "workspaceId"}
-)
+var teamPathTask = []string{"teamId", "taskId"}
 
 func (h *handler) listTeamWorkspaces() fiber.Handler {
 	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
@@ -62,7 +54,7 @@ func teamTasksPage(c *fiber.Ctx) (limit, offset int) {
 
 func (h *handler) listTeamTasks() fiber.Handler {
 	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		rq := entity.ListTeamTasksRequest{UserID: sessionUser(c), TeamID: ids[0], Group: c.Query("group")}
+		rq := entity.ListTeamTasksRequest{UserID: sessionUser(c), TeamID: ids[0], Workspace: c.Query("workspace")}
 		if s := c.Query("status"); s != "" {
 			rq.Status = strings.Split(s, ",")
 		}
@@ -122,7 +114,7 @@ func (h *handler) cloneTeamTask() fiber.Handler {
 		defer cancel()
 		userID := sessionUser(c)
 		rs, err := h.teamView.CloneTask(ctx, entity.CloneTeamTaskRequest{
-			UserID: userID, TeamID: ids[0], TaskID: ids[1], WorkspaceID: workspaceID, Status: rq.Status,
+			UserID: userID, TeamID: ids[0], TaskID: ids[1], WorkspaceID: workspaceID, Assignee: rq.Assignee,
 		})
 		if err != nil {
 			return teamError(c, err)
@@ -131,67 +123,6 @@ func (h *handler) cloneTeamTask() fiber.Handler {
 		c.Set(_headerContentType, _mimeJSON)
 		return c.Status(fiber.StatusCreated).Send(mapper.FromCreateTaskResponseEntityToHTTPResponse(rs))
 	}
-}
-
-func (h *handler) getTeamStats() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		from, _ := strconv.ParseInt(c.Query("from"), 10, 64)
-		to, _ := strconv.ParseInt(c.Query("to"), 10, 64)
-		ctx, cancel := newContext(c)
-		defer cancel()
-		rs, err := h.teamView.GetStats(ctx, entity.GetTeamStatsRequest{
-			UserID: sessionUser(c), TeamID: ids[0], Group: c.Query("group"), Range: c.Query("range", "7d"), From: from, To: to,
-		})
-		if err != nil {
-			return nil, err
-		}
-		return mapper.FromTeamStatsEntityToHTTPResponse(rs), nil
-	})
-}
-
-func (h *handler) getTeamMemory() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		ctx, cancel := newContext(c)
-		defer cancel()
-		m, err := h.teamView.GetMemory(ctx, sessionUser(c), ids[0])
-		return mapper.FromTeamMemoryEntityToHTTPResponse(m), err
-	})
-}
-
-func (h *handler) saveTeamMemory() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		var v view.SaveTeamMemoryRequest
-		if err := body(c, &v); err != nil {
-			return nil, err
-		}
-		rq := mapper.FromHTTPRequestToSaveTeamMemoryRequestEntity(v)
-		if rq == nil {
-			return nil, errBadRequest
-		}
-		rq.UserID, rq.TeamID = sessionUser(c), ids[0]
-		ctx, cancel := newContext(c)
-		defer cancel()
-		m, err := h.teamView.SaveMemory(ctx, *rq)
-		return mapper.FromTeamMemoryEntityToHTTPResponse(m), err
-	})
-}
-
-func (h *handler) getTeamMemoryIndex() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		ctx, cancel := newContext(c)
-		defer cancel()
-		es, err := h.teamView.MemoryIndex(ctx, sessionUser(c), ids[0])
-		return mapper.FromTeamMemoryIndexEntitiesToHTTPResponse(es), err
-	})
-}
-
-func (h *handler) getTeamMemberMemory() fiber.Handler {
-	return teamRoute(teamPathTeamWorkspace, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		ctx, cancel := newContext(c)
-		defer cancel()
-		m, err := h.teamView.GetMemberMemory(ctx, sessionUser(c), ids[0], ids[1], c.Params("name"))
-		return mapper.FromMemoryEntityToHTTPResponse(m), err
-	})
 }
 
 func (h *handler) listTeamSkills() fiber.Handler {

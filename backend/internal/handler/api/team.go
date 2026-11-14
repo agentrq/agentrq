@@ -6,8 +6,10 @@ package api
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/gofiber/fiber/v2"
@@ -15,8 +17,10 @@ import (
 	zlog "github.com/rs/zerolog/log"
 )
 
-// registerTeamRoutes adds teams, their members and invitations, the
-// account's own invitations, and the sharing of a workspace with a team.
+// registerTeamRoutes adds teams, their members, invitations and activity,
+// the account's own invitations, and the sharing of a workspace with a team.
+// Every change sends the team's version it was made from: in its body, or
+// as ?version= on a DELETE.
 func (h *handler) registerTeamRoutes() {
 	r := h.router.Group("/teams")
 	r.Get("", h.listTeams())
@@ -25,12 +29,12 @@ func (h *handler) registerTeamRoutes() {
 	r.Patch("/:teamId", h.renameTeam())
 	r.Delete("/:teamId", h.deleteTeam())
 	r.Get("/:teamId/members", h.listTeamMembers())
-	r.Patch("/:teamId/members/:userId", h.setTeamMemberRole())
 	r.Delete("/:teamId/members/:userId", h.removeTeamMember())
 	r.Post("/:teamId/leave", h.leaveTeam())
 	r.Get("/:teamId/invitations", h.listTeamInvitations())
 	r.Post("/:teamId/invitations", h.createTeamInvitation())
 	r.Delete("/:teamId/invitations/:invitationId", h.revokeTeamInvitation())
+	r.Get("/:teamId/activities", h.listTeamActivities())
 
 	i := h.router.Group("/invitations")
 	i.Get("", h.listMyInvitations())
@@ -51,6 +55,10 @@ func teamError(c *fiber.Ctx, err error) error {
 	var se *crud.SkillError
 	if errors.As(err, &se) {
 		return sendSkillError(c, err)
+	}
+	var ve *entity.TeamVersionError
+	if errors.As(err, &ve) {
+		return c.Status(fiber.StatusConflict).Send(mapper.FromTeamVersionErrorToHTTPResponse(ve))
 	}
 	b, status := mapper.FromErrorToHTTPResponse(err)
 	if status >= fiber.StatusInternalServerError {
@@ -104,6 +112,30 @@ func body(c *fiber.Ctx, v any) error {
 	return nil
 }
 
+// change is the team change a request makes from the version it sends,
+// which a team's versions start at 1; errBadRequest when it sends none.
+func change(c *fiber.Ctx, teamID, version int64) (entity.TeamChange, error) {
+	if version < 1 {
+		return entity.TeamChange{}, errBadRequest
+	}
+	return entity.TeamChange{UserID: sessionUser(c), TeamID: teamID, Version: version}, nil
+}
+
+// bodyChange is change from the version in the JSON body.
+func bodyChange(c *fiber.Ctx, teamID int64) (entity.TeamChange, error) {
+	var rq view.TeamVersionRequest
+	if err := body(c, &rq); err != nil {
+		return entity.TeamChange{}, err
+	}
+	return change(c, teamID, rq.Version)
+}
+
+// queryChange is change from ?version=, as a DELETE sends it.
+func queryChange(c *fiber.Ctx, teamID int64) (entity.TeamChange, error) {
+	v, _ := strconv.ParseInt(c.Query("version"), 10, 64)
+	return change(c, teamID, v)
+}
+
 var (
 	teamPathNone         = []string{}
 	teamPathTeam         = []string{"teamId"}
@@ -155,18 +187,26 @@ func (h *handler) renameTeam() fiber.Handler {
 		if err := body(c, &rq); err != nil {
 			return nil, err
 		}
+		ch, err := change(c, ids[0], rq.Version)
+		if err != nil {
+			return nil, err
+		}
 		ctx, cancel := newContext(c)
 		defer cancel()
-		team, err := h.teams.RenameTeam(ctx, sessionUser(c), ids[0], rq.Name)
+		team, err := h.teams.RenameTeam(ctx, ch, rq.Name)
 		return mapper.FromTeamEntityToHTTPResponse(team), err
 	})
 }
 
 func (h *handler) deleteTeam() fiber.Handler {
 	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		ch, err := queryChange(c, ids[0])
+		if err != nil {
+			return nil, err
+		}
 		ctx, cancel := newContext(c)
 		defer cancel()
-		return nil, h.teams.DeleteTeam(ctx, sessionUser(c), ids[0])
+		return nil, h.teams.DeleteTeam(ctx, ch)
 	})
 }
 
@@ -175,35 +215,37 @@ func (h *handler) listTeamMembers() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		members, err := h.teams.ListMembers(ctx, sessionUser(c), ids[0])
-		return mapper.FromTeamMemberEntitiesToHTTPResponse(members), err
+		return mapper.FromTeamMembersEntityToHTTPResponse(members), err
 	})
 }
 
-func (h *handler) setTeamMemberRole() fiber.Handler {
+// removeTeamMember answers the team's version, or no content when the
+// caller removed themself: they no longer see the team.
+func (h *handler) removeTeamMember() fiber.Handler {
 	return teamRoute(teamPathMember, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		var rq view.TeamMemberRoleRequest
-		if err := body(c, &rq); err != nil {
+		ch, err := queryChange(c, ids[0])
+		if err != nil {
 			return nil, err
 		}
 		ctx, cancel := newContext(c)
 		defer cancel()
-		return nil, h.teams.SetMemberRole(ctx, sessionUser(c), ids[0], ids[1], rq.Role)
-	})
-}
-
-func (h *handler) removeTeamMember() fiber.Handler {
-	return teamRoute(teamPathMember, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		ctx, cancel := newContext(c)
-		defer cancel()
-		return nil, h.teams.RemoveMember(ctx, sessionUser(c), ids[0], ids[1])
+		v, err := h.teams.RemoveMember(ctx, ch, ids[1])
+		if err != nil || ids[1] == ch.UserID {
+			return nil, err
+		}
+		return mapper.FromTeamVersionToHTTPResponse(v), nil
 	})
 }
 
 func (h *handler) leaveTeam() fiber.Handler {
 	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		ch, err := bodyChange(c, ids[0])
+		if err != nil {
+			return nil, err
+		}
 		ctx, cancel := newContext(c)
 		defer cancel()
-		return nil, h.teams.LeaveTeam(ctx, sessionUser(c), ids[0])
+		return nil, h.teams.LeaveTeam(ctx, ch)
 	})
 }
 
@@ -212,7 +254,7 @@ func (h *handler) listTeamInvitations() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		invs, err := h.teams.ListTeamInvitations(ctx, sessionUser(c), ids[0])
-		return mapper.FromTeamInvitationEntitiesToHTTPResponse(invs), err
+		return mapper.FromTeamInvitationsEntityToHTTPResponse(invs), err
 	})
 }
 
@@ -225,9 +267,13 @@ func (h *handler) createTeamInvitation() fiber.Handler {
 		if !ok || body(c, &rq) != nil {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
 		}
+		ch, err := change(c, ids[0], rq.Version)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
+		}
 		ctx, cancel := newContext(c)
 		defer cancel()
-		rs, err := h.teams.CreateInvitation(ctx, sessionUser(c), ids[0], rq.Email, rq.Role)
+		rs, err := h.teams.CreateInvitation(ctx, ch, rq.Email)
 		if err != nil {
 			return teamError(c, err)
 		}
@@ -238,9 +284,32 @@ func (h *handler) createTeamInvitation() fiber.Handler {
 
 func (h *handler) revokeTeamInvitation() fiber.Handler {
 	return teamRoute(teamPathInvitation, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		ch, err := queryChange(c, ids[0])
+		if err != nil {
+			return nil, err
+		}
 		ctx, cancel := newContext(c)
 		defer cancel()
-		return nil, h.teams.RevokeInvitation(ctx, sessionUser(c), ids[0], ids[1])
+		v, err := h.teams.RevokeInvitation(ctx, ch, ids[1])
+		return mapper.FromTeamVersionToHTTPResponse(v), err
+	})
+}
+
+// listTeamActivities pages the team's activity: ?limit= of them, older than
+// the activity ?before= names.
+func (h *handler) listTeamActivities() fiber.Handler {
+	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		rq := entity.ListTeamActivitiesRequest{UserID: sessionUser(c), TeamID: ids[0]}
+		rq.Limit, _ = strconv.Atoi(c.Query("limit"))
+		if b := c.Query("before"); b != "" {
+			if rq.Before = monoflake.IDFromBase62(b).Int64(); rq.Before == 0 {
+				return nil, errBadRequest
+			}
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		as, err := h.teams.ListActivities(ctx, rq)
+		return mapper.FromTeamActivitiesEntityToHTTPResponse(as), err
 	})
 }
 
@@ -307,24 +376,26 @@ func (h *handler) listWorkspaceShares() fiber.Handler {
 
 func (h *handler) shareWorkspace() fiber.Handler {
 	return teamRoute(teamPathShare, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		var rq view.WorkspaceShareRequest
-		// No body shares under the workspace's name.
-		if len(c.Body()) > 0 {
-			if err := body(c, &rq); err != nil {
-				return nil, err
-			}
+		ch, err := bodyChange(c, ids[1])
+		if err != nil {
+			return nil, err
 		}
 		ctx, cancel := newContext(c)
 		defer cancel()
-		s, err := h.teams.ShareWorkspace(ctx, sessionUser(c), ids[0], ids[1], rq.Group)
+		s, err := h.teams.ShareWorkspace(ctx, ch, ids[0])
 		return mapper.FromWorkspaceShareEntityToHTTPResponse(s), err
 	})
 }
 
 func (h *handler) unshareWorkspace() fiber.Handler {
 	return teamRoute(teamPathShare, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		ch, err := queryChange(c, ids[1])
+		if err != nil {
+			return nil, err
+		}
 		ctx, cancel := newContext(c)
 		defer cancel()
-		return nil, h.teams.UnshareWorkspace(ctx, sessionUser(c), ids[0], ids[1])
+		v, err := h.teams.UnshareWorkspace(ctx, ch, ids[0])
+		return mapper.FromTeamVersionToHTTPResponse(v), err
 	})
 }

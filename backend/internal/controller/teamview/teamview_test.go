@@ -9,7 +9,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -26,8 +25,9 @@ type fake struct {
 	canRead   bool
 	visible   []entity.TeamWorkspace
 	task      model.Task
-	memRows   []base.WorkspaceMemoryRow
 	skillRows []base.WorkspaceSkillRow
+	tasks     []entity.Task // what a task list returns
+	listedIn  []int64       // the workspaces the last list read
 	published []entity.CRUDEvent
 	missing   string                   // the attachment whose file is gone
 	created   entity.CreateTaskRequest // the last task created
@@ -62,18 +62,13 @@ func (f *fake) GetAttachment(_ context.Context, req entity.GetAttachmentRequest)
 	}
 	return &entity.GetAttachmentResponse{Data: []byte("x")}, f.err("GetAttachment")
 }
-func (f *fake) GetMemory(context.Context, entity.GetMemoryRequest) (*entity.GetMemoryResponse, error) {
-	return &entity.GetMemoryResponse{}, f.err("GetMemory")
-}
 func (f *fake) CreateTask(_ context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
 	f.created = req
 	return &entity.CreateTaskResponse{Task: entity.Task{ID: 9}}, f.err("CreateTask")
 }
-func (f *fake) SystemListTasksInWorkspaces(context.Context, entity.ListTasksRequest, []int64) (*entity.ListTasksResponse, error) {
-	return &entity.ListTasksResponse{}, f.err("SystemListTasksInWorkspaces")
-}
-func (f *fake) SystemGetDetailedStatsOfWorkspaces(context.Context, entity.GetStatsOfWorkspacesRequest) (*entity.GetStatsOfWorkspacesResponse, error) {
-	return &entity.GetStatsOfWorkspacesResponse{}, f.err("SystemGetDetailedStatsOfWorkspaces")
+func (f *fake) SystemListTasksInWorkspaces(_ context.Context, _ entity.ListTasksRequest, ids []int64) (*entity.ListTasksResponse, error) {
+	f.listedIn = ids
+	return &entity.ListTasksResponse{Tasks: f.tasks}, f.err("SystemListTasksInWorkspaces")
 }
 func (f *fake) SystemGetSkillFile(context.Context, entity.SystemGetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
 	return &entity.GetSkillFileResponse{}, f.err("SystemGetSkillFile")
@@ -85,20 +80,8 @@ func (f *fake) CopySkill(context.Context, entity.CopySkillRequest) (*entity.Copy
 func (f *fake) SystemGetTask(context.Context, int64) (model.Task, error) {
 	return f.task, f.err("SystemGetTask")
 }
-func (f *fake) SystemGetUser(context.Context, int64) (model.User, error) {
-	return model.User{Name: "Alice"}, f.err("SystemGetUser")
-}
-func (f *fake) TeamWorkspaceInfo(_ context.Context, _, workspaceID int64) (base.TeamWorkspaceRow, error) {
-	return base.TeamWorkspaceRow{ID: workspaceID, UserID: 1}, f.err("TeamWorkspaceInfo")
-}
-func (f *fake) GetTeamMemory(context.Context, int64, string) (model.TeamMemory, error) {
-	return model.TeamMemory{}, f.err("GetTeamMemory")
-}
-func (f *fake) SaveTeamMemory(context.Context, model.TeamMemory) (model.TeamMemory, bool, error) {
-	return model.TeamMemory{}, false, f.err("SaveTeamMemory")
-}
-func (f *fake) ListWorkspaceMemoryNames(context.Context, []int64) ([]base.WorkspaceMemoryRow, error) {
-	return f.memRows, f.err("ListWorkspaceMemoryNames")
+func (f *fake) TeamWorkspaceInfo(_ context.Context, workspaceID int64) (base.TeamWorkspaceRow, error) {
+	return base.TeamWorkspaceRow{ID: workspaceID, UserID: 1, Name: "api fork", SharedName: "API", OwnerName: "Alice"}, f.err("TeamWorkspaceInfo")
 }
 func (f *fake) ListSkillsOnInWorkspaces(context.Context, []int64) ([]base.WorkspaceSkillRow, error) {
 	return f.skillRows, f.err("ListSkillsOnInWorkspaces")
@@ -109,20 +92,16 @@ func (f *fake) Publish(_ context.Context, req pubsub.PublishRequest) (*pubsub.Pu
 	return &pubsub.PublishResponse{}, nil
 }
 
-type ids struct{ n int64 }
-
-func (s *ids) NextID() int64 { s.n++; return s.n }
-
 func newFake() (*fake, Controller) {
 	f := &fake{
 		canRead: true,
-		visible: []entity.TeamWorkspace{{ID: 100, OwnerID: 1, Group: "g"}},
+		visible: []entity.TeamWorkspace{{ID: 100, OwnerID: 1, SharedName: "g"}},
 		task:    model.Task{ID: 1000, WorkspaceID: 100, Attachments: []byte(`[{"id":"a","filename":"f.txt"}]`)},
 		skillRows: []base.WorkspaceSkillRow{
 			{WorkspaceID: 100, UserID: 1, Name: "deploy"},
 		},
 	}
-	return f, New(Params{Teams: f, Owner: f, Repository: f, IDGen: &ids{}, PubSub: f, MaxMemoryBytes: 10})
+	return f, New(Params{Teams: f, Owner: f, Repository: f, PubSub: f})
 }
 
 // Every read passes a failure on, as it is.
@@ -144,22 +123,13 @@ func TestFailures(t *testing.T) {
 		{"GetTaskPlan", func(c Controller) error { _, err := c.GetTask(ctx, 2, 10, 1000); return err }},
 		{"SystemGetTask", func(c Controller) error { _, err := c.GetAttachment(ctx, 2, 10, 1000, "a"); return err }},
 		{"ListTeamWorkspaces", func(c Controller) error {
-			_, err := c.GetStats(ctx, entity.GetTeamStatsRequest{UserID: 2, TeamID: 10})
+			_, err := c.ListTasks(ctx, entity.ListTeamTasksRequest{UserID: 2, TeamID: 10})
 			return err
 		}},
+		{"GetAttachment", func(c Controller) error { _, err := c.GetAttachment(ctx, 2, 10, 1000, "a"); return err }},
 		{"SystemGetTask", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
 		{"GetTeam", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
 		{"CreateTask", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
-		{"GetTeam", func(c Controller) error { _, err := c.GetMemory(ctx, 2, 10); return err }},
-		{"GetTeamMemory", func(c Controller) error { _, err := c.GetMemory(ctx, 2, 10); return err }},
-		{"SaveTeamMemory", func(c Controller) error {
-			_, err := c.SaveMemory(ctx, entity.SaveTeamMemoryRequest{UserID: 2, TeamID: 10})
-			return err
-		}},
-		{"ListTeamWorkspaces", func(c Controller) error { _, err := c.MemoryIndex(ctx, 2, 10); return err }},
-		{"ListWorkspaceMemoryNames", func(c Controller) error { _, err := c.MemoryIndex(ctx, 2, 10); return err }},
-		{"CanReadWorkspaceInTeam", func(c Controller) error { _, err := c.GetMemberMemory(ctx, 2, 10, 100, "memory.md"); return err }},
-		{"GetMemory", func(c Controller) error { _, err := c.GetMemberMemory(ctx, 2, 10, 100, "memory.md"); return err }},
 		{"ListTeamWorkspaces", func(c Controller) error { _, err := c.ListSkills(ctx, 2, 10); return err }},
 		{"ListSkillsOnInWorkspaces", func(c Controller) error { _, err := c.ListSkills(ctx, 2, 10); return err }},
 		{"ListSkillsOnInWorkspaces", func(c Controller) error { _, err := c.GetSkill(ctx, 2, 10, "deploy"); return err }},
@@ -188,22 +158,19 @@ func TestNotReadable(t *testing.T) {
 	if _, err := c.GetTask(ctx, 2, 10, 1000); !errors.Is(err, base.ErrNotFound) {
 		t.Errorf("GetTask: %v", err)
 	}
-	if _, err := c.GetMemberMemory(ctx, 2, 10, 100, "memory.md"); !errors.Is(err, base.ErrNotFound) {
-		t.Errorf("GetMemberMemory: %v", err)
+	if _, err := c.GetAttachment(ctx, 2, 10, 1000, "a"); !errors.Is(err, base.ErrNotFound) {
+		t.Errorf("GetAttachment: %v", err)
 	}
 	if _, err := c.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201}); !errors.Is(err, base.ErrNotFound) {
 		t.Errorf("CloneTask: %v", err)
 	}
 }
 
-// The three writes are counted as team actions, by whom and on what.
+// The two writes are counted as team actions, by whom and on what.
 func TestTelemetry(t *testing.T) {
 	ctx := context.Background()
 	f, c := newFake()
 	if _, err := c.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.SaveMemory(ctx, entity.SaveTeamMemoryRequest{UserID: 2, TeamID: 10, Content: "x"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.AddSkill(ctx, 2, 10, "deploy", nil); err != nil {
@@ -211,7 +178,6 @@ func TestTelemetry(t *testing.T) {
 	}
 	want := []entity.CRUDEvent{
 		{Action: entity.ActionTeamTaskClone, WorkspaceID: 201, UserID: 2, ResourceID: 9},
-		{Action: entity.ActionTeamMemorySave, UserID: 2, ResourceID: 10},
 		{Action: entity.ActionTeamSkillAdd, UserID: 2, ResourceID: 8},
 	}
 	if len(f.published) != len(want) {
@@ -226,29 +192,23 @@ func TestTelemetry(t *testing.T) {
 	}
 
 	// With no publisher nothing is counted, and nothing fails.
-	quiet := New(Params{Teams: f, Owner: f, Repository: f, IDGen: &ids{}, MaxMemoryBytes: 10})
-	if _, err := quiet.SaveMemory(ctx, entity.SaveTeamMemoryRequest{UserID: 2, TeamID: 10}); err != nil {
+	quiet := New(Params{Teams: f, Owner: f, Repository: f})
+	if _, err := quiet.AddSkill(ctx, 2, 10, "deploy", nil); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// A plan the task has none of is left out; a writer whose account is gone
-// is named by id alone; a task whose attachments are not JSON clones with none.
+// A plan the task has none of is left out; a task whose attachments are not
+// JSON clones with none.
 func TestOptionalReads(t *testing.T) {
 	ctx := context.Background()
 	f, c := newFake()
 
 	notFound := &planNotFound{fake: f}
-	c = New(Params{Teams: f, Owner: notFound, Repository: f, IDGen: &ids{}, MaxMemoryBytes: 10})
+	c = New(Params{Teams: f, Owner: notFound, Repository: f})
 	if d, err := c.GetTask(ctx, 2, 10, 1000); err != nil || d.Plan != nil {
 		t.Errorf("a task with no plan: %+v, %v", d.Plan, err)
 	}
-
-	f.fail = "SystemGetUser"
-	if m, err := c.SaveMemory(ctx, entity.SaveTeamMemoryRequest{UserID: 2, TeamID: 10, Content: "x"}); err != nil || m.UpdatedBy != 2 || m.UpdatedByName != "" {
-		t.Errorf("a writer whose account is gone: %+v, %v", m, err)
-	}
-	f.fail = ""
 
 	f.task.Attachments = []byte(`not json`)
 	if _, err := c.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201}); err != nil || f.created.Task.Attachments != nil {
@@ -282,37 +242,85 @@ func (p *planNotFound) GetTaskPlan(context.Context, entity.GetTaskPlanRequest) (
 	return nil, base.ErrNotFound
 }
 
-// The memory index is by group, ignoring case and spaces, then owner, then
-// workspace, each with its latest change; a fork, which reads its parent's,
-// is left out.
-func TestMemoryIndexOrder(t *testing.T) {
+// A task is read as its owner reads it, with its workspace's shared name,
+// its plan when it has one, and no Pano docs; a file is served likewise.
+func TestGetTaskAndAttachment(t *testing.T) {
+	ctx := context.Background()
 	f, c := newFake()
-	t1, t2 := time.Unix(100, 0), time.Unix(200, 0)
+	d, err := c.GetTask(ctx, 2, 10, 1000)
+	if err != nil || d.Plan == nil || d.Workspace.SharedName != "API" || d.Workspace.Name != "api fork" || d.Workspace.OwnerName != "Alice" || d.Detail.PanoDocs != nil {
+		t.Errorf("GetTask: %+v, %v", d, err)
+	}
+	a, err := c.GetAttachment(ctx, 2, 10, 1000, "a")
+	if err != nil || string(a.Data) != "x" {
+		t.Errorf("GetAttachment: %+v, %v", a, err)
+	}
+	_ = f
+}
+
+// A clone is not started and for a human unless an agent is asked for; any
+// other assignee is refused before anything is created.
+func TestCloneAssignee(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct{ in, want string }{{"", "human"}, {"human", "human"}, {"agent", "agent"}} {
+		f, c := newFake()
+		if _, err := c.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201, Assignee: tc.in}); err != nil {
+			t.Fatalf("assignee %q: %v", tc.in, err)
+		}
+		task := f.created.Task
+		if task.Assignee != tc.want || task.Status != "notstarted" || task.WorkspaceID != 201 || task.CreatedBy != "human" {
+			t.Errorf("assignee %q: the clone is %+v, want %s, not started", tc.in, task, tc.want)
+		}
+		if !strings.Contains(task.Body, "Cloned from [core / Alice / api fork]") {
+			t.Errorf("the clone's body is %q", task.Body)
+		}
+	}
+	f, c := newFake()
+	_, err := c.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201, Assignee: "robot"})
+	var te *entity.TeamError
+	if !errors.As(err, &te) || te.Kind != entity.TeamInvalid || te.Message != `a clone is for a human or an agent, not "robot"` {
+		t.Errorf("an assignee robot: %v", err)
+	}
+	if f.created.Task.Title != "" || len(f.published) != 0 {
+		t.Errorf("a refused clone created %+v", f.created)
+	}
+}
+
+// The task list reads the team's workspaces of one team workspace, by its
+// shared name ignoring case and spaces, and of one owner; with none left it
+// reads nothing.
+func TestListTasksFilters(t *testing.T) {
+	ctx := context.Background()
+	f, c := newFake()
 	f.visible = []entity.TeamWorkspace{
-		{ID: 3, Group: "x", OwnerName: "Bob"},
-		{ID: 2, Group: "X ", OwnerName: "alice"},
-		{ID: 1, Group: "x", OwnerName: "Bob"},
-		{ID: 4, Group: "a", OwnerName: "Zed"},
-		{ID: 5, Group: "a", ForkOfID: 4},
+		{ID: 1, SharedName: "API", OwnerID: 7},
+		{ID: 2, SharedName: " api ", OwnerID: 8},
+		{ID: 3, SharedName: "docs", OwnerID: 7},
 	}
-	f.memRows = []base.WorkspaceMemoryRow{
-		{WorkspaceID: 1, Name: "a.md", UpdatedAt: t2}, {WorkspaceID: 1, Name: "b.md", UpdatedAt: t1},
-		{WorkspaceID: 2, Name: "a.md", UpdatedAt: t1}, {WorkspaceID: 3, Name: "a.md", UpdatedAt: t1},
-		{WorkspaceID: 4, Name: "a.md", UpdatedAt: t1},
+	f.tasks = []entity.Task{{ID: 50, WorkspaceID: 2}}
+	got, err := c.ListTasks(ctx, entity.ListTeamTasksRequest{UserID: 2, TeamID: 10, Workspace: "Api"})
+	if err != nil || len(f.listedIn) != 2 || f.listedIn[0] != 1 || f.listedIn[1] != 2 {
+		t.Fatalf("by workspace: read %v, %v", f.listedIn, err)
 	}
-	es, err := c.MemoryIndex(context.Background(), 2, 10)
-	if err != nil {
-		t.Fatal(err)
+	if len(got) != 1 || got[0].Task.ID != 50 || got[0].Workspace.ID != 2 || got[0].Workspace.OwnerID != 8 {
+		t.Errorf("by workspace: %+v", got)
 	}
-	var order []int64
-	for _, e := range es {
-		order = append(order, e.Workspace.ID)
+	if _, err := c.ListTasks(ctx, entity.ListTeamTasksRequest{UserID: 2, TeamID: 10, Workspace: "api", Member: 7}); err != nil || len(f.listedIn) != 1 || f.listedIn[0] != 1 {
+		t.Errorf("by workspace and member: read %v, %v", f.listedIn, err)
 	}
-	if len(order) != 4 || order[0] != 4 || order[1] != 2 || order[2] != 1 || order[3] != 3 {
-		t.Errorf("the index is in the order %v, want 4, 2, 1, 3", order)
+	if _, err := c.ListTasks(ctx, entity.ListTeamTasksRequest{UserID: 2, TeamID: 10}); err != nil || len(f.listedIn) != 3 {
+		t.Errorf("unfiltered: read %v, %v", f.listedIn, err)
 	}
-	if len(es) == 4 && (len(es[2].Names) != 2 || !es[2].UpdatedAt.Equal(t2)) {
-		t.Errorf("workspace 1 reads %+v", es[2])
+	f.listedIn = nil
+	got, err = c.ListTasks(ctx, entity.ListTeamTasksRequest{UserID: 2, TeamID: 10, Workspace: "none"})
+	if err != nil || got == nil || len(got) != 0 || f.listedIn != nil {
+		t.Errorf("no workspace left: %v, %v, read %v", got, err, f.listedIn)
+	}
+}
+
+func TestWorkspaceKey(t *testing.T) {
+	if WorkspaceKey("  API Server ") != "api server" {
+		t.Errorf("WorkspaceKey: %q", WorkspaceKey("  API Server "))
 	}
 }
 
@@ -326,5 +334,34 @@ func TestSkillOwnersOnce(t *testing.T) {
 	ss, err := c.ListSkills(context.Background(), 2, 10)
 	if err != nil || len(ss) != 1 || len(ss[0].Owners) != 2 {
 		t.Errorf("the skills are %+v, %v: want deploy, owned by 1 and 2", ss, err)
+	}
+}
+
+// A task with no body clones as the note alone; a skill is read from the
+// owner who changed it last, and a name that is not one, or that no shared
+// workspace has on, is not found.
+func TestCloneNoteAndSkillReads(t *testing.T) {
+	ctx := context.Background()
+	f, c := newFake()
+	if _, err := c.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201}); err != nil {
+		t.Fatal(err)
+	}
+	if body := f.created.Task.Body; !strings.HasPrefix(body, "Cloned from [core / Alice / api fork](/workspaces/") || strings.Contains(body, "---") {
+		t.Errorf("a clone of a task with no body reads %q", body)
+	}
+	f.task.Body = "Ship it."
+	if _, err := c.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201}); err != nil {
+		t.Fatal(err)
+	}
+	if body := f.created.Task.Body; !strings.HasPrefix(body, "Ship it.\n\n---\nCloned from [core / Alice / api fork]") {
+		t.Errorf("a clone of a task with a body reads %q", body)
+	}
+	if s, err := c.GetSkill(ctx, 2, 10, "deploy"); err != nil || s.Name != "deploy" {
+		t.Errorf("GetSkill: %+v, %v", s, err)
+	}
+	for _, name := range []string{"Not A Name!", "absent"} {
+		if _, err := c.GetSkill(ctx, 2, 10, name); !errors.Is(err, base.ErrNotFound) {
+			t.Errorf("GetSkill(%q): %v, want not found", name, err)
+		}
 	}
 }
