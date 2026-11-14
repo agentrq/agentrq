@@ -10,11 +10,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createApp, h, ref } from 'vue'
+import { createApp, h, reactive, ref } from 'vue'
 import { createPinia } from 'pinia'
 
 // The board under a workspace has `id` in the route; on /kanban it has none.
-const route = { params: { id: 'ws1' }, query: {} }
+// Reactive, as the router's is: the board follows its query.
+const route = reactive({ params: { id: 'ws1' }, query: {} })
 const push = vi.fn()
 const replace = vi.fn()
 vi.mock('vue-router', () => ({
@@ -49,7 +50,7 @@ const launchAgent = vi.fn(() => Promise.resolve({ session: { id: 's1' } }))
 let workspaceList = []
 const fetchWorkspaces = vi.fn(() => Promise.resolve({ workspaces: workspaceList }))
 const fetchTeamTasks = vi.fn((_team, { status }) => Promise.resolve({ tasks: byStatus[status] || [] }))
-const fetchTeamWorkspaces = vi.fn(() => Promise.resolve({ workspaces: [{ id: 'theirs', name: 'api', group: 'Backend' }] }))
+const fetchTeamWorkspaces = vi.fn(() => Promise.resolve({ workspaces: [{ id: 'theirs', name: 'api', sharedName: 'Backend' }] }))
 
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -543,7 +544,7 @@ describe('the team\'s board (/kanban?team=)', () => {
     if (app) app.unmount()
     document.body.innerHTML = ''
     route.params = {}
-    route.query = { team: 'tm1', group: 'Backend' }
+    route.query = { team: 'tm1', workspace: 'Backend' }
     push.mockClear()
     replace.mockClear()
     fetchTeamTasks.mockClear()
@@ -561,7 +562,7 @@ describe('the team\'s board (/kanban?team=)', () => {
 
   it('reads the team\'s tasks, read-only, each card naming whose it is', async () => {
     const { el, card, fire } = await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
-    expect(fetchTeamTasks).toHaveBeenCalledWith('tm1', expect.objectContaining({ status: 'ongoing', group: 'Backend', member: '' }))
+    expect(fetchTeamTasks).toHaveBeenCalledWith('tm1', expect.objectContaining({ status: 'ongoing', workspace: 'Backend', member: '' }))
     expect(fetchGlobalTasks).not.toHaveBeenCalled()
     expect(el.textContent).toContain("Every shared workspace's tasks on one board.")
     expect([...el.querySelectorAll('a, button')].some((b) => /New task/i.test(b.textContent))).toBe(false)
@@ -594,15 +595,27 @@ describe('the team\'s board (/kanban?team=)', () => {
   it('follows the team\'s live updates, inside its filters', async () => {
     const { el } = await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
     const send = async (ev) => { events.value = [...events.value, ev]; await settle() }
-    await send({ type: 'team.task.created', teamId: 'tm2', payload: theirs('other', 'ongoing', { group: 'Backend' }) })
+    await send({ type: 'team.task.created', teamId: 'tm2', payload: theirs('other', 'ongoing', { sharedName: 'Backend' }) })
     expect(el.textContent).not.toContain('Task other')
-    await send({ type: 'team.task.created', teamId: 'tm1', payload: theirs('new', 'ongoing', { group: 'backend ' }) })
+    await send({ type: 'team.task.created', teamId: 'tm1', payload: theirs('new', 'ongoing', { sharedName: 'backend ' }) })
     expect(el.textContent).toContain('Task new')
-    // Moved to another group: off a board filtered to this one.
-    await send({ type: 'team.task.updated', teamId: 'tm1', payload: theirs('new', 'ongoing', { group: 'Web' }) })
+    // Moved to another team workspace: off a board filtered to this one.
+    await send({ type: 'team.task.updated', teamId: 'tm1', payload: theirs('new', 'ongoing', { sharedName: 'Web' }) })
     expect(el.textContent).not.toContain('Task new')
     await send({ type: 'team.task.deleted', teamId: 'tm1', payload: { id: 'o1' } })
     expect(el.textContent).not.toContain('Task o1')
+  })
+
+  it('offers its filters as pickers, and reads the board again when they change', async () => {
+    const { el } = await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
+    expect(el.querySelector('[data-test=team-task-filters]')).not.toBe(null)
+    expect(el.querySelector('[data-test=team-filter-workspace]').textContent).toContain('Backend')
+    fetchTeamTasks.mockClear()
+
+    route.query = { team: 'tm1', workspace: 'Web', member: 'u2' }
+    await settle()
+
+    expect(fetchTeamTasks).toHaveBeenCalledWith('tm1', expect.objectContaining({ workspace: 'Web', member: 'u2' }))
   })
 
   it('keeps a member filter to that member\'s tasks', async () => {

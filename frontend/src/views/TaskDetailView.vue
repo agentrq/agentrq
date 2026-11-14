@@ -56,9 +56,13 @@
                 <span class="w-1.5 h-1.5 rounded-full" :class="taskDotClass(task.status)"></span>
                 <span class="hidden @min-[48rem]:inline">{{ task.status }}</span>
               </span>
-              <button type="button" data-test="clone-task" @click="cloning = true"
-                      class="px-2.5 h-7 rounded-lg bg-black dark:bg-white text-white dark:text-black text-[9px] font-black uppercase tracking-widest hover:opacity-90 whitespace-nowrap">
-                Clone to my workspace
+              <!-- Icon only where the header is narrow, named by its tooltip. -->
+              <button type="button" data-test="clone-task" aria-label="Clone to my workspace" @click="cloning = true"
+                      @mouseenter="tooltipStore.show($event, 'Clone to my workspace', 'bottom')"
+                      @mouseleave="tooltipStore.hide()"
+                      class="px-2 @min-[48rem]:px-2.5 h-7 rounded-lg bg-black dark:bg-white text-white dark:text-black text-[9px] font-black uppercase tracking-widest hover:opacity-90 whitespace-nowrap flex items-center gap-1.5">
+                <svg data-test="clone-icon" class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></svg>
+                <span class="hidden @min-[48rem]:inline">Clone to my workspace</span>
               </button>
             </template>
             <template v-else>

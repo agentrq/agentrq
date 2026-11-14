@@ -7,7 +7,6 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { setActivePinia, createPinia } from 'pinia'
 
 import { routes, adminRoutes, clickOutside, createAuthGuard, createAgentRQApp } from '../src/app'
-import { pageKey } from '../src/pageKey'
 import { usePlatformStore } from '../src/stores/platformStore'
 
 /** Flatten the route tree so nested paths can be asserted on directly. */
@@ -60,8 +59,6 @@ describe('routes', () => {
       '/skills/:name',
       '/team/new',
       '/team/settings',
-      '/team/analytics',
-      '/team/memory',
       '/invitations',
       '/invite',
       '/sessions/:id',
@@ -94,20 +91,19 @@ describe('routes', () => {
     expect(publicRoutes).toEqual(['/invite', '/login'])
   })
 
-  it('rebuilds a team page when the team in its query changes', () => {
+  // The settings page the Manage team dialog replaced: an old link opens it.
+  it('sends the old team settings page to the team, with Manage team open', () => {
     const router = createRouter({ history: createMemoryHistory(), routes })
-    for (const path of ['/team/settings', '/team/analytics', '/team/memory']) {
-      const a = router.resolve(`${path}?team=a`)
-      const b = router.resolve(`${path}?team=b`)
-      expect(pageKey(a)).toBe(`${path}?team=a`)
-      expect(pageKey(b)).not.toBe(pageKey(a))
-      expect(pageKey(router.resolve(path))).toBe(`${path}?team=`)
-    }
+    const to = router.resolve('/team/settings?team=tm1')
+    const settings = routes.find((r) => r.path === '/team/settings')
+
+    expect(settings.redirect(to)).toEqual({ path: '/tasks/active', query: { team: 'tm1', manage: 'members' } })
+    expect(settings.redirect(router.resolve('/team/settings'))).toBe('/')
   })
 
   it('lazy-loads every view, so no route pulls its component into the entry chunk', () => {
     // A route with named views (the Pano's chat) lazy-loads each of them.
-    for (const route of routes) {
+    for (const route of routes.filter((r) => !r.redirect)) {
       for (const component of Object.values(route.components ?? { default: route.component })) {
         expect(typeof component).toBe('function')
       }
@@ -149,7 +145,8 @@ describe('routes', () => {
     // silently, and skipping is the one failure this test cannot report.
     // A route with named views (the Pano's chat) has a loader for each.
     const extraViews = routes.filter((route) => route.components).reduce((n, route) => n + Object.keys(route.components).length - 1, 0)
-    expect(resolved.length).toBe(flatten(routes).length + extraViews)
+    // A redirect has none: it is no page.
+    expect(resolved.length).toBe(flatten(routes.filter((r) => !r.redirect)).length + extraViews)
     for (const [path, module] of resolved) {
       expect(module.default, `${path} resolved to a module with no default export`).toBeTruthy()
     }

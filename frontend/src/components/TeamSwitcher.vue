@@ -23,7 +23,13 @@
         <button type="button" data-test="switch-me" @click="chooseMe"
                 :class="!isTeamMode ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-200'"
                 class="px-3 rounded-md text-[11px] font-semibold transition-all shrink-0">Me</button>
-        <button type="button" data-test="switch-team" @click="chooseTeamSide"
+        <!-- In team mode the team's name renames it in place. -->
+        <div v-if="isTeamMode && team" data-test="switch-team-current"
+             class="flex-1 min-w-0 px-2 rounded-md text-[11px] font-semibold flex items-center gap-1 bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm">
+          <span class="shrink-0">Team:</span>
+          <TeamNameEditor :team="team" input-class="text-[11px] h-5" />
+        </div>
+        <button v-else type="button" data-test="switch-team" @click="chooseTeamSide"
                 :class="isTeamMode ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-200'"
                 class="flex-1 min-w-0 px-2 rounded-md text-[11px] font-semibold transition-all flex items-center gap-1">
           <span class="truncate">{{ teamLabel }}</span>
@@ -50,7 +56,7 @@
           <svg v-if="String(t.id) === teamId" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
         </span>
         <span class="flex-1 min-w-0 truncate text-gray-800 dark:text-zinc-100 font-medium">{{ t.name }}</span>
-        <span class="shrink-0 text-[10px] text-gray-400 dark:text-zinc-500 capitalize">{{ t.role }}</span>
+        <span v-if="t.memberCount" class="shrink-0 text-[10px] text-gray-400 dark:text-zinc-500">{{ t.memberCount }} {{ t.memberCount === 1 ? 'member' : 'members' }}</span>
       </button>
       <div v-if="teams.length" class="h-px bg-gray-100 dark:bg-zinc-800 mx-1 my-1"></div>
       <button type="button" role="menuitem" @click="go('/team/new')"
@@ -63,10 +69,10 @@
         <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
         <span class="flex-1">Invitations ({{ pendingCount }})</span>
       </button>
-      <button v-if="settingsTeamId" type="button" role="menuitem" @click="go({ path: '/team/settings', query: { team: settingsTeamId } })"
+      <button v-if="settingsTeamId" type="button" role="menuitem" data-test="manage-team" @click="manage"
               class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-xs text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
         <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-        Team settings
+        Manage team
       </button>
       <template v-if="collapsed">
         <div class="h-px bg-gray-100 dark:bg-zinc-800 mx-1 my-1"></div>
@@ -85,15 +91,17 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { storeToRefs } from 'pinia';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useTeamStore, rememberTeam, rememberedTeam } from '../stores/teamStore';
-import { teamHome, useTeamMode } from '../composables/useTeamMode';
+import { teamHome, useTeamMode, withManage } from '../composables/useTeamMode';
+import TeamNameEditor from './TeamNameEditor.vue';
 
 defineProps({ collapsed: { type: Boolean, default: false } });
 
 // Two heads and a third behind them.
 const TEAM_ICON = 'M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z';
 
+const route = useRoute();
 const router = useRouter();
 const store = useTeamStore();
 const { teams, pendingCount } = storeToRefs(store);
@@ -129,5 +137,13 @@ function chooseTeam(id) {
 function chooseTeamSide() {
   if (!nextTeam.value) return go('/team/new');
   return chooseTeam(nextTeam.value.id);
+}
+
+// The Manage team dialog, over the page on screen in team mode, else over
+// the team's tasks.
+function manage() {
+  if (isTeamMode.value) return go(withManage(route, 'members'));
+  rememberTeam(settingsTeamId.value);
+  return go(withManage(teamHome(settingsTeamId.value), 'members'));
 }
 </script>

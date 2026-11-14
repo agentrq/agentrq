@@ -104,6 +104,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   route.params = { filter: 'notstarted' }
   route.query = {}
+  route.path = '/tasks/notstarted'
   busEvents.value = []
   fetchGlobalTasks.mockImplementation(byPage)
   readAllCachedTasks.mockImplementation(async () => [])
@@ -386,21 +387,23 @@ describe('Move Up and Move Down', () => {
 describe('the team\'s task list (?team=)', () => {
   const bob = { userId: 'u2', name: 'Bob' }
   const shared = [
-    { id: 'tw1', name: 'api', group: 'Backend', owner: bob },
+    { id: 'tw1', name: 'api', sharedName: 'Backend', owner: bob },
     { id: 'tw2', name: 'site', owner: { userId: 'u3', name: 'Cy' } },
   ]
   const theirs = (id, extra = {}) => ({ ...task(id, 'tw1', 'notstarted'), owner: bob, assignee: 'human', createdBy: 'agent', ...extra })
+  const options = (el, picker) => [...el.querySelectorAll(`[data-test=${picker}-option]`)]
 
   beforeEach(() => {
     route.params = { filter: 'pending' }
-    route.query = { team: 'tm1', group: 'Backend' }
+    route.path = '/tasks/pending'
+    route.query = { team: 'tm1', workspace: 'Backend' }
     fetchTeamWorkspaces.mockImplementation(async () => ({ workspaces: shared }))
     fetchTeamTasks.mockImplementation(async () => ({ tasks: [theirs('t1'), theirs('t2', { owner: undefined })] }))
   })
 
   it('reads the team\'s tasks with no way to change them', async () => {
     const el = await mount(TaskListView)
-    expect(fetchTeamTasks).toHaveBeenCalledWith('tm1', expect.objectContaining({ group: 'Backend', member: '' }))
+    expect(fetchTeamTasks).toHaveBeenCalledWith('tm1', expect.objectContaining({ workspace: 'Backend', member: '' }))
     expect(fetchGlobalTasks).not.toHaveBeenCalled()
     expect(rows(el)).toEqual(['task t1', 'task t2'])
     expect(el.querySelector('[data-test="new-task"]')).toBe(null)
@@ -415,21 +418,26 @@ describe('the team\'s task list (?team=)', () => {
     expect([...el.querySelectorAll('button')].some((b) => /^Pending/.test(b.textContent.trim()))).toBe(false)
   })
 
-  it('filters by member and group in the URL, and opens a task in the team', async () => {
+  it('filters by member and workspace in the URL, with its own pickers, and opens a task in the team', async () => {
     const el = await mount(TaskListView)
-    const member = el.querySelector('[data-test=team-filter-member]')
-    expect([...member.options].map((o) => o.textContent)).toEqual(['All members', 'Bob', 'Cy'])
-    expect([...el.querySelector('[data-test=team-filter-group]').options].map((o) => o.value)).toEqual(['', 'Backend', 'site'])
-    member.value = 'u2'
-    member.dispatchEvent(new Event('change'))
-    expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending', query: { team: 'tm1', group: 'Backend', member: 'u2' } })
-    const group = el.querySelector('[data-test=team-filter-group]')
-    group.value = ''
-    group.dispatchEvent(new Event('change'))
+    expect(el.querySelector('select')).toBe(null)
+    expect(el.querySelector('[data-test=team-filter-workspace]').textContent).toContain('Backend')
+
+    el.querySelector('[data-test=team-filter-member]').click()
+    await settle()
+    expect(options(el, 'team-filter-member').map((o) => o.dataset.value)).toEqual(['', 'u2', 'u3'])
+    expect(options(el, 'team-filter-member')[1].textContent).toContain('Bob')
+    options(el, 'team-filter-member')[1].click()
+    expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending', query: { team: 'tm1', workspace: 'Backend', member: 'u2' } })
+
+    el.querySelector('[data-test=team-filter-workspace]').click()
+    await settle()
+    expect(options(el, 'team-filter-workspace').map((o) => o.dataset.value)).toEqual(['', 'Backend', 'site'])
+    options(el, 'team-filter-workspace')[0].click()
     expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending', query: { team: 'tm1' } })
 
     rowOf(el, 'task t1').click()
-    expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending/tw1/t1', query: { team: 'tm1', group: 'Backend' } })
+    expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending/tw1/t1', query: { team: 'tm1', workspace: 'Backend' } })
   })
 
   it('reads the list again on the team\'s events, and only those', async () => {

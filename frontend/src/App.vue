@@ -472,6 +472,7 @@
     <main v-else :class="['grow min-w-0 p-0 md:py-4 md:pr-4 h-full min-h-0 flex-col relative bg-white md:bg-zinc-100 dark:bg-zinc-950', showSidePanel && sidePanel.state.full ? 'hidden' : panoChatOpen ? 'hidden lg:flex' : 'flex']">
       <div class="h-full overflow-y-auto min-w-0 md:rounded-sm scroll-smooth page-surface md:border border-gray-200 dark:border-zinc-800 no-scrollbar flex flex-col">
         <TeamModeBar v-if="isTeamMode" :name="currentTeam?.name || 'Team'" />
+        <TeamManageDialog v-if="isTeamMode" />
         <!-- Never unmounted by a route change — router-view is swapped inside
              it — so its size is also the size a page navigated to next is
              about to get. useLaunchTerminalSize.js reads it before a launch
@@ -564,6 +565,7 @@ import SidebarWorkspaces from './components/SidebarWorkspaces.vue'
 import TeamSwitcher from './components/TeamSwitcher.vue'
 import TeamSidebar from './components/TeamSidebar.vue'
 import TeamModeBar from './components/TeamModeBar.vue'
+import TeamManageDialog from './components/TeamManageDialog.vue'
 import { useTeamStore } from './stores/teamStore'
 import { useTeamMode } from './composables/useTeamMode'
 import { coalesce, indexOverview } from './composables/useWorkspaceOverview'

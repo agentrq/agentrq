@@ -44,7 +44,7 @@
          :class="{'hidden @min-[40rem]:flex': selectedTaskId}">
       <div class="flex flex-col min-w-0 flex-1">
         <h1 class="text-lg @min-[48rem]:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">{{ title }}</h1>
-        <p v-if="isTeamMode && teamGroup" class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5 truncate">{{ teamGroup }}</p>
+        <p v-if="isTeamMode && teamWorkspace" class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5 truncate">{{ teamWorkspace }}</p>
       </div>
 
 
@@ -84,20 +84,9 @@
           </button>
         </div>
 
-        <!-- Team mode: whose, and which group. In the URL, so a link keeps them. -->
-        <template v-if="isTeamMode">
-          <select :value="teamMember" @change="setTeamFilter('member', $event.target.value)" data-test="team-filter-member" aria-label="Member"
-                  class="h-8 max-w-[9rem] bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-2 text-xs text-gray-700 dark:text-zinc-200 outline-none">
-            <option value="">All members</option>
-            <option v-for="o in teamOwnerList" :key="o.userId" :value="String(o.userId)">{{ o.name || o.email }}</option>
-          </select>
-          <select :value="teamGroup" @change="setTeamFilter('group', $event.target.value)" data-test="team-filter-group" aria-label="Group"
-                  class="h-8 max-w-[9rem] bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-2 text-xs text-gray-700 dark:text-zinc-200 outline-none">
-            <option value="">All groups</option>
-            <option v-for="g in teamGroupList" :key="g.name" :value="g.name">{{ g.name }}</option>
-          </select>
-        </template>
-        <template v-else>
+        <!-- Team mode: whose, and which team workspace. -->
+        <TeamTaskFilters v-if="isTeamMode" />
+        <template v-if="!isTeamMode">
           <div class="w-px h-4 bg-gray-200 dark:bg-zinc-800"></div>
           <NewTaskButton />
         </template>
@@ -118,7 +107,7 @@
         <!-- A team with nothing shared yet (§9): say how it fills up. -->
         <div v-else-if="teamIsEmpty" data-test="team-empty" class="mx-4 py-6 px-4 border border-dashed border-gray-200 dark:border-zinc-800 rounded-xl text-[12px] text-gray-500 dark:text-zinc-400 font-medium space-y-3">
           <p>Nothing shared yet. Members choose which workspaces to share.</p>
-          <router-link :to="{ path: '/team/settings', query: { team: teamId, tab: 'workspaces' } }"
+          <router-link :to="withManage(route, 'workspaces')"
                        class="inline-flex px-3 py-1.5 rounded-lg bg-black dark:bg-white text-white dark:text-black text-[10px] font-black uppercase tracking-widest">Share your workspaces</router-link>
         </div>
 
@@ -263,8 +252,9 @@ import { useExtensionSurfaces } from '../composables/useExtensionSurfaces';
 import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
 import { readAllCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
 import OwnerAvatar from '../components/OwnerAvatar.vue';
+import TeamTaskFilters from '../components/TeamTaskFilters.vue';
 import { useTeamStore } from '../stores/teamStore';
-import { lostTeam, teamEvent, teamGroups, teamOwners, useTeamMode } from '../composables/useTeamMode';
+import { lostTeam, teamEvent, useTeamMode, withManage } from '../composables/useTeamMode';
 
 const { getNextRunLabel, getNextRunDateTime, getNextRunDate } = useCron();
 const route = useRoute();
@@ -278,24 +268,18 @@ const isMobile = computed(() => isMobileWindow.value || isNarrow.value);
 
 const tasks = ref([]);
 
-// Team mode: the team's shared tasks, read-only, filtered by member and group.
+// Team mode: the team's shared tasks, read-only, filtered by member and by
+// team workspace.
 const { teamId, isTeamMode, link, leaveTeam } = useTeamMode();
 const teamStore = useTeamStore();
 const teamMember = computed(() => (isTeamMode.value && typeof route.query.member === 'string' ? route.query.member : ''));
-const teamGroup = computed(() => (isTeamMode.value && typeof route.query.group === 'string' ? route.query.group : ''));
+const teamWorkspace = computed(() => (isTeamMode.value && typeof route.query.workspace === 'string' ? route.query.workspace : ''));
 const teamFilterQuery = computed(() => ({
   ...(teamMember.value && { member: teamMember.value }),
-  ...(teamGroup.value && { group: teamGroup.value }),
+  ...(teamWorkspace.value && { workspace: teamWorkspace.value }),
 }));
 const teamWorkspaces = computed(() => teamStore.workspacesOf(teamId.value));
-const teamOwnerList = computed(() => teamOwners(teamWorkspaces.value));
-const teamGroupList = computed(() => teamGroups(teamWorkspaces.value));
 const teamIsEmpty = computed(() => isTeamMode.value && teamId.value in teamStore.workspacesByTeam && teamWorkspaces.value.length === 0);
-function setTeamFilter(key, value) {
-  const query = { ...route.query, [key]: value };
-  if (!value) delete query[key];
-  router.push({ path: `/tasks/${filterType.value}`, query });
-}
 // Read, never written: the shell keeps the store's agentConnected current from
 // the event stream, so the per-row dots below follow an agent coming and going
 // instead of freezing at whatever was true when this list was fetched.
@@ -585,7 +569,7 @@ const fetchNext = async () => {
   const gen = generation;
   try {
     const res = isTeamMode.value
-      ? await fetchTeamTasks(teamId.value, { ...params, member: teamMember.value, group: teamGroup.value })
+      ? await fetchTeamTasks(teamId.value, { ...params, member: teamMember.value, workspace: teamWorkspace.value })
       : await fetchGlobalTasks(params);
     if (gen !== generation) return;
     const newTasks = res.tasks || [];
@@ -711,7 +695,7 @@ const getTaskLabel = (status) => {
   return status;
 };
 
-watch(() => [route.params.filter, teamId.value, teamMember.value, teamGroup.value], (now, before) => {
+watch(() => [route.params.filter, teamId.value, teamMember.value, teamWorkspace.value], (now, before) => {
   if (now.some((v, i) => v !== before[i])) fetchInitial();
 });
 

@@ -82,6 +82,19 @@ export const useTeamStore = defineStore('team', () => {
     teams.value = [...rest, { ...getTeam(team.id), ...team }].sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  /** The team read again: after someone else changed it. */
+  async function refresh(teamId) {
+    const team = await api.getTeam(teamId);
+    upsert(team);
+    return getTeam(teamId);
+  }
+
+  /** The version a change of yours left the team at. */
+  function setVersion(teamId, version) {
+    if (version === undefined || version === null) return;
+    teams.value = teams.value.map((t) => (String(t.id) === String(teamId) ? { ...t, version } : t));
+  }
+
   /** A team deleted, left, or one you were removed from. */
   function drop(teamId) {
     teams.value = teams.value.filter((t) => String(t.id) !== String(teamId));
@@ -105,6 +118,8 @@ export const useTeamStore = defineStore('team', () => {
     loadWorkspaces,
     workspacesOf,
     upsert,
+    refresh,
+    setVersion,
     drop,
     dropInvitation,
   };

@@ -5,8 +5,9 @@
 -->
 
 <!-- "Clone to my workspace" on a teammate's task: pick one of your workspaces
-     (the one named like the task's workspace or group comes first) and how
-     the copy starts. The copy is yours; the original is not touched. -->
+     (the one named like the task's workspace, or the team workspace it is in,
+     comes first) and who the copy is assigned to, a human unless you say an
+     agent. The copy is yours; the original is not touched. -->
 <template>
   <Teleport to="body">
     <div v-if="show" class="fixed inset-0 z-[120] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="clone-task-title" data-test="clone-modal">
@@ -20,21 +21,22 @@
           You have no workspace to clone into. <router-link to="/workspaces/new" class="font-semibold underline text-gray-900 dark:text-white" @click="$emit('close')">Create one</router-link> first.
         </p>
         <template v-else>
-          <label class="block space-y-1">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-zinc-400">Workspace</span>
-            <select v-model="workspaceId" data-test="clone-workspace"
-                    class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-700 rounded-sm px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 outline-none">
-              <option v-for="w in mine" :key="w.id" :value="String(w.id)">{{ w.name }}</option>
-            </select>
-          </label>
-          <label class="block space-y-1">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-zinc-400">Start as</span>
-            <select v-model="status" data-test="clone-status"
-                    class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-700 rounded-sm px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 outline-none">
-              <option value="notstarted">Not started</option>
-              <option value="ongoing">Ongoing</option>
-            </select>
-          </label>
+          <div class="space-y-1">
+            <span class="block text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-zinc-400">Workspace</span>
+            <ItemPicker v-model="workspaceId" :items="workspaceItems" block data-test="clone-workspace" aria-label="Workspace" />
+          </div>
+          <div class="space-y-1">
+            <span id="clone-assignee-label" class="block text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-zinc-400">Assign to</span>
+            <div role="radiogroup" aria-labelledby="clone-assignee-label" data-test="clone-assignee"
+                 class="flex p-0.5 bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700/50 rounded-lg">
+              <button v-for="a in ASSIGNEES" :key="a.value" type="button" role="radio" :aria-checked="assignee === a.value"
+                      :data-test="`clone-assignee-${a.value}`" @click="assignee = a.value"
+                      :class="assignee === a.value ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200'"
+                      class="flex-1 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all">
+                {{ a.label }}
+              </button>
+            </div>
+          </div>
         </template>
         <div class="flex justify-end gap-2">
           <button type="button" @click="$emit('close')"
@@ -58,12 +60,15 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useToasts } from '../composables/useToasts';
 import { useEscapeKey } from '../composables/useEscapeKey';
 import { preferredWorkspace } from '../composables/useTeamMode';
+import ItemPicker from './ItemPicker.vue';
+
+const ASSIGNEES = [{ value: 'human', label: 'Human' }, { value: 'agent', label: 'Agent' }];
 
 const props = defineProps({
   show: { type: Boolean, default: false },
   teamId: { type: String, default: '' },
   task: { type: Object, default: null },
-  // The task's workspace as the team sees it: { name, group }.
+  // The task's workspace as the team sees it: { name, sharedName }.
   workspace: { type: Object, default: null },
 });
 const emit = defineEmits(['close']);
@@ -72,22 +77,23 @@ const workspaceStore = useWorkspaceStore();
 const { notifySuccess, notifyError } = useToasts();
 
 const mine = computed(() => workspaceStore.workspaces.filter((w) => !w.archivedAt));
+const workspaceItems = computed(() => mine.value.map((w) => ({ value: String(w.id), label: w.name })));
 const workspaceId = ref('');
-const status = ref('notstarted');
+const assignee = ref('human');
 const busy = ref(false);
 
 watch(() => props.show, async (open) => {
   if (!open) return;
-  status.value = 'notstarted';
+  assignee.value = 'human';
   // The store reports its own failures: the picker then offers to make one.
   if (workspaceStore.workspaces.length === 0) await workspaceStore.fetchWorkspaces();
-  workspaceId.value = preferredWorkspace(mine.value, { workspaceName: props.workspace?.name, group: props.workspace?.group });
+  workspaceId.value = preferredWorkspace(mine.value, { workspaceName: props.workspace?.name, sharedName: props.workspace?.sharedName });
 }, { immediate: true });
 
 async function clone() {
   busy.value = true;
   try {
-    const res = await cloneTeamTask(props.teamId, props.task.id, workspaceId.value, status.value);
+    const res = await cloneTeamTask(props.teamId, props.task.id, workspaceId.value, assignee.value);
     const copy = res?.task ?? res ?? {};
     const wsId = String(copy.workspaceId ?? workspaceId.value);
     notifySuccess('Task cloned', null, copy.id ? { taskId: String(copy.id), workspaceId: wsId, label: 'Open' } : null);
