@@ -239,3 +239,12 @@ own route.
 A title may be `Untitled` or written by a browser's local model, so every
 message that hands a task to an agent names it by ID and body only; a new
 delivery path must too, or the agent takes a guessed title for the brief.
+
+## The workspace's notes go with the task, never in it
+
+A workspace's `selfLearningLoopNote` is appended to a task's body only when the
+agent is handed it (`AgentTaskBody`: every push, and `task get` while the task
+is `notstarted`) and is never stored. Stored, it was repeated in every read of
+every task, by supervisors and agents alike. A new delivery path must append
+them too (Slack, out of the server's reach, calls `AppendSelfLearningNote`), or
+its agent never sees them.

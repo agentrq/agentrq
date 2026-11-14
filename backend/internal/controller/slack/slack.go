@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
@@ -650,7 +651,7 @@ func (c *controller) HandleSlashCommand(ctx context.Context, channelID string, t
 		}
 
 		if shouldNotifyMCP {
-			content := fmt.Sprintf("[Task %s]\n%s", monoflake.ID(resp.Task.ID).String(), resp.Task.Body)
+			content := fmt.Sprintf("[Task %s]\n%s", monoflake.ID(resp.Task.ID).String(), crud.AppendSelfLearningNote(resp.Task.Body, ws.SelfLearningLoopNote))
 			if atts := formatSlackAttachments(resp.Task.Attachments); atts != "" {
 				content += "\n" + atts
 			}

@@ -103,6 +103,9 @@ type fakeWorkspaceServer struct {
 	notifiedContent     string
 	notifiedAttachments []entity.Attachment
 
+	// notes are the workspace's notes AgentTaskBody appends.
+	notes string
+
 	// archivedAt is the last UpdateArchivedAt value; archivedAtCalls counts them.
 	archivedAt      *time.Time
 	archivedAtCalls int
@@ -138,6 +141,13 @@ func (f *fakeWorkspaceServer) SendChannelNotification(ctx context.Context, taskI
 	f.notifiedTaskID = taskID
 	f.notifiedContent = content
 	f.notifiedAttachments = attachments
+}
+
+func (f *fakeWorkspaceServer) AgentTaskBody(ctx context.Context, body string) string {
+	if f.notes == "" {
+		return body
+	}
+	return body + "\n\n" + f.notes
 }
 
 func (f *fakeWorkspaceServer) ClearContextForTask(ctx context.Context, taskID int64, clearContext bool) {

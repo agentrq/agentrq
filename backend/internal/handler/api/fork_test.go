@@ -165,3 +165,17 @@ func TestPushTaskToAgent_EventInstruction(t *testing.T) {
 		t.Errorf("the agent was pushed task %d with %q, want task 7 without the event instruction", srv.notifiedTaskID, srv.notifiedContent)
 	}
 }
+
+// The push carries the workspace's notes after the body: they go with the task
+// when the agent is handed it, never in what is stored.
+func TestPushTaskToAgent_CarriesTheWorkspaceNotes(t *testing.T) {
+	task := entity.Task{ID: 7, WorkspaceID: 1, Body: "Do it."}
+
+	srv := &fakeWorkspaceServer{notes: "Keep me posted."}
+	h := &handler{crud: &mockCrudPushEvent{}, mcpManager: &fakeMCPManager{server: srv}}
+	h.pushTaskToAgent(context.Background(), monoflake.ID(100).String(), task)
+
+	if want := "[Task " + monoflake.ID(7).String() + "]\nDo it.\n\nKeep me posted."; srv.notifiedContent != want {
+		t.Errorf("the agent was pushed %q, want %q", srv.notifiedContent, want)
+	}
+}

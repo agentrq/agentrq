@@ -171,68 +171,32 @@ func TestCreateTask_HumanOverrideYOLO(t *testing.T) {
 	}
 }
 
-func TestCreateTask_AgentAppendLoopNote(t *testing.T) {
+// The workspace's notes are handed to the agent with the task, never stored
+// in its body, where every read of the task repeated them.
+func TestCreateTask_AgentTaskStoresTheBodyWithoutTheNotes(t *testing.T) {
 	e := newTestController(t)
 
 	ws := activeWorkspace()
 	ws.SelfLearningLoopNote = "Be concise."
 
-	created := model.Task{ID: 45, WorkspaceID: 1, Assignee: "agent", Body: "Hello world.\n\nBe concise."}
-
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
 	e.idgen.EXPECT().NextID().Return(int64(45))
 	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
-		if m.Body != "Hello world.\n\nBe concise." {
-			return model.Task{}, fmt.Errorf("expected Body to have loop note appended, got %q", m.Body)
+		if m.Body != "Hello world." {
+			return model.Task{}, fmt.Errorf("expected the body as given, got %q", m.Body)
 		}
-		return created, nil
+		return m, nil
 	})
 
 	resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
 		UserID: testUserIDStr,
 		Task:   entity.Task{WorkspaceID: 1, Title: "Agent Task", Body: "Hello world.", Assignee: "agent"},
 	})
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Task.Body != "Hello world.\n\nBe concise." {
-		t.Errorf("expected task body with note")
-	}
-}
-
-// TestCreateTask_AgentLoopNoteIdempotent ensures the self-learning loop note is
-// not appended a second time when the submitted body already contains it (e.g.
-// a self-improving loop re-submitting a prior task body). Otherwise the note
-// would accumulate and be returned multiple times by the getTask tool.
-func TestCreateTask_AgentLoopNoteIdempotent(t *testing.T) {
-	e := newTestController(t)
-
-	ws := activeWorkspace()
-	ws.SelfLearningLoopNote = "Be concise."
-
-	bodyWithNote := "Hello world.\n\nBe concise."
-	created := model.Task{ID: 46, WorkspaceID: 1, Assignee: "agent", Body: bodyWithNote}
-
-	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
-	e.idgen.EXPECT().NextID().Return(int64(46))
-	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
-		if m.Body != bodyWithNote {
-			return model.Task{}, fmt.Errorf("expected note to NOT be duplicated, got %q", m.Body)
-		}
-		return created, nil
-	})
-
-	resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
-		UserID: testUserIDStr,
-		Task:   entity.Task{WorkspaceID: 1, Title: "Agent Task", Body: bodyWithNote, Assignee: "agent"},
-	})
-
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.Task.Body != bodyWithNote {
-		t.Errorf("expected body unchanged (note not duplicated), got %q", resp.Task.Body)
+	if resp.Task.Body != "Hello world." {
+		t.Errorf("expected the body without the notes, got %q", resp.Task.Body)
 	}
 }
 
@@ -738,23 +702,20 @@ func TestUpdateTaskAllowAllCommands(t *testing.T) {
 
 // ── UpdateTaskAssignee ────────────────────────────────────────────────────────
 
-func TestUpdateTaskAssignee_AgentAppendLoopNote(t *testing.T) {
+// Handing a task to the agent changes only its assignee: the notes go with
+// the task when the agent is handed it, not into its body.
+func TestUpdateTaskAssignee_ToTheAgentLeavesTheBodyAlone(t *testing.T) {
 	e := newTestController(t)
 
 	ws := activeWorkspace()
 	ws.SelfLearningLoopNote = "Be concise."
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Assignee: "human", Body: "Original body."}
-	updated := model.Task{ID: 10, WorkspaceID: 1, Assignee: "agent", Body: "Original body.\n\nBe concise."}
 
 	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
-
-	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), "Assignee", "Body").DoAndReturn(func(ctx context.Context, m model.Task, _ ...string) (model.Task, error) {
-		if m.Body != "Original body.\n\nBe concise." {
-			return model.Task{}, fmt.Errorf("expected Body to have loop note appended, got %q", m.Body)
-		}
-		return updated, nil
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), "Assignee").DoAndReturn(func(ctx context.Context, m model.Task, _ ...string) (model.Task, error) {
+		return m, nil
 	})
 
 	resp, err := e.controller.UpdateTaskAssignee(context.Background(), entity.UpdateTaskAssigneeRequest{
@@ -766,148 +727,8 @@ func TestUpdateTaskAssignee_AgentAppendLoopNote(t *testing.T) {
 	if resp.Task.Assignee != "agent" {
 		t.Errorf("expected assignee agent, got %s", resp.Task.Assignee)
 	}
-	if resp.Task.Body != "Original body.\n\nBe concise." {
-		t.Errorf("expected task body to be updated")
-	}
-}
-
-// Handing a task back leaves the body alone, so it names only the assignee: a
-// body edited since this copy was read must not be written back over.
-func TestUpdateTaskAssignee_ToHumanWritesOnlyTheAssignee(t *testing.T) {
-	e := newTestController(t)
-
-	task := model.Task{ID: 10, WorkspaceID: 1, Assignee: "agent", Body: "Original body."}
-	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
-	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), "Assignee").Return(model.Task{ID: 10, WorkspaceID: 1, Assignee: "human"}, nil)
-
-	if _, err := e.controller.UpdateTaskAssignee(context.Background(), entity.UpdateTaskAssigneeRequest{
-		WorkspaceID: 1, TaskID: 10, Assignee: "human", UserID: testUserIDStr,
-	}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-// ── UpdateTaskTitle ───────────────────────────────────────────────────────────
-
-func TestUpdateTaskTitle_RenamesATaskInAnyStatusWithinSevenDays(t *testing.T) {
-	e := newMachineTelemetryEnv(t)
-
-	task := model.Task{ID: 10, WorkspaceID: 1, Title: "Untitled", Status: "completed", CreatedAt: time.Now().Add(-6 * 24 * time.Hour)}
-	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
-	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), "Title").DoAndReturn(func(ctx context.Context, m model.Task, _ ...string) (model.Task, error) {
-		return m, nil
-	})
-
-	resp, err := e.controller.UpdateTaskTitle(context.Background(), entity.UpdateTaskTitleRequest{
-		WorkspaceID: 1, TaskID: 10, Title: "  Fix the login page  ", UserID: testUserIDStr,
-	})
-	if err != nil {
-		t.Fatalf("UpdateTaskTitle returned %v, want the task renamed", err)
-	}
-	if resp.Task.Title != "Fix the login page" {
-		t.Errorf("UpdateTaskTitle stored the title %q, want %q with the spaces trimmed", resp.Task.Title, "Fix the login page")
-	}
-	if resp.Task.Status != "completed" {
-		t.Errorf("UpdateTaskTitle changed the status to %q, want it left completed", resp.Task.Status)
-	}
-	// Its own action, not task_update, which would email "status updated".
-	if ev := e.only(t); ev.Action != entity.ActionTaskTitleUpdate || ev.ResourceID != 10 || ev.Actor != entity.ActorHuman {
-		t.Errorf("UpdateTaskTitle published %+v, want a task_title_update on task 10 by a human", ev)
-	}
-}
-
-func TestUpdateTaskTitle_RefusesATaskOlderThanSevenDays(t *testing.T) {
-	e := newTestController(t)
-
-	task := model.Task{ID: 10, WorkspaceID: 1, Title: "Old", CreatedAt: time.Now().Add(-8 * 24 * time.Hour)}
-	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
-
-	_, err := e.controller.UpdateTaskTitle(context.Background(), entity.UpdateTaskTitleRequest{
-		WorkspaceID: 1, TaskID: 10, Title: "New", UserID: testUserIDStr,
-	})
-	if !errors.Is(err, entity.ErrTaskTitleLocked) {
-		t.Fatalf("UpdateTaskTitle returned %v, want ErrTaskTitleLocked", err)
-	}
-}
-
-func TestUpdateTaskTitle_RefusesABlankTitle(t *testing.T) {
-	e := newTestController(t)
-
-	_, err := e.controller.UpdateTaskTitle(context.Background(), entity.UpdateTaskTitleRequest{
-		WorkspaceID: 1, TaskID: 10, Title: "  ", UserID: testUserIDStr,
-	})
-	if err == nil || err.Error() != "title is required" {
-		t.Fatalf("UpdateTaskTitle returned %v, want \"title is required\"", err)
-	}
-}
-
-func TestUpdateTaskTitle_PassesOnRepositoryFailures(t *testing.T) {
-	errDB := errors.New("database unavailable")
-	recent := model.Task{ID: 10, WorkspaceID: 1, CreatedAt: time.Now()}
-
-	cases := []struct {
-		name   string
-		expect func(e *testEnv)
-	}{
-		{"the workspace cannot be read", func(e *testEnv) {
-			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(model.Workspace{}, errDB)
-		}},
-		{"the task cannot be read", func(e *testEnv) {
-			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-			e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, errDB)
-		}},
-		{"the task cannot be saved", func(e *testEnv) {
-			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-			e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(recent, nil)
-			e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), "Title").Return(model.Task{}, errDB)
-		}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			e := newTestController(t)
-			tc.expect(e)
-			_, err := e.controller.UpdateTaskTitle(context.Background(), entity.UpdateTaskTitleRequest{
-				WorkspaceID: 1, TaskID: 10, Title: "New", UserID: testUserIDStr,
-			})
-			if !errors.Is(err, errDB) {
-				t.Fatalf("UpdateTaskTitle returned %v, want the database error", err)
-			}
-		})
-	}
-}
-
-// TestUpdateTaskAssignee_LoopNoteIdempotent ensures reassigning a task to the
-// agent does not append the loop note again when the body already contains it.
-func TestUpdateTaskAssignee_LoopNoteIdempotent(t *testing.T) {
-	e := newTestController(t)
-
-	ws := activeWorkspace()
-	ws.SelfLearningLoopNote = "Be concise."
-
-	bodyWithNote := "Original body.\n\nBe concise."
-	task := model.Task{ID: 11, WorkspaceID: 1, Assignee: "human", Body: bodyWithNote}
-	updated := model.Task{ID: 11, WorkspaceID: 1, Assignee: "agent", Body: bodyWithNote}
-
-	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(11), testUserID).Return(task, nil)
-	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
-	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), "Assignee", "Body").DoAndReturn(func(ctx context.Context, m model.Task, _ ...string) (model.Task, error) {
-		if m.Body != bodyWithNote {
-			return model.Task{}, fmt.Errorf("expected note to NOT be duplicated, got %q", m.Body)
-		}
-		return updated, nil
-	})
-
-	resp, err := e.controller.UpdateTaskAssignee(context.Background(), entity.UpdateTaskAssigneeRequest{
-		WorkspaceID: 1, TaskID: 11, Assignee: "agent", UserID: testUserIDStr,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.Task.Body != bodyWithNote {
-		t.Errorf("expected body unchanged (note not duplicated), got %q", resp.Task.Body)
+	if resp.Task.Body != "Original body." {
+		t.Errorf("expected the body unchanged, got %q", resp.Task.Body)
 	}
 }
 

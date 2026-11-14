@@ -25,12 +25,11 @@ import (
 	"gorm.io/datatypes"
 )
 
-// AppendSelfLearningNote appends the workspace's self-learning loop note to an
-// agent task body. It is idempotent: if the note is empty or the body already
-// contains it, the body is returned unchanged. This prevents the note from
-// accumulating multiple times when a body that already carries it is re-submitted
-// (e.g. self-improving loop tasks, copied bodies, or repeated human→agent
-// reassignment) — which would otherwise be returned repeatedly by the getTask tool.
+// AppendSelfLearningNote is an agent task's body as the agent is handed it:
+// the body, then the workspace's standing notes. Never stored: a stored copy
+// was repeated in every read of the task, by supervisors and agents alike. A
+// body that already contains the notes, as one stored before they were moved
+// to the hand-off does, is returned unchanged, so the agent sees them once.
 func AppendSelfLearningNote(body, note string) string {
 	if note == "" || strings.Contains(body, note) {
 		return body
@@ -136,10 +135,6 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 	clearContext := req.Task.ClearContext
 	if req.Task.CreatedBy == "agent" && !clearContext {
 		clearContext = w.ClearContextDefault
-	}
-
-	if req.Task.Assignee == "agent" {
-		req.Task.Body = AppendSelfLearningNote(req.Task.Body, w.SelfLearningLoopNote)
 	}
 
 	// Choosing a workflow means "run this pipeline on completion", which fires
@@ -608,8 +603,7 @@ func (c *controller) UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskO
 }
 
 func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTaskAssigneeRequest) (*entity.UpdateTaskAssigneeResponse, error) {
-	w, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID)
-	if err != nil {
+	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
@@ -622,16 +616,10 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 		return nil, fmt.Errorf("invalid assignee: %s", req.Assignee)
 	}
 
-	changed := []string{"Assignee"}
-	if req.Assignee == "agent" && m.Assignee != "agent" {
-		m.Body = AppendSelfLearningNote(m.Body, w.SelfLearningLoopNote)
-		changed = append(changed, "Body")
-	}
-
 	m.Assignee = req.Assignee
 	m.UpdatedAt = time.Now()
 
-	updated, err := c.repository.UpdateTask(ctx, m, changed...)
+	updated, err := c.repository.UpdateTask(ctx, m, "Assignee")
 	if err != nil {
 		return nil, err
 	}
