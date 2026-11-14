@@ -42,13 +42,15 @@ type (
 		// instance ticking that minute writes the same (parent_id, created_at)
 		// and only one of them gets in. Tasks with no parent are left out.
 		CreatedAt time.Time `gorm:"uniqueIndex:idx_tasks_cron_run,priority:2"`
-		UpdatedAt time.Time
+		// idx_tasks_user_id_updated_at serves the supervisor's task changes:
+		// an account's tasks written after a time.
+		UpdatedAt time.Time `gorm:"index:idx_tasks_user_id_updated_at,priority:2"`
 
 		// idx_tasks_dequeue is a composite index matching the equality prefix of the
 		// agent work-dequeue query (ClaimNextTask / GetNextTask): workspace_id, user_id,
 		// status. Column order mirrors the query. assignee and sort_order are left out
 		// deliberately to keep the index small.
-		UserID      int64  `gorm:"index:idx_tasks_user_id;index:idx_tasks_dequeue,priority:2"`
+		UserID      int64  `gorm:"index:idx_tasks_user_id;index:idx_tasks_dequeue,priority:2;index:idx_tasks_user_id_updated_at,priority:1"`
 		WorkspaceID int64  `gorm:"index:idx_tasks_workspace_id;index:idx_tasks_dequeue,priority:1"`
 		CreatedBy   string `gorm:"type:varchar(16)"`                                       // "human" | "agent"
 		Assignee    string `gorm:"type:varchar(16)"`                                       // "human" | "agent"
@@ -378,12 +380,14 @@ type (
 	}
 
 	Message struct {
-		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
-		CreatedAt   time.Time
-		TaskID      int64  `gorm:"index:idx_messages_task_id"`
-		UserID      int64  `gorm:"index:idx_messages_user_id"`
-		Sender      string `gorm:"type:varchar(16)"` // "human" | "agent"
-		Text        string `gorm:"type:text"`
+		ID int64 `gorm:"primaryKey;autoIncrement:false"`
+		// idx_messages_user_id_created_at serves the supervisor's task
+		// changes: an account's messages created after a time.
+		CreatedAt   time.Time `gorm:"index:idx_messages_user_id_created_at,priority:2"`
+		TaskID      int64     `gorm:"index:idx_messages_task_id"`
+		UserID      int64     `gorm:"index:idx_messages_user_id;index:idx_messages_user_id_created_at,priority:1"`
+		Sender      string    `gorm:"type:varchar(16)"` // "human" | "agent"
+		Text        string    `gorm:"type:text"`
 		Attachments datatypes.JSON
 		Metadata    datatypes.JSON
 	}
@@ -935,6 +939,8 @@ const (
 	SubActionIDMCPSkillsList
 	SubActionIDMCPSkillsGet
 	SubActionIDMCPDirectoryRead
+	// The supervisor task tool's changes action.
+	SubActionIDMCPTaskChanges
 )
 
 // ForkSettings is the one list of what a workspace fork inherits from its

@@ -484,6 +484,26 @@ type (
 		Tasks []Task
 	}
 
+	// ListTaskChangesRequest asks for the tasks that changed after Since:
+	// their row, or their conversation.
+	ListTaskChangesRequest struct {
+		UserID               string
+		Since                time.Time
+		WorkspaceID          int64 // optional filter
+		CreatedByWorkspaceID int64 // optional filter: the workspace that delegated it
+		Limit                int
+	}
+
+	// ListTaskChangesResponse is the changed tasks, the least recently
+	// changed first, each with the messages its reply state reads;
+	// NewMessages counts, by task, its conversation's messages after Since,
+	// and StatusChangedAt says when its status last changed after Since.
+	ListTaskChangesResponse struct {
+		Tasks           []Task
+		NewMessages     map[int64]int
+		StatusChangedAt map[int64]time.Time
+	}
+
 	// GetTaskOverviewResponse is, for every workspace of the user that has
 	// tasks, its task counts and the first few tasks of its Active list: what
 	// the workspaces page shows on each workspace's card.
@@ -507,6 +527,22 @@ type (
 		CronSchedule string
 		CreatedAt    time.Time
 		UpdatedAt    time.Time
+	}
+
+	// TaskChange is where a task stands for the supervisor's task changes:
+	// StatusChangedAt, when not zero, is when its status last changed, and
+	// NewMessages how many messages its conversation gained, since the time
+	// asked about; LastMessagePreview begins the newest of those.
+	TaskChange struct {
+		TaskID             int64
+		WorkspaceID        int64
+		Title              string
+		Status             string
+		StatusChangedAt    time.Time
+		NewMessages        int
+		LastMessageBy      string
+		LastMessagePreview string
+		AwaitingReply      bool
 	}
 
 	// TaskReplyState is whether a task awaits a reply, as the supervisor

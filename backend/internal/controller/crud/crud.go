@@ -158,6 +158,8 @@ type TaskController interface {
 	ListTaskToolCalls(ctx context.Context, req entity.ListTaskToolCallsRequest) (*entity.ListTaskToolCallsResponse, error)
 	GetTaskPlan(ctx context.Context, req entity.GetTaskPlanRequest) (*entity.GetTaskPlanResponse, error)
 	ListTasks(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error)
+	// ListTaskChanges answers the tasks that changed after req.Since.
+	ListTaskChanges(ctx context.Context, req entity.ListTaskChangesRequest) (*entity.ListTaskChangesResponse, error)
 	// LastTaskAgents names, by task ID, the agent behind each task's latest
 	// status change made by an agent. A task no agent has changed is left out.
 	LastTaskAgents(ctx context.Context, taskIDs []int64) (map[int64]string, error)

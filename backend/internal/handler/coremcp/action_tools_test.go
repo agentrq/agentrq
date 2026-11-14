@@ -25,6 +25,7 @@ import (
 func TestActionTools_EveryExampleRunsTheToolItReplaced(t *testing.T) {
 	newerActions := map[string]mcpevent.LegacyTool{
 		"getTaskMessages": {Tool: "task", Action: "messages"},
+		"taskChanges":     {Tool: "task", Action: "changes"},
 	}
 	var recorded string
 	fps := &fakePubSub{onPublish: func(req pubsub.PublishRequest) {

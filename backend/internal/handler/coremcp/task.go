@@ -22,9 +22,9 @@ import (
 const taskToolDescription = "Hand out, follow and steer the work of every workspace on the account. A task is one piece of work, assigned to a workspace's agent or to the human, with a conversation between them. " +
 	"Use it to give a workspace work, check on it, answer an agent that is waiting, and close it. " + twoInputs +
 	"An action on one task takes its workspaceId and taskId; workspaceId comes from workspace list. " +
-	"list (workspaceId) and listAll list one workspace's tasks or every workspace's, 5 by default and at most 50, filtered by text, status, creator or awaitingReply, each as a summary without its body unless includeBody is true: poll with them and messages, not get; " +
+	"list (workspaceId) and listAll list one workspace's tasks or every workspace's, 5 by default and at most 50, filtered by text, status, creator or awaitingReply, each as a summary without its body unless includeBody is true; never poll with get; " +
 	"create (workspaceId, title, body) adds a task, assigned to the human unless assignee says agent, once or on a cronSchedule; get reads a task in full; " +
-	"messages reads only a task's conversation, far smaller than get, to follow up on a task; reply posts to it; " +
+	"messages reads only a task's conversation, far smaller than get; changes (since) lists only the tasks whose status or conversation changed after since, with now for the next call: follow tasks up with changes, then messages; reply posts to a task; " +
 	"respond answers the permission request a task is waiting on; updateStatus, updateSortingOrder, updateAssignee, updateAllowAll and updateSchedule change one thing about a task; " +
 	"those and create answer only the task's id, workspaceId, title, status, assignee and updatedAt, and reply the messageId it posted; verbose: true in their payload answers the whole task. " +
 	"getAttachment gets a task's attachment. delete removes a task with its messages and attachments and cannot be undone: to stop a scheduled task without losing its history, updateStatus it to rejected instead."
@@ -40,6 +40,12 @@ const awaitingReplyHelp = "Each task has awaitingReply: true while a question or
 const taskListHelp = "filter keeps the tasks whose title or body contains it, ignoring case; status, createdBy ('human' or 'agent'), createdByWorkspaceId (the workspace that delegated it through create) and awaitingReply narrow the list further; limit (default 5, at most 50) and offset page through it. " +
 	"Each task is a summary: id, workspaceId, title, status, assignee, createdAt, updatedAt, lastMessageAt, lastMessageBy, awaitingReply and, for a scheduled one, cronSchedule. " +
 	"includeBody: true answers each task whole, its body included; to check on tasks, the summary is enough. " + awaitingReplyHelp
+
+// taskChangesHelp is what changes takes and answers.
+const taskChangesHelp = "since (required) is an RFC3339 time; workspaceId and createdByWorkspaceId narrow it to one workspace's tasks or those one delegated; limit (default 20, at most 100). " +
+	"Answers now, the since of your next call, and changes: each task whose status changed or whose conversation gained messages after since, as taskId, workspaceId, title, status, statusChangedAt when its status changed, " +
+	"newMessages, lastMessageBy, lastMessagePreview (the start of the newest new message) and awaitingReply. Nothing changed answers an empty list. " +
+	"hasMore: true means the limit cut the list; call again with now for the rest. To follow tasks, call changes with the last now, then messages only for those with newMessages."
 
 // TaskParams is the input to the task tool.
 type TaskParams struct {
@@ -69,6 +75,10 @@ func (s *WorkspaceServer) taskActions() []mcpevent.ToolAction {
 		mcpevent.NewToolAction("messages", "Read a task's conversation: its text messages, oldest first, with the task's status and updatedAt.", s.handleTaskMessages).
 			WithDetails("Each message has its id, createdAt, sender (human or agent), text and attachment names; an agent's question to the human is one. Tool calls, permission requests and the agent's thoughts, usage and notices are left out. limit (default 5, at most 100) keeps the newest. since, a message id or an RFC3339 time, keeps the messages after it: pass the id of the last one you read to poll for news. before, the same, keeps those before it: pass the id of the oldest you have to page back. total says how many matched, hasMore whether the limit left older ones out. maxChars cuts each text to that many characters, marking the cut, to skim.").
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "since": "0kGoh3Xr2Pa", "maxChars": 500}`).
+			ReadOnly(),
+		mcpevent.NewToolAction("changes", "List the tasks that changed after a time: a status change or new messages, one short line each.", s.handleTaskChanges).
+			WithDetails(taskChangesHelp).
+			WithExample(`{"since": "2026-10-26T09:00:00Z", "createdByWorkspaceId": "0ZzhYQG2qtl"}`).
 			ReadOnly(),
 		mcpevent.NewToolAction("reply", "Post a message to a task's thread.", s.handleReplyToTask).
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "text": "Looks good, go ahead."}`),
@@ -106,6 +116,91 @@ func taskChanged(verbose bool, t entity.Task, messageID int64, full func() []byt
 		return textResponse(string(full()))
 	}
 	return textResponse(string(apiMapper.FromTaskEntityToTaskSummaryMCPResponse(t, messageID)))
+}
+
+// How many tasks the task tool's changes action returns by default, and at
+// most, and how many characters of a task's newest message it previews.
+const (
+	defaultTaskChanges = 20
+	maxTaskChanges     = 100
+	previewChars       = 200
+)
+
+// changesLag is how far behind the clock changes' now is: a write stamped
+// before a read can commit after it, and a now taken at the read would skip
+// it for good. Within the lag a change can be answered twice, never missed.
+const changesLag = time.Second
+
+// handleTaskChanges answers which tasks changed after since, a short line
+// each, so a supervisor following its tasks reads only those.
+func (s *WorkspaceServer) handleTaskChanges(ctx context.Context, req *mcp.CallToolRequest, args TaskChangesParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "taskChanges", parseID(args.WorkspaceID))
+	since, err := parseSince("since", args.Since)
+	if err == nil && since.IsZero() {
+		err = errSinceRequired
+	}
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+	limit := args.Limit
+	if limit <= 0 {
+		limit = defaultTaskChanges
+	}
+	limit = min(limit, maxTaskChanges)
+	now := time.Now().Add(-changesLag).Truncate(time.Microsecond)
+	res, err := s.crud.ListTaskChanges(ctx, entity.ListTaskChangesRequest{
+		UserID:               getUserID(ctx),
+		Since:                since,
+		WorkspaceID:          parseID(args.WorkspaceID),
+		CreatedByWorkspaceID: parseID(args.CreatedByWorkspaceID),
+		Limit:                limit + 1,
+	})
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+	tasks := res.Tasks
+	hasMore := len(tasks) > limit
+	if hasMore {
+		tasks = tasks[:limit]
+	}
+	changes := make([]entity.TaskChange, len(tasks))
+	for i, t := range tasks {
+		state := replyState(t.Messages)
+		changes[i] = entity.TaskChange{
+			TaskID:          t.ID,
+			WorkspaceID:     t.WorkspaceID,
+			Title:           t.Title,
+			Status:          t.Status,
+			StatusChangedAt: res.StatusChangedAt[t.ID],
+			NewMessages:     res.NewMessages[t.ID],
+			LastMessageBy:   state.LastMessageBy,
+			AwaitingReply:   state.AwaitingReply,
+		}
+		if changes[i].NewMessages > 0 {
+			changes[i].LastMessagePreview = preview(textMessages(t.Messages))
+		}
+		if hasMore {
+			// Where the cut list stopped, as the repository orders it.
+			now = t.UpdatedAt
+			if state.LastMessageAt.After(now) {
+				now = state.LastMessageAt
+			}
+		}
+	}
+	return textResponse(string(apiMapper.FromTaskChangeEntitiesToTaskChangesMCPResponse(now, hasMore, changes))), nil, nil
+}
+
+// preview begins the newest of a conversation's messages, at most
+// previewChars characters of it, marking a cut.
+func preview(conversation []entity.Message) string {
+	if len(conversation) == 0 {
+		return ""
+	}
+	text := []rune(strings.TrimSpace(conversation[len(conversation)-1].Text))
+	if len(text) > previewChars {
+		return string(text[:previewChars]) + "…"
+	}
+	return string(text)
 }
 
 // How many messages the task tool's messages action returns by default, and

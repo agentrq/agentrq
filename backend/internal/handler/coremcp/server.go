@@ -162,6 +162,8 @@ func textResponse(text string) *mcp.CallToolResult {
 
 var errTitleRequired = errors.New("title is required")
 
+var errSinceRequired = errors.New("since is required: an RFC3339 time, like 2026-10-26T09:00:00Z, or the now of your last changes call")
+
 func errorResponse(err error) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
 		IsError: true,
@@ -301,6 +303,13 @@ type TaskMessagesParams struct {
 	Before      string `json:"before,omitempty" jsonschema:"Only the messages before this one: a message id, like the id of the oldest message you have, to page back, or an RFC3339 time."`
 	Limit       int    `json:"limit,omitempty" jsonschema:"At most this many messages, the newest ones; default 5, capped at 100."`
 	MaxChars    int    `json:"maxChars,omitempty" jsonschema:"Cut each message's text to this many characters, marking the cut. Default 0, whole."`
+}
+
+type TaskChangesParams struct {
+	Since                string `json:"since" jsonschema:"Only the tasks that changed after this RFC3339 time: the now of your last changes call, or when you started following."`
+	WorkspaceID          string `json:"workspaceId,omitempty" jsonschema:"Only this workspace's tasks (base62)."`
+	CreatedByWorkspaceID string `json:"createdByWorkspaceId,omitempty" jsonschema:"Only the tasks this workspace delegated through create (base62), such as your own workspace's."`
+	Limit                int    `json:"limit,omitempty" jsonschema:"At most this many tasks, the least recently changed first; default 20, capped at 100."`
 }
 
 type RespondToTaskParams struct {
