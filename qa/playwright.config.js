@@ -49,7 +49,8 @@ export default defineConfig({
     {
       name: 'backend',
       // The server reads its config relative to its working directory.
-      command: 'go run .',
+      // QA_BACKEND_CMD runs a prebuilt server instead (the Postgres rig).
+      command: process.env.QA_BACKEND_CMD || 'go run .',
       cwd: join(repo, 'backend/cmd/server'),
       url: `http://localhost:${apiPort}/api/v1/auth/user`,
       // Unauthenticated, /auth/user answers 401, which Playwright counts as up.
@@ -76,6 +77,10 @@ export default defineConfig({
         AGENTRQ_TRUSTED_PROXIES: '127.0.0.1,::1',
         // Public file links are made from it, so they point at this server.
         AGENTRQ_BASE_URL: `http://localhost:${apiPort}`,
+        // QA_POSTGRES_HOST runs the server on Postgres instead of SQLite.
+        ...(process.env.QA_POSTGRES_HOST
+          ? { AGENTRQ_SQLITE_ENABLED: 'false', AGENTRQ_POSTGRES_ENABLED: 'true', AGENTRQ_POSTGRES_HOST: process.env.QA_POSTGRES_HOST }
+          : {}),
       },
     },
     {
