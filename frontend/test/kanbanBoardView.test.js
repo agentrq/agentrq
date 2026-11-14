@@ -572,6 +572,8 @@ describe('the team\'s board (/kanban?team=)', () => {
     expect(n1.querySelector('[data-test=card-workspace]').textContent).toMatch(/Bob|B/)
     expect(n1.querySelector('[data-test=card-workspace]').textContent).toContain('Backend')
     expect(n1.querySelector('[data-test=card-owner]')).not.toBe(null)
+    // As small as the agent and assignee icons beside it.
+    expect(n1.querySelector('[data-test=card-owner]').firstElementChild.className).toMatch(/\bw-3\.5 h-3\.5\b/)
     expect(n1.querySelector('[title="Spin up in a fork"]')).toBe(null)
     expect([...n1.querySelectorAll('button')].some((b) => /Allow|Deny/.test(b.textContent))).toBe(false)
 

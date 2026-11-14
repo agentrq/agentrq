@@ -161,9 +161,16 @@ describe('an owner\'s avatar', () => {
         h(OwnerAvatar, { owner: alice, label: true, size: 'md' }),
         h(OwnerAvatar, { owner: { email: 'zed@x.com' }, label: true }),
         h(OwnerAvatar, {}),
+        h(OwnerAvatar, { owner: bob, size: 'xs' }),
       ]),
     }));
-    const [a, z, none] = $$('[data-test=owner-avatar]');
+    const [a, z, none, xs] = $$('[data-test=owner-avatar]');
+    const circle = (el) => el.firstElementChild.className;
+    expect(circle(a)).toMatch(/\bw-6 h-6\b.*\bring-1\b/);
+    expect(circle(z)).toMatch(/\bw-4 h-4\b.*\bring-1\b/);
+    // xs matches the 14px icons beside it on a kanban card, with no ring.
+    expect(circle(xs)).toMatch(/\bw-3\.5 h-3\.5\b/);
+    expect(circle(xs)).not.toMatch(/\bring-1\b/);
     expect(a.querySelector('img').getAttribute('src')).toBe(alice.picture);
     expect(a.getAttribute('title')).toBe('Alice');
     expect(text(a)).toBe('Alice');
