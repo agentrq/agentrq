@@ -1499,7 +1499,7 @@ func TestPano_Edit(t *testing.T) {
 		want string
 	}{
 		{"no ops", nil, "at least one op"},
-		{"an unknown op", []entity.PanoEditOp{{Op: "delete"}}, "op 1: op must be append or replace"},
+		{"an unknown op", []entity.PanoEditOp{{Op: "delete"}}, "op 1: op must be append, replace or replaceSection"},
 		{"an append without text", []entity.PanoEditOp{{Op: "append"}}, "op 1: append needs text"},
 		{"a replace without an oldString", []entity.PanoEditOp{{Op: "replace", NewString: "x"}}, "op 1: replace needs an oldString"},
 		{"a replace that matches nothing", []entity.PanoEditOp{{Op: "replace", OldString: "- [ ] zero", NewString: "x"}}, "not in the markdown, nothing was changed"},

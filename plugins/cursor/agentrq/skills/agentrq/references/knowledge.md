@@ -19,8 +19,8 @@ The account's skills as a workspace sees them, read-only.
 The account's Pano: markdown docs every workspace reads and writes.
 
 - `save` creates a doc (no `id`; returns its `id`) or replaces one's `title` and `markdown`; its `files` must each be linked from the markdown by filename (`![alt](chart.png)`) or the save is refused
-- `edit` takes `id`, the `version` you read and `ops`, all or none: `{op: "append", text}`, or `{op: "replace", oldString, newString}` where `oldString` occurs once. Quote an assigned item as you read it: its task link's status and its box match whatever the doc says now. A miss names the closest line, so retry from that without reading the doc again
-- `read` takes `id`, `includeComments` and `includeAttachments`
+- `edit` takes `id`, the `version` you read and `ops`, all or none: `{op: "append", text}`, `{op: "replace", oldString, newString}` where `oldString` occurs once, or `{op: "replaceSection", section, markdown}`, which swaps a heading's section, heading line included. Quote an assigned item as you read it: its task link's status and its box match whatever the doc says now. A miss names the closest line, so retry from that without reading the doc again
+- `read` takes `id`, `includeComments` and `includeAttachments`. For a big doc, read only what you need: `outline: true` gives its headings, each with its checklist's done/total, and `section: "<heading>"` that heading's markdown, both with the `version` an `edit` needs
 - `comment` adds `comment`; `attach` adds `files` that need no link; `delete` deletes the doc
 
 Writes are recorded as the supervisor workspace. There is no search: pass a doc's `id` along.
