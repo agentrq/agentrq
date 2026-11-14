@@ -8,7 +8,7 @@
 - **An invitation is accepted only while its inviter is still in the team.** Checked at accept, so a removed inviter's invitations die without being revoked.
 - **The daily cap counts every invitation created in the last 24 hours, revoked and declined ones included.** Otherwise revoking would reset it.
 - **The per-account cap locks the inviter's `users` row too (`lockUser`, after `changeTeam`).** The team lock alone lets one account's parallel invites to two teams both pass it on Postgres.
-- **Only the SHA-256 of an invitation token is stored.** The link carries the token in its `#fragment`, so it never reaches a server log. It is shown once, when no mail was sent.
+- **Only the SHA-256 of an invitation token is stored.** The link carries the token in its `#fragment`, so it never reaches a server log. It is shown once, in the answer to the invite, whether or not a mail was sent.
 - **Read access goes through `CanReadWorkspaceInTeam`, never through an owner check.** It sees a fork through its parent's share and hides archived workspaces. The existing owner checks must stay as they are.
 - **Only a parent workspace is shared; a fork follows its parent's share** and shows under its parent's name.
 - **A team workspace is every shared workspace of one name** (`lower(trim(name))`, matched in Go by `teamview.WorkspaceKey`, not in SQL: SQLite's `LOWER` folds ASCII only). There is no label to show a share under.
