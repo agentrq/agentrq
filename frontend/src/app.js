@@ -22,7 +22,7 @@ import App from './App.vue'
 import { fetchUser } from './api'
 import { usePlatformStore } from './stores/platformStore'
 import { rememberedTeam } from './stores/teamStore'
-import { teamHome, teamLanding, withManage } from './composables/useTeamMode'
+import { teamLanding } from './composables/useTeamMode'
 
 // The Pano's board, shared by its two routes below.
 const PanoView = () => import('./views/PanoView.vue')
@@ -102,14 +102,15 @@ export const routes = [
 
   // Teams. The team on screen is `?team=<id>` on the pages above that show a
   // team read-only (/tasks/*, /kanban, /skills); see useTeamMode. It is
-  // managed in a dialog over them, `?manage=<tab>`. Creating one, and the
-  // invitations addressed to you, need none.
+  // managed on its settings page. Creating one, and the invitations addressed
+  // to you, need none.
   { path: '/team/new', component: () => import('./views/TeamNewView.vue') },
   // A team's analytics, or one team workspace's (?workspace=); a team page, so
   // with no team there is nothing to show.
   { path: '/team/analytics', component: () => import('./views/TeamAnalyticsView.vue'), beforeEnter: (to) => (to.query.team ? true : '/') },
-  // The settings page the dialog replaced: an old link opens the dialog.
-  { path: '/team/settings', redirect: (to) => (to.query.team ? withManage(teamHome(to.query.team), 'members') : '/') },
+  // A team's settings (?tab=); a team page, so with no team there is nothing
+  // to show.
+  { path: '/team/settings', component: () => import('./views/TeamSettingsView.vue'), beforeEnter: (to) => (to.query.team ? true : '/') },
   { path: '/invitations', component: () => import('./views/InvitationsView.vue') },
   // An invitation link. Public, because it may be opened signed out: the page
   // itself offers the sign-in, and comes back here after it.

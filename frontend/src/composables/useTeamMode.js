@@ -120,19 +120,16 @@ export const isVersionConflict = (err) => err?.status === 409 && err?.conflict =
 /** What a conflict tells the person, once the team is read again. */
 export const CONFLICT_NOTICE = 'Someone changed this team, refreshed';
 
-/** The Manage team dialog's tabs; `?manage=<tab>` opens it on one. */
-export const MANAGE_TABS = ['members', 'invitations', 'activity', 'workspaces'];
+/** The team settings page's tabs; `?tab=<tab>` opens it on one. */
+export const SETTINGS_TABS = ['members', 'invitations', 'activity', 'workspaces', 'danger'];
 
-/** `route`'s location with the Manage team dialog open on `tab`, or shut (''). */
-export function withManage(route, tab) {
-  const query = { ...(route?.query || {}) };
-  if (tab) query.manage = tab;
-  else delete query.manage;
-  return { path: route?.path || '/', query };
+/** Team `teamId`'s settings page, on `tab` (its first when none). */
+export function teamSettings(teamId, tab = 'members') {
+  return { path: '/team/settings', query: { team: String(teamId), tab } };
 }
 
-/** The dialog's tab a route asks for, '' when it is shut. */
-export const manageTabOf = (route) => (MANAGE_TABS.includes(route?.query?.manage) ? route.query.manage : '');
+/** The settings tab a route asks for, its first for any other. */
+export const settingsTabOf = (route) => (SETTINGS_TABS.includes(route?.query?.tab) ? route.query.tab : 'members');
 
 const personName = (p) => p?.name || p?.email || 'Someone';
 

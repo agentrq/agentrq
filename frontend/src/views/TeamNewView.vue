@@ -48,7 +48,7 @@ import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { createTeam } from '../api';
 import { useTeamStore, rememberTeam } from '../stores/teamStore';
-import { teamHome, withManage } from '../composables/useTeamMode';
+import { teamSettings } from '../composables/useTeamMode';
 
 const router = useRouter();
 const store = useTeamStore();
@@ -67,8 +67,8 @@ async function create() {
     const team = await createTeam(name.value.trim());
     store.upsert(team);
     rememberTeam(String(team.id));
-    // The team, with its invitations open: the next thing to do.
-    await router.push(withManage(teamHome(team.id), 'invitations'));
+    // The team's invitations: the next thing to do.
+    await router.push(teamSettings(team.id, 'invitations'));
   } catch (err) {
     error.value = err.message;
   } finally {
