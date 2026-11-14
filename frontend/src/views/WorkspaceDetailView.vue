@@ -84,7 +84,7 @@
 
               <!-- Filters Segment Control (Top Right) -->
               <div v-if="showMobileFilters || !isMobile" 
-                   class="h-8 p-0.5 bg-gray-100 dark:bg-zinc-800 rounded-md border border-gray-200 dark:border-zinc-700/50 shadow-inner mr-2 overflow-x-auto no-scrollbar transition-all duration-300"
+                   class="h-8 p-0.5 bg-gray-100 dark:bg-zinc-800 rounded-md border border-gray-200 dark:border-zinc-700/50 mr-2 overflow-x-auto no-scrollbar transition-all duration-300"
                    :class="[showMobileFilters ? 'absolute top-10 left-0 z-50 flex shadow-2xl border-gray-900 dark:border-white w-max animate-in fade-in slide-in-from-top-2' : 'hidden @min-[48rem]:flex items-center']">
                 <button v-for="f in filters" :key="f.id"
                         @click="selectFilter(f.id)"
