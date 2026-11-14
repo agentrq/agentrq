@@ -262,10 +262,12 @@ Every file is kept at a key that names its workspace and task, or its account an
     "Effect": "Allow",
     "Principal": "*",
     "Action": "s3:GetObject",
-    "Resource": ["arn:aws:s3:::<bucket>/artifacts/*", "arn:aws:s3:::<bucket>/skills/*", "arn:aws:s3:::<bucket>/pano/*"]
+    "Resource": ["arn:aws:s3:::<bucket>/artifacts/*", "arn:aws:s3:::<bucket>/skills/*", "arn:aws:s3:::<bucket>/pano/*", "arn:aws:s3:::<bucket>/avatars/*"]
   }]
 }
 ```
+
+**Profile pictures.** When `AGENTRQ_S3_ENDPOINT` and `AGENTRQ_S3_BUCKET` are set, each Google or GitHub sign-in copies the account's picture to `avatars/u-<account id>/<hash>.png` as a 32×32 PNG, and the app shows it from there, since a provider's link can stop working. If the copy fails, the sign-in goes ahead with the provider's link. The desktop app's content policy allows only the providers' own picture hosts, so it shows the initial-letter placeholder for a copied picture.
 
 An attachment's upload type is kept only when a browser cannot run it; anything else is stored as `application/octet-stream`.
 

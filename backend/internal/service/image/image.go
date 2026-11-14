@@ -6,6 +6,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"image"
@@ -15,11 +16,19 @@ import (
 	"strings"
 
 	"golang.org/x/image/draw"
+	_ "golang.org/x/image/webp"
 )
 
 type Service interface {
 	ResizeBase64(dataBase64 string, width, height int) (string, error)
+	// SquarePNG crops a PNG, JPEG, GIF or WebP image to its centred square
+	// and scales it to a size×size PNG.
+	SquarePNG(ctx context.Context, data []byte, size int) ([]byte, error)
 }
+
+// maxSourceSide is the widest or tallest image SquarePNG decodes: a small
+// file can still claim dimensions that take gigabytes to decode.
+const maxSourceSide = 4096
 
 type service struct{}
 
@@ -78,4 +87,30 @@ func (s *service) ResizeBase64(dataBase64 string, width, height int) (string, er
 	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
 	// Keep the same mime type in meta part, or update it to be safe
 	return meta + "," + encoded, nil
+}
+
+func (s *service) SquarePNG(ctx context.Context, data []byte, size int) ([]byte, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode image: %w", err)
+	}
+	if cfg.Width > maxSourceSide || cfg.Height > maxSourceSide {
+		return nil, fmt.Errorf("image too large: %dx%d", cfg.Width, cfg.Height)
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode image: %w", err)
+	}
+
+	b := img.Bounds()
+	side := min(b.Dx(), b.Dy())
+	x, y := b.Min.X+(b.Dx()-side)/2, b.Min.Y+(b.Dy()-side)/2
+	dst := image.NewRGBA(image.Rect(0, 0, size, size))
+	draw.CatmullRom.Scale(dst, dst.Bounds(), img, image.Rect(x, y, x+side, y+side), draw.Src, nil)
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, dst); err != nil {
+		return nil, fmt.Errorf("encode image: %w", err)
+	}
+	return buf.Bytes(), nil
 }

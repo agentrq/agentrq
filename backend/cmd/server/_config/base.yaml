@@ -152,7 +152,8 @@ acp:
   v1:
     enabled: ${AGENTRQ_ACP_V1_ENABLED:true}
 
-# Any S3-compatible store. Objects are addressed path-style.
+# Any S3-compatible store. Objects are addressed path-style. With an endpoint
+# and a bucket set, sign-in pictures are kept public in it under avatars/.
 s3:
   endpoint: "${AGENTRQ_S3_ENDPOINT:}"
   accessKey: "${AGENTRQ_S3_ACCESS_KEY:}"
