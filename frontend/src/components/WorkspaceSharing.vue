@@ -59,6 +59,9 @@ const props = defineProps({
   teamId: { type: String, default: '' },
 });
 
+// After a share or an unshare, which changes who the teammates are.
+const emit = defineEmits(['changed']);
+
 const teamStore = useTeamStore();
 const workspaceStore = useWorkspaceStore();
 const { notifySuccess, notifyError } = useToasts();
@@ -131,6 +134,7 @@ async function change(row, work, done) {
     const res = await work(teamStore.getTeam(row.teamId)?.version);
     teamStore.setVersion(row.teamId, res?.version);
     done();
+    emit('changed');
   } catch (err) {
     if (await changeFailed(err, row.teamId) === 'conflict') await load();
   } finally {

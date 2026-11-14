@@ -96,6 +96,9 @@ func TestListTeamPeerWorkspaces(t *testing.T) {
 				t.Errorf("peers of %d: %v, %v; want %s", ws, got, err, want)
 			}
 		}
+		if rows, _ := r.ListTeamPeerWorkspaces(ctx, 100); len(rows) == 0 || rows[0].OwnerPicture != "a.png" {
+			t.Errorf("peers of 100 carry their owner's picture: %+v", rows)
+		}
 		// A peer archived drops out.
 		db.Model(&model.Workspace{}).Where("id = 200").Update("archived_at", teamT0)
 		rows, _ := r.ListTeamPeerWorkspaces(ctx, 100)
@@ -167,6 +170,72 @@ func TestTeamViewSkillsAreTheOwners(t *testing.T) {
 		}
 		if err != nil || fmt.Sprint(names) != "[200/deploy/11 100/deploy/10]" {
 			t.Errorf("skills: %v, %v; want the owners' that are on, by name, the latest first", names, err)
+		}
+	})
+}
+
+// A user's exclusions are their own, per workspace of theirs: leaving a
+// teammate out twice, or taking them back twice, is no error, and nobody
+// else's choice shows in the list.
+func TestMemoryExclusions(t *testing.T) {
+	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
+		ctx := context.Background()
+		for _, e := range []model.MemoryExclusion{
+			{WorkspaceID: 100, UserID: 10, ExcludedUserID: 12},
+			{WorkspaceID: 100, UserID: 10, ExcludedUserID: 11},
+			{WorkspaceID: 100, UserID: 10, ExcludedUserID: 11},
+			{WorkspaceID: 101, UserID: 10, ExcludedUserID: 13},
+			{WorkspaceID: 200, UserID: 11, ExcludedUserID: 10},
+		} {
+			if err := r.ExcludeTeammateMemory(ctx, e); err != nil {
+				t.Fatalf("exclude %+v: %v", e, err)
+			}
+		}
+		if ids, err := r.ListMemoryExclusions(ctx, 10, 100); err != nil || fmt.Sprint(ids) != "[11 12]" {
+			t.Errorf("exclusions of 10 in 100: %v, %v; want [11 12]", ids, err)
+		}
+		if ids, err := r.ListMemoryExclusions(ctx, 11, 100); err != nil || ids == nil || len(ids) != 0 {
+			t.Errorf("exclusions of 11 in 10's workspace: %v, %v; want none", ids, err)
+		}
+		for range 2 {
+			if err := r.IncludeTeammateMemory(ctx, 10, 100, 11); err != nil {
+				t.Fatalf("include: %v", err)
+			}
+		}
+		if ids, _ := r.ListMemoryExclusions(ctx, 10, 100); fmt.Sprint(ids) != "[12]" {
+			t.Errorf("exclusions of 10 in 100 after taking 11 back: %v; want [12]", ids)
+		}
+		if ids, _ := r.ListMemoryExclusions(ctx, 11, 200); fmt.Sprint(ids) != "[10]" {
+			t.Errorf("11's own exclusion was touched: %v", ids)
+		}
+	})
+}
+
+// A workspace's last memory write is the latest of its memories; one with
+// none is left out, and no workspaces read nothing.
+func TestMemoryUpdates(t *testing.T) {
+	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
+		ctx := context.Background()
+		if got, err := r.MemoryUpdates(ctx, nil); err != nil || got == nil || len(got) != 0 {
+			t.Errorf("no workspaces: %v, %v", got, err)
+		}
+		if err := db.AutoMigrate(&model.Memory{}); err != nil {
+			t.Fatal(err)
+		}
+		for i, m := range []model.Memory{
+			{WorkspaceID: 100, UserID: 10, Name: "memory.md", UpdatedAt: teamT0},
+			{WorkspaceID: 100, UserID: 10, Name: "deploys.md", UpdatedAt: teamT0.Add(time.Hour)},
+			{WorkspaceID: 200, UserID: 11, Name: "memory.md", UpdatedAt: teamT0.Add(2 * time.Hour)},
+			{WorkspaceID: 300, UserID: 12, Name: "memory.md", UpdatedAt: teamT0.Add(3 * time.Hour)},
+		} {
+			m.ID, m.CreatedAt = int64(i+1), teamT0
+			if err := db.Create(&m).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, err := r.MemoryUpdates(ctx, []int64{100, 200, 400})
+		if err != nil || len(got) != 2 || !got[100].Equal(teamT0.Add(time.Hour)) || !got[200].Equal(teamT0.Add(2*time.Hour)) {
+			t.Errorf("updates: %v, %v; want 100 at +1h, 200 at +2h", got, err)
 		}
 	})
 }

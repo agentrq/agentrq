@@ -1889,6 +1889,10 @@ const (
 	ActionTeamMemorySave Action = 120
 	// A teammate's skill copied into the account; workspace 0.
 	ActionTeamSkillAdd Action = 121
+	// A teammate's memory included in, or left out of, the memory index of
+	// one of the account's shared workspaces, which it carries.
+	ActionTeammateMemoryInclude Action = 122
+	ActionTeammateMemoryExclude Action = 123
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2129,6 +2133,10 @@ func (a Action) String() string {
 		return "team_memory_save"
 	case ActionTeamSkillAdd:
 		return "team_skill_add"
+	case ActionTeammateMemoryInclude:
+		return "teammate_memory_include"
+	case ActionTeammateMemoryExclude:
+		return "teammate_memory_exclude"
 	}
 	return "unknown"
 }

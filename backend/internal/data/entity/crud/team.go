@@ -254,6 +254,18 @@ type TeamOwner struct {
 	Picture string
 }
 
+// TeammateMemory is a teammate's workspace in the team workspace of one of
+// the account's own, and whether that workspace's agent reads its memory.
+// UpdatedAt is when a memory there was last written; nil when none was.
+type TeammateMemory struct {
+	UserID      int64
+	Name        string
+	Picture     string
+	WorkspaceID int64
+	UpdatedAt   *time.Time
+	Included    bool
+}
+
 // TeamSkill is a skill on in a team's workspaces, and who has it on. One read
 // on its own carries its SKILL.md, from the owner who changed it last.
 type TeamSkill struct {

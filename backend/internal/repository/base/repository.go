@@ -153,6 +153,10 @@ type Repository interface {
 	// Team mode reads, over workspaces the two checks above allowed.
 	TeamWorkspaceInfo(ctx context.Context, workspaceID int64) (TeamWorkspaceRow, error)
 	ListTeamPeerWorkspaces(ctx context.Context, workspaceID int64) ([]TeamWorkspacePeer, error)
+	ListMemoryExclusions(ctx context.Context, userID, workspaceID int64) ([]int64, error)
+	ExcludeTeammateMemory(ctx context.Context, e model.MemoryExclusion) error
+	IncludeTeammateMemory(ctx context.Context, userID, workspaceID, teammateID int64) error
+	MemoryUpdates(ctx context.Context, workspaceIDs []int64) (map[int64]time.Time, error)
 	ListSkillsOnInWorkspaces(ctx context.Context, workspaceIDs []int64) ([]WorkspaceSkillRow, error)
 	ListTeamReaders(ctx context.Context, workspaceID int64) ([]TeamReader, error)
 
@@ -624,6 +628,9 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.WorkspaceShare{}).Error; err != nil {
 		return err
 	}
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.MemoryExclusion{}).Error; err != nil {
+		return err
+	}
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.ForkFolder{}).Error; err != nil {
 		return err
 	}
@@ -659,6 +666,7 @@ var workspaceIDTables = []any{
 	&model.Memory{}, &model.Skill{}, &model.WorkspaceSkill{}, &model.EventTrigger{}, &model.WorkflowStep{},
 	&model.PanoFile{}, &model.PanoComment{}, &model.PanoDocTask{}, &model.Session{}, &model.ForkFolder{},
 	&model.SiteShare{}, &model.SlackWorkspaceLink{}, &model.SlackTaskThread{}, &model.PushSubscription{}, &model.WorkspaceShare{},
+	&model.MemoryExclusion{},
 	&model.Telemetry{}, &model.HourlyTelemetry{}, &model.DailyTelemetry{}, &model.MonthlyTelemetry{},
 }
 

@@ -39,9 +39,9 @@ func mcpWorkspace(ctx context.Context, repo base.Repository, workspaceID int64, 
 //
 // The one exception is a workspace shared with a team. There, memory.md is
 // an index built at each load, one line per member of its team workspace
-// (the shared workspaces of its name, in every team it is shared with), and
-// "<workspaceId>/<name>" reads a member's memory, read-only, after
-// CanReadWorkspaceInTeam allows it. The agent's own memory is still saved
+// (the shared workspaces of its name, in every team it is shared with) the
+// owner has not left out, and "<workspaceId>/<name>" reads such a member's
+// memory, read-only, after CanReadWorkspaceInTeam allows it. The agent's own memory is still saved
 // under a plain name, or under its own workspace's id.
 type workspaceMemory struct {
 	repo        base.Repository
@@ -71,29 +71,12 @@ func (m workspaceMemory) split(name string) (workspaceID int64, rest string, pre
 	return monoflake.IDFromBase62(id).Int64(), rest, true
 }
 
-// teamPeers is the members of this workspace's team workspace: each
-// workspace of its name shared with a team it is shared with, once, with
-// that team. None when it is shared with no team.
+// teamPeers is the members of this workspace's team workspace whose memory
+// its owner reads: each workspace of its name shared with a team it is
+// shared with, once, with that team, less the teammates the owner left out.
+// None when it is shared with no team.
 func (m workspaceMemory) teamPeers(ctx context.Context) ([]base.TeamWorkspacePeer, error) {
-	rows, err := m.repo.ListTeamPeerWorkspaces(ctx, m.workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	key := ""
-	for _, r := range rows {
-		if r.WorkspaceID == m.workspaceID {
-			key = teamview.WorkspaceKey(r.Name)
-		}
-	}
-	seen := map[int64]bool{}
-	out := []base.TeamWorkspacePeer{}
-	for _, r := range rows {
-		if teamview.WorkspaceKey(r.Name) == key && !seen[r.WorkspaceID] {
-			seen[r.WorkspaceID] = true
-			out = append(out, r)
-		}
-	}
-	return out, nil
+	return teamview.MemoryPeers(ctx, m.repo, m.uid(), m.workspaceID)
 }
 
 // teamIndex is the memory index of a team workspace, a line per member's

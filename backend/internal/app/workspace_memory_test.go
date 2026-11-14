@@ -6,6 +6,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -150,7 +151,7 @@ func TestATeamWorkspacesMemoryIsAnIndexOfItsMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Memory{}, &model.Team{},
-		&model.TeamMember{}, &model.WorkspaceShare{}); err != nil {
+		&model.TeamMember{}, &model.WorkspaceShare{}, &model.MemoryExclusion{}); err != nil {
 		t.Fatal(err)
 	}
 	const (
@@ -236,6 +237,37 @@ func TestATeamWorkspacesMemoryIsAnIndexOfItsMembers(t *testing.T) {
 		t.Errorf("delete by its own id: %v %v", deleted, err)
 	}
 
+	// Bob leaves Alice out: she is gone from his index, her memory no longer
+	// reads through it, and his own line stays. Alice's own index, and
+	// Erin's choice about Alice, are not Bob's: they change nothing for him.
+	for _, e := range []model.MemoryExclusion{
+		{WorkspaceID: memParent, UserID: memUser, ExcludedUserID: alice},
+		{WorkspaceID: memParent, UserID: memUser, ExcludedUserID: memUser},
+		{WorkspaceID: erinAPI, UserID: erin, ExcludedUserID: erin},
+	} {
+		if err := repo.ExcludeTeammateMemory(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	without := teamIndexHeader + "\n" +
+		"A member: " + id(erinAPI) + "/memory.md\n" +
+		"Bob: " + id(memParent) + "/memory.md (your actual memory that you can update)\n"
+	if got, _, _, err := bob.load(ctx, "memory.md"); err != nil || got != without {
+		t.Errorf("the index without alice: %v\n%s\nwant\n%s", err, got, without)
+	}
+	if _, _, _, err := bob.load(ctx, id(aliceAPI)+"/memory.md"); err != errNotTeammate {
+		t.Errorf("an excluded teammate's memory: %v", err)
+	}
+	if got, _, _, err := memoryOf(aliceAPI).load(ctx, "memory.md"); err != nil || !strings.Contains(got, "Bob: "+id(memParent)) {
+		t.Errorf("alice's own index still lists bob: %v\n%s", err, got)
+	}
+	if err := repo.IncludeTeammateMemory(ctx, memUser, memParent, alice); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _, err := bob.load(ctx, "memory.md"); err != nil || got != want {
+		t.Errorf("the index with alice back: %v\n%s", err, got)
+	}
+
 	// Out of team two, Bob no longer reads Erin's memory, though her share
 	// is still listed there.
 	if err := db.Where("team_id = ? AND user_id = ?", team2, memUser).Delete(&model.TeamMember{}).Error; err != nil {
@@ -269,9 +301,17 @@ func TestATeamWorkspacesMemoryReportsStorageFailures(t *testing.T) {
 	repo.EXPECT().ListTeamPeerWorkspaces(gomock.Any(), memParent).Return([]base.TeamWorkspacePeer{
 		{TeamID: 7, WorkspaceID: memParent, Name: "api"}, {TeamID: 7, WorkspaceID: 31, Name: "api"},
 	}, nil)
+	repo.EXPECT().ListMemoryExclusions(gomock.Any(), memUser, memParent).Return(nil, nil)
 	repo.EXPECT().CanReadWorkspaceInTeam(gomock.Any(), memUser, int64(7), int64(31)).Return(false, errRepo)
 	if _, _, _, err := m.load(ctx, other); err != errRepo {
 		t.Errorf("a member's, the check: %v", err)
+	}
+	repo.EXPECT().ListTeamPeerWorkspaces(gomock.Any(), memParent).Return([]base.TeamWorkspacePeer{
+		{TeamID: 7, WorkspaceID: memParent, Name: "api"}, {TeamID: 7, WorkspaceID: 31, Name: "api"},
+	}, nil)
+	repo.EXPECT().ListMemoryExclusions(gomock.Any(), memUser, memParent).Return(nil, errRepo)
+	if _, _, _, err := m.load(ctx, "memory.md"); err != errRepo {
+		t.Errorf("the index, the exclusions: %v", err)
 	}
 }
 

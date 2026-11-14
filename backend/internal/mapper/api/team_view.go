@@ -137,3 +137,27 @@ func FromTeamStatsEntityToHTTPResponse(rs *entity.GetDetailedWorkspaceStatsRespo
 	b, _ := json.Marshal(rs)
 	return b
 }
+
+func fromTeammateMemoryEntity(m entity.TeammateMemory) view.TeammateMemory {
+	return view.TeammateMemory{
+		UserID: id62(m.UserID), Name: m.Name, Picture: m.Picture,
+		WorkspaceID: id62(m.WorkspaceID), UpdatedAt: m.UpdatedAt, Included: m.Included,
+	}
+}
+
+// FromTeammateMemoryEntitiesToHTTPResponse renders the teammates of a
+// workspace of the caller's.
+func FromTeammateMemoryEntitiesToHTTPResponse(ms []entity.TeammateMemory) []byte {
+	out := make([]view.TeammateMemory, len(ms))
+	for i, m := range ms {
+		out[i] = fromTeammateMemoryEntity(m)
+	}
+	b, _ := json.Marshal(view.ListTeammateMemoriesResponse{Teammates: out})
+	return b
+}
+
+// FromTeammateMemoryEntityToHTTPResponse renders one teammate, as now set.
+func FromTeammateMemoryEntityToHTTPResponse(m entity.TeammateMemory) []byte {
+	b, _ := json.Marshal(view.SetTeammateMemoryResponse{Teammate: fromTeammateMemoryEntity(m)})
+	return b
+}

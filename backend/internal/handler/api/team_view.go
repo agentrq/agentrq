@@ -29,6 +29,8 @@ func (h *handler) registerTeamViewRoutes() {
 	r.Get("/skills", h.listTeamSkills())
 	r.Get("/skills/:name", h.getTeamSkill())
 	r.Post("/skills/:name/add", h.addTeamSkill())
+	h.router.Get("/workspaces/:id/teammate-memories", h.listTeammateMemories())
+	h.router.Put("/workspaces/:id/teammate-memories/:userId", h.setTeammateMemory())
 }
 
 var teamPathTask = []string{"teamId", "taskId"}
@@ -178,5 +180,29 @@ func (h *handler) addTeamSkill() fiber.Handler {
 		defer cancel()
 		s, err := h.teamView.AddSkill(ctx, sessionUser(c), ids[0], c.Params("name"), workspaceIDs)
 		return mapper.FromAddTeamSkillResponseEntityToHTTPResponse(s), err
+	})
+}
+
+var teamPathTeammate = []string{"id", "userId"}
+
+func (h *handler) listTeammateMemories() fiber.Handler {
+	return teamRoute(teamPathWorkspace, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		ctx, cancel := newContext(c)
+		defer cancel()
+		ms, err := h.teamView.ListTeammateMemories(ctx, sessionUser(c), ids[0])
+		return mapper.FromTeammateMemoryEntitiesToHTTPResponse(ms), err
+	})
+}
+
+func (h *handler) setTeammateMemory() fiber.Handler {
+	return teamRoute(teamPathTeammate, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		var rq view.SetTeammateMemoryRequest
+		if err := body(c, &rq); err != nil || rq.Included == nil {
+			return nil, errBadRequest
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		m, err := h.teamView.SetTeammateMemory(ctx, sessionUser(c), ids[0], ids[1], *rq.Included)
+		return mapper.FromTeammateMemoryEntityToHTTPResponse(m), err
 	})
 }

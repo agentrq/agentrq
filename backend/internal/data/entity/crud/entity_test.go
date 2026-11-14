@@ -112,6 +112,8 @@ func TestActionString(t *testing.T) {
 		{ActionTeamTaskClone, "team_task_clone"},
 		{ActionTeamMemorySave, "team_memory_save"},
 		{ActionTeamSkillAdd, "team_skill_add"},
+		{ActionTeammateMemoryInclude, "teammate_memory_include"},
+		{ActionTeammateMemoryExclude, "teammate_memory_exclude"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},
