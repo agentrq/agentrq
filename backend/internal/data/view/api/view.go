@@ -258,6 +258,11 @@ type (
 		UpdatedAt time.Time `json:"updatedAt"`
 	}
 
+	// GetTaskPlanResponse is a task's plan, or null when it has none.
+	GetTaskPlanResponse struct {
+		Plan *TaskPlan `json:"plan"`
+	}
+
 	// TaskPlanUpdated is a taskPlan.updated stream event: a task's plan
 	// written or replaced, or withdrawn when Plan is null.
 	TaskPlanUpdated struct {

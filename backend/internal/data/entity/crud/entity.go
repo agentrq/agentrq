@@ -425,7 +425,7 @@ type (
 	}
 
 	GetTaskPlanResponse struct {
-		Plan TaskPlan
+		Plan *TaskPlan
 	}
 
 	// TaskPlan is the plan a task's agent works to, as markdown; its ID is the

@@ -126,7 +126,7 @@ describe('useTaskPlan', () => {
   })
 
   it('reads through the api by default', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('{"error":"not found"}', { status: 404 }))))
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('{"plan":null}', { status: 200 }))))
     const s = useTaskPlan()
     await s.load('ws1', 't1')
     expect(s.plan.value).toBeNull()

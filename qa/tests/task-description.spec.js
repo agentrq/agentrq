@@ -54,7 +54,6 @@ for (const size of [{ width: 1280, height: 836 }, { width: 390, height: 844 }]) 
     await expect(description(page), 'the description once the first reply arrives').toHaveCount(0)
     await expect.poll(() => drawn(page, 'A live reply.'), { message: 'the live reply, drawn at its middle' }).toBe(true)
 
-    // A task the agent has made no plan for answers 404 for it.
-    traffic.expectClean({ allow: ['404 /plan'] })
+    traffic.expectClean()
   })
 }

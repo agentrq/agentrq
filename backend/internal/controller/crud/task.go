@@ -229,18 +229,21 @@ func (c *controller) ListTaskToolCalls(ctx context.Context, req entity.ListTaskT
 	return &entity.ListTaskToolCallsResponse{ToolCalls: fromModelToolCallsToEntity(tcs)}, nil
 }
 
-// GetTaskPlan reads the plan of a task of the caller's, ErrNotFound when the
-// task has none.
+// GetTaskPlan reads the plan of a task of the caller's, nil when the task has
+// none.
 func (c *controller) GetTaskPlan(ctx context.Context, req entity.GetTaskPlanRequest) (*entity.GetTaskPlanResponse, error) {
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	if _, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid); err != nil {
 		return nil, err
 	}
 	p, err := c.repository.GetTaskPlan(ctx, req.TaskID)
+	if errors.Is(err, base.ErrNotFound) {
+		return &entity.GetTaskPlanResponse{}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	return &entity.GetTaskPlanResponse{Plan: entity.TaskPlan{
+	return &entity.GetTaskPlanResponse{Plan: &entity.TaskPlan{
 		ID: p.ID, Content: p.Content, Version: p.Version, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}}, nil
 }

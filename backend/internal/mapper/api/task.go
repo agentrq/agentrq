@@ -98,10 +98,13 @@ func FromHTTPRequestToGetTaskPlanRequestEntity(c *fiber.Ctx) *entity.GetTaskPlan
 }
 
 func FromGetTaskPlanResponseEntityToHTTPResponse(rs *entity.GetTaskPlanResponse) []byte {
-	p := rs.Plan
-	payload, _ := json.Marshal(view.TaskPlan{
-		ID: monoflake.ID(p.ID).String(), Content: p.Content, Version: p.Version, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
-	})
+	var out view.GetTaskPlanResponse
+	if p := rs.Plan; p != nil {
+		out.Plan = &view.TaskPlan{
+			ID: monoflake.ID(p.ID).String(), Content: p.Content, Version: p.Version, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+		}
+	}
+	payload, _ := json.Marshal(out)
 	return payload
 }
 

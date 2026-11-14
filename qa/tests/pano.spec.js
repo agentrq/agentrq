@@ -387,8 +387,7 @@ test('a task linked from a doc opens beside it', async ({ page, workspace }) => 
   await expect(page.locator('[data-pano-chat]')).toBeVisible()
   await expect(page.getByTestId('pano-body')).toBeVisible()
   if (process.env.QA_SCREENSHOT) await page.screenshot({ path: process.env.QA_SCREENSHOT })
-  // A task with no agent plan answers 404 for it.
-  traffic.expectClean({ allow: ['404 /plan'] })
+  traffic.expectClean()
 })
 
 // A doc is linked to the tasks that worked on it without the agent writing a
@@ -451,7 +450,7 @@ test('a doc an agent writes on its task is in that task\'s links', async ({ page
   await expect(page.getByTestId('pano-related-task')).toHaveText(task.title)
   // The workspace is shared: leave it with no ongoing task.
   await setTaskStatus(page, workspace.id, task.id, 'completed')
-  traffic.expectClean({ allow: ['404 /plan'] })
+  traffic.expectClean()
 })
 
 // P opens the Pano from anywhere, but a P typed into a field stays text.
