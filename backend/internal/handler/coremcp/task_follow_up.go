@@ -46,10 +46,11 @@ func (s *WorkspaceServer) handleFollowUpTask(ctx context.Context, req *mcp.CallT
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "followUpTask", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.FollowUpTask(ctx, entity.FollowUpTaskRequest{
-		UserID:      userID,
-		WorkspaceID: parseID(args.WorkspaceID),
-		TaskID:      parseID(args.TaskID),
-		Text:        args.Text,
+		UserID:       userID,
+		WorkspaceID:  parseID(args.WorkspaceID),
+		TaskID:       parseID(args.TaskID),
+		Text:         args.Text,
+		BySupervisor: true,
 	})
 	if err != nil {
 		return errorResponse(err), nil, nil

@@ -38,6 +38,8 @@ type agentTasks struct {
 
 // reply posts the agent's message to a task, starting a task that had not.
 func (a agentTasks) reply(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
+	// What the agent writes is put down to its workspace.
+	ctx = entity.WithAgentWorkspace(ctx, a.workspaceID)
 	id := monoflake.IDFromBase62(chatID)
 	if id == 0 {
 		return 0, fmt.Errorf("invalid chat ID: %s", chatID)

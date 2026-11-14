@@ -311,6 +311,7 @@ type TaskChangesParams struct {
 	WorkspaceID          string `json:"workspaceId,omitempty" jsonschema:"Only this workspace's tasks (base62)."`
 	CreatedByWorkspaceID string `json:"createdByWorkspaceId,omitempty" jsonschema:"Only the tasks this workspace delegated through create (base62), such as your own workspace's."`
 	Limit                int    `json:"limit,omitempty" jsonschema:"At most this many tasks, the least recently changed first; default 20, capped at 100."`
+	ExcludeSelf          bool   `json:"excludeSelf,omitempty" jsonschema:"true leaves out what you wrote: a task changed only if someone else sent it a message or set its status. Use it to follow up."`
 }
 
 type RespondToTaskParams struct {
@@ -785,11 +786,12 @@ func (s *WorkspaceServer) handleRespondToTask(ctx context.Context, req *mcp.Call
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "respondToTask", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.RespondToTask(ctx, entity.RespondToTaskRequest{
-		UserID:      userID,
-		WorkspaceID: parseID(args.WorkspaceID),
-		TaskID:      parseID(args.TaskID),
-		Action:      args.Action,
-		Text:        args.Text,
+		UserID:       userID,
+		WorkspaceID:  parseID(args.WorkspaceID),
+		TaskID:       parseID(args.TaskID),
+		Action:       args.Action,
+		Text:         args.Text,
+		BySupervisor: true,
 	})
 	if err != nil {
 		return errorResponse(err), nil, nil
@@ -802,10 +804,11 @@ func (s *WorkspaceServer) handleReplyToTask(ctx context.Context, req *mcp.CallTo
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "replyToTask", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.ReplyToTask(ctx, entity.ReplyToTaskRequest{
-		UserID:      userID,
-		WorkspaceID: parseID(args.WorkspaceID),
-		TaskID:      parseID(args.TaskID),
-		Text:        args.Text,
+		UserID:       userID,
+		WorkspaceID:  parseID(args.WorkspaceID),
+		TaskID:       parseID(args.TaskID),
+		Text:         args.Text,
+		BySupervisor: true,
 	})
 	if err != nil {
 		return errorResponse(err), nil, nil
@@ -818,10 +821,11 @@ func (s *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.C
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "updateTaskStatus", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.UpdateTaskStatus(ctx, entity.UpdateTaskStatusRequest{
-		UserID:      userID,
-		WorkspaceID: parseID(args.WorkspaceID),
-		TaskID:      parseID(args.TaskID),
-		Status:      args.Status,
+		UserID:       userID,
+		WorkspaceID:  parseID(args.WorkspaceID),
+		TaskID:       parseID(args.TaskID),
+		Status:       args.Status,
+		BySupervisor: true,
 	})
 	if err != nil {
 		return errorResponse(err), nil, nil

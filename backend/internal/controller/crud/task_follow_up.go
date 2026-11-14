@@ -61,6 +61,9 @@ func (c *controller) FollowUpTask(ctx context.Context, req entity.FollowUpTaskRe
 	if m.Status == "cron" {
 		return nil, errFollowUpCron
 	}
+	if ctx, _, err = c.asSupervisor(ctx, req.BySupervisor, uid); err != nil {
+		return nil, err
+	}
 
 	msg := model.Message{
 		ID:        c.idgen.NextID(),

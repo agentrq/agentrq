@@ -177,3 +177,89 @@ func TestTaskChanges_Errors(t *testing.T) {
 		})
 	}
 }
+
+// With excludeSelf, the preview is of the others' newest message, and a cut
+// list stops where the others last changed its last task.
+func TestTaskChanges_ExcludeSelf(t *testing.T) {
+	res := changedTasks()
+	// The supervisor wrote last on task 1; the human before it.
+	res.LastMessages = map[int64]entity.Message{1: {ID: 10, TaskID: 1, CreatedAt: changesAt(10), Sender: "human", Text: "Release from main."}}
+	res.NewMessages = map[int64]int{1: 1}
+	res.ChangedAt = map[int64]time.Time{1: changesAt(10), 2: changesAt(20)}
+	res.Tasks = append(res.Tasks, entity.Task{ID: 3})
+	fake := &changesCrud{res: res}
+	got, _ := taskChanges(t, fake, map[string]any{"since": changesSince.Format(time.RFC3339), "excludeSelf": true, "limit": 1})
+
+	if !fake.req.ExcludeSelf {
+		t.Error("excludeSelf was not asked for")
+	}
+	if len(got.Changes) != 1 || !got.HasMore || !got.Now.Equal(changesAt(10)) {
+		t.Fatalf("answered %+v; want task 1, cut at the others' change at +10", got)
+	}
+	if c := got.Changes[0]; c.NewMessages != 1 || c.LastMessagePreview != "Release from main." || c.LastMessageBy != "agent" {
+		t.Errorf("task 1 = %+v; want the human's message previewed, the newest by the agent", c)
+	}
+
+	// A task the others changed only by its status has no preview.
+	got, _ = taskChanges(t, &changesCrud{res: res}, map[string]any{"since": changesSince.Format(time.RFC3339), "excludeSelf": true, "limit": 2})
+	if c := got.Changes[1]; c.LastMessagePreview != "" || !got.Now.Equal(changesAt(20)) {
+		t.Errorf("task 2 = %+v, now %v; want no preview, cut at +20", c, got.Now)
+	}
+}
+
+// What the supervisor writes through its task tool is asked to be put down
+// to its workspace.
+func TestTaskWrites_AreBySupervisor(t *testing.T) {
+	fake := &supervisorWritesCrud{}
+	srv := &WorkspaceServer{crud: fake}
+	ids := map[string]any{"workspaceId": base62(testWorkspace), "taskId": base62(42)}
+	with := func(extra map[string]any) map[string]any {
+		p := map[string]any{}
+		for k, v := range ids {
+			p[k] = v
+		}
+		for k, v := range extra {
+			p[k] = v
+		}
+		return p
+	}
+	for action, payload := range map[string]map[string]any{
+		"reply":        with(map[string]any{"text": "hi"}),
+		"respond":      with(map[string]any{"action": "allow"}),
+		"updateStatus": with(map[string]any{"status": "completed"}),
+	} {
+		if res := toolResult(srv.handleTask(authedContext(), nil, TaskParams{Action: action, Payload: payload})); res.isError {
+			t.Fatalf("%s: %s", action, res.text)
+		}
+	}
+	if want := []string{"reply", "respond", "updateStatus"}; len(fake.by) != 3 {
+		t.Errorf("by the supervisor: %v, want %v", fake.by, want)
+	}
+}
+
+// supervisorWritesCrud notes each write that came by the supervisor.
+type supervisorWritesCrud struct {
+	mockServerCrud
+	by []string
+}
+
+func (m *supervisorWritesCrud) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error) {
+	if req.BySupervisor {
+		m.by = append(m.by, "reply")
+	}
+	return m.mockServerCrud.ReplyToTask(ctx, req)
+}
+
+func (m *supervisorWritesCrud) RespondToTask(ctx context.Context, req entity.RespondToTaskRequest) (*entity.RespondToTaskResponse, error) {
+	if req.BySupervisor {
+		m.by = append(m.by, "respond")
+	}
+	return m.mockServerCrud.RespondToTask(ctx, req)
+}
+
+func (m *supervisorWritesCrud) UpdateTaskStatus(ctx context.Context, req entity.UpdateTaskStatusRequest) (*entity.UpdateTaskStatusResponse, error) {
+	if req.BySupervisor {
+		m.by = append(m.by, "updateStatus")
+	}
+	return m.mockServerCrud.UpdateTaskStatus(ctx, req)
+}

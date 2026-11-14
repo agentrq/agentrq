@@ -46,7 +46,8 @@ const taskListHelp = "filter keeps the tasks whose title or body contains it, ig
 const taskChangesHelp = "since (required) is an RFC3339 time; workspaceId and createdByWorkspaceId narrow it to one workspace's tasks or those one delegated; limit (default 20, at most 100). " +
 	"Answers now, the since of your next call, and changes: each task whose status changed or whose conversation gained messages after since, as taskId, workspaceId, title, status, statusChangedAt when its status changed, " +
 	"newMessages, lastMessageBy, lastMessagePreview (the start of the newest new message) and awaitingReply. Nothing changed answers an empty list. " +
-	"hasMore: true means the limit cut the list; call again with now for the rest. To follow tasks, call changes with the last now, then messages only for those with newMessages."
+	"excludeSelf: true leaves out what you wrote: a task counts only if someone else sent it a message or set its status after since, and newMessages and lastMessagePreview count only theirs. " +
+	"hasMore: true means the limit cut the list; call again with now for the rest. To follow tasks, call changes with excludeSelf and the last now, then messages only for those with newMessages."
 
 // TaskParams is the input to the task tool.
 type TaskParams struct {
@@ -79,7 +80,7 @@ func (s *WorkspaceServer) taskActions() []mcpevent.ToolAction {
 			ReadOnly(),
 		mcpevent.NewToolAction("changes", "List the tasks that changed after a time: a status change or new messages, one short line each.", s.handleTaskChanges).
 			WithDetails(taskChangesHelp).
-			WithExample(`{"since": "2026-10-26T09:00:00Z", "createdByWorkspaceId": "0ZzhYQG2qtl"}`).
+			WithExample(`{"since": "2026-10-26T09:00:00Z", "createdByWorkspaceId": "0ZzhYQG2qtl", "excludeSelf": true}`).
 			ReadOnly(),
 		mcpevent.NewToolAction("reply", "Post a message to a task's thread.", s.handleReplyToTask).
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "text": "Looks good, go ahead."}`),
@@ -158,6 +159,7 @@ func (s *WorkspaceServer) handleTaskChanges(ctx context.Context, req *mcp.CallTo
 		WorkspaceID:          parseID(args.WorkspaceID),
 		CreatedByWorkspaceID: parseID(args.CreatedByWorkspaceID),
 		Limit:                limit + 1,
+		ExcludeSelf:          args.ExcludeSelf,
 	})
 	if err != nil {
 		return errorResponse(err), nil, nil
@@ -180,7 +182,12 @@ func (s *WorkspaceServer) handleTaskChanges(ctx context.Context, req *mcp.CallTo
 			LastMessageBy:   state.LastMessageBy,
 			AwaitingReply:   state.AwaitingReply,
 		}
-		if changes[i].NewMessages > 0 {
+		switch {
+		case args.ExcludeSelf:
+			if last, ok := res.LastMessages[t.ID]; ok {
+				changes[i].LastMessagePreview = preview([]entity.Message{last})
+			}
+		case changes[i].NewMessages > 0:
 			changes[i].LastMessagePreview = preview(textMessages(t.Messages))
 		}
 		if hasMore {
@@ -188,6 +195,9 @@ func (s *WorkspaceServer) handleTaskChanges(ctx context.Context, req *mcp.CallTo
 			now = t.UpdatedAt
 			if state.LastMessageAt.After(now) {
 				now = state.LastMessageAt
+			}
+			if args.ExcludeSelf {
+				now = res.ChangedAt[t.ID]
 			}
 		}
 	}

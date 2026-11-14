@@ -492,16 +492,24 @@ type (
 		WorkspaceID          int64 // optional filter
 		CreatedByWorkspaceID int64 // optional filter: the workspace that delegated it
 		Limit                int
+		// ExcludeSelf leaves out what the account's supervisor workspace
+		// wrote: its messages and status changes are no change.
+		ExcludeSelf bool
 	}
 
 	// ListTaskChangesResponse is the changed tasks, the least recently
 	// changed first, each with the messages its reply state reads;
 	// NewMessages counts, by task, its conversation's messages after Since,
 	// and StatusChangedAt says when its status last changed after Since.
+	// With ExcludeSelf, both leave the supervisor workspace's own out,
+	// LastMessages has the newest of the others' new messages, and ChangedAt
+	// when the others last changed the task, the time the list is in order of.
 	ListTaskChangesResponse struct {
 		Tasks           []Task
 		NewMessages     map[int64]int
 		StatusChangedAt map[int64]time.Time
+		LastMessages    map[int64]Message
+		ChangedAt       map[int64]time.Time
 	}
 
 	// GetTaskOverviewResponse is, for every workspace of the user that has
@@ -560,6 +568,9 @@ type (
 		Text        string // optional for "text" action
 		Attachments []Attachment
 		UserID      string
+		// BySupervisor says the supervisor's task tool is making the change:
+		// it is put down to the account's supervisor workspace.
+		BySupervisor bool
 	}
 
 	RespondToTaskResponse struct {
@@ -587,6 +598,9 @@ type (
 		TaskID      int64
 		Status      string
 		UserID      string
+		// BySupervisor says the supervisor's task tool is making the change:
+		// it is put down to the account's supervisor workspace.
+		BySupervisor bool
 	}
 
 	UpdateTaskStatusResponse struct {
@@ -655,6 +669,9 @@ type (
 		Attachments []Attachment
 		UserID      string
 		SlackUser   string
+		// BySupervisor says the supervisor's task tool is making the change:
+		// it is put down to the account's supervisor workspace.
+		BySupervisor bool
 	}
 
 	ReplyToTaskResponse struct {
@@ -667,6 +684,9 @@ type (
 		TaskID      int64
 		Text        string
 		UserID      string
+		// BySupervisor says the supervisor's task tool is making the change:
+		// it is put down to the account's supervisor workspace.
+		BySupervisor bool
 	}
 
 	FollowUpTaskResponse struct {

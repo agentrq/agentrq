@@ -90,17 +90,11 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		}
 	}
 
-	// The supervisor's token names the account, not the calling workspace, so
-	// its task is put down to the supervisor workspace, if the account has one.
-	var createdByWorkspaceID int64
-	if req.BySupervisor {
-		sup, found, err := c.findSupervisorWorkspace(ctx, userID)
-		if err != nil {
-			return nil, err
-		}
-		if found {
-			createdByWorkspaceID = sup.ID
-		}
+	// The supervisor's task is put down to the supervisor workspace, if the
+	// account has one.
+	ctx, createdByWorkspaceID, err := c.asSupervisor(ctx, req.BySupervisor, userID)
+	if err != nil {
+		return nil, err
 	}
 
 	now := time.Now()
@@ -370,7 +364,14 @@ func (c *controller) ListTasks(ctx context.Context, req entity.ListTasksRequest)
 }
 
 func (c *controller) ListTaskChanges(ctx context.Context, req entity.ListTaskChangesRequest) (*entity.ListTaskChangesResponse, error) {
-	ms, err := c.repository.ListTaskChanges(ctx, req, monoflake.IDFromBase62(req.UserID).Int64())
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	// Leaving out the supervisor's own is leaving out what was put down to
+	// its workspace; an account with none has nothing to leave out.
+	_, exclude, err := c.asSupervisor(ctx, req.ExcludeSelf, uid)
+	if err != nil {
+		return nil, err
+	}
+	ms, err := c.repository.ListTaskChanges(ctx, req, uid, exclude)
 	if err != nil {
 		return nil, err
 	}
@@ -383,11 +384,27 @@ func (c *controller) ListTaskChanges(ctx context.Context, req entity.ListTaskCha
 		ids[i] = m.ID
 		res.Tasks[i] = c.fromModelTaskToEntity(m)
 	}
-	if res.NewMessages, err = c.repository.CountNewMessages(ctx, ids, req.Since); err != nil {
+	if res.NewMessages, err = c.repository.CountNewMessages(ctx, ids, req.Since, exclude); err != nil {
 		return nil, err
 	}
-	if res.StatusChangedAt, err = c.repository.ListStatusChanges(ctx, ids, req.Since); err != nil {
+	var moved map[int64]time.Time
+	if res.StatusChangedAt, moved, err = c.repository.ListStatusChanges(ctx, ids, req.Since, exclude); err != nil {
 		return nil, err
+	}
+	if exclude == 0 {
+		return res, nil
+	}
+	last, err := c.repository.ListNewestMessages(ctx, ids, req.Since, exclude)
+	if err != nil {
+		return nil, err
+	}
+	// When the others last changed each task: its newest move or message.
+	res.LastMessages, res.ChangedAt = make(map[int64]entity.Message, len(last)), moved
+	for id, m := range last {
+		res.LastMessages[id] = fromModelMessageToEntity(m)
+		if m.CreatedAt.After(moved[id]) {
+			res.ChangedAt[id] = m.CreatedAt
+		}
 	}
 	return res, nil
 }
@@ -429,6 +446,9 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 	}
 	m, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
+		return nil, err
+	}
+	if ctx, _, err = c.asSupervisor(ctx, req.BySupervisor, uid); err != nil {
 		return nil, err
 	}
 
@@ -550,6 +570,9 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 	}
 	if m.Status == "cron" {
 		return nil, fmt.Errorf("cannot update status of a chronic task template; it must remain in 'cron' state")
+	}
+	if ctx, _, err = c.asSupervisor(ctx, req.BySupervisor, uid); err != nil {
+		return nil, err
 	}
 
 	if !isValidTaskStatus(req.Status) {
@@ -798,6 +821,9 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	if err != nil {
 		return nil, err
 	}
+	if ctx, _, err = c.asSupervisor(ctx, req.BySupervisor, uid); err != nil {
+		return nil, err
+	}
 
 	// Save attachments
 	c.saveAttachments(w.ContentID(), req.TaskID, req.Attachments)
@@ -958,6 +984,27 @@ func (c *controller) UpdateMessageMetadata(ctx context.Context, req entity.Updat
 	return nil
 }
 
+func fromModelMessageToEntity(msg model.Message) entity.Message {
+	var msgAtts []entity.Attachment
+	if len(msg.Attachments) > 0 {
+		_ = json.Unmarshal(msg.Attachments, &msgAtts)
+	}
+	var metadata any
+	if len(msg.Metadata) > 0 {
+		_ = json.Unmarshal(msg.Metadata, &metadata)
+	}
+	return entity.Message{
+		ID:          msg.ID,
+		CreatedAt:   msg.CreatedAt,
+		TaskID:      msg.TaskID,
+		UserID:      msg.UserID,
+		Sender:      msg.Sender,
+		Text:        msg.Text,
+		Attachments: msgAtts,
+		Metadata:    metadata,
+	}
+}
+
 func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 	var atts []entity.Attachment
 	if len(m.Attachments) > 0 {
@@ -966,24 +1013,7 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 
 	msgs := make([]entity.Message, len(m.Messages))
 	for i, msg := range m.Messages {
-		var msgAtts []entity.Attachment
-		if len(msg.Attachments) > 0 {
-			_ = json.Unmarshal(msg.Attachments, &msgAtts)
-		}
-		var metadata any
-		if len(msg.Metadata) > 0 {
-			_ = json.Unmarshal(msg.Metadata, &metadata)
-		}
-		msgs[i] = entity.Message{
-			ID:          msg.ID,
-			CreatedAt:   msg.CreatedAt,
-			TaskID:      msg.TaskID,
-			UserID:      msg.UserID,
-			Sender:      msg.Sender,
-			Text:        msg.Text,
-			Attachments: msgAtts,
-			Metadata:    metadata,
-		}
+		msgs[i] = fromModelMessageToEntity(msg)
 	}
 
 	return entity.Task{

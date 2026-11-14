@@ -40,6 +40,8 @@ func workspaceTask(ctx context.Context, repo base.Repository, workspaceID int64,
 // No "Status updated to" message in the thread: the change is recorded as a
 // state transition and shown in the task's timeline.
 func setAgentTaskStatus(ctx context.Context, repo base.Repository, ps pubsub.Service, workspaceID int64, owner string, taskID int64, status string) (model.Task, error) {
+	// The change is put down to the agent's workspace.
+	ctx = entity.WithAgentWorkspace(ctx, workspaceID)
 	uid := monoflake.IDFromBase62(owner).Int64()
 	m, err := repo.GetTaskRow(ctx, workspaceID, taskID, uid)
 	if err != nil {

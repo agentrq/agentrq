@@ -390,6 +390,11 @@ type (
 		Text        string    `gorm:"type:text"`
 		Attachments datatypes.JSON
 		Metadata    datatypes.JSON
+		// ByWorkspaceID is the workspace whose agent wrote the message: its
+		// own, or the supervisor workspace for the supervisor's; 0 for a
+		// person or the server. The sender cannot tell: the supervisor's
+		// replies are the human's.
+		ByWorkspaceID int64 `gorm:"not null;default:0"`
 	}
 
 	// Telemetry record for user and workspace actions

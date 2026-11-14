@@ -61,7 +61,7 @@ func TestTaskFollowUp_ReopensAFinishedTask(t *testing.T) {
 	n := &fakeNotifier{}
 	text := textOf(t, callFollowUp(&WorkspaceServer{crud: fake, notifier: n}, false))
 
-	if fake.req != (entity.FollowUpTaskRequest{WorkspaceID: testWorkspace, TaskID: 42, Text: "Also cover the error path.", UserID: testUserID}) {
+	if fake.req != (entity.FollowUpTaskRequest{WorkspaceID: testWorkspace, TaskID: 42, Text: "Also cover the error path.", UserID: testUserID, BySupervisor: true}) {
 		t.Errorf("request = %+v", fake.req)
 	}
 	if len(n.sent) != 0 {

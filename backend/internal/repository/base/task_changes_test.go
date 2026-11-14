@@ -95,7 +95,7 @@ func TestListTaskChanges(t *testing.T) {
 				if req.Limit == 0 {
 					req.Limit = 10
 				}
-				tasks, err := repo.ListTaskChanges(ctx, req, tcUser)
+				tasks, err := repo.ListTaskChanges(ctx, req, tcUser, 0)
 				if err != nil {
 					t.Fatalf("ListTaskChanges(%+v): %v", req, err)
 				}
@@ -123,7 +123,7 @@ func TestListTaskChanges(t *testing.T) {
 			}
 
 			// Nothing after the newest change.
-			tasks, err := repo.ListTaskChanges(ctx, entity.ListTaskChangesRequest{Since: tcAt(31), Limit: 10}, tcUser)
+			tasks, err := repo.ListTaskChanges(ctx, entity.ListTaskChangesRequest{Since: tcAt(31), Limit: 10}, tcUser, 0)
 			if err != nil || len(tasks) != 0 {
 				t.Errorf("changes after the last = %v, %v; want none", taskIDs(tasks), err)
 			}
@@ -136,7 +136,7 @@ func TestCountNewMessages(t *testing.T) {
 	for _, d := range historyDBs(t) {
 		t.Run(d.name, func(t *testing.T) {
 			seedTaskChanges(t, d.db)
-			got, err := New(&mockDB{db: d.db}).CountNewMessages(ctx, []int64{1, 2, 3}, tcSince)
+			got, err := New(&mockDB{db: d.db}).CountNewMessages(ctx, []int64{1, 2, 3}, tcSince, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -184,7 +184,7 @@ func TestListStatusChanges(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			got, err := New(&mockDB{db: d.db}).ListStatusChanges(ctx, []int64{1, 2, 3, 4, 5, 6}, tcSince)
+			got, _, err := New(&mockDB{db: d.db}).ListStatusChanges(ctx, []int64{1, 2, 3, 4, 5, 6}, tcSince, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -233,7 +233,7 @@ func TestListTaskChangesUsesTheIndexes(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = d.db.Callback().Query().Remove("test:changes_plan") })
-			if _, err := New(&mockDB{db: d.db}).ListTaskChanges(ctx, entity.ListTaskChangesRequest{Since: tcSince, Limit: 10}, tcUser); err != nil {
+			if _, err := New(&mockDB{db: d.db}).ListTaskChanges(ctx, entity.ListTaskChangesRequest{Since: tcSince, Limit: 10}, tcUser, 0); err != nil {
 				t.Fatal(err)
 			}
 			if len(sent) != 1 {
@@ -303,13 +303,13 @@ func TestTaskChanges_DatabaseErrors(t *testing.T) {
 	}
 	t.Run("tasks", func(t *testing.T) {
 		fail(t, "tasks")
-		if _, err := repo.ListTaskChanges(ctx, entity.ListTaskChangesRequest{Since: tcSince, Limit: 10}, tcUser); err == nil {
+		if _, err := repo.ListTaskChanges(ctx, entity.ListTaskChangesRequest{Since: tcSince, Limit: 10}, tcUser, 0); err == nil {
 			t.Error("ListTaskChanges hid the database's error")
 		}
 	})
 	t.Run("transitions", func(t *testing.T) {
 		fail(t, "task_state_transitions")
-		if _, err := repo.ListStatusChanges(ctx, []int64{1}, tcSince); err == nil {
+		if _, _, err := repo.ListStatusChanges(ctx, []int64{1}, tcSince, 0); err == nil {
 			t.Error("ListStatusChanges hid the database's error")
 		}
 	})
@@ -319,7 +319,7 @@ func TestTaskChanges_DatabaseErrors(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = d.db.Callback().Row().Remove("test:fail_count") })
-		if _, err := repo.CountNewMessages(ctx, []int64{1}, tcSince); err == nil {
+		if _, err := repo.CountNewMessages(ctx, []int64{1}, tcSince, 0); err == nil {
 			t.Error("CountNewMessages hid the database's error")
 		}
 	})
@@ -332,10 +332,10 @@ func TestTaskChanges_PostgresStatements(t *testing.T) {
 	ctx := context.Background()
 	db, repo := postgresNamed(t)
 	seedTaskChanges(t, db)
-	if _, err := repo.ListTaskChanges(ctx, entity.ListTaskChangesRequest{Since: tcSince, Limit: 10}, tcUser); err == nil || !strings.Contains(err.Error(), "GREATEST") {
+	if _, err := repo.ListTaskChanges(ctx, entity.ListTaskChangesRequest{Since: tcSince, Limit: 10}, tcUser, 0); err == nil || !strings.Contains(err.Error(), "GREATEST") {
 		t.Errorf("ListTaskChanges = %v, want SQLite to refuse GREATEST", err)
 	}
-	got, err := repo.CountNewMessages(ctx, []int64{2, 3}, tcSince)
+	got, err := repo.CountNewMessages(ctx, []int64{2, 3}, tcSince, 0)
 	if want := map[int64]int{2: 2}; err != nil || !reflect.DeepEqual(got, want) {
 		t.Errorf("CountNewMessages = %v, %v; want %v", got, err, want)
 	}

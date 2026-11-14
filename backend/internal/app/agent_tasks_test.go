@@ -58,7 +58,9 @@ func newAgentTasks(t *testing.T) agentTasksEnv {
 }
 
 func TestAgentTasksReply(t *testing.T) {
-	ctx := context.Background()
+	// The reply is put down to the agent's workspace: what it writes carries it.
+	call := context.Background()
+	ctx := entity.WithAgentWorkspace(call, memParent)
 	chatID := monoflake.ID(101).String()
 	row := func(status string) model.Task {
 		return model.Task{ID: 101, WorkspaceID: memParent, UserID: memUser, Status: status}
@@ -87,7 +89,7 @@ func TestAgentTasksReply(t *testing.T) {
 		})
 		e.repo.EXPECT().GetTask(ctx, memParent, int64(101), memUser).Return(row("ongoing"), nil)
 
-		id, err := e.a.reply(ctx, chatID, "done", []entity.Attachment{{Filename: "a.txt", MimeType: "text/plain", Data: "aGk="}}, map[string]string{"k": "v"})
+		id, err := e.a.reply(call, chatID, "done", []entity.Attachment{{Filename: "a.txt", MimeType: "text/plain", Data: "aGk="}}, map[string]string{"k": "v"})
 		if err != nil || id != 8 {
 			t.Fatalf("reply = %d, %v", id, err)
 		}
@@ -113,7 +115,7 @@ func TestAgentTasksReply(t *testing.T) {
 		})
 		e.repo.EXPECT().GetTask(ctx, memParent, int64(101), memUser).Return(model.Task{}, errRepo)
 
-		if _, err := e.a.reply(ctx, chatID, "still going", nil, make(chan int)); err != nil {
+		if _, err := e.a.reply(call, chatID, "still going", nil, make(chan int)); err != nil {
 			t.Fatal(err)
 		}
 		select {
@@ -125,19 +127,19 @@ func TestAgentTasksReply(t *testing.T) {
 
 	t.Run("refusals and storage failures", func(t *testing.T) {
 		e := newAgentTasks(t)
-		if _, err := e.a.reply(ctx, "", "x", nil, nil); err == nil {
+		if _, err := e.a.reply(call, "", "x", nil, nil); err == nil {
 			t.Error("an empty chat id was taken")
 		}
 
 		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(model.Task{ID: 101, WorkspaceID: memFork, UserID: memUser}, nil)
-		if _, err := e.a.reply(ctx, chatID, "x", nil, nil); err == nil {
+		if _, err := e.a.reply(call, chatID, "x", nil, nil); err == nil {
 			t.Error("a task in another workspace took a reply")
 		}
 
 		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(row("ongoing"), nil)
 		e.ids.EXPECT().NextID().Return(int64(8))
 		e.repo.EXPECT().CreateMessage(ctx, gomock.Any()).Return(errRepo)
-		if _, err := e.a.reply(ctx, chatID, "x", nil, nil); err != errRepo {
+		if _, err := e.a.reply(call, chatID, "x", nil, nil); err != errRepo {
 			t.Errorf("err = %v, want %v", err, errRepo)
 		}
 		if len(*e.actions) != 0 {

@@ -55,8 +55,10 @@ func (s TaskState) String() string {
 // repository beside every task write that changes the status, so no caller
 // can change one without leaving a row.
 type TaskStateTransition struct {
-	ID          int64 `gorm:"primaryKey"`
-	UserID      int64 `gorm:"index:idx_task_state_transitions_user_id"`
+	ID int64 `gorm:"primaryKey"`
+	// idx_task_state_transitions_user_id_created_at serves the supervisor's
+	// task changes that leave out its own: an account's rows after a time.
+	UserID      int64 `gorm:"index:idx_task_state_transitions_user_id;index:idx_task_state_transitions_user_id_created_at,priority:1"`
 	WorkspaceID int64 `gorm:"index:idx_task_state_transitions_workspace_id"`
 	TaskID      int64 `gorm:"index:idx_task_state_transitions_task_id"`
 	FromState   TaskState
@@ -66,5 +68,8 @@ type TaskStateTransition struct {
 	// server made it, or the agent never said.
 	AgentID      int64 `gorm:"not null;default:0"`
 	AgentModelID int64 `gorm:"not null;default:0"`
-	CreatedAt    time.Time
+	// ByWorkspaceID is the workspace whose agent made the change, as on a
+	// Message; 0 for a person or the server.
+	ByWorkspaceID int64     `gorm:"not null;default:0"`
+	CreatedAt     time.Time `gorm:"index:idx_task_state_transitions_user_id_created_at,priority:2"`
 }

@@ -46,6 +46,7 @@ var dynamicSQL = map[string]string{
 	"ListTaskChanges:changed":                          "the per-database changed-tasks filter",
 	"ListTaskChanges:order":                            "the per-database change-time order",
 	"CountNewMessages:clause":                          "the per-database conversation filter",
+	"ListNewestMessages:clause":                        "the per-database conversation filter",
 	"detailedStats:scopeClause":                        "a scope its two callers pass as a literal",
 	"detailedStats:dateExpr":                           "the per-database date buckets",
 	"detailedStats:bucketExpr":                         "the per-database date buckets",
