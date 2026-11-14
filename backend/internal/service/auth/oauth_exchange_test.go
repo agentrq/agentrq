@@ -106,7 +106,7 @@ func requireBearer(t *testing.T, r *http.Request) {
 	}
 }
 
-func TestGitHubExchange_UserWithPublicEmail(t *testing.T) {
+func TestGitHubExchange_ProfileEmailThatIsVerified(t *testing.T) {
 	p := newFakeProvider(t)
 	p.handle(githubToken, func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -120,7 +120,13 @@ func TestGitHubExchange_UserWithPublicEmail(t *testing.T) {
 	})
 	p.handle(githubUser, func(w http.ResponseWriter, r *http.Request) {
 		requireBearer(t, r)
-		_, _ = w.Write([]byte(`{"id":42,"login":"octo","name":"Octo Cat","email":"octo@example.com","avatar_url":"https://avatars.example.com/42"}`))
+		_, _ = w.Write([]byte(`{"id":42,"login":"octo","name":"Octo Cat","email":"Octo@example.com","avatar_url":"https://avatars.example.com/42"}`))
+	})
+	// The profile's address is verified but not primary: it still wins, so an
+	// existing account keeps signing in as itself.
+	p.handle(githubEmails, func(w http.ResponseWriter, r *http.Request) {
+		requireBearer(t, r)
+		_, _ = w.Write([]byte(`[{"email":"main@example.com","primary":true,"verified":true},{"email":"octo@example.com","primary":false,"verified":true}]`))
 	})
 
 	user, err := NewGitHub("cid", "secret", "http://localhost/cb").Exchange(p.ctx(), "the-code")
@@ -131,33 +137,40 @@ func TestGitHubExchange_UserWithPublicEmail(t *testing.T) {
 	if *user != want {
 		t.Errorf("user = %+v, want %+v", *user, want)
 	}
-	// A public email is enough: the emails endpoint must not be asked.
-	for _, hit := range p.hitList() {
-		if hit == githubEmails {
-			t.Errorf("fetched %s although the profile carried an email", githubEmails)
-		}
-	}
 }
 
-func TestGitHubExchange_FallsBackToTheEmailsList(t *testing.T) {
+func TestGitHubExchange_TakesOnlyAVerifiedEmail(t *testing.T) {
 	cases := []struct {
-		name   string
-		emails string
-		want   string
+		name    string
+		profile string
+		emails  string
+		want    string
 	}{
 		{
-			name:   "primary and verified wins over an earlier verified one",
+			name:   "verified primary wins over an earlier verified one",
 			emails: `[{"email":"old@example.com","primary":false,"verified":true},{"email":"main@example.com","primary":true,"verified":true}]`,
 			want:   "main@example.com",
 		},
 		{
-			name:   "unverified primary when no primary is verified",
-			emails: `[{"email":"other@example.com","primary":false,"verified":true},{"email":"main@example.com","primary":true,"verified":false}]`,
-			want:   "main@example.com",
+			name:   "unverified primary gives way to a verified secondary",
+			emails: `[{"email":"main@example.com","primary":true,"verified":false},{"email":"other@example.com","primary":false,"verified":true}]`,
+			want:   "other@example.com",
 		},
 		{
-			name:   "first address when none is primary",
-			emails: `[{"email":"first@example.com"},{"email":"second@example.com"}]`,
+			name:    "a profile email that is not verified is passed over",
+			profile: "victim@example.com",
+			emails:  `[{"email":"victim@example.com","primary":false,"verified":false},{"email":"main@example.com","primary":true,"verified":true}]`,
+			want:    "main@example.com",
+		},
+		{
+			name:    "a profile email missing from the list is passed over",
+			profile: "victim@example.com",
+			emails:  `[{"email":"main@example.com","primary":true,"verified":true}]`,
+			want:    "main@example.com",
+		},
+		{
+			name:   "first verified one when none of them is primary",
+			emails: `[{"email":"first@example.com","verified":true},{"email":"second@example.com","verified":true}]`,
 			want:   "first@example.com",
 		},
 	}
@@ -166,7 +179,7 @@ func TestGitHubExchange_FallsBackToTheEmailsList(t *testing.T) {
 			p := newFakeProvider(t)
 			p.json(githubToken, http.StatusOK, tokenJSON)
 			// No name either, so the login stands in for it.
-			p.json(githubUser, http.StatusOK, `{"id":7,"login":"octo","email":""}`)
+			p.json(githubUser, http.StatusOK, `{"id":7,"login":"octo","email":"`+tc.profile+`"}`)
 			p.handle(githubEmails, func(w http.ResponseWriter, r *http.Request) {
 				requireBearer(t, r)
 				_, _ = w.Write([]byte(tc.emails))
@@ -184,6 +197,48 @@ func TestGitHubExchange_FallsBackToTheEmailsList(t *testing.T) {
 			}
 			if user.ID != "github:7" {
 				t.Errorf("id = %q, want github:7", user.ID)
+			}
+		})
+	}
+}
+
+func TestGitHubExchange_RefusesAnAccountWithNoVerifiedEmail(t *testing.T) {
+	cases := []struct {
+		name    string
+		profile string
+		emails  string
+	}{
+		{
+			name:   "unverified primary and nothing else",
+			emails: `[{"email":"main@example.com","primary":true,"verified":false}]`,
+		},
+		{
+			name:   "first listed unverified, none verified",
+			emails: `[{"email":"first@example.com","primary":false,"verified":false},{"email":"second@example.com","primary":false,"verified":false}]`,
+		},
+		{
+			name:    "an unverified profile email",
+			profile: "victim@example.com",
+			emails:  `[{"email":"victim@example.com","primary":true,"verified":false}]`,
+		},
+		{
+			name:   "no email at all",
+			emails: `[]`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newFakeProvider(t)
+			p.json(githubToken, http.StatusOK, tokenJSON)
+			p.json(githubUser, http.StatusOK, `{"id":7,"login":"octo","email":"`+tc.profile+`"}`)
+			p.json(githubEmails, http.StatusOK, tc.emails)
+
+			user, err := NewGitHub("cid", "secret", "").Exchange(p.ctx(), "code")
+			if !errors.Is(err, ErrEmailNotVerified) {
+				t.Fatalf("err = %v, want ErrEmailNotVerified", err)
+			}
+			if user != nil {
+				t.Errorf("user = %+v, want nil when refused", user)
 			}
 		})
 	}
@@ -251,15 +306,6 @@ func TestGitHubExchange_Errors(t *testing.T) {
 			},
 			wantErr: "github decode emails",
 		},
-		{
-			name: "account has no email at all",
-			setup: func(p *fakeProvider) {
-				p.json(githubToken, http.StatusOK, tokenJSON)
-				p.json(githubUser, http.StatusOK, `{"id":1,"login":"octo"}`)
-				p.json(githubEmails, http.StatusOK, `[]`)
-			},
-			wantErr: "no email found in github account",
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -282,7 +328,7 @@ func TestGoogleExchange(t *testing.T) {
 		p.json(googleToken, http.StatusOK, tokenJSON)
 		p.handle(googleUser, func(w http.ResponseWriter, r *http.Request) {
 			requireBearer(t, r)
-			_, _ = w.Write([]byte(`{"id":"g-1","email":"g@example.com","name":"Gee","picture":"https://p.example.com/g"}`))
+			_, _ = w.Write([]byte(`{"id":"g-1","email":"g@example.com","verified_email":true,"name":"Gee","picture":"https://p.example.com/g"}`))
 		})
 		user, err := NewGoogle("cid", "secret", "").Exchange(p.ctx(), "code")
 		if err != nil {
@@ -291,6 +337,24 @@ func TestGoogleExchange(t *testing.T) {
 		want := User{ID: "g-1", Email: "g@example.com", Name: "Gee", Picture: "https://p.example.com/g"}
 		if *user != want {
 			t.Errorf("user = %+v, want %+v", *user, want)
+		}
+	})
+
+	t.Run("refuses an email Google has not verified", func(t *testing.T) {
+		for _, body := range []string{
+			`{"id":"g-1","email":"victim@example.com","verified_email":false,"name":"Gee"}`,
+			`{"id":"g-1","email":"victim@example.com","name":"Gee"}`,
+		} {
+			p := newFakeProvider(t)
+			p.json(googleToken, http.StatusOK, tokenJSON)
+			p.json(googleUser, http.StatusOK, body)
+			user, err := NewGoogle("cid", "secret", "").Exchange(p.ctx(), "code")
+			if !errors.Is(err, ErrEmailNotVerified) {
+				t.Fatalf("err = %v for %s, want ErrEmailNotVerified", err, body)
+			}
+			if user != nil {
+				t.Errorf("user = %+v, want nil when refused", user)
+			}
 		}
 	})
 

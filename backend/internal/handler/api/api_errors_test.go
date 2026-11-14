@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -324,13 +325,14 @@ func TestOAuthLogin(t *testing.T) {
 
 func TestOAuthCallback(t *testing.T) {
 	type provider struct {
-		name string
-		path string
-		auth func(h *handler, svc auth.Service)
+		name       string
+		path       string
+		auth       func(h *handler, svc auth.Service)
+		unverified string // the login page's error code for an unverified email
 	}
 	providers := []provider{
-		{"google", "/auth/google/callback", func(h *handler, svc auth.Service) { h.auth = svc }},
-		{"github", "/auth/github/callback", func(h *handler, svc auth.Service) { h.githubAuth = svc }},
+		{"google", "/auth/google/callback", func(h *handler, svc auth.Service) { h.auth = svc }, "googleEmailUnverified"},
+		{"github", "/auth/github/callback", func(h *handler, svc auth.Service) { h.githubAuth = svc }, "githubEmailUnverified"},
 	}
 	exchanged := func(context.Context, string) (*auth.User, error) {
 		return &auth.User{Sub: "sub-1", Email: "a@b.com", Name: "Ada"}, nil
@@ -370,6 +372,26 @@ func TestOAuthCallback(t *testing.T) {
 					}
 				})
 			}
+
+			t.Run("sends an unverified email back to the login page", func(t *testing.T) {
+				refused := func(context.Context, string) (*auth.User, error) {
+					return nil, fmt.Errorf("wrapped: %w", auth.ErrEmailNotVerified)
+				}
+				app, ctrl := newApp("/agentrq", refused, nil, &authPathTokens{})
+				resp, body := errPathDo(t, app, http.MethodGet, p.path+"?code=c1", "")
+				if resp.StatusCode != http.StatusFound {
+					t.Fatalf("status = %d, want 302 (body %s)", resp.StatusCode, body)
+				}
+				if loc, want := resp.Header.Get("Location"), "/agentrq/login?error="+p.unverified; loc != want {
+					t.Errorf("Location = %q, want %q", loc, want)
+				}
+				if ctrl.sawEmail != "" {
+					t.Errorf("synced %q, want no account looked up", ctrl.sawEmail)
+				}
+				if strings.Contains(setCookies(resp), "at=") {
+					t.Errorf("a refused sign-in set a session: %s", setCookies(resp))
+				}
+			})
 
 			t.Run("signs in and returns to the root under the base path", func(t *testing.T) {
 				app, ctrl := newApp("/agentrq", exchanged, nil, &authPathTokens{})

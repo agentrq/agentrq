@@ -40,3 +40,21 @@ export function loginRedirect(raw, origin, allowedDomains = []) {
 export function providerLoginUrl(route, redirect) {
   return redirect ? `${route}?redirect_url=${encodeURIComponent(redirect)}` : route
 }
+
+/**
+ * What the login page says when the server sent a provider sign-in back to
+ * it with `?error=<code>`. Only these fixed codes have a message; anything
+ * else shows nothing, so a crafted link cannot put its own words on the page.
+ */
+const LOGIN_ERRORS = {
+  githubEmailUnverified: 'Verify an email address on GitHub, then sign in again.',
+  googleEmailUnverified: 'Verify your email address with Google, then sign in again.',
+}
+
+/**
+ * @param {unknown} code the `error` query value
+ * @returns {string} the message, or '' for an unknown code
+ */
+export function loginErrorMessage(code) {
+  return typeof code === 'string' && Object.hasOwn(LOGIN_ERRORS, code) ? LOGIN_ERRORS[code] : ''
+}

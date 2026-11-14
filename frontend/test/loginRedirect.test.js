@@ -10,7 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createApp, h } from 'vue'
-import { loginRedirect, providerLoginUrl } from '../src/utils/loginRedirect'
+import { loginRedirect, providerLoginUrl, loginErrorMessage } from '../src/utils/loginRedirect'
 
 const origin = 'https://app.agentrq.com'
 const authorize = `${origin}/mcp/oauth2/authorize?client_id=a&state=b`
@@ -64,6 +64,22 @@ describe('providerLoginUrl', () => {
 
   it('is the bare route without one', () => {
     expect(providerLoginUrl('/api/v1/auth/github/login', null)).toBe('/api/v1/auth/github/login')
+  })
+})
+
+describe('loginErrorMessage', () => {
+  it('names what to do for each refusal the server sends back', () => {
+    expect(loginErrorMessage('githubEmailUnverified')).toBe('Verify an email address on GitHub, then sign in again.')
+    expect(loginErrorMessage('googleEmailUnverified')).toBe('Verify your email address with Google, then sign in again.')
+  })
+
+  it.each([
+    ['nothing', undefined],
+    ['an unknown code', 'Your account is locked, call +1 555'],
+    ['an inherited property', 'toString'],
+    ['a repeated parameter', ['githubEmailUnverified']],
+  ])('is empty for %s', (_, code) => {
+    expect(loginErrorMessage(code)).toBe('')
   })
 })
 
@@ -155,6 +171,17 @@ describe('the login page', () => {
     await signInWithToken(el)
     expect(assign).toHaveBeenCalledWith(back)
     expect(push).not.toHaveBeenCalled()
+  })
+
+  it('says why a provider sign-in was refused', async () => {
+    const el = await mount({ query: { error: 'githubEmailUnverified' }, config: { githubLoginEnabled: true } })
+    expect(el.querySelector('[role=alert]').textContent).toBe('Verify an email address on GitHub, then sign in again.')
+    expect(links(el)).toEqual(['/api/v1/auth/google/login', '/api/v1/auth/github/login'])
+  })
+
+  it('shows no message for a code it does not know', async () => {
+    const el = await mount({ query: { error: 'anything at all' } })
+    expect(el.querySelector('[role=alert]')).toBeNull()
   })
 
   it('opens the app after a root-token sign-in with nowhere to return to', async () => {

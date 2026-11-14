@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
@@ -48,13 +49,11 @@ func (s *githubService) Exchange(ctx context.Context, code string) (*User, error
 		return nil, err
 	}
 
-	if user.Email == "" {
-		email, err := s.fetchPrimaryEmail(client)
-		if err != nil {
-			return nil, err
-		}
-		user.Email = email
+	email, err := s.fetchVerifiedEmail(client, user.Email)
+	if err != nil {
+		return nil, err
 	}
+	user.Email = email
 
 	return user, nil
 }
@@ -94,7 +93,11 @@ func (s *githubService) fetchUser(client *http.Client) (*User, error) {
 	}, nil
 }
 
-func (s *githubService) fetchPrimaryEmail(client *http.Client) (string, error) {
+// fetchVerifiedEmail returns a verified address from the account's email
+// list: the profile's own address if it is one, then the verified primary,
+// then any verified one. Accounts are matched by email, so an address GitHub
+// has not verified must never be taken, not even from the profile.
+func (s *githubService) fetchVerifiedEmail(client *http.Client, profileEmail string) (string, error) {
 	resp, err := client.Get("https://api.github.com/user/emails")
 	if err != nil {
 		return "", fmt.Errorf("github get emails: %w", err)
@@ -114,19 +117,27 @@ func (s *githubService) fetchPrimaryEmail(client *http.Client) (string, error) {
 		return "", fmt.Errorf("github decode emails: %w", err)
 	}
 
+	var primary, first string
 	for _, e := range emails {
-		if e.Primary && e.Verified {
+		if !e.Verified {
+			continue
+		}
+		if profileEmail != "" && strings.EqualFold(e.Email, profileEmail) {
 			return e.Email, nil
 		}
-	}
-	for _, e := range emails {
-		if e.Primary {
-			return e.Email, nil
+		if e.Primary && primary == "" {
+			primary = e.Email
+		}
+		if first == "" {
+			first = e.Email
 		}
 	}
-	if len(emails) > 0 {
-		return emails[0].Email, nil
+	if primary != "" {
+		return primary, nil
+	}
+	if first != "" {
+		return first, nil
 	}
 
-	return "", fmt.Errorf("no email found in github account")
+	return "", ErrEmailNotVerified
 }

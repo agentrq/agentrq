@@ -54,10 +54,18 @@ func (s *googleService) Exchange(ctx context.Context, code string) (*User, error
 		return nil, fmt.Errorf("google userinfo status: %d", resp.StatusCode)
 	}
 
-	var user User
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+	var info struct {
+		User
+		VerifiedEmail bool `json:"verified_email"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		return nil, fmt.Errorf("google decode userinfo: %w", err)
 	}
+	// Accounts are matched by email: an address Google has not verified
+	// must not sign anyone in.
+	if !info.VerifiedEmail {
+		return nil, ErrEmailNotVerified
+	}
 
-	return &user, nil
+	return &info.User, nil
 }
