@@ -1587,10 +1587,17 @@ paths:
       summary: Read the plan the task's agent is working to
       responses:
         '200':
-          description: The plan
+          description: The plan, or null when the task has none
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/TaskPlan' }
+              schema:
+                type: object
+                required: [plan]
+                properties:
+                  plan:
+                    nullable: true
+                    allOf:
+                      - $ref: '#/components/schemas/TaskPlan'
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 

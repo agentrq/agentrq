@@ -176,9 +176,9 @@ export async function listTaskToolCalls(workspaceId, taskId, { before = '', limi
 // The plan a task's agent is working to, as markdown, or null when it has none.
 export async function getTaskPlan(workspaceId, taskId) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/plan`);
-  if (res.status === 404) return null;
   if (!res.ok) throw new Error('Failed to fetch plan');
-  return res.json();
+  const body = await res.json();
+  return body?.plan ?? null;
 }
 
 // The trailing eventId/workflowId are mutually exclusive: they are the two

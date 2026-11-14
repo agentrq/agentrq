@@ -53,7 +53,7 @@ func TestGetTaskPlan_ReadsThePlan(t *testing.T) {
 	var got entity.GetTaskPlanRequest
 	status, body := getTaskPlan(t, taskPlanPath, func(ctx context.Context, req entity.GetTaskPlanRequest) (*entity.GetTaskPlanResponse, error) {
 		got = req
-		return &entity.GetTaskPlanResponse{Plan: entity.TaskPlan{ID: 44, Content: "- [x] Read", Version: 2, CreatedAt: at, UpdatedAt: at}}, nil
+		return &entity.GetTaskPlanResponse{Plan: &entity.TaskPlan{ID: 44, Content: "- [x] Read", Version: 2, CreatedAt: at, UpdatedAt: at}}, nil
 	})
 	if status != http.StatusOK {
 		t.Fatalf("answered %d (%s), want 200", status, body)
@@ -61,8 +61,15 @@ func TestGetTaskPlan_ReadsThePlan(t *testing.T) {
 	if want := (entity.GetTaskPlanRequest{WorkspaceID: 1, TaskID: 44, UserID: monoflake.ID(100).String()}); got != want {
 		t.Errorf("the controller was asked %+v, want %+v", got, want)
 	}
-	if want := `{"id":"` + monoflake.ID(44).String() + `","content":"- [x] Read","version":2,"createdAt":"2026-10-18T00:00:00Z","updatedAt":"2026-10-18T00:00:00Z"}`; body != want {
+	if want := `{"plan":{"id":"` + monoflake.ID(44).String() + `","content":"- [x] Read","version":2,"createdAt":"2026-10-18T00:00:00Z","updatedAt":"2026-10-18T00:00:00Z"}}`; body != want {
 		t.Errorf("body = %s\nwant %s", body, want)
+	}
+
+	status, body = getTaskPlan(t, taskPlanPath, func(ctx context.Context, req entity.GetTaskPlanRequest) (*entity.GetTaskPlanResponse, error) {
+		return &entity.GetTaskPlanResponse{}, nil
+	})
+	if status != http.StatusOK || body != `{"plan":null}` {
+		t.Errorf("no plan answered %d (%s), want 200 {\"plan\":null}", status, body)
 	}
 }
 
@@ -78,6 +85,6 @@ func TestGetTaskPlan_Refusals(t *testing.T) {
 		return nil, base.ErrNotFound
 	}
 	if status, _ := getTaskPlan(t, taskPlanPath, notFound); status != http.StatusNotFound {
-		t.Errorf("no plan answered %d, want 404", status)
+		t.Errorf("unknown task answered %d, want 404", status)
 	}
 }

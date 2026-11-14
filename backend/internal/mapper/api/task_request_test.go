@@ -246,8 +246,11 @@ func TestTaskResponses(t *testing.T) {
 
 func TestFromGetTaskPlanResponseEntityToHTTPResponse(t *testing.T) {
 	checkResponse(t, FromGetTaskPlanResponseEntityToHTTPResponse(&entity.GetTaskPlanResponse{
-		Plan: entity.TaskPlan{ID: 101, Content: "- [ ] Read", Version: 2, CreatedAt: at, UpdatedAt: at.Add(1)},
-	}), view.TaskPlan{ID: b62(101), Content: "- [ ] Read", Version: 2, CreatedAt: at, UpdatedAt: at.Add(1)})
+		Plan: &entity.TaskPlan{ID: 101, Content: "- [ ] Read", Version: 2, CreatedAt: at, UpdatedAt: at.Add(1)},
+	}), view.GetTaskPlanResponse{Plan: &view.TaskPlan{ID: b62(101), Content: "- [ ] Read", Version: 2, CreatedAt: at, UpdatedAt: at.Add(1)}})
+	if got := string(FromGetTaskPlanResponseEntityToHTTPResponse(&entity.GetTaskPlanResponse{})); got != `{"plan":null}` {
+		t.Errorf("no plan = %s", got)
+	}
 }
 
 func TestFromListTaskToolCallsResponseEntityToHTTPResponse(t *testing.T) {
