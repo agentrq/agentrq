@@ -101,14 +101,27 @@ func TestResetWorkspaceID_MovesEveryRowNamingTheWorkspace(t *testing.T) {
 		{ID: 1, TaskID: 1, Attachments: attachments(rsOld)},
 		{ID: 2, TaskID: 500, Attachments: attachments(rsOld)},
 		{ID: 3, TaskID: 600, Attachments: attachments(rsOther)},
+		// Its agent's message, and its status change, on another's task.
+		{ID: 4, TaskID: 700, UserID: rsUser, ByWorkspaceID: rsOld},
 	} {
 		if err := db.Create(&msg).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
 
+	if err := db.Create(&model.TaskStateTransition{ID: 900, TaskID: 700, UserID: rsUser, WorkspaceID: rsOther, ByWorkspaceID: rsOld}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	if err := repo.ResetWorkspaceID(context.Background(), rsOld, rsNew, rsUser); err != nil {
 		t.Fatalf("reset: %v", err)
+	}
+	var byMsg model.Message
+	db.First(&byMsg, 4)
+	var byMove model.TaskStateTransition
+	db.First(&byMove, 900)
+	if byMsg.ByWorkspaceID != rsNew || byMove.ByWorkspaceID != rsNew {
+		t.Errorf("its agent's message and status change are put down to %d and %d, want the new id %d", byMsg.ByWorkspaceID, byMove.ByWorkspaceID, rsNew)
 	}
 
 	var w model.Workspace
@@ -244,11 +257,13 @@ func TestResetWorkspaceID_CoversEveryColumnNamingAWorkspace(t *testing.T) {
 		}
 	}
 	covered := map[string]bool{
-		"Workspace.ForkOfID":           true,
-		"SkillShare.TargetWorkspaceID": true,
-		"PanoDoc.CreatedByWorkspaceID": true,
-		"PanoDoc.UpdatedByWorkspaceID": true,
-		"Task.CreatedByWorkspaceID":    true,
+		"Workspace.ForkOfID":                true,
+		"SkillShare.TargetWorkspaceID":      true,
+		"PanoDoc.CreatedByWorkspaceID":      true,
+		"PanoDoc.UpdatedByWorkspaceID":      true,
+		"Task.CreatedByWorkspaceID":         true,
+		"Message.ByWorkspaceID":             true,
+		"TaskStateTransition.ByWorkspaceID": true,
 	}
 	for _, m := range workspaceIDTables {
 		covered[reflect.TypeOf(m).Elem().Name()+".WorkspaceID"] = true

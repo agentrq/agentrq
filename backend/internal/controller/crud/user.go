@@ -199,6 +199,21 @@ func (c *controller) findSupervisorWorkspace(ctx context.Context, userID int64) 
 	return model.Workspace{}, false, nil
 }
 
+// asSupervisor puts what a request of the supervisor's task tool writes down
+// to the account's supervisor workspace, and answers it: its token names the
+// account, not the calling workspace. Any other request's context is answered
+// as it is, with 0, and so is one of an account with no supervisor workspace.
+func (c *controller) asSupervisor(ctx context.Context, bySupervisor bool, userID int64) (context.Context, int64, error) {
+	if !bySupervisor {
+		return ctx, 0, nil
+	}
+	sup, found, err := c.findSupervisorWorkspace(ctx, userID)
+	if err != nil || !found {
+		return ctx, 0, err
+	}
+	return entity.WithAgentWorkspace(ctx, sup.ID), sup.ID, nil
+}
+
 func (c *controller) CreateUser(ctx context.Context, u entity.User) (entity.User, error) {
 	// Simple implementation if needed, but FindOrCreateUser is primary
 	newUser := model.User{

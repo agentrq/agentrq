@@ -25,12 +25,12 @@ func TestListTaskChanges(t *testing.T) {
 	e := newTestController(t)
 	req := changesRequest()
 	at := req.Since.Add(time.Minute)
-	e.repo.EXPECT().ListTaskChanges(gomock.Any(), req, testUserID).Return([]model.Task{
+	e.repo.EXPECT().ListTaskChanges(gomock.Any(), req, testUserID, int64(0)).Return([]model.Task{
 		{ID: 1, Title: "a", Messages: []model.Message{{ID: 10, TaskID: 1, Sender: "agent", Text: "Done?"}}},
 		{ID: 2, Title: "b"},
 	}, nil)
-	e.repo.EXPECT().CountNewMessages(gomock.Any(), []int64{1, 2}, req.Since).Return(map[int64]int{1: 3}, nil)
-	e.repo.EXPECT().ListStatusChanges(gomock.Any(), []int64{1, 2}, req.Since).Return(map[int64]time.Time{2: at}, nil)
+	e.repo.EXPECT().CountNewMessages(gomock.Any(), []int64{1, 2}, req.Since, int64(0)).Return(map[int64]int{1: 3}, nil)
+	e.repo.EXPECT().ListStatusChanges(gomock.Any(), []int64{1, 2}, req.Since, int64(0)).Return(map[int64]time.Time{2: at}, map[int64]time.Time{2: at}, nil)
 
 	res, err := e.controller.ListTaskChanges(context.Background(), req)
 	if err != nil {
@@ -47,7 +47,7 @@ func TestListTaskChanges(t *testing.T) {
 // Nothing changed asks nothing more of the database.
 func TestListTaskChanges_NoneChanged(t *testing.T) {
 	e := newTestController(t)
-	e.repo.EXPECT().ListTaskChanges(gomock.Any(), gomock.Any(), testUserID).Return(nil, nil)
+	e.repo.EXPECT().ListTaskChanges(gomock.Any(), gomock.Any(), testUserID, int64(0)).Return(nil, nil)
 	res, err := e.controller.ListTaskChanges(context.Background(), changesRequest())
 	if err != nil || res == nil || len(res.Tasks) != 0 {
 		t.Errorf("ListTaskChanges = %+v, %v; want an empty answer", res, err)
@@ -58,16 +58,16 @@ func TestListTaskChanges_RepositoryErrors(t *testing.T) {
 	changed := []model.Task{{ID: 1}}
 	for name, expect := range map[string]func(e *testEnv){
 		"tasks": func(e *testEnv) {
-			e.repo.EXPECT().ListTaskChanges(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errChangesDBDown)
+			e.repo.EXPECT().ListTaskChanges(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errChangesDBDown)
 		},
 		"messages": func(e *testEnv) {
-			e.repo.EXPECT().ListTaskChanges(gomock.Any(), gomock.Any(), gomock.Any()).Return(changed, nil)
-			e.repo.EXPECT().CountNewMessages(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errChangesDBDown)
+			e.repo.EXPECT().ListTaskChanges(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(changed, nil)
+			e.repo.EXPECT().CountNewMessages(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errChangesDBDown)
 		},
 		"status": func(e *testEnv) {
-			e.repo.EXPECT().ListTaskChanges(gomock.Any(), gomock.Any(), gomock.Any()).Return(changed, nil)
-			e.repo.EXPECT().CountNewMessages(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-			e.repo.EXPECT().ListStatusChanges(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errChangesDBDown)
+			e.repo.EXPECT().ListTaskChanges(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(changed, nil)
+			e.repo.EXPECT().CountNewMessages(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+			e.repo.EXPECT().ListStatusChanges(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil, errChangesDBDown)
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

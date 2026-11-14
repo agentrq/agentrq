@@ -72,9 +72,10 @@ type Repository interface {
 	GetTaskRow(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error)
 	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
 	CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error)
-	ListTaskChanges(ctx context.Context, req entity.ListTaskChangesRequest, userID int64) ([]model.Task, error)
-	CountNewMessages(ctx context.Context, taskIDs []int64, since time.Time) (map[int64]int, error)
-	ListStatusChanges(ctx context.Context, taskIDs []int64, since time.Time) (map[int64]time.Time, error)
+	ListTaskChanges(ctx context.Context, req entity.ListTaskChangesRequest, userID, excludeWorkspaceID int64) ([]model.Task, error)
+	CountNewMessages(ctx context.Context, taskIDs []int64, since time.Time, excludeWorkspaceID int64) (map[int64]int, error)
+	ListNewestMessages(ctx context.Context, taskIDs []int64, since time.Time, excludeWorkspaceID int64) (map[int64]model.Message, error)
+	ListStatusChanges(ctx context.Context, taskIDs []int64, since time.Time, excludeWorkspaceID int64) (changed, moved map[int64]time.Time, err error)
 	// UpdateTask writes only the columns of t it names, and UpdatedAt.
 	UpdateTask(ctx context.Context, t model.Task, columns ...string) (model.Task, error)
 	DeleteTask(ctx context.Context, workspaceID, taskID int64, userID int64) error
@@ -644,6 +645,13 @@ func (r *repository) ResetWorkspaceID(ctx context.Context, oldID, newID, userID 
 		if err := tx.Model(&model.Task{}).Where("created_by_workspace_id = ?", oldID).UpdateColumn("created_by_workspace_id", newID).Error; err != nil {
 			return err
 		}
+		// What its agent wrote, in any workspace's tasks.
+		if err := tx.Model(&model.Message{}).Where("user_id = ? AND by_workspace_id = ?", userID, oldID).UpdateColumn("by_workspace_id", newID).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.TaskStateTransition{}).Where("user_id = ? AND by_workspace_id = ?", userID, oldID).UpdateColumn("by_workspace_id", newID).Error; err != nil {
+			return err
+		}
 
 		// A public attachment link names its file, kept under the content
 		// workspace: this one, for its own tasks and its forks'.
@@ -1025,7 +1033,12 @@ func (r *repository) DeleteTask(ctx context.Context, workspaceID, taskID int64, 
 	})
 }
 
+// CreateMessage writes a message, put down to the workspace whose agent the
+// context says wrote it, unless the message already names one.
 func (r *repository) CreateMessage(ctx context.Context, m model.Message) error {
+	if m.ByWorkspaceID == 0 {
+		m.ByWorkspaceID = entity.GetAgentWorkspace(ctx)
+	}
 	if !hasRequestStatus(m.Metadata) {
 		return r.conn(ctx).Create(&m).Error
 	}

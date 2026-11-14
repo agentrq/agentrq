@@ -38,9 +38,10 @@ one action's payload with an example.
    `since` (the id of the last message you read) returns only the newer messages, far
    more efficient than another `get`; it sends the newest 5 unless `limit` says more,
    `before` pages back, and `maxChars` cuts long messages to skim.
-   To follow tasks up, call `task.changes` with the `now` of your last call as `since`: it
-   lists only the tasks whose status or conversation changed, a short line each, and an
-   empty list when nothing did; then `task.messages` only for those with `newMessages`.
+   To follow tasks up, call `task.changes` with `excludeSelf: true` and the `now` of your last
+   call as `since`: it lists only the tasks someone else changed, by a message or a status,
+   a short line each, and an empty list when nothing did; then `task.messages` only for
+   those with `newMessages`.
    To ask an agent for more on a task, even a completed one, use `task.followUp` rather than a new
    task repeating its context: the task reopens and the agent reads the follow-up first.
    Poll with `task.changes`, `task.list`/`task.listAll` and `task.messages`, never `get`: a listed task

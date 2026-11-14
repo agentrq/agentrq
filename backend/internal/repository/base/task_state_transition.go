@@ -83,17 +83,19 @@ func byIDs(db *gorm.DB, ids []int64) *gorm.DB {
 // recordTaskStateTransition is the only writer of a task's history. A move
 // into a closed state also records the task's latency, here rather than in
 // the callers, so no path can close a task without it. The agent that made
-// the change, if any, comes from the context, already registered.
+// the change, if any, comes from the context, already registered, and so does
+// the workspace it works for.
 func recordTaskStateTransition(tx *gorm.DB, t model.Task, from, to model.TaskState) error {
 	agent := entity.GetTaskAgent(tx.Statement.Context)
 	if err := tx.Create(&model.TaskStateTransition{
-		UserID:       t.UserID,
-		WorkspaceID:  t.WorkspaceID,
-		TaskID:       t.ID,
-		FromState:    from,
-		ToState:      to,
-		AgentID:      agent.ID,
-		AgentModelID: agent.ModelID,
+		UserID:        t.UserID,
+		WorkspaceID:   t.WorkspaceID,
+		TaskID:        t.ID,
+		FromState:     from,
+		ToState:       to,
+		AgentID:       agent.ID,
+		AgentModelID:  agent.ModelID,
+		ByWorkspaceID: entity.GetAgentWorkspace(tx.Statement.Context),
 	}).Error; err != nil {
 		return err
 	}

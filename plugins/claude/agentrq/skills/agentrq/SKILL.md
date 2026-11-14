@@ -23,8 +23,8 @@ A tool's actions are in `references/<tool>.md`; memory, skills and pano share `k
 
 ## Core Guidelines
 
-1. **Discover first**: `workspace.list` and `task.listAll` before creating.
-2. **Follow up efficiently**: `task.changes` from the last `now`, `task.messages` where `newMessages`; never poll `get`. More on a task: `task.followUp`.
+1. **Discover first**: `workspace.list`, `task.listAll` before creating.
+2. **Follow up efficiently**: `task.changes` with `excludeSelf` from the last `now`, `task.messages` where `newMessages`; never `get`. More: `task.followUp`.
 3. **Humans in the loop**: blocked or needing approval, set the task `blocked` and `task.reply` what you need.
 4. **Learn**: read a workspace's `selfLearningLoopNote` and `memory.get` `MEMORY.md` first; save lessons with `workspace.update`.
 5. **Sub-tasks**: split big goals with `parentId`.

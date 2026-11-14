@@ -102,7 +102,11 @@ func TestSetAgentTaskStatus(t *testing.T) {
 			repo := mock_repository.NewMockRepository(ctrl)
 			ps := mock_pubsub.NewMockService(ctrl)
 			repo.EXPECT().GetTaskRow(gomock.Any(), memParent, int64(101), memUser).Return(row, nil)
-			repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), "Status").DoAndReturn(func(_ context.Context, m model.Task, _ ...string) (model.Task, error) {
+			repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), "Status").DoAndReturn(func(ctx context.Context, m model.Task, _ ...string) (model.Task, error) {
+				// The change is put down to the agent's workspace.
+				if by := entity.GetAgentWorkspace(ctx); by != memParent {
+					t.Errorf("changed as workspace %d, want %d", by, memParent)
+				}
 				return m, nil
 			})
 			actions := published(ps)
