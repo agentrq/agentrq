@@ -114,6 +114,14 @@ export function preferredWorkspace(mine = [], { workspaceName = '', sharedName =
   return String((named(workspaceName) || named(sharedName) || open[0])?.id ?? '');
 }
 
+/**
+ * Your own workspace in a team workspace: the one of yours, not archived and
+ * not a fork, of its name. '' when you have none.
+ */
+export function ownTeamWorkspace(mine = [], name = '') {
+  return String(mine.find((w) => name && !w.archivedAt && !w.forkOfId && sameSharedName(w.name, name))?.id ?? '');
+}
+
 /** A change refused because someone changed the team since it was read. */
 export const isVersionConflict = (err) => err?.status === 409 && err?.conflict === true;
 

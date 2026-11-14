@@ -556,6 +556,19 @@ func (m *teamMode) skills(t *testing.T) {
 		status, body := m.get(t, bobID, "/teams/"+teamTen+"/skills/"+pathEscape(name))
 		expectStatus(t, "a skill "+what, status, http.StatusNotFound, body)
 	}
+	// One team workspace's skills: backend holds both, api none.
+	for query, want := range map[string][]string{"?workspace=%20BACKEND": {"alice-only", "deploy"}, "?workspace=api": {}, "?workspace=frontend": {}} {
+		status, body := m.get(t, bobID, "/teams/"+teamTen+"/skills"+query)
+		if got := list(body, "skills", "name"); status != http.StatusOK || !sameList(got, want...) {
+			t.Errorf("the skills of %s are %d %v, want %v", query, status, got, want)
+		}
+	}
+	status, body = m.get(t, bobID, "/teams/"+teamTen+"/skills/deploy?workspace=backend")
+	expectStatus(t, "deploy in backend", status, http.StatusOK, body)
+	status, body = m.get(t, bobID, "/teams/"+teamTen+"/skills/deploy?workspace=api")
+	expectStatus(t, "deploy, not on in api", status, http.StatusNotFound, body)
+	status, body = call(t, m.app, bobID, http.MethodPost, "/teams/"+teamTen+"/skills/alice-only/add?workspace=api", `{"workspaceIds":[]}`)
+	expectStatus(t, "adding from api a skill on only in backend", status, http.StatusNotFound, body)
 	status, body = m.get(t, daveID, "/teams/"+teamTen+"/skills")
 	expectStatus(t, "Dave, outside, listing skills", status, http.StatusNotFound, body)
 

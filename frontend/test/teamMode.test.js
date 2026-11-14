@@ -29,6 +29,7 @@ import {
   memberChoices,
   workspaceChoices,
   preferredWorkspace,
+  ownTeamWorkspace,
   isVersionConflict,
   CONFLICT_NOTICE,
   SETTINGS_TABS,
@@ -324,6 +325,20 @@ describe('the workspace a clone goes to', () => {
   it('is none when every workspace is archived, or there are none', () => {
     expect(preferredWorkspace([mine[0]])).toBe('');
     expect(preferredWorkspace()).toBe('');
+  });
+});
+
+describe('your own workspace in a team workspace', () => {
+  it('is yours of its name, never archived or a fork, else none', () => {
+    const mine = [
+      { id: 'a', name: 'backend', archivedAt: '2026-01-01' },
+      { id: 'f', name: 'Backend', forkOfId: 'c' },
+      { id: 'c', name: ' Backend ' },
+    ];
+    expect(ownTeamWorkspace(mine, 'BACKEND')).toBe('c');
+    expect(ownTeamWorkspace(mine, 'docs')).toBe('');
+    expect(ownTeamWorkspace(mine, '')).toBe('');
+    expect(ownTeamWorkspace()).toBe('');
   });
 });
 

@@ -454,6 +454,19 @@ describe('the team\'s task list (?team=)', () => {
     expect(el.querySelector('[data-test=team-analytics]')).toBe(null)
   })
 
+  it('opens the skills of the team workspace on screen, and offers none across the team', async () => {
+    let el = await mount(TaskListView)
+    expect(el.querySelector('[data-test=team-skills-link]').getAttribute('title')).toBe('Skills')
+    el.querySelector('[data-test=team-skills-link]').click()
+    expect(push).toHaveBeenLastCalledWith({ path: '/skills', query: { team: 'tm1', workspace: 'Backend' } })
+    route.query = { team: 'tm1' }
+    el = await mount(TaskListView)
+    expect(el.querySelector('[data-test=team-skills-link]')).toBe(null)
+    route.query = {}
+    el = await mount(TaskListView)
+    expect(el.querySelector('[data-test=team-skills-link]')).toBe(null)
+  })
+
   it('reads the list again on the team\'s events, and only those', async () => {
     await mount(TaskListView)
     const calls = fetchTeamTasks.mock.calls.length

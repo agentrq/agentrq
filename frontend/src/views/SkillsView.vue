@@ -20,6 +20,7 @@ import { useTeamMode } from '../composables/useTeamMode'
 const route = useRoute()
 const skillName = computed(() => route.params.name || '')
 const { isTeamMode } = useTeamMode()
+const teamWorkspace = computed(() => (isTeamMode.value && typeof route.query.workspace === 'string' ? route.query.workspace : ''))
 </script>
 
 <template>
@@ -28,7 +29,8 @@ const { isTeamMode } = useTeamMode()
       <div class="flex flex-col min-w-0 flex-1">
         <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">Skills</h1>
         <p v-if="isTeamMode" class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
-          The skills your teammates' shared workspaces use. Add one to yours to use it.
+          <template v-if="teamWorkspace">The skills used in <span data-test="team-skills-workspace" class="font-semibold">{{ teamWorkspace }}</span>. Add the ones you want to yours.</template>
+          <template v-else>Each team workspace has its own skills.</template>
         </p>
         <p v-else class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
           Playbooks agents load when a task matches one. Turn one on in each workspace whose agents should see it.
