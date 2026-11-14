@@ -139,6 +139,22 @@ export function inviterName(invitation, members = []) {
   return members.find((m) => String(m.userId) === String(by))?.name || by || '';
 }
 
+/**
+ * A teammate's task event on your account stream, as the event the page would
+ * get for its own task: `team.task.updated` for team `teamId` reads as
+ * `task.updated`. null for any other team's, and for your own events.
+ */
+export function teamEvent(ev, teamId) {
+  if (!teamId || !ev?.type?.startsWith('team.') || String(ev.teamId) !== String(teamId)) return null;
+  return { ...ev, type: ev.type.slice('team.'.length) };
+}
+
+/** Whether a team task is in the list's group and member filters ('' = any). */
+export function inTeamFilter(task, { group = '', member = '' } = {}) {
+  if (member && String(task?.owner?.userId) !== String(member)) return false;
+  return !group || (task?.group || '').trim().toLowerCase() === group.trim().toLowerCase();
+}
+
 /** A team answer that means you can no longer see it: removed, or it is gone. */
 export const lostTeam = (err) => err?.status === 404 || err?.status === 403;
 
@@ -150,6 +166,9 @@ export function invitationState(preview, err) {
   if (preview && preview.emailMatches === false) return 'wrongEmail';
   return preview ? 'ready' : 'loading';
 }
+
+// The team being left, while the way back to Me is under way.
+let leaving = null;
 
 /** The team on screen, and links that stay in its mode. */
 export function useTeamMode() {
@@ -171,10 +190,15 @@ export function useTeamMode() {
    */
   function leaveTeam(name = team.value?.name) {
     const id = teamId.value;
+    // A page's reads fail together (its tasks and the team's workspaces):
+    // one notice, one way back.
+    if (leaving?.id === id) return leaving.done;
     notifyInfo(name ? `You're no longer in ${name}` : "You're no longer in that team");
     store.drop(id);
     rememberTeam('');
-    return router.replace('/');
+    const done = Promise.resolve(router.replace('/')).finally(() => { leaving = null; });
+    leaving = { id, done };
+    return done;
   }
 
   return { teamId, isTeamMode, team, link, leaveTeam };

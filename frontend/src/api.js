@@ -1574,13 +1574,15 @@ export function fetchTeamTasks(teamId, { status = '', group = '', member = '', l
   return teamCall(`/teams/${enc(teamId)}/tasks?${params.toString()}`, 'Failed to load the team\'s tasks');
 }
 
-// { task, workspace, owner, stateTransitions }
+// { task, workspace, owner, plan, stateTransitions }: no Pano docs, which stay the owner's.
 export function getTeamTask(teamId, taskId) {
   return teamCall(`/teams/${enc(teamId)}/tasks/${enc(taskId)}`, 'Failed to load the task');
 }
 
-export function getTeamAttachmentUrl(teamId, taskId, attachmentId) {
-  return `${API_BASE_URL}/teams/${enc(teamId)}/tasks/${enc(taskId)}/attachments/${enc(attachmentId)}`;
+// A file's link in team mode, as the server gave it: its session-checked team
+// route (never the public link), under the app's base path.
+export function teamFileUrl(att) {
+  return `${cleanBase}${att.url}`;
 }
 
 // The workspace analytics, summed for the team or one group, plus `byMember`.
@@ -1598,12 +1600,13 @@ export function cloneTeamTask(teamId, taskId, workspaceId, status = 'notstarted'
   return teamCall(`/teams/${enc(teamId)}/tasks/${enc(taskId)}/clone`, 'Failed to clone the task', { method: 'POST', body: { workspaceId, status } });
 }
 
-// The team's own memory.md: { content, updatedAt }.
+// The team's own memory.md: { content, updatedAt, updatedBy }, both null before the first save.
 export function getTeamMemory(teamId) {
   return teamCall(`/teams/${enc(teamId)}/memory`, 'Failed to load the team\'s memory');
 }
 
-// Last write wins; 409 when someone saved since `baseUpdatedAt`.
+// Last write wins. `baseUpdatedAt` is the updatedAt you loaded ('' for none);
+// `conflict: true` in the answer when someone else saved since.
 export function saveTeamMemory(teamId, content, baseUpdatedAt = '') {
   return teamCall(`/teams/${enc(teamId)}/memory`, 'Failed to save the team\'s memory', { method: 'PUT', body: { content, baseUpdatedAt } });
 }

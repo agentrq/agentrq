@@ -33,6 +33,8 @@ import {
   lostTeam,
   invitationState,
   useTeamMode,
+  teamEvent,
+  inTeamFilter,
 } from '../src/composables/useTeamMode';
 import { useToasts } from '../src/composables/useToasts';
 import { routes, createAgentRQApp } from '../src/app';
@@ -415,6 +417,20 @@ describe('useTeamMode', () => {
     expect(toasts.value.at(-1).message).toBe("You're no longer in that team");
     app.unmount();
   });
+
+  it('leaves once when a page\'s reads fail together', async () => {
+    const { mode, router, app } = await mountAt('/tasks/active?team=tm1');
+    const { toasts } = useToasts();
+    const before = toasts.value.length;
+
+    const first = mode.leaveTeam();
+    expect(mode.leaveTeam()).toBe(first);
+    await first;
+
+    expect(toasts.value.length).toBe(before + 1);
+    expect(router.currentRoute.value.fullPath).toBe('/');
+    app.unmount();
+  });
 });
 
 describe('the team routes', () => {
@@ -423,5 +439,27 @@ describe('the team routes', () => {
     for (const p of ['/team/new', '/team/settings', '/team/analytics', '/team/memory', '/invitations', '/invite']) {
       expect(paths).toContain(p);
     }
+  });
+});
+
+describe('a team\'s events on your account stream', () => {
+  it('reads team.<type> for the team on screen as <type>, and nothing else', () => {
+    const ev = { type: 'team.task.updated', teamId: 'tm1', payload: { id: 't1' } };
+    expect(teamEvent(ev, 'tm1')).toEqual({ type: 'task.updated', teamId: 'tm1', payload: { id: 't1' } });
+    expect(teamEvent(ev, 'tm2')).toBe(null);
+    expect(teamEvent(ev, '')).toBe(null);
+    expect(teamEvent({ type: 'task.updated', payload: {} }, 'tm1')).toBe(null);
+    expect(teamEvent(undefined, 'tm1')).toBe(null);
+  });
+
+  it('keeps a task to the group and member filters, any when unset', () => {
+    const t = { group: ' Backend', owner: { userId: 'u2' } };
+    expect(inTeamFilter(t)).toBe(true);
+    expect(inTeamFilter(t, { group: 'backend' })).toBe(true);
+    expect(inTeamFilter(t, { group: 'Web' })).toBe(false);
+    expect(inTeamFilter(t, { member: 'u2' })).toBe(true);
+    expect(inTeamFilter(t, { member: 'u3' })).toBe(false);
+    expect(inTeamFilter({}, { group: 'Web' })).toBe(false);
+    expect(inTeamFilter(undefined, { member: 'u2' })).toBe(false);
   });
 });
