@@ -45,6 +45,20 @@ func TestAppendSelfLearningNote_ToAnEmptyBody(t *testing.T) {
 	}
 }
 
+// The notes follow the body; a body that already carries them, as one stored
+// before they moved to the hand-off does, and an empty note, leave it as it is.
+func TestAppendSelfLearningNote(t *testing.T) {
+	for _, tc := range []struct{ body, note, want string }{
+		{"Do it.", "note", "Do it.\n\nnote"},
+		{"Do it.\n\nnote", "note", "Do it.\n\nnote"},
+		{"Do it.", "", "Do it."},
+	} {
+		if got := AppendSelfLearningNote(tc.body, tc.note); got != tc.want {
+			t.Errorf("AppendSelfLearningNote(%q, %q) = %q, want %q", tc.body, tc.note, got, tc.want)
+		}
+	}
+}
+
 func TestCreateTask_Refusals(t *testing.T) {
 	t.Run("rate limited before anything is read", func(t *testing.T) {
 		e := newTestController(t)
