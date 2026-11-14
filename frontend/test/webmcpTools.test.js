@@ -584,6 +584,9 @@ describe('each tool calls the interface the way the UI does', () => {
     ['manageTeam', { action: 'decline', invitationId: 'i1' }, 'declineInvitation', ['i1']],
     ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', version: 3 }, 'shareWorkspace', ['ws1', 'tm1', 3]],
     ['manageTeam', { action: 'unshare', workspaceId: 'ws1', teamId: 'tm1', version: 3 }, 'unshareWorkspace', ['ws1', 'tm1', 3]],
+    ['readTeams', { action: 'teammateMemories', workspaceId: 'ws1' }, 'listTeammateMemories', ['ws1']],
+    ['manageTeam', { action: 'teammateMemory', workspaceId: 'ws1', userId: 'u1', included: false }, 'setTeammateMemory', ['ws1', 'u1', false]],
+    ['manageTeam', { action: 'teammateMemory', workspaceId: 'ws1', userId: 'u1' }, 'setTeammateMemory', ['ws1', 'u1', true]],
     ['readTeams', { action: 'workspaces', teamId: 'tm1' }, 'fetchTeamWorkspaces', ['tm1']],
     ['readTeams', { action: 'tasks', teamId: 'tm1' }, 'fetchTeamTasks', ['tm1', { status: '', workspace: '', member: '', limit: 10, offset: 0 }]],
     [
@@ -625,6 +628,7 @@ describe('the grouped team tools', () => {
 
     expect(page({ action: 'share', workspaceId: 'ws1', teamId: 'tm1' })).toBe('/workspaces/ws1/settings?tab=sharing');
     expect(page({ action: 'unshare', workspaceId: 'ws1', teamId: 'tm1' })).toBe('/workspaces/ws1/settings?tab=sharing');
+    expect(page({ action: 'teammateMemory', workspaceId: 'ws1', userId: 'u1' })).toBe('/workspaces/ws1/settings?tab=sharing');
     expect(page({ action: 'accept', token: 'tok' })).toBe('/invitations');
     expect(page({ action: 'decline', invitationId: 'i1' })).toBe('/invitations');
     expect(page({ action: 'invite', teamId: 't/1' })).toBe('/team/settings?team=t%2F1&tab=invitations');

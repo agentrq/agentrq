@@ -257,7 +257,7 @@ func TestAcceptingNeedsAnInviterStillInTheTeam(t *testing.T) {
 // A deleted workspace takes its team shares with it, and nobody else's.
 func TestDeleteWorkspace_DeletesItsTeamShares(t *testing.T) {
 	db := deleteTaskDB(t)
-	if err := db.AutoMigrate(&model.Workspace{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.WorkspaceShare{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.WorkspaceShare{}, &model.MemoryExclusion{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	for _, id := range []int64{100, 101} {
@@ -265,6 +265,9 @@ func TestDeleteWorkspace_DeletesItsTeamShares(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := db.Create(&model.WorkspaceShare{ID: id, TeamID: 1, WorkspaceID: id, UserID: 10}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&model.MemoryExclusion{WorkspaceID: id, UserID: 10, ExcludedUserID: 11}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -275,6 +278,11 @@ func TestDeleteWorkspace_DeletesItsTeamShares(t *testing.T) {
 	db.Model(&model.WorkspaceShare{}).Order("workspace_id").Pluck("workspace_id", &left)
 	if fmt.Sprint(left) != "[101]" {
 		t.Errorf("shares left are of workspaces %v, want only [101]", left)
+	}
+	left = nil
+	db.Model(&model.MemoryExclusion{}).Order("workspace_id").Pluck("workspace_id", &left)
+	if fmt.Sprint(left) != "[101]" {
+		t.Errorf("memory exclusions left are of workspaces %v, want only [101]", left)
 	}
 }
 

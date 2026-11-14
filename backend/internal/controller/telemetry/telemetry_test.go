@@ -511,6 +511,8 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionTeamTaskClone, model.ActionIDTeamTaskClone, "team task clone"},
 		{entity.ActionTeamMemorySave, model.ActionIDTeamMemorySave, "team memory save"},
 		{entity.ActionTeamSkillAdd, model.ActionIDTeamSkillAdd, "team skill add"},
+		{entity.ActionTeammateMemoryInclude, model.ActionIDTeammateMemoryInclude, "teammate memory include"},
+		{entity.ActionTeammateMemoryExclude, model.ActionIDTeammateMemoryExclude, "teammate memory exclude"},
 	}
 
 	for _, tc := range cases {

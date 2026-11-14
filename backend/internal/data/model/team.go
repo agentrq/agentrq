@@ -59,6 +59,17 @@ type WorkspaceShare struct {
 	UserID      int64 `gorm:"not null;index:idx_workspace_shares_team_id_user_id,priority:2"`
 }
 
+// MemoryExclusion leaves a teammate's memory out of the memory index the
+// agent of one of UserID's own shared workspaces reads. No row means
+// included, so a new teammate starts included. It changes nothing for the
+// teammate, and a row for someone no longer a teammate is ignored.
+type MemoryExclusion struct {
+	WorkspaceID    int64 `gorm:"primaryKey;autoIncrement:false"`
+	UserID         int64 `gorm:"primaryKey;autoIncrement:false"`
+	ExcludedUserID int64 `gorm:"primaryKey;autoIncrement:false"`
+	CreatedAt      time.Time
+}
+
 // What a team management activity records.
 const (
 	TeamActivityTeamCreated        = "team.created"
