@@ -54,10 +54,19 @@ test('a team workspace\'s analytics sum each member\'s workspace in it', async (
   await completeAsAgent(bea, beaWs.id, unique('Ship Bea\'s second part'))
   await completeAsAgent(owner, other.id, unique('Ship the other part'))
 
+  // Telemetry is written after the call answers: wait for each completion.
+  for (const [p, id, n] of [[owner, workspace.id, 1], [bea, beaWs.id, 2], [owner, other.id, 1]]) {
+    await expect.poll(async () => (await summaryOf(p, `/workspaces/${id}/stats`)).tasksCompleted, { message: `completions in ${id}` }).toBe(n)
+  }
   const mine = await summaryOf(owner, `/workspaces/${workspace.id}/stats`)
   const hers = await summaryOf(bea, `/workspaces/${beaWs.id}/stats`)
   const third = await summaryOf(owner, `/workspaces/${other.id}/stats`)
-  expect(hers.tasksCompleted, 'Bea\'s completions, counted').toBeGreaterThan(0)
+
+  // The workspace page's own Analytics button, which the team's copies.
+  await owner.goto(`/workspaces/${workspace.id}`)
+  await openSidebar(owner)
+  await owner.getByTitle('Analytics').waitFor()
+  await owner.screenshot({ path: test.info().outputPath('workspace-header.png'), animations: 'disabled' })
 
   // From the team workspace's tasks, the Analytics button.
   await owner.goto(`/tasks/active?team=${team.id}&workspace=${encodeURIComponent(workspace.name)}`)
