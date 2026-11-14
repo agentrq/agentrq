@@ -435,8 +435,13 @@ func (c *controller) EditPanoDoc(ctx context.Context, req entity.EditPanoDocRequ
 			default:
 				return nil, panoRefuse("op %d: oldString occurs %d times, it must occur once: add the text around it, nothing was changed", i+1, n)
 			}
+		case "replaceSection":
+			var err error
+			if markdown, err = panoReplaceSection(markdown, op.Section, op.Markdown); err != nil {
+				return nil, panoRefuse("op %d: nothing was changed: %s", i+1, err.(*entity.PanoError).Message)
+			}
 		default:
-			return nil, panoRefuse("op %d: op must be append or replace", i+1)
+			return nil, panoRefuse("op %d: op must be append, replace or replaceSection", i+1)
 		}
 	}
 	return c.SavePanoDoc(ctx, entity.SavePanoDocRequest{UserID: req.UserID, WorkspaceID: req.WorkspaceID, ID: req.ID, Version: req.Version, Title: d.Title, Markdown: markdown})
@@ -785,6 +790,15 @@ var panoAssigneeName = regexp.MustCompile(`[ \t]*→ \[@[^\]\n]*\]$`)
 // panoItems calls fn with each checklist item of the lines, outside fenced
 // code, and the index of its box in the item's match.
 func panoItems(lines []string, fn func(i int, item []int)) {
+	panoOutside(lines, func(i int) {
+		if item := panoTaskItem.FindStringSubmatchIndex(lines[i]); item != nil {
+			fn(i, item)
+		}
+	})
+}
+
+// panoOutside calls fn with the index of each line outside fenced code.
+func panoOutside(lines []string, fn func(i int)) {
 	fence := ""
 	for i, line := range lines {
 		trimmed := strings.TrimLeft(line, " ")
@@ -798,9 +812,7 @@ func panoItems(lines []string, fn func(i int, item []int)) {
 			fence = trimmed[:3]
 			continue
 		}
-		if item := panoTaskItem.FindStringSubmatchIndex(line); item != nil {
-			fn(i, item)
-		}
+		fn(i)
 	}
 }
 

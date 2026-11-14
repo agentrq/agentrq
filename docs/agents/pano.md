@@ -17,6 +17,9 @@
 - **The markdown is in the database, the files in storage.** A file's blob is
   written before its row and purged if the row fails, as with skills; the
   other order leaves a row whose file cannot be read. Lists `Omit("markdown")`.
+- **`read`'s `outline` and `section`, and the `replaceSection` op, share
+  `panoSections`**, on the markdown as a read returns it: a section one finds
+  is the one the other replaces. It skips fenced code, as the checklist does.
 - **The checklist count is stored at save** (`panoChecklist`), and the board's
   `togglePanoCheckbox` must find the same items: both skip fenced code.
 - **An assigned item ends `→ [@name](/workspaces/<id>/tasks/<id> "status")`**;

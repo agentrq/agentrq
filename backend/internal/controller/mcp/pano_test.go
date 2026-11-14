@@ -112,9 +112,9 @@ func TestRunPano_EveryAction(t *testing.T) {
 			[]string{`"title":"Plan"`, `"version":0`}, nil},
 		{"edit applies the ops and answers the new version without the markdown",
 			PanoParams{Action: "edit", Payload: map[string]any{"id": docID, "version": 3, "ops": []PanoEditOp{
-				{Op: "replace", OldString: "- [ ] x", NewString: "- [x] x"}, {Op: "append", Text: "\n- [ ] y"}}}},
+				{Op: "replace", OldString: "- [ ] x", NewString: "- [x] x"}, {Op: "append", Text: "\n- [ ] y"}, {Op: "replaceSection", Section: "Plan", Markdown: "# Plan\n"}}}},
 			entity.EditPanoDocRequest{UserID: user, WorkspaceID: ws, ID: 7, Version: 3, Ops: []entity.PanoEditOp{
-				{Op: "replace", OldString: "- [ ] x", NewString: "- [x] x"}, {Op: "append", Text: "\n- [ ] y"}}},
+				{Op: "replace", OldString: "- [ ] x", NewString: "- [x] x"}, {Op: "append", Text: "\n- [ ] y"}, {Op: "replaceSection", Section: "Plan", Markdown: "# Plan\n"}}},
 			[]string{`"id":"` + docID + `"`, `"version":4`}, []string{`"markdown"`}},
 		{"read answers the markdown and linked files only",
 			PanoParams{Action: "read", Payload: map[string]any{"id": docID}},
@@ -127,6 +127,14 @@ func TestRunPano_EveryAction(t *testing.T) {
 			[]string{`"attachments":[{"id":"` + monoflake.ID(12).String() + `","filename":"notes.txt","mimeType":"text/plain","size":5,"addedBy":"human"`,
 				`"comments":[{"id":"` + monoflake.ID(13).String() + `","author":"human","body":"Agreed."`, `"author":"` + wsID + `","body":"Done."`},
 			nil},
+		{"read with outline answers only the headings and the version",
+			PanoParams{Action: "read", Payload: map[string]any{"id": docID, "outline": true}},
+			entity.GetPanoDocRequest{UserID: user, WorkspaceID: ws, ID: 7},
+			[]string{`{"id":"` + docID + `","version":0,"title":"Plan","headings":[{"level":1,"text":"Plan"}]}`}, nil},
+		{"read with section answers only that section and the version",
+			PanoParams{Action: "read", Payload: map[string]any{"id": docID, "section": "plan"}},
+			entity.GetPanoDocRequest{UserID: user, WorkspaceID: ws, ID: 7},
+			[]string{`{"id":"` + docID + `","version":0,"title":"Plan","heading":{"level":1,"text":"Plan"},"markdown":"# Plan"}`}, nil},
 		{"comment adds a comment as the workspace",
 			PanoParams{Action: "comment", Payload: map[string]any{"id": docID, "comment": "Agreed."}},
 			entity.AddPanoCommentRequest{UserID: user, WorkspaceID: ws, ID: 7, Body: "Agreed."},
@@ -183,6 +191,7 @@ func TestRunPano_Refusals(t *testing.T) {
 		{"attach with an id that is not one is not found", PanoParams{Action: "attach", Payload: map[string]any{"id": "00000000000", "files": []any{}}}, "Pano doc not found"},
 		{"edit with an id that is not one is not found", PanoParams{Action: "edit", Payload: map[string]any{"id": "00000000000", "version": 1, "ops": []any{}}}, "Pano doc not found"},
 		{"save with an id that is not one is not found", PanoParams{Action: "save", Payload: map[string]any{"id": "00000000000", "title": "t", "markdown": "m"}}, "Pano doc not found"},
+		{"read with both outline and section is refused", PanoParams{Action: "read", Payload: map[string]any{"id": docID, "outline": true, "section": "Plan"}}, "read takes outline or section, not both"},
 		{"an unknown action is refused naming the actions", PanoParams{Action: "list", Payload: map[string]any{"id": docID}}, `unknown action "list": use save, edit, read, comment, attach, delete or help`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -273,5 +282,13 @@ func TestPanoParams_ColorEnumIsThePanosColors(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, entity.PanoColors) {
 		t.Errorf("PanoSavePayload.Color offers %v, want the Pano's colors %v", got, entity.PanoColors)
+	}
+}
+
+// A section no heading names is refused, listing the headings to choose from.
+func TestRunPano_ReadsAMissingSection(t *testing.T) {
+	text, isErr := call(RunPano(context.Background(), &fakePano{}, "user-1", 100, PanoParams{Action: "read", Payload: map[string]any{"id": docID, "section": "Rollout"}}), nil, nil)
+	if want := "no heading is \"Rollout\"; the headings:\n# Plan"; !isErr || text != want {
+		t.Errorf("RunPano answered %q (error %v), want the error %q", text, isErr, want)
 	}
 }

@@ -29,17 +29,17 @@ const PanoCLIHint = " Prefer the shell to save tokens: `npx -y @agentrq/agentrq-
 // PanoToolDescription is the pano tool's description, on both servers. With
 // PanoCLIHint it must stay within the 2048 bytes Claude Code keeps.
 var PanoToolDescription = "Read and write the Pano: markdown docs shared by every workspace of this account. " +
-	"Inputs: action, and payload, its fields; help with payload {\"topic\": \"<action>\"} gives an action's payload. " +
+	"Help with payload {\"topic\": \"<action>\"} gives an action's payload. " +
 	"save: no id creates a doc, returning its id and version; with an id it replaces title and markdown, both required. " +
-	"Every write changes a doc's version; save or edit needs the version you read, and if refused, read again, redo your change, retry with the new version. " +
-	"edit: id, version and ops, all or none: {op: append, text} adds at the end; {op: replace, oldString, newString} swaps oldString, which must occur once; a task link's status and box match any. Tick an item by replacing \"- [ ] x\" with \"- [x] x\". " +
+	"Every write changes a doc's version; save or edit needs the version you read: if refused, read again, redo your change, retry. " +
+	"edit: id, version and ops, all or none: {op: append, text} adds at the end; {op: replace, oldString, newString} swaps oldString, which must occur once; a task link's status and box match any; {op: replaceSection, section, markdown} swaps a section, heading included. Tick an item by replacing \"- [ ] x\" with \"- [x] x\". " +
 	"A checklist item ending → [@workspace](/workspaces/<id>/tasks/<id> \"status\") is assigned to that task: keep the link. " +
 	"A read shows the task's status now, and the box ticks when it completes; unticked by hand, it stays so until the status changes. " +
 	"With manual after the status (\"completed manual\") it never ticks itself: tick it when the work is really done, such as its PR merged. " +
 	"Tick your own steps as plain items; assign an item only for a whole task. " +
 	"A doc is deleted ttlDays after its last save (30, or the last ttlDays given). " +
 	"files must each be linked from the markdown by filename, [text](name) or ![alt](name), or the save is refused; one no longer linked is dropped. " +
-	"read: a doc by id, with its version and linked files; includeComments and includeAttachments add those. Also comment, attach (files that need no link) and delete. " +
+	"read: a doc by id, with its version and linked files; includeComments and includeAttachments add those; in a long doc, outline lists its headings, section reads one. Also comment, attach (files that need no link) and delete. " +
 	"Your workspace (a fork's parent) is the author. No search: share a doc's id with the agents that need it. " +
 	fmt.Sprintf("Limits: title %d characters, markdown %d KiB, file %d MiB, %d files per doc.", crud.PanoMaxTitleChars, crud.PanoMaxMarkdownBytes>>10, crud.PanoMaxFileBytes>>20, crud.PanoMaxFiles)
 
@@ -69,6 +69,8 @@ type (
 		ID                 string `json:"id" jsonschema:"The doc's ID (base62)."`
 		IncludeComments    bool   `json:"includeComments,omitempty" jsonschema:"Include the doc's comments."`
 		IncludeAttachments bool   `json:"includeAttachments,omitempty" jsonschema:"Include the doc's attachments."`
+		Outline            bool   `json:"outline,omitempty" jsonschema:"Only the doc's headings, each with its section's checklist, and its version: to find a section in a long doc."`
+		Section            string `json:"section,omitempty" jsonschema:"Only the section under this heading, its heading included, up to the next heading of its level or a higher one, and the doc's version. The heading's text, matched exactly, else ignoring case."`
 	}
 	PanoCommentPayload struct {
 		ID      string `json:"id" jsonschema:"The doc's ID (base62)."`
@@ -85,10 +87,12 @@ type (
 
 // PanoEditOp is one change of an edit.
 type PanoEditOp struct {
-	Op        string `json:"op" jsonschema:"enum: append, replace"`
+	Op        string `json:"op" jsonschema:"enum: append, replace, replaceSection"`
 	Text      string `json:"text,omitempty" jsonschema:"append: the text added at the end of the markdown, as is: start it with a newline to begin a new line."`
 	OldString string `json:"oldString,omitempty" jsonschema:"replace: the text to replace. It must occur exactly once in the markdown. In an item assigned to a task, the link's status and the box match whatever the doc says now, so the text as you read it still finds the item. If it is not found, the refusal names the closest line."`
 	NewString string `json:"newString,omitempty" jsonschema:"replace: what it becomes. Empty deletes it."`
+	Section   string `json:"section,omitempty" jsonschema:"replaceSection: the heading whose section is replaced, as read's section takes it."`
+	Markdown  string `json:"markdown,omitempty" jsonschema:"replaceSection: what the section becomes, its heading line included, as read's section returns it. Empty deletes the section."`
 }
 
 // PanoFileParam is a file sent to the Pano.
@@ -134,6 +138,44 @@ type panoDocView struct {
 	Files          []panoFileView    `json:"files"`
 	Attachments    []panoFileView    `json:"attachments,omitempty"`
 	Comments       []panoCommentView `json:"comments,omitempty"`
+}
+
+// panoHeadingView is a heading of a doc's outline.
+type panoHeadingView struct {
+	Level          int    `json:"level"`
+	Text           string `json:"text"`
+	ChecklistDone  int    `json:"checklistDone,omitempty"`
+	ChecklistTotal int    `json:"checklistTotal,omitempty"`
+}
+
+// panoPartView is part of a doc: its outline, or one section.
+type panoPartView struct {
+	ID       string            `json:"id"`
+	Version  int64             `json:"version"`
+	Title    string            `json:"title"`
+	Headings []panoHeadingView `json:"headings,omitempty"`
+	Heading  *panoHeadingView  `json:"heading,omitempty"`
+	Markdown string            `json:"markdown,omitempty"`
+}
+
+// panoPart is the outline, or the section, a read asked for instead of the
+// whole doc.
+func panoPart(d entity.PanoDoc, p PanoReadPayload) *mcp.CallToolResult {
+	v := panoPartView{ID: monoflake.ID(d.ID).String(), Version: d.Version, Title: d.Title}
+	if p.Outline {
+		v.Headings = []panoHeadingView{}
+		for _, h := range crud.PanoOutline(d.Markdown) {
+			v.Headings = append(v.Headings, panoHeadingView(h))
+		}
+		return jsonResult(v)
+	}
+	h, markdown, err := crud.PanoSection(d.Markdown, p.Section)
+	if err != nil {
+		return panoFailure(err, "read")
+	}
+	hv := panoHeadingView(h)
+	v.Heading, v.Markdown = &hv, markdown
+	return jsonResult(v)
 }
 
 // panoAuthor names who wrote something: a workspace's id, or "human".
@@ -254,7 +296,7 @@ func PanoActions(pano crud.PanoController, userID string, workspaceID int64) []T
 			}
 			ops := make([]entity.PanoEditOp, len(p.Ops))
 			for i, o := range p.Ops {
-				ops[i] = entity.PanoEditOp{Op: o.Op, Text: o.Text, OldString: o.OldString, NewString: o.NewString}
+				ops[i] = entity.PanoEditOp{Op: o.Op, Text: o.Text, OldString: o.OldString, NewString: o.NewString, Section: o.Section, Markdown: o.Markdown}
 			}
 			rs, err := pano.EditPanoDoc(ctx, entity.EditPanoDocRequest{UserID: userID, WorkspaceID: workspaceID, ID: id, Version: p.Version, Ops: ops})
 			if err != nil {
@@ -264,17 +306,23 @@ func PanoActions(pano crud.PanoController, userID string, workspaceID int64) []T
 			v.Markdown = ""
 			return jsonResult(v), nil, nil
 		}).WithExample(`{"id": "0kGpezGeuxt", "version": 3, "ops": [{"op": "replace", "oldString": "- [ ] Tag v0.9.20", "newString": "- [x] Tag v0.9.20"}, {"op": "append", "text": "\n- [ ] Announce"}]}`),
-		NewToolAction("read", "Read a doc, with its linked files.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoReadPayload) (*mcp.CallToolResult, any, error) {
+		NewToolAction("read", "Read a doc, with its linked files; or with outline, only its headings; or with section, only that section.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoReadPayload) (*mcp.CallToolResult, any, error) {
 			id, bad := docID(p.ID)
 			if bad != nil {
 				return bad, nil, nil
+			}
+			if p.Outline && p.Section != "" {
+				return toolError("read takes outline or section, not both"), nil, nil
 			}
 			rs, err := pano.GetPanoDoc(ctx, entity.GetPanoDocRequest{UserID: userID, WorkspaceID: workspaceID, ID: id, IncludeComments: p.IncludeComments, IncludeAttachments: p.IncludeAttachments})
 			if err != nil {
 				return panoFailure(err, "read"), nil, nil
 			}
+			if p.Outline || p.Section != "" {
+				return panoPart(rs.Doc, p), nil, nil
+			}
 			return jsonResult(panoDocViewOf(rs.Doc)), nil, nil
-		}).WithExample(`{"id": "0kGpezGeuxt", "includeComments": true}`).ReadOnly(),
+		}).WithExample(`{"id": "0kGpezGeuxt", "section": "Rollout"}`).ReadOnly(),
 		NewToolAction("comment", "Add a comment to a doc.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoCommentPayload) (*mcp.CallToolResult, any, error) {
 			id, bad := docID(p.ID)
 			if bad != nil {
