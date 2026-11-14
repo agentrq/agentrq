@@ -11,6 +11,8 @@
  * and what a card's counts say.
  */
 
+import { taskDotClass } from './useTaskStatusStyle';
+
 /** How many tasks a card shows, one fewer than the server's preview holds. */
 export const OVERVIEW_TASKS = 3;
 
@@ -114,14 +116,20 @@ const ACTIVITY = [
 
 /**
  * A sidebar row's activity: the tone of its bullet (null for none) with its
- * label, and how many tasks are queued for the agent.
+ * dot class and label, and how many tasks are queued for the agent. An ongoing
+ * task whose agent is offline pulses red instead of green.
  *
  * @param {Record<string, number>} counts  a workspace's overview counts
- * @returns {{ tone: string|null, label: string, queued: number }}
+ * @param {boolean} [agentConnected=true]  whether the workspace's agent is online
+ * @returns {{ tone: string|null, dot: string, label: string, queued: number }}
  */
-export function sidebarActivity(counts = {}) {
+export function sidebarActivity(counts = {}, agentConnected = true) {
   const hit = ACTIVITY.find((a) => counts[a.key] > 0);
-  return { tone: hit?.key ?? null, label: hit?.label ?? '', queued: counts.queued > 0 ? counts.queued : 0 };
+  const tone = hit?.key ?? null;
+  const dot = tone === 'ongoing' && !agentConnected
+    ? `${taskDotClass('blocked')} animate-pulse`
+    : tone ? taskDotClass(tone) : '';
+  return { tone, dot, label: hit?.label ?? '', queued: counts.queued > 0 ? counts.queued : 0 };
 }
 
 /**

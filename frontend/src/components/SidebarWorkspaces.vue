@@ -22,7 +22,6 @@ import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useToasts } from '../composables/useToasts'
 import { useFormat } from '../composables/useFormat'
 import { sidebarActivity } from '../composables/useWorkspaceOverview'
-import { taskDotClass } from '../composables/useTaskStatusStyle'
 
 const props = defineProps({
   workspaces: { type: Array, default: () => [] },
@@ -37,7 +36,7 @@ const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const { toKebabCase } = useFormat()
 const workspaces = computed(() => props.workspaces)
-const activityOf = (ws) => sidebarActivity(props.overview.get(ws.id)?.counts)
+const activityOf = (ws) => sidebarActivity(props.overview.get(ws.id)?.counts, ws.agentConnected)
 
 // Forks nested under their parent, and which parents have them folded away.
 // The fold is a per-browser convenience, remembered like the sidebar's width.
@@ -104,7 +103,7 @@ function onWorkspaceMenuSelect(key) {
           <!-- A task waiting on the person, blocked or running marks the
                row with that task's status dot; otherwise the agent's state. -->
           <div v-if="activityOf(ws).tone" class="w-1.5 h-1.5 rounded-full shrink-0"
-               :class="taskDotClass(activityOf(ws).tone)" :title="activityOf(ws).label"
+               :class="activityOf(ws).dot" :title="activityOf(ws).label"
                data-test="sidebar-activity"></div>
           <div v-else class="w-1.5 h-1.5 rounded-full shrink-0"
                :class="ws.agentConnected ? 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"
