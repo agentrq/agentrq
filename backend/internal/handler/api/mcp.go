@@ -60,6 +60,9 @@ type (
 		SetAgentEffort(ctx context.Context, effort string) error
 		SetAgentConcurrency(ctx context.Context, limit int) error
 		SendChannelNotification(ctx context.Context, taskID int64, content string, attachments ...entity.Attachment)
+		// AgentTaskBody is a task's body with the workspace's notes, which
+		// go with the task only when it is handed to the agent.
+		AgentTaskBody(ctx context.Context, body string) string
 		// ClearContextForTask clears at most once per handover, however many
 		// times the task is then pushed — so a caller pushes freely and never
 		// has to decide whether this one is a repeat.

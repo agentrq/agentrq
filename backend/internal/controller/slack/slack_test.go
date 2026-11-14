@@ -287,7 +287,7 @@ func TestHandleSlashCommand_Success_QuotedBoth(t *testing.T) {
 
 	mockRepo.EXPECT().
 		SystemGetWorkspace(gomock.Any(), int64(42)).
-		Return(model.Workspace{ID: 42, UserID: 100}, nil)
+		Return(model.Workspace{ID: 42, UserID: 100, SelfLearningLoopNote: "Keep me posted."}, nil)
 
 	mockRepo.EXPECT().
 		ListTasks(gomock.Any(), entity.ListTasksRequest{WorkspaceID: int64(42)}, int64(100)).
@@ -307,8 +307,9 @@ func TestHandleSlashCommand_Success_QuotedBoth(t *testing.T) {
 	if capturedReq.Task.Body != "Description goes in second quotes here" {
 		t.Errorf("expected parsed Body, got %q", capturedReq.Task.Body)
 	}
-	// The agent is handed the task by ID and body; the title stays out.
-	if want := "[Task " + monoflake.ID(7).String() + "]\nDescription goes in second quotes here"; mcp.pushed != want {
+	// The agent is handed the task by ID and body, then the workspace's notes,
+	// which are not stored with it; the title stays out.
+	if want := "[Task " + monoflake.ID(7).String() + "]\nDescription goes in second quotes here\n\nKeep me posted."; mcp.pushed != want {
 		t.Errorf("pushed %q, want %q", mcp.pushed, want)
 	}
 }

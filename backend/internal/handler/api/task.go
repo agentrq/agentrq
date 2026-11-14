@@ -180,7 +180,9 @@ func reassignedTaskContent(t entity.Task) string {
 // the poller's next tick.
 func (h *handler) pushTaskToAgent(ctx context.Context, userID string, t entity.Task) {
 	srv := h.mcpManager.Get(t.WorkspaceID, userID)
-	content := taskPushContent(t)
+	pushed := t
+	pushed.Body = srv.AgentTaskBody(ctx, t.Body)
+	content := taskPushContent(pushed)
 	if atts := formatAttachments(t.Attachments); atts != "" {
 		content += "\n" + atts
 	}

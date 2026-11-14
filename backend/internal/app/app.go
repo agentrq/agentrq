@@ -599,6 +599,7 @@ func New(cfg Config) (*App, error) {
 			tokenSvc,
 			pubsubSvc,
 		)
+		srv.SetWorkspaceNotes(workspaceNotes(repo, workspaceID, workspace))
 		srv.StartPoller(repo)
 		srv.StartPing()
 		return srv
@@ -1006,10 +1007,20 @@ func mcpTaskDefaults(ctx context.Context, repo base.Repository, workspaceID int6
 	if !task.ClearContext {
 		task.ClearContext = workspace.ClearContextDefault
 	}
-	if task.Assignee == "agent" {
-		task.Body = crud.AppendSelfLearningNote(task.Body, workspace.SelfLearningLoopNote)
-	}
 	return task
+}
+
+// workspaceNotes reads the workspace's notes for its agent as they are now, so
+// an edit reaches tasks already queued; started is the copy read when the
+// server was, used if that read fails.
+func workspaceNotes(repo base.Repository, workspaceID int64, started model.Workspace) mcp.WorkspaceNotesFunc {
+	return func(ctx context.Context) string {
+		workspace, err := repo.SystemGetWorkspace(ctx, workspaceID)
+		if err != nil {
+			workspace = started
+		}
+		return workspace.SelfLearningLoopNote
+	}
 }
 
 // taskEventPayload loads the task an SSE event is about, with its messages.
