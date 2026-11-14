@@ -134,7 +134,6 @@ type Repository interface {
 	DeleteTeam(ctx context.Context, teamID, callerID, version int64, act model.TeamManagementActivity) error
 	GetTeamMember(ctx context.Context, teamID, userID int64) (model.TeamMember, error)
 	ListTeamMembers(ctx context.Context, teamID int64) ([]TeamMemberWithUser, error)
-	TeamHasMemberWithEmail(ctx context.Context, teamID int64, email string) (bool, error)
 	RemoveTeamMember(ctx context.Context, teamID, callerID, userID, version int64, act model.TeamManagementActivity, deletedID int64) (int64, bool, error)
 	CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, version int64, since time.Time, teamLimit, userLimit int64, act model.TeamManagementActivity) (int64, error)
 	ListTeamInvitations(ctx context.Context, teamID int64, now time.Time) ([]model.TeamInvitation, error)
