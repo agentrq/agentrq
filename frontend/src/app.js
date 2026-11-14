@@ -108,6 +108,10 @@ export const routes = [
   // A team's analytics, or one team workspace's (?workspace=); a team page, so
   // with no team there is nothing to show.
   { path: '/team/analytics', component: () => import('./views/TeamAnalyticsView.vue'), beforeEnter: (to) => (to.query.team ? true : '/') },
+  // The Pano docs members shared with the team, and one of them, read-only.
+  // Not /pano?team=: that board and its docs are your own, to write.
+  { path: '/team/pano', component: () => import('./views/TeamPanoView.vue'), beforeEnter: (to) => (to.query.team ? true : '/') },
+  { path: '/team/pano/:docId', component: () => import('./views/TeamPanoDocView.vue'), beforeEnter: (to) => (to.query.team ? true : '/'), meta: { remount: true } },
   // A team's settings (?tab=); a team page, so with no team there is nothing
   // to show.
   { path: '/team/settings', component: () => import('./views/TeamSettingsView.vue'), beforeEnter: (to) => (to.query.team ? true : '/') },

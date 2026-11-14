@@ -55,6 +55,14 @@ type Controller interface {
 	// where it came from.
 	CloneTask(ctx context.Context, req entity.CloneTeamTaskRequest) (*entity.CreateTaskResponse, error)
 
+	// ListPanoDocs is the Pano docs shared with the team, without their
+	// markdown. GetPanoDoc is one of them, read-only: its files' links are
+	// the team's route, and it carries no comments and no tasks, which name
+	// the owner's workspaces. GetPanoFile is one of its files.
+	ListPanoDocs(ctx context.Context, userID, teamID int64) ([]entity.TeamPanoDoc, error)
+	GetPanoDoc(ctx context.Context, userID, teamID, docID int64) (entity.TeamPanoDoc, error)
+	GetPanoFile(ctx context.Context, userID, teamID, docID, fileID int64) (*entity.GetAttachmentResponse, error)
+
 	ListSkills(ctx context.Context, userID, teamID int64) ([]entity.TeamSkill, error)
 	GetSkill(ctx context.Context, userID, teamID int64, name string) (entity.TeamSkill, error)
 	// AddSkill copies a teammate's skill into the caller's account, on in
@@ -89,6 +97,8 @@ type Owner interface {
 	SystemGetDetailedStatsOfWorkspaces(ctx context.Context, req entity.GetStatsOfWorkspacesRequest) (*entity.GetDetailedWorkspaceStatsResponse, error)
 	SystemGetSkillFile(ctx context.Context, req entity.SystemGetSkillFileRequest) (*entity.GetSkillFileResponse, error)
 	CopySkill(ctx context.Context, req entity.CopySkillRequest) (*entity.CopySkillResponse, error)
+	GetPanoDoc(ctx context.Context, req entity.GetPanoDocRequest) (*entity.GetPanoDocResponse, error)
+	GetPanoFile(ctx context.Context, req entity.GetPanoFileRequest) (*entity.GetAttachmentResponse, error)
 }
 
 // Repository is what team mode reads and writes itself.
@@ -102,6 +112,8 @@ type Repository interface {
 	ExcludeTeammateMemory(ctx context.Context, e model.MemoryExclusion) error
 	IncludeTeammateMemory(ctx context.Context, userID, workspaceID, teammateID int64) error
 	MemoryUpdates(ctx context.Context, workspaceIDs []int64) (map[int64]time.Time, error)
+	ListTeamPanoDocs(ctx context.Context, teamID int64, now time.Time) ([]base.TeamPanoDocRow, error)
+	PanoDocOwnerInTeam(ctx context.Context, userID, teamID, docID int64) (base.PanoDocOwner, error)
 }
 
 // Publisher carries telemetry.

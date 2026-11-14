@@ -78,6 +78,11 @@ type Controller interface {
 	ListShares(ctx context.Context, userID, workspaceID int64) ([]entity.WorkspaceShare, error)
 	ShareWorkspace(ctx context.Context, ch entity.TeamChange, workspaceID int64) (entity.WorkspaceShare, error)
 	UnshareWorkspace(ctx context.Context, ch entity.TeamChange, workspaceID int64) (int64, error)
+	// ListPanoShares, SharePanoDoc and UnsharePanoDoc are the account's own
+	// Pano doc's shares, as for a workspace's.
+	ListPanoShares(ctx context.Context, userID, docID int64) ([]entity.PanoDocShare, error)
+	SharePanoDoc(ctx context.Context, ch entity.TeamChange, docID int64) (entity.PanoDocShare, error)
+	UnsharePanoDoc(ctx context.Context, ch entity.TeamChange, docID int64) (int64, error)
 
 	// CanReadWorkspaceInTeam is the one check behind every team read: the
 	// account is in the team, and the workspace, or the parent it is a fork
@@ -113,6 +118,10 @@ type Repository interface {
 	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, version int64, act model.TeamManagementActivity) (base.WorkspaceShareWithTeam, int64, error)
 	ListWorkspaceShares(ctx context.Context, workspaceID, userID int64) ([]base.WorkspaceShareWithTeam, error)
 	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error)
+	GetPanoDoc(ctx context.Context, userID, id int64, now time.Time) (model.PanoDoc, error)
+	SetPanoDocShare(ctx context.Context, s model.PanoDocShare, version int64, act model.TeamManagementActivity) (base.PanoDocShareWithTeam, int64, error)
+	ListPanoDocShares(ctx context.Context, docID, userID int64) ([]base.PanoDocShareWithTeam, error)
+	DeletePanoDocShare(ctx context.Context, docID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error)
 	ListTeamActivities(ctx context.Context, teamID int64, limit int, before int64) ([]base.TeamActivityRow, error)
 	CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
 	ListTeamWorkspaces(ctx context.Context, teamID int64) ([]base.TeamWorkspaceRow, error)

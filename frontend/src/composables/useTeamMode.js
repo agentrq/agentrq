@@ -134,14 +134,15 @@ export const settingsTabOf = (route) => (SETTINGS_TABS.includes(route?.query?.ta
 const personName = (p) => p?.name || p?.email || 'Someone';
 
 /**
- * One line of a team's activity log: who did what. The workspace a share
- * names is the one it had then, as the server kept it.
+ * One line of a team's activity log: who did what. The workspace or doc a
+ * share names is the name it had then, as the server kept it.
  */
 export function describeActivity(a = {}) {
   const who = personName(a.actor);
   const d = a.details || {};
   const target = a.targetUser ? personName(a.targetUser) : a.targetEmail || '';
   const workspace = d.workspaceName || 'a workspace';
+  const doc = d.docTitle ? `the Pano doc ${d.docTitle}` : 'a Pano doc';
   switch (a.action) {
     case 'team.created': return `${who} created the team`;
     case 'team.renamed': return d.from && d.to ? `${who} renamed the team from ${d.from} to ${d.to}` : `${who} renamed the team`;
@@ -153,6 +154,8 @@ export function describeActivity(a = {}) {
     case 'member.left': return `${who} left`;
     case 'workspace.shared': return `${who} shared ${workspace}`;
     case 'workspace.unshared': return `${who} stopped sharing ${workspace}`;
+    case 'pano.shared': return `${who} shared ${doc}`;
+    case 'pano.unshared': return `${who} stopped sharing ${doc}`;
     case 'team.deleted': return `${who} deleted the team`;
     default: return `${who}: ${a.action || 'a change'}`;
   }

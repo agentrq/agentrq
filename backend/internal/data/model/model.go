@@ -851,6 +851,8 @@ const (
 	// one of the account's workspaces; emitted by the backend.
 	ActionIDTeammateMemoryInclude
 	ActionIDTeammateMemoryExclude
+	// A Pano doc shared with a team; emitted by the backend.
+	ActionIDPanoShare
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

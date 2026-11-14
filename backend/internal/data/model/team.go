@@ -59,6 +59,17 @@ type WorkspaceShare struct {
 	UserID      int64 `gorm:"not null;index:idx_workspace_shares_team_id_user_id,priority:2"`
 }
 
+// PanoDocShare lets a team's members read one of UserID's Pano docs, and
+// its files. UserID, the doc's owner, alone shares and unshares it, and the
+// share goes when they leave the team or the doc is deleted.
+type PanoDocShare struct {
+	ID        int64 `gorm:"primaryKey;autoIncrement:false"`
+	CreatedAt time.Time
+	TeamID    int64 `gorm:"not null;uniqueIndex:uk_pano_doc_shares_team_id_doc_id,priority:1;index:idx_pano_doc_shares_team_id_user_id,priority:1"`
+	DocID     int64 `gorm:"not null;uniqueIndex:uk_pano_doc_shares_team_id_doc_id,priority:2;index:idx_pano_doc_shares_doc_id"`
+	UserID    int64 `gorm:"not null;index:idx_pano_doc_shares_team_id_user_id,priority:2"`
+}
+
 // MemoryExclusion leaves a teammate's memory out of the memory index the
 // agent of one of UserID's own shared workspaces reads. No row means
 // included, so a new teammate starts included. It changes nothing for the
@@ -82,6 +93,8 @@ const (
 	TeamActivityMemberLeft         = "member.left"
 	TeamActivityWorkspaceShared    = "workspace.shared"
 	TeamActivityWorkspaceUnshared  = "workspace.unshared"
+	TeamActivityPanoShared         = "pano.shared"
+	TeamActivityPanoUnshared       = "pano.unshared"
 	TeamActivityTeamDeleted        = "team.deleted"
 )
 

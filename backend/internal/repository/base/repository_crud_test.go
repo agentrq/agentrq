@@ -26,7 +26,7 @@ const (
 
 var crudTables = []any{
 	&model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{},
-	&model.TaskStateTransition{}, &model.TaskLatency{}, &model.PanoDocTask{}, &model.User{},
+	&model.TaskStateTransition{}, &model.TaskLatency{}, &model.PanoDocTask{}, &model.PanoDocShare{}, &model.User{},
 	&model.SlackWorkspaceLink{}, &model.SlackTaskThread{}, &model.PushSubscription{},
 	&model.Event{}, &model.EventTrigger{}, &model.Workflow{}, &model.WorkflowStep{},
 	&model.Telemetry{}, &model.Memory{},

@@ -6,6 +6,7 @@ package base
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +53,15 @@ func TestPanoDocTaskQueriesUseAnIndex(t *testing.T) {
 		{"a doc's unticked links", func() error { return setPanoUnticked(db, 1, nil) }},
 		{"a doc's links, clearing and marking unticked", func() error {
 			return setPanoUnticked(db, 1, []model.PanoDocTask{{TaskID: 31, Unticked: true}})
+		}},
+		{"a doc's shares", func() error { _, err := r.ListPanoDocShares(ctx, 1, skUser); return err }},
+		{"a team's shared docs", func() error { _, err := r.ListTeamPanoDocs(ctx, 9, time.Now()); return err }},
+		{"a shared doc's owner, for a teammate", func() error {
+			_, err := r.PanoDocOwnerInTeam(ctx, skUser, 9, 1)
+			if errors.Is(err, ErrNotFound) {
+				return nil
+			}
+			return err
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

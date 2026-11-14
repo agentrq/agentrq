@@ -372,6 +372,8 @@ describe('the activity log', () => {
     expect(line('member.left')).toBe('Alice left');
     expect(line('workspace.shared', { details: { workspaceName: 'docs' } })).toBe('Alice shared docs');
     expect(line('workspace.unshared')).toBe('Alice stopped sharing a workspace');
+    expect(line('pano.shared', { details: { docTitle: 'Plan' } })).toBe('Alice shared the Pano doc Plan');
+    expect(line('pano.unshared')).toBe('Alice stopped sharing a Pano doc');
     expect(line('team.deleted', { details: { name: 'Core' } })).toBe('Alice deleted the team');
     expect(line('team.archived')).toBe('Alice: team.archived');
     expect(describeActivity()).toBe('Someone: a change');
@@ -602,13 +604,13 @@ describe('the team store\'s version', () => {
 describe('the team routes', () => {
   it('are in the one route table, with no page for memory', () => {
     const paths = routes.map((r) => r.path);
-    for (const p of ['/team/new', '/team/settings', '/team/analytics', '/invitations', '/invite']) {
+    for (const p of ['/team/new', '/team/settings', '/team/analytics', '/team/pano', '/team/pano/:docId', '/invitations', '/invite']) {
       expect(paths).toContain(p);
     }
     expect(paths).not.toContain('/team/memory');
   });
 
-  it.each(['/team/analytics', '/team/settings'])('shows %s only for a team: with none it is the home page', (path) => {
+  it.each(['/team/analytics', '/team/settings', '/team/pano', '/team/pano/:docId'])('shows %s only for a team: with none it is the home page', (path) => {
     const { beforeEnter } = routes.find((r) => r.path === path);
     expect(typeof routes.find((r) => r.path === path).component).toBe('function');
     expect(beforeEnter({ query: { team: 'tm1' } })).toBe(true);

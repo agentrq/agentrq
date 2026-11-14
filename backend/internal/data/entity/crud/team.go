@@ -68,6 +68,24 @@ type WorkspaceShare struct {
 	Version     int64
 }
 
+// PanoDocShare is a Pano doc shared with a team. Version is the team's
+// after the share was made, when it was just made.
+type PanoDocShare struct {
+	TeamID    int64
+	TeamName  string
+	DocID     int64
+	CreatedAt time.Time
+	Version   int64
+}
+
+// TeamPanoDoc is a Pano doc shared with a team, with its owner.
+type TeamPanoDoc struct {
+	PanoDoc
+	OwnerID      int64
+	OwnerName    string
+	OwnerPicture string
+}
+
 // TeamWorkspace is a workspace a team's members may read: one shared with
 // it, or a fork of one. SharedName is the name of the shared workspace it
 // shows under, its own or its parent's: every shared workspace of one name,

@@ -286,6 +286,8 @@ describe('the navigate tool\'s map of the interface', () => {
     '/extensions/acme/home',
     '/team/new',
     '/team/analytics?team=tm1',
+    '/team/pano?team=tm1',
+    '/team/pano/d1?team=tm1',
     '/team/settings?team=tm1&tab=members',
     '/invitations',
   ];
@@ -309,7 +311,7 @@ describe('the navigate tool\'s map of the interface', () => {
 
     for (const word of ['board', 'analytics', 'settings', 'instances', 'edit', 'new', 'events', 'workflows',
       'machines', 'sessions', 'extensions', 'notstarted', 'pending', 'ongoing', 'completed', 'scheduled',
-      '?filter=', '?tab=', 'memories', 'danger', 'sharing', '?team=', '/team/new', 'team/analytics', 'team/settings', '/invitations']) {
+      '?filter=', '?tab=', 'memories', 'danger', 'sharing', '?team=', '/team/new', 'team/analytics', 'team/settings', 'team/pano', '/invitations']) {
       expect(description).toContain(word);
     }
   });

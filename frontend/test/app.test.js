@@ -59,6 +59,8 @@ describe('routes', () => {
       '/skills/:name',
       '/team/new',
       '/team/analytics',
+      '/team/pano',
+      '/team/pano/:docId',
       '/team/settings',
       '/invitations',
       '/invite',

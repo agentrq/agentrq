@@ -37,6 +37,9 @@ type PanoController interface {
 	// expired, and returns how many it deleted.
 	DeleteExpiredPanoDocs(ctx context.Context) (int, error)
 	GetPanoDoc(ctx context.Context, req entity.GetPanoDocRequest) (*entity.GetPanoDocResponse, error)
+	// GetPanoFile reads a file of one of the account's docs, for a reader
+	// that has no public link to it.
+	GetPanoFile(ctx context.Context, req entity.GetPanoFileRequest) (*entity.GetAttachmentResponse, error)
 	SavePanoDoc(ctx context.Context, req entity.SavePanoDocRequest) (*entity.SavePanoDocResponse, error)
 	// EditPanoDoc changes part of a doc's markdown, all or none of the ops.
 	EditPanoDoc(ctx context.Context, req entity.EditPanoDocRequest) (*entity.SavePanoDocResponse, error)
@@ -236,6 +239,31 @@ func (c *controller) GetPanoDoc(ctx context.Context, req entity.GetPanoDocReques
 		}
 	}
 	return &entity.GetPanoDocResponse{Doc: doc}, nil
+}
+
+func (c *controller) GetPanoFile(ctx context.Context, req entity.GetPanoFileRequest) (*entity.GetAttachmentResponse, error) {
+	uid, err := c.panoAuthor(ctx, req.UserID, 0)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := c.repository.GetPanoDoc(ctx, uid, req.DocID, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	files, err := c.repository.ListPanoFiles(ctx, req.DocID)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		if f.ID != req.FileID {
+			continue
+		}
+		data, err := c.panoStorage.LoadRaw(f.StorageID)
+		if err != nil {
+			return nil, fmt.Errorf("load pano file: %w", err)
+		}
+		return &entity.GetAttachmentResponse{Data: data, Filename: f.Filename, MimeType: f.MimeType}, nil
+	}
+	return nil, base.ErrNotFound
 }
 
 // SavePanoDoc writes a doc, and the linked files sent with it. Every file

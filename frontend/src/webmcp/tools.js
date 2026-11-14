@@ -112,6 +112,7 @@ const TEAM_FIELDS = {
   userId: str('A member\'s user ID, as the members action reports it.'),
   invitationId: str('An invitation ID, as the invitations actions report it.'),
   token: str('The token from an invitation link: what follows "#" in /invite#<token>.'),
+  docId: str('A Pano doc ID: one of yours from listPanoDocs, or a teammate\'s from the panoDocs action.'),
 }
 
 /** One action of a grouped tool: its `api.js` call, and what it needs. */
@@ -140,6 +141,9 @@ const TEAM_READS = (api) => ({
   analytics: ({ teamId, range = '7d', workspace = '' }) => api.fetchTeamStats(teamId, range, 0, 0, workspace),
   skills: ({ teamId }) => api.fetchTeamSkills(teamId),
   skill: ({ teamId, name }) => api.getTeamSkill(teamId, name),
+  panoShares: ({ docId }) => api.listPanoShares(docId),
+  panoDocs: ({ teamId }) => api.listTeamPanoDocs(teamId),
+  panoDoc: ({ teamId, docId }) => api.getTeamPanoDoc(teamId, docId),
 })
 
 // A change to a team names the version it was read at; the server refuses one
@@ -157,6 +161,8 @@ const TEAM_WRITES = (api) => ({
   unshare: ({ workspaceId, teamId, version }) => api.unshareWorkspace(workspaceId, teamId, version),
   teammateMemory: ({ workspaceId, userId, included }) => api.setTeammateMemory(workspaceId, userId, included !== false),
   addSkill: ({ teamId, name, workspaceIds = [] }) => api.addTeamSkill(teamId, name, workspaceIds),
+  sharePano: ({ docId, teamId, version }) => api.sharePanoDoc(docId, teamId, version),
+  unsharePano: ({ docId, teamId, version }) => api.unsharePanoDoc(docId, teamId, version),
 })
 
 /** Where a manageTeam action shows: the page that holds what it changes. */
@@ -164,6 +170,7 @@ function teamWritePage(input = {}) {
   if (['share', 'unshare', 'teammateMemory'].includes(input.action)) return sharingPage(input)
   if (input.action === 'accept' || input.action === 'decline') return '/invitations'
   if (input.action === 'addSkill') return `/skills?team=${seg(input.teamId)}`
+  if (input.action === 'sharePano' || input.action === 'unsharePano') return panoDocPage({ id: input.docId })
   if (input.action === 'invite' || input.action === 'revokeInvitation') return teamPage(input, 'invitations')
   return teamPage(input)
 }
@@ -209,14 +216,14 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         '- "/" workspaces, "/workspaces/new".\n' +
         '- "/kanban", "/tasks/<filter>" (active|notstarted|pending|ongoing|completed|scheduled) of all ' +
         'workspaces; add "/<workspaceId>/<taskId>" to open one, then "/instances".\n' +
-        '- "/workspaces/<workspaceId>" ("?filter=" as above); under it "/board", "/analytics", "/settings", ' +
-        '"/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", plus "/instances" or "/edit". Its ' +
+        '- "/workspaces/<id>" ("?filter=" as above); under it "/{board,analytics,settings}", ' +
+        '"/settings/skills/<name>", "/tasks/{new,<taskId>}", plus "/instances" or "/edit". Its ' +
         '"?tab=" general|setup|automations|notifications|memories|skills|sharing|slack|input|storage|danger.\n' +
         '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/skills[/<name>]", "/{pano,events/hooks}/new", ' +
         '"/pano/[<id>/]chat/<workspaceId>/<taskId>".\n' +
         '- "/machines[/<id>]", "/sessions/<id>" (terminal).\n' +
         '- "/extensions[/<name>/<pageId>]" (desktop).\n' +
-        '- "/team/new", "/invitations"; "?team=<id>" on "/{tasks/*,kanban,skills,team/analytics,team/settings}" is a team; ' +
+        '- "/team/new", "/invitations"; "?team=<id>" on "/{tasks/*,kanban,skills,team/analytics,team/settings,team/pano[/<id>]}" is a team; ' +
         'settings "&tab=members|invitations|activity|workspaces|danger".\n' +
         'Others refused.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
@@ -1502,7 +1509,8 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'myInvitations (addressed to you), preview (a link\'s invitation, by token), shares (the teams a workspace is shared with), ' +
         'teammateMemories (workspaceId: the teammates whose memory that workspace\'s agent reads, each with included). ' +
         'A team\'s shared work, read-only: workspaces (each with the sharedName it shows under), ' +
-        'tasks (status, workspace, member), task (taskId), analytics (range; workspace: one team workspace), skills, skill (name).',
+        'tasks (status, workspace, member), task (taskId), analytics (range; workspace: one team workspace), skills, skill (name), ' +
+        'panoDocs (docs members shared), panoDoc (docId). panoShares (docId: the teams a doc of yours is shared with).',
       properties: {
         action: { type: 'string', enum: Object.keys(TEAM_READS({})), description: 'What to read.' },
         ...TEAM_FIELDS,
@@ -1535,7 +1543,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'invite (email; at most a few per team per day, 429 past it), revokeInvitation (invitationId), ' +
         'share/unshare (workspaceId: one of yours), accept (token or invitationId), decline (invitationId), ' +
         'teammateMemory (workspaceId: one of yours, userId, included: whether its agent\'s memory index lists that teammate\'s memory), ' +
-        'addSkill (name, workspaceIds: copy a teammate\'s skill into your account). ' +
+        'addSkill (name, workspaceIds: copy a teammate\'s skill into your account), sharePano/unsharePano (docId: a Pano doc of yours). ' +
         'Every change but accept, decline, addSkill and teammateMemory takes the team\'s version, from get, members or invitations; ' +
         'one made after someone else\'s is refused with 409, conflict: true and the current version: read again, then retry.',
       properties: {
