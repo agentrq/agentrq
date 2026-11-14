@@ -66,6 +66,8 @@
           </div>
 
           <template v-else>
+            <p v-if="!admin && signInError" role="alert" class="p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 rounded-2xl text-sm text-red-600 dark:text-red-400 font-medium text-center">{{ signInError }}</p>
+
             <a v-if="!admin && !rootLoginEnabled" :href="providerLoginUrl(`${API_BASE_URL}/auth/google/login`, redirect)"
               class="w-full py-4 px-6 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 font-bold rounded-2xl border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center gap-3 transform active:scale-[0.98] transition-all shadow-sm">
               <svg width="20" height="20" viewBox="0 0 24 24">
@@ -132,7 +134,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { API_BASE_URL, adminLogin } from '../api'
-import { loginRedirect, providerLoginUrl } from '../utils/loginRedirect'
+import { loginRedirect, providerLoginUrl, loginErrorMessage } from '../utils/loginRedirect'
 import { PUBLIC_STATS, formatCount, followPublicStats } from '../utils/publicStats'
 
 // The operator's sign-in at /admin/login: the same page, with only the root
@@ -142,7 +144,10 @@ defineProps({ admin: { type: Boolean, default: false } })
 const router = useRouter()
 // Set when an MCP client's authorize step, or a site on the server's
 // allowedRedirectDomains, sent the person here to sign in.
-const rawRedirect = useRoute().query.redirect_url
+const route = useRoute()
+const rawRedirect = route.query.redirect_url
+// Why the server sent a provider sign-in back here, such as no verified email.
+const signInError = loginErrorMessage(route.query.error)
 const allowedRedirectDomains = ref([])
 const redirect = computed(() => loginRedirect(rawRedirect, window.location.origin, allowedRedirectDomains.value))
 const rootLoginEnabled = ref(false)

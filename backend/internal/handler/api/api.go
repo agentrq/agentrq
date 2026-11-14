@@ -492,6 +492,9 @@ func (h *handler) googleCallback() fiber.Handler {
 		defer cancel()
 
 		user, err := h.auth.Exchange(ctx, code)
+		if errors.Is(err, auth.ErrEmailNotVerified) {
+			return h.refuseSignIn(c, "googleEmailUnverified")
+		}
 		if err != nil {
 			zlog.Error().Err(err).Msg("OAuth exchange failed")
 			c.Set(_headerContentType, _mimeJSON)
@@ -575,6 +578,9 @@ func (h *handler) githubCallback() fiber.Handler {
 		defer cancel()
 
 		user, err := h.githubAuth.Exchange(ctx, code)
+		if errors.Is(err, auth.ErrEmailNotVerified) {
+			return h.refuseSignIn(c, "githubEmailUnverified")
+		}
 		if err != nil {
 			zlog.Error().Err(err).Msg("GitHub OAuth exchange failed")
 			c.Set(_headerContentType, _mimeJSON)
@@ -623,6 +629,13 @@ func (h *handler) githubCallback() fiber.Handler {
 
 		return c.Redirect(redirectURL)
 	}
+}
+
+// refuseSignIn sends a provider sign-in the server will not accept back to
+// the login page, which shows the message for code. Only a fixed code goes
+// on the URL, so a crafted link cannot put its own words on the page.
+func (h *handler) refuseSignIn(c *fiber.Ctx, code string) error {
+	return c.Redirect(h.basePath + "/login?error=" + code)
 }
 
 // sanitizeRedirectURL validates a redirect URL to prevent open redirect attacks.

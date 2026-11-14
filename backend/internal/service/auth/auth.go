@@ -4,7 +4,15 @@
 
 package auth
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrEmailNotVerified is returned by Exchange when the provider has no
+// verified email address for the account. Accounts are matched by email, so
+// such a sign-in is refused rather than trusted.
+var ErrEmailNotVerified = errors.New("no verified email address")
 
 type User struct {
 	ID      string `json:"id"`
