@@ -166,6 +166,15 @@ func (e *TeamVersionError) Error() string {
 	return "someone changed this team: reload it and try again"
 }
 
+// GetStatsOfWorkspacesRequest asks for the workspace statistics summed over
+// WorkspaceIDs, over the window Range (and From/To for "custom") names.
+type GetStatsOfWorkspacesRequest struct {
+	WorkspaceIDs []int64
+	Range        string
+	From         int64
+	To           int64
+}
+
 // SystemGetSkillFileRequest reads a file of UserID's skill.
 type SystemGetSkillFileRequest struct {
 	UserID int64
@@ -214,6 +223,18 @@ type TeamTaskDetail struct {
 	Detail    GetTaskResponse
 	Plan      *TaskPlan
 	Workspace TeamWorkspace
+}
+
+// GetTeamStatsRequest asks for the statistics of a team's workspaces, or of
+// one team workspace (by its shared name, as ListTeamTasksRequest) when
+// Workspace is set.
+type GetTeamStatsRequest struct {
+	UserID    int64
+	TeamID    int64
+	Workspace string
+	Range     string
+	From      int64
+	To        int64
 }
 
 // CloneTeamTaskRequest copies a teammate's task into WorkspaceID, one of the
