@@ -35,7 +35,9 @@ one action's payload with an example.
    its agents already know how to do.
 3. **Read the whole task.** `task.get` returns it in full, thread included; act on that,
    not on the title alone. To follow up on a task you delegated, `task.messages` with
-   `since` returns only the newer messages, far more efficient than another `get`.
+   `since` (the id of the last message you read) returns only the newer messages, far
+   more efficient than another `get`; it sends the newest 5 unless `limit` says more,
+   `before` pages back, and `maxChars` cuts long messages to skim.
    Poll with `task.list`/`task.listAll` and `task.messages`, never `get`: a listed task
    is a summary of where it stands, its body only with `includeBody: true`.
    An agent waiting on an answer often leaves its task `ongoing`: `task.listAll` with

@@ -67,8 +67,8 @@ func (s *WorkspaceServer) taskActions() []mcpevent.ToolAction {
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "messagesSince": "2026-10-26T09:00:00Z"}`).
 			ReadOnly(),
 		mcpevent.NewToolAction("messages", "Read a task's conversation: its text messages, oldest first, with the task's status and updatedAt.", s.handleTaskMessages).
-			WithDetails("Each message has its id, createdAt, sender (human or agent), text and attachment names; an agent's question to the human is one. Tool calls, permission requests and the agent's thoughts, usage and notices are left out. since keeps the messages created after it: pass the createdAt of the last one you read. limit (default 20, at most 100) keeps the newest; total says how many matched.").
-			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "since": "2026-10-26T09:00:00Z"}`).
+			WithDetails("Each message has its id, createdAt, sender (human or agent), text and attachment names; an agent's question to the human is one. Tool calls, permission requests and the agent's thoughts, usage and notices are left out. limit (default 5, at most 100) keeps the newest. since, a message id or an RFC3339 time, keeps the messages after it: pass the id of the last one you read to poll for news. before, the same, keeps those before it: pass the id of the oldest you have to page back. total says how many matched, hasMore whether the limit left older ones out. maxChars cuts each text to that many characters, marking the cut, to skim.").
+			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "since": "0kGoh3Xr2Pa", "maxChars": 500}`).
 			ReadOnly(),
 		mcpevent.NewToolAction("reply", "Post a message to a task's thread.", s.handleReplyToTask).
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "text": "Looks good, go ahead."}`),
@@ -111,9 +111,65 @@ func taskChanged(verbose bool, t entity.Task, messageID int64, full func() []byt
 // How many messages the task tool's messages action returns by default, and
 // at most.
 const (
-	defaultTaskMessages = 20
+	defaultTaskMessages = 5
 	maxTaskMessages     = 100
 )
+
+// messageCursor is where the task tool's messages action starts or stops
+// reading a thread: a message, by id, or a time. The zero cursor is unset.
+type messageCursor struct {
+	id int64
+	at time.Time
+}
+
+// parseMessageCursor reads field's value as an RFC3339 time or a message id;
+// empty is the unset cursor.
+func parseMessageCursor(field, value string) (messageCursor, error) {
+	if value == "" {
+		return messageCursor{}, nil
+	}
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		return messageCursor{at: t}, nil
+	}
+	if id := parseID(value); id > 0 && isBase62(value) {
+		return messageCursor{id: id}, nil
+	}
+	return messageCursor{}, fmt.Errorf("%s must be a message id or an RFC3339 time, like 2026-10-26T09:00:00Z", field)
+}
+
+func isBase62(s string) bool {
+	return strings.Trim(s, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") == ""
+}
+
+// after says whether m comes after c; every message does when c is unset.
+func (c messageCursor) after(m entity.Message) bool {
+	if c.id != 0 {
+		return m.ID > c.id
+	}
+	return c.at.IsZero() || m.CreatedAt.After(c.at)
+}
+
+// before says whether m comes before c; every message does when c is unset.
+func (c messageCursor) before(m entity.Message) bool {
+	if c.id != 0 {
+		return m.ID < c.id
+	}
+	return c.at.IsZero() || m.CreatedAt.Before(c.at)
+}
+
+// truncateMessages cuts each message's text to maxChars characters, ending
+// it with a marker that says how many were cut; maxChars 0 keeps them whole.
+func truncateMessages(msgs []entity.Message, maxChars int) {
+	if maxChars <= 0 {
+		return
+	}
+	for i, m := range msgs {
+		text := []rune(m.Text)
+		if len(text) > maxChars {
+			msgs[i].Text = fmt.Sprintf("%s…[%d more characters]", string(text[:maxChars]), len(text)-maxChars)
+		}
+	}
+}
 
 // parseSince reads the RFC3339 time in field; empty is the zero time.
 func parseSince(field, value string) (time.Time, error) {
