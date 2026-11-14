@@ -432,6 +432,18 @@ describe('the team\'s task list (?team=)', () => {
     expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending/tw1/t1', query: { team: 'tm1', group: 'Backend' } })
   })
 
+  it('reads the list again on the team\'s events, and only those', async () => {
+    await mount(TaskListView)
+    const calls = fetchTeamTasks.mock.calls.length
+    busEvents.value = [...busEvents.value, { type: 'task.updated' }]
+    await settle()
+    busEvents.value = [...busEvents.value, { type: 'team.task.updated', teamId: 'tm2' }]
+    await settle()
+    busEvents.value = [...busEvents.value, { type: 'team.reply.received', teamId: 'tm1' }]
+    await settle()
+    expect(fetchTeamTasks.mock.calls.length).toBe(calls + 1)
+  })
+
   it('says how a team with nothing shared fills up', async () => {
     fetchTeamWorkspaces.mockImplementation(async () => ({ workspaces: [] }))
     fetchTeamTasks.mockImplementation(async () => ({ tasks: [] }))

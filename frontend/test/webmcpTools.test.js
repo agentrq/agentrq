@@ -221,7 +221,7 @@ describe('parity with the interface', () => {
     // Builds a URL for an <img>/<a>; the bytes are fetched by the browser with
     // the session cookie, which an agent cannot replay outside the page.
     getAttachmentUrl: 'returns a URL the page renders, not an action',
-    getTeamAttachmentUrl: 'returns a URL the page renders, not an action; the same as getAttachmentUrl',
+    teamFileUrl: 'returns a URL the page renders, not an action; the same as getAttachmentUrl',
     // Exempted deliberately, and this is the reason.
     //
     // Every other exemption here is "not really an action". This one is an

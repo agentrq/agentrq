@@ -264,7 +264,7 @@ import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
 import { readAllCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
 import OwnerAvatar from '../components/OwnerAvatar.vue';
 import { useTeamStore } from '../stores/teamStore';
-import { lostTeam, teamGroups, teamOwners, useTeamMode } from '../composables/useTeamMode';
+import { lostTeam, teamEvent, teamGroups, teamOwners, useTeamMode } from '../composables/useTeamMode';
 
 const { getNextRunLabel, getNextRunDateTime, getNextRunDate } = useCron();
 const route = useRoute();
@@ -318,8 +318,11 @@ const { connect, disconnect, events } = useEventBus();
 
 watch(events, (newEvents) => {
   if (newEvents.length === 0) return;
-  const event = newEvents[newEvents.length - 1];
-  
+  // In team mode, the team's events and nothing else: yours are not on its list.
+  const last = newEvents[newEvents.length - 1];
+  const event = isTeamMode.value ? teamEvent(last, teamId.value) : last;
+  if (!event) return;
+
   // Refresh list on relevant task events
   if (['task.created', 'task.updated', 'status.updated', 'task.deleted', 'reply.received', 'respond.ack'].includes(event.type)) {
      // For global list, we refresh to keep it simple

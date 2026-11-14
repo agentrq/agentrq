@@ -73,3 +73,9 @@ describe('the team API', () => {
     expect(err.status).toBe(502);
   });
 });
+
+describe('a team file\'s link', () => {
+  it('is the one the server gave, never built here', () => {
+    expect(api.teamFileUrl({ id: 'a1', url: '/api/v1/teams/tm1/tasks/t1/attachments/a1' })).toBe('/api/v1/teams/tm1/tasks/t1/attachments/a1');
+  });
+});
