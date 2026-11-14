@@ -180,7 +180,7 @@ import { getOrder, sortColumn, orderBetween } from '../composables/useKanbanOrde
 import LoadMoreButton from '../components/LoadMoreButton.vue';
 import OwnerAvatar from '../components/OwnerAvatar.vue';
 import { useTeamStore } from '../stores/teamStore';
-import { inTeamFilter, lostTeam, teamEvent, useTeamMode } from '../composables/useTeamMode';
+import { inTeamFilter, lostTeam, sharedNameOf, teamEvent, useTeamMode } from '../composables/useTeamMode';
 
 const route = useRoute();
 const router = useRouter();
@@ -205,7 +205,7 @@ const isArchived = (t) => !!workspaceStore.getWorkspace(workspaceOf(t))?.archive
 const canDrag = (t) => !isTeamMode.value && !isArchived(t);
 const isAgentConnected = (t) => workspaceStore.isAgentConnected(workspaceOf(t));
 const workspaceName = (t) => (isTeamMode.value
-  ? teamWorkspace(t)?.group || teamWorkspace(t)?.name || t.group || '...'
+  ? sharedNameOf(teamWorkspace(t)) || t.sharedName || '...'
   : workspaceStore.getWorkspace(workspaceOf(t))?.name || '...');
 
 
@@ -359,8 +359,8 @@ async function loadColumn(colId, isLoadMore = false) {
     const query = { status: col.statuses.join(','), limit: PAGE_SIZE, offset };
     let res;
     if (isTeamMode.value) {
-      const { group = '', member = '' } = route.query;
-      res = await fetchTeamTasks(teamId.value, { ...query, group, member });
+      const { workspace = '', member = '' } = route.query;
+      res = await fetchTeamTasks(teamId.value, { ...query, workspace, member });
     } else {
       res = isGlobal.value ? await fetchGlobalTasks(query) : await fetchTasks(workspaceId.value, query);
       // Write-through, same as the other lists: what the server just returned is
@@ -630,7 +630,7 @@ watch(() => events.value.length, (newLen, oldLen) => {
       const t = ev.payload;
       if (!t) return;
       if (!isGlobal.value && t.workspaceId && String(t.workspaceId) !== String(workspaceId.value)) return;
-      // A task moved out of the board's group or member filter leaves it.
+      // A task moved out of the board's workspace or member filter leaves it.
       if (isTeamMode.value && !inTeamFilter(t, route.query)) {
         removeTask(t.id);
         return;
@@ -656,7 +656,10 @@ onUnmounted(() => {
   disconnect();
 });
 
-watch([workspaceId, teamId], () => {
+// The team board's filters are in the URL: a new one reads the board again.
+const teamFilters = computed(() => (isTeamMode.value ? `${route.query.workspace ?? ''}\n${route.query.member ?? ''}` : ''));
+
+watch([workspaceId, teamId, teamFilters], () => {
   tasks.value = [];
   offsets.value = Object.fromEntries(columns.map(c => [c.id, 0]));
   hasMore.value = Object.fromEntries(columns.map(c => [c.id, false]));

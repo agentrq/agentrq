@@ -1434,16 +1434,24 @@ export async function deleteAdminHook(id) {
 
 // ── Teams ───────────────────────────────────────────────────────────────────
 // Teams, their members and invitations, and which of your workspaces a team
-// may see. Every refusal carries its HTTP status, because the screens tell
-// them apart: 429 is a daily invitation cap, the team's or the inviter's, 410 an invitation that
-// is no longer valid, 403 one addressed to another email.
+// may see. Every member may change a team. Every refusal carries its HTTP
+// status, because the screens tell them apart: 429 is a daily invitation cap,
+// the team's or the inviter's, 410 an invitation that is no longer valid, 403
+// one addressed to another email, and 409 with `conflict` a change made
+// against a version of the team someone has changed since.
 
-// The server's answer, { error: { message, code } }, as an Error with its
-// status, in the server's own words.
+// The server's answer, { error: { message, code } } (a version conflict adds
+// `conflict` and the team's current `version`), as an Error with its status,
+// in the server's own words.
 async function teamError(res, fallback) {
   const body = await res.json().catch(() => null);
-  const err = new Error(body?.error?.message || fallback);
+  const message = body?.error?.message || (typeof body?.error === 'string' ? body.error : '');
+  const err = new Error(message || fallback);
   err.status = res.status;
+  if (body?.conflict === true) {
+    err.conflict = true;
+    err.version = body.version;
+  }
   return err;
 }
 
@@ -1460,12 +1468,15 @@ async function teamCall(path, fallback, { method = 'GET', body } = {}) {
 
 const enc = encodeURIComponent;
 
-// Every team the signed-in user is in, each with their role: { teams }.
+// A DELETE names the version it was made against in its query.
+const atVersion = (path, version) => `${path}?version=${enc(version)}`;
+
+// Every team the signed-in user is in: { teams: [{ id, name, version, memberCount, createdAt }] }.
 export function listTeams() {
   return teamCall('/teams', 'Failed to load teams');
 }
 
-// A new team, with the caller as its owner: { id, name, role, memberCount, createdAt }.
+// A new team, with the caller in it: { id, name, version, memberCount, createdAt }.
 export function createTeam(name) {
   return teamCall('/teams', 'Failed to create the team', { method: 'POST', body: { name } });
 }
@@ -1474,46 +1485,59 @@ export function getTeam(teamId) {
   return teamCall(`/teams/${enc(teamId)}`, 'Failed to load the team');
 }
 
-export function renameTeam(teamId, name) {
-  return teamCall(`/teams/${enc(teamId)}`, 'Failed to rename the team', { method: 'PATCH', body: { name } });
+// Each change below sends the team's `version` it was made against, and is
+// refused (409, `conflict: true`) when someone changed the team since.
+
+// The team, at its new version.
+export function renameTeam(teamId, name, version) {
+  return teamCall(`/teams/${enc(teamId)}`, 'Failed to rename the team', { method: 'PATCH', body: { name, version } });
 }
 
-// Owner only. Every share to the team goes with it.
-export function deleteTeam(teamId) {
-  return teamCall(`/teams/${enc(teamId)}`, 'Failed to delete the team', { method: 'DELETE' });
+// Every share to the team goes with it.
+export function deleteTeam(teamId, version) {
+  return teamCall(atVersion(`/teams/${enc(teamId)}`, version), 'Failed to delete the team', { method: 'DELETE' });
 }
 
+// { members: [{ userId, name, email, picture, joinedAt }], version }.
 export function listTeamMembers(teamId) {
   return teamCall(`/teams/${enc(teamId)}/members`, 'Failed to load members');
 }
 
-export function setTeamMemberRole(teamId, userId, role) {
-  return teamCall(`/teams/${enc(teamId)}/members/${enc(userId)}`, 'Failed to change the role', { method: 'PATCH', body: { role } });
+// Their shares to the team are removed with them: { version }.
+export function removeTeamMember(teamId, userId, version) {
+  return teamCall(atVersion(`/teams/${enc(teamId)}/members/${enc(userId)}`, version), 'Failed to remove the member', { method: 'DELETE' });
 }
 
-// Their shares to the team are removed with them.
-export function removeTeamMember(teamId, userId) {
-  return teamCall(`/teams/${enc(teamId)}/members/${enc(userId)}`, 'Failed to remove the member', { method: 'DELETE' });
+// Your shares to the team are removed; the last member to leave deletes it.
+export function leaveTeam(teamId, version) {
+  return teamCall(`/teams/${enc(teamId)}/leave`, 'Failed to leave the team', { method: 'POST', body: { version } });
 }
 
-// Your shares to the team are removed. The last owner is refused (409).
-export function leaveTeam(teamId) {
-  return teamCall(`/teams/${enc(teamId)}/leave`, 'Failed to leave the team', { method: 'POST' });
-}
-
+// { invitations, version }.
 export function listTeamInvitations(teamId) {
   return teamCall(`/teams/${enc(teamId)}/invitations`, 'Failed to load invitations');
 }
 
-// { invitation, emailSent, link }: the link only when no email was sent, and
-// never shown again. 429 once the team, or the inviter across all their
-// teams, has reached its daily cap; the message says which.
-export function createTeamInvitation(teamId, email, role) {
-  return teamCall(`/teams/${enc(teamId)}/invitations`, 'Failed to send the invitation', { method: 'POST', body: { email, role } });
+// { invitation, emailSent, link, version }: the link only when no email was
+// sent, and never shown again. 429 once the team, or the inviter across all
+// their teams, has reached its daily cap; the message says which.
+export function createTeamInvitation(teamId, email, version) {
+  return teamCall(`/teams/${enc(teamId)}/invitations`, 'Failed to send the invitation', { method: 'POST', body: { email, version } });
 }
 
-export function revokeTeamInvitation(teamId, invitationId) {
-  return teamCall(`/teams/${enc(teamId)}/invitations/${enc(invitationId)}`, 'Failed to revoke the invitation', { method: 'DELETE' });
+// { version }.
+export function revokeTeamInvitation(teamId, invitationId, version) {
+  return teamCall(atVersion(`/teams/${enc(teamId)}/invitations/${enc(invitationId)}`, version), 'Failed to revoke the invitation', { method: 'DELETE' });
+}
+
+// Every change to the team, newest first: { activities: [{ id, action, actor,
+// targetUser, targetEmail, targetWorkspaceId, details, createdAt }], version }.
+// `before` is the id of the last one already shown, for the next page.
+export function fetchTeamActivities(teamId, { limit = 20, before = '' } = {}) {
+  const params = new URLSearchParams();
+  params.append('limit', limit);
+  if (before) params.append('before', before);
+  return teamCall(`/teams/${enc(teamId)}/activities?${params.toString()}`, 'Failed to load the team\'s activity');
 }
 
 // Invitations addressed to the signed-in user's email: { invitations }.
@@ -1541,34 +1565,38 @@ export function declineInvitation(invitationId) {
   return teamCall(`/invitations/${enc(invitationId)}/decline`, 'Failed to decline the invitation', { method: 'POST' });
 }
 
-// The teams a workspace is shared with: { shares: [{ teamId, teamName, workspaceId, group, createdAt, updatedAt }] }.
+// The teams a workspace is shared with: { shares: [{ teamId, teamName, workspaceId, createdAt, updatedAt }] }.
 export function listWorkspaceShares(workspaceId) {
   return teamCall(`/workspaces/${enc(workspaceId)}/shares`, 'Failed to load sharing');
 }
 
-// Shares it, or changes the group it shows in: `group` is its "show in team as".
-export function shareWorkspace(workspaceId, teamId, group) {
-  return teamCall(`/workspaces/${enc(workspaceId)}/shares/${enc(teamId)}`, 'Failed to share the workspace', { method: 'PUT', body: { group } });
+// The share, with the team's new `version`.
+export function shareWorkspace(workspaceId, teamId, version) {
+  return teamCall(`/workspaces/${enc(workspaceId)}/shares/${enc(teamId)}`, 'Failed to share the workspace', { method: 'PUT', body: { version } });
 }
 
-export function unshareWorkspace(workspaceId, teamId) {
-  return teamCall(`/workspaces/${enc(workspaceId)}/shares/${enc(teamId)}`, 'Failed to stop sharing the workspace', { method: 'DELETE' });
+// { version }.
+export function unshareWorkspace(workspaceId, teamId, version) {
+  return teamCall(atVersion(`/workspaces/${enc(workspaceId)}/shares/${enc(teamId)}`, version), 'Failed to stop sharing the workspace', { method: 'DELETE' });
 }
 
 // ── Team mode ───────────────────────────────────────────────────────────────
 // A team's shared work, read-only: the workspaces its members shared, their
-// tasks, analytics, memory and skills. Unknown or no-longer-shared answers 404.
+// tasks and skills. Unknown or no-longer-shared answers 404.
 
-// { workspaces: [{ id, name, group, owner: { userId, name, picture }, forkOfId }] }
+// { workspaces: [{ id, name, sharedName, owner: { userId, name, picture }, forkOfId }] }.
+// Members' workspaces whose sharedName matches, ignoring case and spaces, are
+// one team workspace.
 export function fetchTeamWorkspaces(teamId) {
   return teamCall(`/teams/${enc(teamId)}/workspaces`, 'Failed to load the team\'s workspaces');
 }
 
-// Newest activity first; each task carries `owner` and `group`.
-export function fetchTeamTasks(teamId, { status = '', group = '', member = '', limit = 10, offset = 0 } = {}) {
+// Newest activity first; each task carries `owner` and `sharedName`.
+// `workspace` is a team workspace's shared name.
+export function fetchTeamTasks(teamId, { status = '', workspace = '', member = '', limit = 10, offset = 0 } = {}) {
   const params = new URLSearchParams();
   if (status) params.append('status', status);
-  if (group) params.append('group', group);
+  if (workspace) params.append('workspace', workspace);
   if (member) params.append('member', member);
   params.append('limit', limit);
   params.append('offset', offset);
@@ -1586,39 +1614,10 @@ export function teamFileUrl(att) {
   return `${cleanBase}${att.url}`;
 }
 
-// The workspace analytics, summed for the team or one group, plus `byMember`.
-export function fetchTeamStats(teamId, range = '7d', from = 0, to = 0, group = '') {
-  const params = new URLSearchParams();
-  params.append('range', range);
-  if (from) params.append('from', from);
-  if (to) params.append('to', to);
-  if (group) params.append('group', group);
-  return teamCall(`/teams/${enc(teamId)}/analytics?${params.toString()}`, 'Failed to load the team\'s analytics');
-}
-
-// Copies a teammate's task into one of your own workspaces: { task }.
-export function cloneTeamTask(teamId, taskId, workspaceId, status = 'notstarted') {
-  return teamCall(`/teams/${enc(teamId)}/tasks/${enc(taskId)}/clone`, 'Failed to clone the task', { method: 'POST', body: { workspaceId, status } });
-}
-
-// The team's own memory.md: { content, updatedAt, updatedBy }, both null before the first save.
-export function getTeamMemory(teamId) {
-  return teamCall(`/teams/${enc(teamId)}/memory`, 'Failed to load the team\'s memory');
-}
-
-// Last write wins. `baseUpdatedAt` is the updatedAt you loaded ('' for none);
-// `conflict: true` in the answer when someone else saved since.
-export function saveTeamMemory(teamId, content, baseUpdatedAt = '') {
-  return teamCall(`/teams/${enc(teamId)}/memory`, 'Failed to save the team\'s memory', { method: 'PUT', body: { content, baseUpdatedAt } });
-}
-
-// Members' workspace memories: { memories: [{ workspaceId, workspaceName, group, owner, names }] }.
-export function fetchTeamMemoryIndex(teamId) {
-  return teamCall(`/teams/${enc(teamId)}/memory/index`, 'Failed to load the members\' memory');
-}
-
-export function getTeamMemberMemory(teamId, workspaceId, name) {
-  return teamCall(`/teams/${enc(teamId)}/workspaces/${enc(workspaceId)}/memory/${enc(name)}`, 'Failed to load the memory');
+// Copies a teammate's task into one of your own workspaces, not started and
+// assigned to `assignee`, human or agent: { task }.
+export function cloneTeamTask(teamId, taskId, workspaceId, assignee = 'human') {
+  return teamCall(`/teams/${enc(teamId)}/tasks/${enc(taskId)}/clone`, 'Failed to clone the task', { method: 'POST', body: { workspaceId, assignee } });
 }
 
 // Skills on in shared workspaces, one per name with who has it: { skills }.

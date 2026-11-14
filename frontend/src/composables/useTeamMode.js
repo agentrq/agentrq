@@ -56,19 +56,25 @@ export function teamLanding(to, from, remembered) {
   return undefined;
 }
 
-/** The group a shared workspace shows in: its "show in team as", else its name. */
-export const groupOf = (w) => (w?.group || w?.name || '').trim();
+/**
+ * The team workspace a shared workspace is part of: the name it is shared
+ * under (its parent's, for a fork), else its own.
+ */
+export const sharedNameOf = (w) => (w?.sharedName || w?.name || '').trim();
+
+/** Two names are one team workspace when they match ignoring case and spaces. */
+export const sameSharedName = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
 
 const ownerKey = (o) => String(o?.userId ?? o?.id ?? '');
 
 /**
- * Shared workspaces as the sidebar draws them: one row per group, by name,
- * with the owners whose workspaces are in it.
+ * The team's workspaces as the sidebar draws them: members' workspaces of the
+ * same name are one, by name, with each owner whose workspace is in it.
  */
-export function teamGroups(workspaces = []) {
+export function teamWorkspaceList(workspaces = []) {
   const byName = new Map();
   for (const w of workspaces) {
-    const name = groupOf(w);
+    const name = sharedNameOf(w);
     const key = name.toLowerCase();
     if (!byName.has(key)) byName.set(key, { name, owners: [], workspaceIds: [] });
     const g = byName.get(key);
@@ -85,31 +91,89 @@ export function teamOwners(workspaces = []) {
   return [...seen.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 }
 
-/**
- * The group a workspace is offered when it is shared: a team group of the
- * same name (ignoring case and spaces), else its own name.
- */
-export function suggestGroup(workspaceName, groups = []) {
-  const want = (workspaceName || '').trim().toLowerCase();
-  return groups.find((g) => g.trim().toLowerCase() === want) || (workspaceName || '').trim();
-}
+/** The member filter's choices: anyone, then each owner with their avatar. */
+export const memberChoices = (owners = []) => [
+  { value: '', label: 'All members' },
+  ...owners.map((o) => ({ value: String(o.userId), label: o.name || o.email || String(o.userId), owner: o })),
+];
+
+/** The workspace filter's choices: any, then each team workspace with its owners. */
+export const workspaceChoices = (list = []) => [
+  { value: '', label: 'All workspaces' },
+  ...list.map((g) => ({ value: g.name, label: g.name, owners: g.owners })),
+];
 
 /**
  * The workspace of yours a teammate's task is cloned into by default: one with
- * the same name as theirs, else as its group, else the first that is not
- * archived. '' when you have none.
+ * the same name as theirs, else as the team workspace it is in, else the first
+ * that is not archived. '' when you have none.
  */
-export function preferredWorkspace(mine = [], { workspaceName = '', group = '' } = {}) {
+export function preferredWorkspace(mine = [], { workspaceName = '', sharedName = '' } = {}) {
   const open = mine.filter((w) => !w.archivedAt);
-  const named = (n) => open.find((w) => n && w.name.trim().toLowerCase() === n.trim().toLowerCase());
-  return String((named(workspaceName) || named(group) || open[0])?.id ?? '');
+  const named = (n) => open.find((w) => n && sameSharedName(w.name, n));
+  return String((named(workspaceName) || named(sharedName) || open[0])?.id ?? '');
 }
 
-/** Owners and admins manage a team; members only read it. */
-export const canManage = (role) => role === 'owner' || role === 'admin';
+/** A change refused because someone changed the team since it was read. */
+export const isVersionConflict = (err) => err?.status === 409 && err?.conflict === true;
 
-/** The roles someone may hand out: only an owner makes another owner. */
-export const assignableRoles = (role) => (role === 'owner' ? ['member', 'admin', 'owner'] : canManage(role) ? ['member', 'admin'] : []);
+/** What a conflict tells the person, once the team is read again. */
+export const CONFLICT_NOTICE = 'Someone changed this team, refreshed';
+
+/** The Manage team dialog's tabs; `?manage=<tab>` opens it on one. */
+export const MANAGE_TABS = ['members', 'invitations', 'activity', 'workspaces'];
+
+/** `route`'s location with the Manage team dialog open on `tab`, or shut (''). */
+export function withManage(route, tab) {
+  const query = { ...(route?.query || {}) };
+  if (tab) query.manage = tab;
+  else delete query.manage;
+  return { path: route?.path || '/', query };
+}
+
+/** The dialog's tab a route asks for, '' when it is shut. */
+export const manageTabOf = (route) => (MANAGE_TABS.includes(route?.query?.manage) ? route.query.manage : '');
+
+const personName = (p) => p?.name || p?.email || 'Someone';
+
+/**
+ * One line of a team's activity log: who did what. The workspace a share
+ * names is the one it had then, as the server kept it.
+ */
+export function describeActivity(a = {}) {
+  const who = personName(a.actor);
+  const d = a.details || {};
+  const target = a.targetUser ? personName(a.targetUser) : a.targetEmail || '';
+  const workspace = d.workspaceName || 'a workspace';
+  switch (a.action) {
+    case 'team.created': return `${who} created the team`;
+    case 'team.renamed': return d.from && d.to ? `${who} renamed the team from ${d.from} to ${d.to}` : `${who} renamed the team`;
+    case 'member.invited': return `${who} invited ${target || 'someone'}`;
+    case 'invitation.revoked': return `${who} revoked the invitation to ${target || 'someone'}`;
+    case 'invitation.accepted': return `${who} joined`;
+    case 'invitation.declined': return `${who} declined the invitation`;
+    case 'member.removed': return `${who} removed ${target || 'a member'}`;
+    case 'member.left': return `${who} left`;
+    case 'workspace.shared': return `${who} shared ${workspace}`;
+    case 'workspace.unshared': return `${who} stopped sharing ${workspace}`;
+    case 'team.deleted': return `${who} deleted the team`;
+    default: return `${who}: ${a.action || 'a change'}`;
+  }
+}
+
+/** "just now", "12 minutes ago", "3 hours ago", "6 days ago", else the date. */
+export function timeAgo(at, now = Date.now()) {
+  const ms = now - new Date(at).getTime();
+  if (!(ms >= 0)) return '';
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
+  return new Date(at).toLocaleDateString();
+}
 
 /** "in 6 days", "in 3 hours", "in 12 minutes", or "expired". */
 export function expiresIn(expiresAt, now = Date.now()) {
@@ -150,10 +214,10 @@ export function teamEvent(ev, teamId) {
   return { ...ev, type: ev.type.slice('team.'.length) };
 }
 
-/** Whether a team task is in the list's group and member filters ('' = any). */
-export function inTeamFilter(task, { group = '', member = '' } = {}) {
+/** Whether a team task is in the list's workspace and member filters ('' = any). */
+export function inTeamFilter(task, { workspace = '', member = '' } = {}) {
   if (member && String(task?.owner?.userId) !== String(member)) return false;
-  return !group || (task?.group || '').trim().toLowerCase() === group.trim().toLowerCase();
+  return !workspace || sameSharedName(task?.sharedName, workspace);
 }
 
 /** A team answer that means you can no longer see it: removed, or it is gone. */
@@ -176,7 +240,7 @@ export function useTeamMode() {
   const route = useRoute();
   const router = useRouter();
   const store = useTeamStore();
-  const { notifyInfo } = useToasts();
+  const { notifyInfo, notifyError } = useToasts();
 
   const teamId = computed(() => teamIdOf(route));
   const isTeamMode = computed(() => teamId.value !== '');
@@ -202,5 +266,26 @@ export function useTeamMode() {
     return done;
   }
 
-  return { teamId, isTeamMode, team, link, leaveTeam };
+  /**
+   * A refused change to team `id`: someone changed it since it was read, and
+   * it is read again and said so ('conflict'); the team on screen is no longer
+   * yours to see, and you go back to Me ('lost'); anything else is shown in
+   * the server's words ('error'). The caller reloads its own lists on a
+   * conflict.
+   */
+  async function changeFailed(err, id = teamId.value) {
+    if (isVersionConflict(err)) {
+      await store.refresh(id).catch(() => {});
+      notifyInfo(CONFLICT_NOTICE);
+      return 'conflict';
+    }
+    if (lostTeam(err) && String(id) === teamId.value) {
+      await leaveTeam();
+      return 'lost';
+    }
+    notifyError(err?.message || 'Something went wrong');
+    return 'error';
+  }
+
+  return { teamId, isTeamMode, team, link, leaveTeam, changeFailed };
 }

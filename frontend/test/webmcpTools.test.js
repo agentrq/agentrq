@@ -567,46 +567,38 @@ describe('each tool calls the interface the way the UI does', () => {
     ['readTeams', { action: 'get', teamId: 'tm1' }, 'getTeam', ['tm1']],
     ['readTeams', { action: 'members', teamId: 'tm1' }, 'listTeamMembers', ['tm1']],
     ['readTeams', { action: 'invitations', teamId: 'tm1' }, 'listTeamInvitations', ['tm1']],
+    ['readTeams', { action: 'activities', teamId: 'tm1' }, 'fetchTeamActivities', ['tm1', { limit: 20, before: '' }]],
+    ['readTeams', { action: 'activities', teamId: 'tm1', limit: 5, before: 'a9' }, 'fetchTeamActivities', ['tm1', { limit: 5, before: 'a9' }]],
     ['readTeams', { action: 'myInvitations' }, 'listMyInvitations', []],
     ['readTeams', { action: 'preview', token: 'tok' }, 'previewInvitation', ['tok']],
     ['readTeams', { action: 'shares', workspaceId: 'ws1' }, 'listWorkspaceShares', ['ws1']],
     ['createTeam', { name: 'Core' }, 'createTeam', ['Core']],
-    ['manageTeam', { action: 'rename', teamId: 'tm1', name: 'Infra' }, 'renameTeam', ['tm1', 'Infra']],
-    ['manageTeam', { action: 'delete', teamId: 'tm1' }, 'deleteTeam', ['tm1']],
-    ['manageTeam', { action: 'setRole', teamId: 'tm1', userId: 'u1', role: 'admin' }, 'setTeamMemberRole', ['tm1', 'u1', 'admin']],
-    ['manageTeam', { action: 'removeMember', teamId: 'tm1', userId: 'u1' }, 'removeTeamMember', ['tm1', 'u1']],
-    ['manageTeam', { action: 'leave', teamId: 'tm1' }, 'leaveTeam', ['tm1']],
-    ['manageTeam', { action: 'invite', teamId: 'tm1', email: 'b@acme.com' }, 'createTeamInvitation', ['tm1', 'b@acme.com', 'member']],
-    ['manageTeam', { action: 'invite', teamId: 'tm1', email: 'b@acme.com', role: 'admin' }, 'createTeamInvitation', ['tm1', 'b@acme.com', 'admin']],
-    ['manageTeam', { action: 'revokeInvitation', teamId: 'tm1', invitationId: 'i1' }, 'revokeTeamInvitation', ['tm1', 'i1']],
+    ['manageTeam', { action: 'rename', teamId: 'tm1', name: 'Infra', version: 3 }, 'renameTeam', ['tm1', 'Infra', 3]],
+    ['manageTeam', { action: 'delete', teamId: 'tm1', version: 3 }, 'deleteTeam', ['tm1', 3]],
+    ['manageTeam', { action: 'removeMember', teamId: 'tm1', userId: 'u1', version: 3 }, 'removeTeamMember', ['tm1', 'u1', 3]],
+    ['manageTeam', { action: 'leave', teamId: 'tm1', version: 3 }, 'leaveTeam', ['tm1', 3]],
+    ['manageTeam', { action: 'invite', teamId: 'tm1', email: 'b@acme.com', version: 3 }, 'createTeamInvitation', ['tm1', 'b@acme.com', 3]],
+    ['manageTeam', { action: 'revokeInvitation', teamId: 'tm1', invitationId: 'i1', version: 3 }, 'revokeTeamInvitation', ['tm1', 'i1', 3]],
     ['manageTeam', { action: 'accept', token: 'tok' }, 'acceptInvitation', ['tok']],
     ['manageTeam', { action: 'accept', invitationId: 'i1' }, 'acceptInvitationById', ['i1']],
     ['manageTeam', { action: 'decline', invitationId: 'i1' }, 'declineInvitation', ['i1']],
-    ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1' }, 'shareWorkspace', ['ws1', 'tm1', '']],
-    ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', group: 'backend' }, 'shareWorkspace', ['ws1', 'tm1', 'backend']],
-    ['manageTeam', { action: 'unshare', workspaceId: 'ws1', teamId: 'tm1' }, 'unshareWorkspace', ['ws1', 'tm1']],
+    ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', version: 3 }, 'shareWorkspace', ['ws1', 'tm1', 3]],
+    ['manageTeam', { action: 'unshare', workspaceId: 'ws1', teamId: 'tm1', version: 3 }, 'unshareWorkspace', ['ws1', 'tm1', 3]],
     ['readTeams', { action: 'workspaces', teamId: 'tm1' }, 'fetchTeamWorkspaces', ['tm1']],
-    ['readTeams', { action: 'tasks', teamId: 'tm1' }, 'fetchTeamTasks', ['tm1', { status: '', group: '', member: '', limit: 10, offset: 0 }]],
+    ['readTeams', { action: 'tasks', teamId: 'tm1' }, 'fetchTeamTasks', ['tm1', { status: '', workspace: '', member: '', limit: 10, offset: 0 }]],
     [
       'readTeams',
-      { action: 'tasks', teamId: 'tm1', status: 'ongoing', group: 'backend', member: 'u1', limit: 5, offset: 5 },
+      { action: 'tasks', teamId: 'tm1', status: 'ongoing', workspace: 'backend', member: 'u1', limit: 5, offset: 5 },
       'fetchTeamTasks',
-      ['tm1', { status: 'ongoing', group: 'backend', member: 'u1', limit: 5, offset: 5 }],
+      ['tm1', { status: 'ongoing', workspace: 'backend', member: 'u1', limit: 5, offset: 5 }],
     ],
     ['readTeams', { action: 'task', teamId: 'tm1', taskId: 't1' }, 'getTeamTask', ['tm1', 't1']],
-    ['readTeams', { action: 'analytics', teamId: 'tm1' }, 'fetchTeamStats', ['tm1', '7d', 0, 0, '']],
-    ['readTeams', { action: 'analytics', teamId: 'tm1', range: '30d', group: 'docs' }, 'fetchTeamStats', ['tm1', '30d', 0, 0, 'docs']],
-    ['readTeams', { action: 'memory', teamId: 'tm1' }, 'getTeamMemory', ['tm1']],
-    ['readTeams', { action: 'memoryIndex', teamId: 'tm1' }, 'fetchTeamMemoryIndex', ['tm1']],
-    ['readTeams', { action: 'memberMemory', teamId: 'tm1', workspaceId: 'ws1', name: 'memory.md' }, 'getTeamMemberMemory', ['tm1', 'ws1', 'memory.md']],
     ['readTeams', { action: 'skills', teamId: 'tm1' }, 'fetchTeamSkills', ['tm1']],
     ['readTeams', { action: 'skill', teamId: 'tm1', name: 'tdd' }, 'getTeamSkill', ['tm1', 'tdd']],
-    ['manageTeam', { action: 'saveMemory', teamId: 'tm1', content: '# M' }, 'saveTeamMemory', ['tm1', '# M', '']],
-    ['manageTeam', { action: 'saveMemory', teamId: 'tm1', content: '# M', baseUpdatedAt: 'x' }, 'saveTeamMemory', ['tm1', '# M', 'x']],
     ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd' }, 'addTeamSkill', ['tm1', 'tdd', []]],
     ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd', workspaceIds: ['ws1'] }, 'addTeamSkill', ['tm1', 'tdd', ['ws1']]],
-    ['cloneTeamTask', { teamId: 'tm1', taskId: 't1', workspaceId: 'ws1' }, 'cloneTeamTask', ['tm1', 't1', 'ws1', 'notstarted']],
-    ['cloneTeamTask', { teamId: 'tm1', taskId: 't1', workspaceId: 'ws1', status: 'ongoing' }, 'cloneTeamTask', ['tm1', 't1', 'ws1', 'ongoing']],
+    ['cloneTeamTask', { teamId: 'tm1', taskId: 't1', workspaceId: 'ws1' }, 'cloneTeamTask', ['tm1', 't1', 'ws1', 'human']],
+    ['cloneTeamTask', { teamId: 'tm1', taskId: 't1', workspaceId: 'ws1', assignee: 'agent' }, 'cloneTeamTask', ['tm1', 't1', 'ws1', 'agent']],
   ];
 
   it.each(CASES)('%s(%o) calls %s', async (toolName, input, method, args) => {
@@ -635,17 +627,30 @@ describe('the grouped team tools', () => {
     expect(page({ action: 'unshare', workspaceId: 'ws1', teamId: 'tm1' })).toBe('/workspaces/ws1/settings?tab=sharing');
     expect(page({ action: 'accept', token: 'tok' })).toBe('/invitations');
     expect(page({ action: 'decline', invitationId: 'i1' })).toBe('/invitations');
-    expect(page({ action: 'invite', teamId: 't/1' })).toBe('/team/settings?team=t%2F1');
-    expect(page({ action: 'saveMemory', teamId: 'tm1' })).toBe('/team/memory?team=tm1');
+    expect(page({ action: 'invite', teamId: 't/1' })).toBe('/tasks/active?team=t%2F1&manage=invitations');
+    expect(page({ action: 'revokeInvitation', teamId: 'tm1' })).toBe('/tasks/active?team=tm1&manage=invitations');
+    expect(page({ action: 'removeMember', teamId: 'tm1' })).toBe('/tasks/active?team=tm1&manage=members');
     expect(page({ action: 'addSkill', teamId: 'tm1' })).toBe('/skills?team=tm1');
-    expect(page(undefined)).toBe('/team/settings?team=');
+    expect(page(undefined)).toBe('/tasks/active?team=&manage=members');
   });
 
-  it('opens a new team\'s settings, or the create form when the answer names none', () => {
+  it('opens a new team\'s invitations, or the create form when the answer names none', () => {
     const after = build().find((t) => t.name === 'createTeam').screen.after;
 
-    expect(after({ name: 'Core' }, { id: 'tm8', name: 'Core' })).toBe('/team/settings?team=tm8');
+    expect(after({ name: 'Core' }, { id: 'tm8', name: 'Core' })).toBe('/tasks/active?team=tm8&manage=invitations');
     expect(after({ name: 'Core' }, {})).toBe('/team/new');
+  });
+
+  it('names no role, memory or analytics, and every change but accept, decline and addSkill takes a version', () => {
+    const tools = build();
+    const reads = tools.find((t) => t.name === 'readTeams');
+    const writes = tools.find((t) => t.name === 'manageTeam');
+
+    expect(reads.inputSchema.properties.action.enum).not.toEqual(expect.arrayContaining(['analytics']));
+    expect(reads.inputSchema.properties.action.enum).not.toContain('memory');
+    expect(writes.inputSchema.properties.action.enum).not.toContain('setRole');
+    expect(writes.inputSchema.properties.role).toBeUndefined();
+    expect(writes.inputSchema.properties.version.type).toBe('integer');
   });
 
   it('opens the clone in your workspace, or the workspace when the answer names none', () => {

@@ -30,6 +30,13 @@ async function expectOk(res, what) {
   return res.json()
 }
 
+// Opens the sidebar if it is folded to icons; a folded one hides its rows,
+// such as a team's workspaces.
+export async function openSidebar(page) {
+  const expand = page.getByTitle('Expand sidebar')
+  if (await expand.isVisible()) await expand.click()
+}
+
 export async function createWorkspace(page, name) {
   const res = await send(page, 'POST', '/workspaces', { workspace: { name, description: `Created by the QA suite: ${name}` } })
   return (await expectOk(res, `creating the workspace ${name}`)).workspace

@@ -5,8 +5,8 @@
 -->
 
 <!-- Creating a team, and the Team side's empty state when you are in none
-     (§1 of the flows). Creating one makes you its owner and opens its
-     settings, with the invite box ready. -->
+     (§1 of the flows). Creating one puts you in it and opens its
+     invitations in the Manage team dialog, with the invite box ready. -->
 <template>
   <div class="flex flex-col h-full w-full overflow-y-auto custom-scrollbar">
     <div class="w-full px-4 py-2 mb-6 shrink-0 flex flex-row items-start justify-between gap-4">
@@ -48,6 +48,7 @@ import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { createTeam } from '../api';
 import { useTeamStore, rememberTeam } from '../stores/teamStore';
+import { teamHome, withManage } from '../composables/useTeamMode';
 
 const router = useRouter();
 const store = useTeamStore();
@@ -66,8 +67,8 @@ async function create() {
     const team = await createTeam(name.value.trim());
     store.upsert(team);
     rememberTeam(String(team.id));
-    // Members, with the invite box focused: the next thing to do.
-    await router.push({ path: '/team/settings', query: { team: String(team.id), tab: 'members', welcome: '1' } });
+    // The team, with its invitations open: the next thing to do.
+    await router.push(withManage(teamHome(team.id), 'invitations'));
   } catch (err) {
     error.value = err.message;
   } finally {
