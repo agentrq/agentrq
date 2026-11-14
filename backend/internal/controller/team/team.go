@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -176,11 +177,15 @@ func canManage(role string) bool { return role == model.TeamRoleOwner || role ==
 
 func validRole(role string) bool { return canManage(role) || role == model.TeamRoleMember }
 
-// cleanName is a team name or group trimmed, 1 to maxName characters.
+// cleanName is a team name or group trimmed, 1 to maxName characters, on
+// one line: a team's name goes into the invitation mail sent in its name.
 func cleanName(name, what string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || utf8.RuneCountInString(name) > maxName {
 		return "", teamErr(entity.TeamInvalid, "a %s is 1 to %d characters", what, maxName)
+	}
+	if strings.IndexFunc(name, unicode.IsControl) >= 0 {
+		return "", teamErr(entity.TeamInvalid, "a %s is one line of text", what)
 	}
 	return name, nil
 }
