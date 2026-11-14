@@ -423,11 +423,11 @@ func TestMembersRemovedAndLeaving(t *testing.T) {
 		if err != nil || len(members) != 3 || members[1].Name != "Bob" || members[1].Email != "Bob@Example.com" || members[0].UserID != 10 {
 			t.Fatalf("members are %+v (%v), want the creator then Bob with his account", members, err)
 		}
-		if in, err := r.TeamHasMemberWithEmail(ctx, 1, "bob@example.com"); err != nil || !in {
-			t.Errorf("TeamHasMemberWithEmail(bob@example.com) = %v, %v; want true whatever the account's case", in, err)
+		if _, err := r.CreateTeamInvitation(ctx, invitation(1, "bob@example.com", teamT0), 1, teamT0.Add(-24*time.Hour), 10, 0, act()); !errors.Is(err, ErrAlreadyTeamMember) {
+			t.Errorf("CreateTeamInvitation(bob@example.com) returned %v, want ErrAlreadyTeamMember whatever the account's case", err)
 		}
-		if in, _ := r.TeamHasMemberWithEmail(ctx, 1, "eve@example.com"); in {
-			t.Error("TeamHasMemberWithEmail found eve, who is in no team")
+		if teamVersion(db, 1) != 1 {
+			t.Error("a refused invitation moved the version")
 		}
 		if _, _, err := r.RemoveTeamMember(ctx, 1, 99, 10, 1, act(), 0); !errors.Is(err, ErrNotFound) {
 			t.Errorf("a stranger removing a member returned %v, want ErrNotFound", err)
@@ -674,6 +674,11 @@ func TestInvitationsPendingAcceptedRevokedAndDeclined(t *testing.T) {
 		}
 		if v, err = r.CreateTeamInvitation(ctx, invitation(6, "a@x.io", later), v, later.Add(-24*time.Hour), 10, 0, act()); err != nil {
 			t.Errorf("inviting an address whose invitation was accepted returned %v", err)
+		}
+		db.Create(&model.User{ID: 12, Email: "eve@x.io"})
+		db.Create(&model.TeamMember{ID: 31, TeamID: 2, UserID: 12})
+		if v, err = r.CreateTeamInvitation(ctx, invitation(7, "eve@x.io", later), v, later.Add(-24*time.Hour), 10, 0, act()); err != nil {
+			t.Errorf("inviting a member of another team returned %v", err)
 		}
 		unknownTeam := invitation(8, "z@x.io", later)
 		unknownTeam.TeamID = 99
@@ -1289,7 +1294,10 @@ func TestTeamStatementFailures(t *testing.T) {
 		{"deleting a team", "delete", "teams", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
 		{"recording a deletion", "create", "team_management_activities", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
 		{"listing members", "row", "team_members", 0, nil, func(r Repository) error { _, err := r.ListTeamMembers(ctx, 1); return err }},
-		{"finding a member by email", "query", "team_members", 0, nil, func(r Repository) error { _, err := r.TeamHasMemberWithEmail(ctx, 1, "a@x.io"); return err }},
+		{"checking whether the invitee is already a member", "query", "team_members", 1, nil, func(r Repository) error {
+			_, err := r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), 1, since, 10, 0, act())
+			return err
+		}},
 		{"reading the member to remove", "query", "team_members", 1, nil, func(r Repository) error {
 			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0)
 			return err

@@ -70,13 +70,6 @@ func (f failing) ListTeamMembers(ctx context.Context, teamID int64) ([]base.Team
 	return f.Repository.ListTeamMembers(ctx, teamID)
 }
 
-func (f failing) TeamHasMemberWithEmail(ctx context.Context, teamID int64, email string) (bool, error) {
-	if f.method == "TeamHasMemberWithEmail" {
-		return false, errDB
-	}
-	return f.Repository.TeamHasMemberWithEmail(ctx, teamID, email)
-}
-
 func (f failing) RemoveTeamMember(ctx context.Context, teamID, callerID, userID, version int64, act model.TeamManagementActivity, deletedID int64) (int64, bool, error) {
 	if f.method == "RemoveTeamMember" {
 		return 0, false, errDB
@@ -264,7 +257,6 @@ func TestRepositoryFailuresReachTheCaller(t *testing.T) {
 		{"listing members", "ListTeamMembers", func(f *fixture) error { return errOf(f.c.ListMembers(f.ctx, alice, f.team)) }},
 		{"removing a member", "RemoveTeamMember", func(f *fixture) error { return errOf(f.c.RemoveMember(f.ctx, f.ch(alice), bob)) }},
 		{"leaving a team", "RemoveTeamMember", func(f *fixture) error { return f.c.LeaveTeam(f.ctx, f.ch(bob)) }},
-		{"checking an invitee is not a member", "TeamHasMemberWithEmail", invite},
 		{"reading the team to invite to", "GetTeam", invite},
 		{"storing an invitation", "CreateTeamInvitation", invite},
 		{"listing a team's invitations", "ListTeamInvitations", func(f *fixture) error { return errOf(f.c.ListTeamInvitations(f.ctx, alice, f.team)) }},
