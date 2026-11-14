@@ -6,6 +6,7 @@ package api
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -297,6 +298,13 @@ func TestTaskConversationMCPResponses(t *testing.T) {
 	if got := string(FromTaskEntityToTaskMessagesMCPResponse(entity.Task{Status: "notstarted", UpdatedAt: at}, nil, 0)); got !=
 		`{"status":"notstarted","updatedAt":"2026-10-30T09:00:00Z","total":0,"messages":[]}` {
 		t.Errorf("no messages = %s", got)
+	}
+
+	// A summary names the task and where it stands, and a reply's message.
+	summary := view.TaskSummary{ID: b62(101), WorkspaceID: b62(20), Title: "Ship", Status: "ongoing", Assignee: "agent", UpdatedAt: at.Add(1)}
+	checkResponse(t, FromTaskEntityToTaskSummaryMCPResponse(fullTask, 77), view.TaskSummaryResponse{Task: summary, MessageID: b62(77)})
+	if got := string(FromTaskEntityToTaskSummaryMCPResponse(fullTask, 0)); strings.Contains(got, "messageId") {
+		t.Errorf("a summary with no message = %s, want no messageId", got)
 	}
 
 	checkResponse(t, FromTaskEntityToTaskResourceMCPResponse(fullTask, msgs, true), view.TaskResource{

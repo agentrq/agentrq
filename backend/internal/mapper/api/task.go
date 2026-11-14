@@ -189,6 +189,24 @@ func fromGetTaskResponseEntityToView(rs *entity.GetTaskResponse) view.GetTaskRes
 	}
 }
 
+// FromTaskEntityToTaskSummaryMCPResponse answers a supervisor's task action
+// that changed t; messageID, when not 0, is the message a reply posted.
+func FromTaskEntityToTaskSummaryMCPResponse(t entity.Task, messageID int64) []byte {
+	res := view.TaskSummaryResponse{Task: view.TaskSummary{
+		ID:          monoflake.ID(t.ID).String(),
+		WorkspaceID: monoflake.ID(t.WorkspaceID).String(),
+		Title:       t.Title,
+		Status:      t.Status,
+		Assignee:    t.Assignee,
+		UpdatedAt:   t.UpdatedAt,
+	}}
+	if messageID != 0 {
+		res.MessageID = monoflake.ID(messageID).String()
+	}
+	payload, _ := json.Marshal(res)
+	return payload
+}
+
 // FromTaskEntityToTaskMessagesMCPResponse answers the supervisor's task
 // messages: msgs, already chosen from t's, and total, how many matched before
 // the limit.

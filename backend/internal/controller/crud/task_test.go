@@ -1115,6 +1115,9 @@ func TestReplyToTask_Success(t *testing.T) {
 	if resp.Task.ID != 10 {
 		t.Errorf("unexpected task ID %d", resp.Task.ID)
 	}
+	if resp.MessageID != 101 {
+		t.Errorf("message id = %d, want 101, the message the reply posted", resp.MessageID)
+	}
 }
 
 // ── UpdateScheduledTask ───────────────────────────────────────────────────────
