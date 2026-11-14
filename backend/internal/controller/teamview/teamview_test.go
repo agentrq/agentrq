@@ -55,7 +55,7 @@ func (f *fake) GetTask(context.Context, entity.GetTaskRequest) (*entity.GetTaskR
 	return &entity.GetTaskResponse{}, f.err("GetTask")
 }
 func (f *fake) GetTaskPlan(context.Context, entity.GetTaskPlanRequest) (*entity.GetTaskPlanResponse, error) {
-	return &entity.GetTaskPlanResponse{}, f.err("GetTaskPlan")
+	return &entity.GetTaskPlanResponse{Plan: &entity.TaskPlan{}}, f.err("GetTaskPlan")
 }
 func (f *fake) GetAttachment(_ context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error) {
 	if req.AttachmentID == f.missing {
