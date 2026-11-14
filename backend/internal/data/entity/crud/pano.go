@@ -116,12 +116,24 @@ type (
 
 	// PanoEditOp is one change to a doc's markdown: Op "append" adds Text at
 	// the end; "replace" swaps OldString, which must occur exactly once, for
-	// NewString.
+	// NewString; "replaceSection" swaps the section under the heading Section,
+	// its heading line included, for Markdown.
 	PanoEditOp struct {
 		Op        string
 		Text      string
 		OldString string
 		NewString string
+		Section   string
+		Markdown  string
+	}
+
+	// PanoHeading is a heading of a doc's markdown, with the checklist of its
+	// section: the lines up to the next heading of its level or a higher one.
+	PanoHeading struct {
+		Level          int
+		Text           string
+		ChecklistDone  int
+		ChecklistTotal int
 	}
 
 	// EditPanoDocRequest applies Ops, all or none, to the markdown of the doc

@@ -68,10 +68,14 @@ The workspace server and the supervisor's CoreMCP both have a `pano` tool. It
 takes two inputs, `action` and `payload`, the action's fields — for example
 `{"action": "read", "payload": {"id": "<id>", "includeComments": true}}`. The
 actions are `save`, `edit` (change part of a doc: `ops` of `append` and of
-`replace`, whose `oldString` must occur exactly once, applied all or none;
+`replace`, whose `oldString` must occur exactly once, and of `replaceSection`,
+which swaps the section under a heading, applied all or none;
 a task link's status and its item's box match whatever the doc says now, and
 a miss names the closest line),
-`read` (`includeComments` and `includeAttachments` add those), `comment`,
+`read` (`includeComments` and `includeAttachments` add those; in a long doc,
+`outline: true` returns only its headings, each with its checklist, and
+`section: "<heading>"` only that heading's section, both with the version an
+edit needs), `comment`,
 `attach` and `delete`; `help` lists them, and with payload
 `{"topic": "save"}` prints one action's payload. The supervisor writes as its
 supervisor workspace.
