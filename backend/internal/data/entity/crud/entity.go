@@ -662,6 +662,18 @@ type (
 		MessageID int64
 	}
 
+	FollowUpTaskRequest struct {
+		WorkspaceID int64
+		TaskID      int64
+		Text        string
+		UserID      string
+	}
+
+	FollowUpTaskResponse struct {
+		Task      Task
+		MessageID int64
+	}
+
 	DeleteTaskRequest struct {
 		WorkspaceID int64
 		TaskID      int64

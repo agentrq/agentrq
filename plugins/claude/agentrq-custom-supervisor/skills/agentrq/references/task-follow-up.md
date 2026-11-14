@@ -1,6 +1,6 @@
 # Following tasks up
 
-To follow tasks you delegated, loop: `changes` with the last `now`, then `messages` only for the tasks it lists with `newMessages`. Never poll with `get`.
+To follow tasks you delegated, loop: `changes` with the last `now`, then `messages` only for the tasks it lists with `newMessages`. Never poll with `get`. To ask an agent for more on a task, even a completed one, `followUp` it (in `task.md`) rather than creating a new task that repeats the context.
 
 - `changes`: the tasks changed after `since` (RFC3339, required), the least recently changed first. Answers `now`, the next call's `since`, and `changes`, one line per task: `taskId`, `workspaceId`, `title`, `status`, `statusChangedAt` if its status changed, `newMessages`, `lastMessageBy`, `lastMessagePreview` (the newest new message's start), `awaitingReply`. Nothing changed: an empty list. Narrow with `workspaceId` or `createdByWorkspaceId` (your own, for what you delegated); `limit` (default 20, at most 100). `hasMore: true`: call again with `now` for the rest.
 - `list` a workspace's tasks, or `listAll` across workspaces: each one's ids, `title`, `status`, `assignee`, times, `cronSchedule`, `awaitingReply`, `lastMessageBy`; `includeBody: true` adds bodies. Filter by `filter` (title, body), `status`, `createdBy`, `createdByWorkspaceId`, `awaitingReply`; page with `limit`/`offset`.

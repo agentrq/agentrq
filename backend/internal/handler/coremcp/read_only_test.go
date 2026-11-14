@@ -32,7 +32,7 @@ var readActions = map[string][]string{
 
 var writeActions = map[string][]string{
 	"workspace": {"create", "update", "fork", "mergeFork"},
-	"task":      {"create", "reply", "respond", "updateStatus", "updateSortingOrder", "updateAssignee", "updateAllowAll", "updateSchedule", "delete"},
+	"task":      {"create", "reply", "followUp", "respond", "updateStatus", "updateSortingOrder", "updateAssignee", "updateAllowAll", "updateSchedule", "delete"},
 	"memory":    {},
 	"skills":    {},
 	"events":    {"create", "update", "delete", "createTrigger", "updateTrigger", "deleteTrigger"},

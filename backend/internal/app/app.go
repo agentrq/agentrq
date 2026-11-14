@@ -731,6 +731,7 @@ func New(cfg Config) (*App, error) {
 		ForkMerger: forkMerger,
 		Launcher:   launcher,
 		Agents:     mcpManager,
+		Notifier:   mcpManager,
 		TokenSvc:   tokenSvc,
 		BaseURL:    cfg.App.BaseURL,
 		Domain:     cfg.App.Domain,

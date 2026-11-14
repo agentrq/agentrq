@@ -41,6 +41,8 @@ one action's payload with an example.
    To follow tasks up, call `task.changes` with the `now` of your last call as `since`: it
    lists only the tasks whose status or conversation changed, a short line each, and an
    empty list when nothing did; then `task.messages` only for those with `newMessages`.
+   To ask an agent for more on a task, even a completed one, use `task.followUp` rather than a new
+   task repeating its context: the task reopens and the agent reads the follow-up first.
    Poll with `task.changes`, `task.list`/`task.listAll` and `task.messages`, never `get`: a listed task
    is a summary of where it stands, its body only with `includeBody: true`.
    An agent waiting on an answer often leaves its task `ongoing`: `task.listAll` with

@@ -24,12 +24,12 @@ A tool's actions are in `references/<tool>.md`; memory, skills and pano share `k
 ## Core Guidelines
 
 1. **Discover first**: `workspace.list` and `task.listAll` before creating.
-2. **Follow up cheaply**: `task.changes` from the last `now`, `task.messages` where `newMessages`; never poll `get`.
+2. **Follow up efficiently**: `task.changes` from the last `now`, `task.messages` where `newMessages`; never poll `get`. More on a task: `task.followUp`.
 3. **Humans in the loop**: blocked or needing approval, set the task `blocked` and `task.reply` what you need.
-4. **Learn**: read a workspace's `selfLearningLoopNote` and `memory.get` `MEMORY.md` first; record lessons with `workspace.update`.
-5. **Sub-tasks**: split large goals with `parentId`.
+4. **Learn**: read a workspace's `selfLearningLoopNote` and `memory.get` `MEMORY.md` first; save lessons with `workspace.update`.
+5. **Sub-tasks**: split big goals with `parentId`.
 6. **Status**: `ongoing`, `completed`, `rejected`. No failure status: explain with `task.reply`, leave it `blocked`.
-7. **Agents**: a task waits until its workspace has one; `machines.launchAgent` on a machine from `machines.list`. Ask before stopping one mid-task.
-8. **Parallel work**: `workspace.fork`, give the fork tasks and an agent, `workspace.mergeFork` when done.
+7. **Agents**: a task waits for its workspace's agent; `machines.launchAgent` starts one. Ask before stopping one mid-task.
+8. **Parallel work**: `workspace.fork`, give it tasks and an agent, `workspace.mergeFork` when done.
 
 Also in `references/`: `concepts.md`, `resources.md` (guides, prompts), `examples.md`, `examples-more.md`.

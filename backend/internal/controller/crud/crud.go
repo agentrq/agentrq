@@ -172,6 +172,7 @@ type TaskController interface {
 	MoveTask(ctx context.Context, req entity.MoveTaskRequest) (*entity.MoveTaskResponse, error)
 	UpdateTaskAllowAllCommands(ctx context.Context, req entity.UpdateTaskAllowAllCommandsRequest) (*entity.UpdateTaskAllowAllCommandsResponse, error)
 	ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error)
+	FollowUpTask(ctx context.Context, req entity.FollowUpTaskRequest) (*entity.FollowUpTaskResponse, error)
 	UpdateScheduledTask(ctx context.Context, req entity.UpdateScheduledTaskRequest) (*entity.UpdateScheduledTaskResponse, error)
 	UpdateMessageMetadata(ctx context.Context, req entity.UpdateMessageMetadataRequest) error
 	CloseExpiredElicitation(ctx context.Context, req entity.CloseExpiredElicitationRequest) (*entity.CloseExpiredElicitationResponse, error)

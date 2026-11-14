@@ -25,8 +25,9 @@ const taskToolDescription = "Hand out, follow and steer the work of every worksp
 	"list (workspaceId) and listAll list one workspace's tasks or every workspace's, 5 by default and at most 50, filtered by text, status, creator or awaitingReply, each as a summary without its body unless includeBody is true; never poll with get; " +
 	"create (workspaceId, title, body) adds a task, assigned to the human unless assignee says agent, once or on a cronSchedule; get reads a task in full; " +
 	"messages reads only a task's conversation, far smaller than get; changes (since) lists only the tasks whose status or conversation changed after since, with now for the next call: follow tasks up with changes, then messages; reply posts to a task; " +
+	"followUp asks an agent for more on a task it finished or is on, reopening it with the follow-up handed over first: use it rather than a new task repeating the context; " +
 	"respond answers the permission request a task is waiting on; updateStatus, updateSortingOrder, updateAssignee, updateAllowAll and updateSchedule change one thing about a task; " +
-	"those and create answer only the task's id, workspaceId, title, status, assignee and updatedAt, and reply the messageId it posted; verbose: true in their payload answers the whole task. " +
+	"those and create answer only the task's id, workspaceId, title, status, assignee and updatedAt, and reply and followUp the messageId they posted; verbose: true in their payload answers the whole task. " +
 	"getAttachment gets a task's attachment. delete removes a task with its messages and attachments and cannot be undone: to stop a scheduled task without losing its history, updateStatus it to rejected instead."
 
 // awaitingReplyHelp is the rule replyState follows, as list, listAll and get
@@ -82,6 +83,9 @@ func (s *WorkspaceServer) taskActions() []mcpevent.ToolAction {
 			ReadOnly(),
 		mcpevent.NewToolAction("reply", "Post a message to a task's thread.", s.handleReplyToTask).
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "text": "Looks good, go ahead."}`),
+		mcpevent.NewToolAction("followUp", "Ask the agent for more on a task it finished or is working on, rather than creating a new task.", s.handleFollowUpTask).
+			WithDetails(taskFollowUpHelp).
+			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "text": "Also cover the error path in the tests."}`),
 		mcpevent.NewToolAction("respond", "Answer the permission request a task is waiting on: allow, allow_all, reject, or text to reply without deciding.", s.handleRespondToTask).
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "action": "allow"}`),
 		mcpevent.NewToolAction("updateStatus", "Set a task's status.", s.handleUpdateTaskStatus).

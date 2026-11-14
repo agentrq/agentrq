@@ -32,6 +32,7 @@ type WorkspaceServer struct {
 	forks        ForkMerger
 	launcher     AgentLauncher
 	agents       AgentPresence
+	notifier     TaskNotifier
 	baseURL      string
 	pubsub       pubsub.Service
 	listeners    *TaskListeners
