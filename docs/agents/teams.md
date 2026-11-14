@@ -7,3 +7,12 @@
 - **The daily cap counts every invitation created in the last 24 hours, revoked and declined ones included.** Otherwise revoking would reset it.
 - **Only the SHA-256 of an invitation token is stored.** The link carries the token in its `#fragment`, so it never reaches a server log. It is shown once, when no mail was sent.
 - **Read access goes through `CanReadWorkspaceInTeam`, never through an owner check.** It sees a fork through its parent's share and hides archived workspaces. The existing owner checks must stay as they are.
+
+## Team mode (`controller/teamview`, `handler/api/team_view.go`)
+
+- **A read of one row passes `CanReadWorkspaceInTeam` on the row's own workspace; a read across the team takes its workspaces from `ListTeamWorkspaces` and nothing else.** Never select by a workspace id the client sent. `TeamWorkspaceInfo` after the check filters nothing on purpose: a second filter would hide a broken check from the mutation tests.
+- **After the check, read as the owner through the owner's own crud method** (`GetTask`, `GetMemory`, `GetAttachment`…). That is how a fork, an archive or storage behaves as it does for the owner. The `System*` crud methods check nothing: call them only with ids a check allowed.
+- **A teammate never sees the owner's Pano.** `GetTask` drops `panoDocs`.
+- **Team memory saves under `lockedMember`**, so a member removed meanwhile cannot write. The last save wins; `conflict` only reports it, and a save with no `baseUpdatedAt` that replaces a memory is one: two members who loaded it empty would otherwise overwrite each other unseen.
+- **A file's link in team mode is the team's route** (`/api/v1/teams/:teamId/tasks/:taskId/attachments/:id`), in every response and event. The public `/storage` link has no session, so a teammate would keep the file after the share ends.
+- **Team task events go on the account stream as `team.<type>` with `teamId`.** The plain type would land in the Me pages, which list and cache the account's own tasks. Readers are queried at every event, never cached, so an unshare, a removal or an archive stops them at once. They are the readers of the task's current workspace: an event for a task that has moved since goes to no team.

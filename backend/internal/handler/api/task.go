@@ -98,18 +98,24 @@ func (h *handler) createTask() fiber.Handler {
 			return c.Send(e)
 		}
 
-		// If human created the task, notify the LLM via MCP channel
-		// ONLY if status is NOT 'cron' (don't notify for template creation)
-		// and the task is assigned to the agent: a task the human made for
-		// themselves is theirs to do, and pushing it started the agent on it.
-		if rq.Task.CreatedBy == "human" && rs.Task.Assignee == "agent" && rs.Task.Status != "cron" {
-			if h.agentHasRoom(ctx, rq.Task.WorkspaceID, rq.UserID, rs.Task.ID) {
-				h.pushTaskToAgent(ctx, rq.UserID, rs.Task)
-			}
+		if rq.Task.CreatedBy == "human" {
+			h.offerHumanTask(ctx, rq.UserID, rs.Task)
 		}
 
 		c.Status(http.StatusCreated)
 		return c.Send(mapper.FromCreateTaskResponseEntityToHTTPResponse(rs))
+	}
+}
+
+// offerHumanTask hands a task a person just created to the workspace's agent
+// via the MCP channel, ONLY if status is NOT 'cron' (don't notify for template
+// creation) and the task is assigned to the agent: a task the human made for
+// themselves is theirs to do, and pushing it started the agent on it.
+func (h *handler) offerHumanTask(ctx context.Context, userID string, t entity.Task) {
+	if t.Assignee == "agent" && t.Status != "cron" {
+		if h.agentHasRoom(ctx, t.WorkspaceID, userID, t.ID) {
+			h.pushTaskToAgent(ctx, userID, t)
+		}
 	}
 }
 
@@ -829,14 +835,13 @@ func (h *handler) getAttachment() fiber.Handler {
 			return c.Send(e)
 		}
 
-		c.Set("Content-Type", res.MimeType)
-		c.Set("Content-Disposition", contentDisposition(res.Filename))
+		c.Set(fiber.HeaderContentDisposition, contentDisposition(sandboxFile(c, res.MimeType), res.Filename))
 		return c.Send(res.Data)
 	}
 }
 
 // contentDisposition builds a Content-Disposition value that is safe to put in
-// an HTTP header.
+// an HTTP header, for disposition ("inline" or "attachment") and filename.
 //
 // Header values are US-ASCII. Filenames are not: a macOS screenshot is named
 // "Screenshot 2026-08-30 at 5.51.27 PM.png", where the space before PM is
@@ -856,13 +861,13 @@ func (h *handler) getAttachment() fiber.Handler {
 // clients that understand it. Building the quoted string by hand also closes
 // the injection the old fmt.Sprintf allowed, where a filename containing a
 // quote could end the parameter early and append parameters of its own.
-func contentDisposition(filename string) string {
+func contentDisposition(disposition, filename string) string {
 	fallback := asciiFilename(filename)
 	if fallback == "" {
 		fallback = "download"
 	}
 
-	disposition := `inline; filename="` + fallback + `"`
+	disposition += `; filename="` + fallback + `"`
 	// Only worth the extended form when there is a real name that the ASCII
 	// fallback does not already carry exactly.
 	if filename != "" && fallback != filename {

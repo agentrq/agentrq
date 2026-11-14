@@ -307,6 +307,12 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDTeamJoin
 	case entity.ActionWorkspaceShare:
 		action = model.ActionIDWorkspaceShare
+	case entity.ActionTeamTaskClone:
+		action = model.ActionIDTeamTaskClone
+	case entity.ActionTeamMemorySave:
+		action = model.ActionIDTeamMemorySave
+	case entity.ActionTeamSkillAdd:
+		action = model.ActionIDTeamSkillAdd
 	default:
 		return
 	}

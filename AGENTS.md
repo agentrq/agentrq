@@ -85,7 +85,8 @@ Each line says what the note will stop you getting wrong.
   starts on an agentrqd without the `fork` capability, or older than 0.9.3.
 - **[Teams](docs/agents/teams.md)** — why a foreign id is 404 and not 403,
   why every counted write locks the team row first, and why the daily invite
-  cap counts revoked invitations.
+  cap counts revoked invitations. In team mode, the two checks every read
+  starts from, and why a teammate's task events carry a type of their own.
 - **[Hooks](docs/agents/hooks.md)** — requests from outside services firing
   events through WebAssembly hooks. Why a hook URL's id is no credential, why
   the token is never cached, why a request is answered before its hook runs,

@@ -36,6 +36,7 @@ tags:
   - name: Events
   - name: Hooks
   - name: Teams
+  - name: Team mode
   - name: Workflows
   - name: Skills
   - name: Pano
@@ -2867,6 +2868,15 @@ paths:
         `status.updated`, `reply.received`, `respond.ack`, `agent.connected`,
         `toolCall.updated` (one tool call, `{workspaceId, toolCall}`).
 
+        It also carries the task events of the workspaces shared with your
+        teams, as `team.task.created`, `team.task.updated`,
+        `team.task.deleted`, `team.status.updated` and `team.reply.received`,
+        each with the `teamId` it is shown in; a task in one comes as the
+        team's task list shows it, with `owner` and `group`, its files linked
+        through the team's attachment route. Who reads a
+        workspace is checked at every event, so they stop as soon as it is
+        unshared or archived, or you leave the team.
+
         Served by the standard-library mux rather than by Fiber, because Fiber's
         response buffering is unsuited to a stream that never ends.
       responses:
@@ -3216,6 +3226,336 @@ paths:
         '204': { description: Done }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /teams/{teamId}/workspaces:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Team mode]
+      summary: List the workspaces a team reads
+      description: The workspaces its members shared with it, and their forks, none archived, by group (ignoring case), then name. A fork shows in its parent's group. 404 unless you are in the team.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspaces:
+                    type: array
+                    items: { $ref: '#/components/schemas/TeamWorkspace' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /teams/{teamId}/tasks:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Team mode]
+      summary: List the tasks of a team's workspaces
+      description: Newest activity first, each with its owner and group.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+          description: Comma-separated statuses.
+        - name: group
+          in: query
+          required: false
+          schema: { type: string }
+          description: Only this group's workspaces, matched ignoring case and surrounding spaces.
+        - name: member
+          in: query
+          required: false
+          schema: { type: string }
+          description: Only this member's workspaces (their user ID, base62).
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 10, maximum: 50 }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items: { $ref: '#/components/schemas/TeamTask' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /teams/{teamId}/tasks/{taskId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/TeamTaskId'
+    get:
+      tags: [Team mode]
+      summary: Read a teammate's task
+      description: What the owner's task page reads (the task with its conversation and tool calls, its history and timing), read-only, with its workspace, owner and plan. Never the owner's Pano docs. 404 once its workspace is no longer shared with the team.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamTaskDetail' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /teams/{teamId}/tasks/{taskId}/attachments/{attachmentId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/TeamTaskId'
+      - name: attachmentId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Team mode]
+      summary: Download an attachment of a teammate's task
+      description: >-
+        The raw bytes, as the owner's own attachment route serves them. Every file of a task in team mode is linked here, never by its public link, so a teammate's access ends with the share. A type a browser could run (HTML, SVG…) comes as `application/octet-stream` with `Content-Disposition: attachment`; every file is sent with `X-Content-Type-Options: nosniff` and a sandbox CSP.
+      responses:
+        '200':
+          description: OK
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /teams/{teamId}/tasks/{taskId}/clone:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/TeamTaskId'
+    post:
+      tags: [Team mode]
+      summary: Clone a teammate's task into one of your workspaces
+      description: Creates a task in `workspaceId`, which must be yours (404 otherwise), as creating one does, with the title, the body and the task's own attachments, and a note linking back to the original. `status` is `notstarted` (the default) or `ongoing` (422 otherwise).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workspaceId]
+              properties:
+                workspaceId: { type: string }
+                status: { type: string, enum: [notstarted, ongoing], default: notstarted }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task: { $ref: '#/components/schemas/Task' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/TeamRefused' }
+
+  /teams/{teamId}/analytics:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Team mode]
+      summary: Activity statistics of a team's workspaces
+      description: The workspace statistics summed over the team's workspaces, or one group of them, and by member.
+      parameters:
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1d', '7d', 'week', '30d', 'month', 'custom']
+            default: '7d'
+        - name: from
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Unix timestamp. Used only when `range=custom`.
+        - name: to
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Unix timestamp. Used only when `range=custom`.
+        - name: group
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamStats' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /teams/{teamId}/memory:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Team mode]
+      summary: Read a team's memory.md
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamMemory' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Team mode]
+      summary: Save a team's memory.md
+      description: Any member. The last save wins; `conflict` is true when it replaced one saved after `baseUpdatedAt`, the `updatedAt` its writer read, or replaced any with no `baseUpdatedAt`. Send the `updatedAt` you loaded, every time. Capped like a workspace's memory (422).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content: { type: string }
+                baseUpdatedAt: { type: string, format: date-time, description: The updatedAt the writer loaded; empty only when it loaded none. }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamMemory' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/TeamRefused' }
+
+  /teams/{teamId}/memory/index:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Team mode]
+      summary: List the memories of a team's workspaces
+      description: Each shared workspace with memories, by group, then owner. A fork shares its parent's.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  memories:
+                    type: array
+                    items: { $ref: '#/components/schemas/TeamMemoryIndexEntry' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /teams/{teamId}/workspaces/{workspaceId}/memory/{name}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - name: workspaceId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: name
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Team mode]
+      summary: Read a memory of a team's workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Memory' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /teams/{teamId}/skills:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Team mode]
+      summary: List the skills on in a team's workspaces
+      description: One per name, with the members who have it on, by name. A skill its owner turned off is left out.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skills:
+                    type: array
+                    items: { $ref: '#/components/schemas/TeamSkill' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /teams/{teamId}/skills/{name}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/SkillName'
+    get:
+      tags: [Team mode]
+      summary: Read one of a team's skills
+      description: With its SKILL.md, from the member who changed it last.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill: { $ref: '#/components/schemas/TeamSkill' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /teams/{teamId}/skills/{name}/add:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/SkillName'
+    post:
+      tags: [Team mode]
+      summary: Add one of a team's skills to your account
+      description: Copies every file of the skill (the copy read by its GET) into your account, on in `workspaceIds`, each of which must be yours (404 otherwise). 409 when you already have a skill of that name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workspaceIds:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill: { $ref: '#/components/schemas/Skill' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/TeamRefused' }
+
 components:
   securitySchemes:
     sessionCookie:
@@ -3310,6 +3650,12 @@ components:
       required: true
       schema: { type: string }
       description: Invitation ID (base62).
+    TeamTaskId:
+      name: taskId
+      in: path
+      required: true
+      schema: { type: string }
+      description: Task ID (base62).
 
   responses:
     TeamRefused:
@@ -3334,6 +3680,86 @@ components:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
 
   schemas:
+    TeamOwner:
+      type: object
+      properties:
+        userId: { type: string }
+        name: { type: string }
+        picture: { type: string }
+    TeamWorkspace:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        group: { type: string, description: What the workspace is shown in the team as; its parent's for a fork. }
+        owner: { $ref: '#/components/schemas/TeamOwner' }
+        forkOfId: { type: string, description: The parent, for a fork. }
+    TeamTask:
+      description: A task in team mode. The `url` of each of its files, and of its messages' files, is the team's attachment route.
+      allOf:
+        - $ref: '#/components/schemas/Task'
+        - type: object
+          properties:
+            owner: { $ref: '#/components/schemas/TeamOwner' }
+            group: { type: string }
+    TeamTaskDetail:
+      type: object
+      properties:
+        task: { $ref: '#/components/schemas/Task' }
+        stateTransitions:
+          type: array
+          items: { $ref: '#/components/schemas/TaskStateTransition' }
+        timing: { $ref: '#/components/schemas/TaskTiming' }
+        workspace: { $ref: '#/components/schemas/TeamWorkspace' }
+        owner: { $ref: '#/components/schemas/TeamOwner' }
+        plan:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/TaskPlan'
+    TeamStats:
+      allOf:
+        - $ref: '#/components/schemas/WorkspaceStats'
+        - type: object
+          properties:
+            byMember:
+              type: array
+              items:
+                type: object
+                properties:
+                  owner: { $ref: '#/components/schemas/TeamOwner' }
+                  tasksCompleted: { type: integer, format: int64 }
+                  messages: { type: integer, format: int64 }
+    TeamMemory:
+      type: object
+      properties:
+        content: { type: string }
+        updatedAt: { type: string, format: date-time, nullable: true, description: Null before anyone saved it. }
+        updatedBy:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/TeamOwner'
+        conflict: { type: boolean, description: "On a save, whether it replaced one saved after baseUpdatedAt, or any when baseUpdatedAt was empty." }
+    TeamMemoryIndexEntry:
+      type: object
+      properties:
+        workspaceId: { type: string }
+        workspaceName: { type: string }
+        group: { type: string }
+        owner: { $ref: '#/components/schemas/TeamOwner' }
+        names:
+          type: array
+          items: { type: string }
+        updatedAt: { type: string, format: date-time, description: When the latest of them was saved. }
+    TeamSkill:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        updatedAt: { type: string, format: date-time }
+        owners:
+          type: array
+          items: { $ref: '#/components/schemas/TeamOwner' }
+        content: { type: string, description: Its SKILL.md; only when one skill is read. }
     ErrorResponse:
       type: object
       description: The structured envelope returned by handlers that map a domain error.

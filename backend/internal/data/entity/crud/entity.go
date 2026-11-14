@@ -1807,6 +1807,13 @@ const (
 	// A workspace shared with a team, or its group changed; it carries the
 	// workspace.
 	ActionWorkspaceShare Action = 118
+	// A teammate's task cloned into one of the account's workspaces, which
+	// it carries.
+	ActionTeamTaskClone Action = 119
+	// A team's memory saved by a member; workspace 0.
+	ActionTeamMemorySave Action = 120
+	// A teammate's skill copied into the account; workspace 0.
+	ActionTeamSkillAdd Action = 121
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2041,6 +2048,12 @@ func (a Action) String() string {
 		return "team_join"
 	case ActionWorkspaceShare:
 		return "workspace_share"
+	case ActionTeamTaskClone:
+		return "team_task_clone"
+	case ActionTeamMemorySave:
+		return "team_memory_save"
+	case ActionTeamSkillAdd:
+		return "team_skill_add"
 	}
 	return "unknown"
 }

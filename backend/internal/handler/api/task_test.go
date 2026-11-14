@@ -33,7 +33,7 @@ func isASCII(s string) bool {
 }
 
 func TestContentDisposition_PlainNameIsLeftAlone(t *testing.T) {
-	got := contentDisposition("report.pdf")
+	got := contentDisposition("inline", "report.pdf")
 
 	if want := `inline; filename="report.pdf"`; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -50,7 +50,7 @@ func TestContentDisposition_MacOSScreenshotDoesNotEscapeIntoTheHeader(t *testing
 	// and the code point 8239 both named in the reported TypeError.
 	name := "Screenshot 2026-08-30 at 5.51.27 PM.png"
 
-	got := contentDisposition(name)
+	got := contentDisposition("inline", name)
 
 	if !isASCII(got) {
 		t.Fatalf("header value is not ASCII: %q", got)
@@ -68,7 +68,7 @@ func TestContentDisposition_MacOSScreenshotDoesNotEscapeIntoTheHeader(t *testing
 func TestContentDisposition_RejectsHeaderInjection(t *testing.T) {
 	// A quote used to close the parameter early and let the rest of the
 	// filename be read as parameters of its own.
-	got := contentDisposition(`evil".png`)
+	got := contentDisposition("inline", `evil".png`)
 
 	if strings.Contains(got, `evil".png`) {
 		t.Errorf("quote survived into the header: %q", got)
@@ -80,7 +80,7 @@ func TestContentDisposition_RejectsHeaderInjection(t *testing.T) {
 
 func TestContentDisposition_RejectsHeaderSplitting(t *testing.T) {
 	// A carriage return would end the header and start another.
-	got := contentDisposition("a\r\nX-Injected: yes.png")
+	got := contentDisposition("inline", "a\r\nX-Injected: yes.png")
 
 	if strings.ContainsAny(got, "\r\n") {
 		t.Fatalf("header value contains a line break: %q", got)
@@ -93,7 +93,7 @@ func TestContentDisposition_RejectsHeaderSplitting(t *testing.T) {
 func TestContentDisposition_BackslashIsNeutralised(t *testing.T) {
 	// Inside a quoted string a backslash escapes whatever follows it, so a name
 	// ending in one would escape the closing quote.
-	got := contentDisposition(`back\slash.png`)
+	got := contentDisposition("inline", `back\slash.png`)
 
 	if !strings.Contains(got, `filename="back_slash.png"`) {
 		t.Errorf("expected the backslash replaced, got %q", got)
@@ -103,7 +103,7 @@ func TestContentDisposition_BackslashIsNeutralised(t *testing.T) {
 func TestContentDisposition_NamesWithNothingUsableStillGetOne(t *testing.T) {
 	// A name made entirely of characters that cannot appear in the header would
 	// otherwise produce filename="", which some clients treat as no name at all.
-	got := contentDisposition("日本語")
+	got := contentDisposition("inline", "日本語")
 
 	if !strings.Contains(got, `filename="___"`) {
 		t.Errorf("expected placeholder characters, got %q", got)
@@ -114,8 +114,8 @@ func TestContentDisposition_NamesWithNothingUsableStillGetOne(t *testing.T) {
 }
 
 func TestContentDisposition_EmptyName(t *testing.T) {
-	if want := `inline; filename="download"`; contentDisposition("") != want {
-		t.Errorf("got %q, want %q", contentDisposition(""), want)
+	if want := `inline; filename="download"`; contentDisposition("inline", "") != want {
+		t.Errorf("got %q, want %q", contentDisposition("inline", ""), want)
 	}
 }
 

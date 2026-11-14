@@ -71,6 +71,7 @@ type Repository interface {
 	// that only changes the task row (#921).
 	GetTaskRow(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error)
 	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
+	ListTasksInWorkspaces(ctx context.Context, req entity.ListTasksRequest, workspaceIDs []int64) ([]model.Task, error)
 	CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error)
 	// UpdateTask writes only the columns of t it names, and UpdatedAt.
 	UpdateTask(ctx context.Context, t model.Task, columns ...string) (model.Task, error)
@@ -144,6 +145,14 @@ type Repository interface {
 	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID int64) error
 	CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
 	ListTeamWorkspaces(ctx context.Context, teamID int64) ([]TeamWorkspaceRow, error)
+	// Team mode reads, over workspaces the two checks above allowed.
+	TeamWorkspaceInfo(ctx context.Context, teamID, workspaceID int64) (TeamWorkspaceRow, error)
+	GetDetailedStatsOfWorkspaces(ctx context.Context, workspaceIDs []int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, []TeamMemberStatsRow, error)
+	GetTeamMemory(ctx context.Context, teamID int64, name string) (model.TeamMemory, error)
+	SaveTeamMemory(ctx context.Context, mem model.TeamMemory) (model.TeamMemory, bool, error)
+	ListWorkspaceMemoryNames(ctx context.Context, workspaceIDs []int64) ([]WorkspaceMemoryRow, error)
+	ListSkillsOnInWorkspaces(ctx context.Context, workspaceIDs []int64) ([]WorkspaceSkillRow, error)
+	ListTeamReaders(ctx context.Context, workspaceID int64) ([]TeamReader, error)
 
 	// Skill — an account's playbooks, each on in some of its workspaces.
 	// Metadata only: file content is in the storage service, and the methods
@@ -757,8 +766,23 @@ func getTask(db *gorm.DB, workspaceID, taskID int64, userID int64) (model.Task, 
 }
 
 func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error) {
+	return r.listTasks(ctx, r.conn(ctx).Where("user_id = ?", userID), req, "")
+}
+
+// ListTasksInWorkspaces is ListTasks over the given workspaces, whoever owns
+// them, newest activity first. The caller has already checked who may read
+// them; none is an empty list.
+func (r *repository) ListTasksInWorkspaces(ctx context.Context, req entity.ListTasksRequest, workspaceIDs []int64) ([]model.Task, error) {
+	if len(workspaceIDs) == 0 {
+		return []model.Task{}, nil
+	}
+	return r.listTasks(ctx, r.conn(ctx).Where("workspace_id IN ?", workspaceIDs), req, "updated_at desc, id desc")
+}
+
+// listTasks finds the tasks q scopes, filtered and paged by req, in order,
+// or in the order req's filters pick when order is empty.
+func (r *repository) listTasks(ctx context.Context, q *gorm.DB, req entity.ListTasksRequest, order string) ([]model.Task, error) {
 	var tasks []model.Task
-	q := r.conn(ctx).Where("user_id = ?", userID)
 
 	if req.WorkspaceID != 0 {
 		q = q.Where("workspace_id = ?", req.WorkspaceID)
@@ -820,6 +844,10 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 		} else if status != "cron" {
 			orderBy = "updated_at desc"
 		}
+	}
+
+	if order != "" {
+		orderBy = order
 	}
 
 	limit := req.Limit
@@ -1381,10 +1409,10 @@ func (r *repository) GetDetailedUserStats(ctx context.Context, userID int64, sta
 
 // detailedStats runs the five aggregations behind both statistics endpoints.
 //
-// scopeClause is a parameterised predicate ("workspace_id = ?" or
-// "user_id = ?") rather than a column name pasted into a string, so widening
-// the scope cannot become a way to inject SQL.
-func (r *repository) detailedStats(ctx context.Context, scopeClause string, scopeValue int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error) {
+// scopeClause is a parameterised predicate ("workspace_id = ?",
+// "workspace_id IN ?" or "user_id = ?") rather than a column name pasted
+// into a string, so widening the scope cannot become a way to inject SQL.
+func (r *repository) detailedStats(ctx context.Context, scopeClause string, scopeValue any, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error) {
 	var res entity.GetDetailedWorkspaceStatsResponse
 
 	// Dialect specific date formatting

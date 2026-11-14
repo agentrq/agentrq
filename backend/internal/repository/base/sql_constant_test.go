@@ -35,15 +35,15 @@ var sqlTextArg = map[string]int{
 // placeholder. A fragment is a non-constant operand of a + or of
 // fmt.Sprintf, or the whole argument when it is neither.
 var dynamicSQL = map[string]string{
-	"ListTasks:metadataExpr":                           "the per-database metadata filter",
-	"ListTasks:orderBy":                                "the per-database sort order, and an ORDER BY picked from constants by the status filter",
+	"listTasks:metadataExpr":                           "the per-database metadata filter",
+	"listTasks:orderBy":                                "the per-database sort order, and an ORDER BY picked from constants by the status filter",
 	"GetNextTask:sortExpr":                             "the per-database sort order",
 	"taskCountsByCategory:metadataExpr":                "the per-database metadata filter",
 	"ListTaskPreviews:queueExpr":                       "the per-database sort order",
 	"syncNeedsInput:pendingRequestClause(tx)":          "pendingRequestClause, a per-database constant",
-	"ListTasks:awaitingReplyClause(r.conn(ctx))":       "awaitingReplyClause, a per-database constant",
+	"listTasks:awaitingReplyClause(r.conn(ctx))":       "awaitingReplyClause, a per-database constant",
 	"awaitingReplyMessages:clause":                     "the per-database reply messages filter",
-	"detailedStats:scopeClause":                        "a scope its two callers pass as a literal",
+	"detailedStats:scopeClause":                        "a scope its three callers pass as a literal",
 	"detailedStats:dateExpr":                           "the per-database date buckets",
 	"detailedStats:bucketExpr":                         "the per-database date buckets",
 	"telemetryCounts:table":                            "a rollup table name its callers pass as a literal",
@@ -221,7 +221,7 @@ func (r *repository) sqlProbe(req entity.ListTasksRequest, tc model.ToolCall, co
 	r.conn(nil).Where(fmt.Sprintf("LIMIT %d", len(rows)))
 }
 
-func ListTasks(r *repository, req entity.ListTasksRequest, metadataExpr string) {
+func listTasks(r *repository, req entity.ListTasksRequest, metadataExpr string) {
 	r.conn(nil).Where("a = " + metadataExpr + " AND b = " + req.Assignee)
 }
 `
@@ -242,7 +242,7 @@ func ListTasks(r *repository, req entity.ListTasksRequest, metadataExpr string) 
 		"15 sqlProbe Order(req.Filter)",
 		"16 sqlProbe Exec(tc.ToolName)",
 		"17 sqlProbe First(col)",
-		"24 ListTasks Where(req.Assignee)",
+		"24 listTasks Where(req.Assignee)",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("the guard reported\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

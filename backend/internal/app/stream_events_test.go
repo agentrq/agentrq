@@ -100,7 +100,7 @@ func TestPublishTaskDelete(t *testing.T) {
 			global := bus.Subscribe(0, owner)
 			tc.ev.WorkspaceID, tc.ev.ResourceID = workspace, task
 
-			if got := publishTaskDelete(bus, tc.ev, owner); got != tc.want {
+			if _, got := publishTaskDelete(bus, tc.ev, owner); got != tc.want {
 				t.Fatalf("handled = %v, want %v", got, tc.want)
 			}
 			for stream, ch := range map[string]chan []byte{"workspace": page, "owner": global} {
