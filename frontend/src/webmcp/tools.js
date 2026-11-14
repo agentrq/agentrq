@@ -1536,7 +1536,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         ...TEAM_FIELDS,
         name: str('The team\'s new name, for rename; the skill\'s, for addSkill.'),
         content: str('The team memory\'s full markdown, for saveMemory.'),
-        baseUpdatedAt: str('The updatedAt the memory was read at; a newer save is refused (409).'),
+        baseUpdatedAt: str('The updatedAt the memory was read at, empty if it was empty. The save still wins; the answer says conflict: true when someone saved in between.'),
         workspaceIds: { type: 'array', items: { type: 'string' }, description: 'Your workspaces to turn an added skill on in.' },
         email: str('The email to invite.'),
         role: { type: 'string', enum: ['member', 'admin', 'owner'], description: 'A member\'s role. Invitations default to member.' },

@@ -180,7 +180,7 @@ import { getOrder, sortColumn, orderBetween } from '../composables/useKanbanOrde
 import LoadMoreButton from '../components/LoadMoreButton.vue';
 import OwnerAvatar from '../components/OwnerAvatar.vue';
 import { useTeamStore } from '../stores/teamStore';
-import { lostTeam, useTeamMode } from '../composables/useTeamMode';
+import { inTeamFilter, lostTeam, teamEvent, useTeamMode } from '../composables/useTeamMode';
 
 const route = useRoute();
 const router = useRouter();
@@ -616,9 +616,12 @@ async function onMoveConfirm(destinationWorkspaceId) {
 const { connect, disconnect, events } = useEventBus(workspaceId);
 
 watch(() => events.value.length, (newLen, oldLen) => {
-  // Your own stream: nothing on it belongs on the team's board.
-  if (newLen <= oldLen || isTeamMode.value) return;
-  events.value.slice(oldLen).forEach(ev => {
+  if (newLen <= oldLen) return;
+  events.value.slice(oldLen).forEach(raw => {
+    // In team mode, the team's events and nothing else: your own tasks are
+    // not on its board.
+    const ev = isTeamMode.value ? teamEvent(raw, teamId.value) : raw;
+    if (!ev) return;
     if (ev.type === 'task.deleted') {
       removeTask(ev.payload?.id);
       return;
@@ -627,6 +630,11 @@ watch(() => events.value.length, (newLen, oldLen) => {
       const t = ev.payload;
       if (!t) return;
       if (!isGlobal.value && t.workspaceId && String(t.workspaceId) !== String(workspaceId.value)) return;
+      // A task moved out of the board's group or member filter leaves it.
+      if (isTeamMode.value && !inTeamFilter(t, route.query)) {
+        removeTask(t.id);
+        return;
+      }
       const existing = tasks.value.find(x => String(x.id) === String(t.id));
       if (existing && existing.updatedAt && t.updatedAt &&
           new Date(existing.updatedAt).getTime() > new Date(t.updatedAt).getTime()) return;
