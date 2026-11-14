@@ -259,6 +259,41 @@ func TestIsShellCommandAllowed(t *testing.T) {
 		{"find -delete", "find *", "find . -name '*.go' -delete", false},
 		{"find plain", "find *", "find . -name '*.go'", true},
 
+		// The shell removes quotes and backslashes before git sees an option.
+		{"single-quoted git -c", "git *", "git '-c' alias.x='!rm -rf ~' x", false},
+		{"backslashed git -c", "git *", `git \-c core.pager=sh log`, false},
+		{"double-quoted git config", "git *", `git "config" core.pager 'sh -c evil'`, false},
+		{"locale-quoted git -c", "git *", `git $"-c" core.pager=sh log`, false},
+		{"single-quoted find -exec", "find *", "find . '-exec' rm {} +", false},
+		// A word the shell rewrites may become any option.
+		{"default-value expansion", "git *", "git -${x:-c} alias.x=!id x", false},
+		{"ANSI-C quoting", "git *", `git $'\x2dc' alias.x=!id x`, false},
+		{"brace expansion", "git *", "git {-c,alias.x=!id} x", false},
+		{"brace with an empty item", "git *", "git {-c,} core.pager=sh log", false},
+		{"brace sequence", "git *", "git -{c..c} core.pager=sh log", false},
+		{"reflog brace stays allowed", "git *", "git stash show stash@{0}", true},
+		{"quoted commit message stays allowed", "git *", `git commit -m "fix: don't drop it"`, true},
+		// Parameter expansion that evaluates its value again.
+		{"bash prompt expansion", "git *", `git log ${x:=\$\(id\)} ${x@P}`, false},
+		{"zsh (e) flag", "git *", `git log ${(e)${:-\$\(id\)}}`, false},
+		{"zsh (%) flag", "git *", "git log ${(%)x}", false},
+		{"zsh glob substitution", "git *", "git add ${~x}", false},
+		// clone's own config applies before the fetch; a template installs hooks.
+		{"git clone -c", "git *", "git clone -c core.sshCommand='sh -c evil' git@host:repo", false},
+		{"git clone --config", "git *", "git clone --config core.hooksPath=/tmp/h repo", false},
+		{"git clone --template", "git *", "git clone --template=/tmp/t repo", false},
+		{"git clone shortened --template", "git *", "git clone --templ=/tmp/t repo", false},
+		{"git init --template", "git *", "git init --template=/tmp/t", false},
+		{"git clone plain", "git *", "git clone --depth 1 git@host:repo", true},
+		{"git commit --template", "git *", "git commit --template=msg.txt", true},
+		// Short and shortened forms of the output options write files too.
+		{"git archive -o", "git *", "git archive -o /home/u/.bashrc HEAD", false},
+		{"git format-patch -o", "git *", "git format-patch -o /tmp/out HEAD~1", false},
+		{"git format-patch --output-directory", "git *", "git format-patch --output-directory /tmp/out HEAD~1", false},
+		{"git rebase shortened --exec", "git *", "git rebase --exe=sh HEAD~1", false},
+		{"git archive plain", "git *", "git archive --format=tar HEAD", true},
+		{"git log --oneline", "git *", "git log --oneline -- path", true},
+
 		// The catch-all rule allowed every command, so nothing above applies.
 		{"catch-all allows substitution", "*", "echo $(date)", true},
 		{"catch-all allows arithmetic", "*", "echo $((1+1))", true},
