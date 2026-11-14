@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -296,8 +297,10 @@ type GetTaskParams struct {
 type TaskMessagesParams struct {
 	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
 	TaskID      string `json:"taskId" jsonschema:"The task's ID (base62)."`
-	Since       string `json:"since,omitempty" jsonschema:"Only the messages created after this time (RFC3339), like the createdAt of the last message you read."`
-	Limit       int    `json:"limit,omitempty" jsonschema:"At most this many messages, the newest ones; default 20, capped at 100."`
+	Since       string `json:"since,omitempty" jsonschema:"Only the messages after this one: a message id, like the id of the last message you read, or an RFC3339 time."`
+	Before      string `json:"before,omitempty" jsonschema:"Only the messages before this one: a message id, like the id of the oldest message you have, to page back, or an RFC3339 time."`
+	Limit       int    `json:"limit,omitempty" jsonschema:"At most this many messages, the newest ones; default 5, capped at 100."`
+	MaxChars    int    `json:"maxChars,omitempty" jsonschema:"Cut each message's text to this many characters, marking the cut. Default 0, whole."`
 }
 
 type RespondToTaskParams struct {
@@ -735,7 +738,11 @@ func (s *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolRe
 // the tool calls and agent telemetry that make up most of a get.
 func (s *WorkspaceServer) handleTaskMessages(ctx context.Context, req *mcp.CallToolRequest, args TaskMessagesParams) (*mcp.CallToolResult, any, error) {
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getTaskMessages", parseID(args.WorkspaceID))
-	since, err := parseSince("since", args.Since)
+	since, err := parseMessageCursor("since", args.Since)
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+	before, err := parseMessageCursor("before", args.Before)
 	if err != nil {
 		return errorResponse(err), nil, nil
 	}
@@ -748,7 +755,9 @@ func (s *WorkspaceServer) handleTaskMessages(ctx context.Context, req *mcp.CallT
 		return errorResponse(err), nil, nil
 	}
 
-	msgs := textMessages(messagesAfter(res.Task.Messages, since))
+	msgs := slices.DeleteFunc(textMessages(res.Task.Messages), func(m entity.Message) bool {
+		return !since.after(m) || !before.before(m)
+	})
 	total := len(msgs)
 	limit := args.Limit
 	if limit <= 0 {
@@ -758,6 +767,7 @@ func (s *WorkspaceServer) handleTaskMessages(ctx context.Context, req *mcp.CallT
 	if len(msgs) > limit {
 		msgs = msgs[len(msgs)-limit:]
 	}
+	truncateMessages(msgs, args.MaxChars)
 	return textResponse(string(apiMapper.FromTaskEntityToTaskMessagesMCPResponse(res.Task, msgs, total))), nil, nil
 }
 

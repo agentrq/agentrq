@@ -293,10 +293,11 @@ func TestTaskConversationMCPResponses(t *testing.T) {
 		{ID: b62(78), CreatedAt: at.Add(1), Sender: "agent", Text: "On it"},
 	}
 
+	// total counts what matched before the limit cut the oldest: hasMore.
 	checkResponse(t, FromTaskEntityToTaskMessagesMCPResponse(fullTask, msgs, 12),
-		view.TaskMessagesResponse{Status: "ongoing", UpdatedAt: at.Add(1), Total: 12, Messages: want})
+		view.TaskMessagesResponse{Status: "ongoing", UpdatedAt: at.Add(1), Total: 12, HasMore: true, Messages: want})
 	if got := string(FromTaskEntityToTaskMessagesMCPResponse(entity.Task{Status: "notstarted", UpdatedAt: at}, nil, 0)); got !=
-		`{"status":"notstarted","updatedAt":"2026-10-30T09:00:00Z","total":0,"messages":[]}` {
+		`{"status":"notstarted","updatedAt":"2026-10-30T09:00:00Z","total":0,"hasMore":false,"messages":[]}` {
 		t.Errorf("no messages = %s", got)
 	}
 

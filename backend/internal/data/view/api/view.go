@@ -414,10 +414,12 @@ type (
 
 	// TaskMessagesResponse is a task's conversation without its tool calls or
 	// the agent's telemetry: what the supervisor reads to follow up on a task.
+	// hasMore says the limit left older messages out.
 	TaskMessagesResponse struct {
 		Status    string        `json:"status"`
 		UpdatedAt time.Time     `json:"updatedAt"`
 		Total     int           `json:"total"`
+		HasMore   bool          `json:"hasMore"`
 		Messages  []TaskMessage `json:"messages"`
 	}
 

@@ -101,8 +101,8 @@ func TestTaskMessages_ReadsOnlyTheConversationOldestFirst(t *testing.T) {
 	if !slices.Equal(texts(got.Messages), want) {
 		t.Errorf("messages = %q, want %q", texts(got.Messages), want)
 	}
-	if got.Status != "blocked" || !got.UpdatedAt.Equal(threadStart.Add(time.Hour)) || got.Total != 4 {
-		t.Errorf("status %q, updatedAt %v, total %d; want blocked, %v, 4", got.Status, got.UpdatedAt, got.Total, threadStart.Add(time.Hour))
+	if got.Status != "blocked" || !got.UpdatedAt.Equal(threadStart.Add(time.Hour)) || got.Total != 4 || got.HasMore {
+		t.Errorf("status %q, updatedAt %v, total %d, hasMore %v; want blocked, %v, 4, false", got.Status, got.UpdatedAt, got.Total, got.HasMore, threadStart.Add(time.Hour))
 	}
 	first, second := got.Messages[0], got.Messages[1]
 	if first.ID != base62(1000) || !first.CreatedAt.Equal(threadStart) || first.Sender != "human" || first.Attachments != nil {
@@ -123,18 +123,72 @@ func TestTaskMessages_SinceKeepsOnlyLaterMessages(t *testing.T) {
 	}
 }
 
+// A supervisor polling for news passes the id of the last message it read,
+// and is sent only what came after it.
+func TestTaskMessages_SinceAMessageIDKeepsOnlyLaterMessages(t *testing.T) {
+	got := taskMessages(t, busyTaskServer(t), map[string]any{"since": base62(1001)})
+
+	want := []string{"Which branch should I release from?", "From main."}
+	if !slices.Equal(texts(got.Messages), want) || got.Total != 2 || got.HasMore {
+		t.Errorf("messages = %q, total %d, hasMore %v; want %q, 2, false", texts(got.Messages), got.Total, got.HasMore, want)
+	}
+}
+
+// before pages back: the oldest id a supervisor has, or a time, keeps only
+// the messages before it, and since and before together read a window.
+func TestTaskMessages_BeforePagesBack(t *testing.T) {
+	for _, tc := range []struct {
+		payload map[string]any
+		want    []string
+	}{
+		{map[string]any{"before": base62(1004)}, []string{"Release v0.9.20.", "On it."}},
+		{map[string]any{"before": threadStart.Add(time.Minute).Format(time.RFC3339)}, []string{"Release v0.9.20."}},
+		{map[string]any{"since": base62(1000), "before": base62(1007)}, []string{"On it.", "Which branch should I release from?"}},
+		{map[string]any{"before": base62(1007), "limit": 1}, []string{"Which branch should I release from?"}},
+	} {
+		got := taskMessages(t, busyTaskServer(t), tc.payload)
+		if !slices.Equal(texts(got.Messages), tc.want) {
+			t.Errorf("%v: messages = %q, want %q", tc.payload, texts(got.Messages), tc.want)
+		}
+	}
+}
+
 // The newest reply is the one a supervisor is following up on, so a limit
-// cuts the oldest; total says how many there were.
+// cuts the oldest; total says how many there were, hasMore that it cut some.
 func TestTaskMessages_LimitKeepsTheNewest(t *testing.T) {
 	got := taskMessages(t, busyTaskServer(t), map[string]any{"limit": 2})
 
 	want := []string{"Which branch should I release from?", "From main."}
-	if !slices.Equal(texts(got.Messages), want) || got.Total != 4 {
-		t.Errorf("messages = %q, total %d; want %q, 4", texts(got.Messages), got.Total, want)
+	if !slices.Equal(texts(got.Messages), want) || got.Total != 4 || !got.HasMore {
+		t.Errorf("messages = %q, total %d, hasMore %v; want %q, 4, true", texts(got.Messages), got.Total, got.HasMore, want)
 	}
 }
 
-func TestTaskMessages_LimitDefaultsTo20AndIsCappedAt100(t *testing.T) {
+// maxChars lets a supervisor skim: a longer text is cut at that many
+// characters, not bytes, and says how much was left out; a shorter one is
+// whole, and so is every one without maxChars.
+func TestTaskMessages_MaxCharsCutsLongTexts(t *testing.T) {
+	long := message(1, "agent", "héllo wörld, the release is tagged", nil)
+	srv := taskServer(&mockTaskCrud{getTask: func(context.Context, entity.GetTaskRequest) (*entity.GetTaskResponse, error) {
+		return &entity.GetTaskResponse{Task: entity.Task{Messages: []entity.Message{message(0, "human", "Go.", nil), long}}}, nil
+	}})
+
+	for _, tc := range []struct {
+		maxChars int
+		want     []string
+	}{
+		{5, []string{"Go.", "héllo…[29 more characters]"}},
+		{0, []string{"Go.", "héllo wörld, the release is tagged"}},
+		{34, []string{"Go.", "héllo wörld, the release is tagged"}},
+	} {
+		got := taskMessages(t, srv, map[string]any{"maxChars": tc.maxChars})
+		if !slices.Equal(texts(got.Messages), tc.want) {
+			t.Errorf("maxChars %d: messages = %q, want %q", tc.maxChars, texts(got.Messages), tc.want)
+		}
+	}
+}
+
+func TestTaskMessages_LimitDefaultsTo5AndIsCappedAt100(t *testing.T) {
 	var thread []entity.Message
 	for n := range 150 {
 		thread = append(thread, message(n, "agent", fmt.Sprint(n), nil))
@@ -146,9 +200,9 @@ func TestTaskMessages_LimitDefaultsTo20AndIsCappedAt100(t *testing.T) {
 	for _, tc := range []struct {
 		limit       int
 		want, first int
-	}{{0, 20, 130}, {500, 100, 50}} {
+	}{{0, 5, 145}, {500, 100, 50}} {
 		got := taskMessages(t, srv, map[string]any{"limit": tc.limit})
-		if len(got.Messages) != tc.want || got.Messages[0].Text != fmt.Sprint(tc.first) || got.Total != 150 {
+		if len(got.Messages) != tc.want || got.Messages[0].Text != fmt.Sprint(tc.first) || got.Total != 150 || !got.HasMore {
 			t.Errorf("limit %d: %d messages from %q, total %d; want %d from %d, total 150", tc.limit, len(got.Messages), got.Messages[0].Text, got.Total, tc.want, tc.first)
 		}
 	}
@@ -159,7 +213,7 @@ func TestTaskMessages_EmptyThreadIsAnEmptyList(t *testing.T) {
 		return &entity.GetTaskResponse{Task: entity.Task{Status: "notstarted"}}, nil
 	}})
 
-	if text := textOf(t, callTask(t, srv, "messages", map[string]any{})); text != `{"status":"notstarted","updatedAt":"0001-01-01T00:00:00Z","total":0,"messages":[]}` {
+	if text := textOf(t, callTask(t, srv, "messages", map[string]any{})); text != `{"status":"notstarted","updatedAt":"0001-01-01T00:00:00Z","total":0,"hasMore":false,"messages":[]}` {
 		t.Errorf("an empty thread answered %s", text)
 	}
 }
@@ -174,7 +228,9 @@ func TestTaskMessages_RefusesABadSinceAndReportsCrudErrors(t *testing.T) {
 		payload map[string]any
 		want    string
 	}{
-		{"messages", map[string]any{"since": "yesterday"}, "since must be an RFC3339 time, like 2026-10-26T09:00:00Z"},
+		{"messages", map[string]any{"since": "last week"}, "since must be a message id or an RFC3339 time, like 2026-10-26T09:00:00Z"},
+		{"messages", map[string]any{"before": "2026-10-26"}, "before must be a message id or an RFC3339 time, like 2026-10-26T09:00:00Z"},
+		{"messages", map[string]any{"since": "0"}, "since must be a message id or an RFC3339 time, like 2026-10-26T09:00:00Z"},
 		{"get", map[string]any{"messagesSince": "2026-10-26"}, "messagesSince must be an RFC3339 time, like 2026-10-26T09:00:00Z"},
 		{"messages", map[string]any{}, "task not found"},
 	} {

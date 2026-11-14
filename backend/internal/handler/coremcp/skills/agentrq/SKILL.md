@@ -24,7 +24,7 @@ A tool's actions are in `references/<tool>.md`; memory, skills and pano share `k
 ## Core Guidelines
 
 1. **Discover first**: `workspace.list` and `task.listAll` before creating.
-2. **Poll cheaply**: `task.list`/`listAll` and `task.messages` with `since`; `task.get` only for a body.
+2. **Poll cheaply**: `task.list`/`listAll` and `task.messages` with `since` (last id read); `task.get` only for a body.
 3. **Humans in the loop**: blocked or needing approval, set the task `blocked` and `task.reply` what you need.
 4. **Learn**: read a workspace's `selfLearningLoopNote` and `memory.get` `MEMORY.md` first; record lessons with `workspace.update`.
 5. **Sub-tasks**: split large goals with `parentId`.

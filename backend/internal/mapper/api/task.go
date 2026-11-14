@@ -235,12 +235,13 @@ func FromTaskEntityToTaskSummaryMCPResponse(t entity.Task, messageID int64) []by
 
 // FromTaskEntityToTaskMessagesMCPResponse answers the supervisor's task
 // messages: msgs, already chosen from t's, and total, how many matched before
-// the limit.
+// the limit, which cut the oldest.
 func FromTaskEntityToTaskMessagesMCPResponse(t entity.Task, msgs []entity.Message, total int) []byte {
 	res := view.TaskMessagesResponse{
 		Status:    t.Status,
 		UpdatedAt: t.UpdatedAt,
 		Total:     total,
+		HasMore:   total > len(msgs),
 		Messages:  fromMessageEntitiesToTaskMessageViews(msgs),
 	}
 	payload, _ := json.Marshal(res)
