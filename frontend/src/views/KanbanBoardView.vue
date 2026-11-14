@@ -67,7 +67,7 @@
                   <!-- Across every workspace a card says whose it is, with the
                        same agent dot the sidebar draws beside that workspace. -->
                   <span v-if="isGlobal" data-test="card-workspace" class="flex items-center gap-1.5 min-w-0 text-[10px] font-medium text-gray-500 dark:text-zinc-400">
-                    <OwnerAvatar v-if="isTeamMode" :owner="t.owner" data-test="card-owner" />
+                    <OwnerAvatar v-if="isTeamMode" :owner="t.owner" size="xs" data-test="card-owner" />
                     <span v-else class="w-1.5 h-1.5 rounded-full shrink-0"
                           :class="isAgentConnected(t) ? 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"
                           :title="isAgentConnected(t) ? 'Agent Online' : 'Agent Offline'"></span>

@@ -76,7 +76,7 @@ const (
 	// maxAgentName and maxModelName are the widths, in characters, of the
 	// name columns of agents and agent_models: room for the names agents
 	// actually give, and no more.
-	maxAgentName = 16
+	maxAgentName = 32
 	maxModelName = 32
 	// maxPending is how many new names per table one batch takes.
 	maxPending = 1000

@@ -478,7 +478,7 @@ type (
 	// it on every row.
 	Agent struct {
 		ID        int64  `gorm:"primaryKey;autoIncrement:false"`
-		Name      string `gorm:"type:varchar(16)"`
+		Name      string `gorm:"type:varchar(32)"`
 		CreatedAt time.Time
 	}
 	AgentModel struct {
