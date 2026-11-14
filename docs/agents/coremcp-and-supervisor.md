@@ -31,6 +31,12 @@ one place every tool call (Pano and retired names included) passes; a guard
 anywhere earlier misses Pano. Unmarked is a write, so a forgotten mark refuses a
 read rather than leaking a write.
 
+**Supervisor tokens are minted by `CreateSupervisorToken` (8h access, 7d
+refresh), never `CreateMCPToken`, whose year is for workspace tokens.** Tokens
+are stateless, so the endpoint also refuses one expiring further out than that
+(`outlivesTTL`): without it, every year-long token signed before the limits
+would keep working.
+
 **Adding a *resource* or *prompt* trips none of the above.** Those parity
 tests match only `mcp.AddTool(s.server, &mcp.Tool{Name: "..."` — an
 `AddResource`/`AddPrompt` call is invisible to them. Cover a new one with its

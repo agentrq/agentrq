@@ -74,6 +74,17 @@ const TerminalTicketTTL = time.Minute
 // radius if it leaks -- and on desktop it is stored unencrypted on disk.
 const RefreshTokenTTL = 2 * 24 * time.Hour
 
+// WorkspaceMCPTokenTTL is how long a workspace MCP token lasts.
+const WorkspaceMCPTokenTTL = 365 * 24 * time.Hour
+
+// A supervisor token reaches every workspace on the account, so it is short
+// lived. Every refresh mints a new refresh token too, so a client used at
+// least once a week stays signed in.
+const (
+	SupervisorAccessTokenTTL  = 8 * time.Hour
+	SupervisorRefreshTokenTTL = 7 * 24 * time.Hour
+)
+
 type TokenConfig struct {
 	JWTSecret string `yaml:"jwt_secret"`
 }
@@ -129,6 +140,7 @@ type TokenService interface {
 	CreateRefreshToken(userID string) (string, error)
 	ValidateRefreshToken(tokenStr string) (*Claims, error)
 	CreateMCPToken(userID, workspaceID, tokenType string) (string, error)
+	CreateSupervisorToken(userID, resource, tokenType string) (string, error)
 	CreateOAuthCodeToken(userID, workspaceID, codeChallenge string) (string, error)
 	CreateTerminalTicket(userID, sessionID string) (string, error)
 	ValidateTerminalTicket(tokenStr, sessionID string) (*Claims, error)
@@ -211,10 +223,25 @@ func (s *tokenService) ValidateRefreshToken(tokenStr string) (*Claims, error) {
 }
 
 func (s *tokenService) CreateMCPToken(userID, workspaceID, tokenType string) (string, error) {
+	return s.createMCPToken(userID, workspaceID, tokenType, WorkspaceMCPTokenTTL)
+}
+
+// CreateSupervisorToken mints a supervisor (CoreMCP) token for resource: a
+// refresh token lasts SupervisorRefreshTokenTTL, any other
+// SupervisorAccessTokenTTL.
+func (s *tokenService) CreateSupervisorToken(userID, resource, tokenType string) (string, error) {
+	ttl := SupervisorAccessTokenTTL
+	if tokenType == "refresh" {
+		ttl = SupervisorRefreshTokenTTL
+	}
+	return s.createMCPToken(userID, resource, tokenType, ttl)
+}
+
+func (s *tokenService) createMCPToken(userID, workspaceID, tokenType string, ttl time.Duration) (string, error) {
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(365 * 24 * time.Hour)), // 365 days
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 		},
 	}
 

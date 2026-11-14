@@ -63,6 +63,17 @@ The response carries `access_token`, `refresh_token`, `token_type` `bearer`,
 `expires_in` and `scope`. To renew, `POST`
 `grant_type=refresh_token&refresh_token=…` to the same endpoint.
 
+How long a credential lasts:
+
+| Server | Access token | Refresh token |
+|---|---|---|
+| Workspace | 365 days | 365 days |
+| Supervisor | 8 hours (`expires_in` 28800) | 7 days |
+
+Every refresh returns a new refresh token as well, so a supervisor client used
+at least once a week stays signed in. A supervisor token issued before these
+lifetimes, which lasted a year, is refused: its client signs in again once.
+
 The workspace server has one scope, listed above. A client may leave `scope`
 out; any scope it asks for is granted as the server's own.
 
