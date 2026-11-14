@@ -264,6 +264,9 @@ type Repository interface {
 	SystemCreateCronRun(ctx context.Context, t model.Task) (bool, error)
 	SystemStartOneTimeTask(ctx context.Context, t model.Task) (bool, error)
 	GetDetailedWorkspaceStats(ctx context.Context, workspaceID int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error)
+	// GetDetailedStatsOfWorkspaces is GetDetailedWorkspaceStats summed over
+	// the given workspaces, whoever owns them.
+	GetDetailedStatsOfWorkspaces(ctx context.Context, workspaceIDs []int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error)
 	GetDetailedUserStats(ctx context.Context, userID int64, startTime, endTime int64) (entity.GetDetailedUserStatsRows, error)
 	GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error)
 	GetWorkspaceTaskCountsByCategory(ctx context.Context, workspaceID int64, userID int64) (map[string]int64, error)
@@ -1348,6 +1351,10 @@ func (r *repository) SystemStartOneTimeTask(ctx context.Context, t model.Task) (
 
 func (r *repository) GetDetailedWorkspaceStats(ctx context.Context, workspaceID int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error) {
 	return r.detailedStats(ctx, "workspace_id = ?", workspaceID, startTime, endTime)
+}
+
+func (r *repository) GetDetailedStatsOfWorkspaces(ctx context.Context, workspaceIDs []int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error) {
+	return r.detailedStats(ctx, "workspace_id IN ?", workspaceIDs, startTime, endTime)
 }
 
 // GetDetailedUserStats is the same five aggregations summed over every

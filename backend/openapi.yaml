@@ -3334,6 +3334,45 @@ paths:
         '400': { $ref: '#/components/responses/InvalidPayload' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /teams/{teamId}/analytics:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Team mode]
+      summary: Activity statistics of a team's workspaces
+      description: A workspace's statistics, in its shape, summed over every workspace the team reads, or over one team workspace's.
+      parameters:
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1d', '7d', 'week', '30d', 'month', 'custom']
+            default: '7d'
+        - name: from
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Unix timestamp. Used only when `range=custom`.
+        - name: to
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Unix timestamp. Used only when `range=custom`.
+        - name: workspace
+          in: query
+          required: false
+          schema: { type: string }
+          description: Only this team workspace, by its shared name, matched ignoring case and surrounding spaces.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceStats' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /teams/{teamId}/tasks/{taskId}:
     parameters:
       - $ref: '#/components/parameters/TeamId'

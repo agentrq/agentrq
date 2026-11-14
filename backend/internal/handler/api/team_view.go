@@ -22,6 +22,7 @@ func (h *handler) registerTeamViewRoutes() {
 	r := h.router.Group("/teams/:teamId")
 	r.Get("/workspaces", h.listTeamWorkspaces())
 	r.Get("/tasks", h.listTeamTasks())
+	r.Get("/analytics", h.getTeamStats())
 	r.Get("/tasks/:taskId", h.getTeamTask())
 	r.Get("/tasks/:taskId/attachments/:attachmentId", h.getTeamAttachment())
 	r.Post("/tasks/:taskId/clone", h.cloneTeamTask())
@@ -68,6 +69,24 @@ func (h *handler) listTeamTasks() fiber.Handler {
 		defer cancel()
 		tasks, err := h.teamView.ListTasks(ctx, rq)
 		return mapper.FromTeamTaskEntitiesToHTTPResponse(tasks, ids[0]), err
+	})
+}
+
+// getTeamStats is a workspace's analytics, in its shape, summed over the
+// team's workspaces or over the team workspace ?workspace= names.
+func (h *handler) getTeamStats() fiber.Handler {
+	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		from, _ := strconv.ParseInt(c.Query("from"), 10, 64)
+		to, _ := strconv.ParseInt(c.Query("to"), 10, 64)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.teamView.GetStats(ctx, entity.GetTeamStatsRequest{
+			UserID: sessionUser(c), TeamID: ids[0], Workspace: c.Query("workspace"), Range: c.Query("range", "7d"), From: from, To: to,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return mapper.FromTeamStatsEntityToHTTPResponse(rs), nil
 	})
 }
 

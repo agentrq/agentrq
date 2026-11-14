@@ -235,6 +235,10 @@ func TestRepository_PostgresBranches(t *testing.T) {
 			_, err := r.GetDetailedWorkspaceStats(ctx, crudWS, 0, 10)
 			return err
 		}},
+		{"stats of workspaces", func(r Repository) error {
+			_, err := r.GetDetailedStatsOfWorkspaces(ctx, []int64{crudWS}, 0, 10)
+			return err
+		}},
 		{"task counts by category", func(r Repository) error {
 			_, err := r.GetWorkspaceTaskCountsByCategory(ctx, crudWS, crudUser)
 			return err
@@ -341,6 +345,16 @@ func TestRepository_TelemetryCounts(t *testing.T) {
 	counts, err := repo.GetTelemetryActionCounts(ctx)
 	if err != nil || counts[model.ActionIDMessageCreate] != 2 || counts[model.ActionIDTaskComplete] != 1 {
 		t.Errorf("GetTelemetryActionCounts = %v, %v", counts, err)
+	}
+
+	// Summed over several workspaces, whoever owns them; none sums nothing.
+	mustCreate(t, db, &model.Telemetry{UserID: crudUser + 1, WorkspaceID: crudWS + 1, OccurredAt: 100, Action: model.ActionIDTaskComplete})
+	mustCreate(t, db, &model.Telemetry{UserID: crudUser + 1, WorkspaceID: crudWS + 2, OccurredAt: 100, Action: model.ActionIDTaskComplete})
+	if all, err := repo.GetDetailedStatsOfWorkspaces(ctx, []int64{crudWS, crudWS + 1}, 0, 1000); err != nil || all.Summary.TasksCompleted != 2 || all.Summary.Messages != 2 {
+		t.Errorf("GetDetailedStatsOfWorkspaces = %+v, %v; want 2 completions and 2 messages", all.Summary, err)
+	}
+	if none, err := repo.GetDetailedStatsOfWorkspaces(ctx, []int64{}, 0, 1000); err != nil || none.Summary != (entity.WorkspaceStatsSummary{}) {
+		t.Errorf("GetDetailedStatsOfWorkspaces(none) = %+v, %v; want nothing", none.Summary, err)
 	}
 }
 

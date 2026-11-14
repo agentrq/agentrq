@@ -1603,6 +1603,17 @@ export function fetchTeamTasks(teamId, { status = '', workspace = '', member = '
   return teamCall(`/teams/${enc(teamId)}/tasks?${params.toString()}`, 'Failed to load the team\'s tasks');
 }
 
+// A workspace's analytics, in its shape, summed over the team's workspaces,
+// or one team workspace's (its shared name) when `workspace` is set.
+export function fetchTeamStats(teamId, range = '7d', from = 0, to = 0, workspace = '') {
+  const params = new URLSearchParams();
+  params.append('range', range);
+  if (from) params.append('from', from);
+  if (to) params.append('to', to);
+  if (workspace) params.append('workspace', workspace);
+  return teamCall(`/teams/${enc(teamId)}/analytics?${params.toString()}`, 'Failed to load the team\'s analytics');
+}
+
 // { task, workspace, owner, plan, stateTransitions }: no Pano docs, which stay the owner's.
 export function getTeamTask(teamId, taskId) {
   return teamCall(`/teams/${enc(teamId)}/tasks/${enc(taskId)}`, 'Failed to load the task');

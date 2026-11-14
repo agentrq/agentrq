@@ -250,6 +250,7 @@ func TestTeamMode(t *testing.T) {
 			t.Run("tasks", m.tasks)
 			t.Run("task", m.task)
 			t.Run("attachment", m.attachmentRoute)
+			t.Run("analytics", m.analytics)
 			t.Run("removed routes", m.removedRoutes)
 			t.Run("clone", m.clone)
 			t.Run("skills", m.skills)
@@ -455,11 +456,37 @@ func (m *teamMode) attachmentRoute(t *testing.T) {
 	}
 }
 
-// Team analytics, the team's memory and the members' memory index are
-// gone: their routes answer as any unknown route does.
+// A team's analytics sum what its members read: the shared workspaces and
+// a shared one's fork, never an unshared, archived or outside workspace.
+func (m *teamMode) analytics(t *testing.T) {
+	path := "/teams/" + teamTen + "/analytics"
+	summary := func(body map[string]any) map[string]any { s, _ := body["summary"].(map[string]any); return s }
+	status, body := m.get(t, bobID, path+"?range=7d")
+	expectStatus(t, "Bob reading the team's analytics", status, http.StatusOK, body)
+	if s := summary(body); s["tasksCompleted"] != float64(3) || s["messages"] != float64(1) {
+		t.Errorf("the summary is %v: want 3 completions (100, its fork and 200) and 1 message, nothing from 102, 103 or 201", s)
+	}
+	if _, ok := body["heatmap"].(map[string]any); !ok {
+		t.Errorf("no heatmap in %v", body)
+	}
+	status, body = m.get(t, bobID, path+"?workspace=api")
+	if s := summary(body); status != http.StatusOK || s["tasksCompleted"] != float64(0) {
+		t.Errorf("a team workspace with nothing done answered %d %v", status, body)
+	}
+	from := time.Now().Add(-2 * time.Hour).Unix()
+	status, body = m.get(t, aliceID, fmt.Sprintf("%s?range=custom&from=%d&to=%d&workspace=%%20BACKEND", path, from, time.Now().Unix()))
+	if s := summary(body); status != http.StatusOK || s["tasksCompleted"] != float64(3) {
+		t.Errorf("one team workspace over a custom window answered %d %v", status, body)
+	}
+	status, body = m.get(t, daveID, path)
+	expectStatus(t, "Dave, outside, reading analytics", status, http.StatusNotFound, body)
+}
+
+// The team's memory and the members' memory index are gone: their routes
+// answer as any unknown route does.
 func (m *teamMode) removedRoutes(t *testing.T) {
 	for _, r := range []struct{ method, path string }{
-		{http.MethodGet, "/analytics"}, {http.MethodGet, "/memory"}, {http.MethodPut, "/memory"},
+		{http.MethodGet, "/memory"}, {http.MethodPut, "/memory"},
 		{http.MethodGet, "/memory/index"}, {http.MethodGet, "/workspaces/" + ws100 + "/memory/memory.md"},
 	} {
 		status, body := call(t, m.app, bobID, r.method, "/teams/"+teamTen+r.path, "")

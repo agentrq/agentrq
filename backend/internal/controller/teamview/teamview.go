@@ -46,6 +46,9 @@ type Controller interface {
 	ListTasks(ctx context.Context, req entity.ListTeamTasksRequest) ([]entity.TeamTask, error)
 	GetTask(ctx context.Context, userID, teamID, taskID int64) (entity.TeamTaskDetail, error)
 	GetAttachment(ctx context.Context, userID, teamID, taskID int64, attachmentID string) (*entity.GetAttachmentResponse, error)
+	// GetStats is a workspace's analytics summed over the team's workspaces,
+	// or over one team workspace's.
+	GetStats(ctx context.Context, req entity.GetTeamStatsRequest) (*entity.GetDetailedWorkspaceStatsResponse, error)
 	// CloneTask creates a copy of a teammate's task in one of the caller's
 	// workspaces, not started, through the normal task creation, noting
 	// where it came from.
@@ -73,6 +76,7 @@ type Owner interface {
 	GetAttachment(ctx context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error)
 	CreateTask(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error)
 	SystemListTasksInWorkspaces(ctx context.Context, req entity.ListTasksRequest, workspaceIDs []int64) (*entity.ListTasksResponse, error)
+	SystemGetDetailedStatsOfWorkspaces(ctx context.Context, req entity.GetStatsOfWorkspacesRequest) (*entity.GetDetailedWorkspaceStatsResponse, error)
 	SystemGetSkillFile(ctx context.Context, req entity.SystemGetSkillFileRequest) (*entity.GetSkillFileResponse, error)
 	CopySkill(ctx context.Context, req entity.CopySkillRequest) (*entity.CopySkillResponse, error)
 }
@@ -196,6 +200,22 @@ func (c *controller) ListTasks(ctx context.Context, req entity.ListTeamTasksRequ
 		out = append(out, entity.TeamTask{Task: t, Workspace: byID[t.WorkspaceID]})
 	}
 	return out, nil
+}
+
+func (c *controller) GetStats(ctx context.Context, req entity.GetTeamStatsRequest) (*entity.GetDetailedWorkspaceStatsResponse, error) {
+	visible, err := c.teams.ListTeamWorkspaces(ctx, req.UserID, req.TeamID)
+	if err != nil {
+		return nil, err
+	}
+	ids := []int64{}
+	for _, w := range visible {
+		if req.Workspace == "" || WorkspaceKey(w.SharedName) == WorkspaceKey(req.Workspace) {
+			ids = append(ids, w.ID)
+		}
+	}
+	return c.owner.SystemGetDetailedStatsOfWorkspaces(ctx, entity.GetStatsOfWorkspacesRequest{
+		WorkspaceIDs: ids, Range: req.Range, From: req.From, To: req.To,
+	})
 }
 
 func (c *controller) GetTask(ctx context.Context, userID, teamID, taskID int64) (entity.TeamTaskDetail, error) {
