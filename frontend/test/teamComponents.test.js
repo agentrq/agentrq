@@ -11,6 +11,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createApp, defineComponent, h, nextTick, ref } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { createRouter, createMemoryHistory } from 'vue-router';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -499,6 +501,17 @@ describe('the team-mode bar', () => {
     expect(here().fullPath).toBe('/tasks/active?team=tm1');
     expect($('[data-test=joined-banner]')).toBe(null);
   });
+
+  // A sticky footer under the page on desktop; on a phone the bottom is the
+  // Menu pill's, so there it is the first thing in the card.
+  it('follows the page as a sticky footer, and leads it on a phone', async () => {
+    const app = readFileSync(resolve(__dirname, '../src/App.vue'), 'utf-8');
+    expect(app.indexOf('<TeamModeBar')).toBeGreaterThan(app.indexOf('data-terminal-launch-area class'));
+    await mount(TeamModeBar, { path: '/kanban?team=tm1&joined=1' });
+    const bar = $('[data-test=team-mode-bar]');
+    expect(bar.className.split(' ')).toEqual(expect.arrayContaining(['order-first', 'md:order-none', 'md:sticky', 'md:bottom-0', 'page-surface']));
+    expect(bar.firstElementChild.className.split(' ')).toEqual(expect.arrayContaining(['md:order-last', 'md:border-t']));
+  });
 });
 
 describe('the picker', () => {
@@ -558,8 +571,35 @@ describe('the picker', () => {
     await pick([{ value: 'a', label: 'A' }], { block: true, placeholder: 'Pick one' }, 'zz');
     expect(text(trigger())).toBe('Pick one');
     expect(trigger().parentElement.className).toContain('w-full');
+    expect(trigger().classList.contains('h-9')).toBe(true);
     await click(trigger());
     expect(active().dataset.value).toBe('a');
+  });
+
+  // In a toolbar, as tall as the status tabs beside it: 38px.
+  it('stands as tall as the status tabs in a toolbar', async () => {
+    await pick(people);
+    expect(trigger().classList.contains('h-9.5')).toBe(true);
+  });
+
+  // On a narrow page: the icon, or the choice's avatar, and no label.
+  it('folds to its icon on a narrow page', async () => {
+    await pick(people, { icon: 'M1 1h2' });
+    expect(trigger().classList.contains('@max-[48rem]:h-8.5')).toBe(true);
+    expect($('[data-test=picker-icon] path').getAttribute('d')).toBe('M1 1h2');
+    expect(trigger().querySelector('.truncate').classList.contains('@max-[48rem]:hidden')).toBe(true);
+  });
+
+  it('folds to the chosen avatar rather than its icon', async () => {
+    await pick(people, { icon: 'M1 1h2' }, 'u1');
+    expect($('[data-test=picker-icon]')).toBe(null);
+    expect(trigger().querySelector('[data-test=owner-avatar]')).not.toBe(null);
+  });
+
+  it('never folds without an icon', async () => {
+    await pick(people);
+    expect($('[data-test=picker-icon]')).toBe(null);
+    expect(trigger().className).not.toContain('@max-[48rem]');
   });
 
   it('opens from the keyboard, and moves, picks and closes as a select does', async () => {
@@ -705,6 +745,8 @@ describe('the team task filters', () => {
     }), { path: '/kanban?team=tm1&member=u1&workspace=api' });
     expect(text($('[data-test=team-filter-member]'))).toContain('Alice');
     expect(text($('[data-test=team-filter-workspace]'))).toContain('api');
+    // Both fold on a narrow page.
+    for (const t of ['member', 'workspace']) expect($(`[data-test=team-filter-${t}]`).classList.contains('@max-[48rem]:h-8.5')).toBe(true);
 
     await click($('[data-test=team-filter-member]'));
     expect($('[data-test=team-filter-member-menu]').className).toContain('left-0');
