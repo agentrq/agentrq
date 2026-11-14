@@ -468,13 +468,34 @@ describe('the workspaces page', () => {
 
 describe('sidebarActivity', () => {
   it('marks the most urgent: waiting on the person, then blocked, then ongoing', () => {
-    expect(sidebarActivity({ pending: 1, blocked: 1, ongoing: 2 })).toEqual({ tone: 'pending', label: 'Waiting on you', queued: 0 });
-    expect(sidebarActivity({ blocked: 1, ongoing: 1 })).toEqual({ tone: 'blocked', label: 'Blocked', queued: 0 });
-    expect(sidebarActivity({ ongoing: 1, queued: 3 })).toEqual({ tone: 'ongoing', label: 'Task ongoing', queued: 3 });
+    expect(sidebarActivity({ pending: 1, blocked: 1, ongoing: 2 })).toEqual({
+      tone: 'pending',
+      dot: 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]',
+      label: 'Waiting on you',
+      queued: 0,
+    });
+    expect(sidebarActivity({ blocked: 1, ongoing: 1 })).toEqual({
+      tone: 'blocked',
+      dot: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]',
+      label: 'Blocked',
+      queued: 0,
+    });
+    expect(sidebarActivity({ ongoing: 1, queued: 3 }, true)).toEqual({
+      tone: 'ongoing',
+      dot: 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse',
+      label: 'Task ongoing',
+      queued: 3,
+    });
+    expect(sidebarActivity({ ongoing: 1, queued: 3 }, false)).toEqual({
+      tone: 'ongoing',
+      dot: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse',
+      label: 'Task ongoing',
+      queued: 3,
+    });
   });
 
   it('marks nothing without such tasks', () => {
-    expect(sidebarActivity({ ongoing: 0, notstarted: 2, completed: 4 })).toEqual({ tone: null, label: '', queued: 0 });
-    expect(sidebarActivity()).toEqual({ tone: null, label: '', queued: 0 });
+    expect(sidebarActivity({ ongoing: 0, notstarted: 2, completed: 4 })).toEqual({ tone: null, dot: '', label: '', queued: 0 });
+    expect(sidebarActivity()).toEqual({ tone: null, dot: '', label: '', queued: 0 });
   });
 });
