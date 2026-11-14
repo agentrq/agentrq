@@ -3248,12 +3248,12 @@ paths:
     put:
       tags: [Teams]
       summary: Share a workspace with a team
-      description: The workspace's owner, in the team, from the team's version. It shows there by its own name, as one team workspace with every shared workspace of that name. Forks follow their parent and archived workspaces cannot be shared (422).
+      description: The workspace's owner, in the team, from the team's version. It shows there by its own name, as one team workspace with every shared workspace of that name. Forks follow their parent and archived workspaces cannot be shared (422). On a workspace already shared, it sets which of its tasks, skills and memory the team reads.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/TeamVersionRequest' }
+            schema: { $ref: '#/components/schemas/ShareWorkspaceRequest' }
       responses:
         '200':
           description: OK, with the team's new `version`
@@ -3902,7 +3902,7 @@ components:
         id: { type: string }
         action:
           type: string
-          enum: [team.created, team.renamed, member.invited, invitation.revoked, invitation.accepted, invitation.declined, member.removed, member.left, workspace.shared, workspace.unshared, team.deleted]
+          enum: [team.created, team.renamed, member.invited, invitation.revoked, invitation.accepted, invitation.declined, member.removed, member.left, workspace.shared, workspace.shareChanged, workspace.unshared, team.deleted]
         actor: { $ref: '#/components/schemas/TeamOwner' }
         targetUser: { $ref: '#/components/schemas/TeamOwner' }
         targetEmail: { type: string }
@@ -3910,7 +3910,7 @@ components:
         details:
           type: object
           additionalProperties: { type: string }
-          description: 'A rename''s `from` and `to`, a share''s `workspaceName`, a deleted team''s `name`.'
+          description: 'A rename''s `from` and `to`, a share''s `workspaceName` and its `tasks`, `skills` and `memory` (`on` or `off`), a deleted team''s `name`.'
         createdAt: { type: string, format: date-time }
     TeamConflictResponse:
       type: object
@@ -4885,6 +4885,14 @@ components:
       required: [version]
       properties:
         version: { type: integer, format: int64, minimum: 1 }
+    ShareWorkspaceRequest:
+      type: object
+      required: [version]
+      properties:
+        version: { type: integer, format: int64, minimum: 1 }
+        tasks: { type: boolean, default: true, description: Whether the team reads the workspace's tasks. }
+        skills: { type: boolean, default: true, description: Whether the team reads the workspace's skills. }
+        memory: { type: boolean, default: true, description: Whether the team's agents read the workspace's memory. }
     TeamMember:
       type: object
       properties:
@@ -4955,6 +4963,9 @@ components:
         teamId: { type: string }
         teamName: { type: string }
         workspaceId: { type: string }
+        tasks: { type: boolean }
+        skills: { type: boolean }
+        memory: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         version: { type: integer, format: int64, description: The team's version, on the share just made. }

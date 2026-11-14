@@ -48,7 +48,9 @@ func (r *repository) TeamWorkspaceInfo(ctx context.Context, workspaceID int64) (
 
 // ListTeamPeerWorkspaces is every workspace shared, unarchived, with a team
 // the workspace is shared with, itself included, with its owner's name: the
-// candidates for its team workspace, which the caller narrows by name.
+// candidates for its team workspace, which the caller narrows by name. A
+// share that holds its memory back from the team is left out, but for the
+// workspace itself.
 func (r *repository) ListTeamPeerWorkspaces(ctx context.Context, workspaceID int64) ([]TeamWorkspacePeer, error) {
 	rows := []TeamWorkspacePeer{}
 	err := r.conn(ctx).Table("workspace_shares AS mine").
@@ -59,6 +61,7 @@ func (r *repository) ListTeamPeerWorkspaces(ctx context.Context, workspaceID int
 		Joins("JOIN workspaces AS peers ON peers.id = peer_shares.workspace_id AND peers.archived_at IS NULL").
 		Joins("LEFT JOIN users ON users.id = peers.user_id").
 		Where("mine.workspace_id = ?", workspaceID).
+		Where("(peers.id = mine.workspace_id OR peer_shares.hide_memory = ?)", false).
 		Order("peer_shares.team_id ASC, peers.id ASC").
 		Scan(&rows).Error
 	return rows, err
@@ -82,8 +85,8 @@ func (r *repository) ListSkillsOnInWorkspaces(ctx context.Context, workspaceIDs 
 	return rows, err
 }
 
-// ListTeamReaders is every member of every team who reads the workspace
-// there: the rule of CanReadWorkspaceInTeam, for all teams at once.
+// ListTeamReaders is every member of every team who reads the workspace's
+// tasks there: the rule of CanReadTasksInTeam, for all teams at once.
 func (r *repository) ListTeamReaders(ctx context.Context, workspaceID int64) ([]TeamReader, error) {
 	rows := []TeamReader{}
 	err := r.conn(ctx).Model(&model.Workspace{}).
@@ -91,6 +94,7 @@ func (r *repository) ListTeamReaders(ctx context.Context, workspaceID int64) ([]
 		Joins(sharedWorkspace).
 		Joins("JOIN team_members ON team_members.team_id = workspace_shares.team_id").
 		Where("workspaces.id = ? AND workspaces.archived_at IS NULL", workspaceID).
+		Where("workspace_shares.hide_tasks = ?", false).
 		Order("workspace_shares.team_id ASC, team_members.user_id ASC").
 		Scan(&rows).Error
 	return rows, err

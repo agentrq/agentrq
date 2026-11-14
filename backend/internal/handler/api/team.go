@@ -380,13 +380,17 @@ func (h *handler) listWorkspaceShares() fiber.Handler {
 
 func (h *handler) shareWorkspace() fiber.Handler {
 	return teamRoute(teamPathShare, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		ch, err := bodyChange(c, ids[1])
+		var rq view.ShareWorkspaceRequest
+		if err := body(c, &rq); err != nil {
+			return nil, err
+		}
+		ch, err := change(c, ids[1], rq.Version)
 		if err != nil {
 			return nil, err
 		}
 		ctx, cancel := newContext(c)
 		defer cancel()
-		s, err := h.teams.ShareWorkspace(ctx, ch, ids[0])
+		s, err := h.teams.ShareWorkspace(ctx, ch, ids[0], mapper.FromShareWorkspaceRequestViewToSharedPartsEntity(rq))
 		return mapper.FromWorkspaceShareEntityToHTTPResponse(s), err
 	})
 }

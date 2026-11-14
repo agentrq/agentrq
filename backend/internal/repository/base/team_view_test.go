@@ -99,6 +99,25 @@ func TestListTeamPeerWorkspaces(t *testing.T) {
 		if rows, _ := r.ListTeamPeerWorkspaces(ctx, 100); len(rows) == 0 || rows[0].OwnerPicture != "a.png" {
 			t.Errorf("peers of 100 carry their owner's picture: %+v", rows)
 		}
+		// A peer holding its memory back from a team drops out of that
+		// team's peers (200 from team 1, 103 from team 2); a workspace
+		// holding its own back still lists itself.
+		db.Model(&model.WorkspaceShare{}).Where("id IN ?", []int64{3, 10}).Update("hide_memory", true)
+		for ws, want := range map[int64]string{
+			100: "1/100/10/backend",
+			200: "1/100/10/backend 1/200/11/docs 2/200/11/docs 2/201/12/notes",
+			103: "2/103/10/private 2/200/11/docs 2/201/12/notes",
+		} {
+			rows, err := r.ListTeamPeerWorkspaces(ctx, ws)
+			got := []string{}
+			for _, p := range rows {
+				got = append(got, fmt.Sprintf("%d/%d/%d/%s", p.TeamID, p.WorkspaceID, p.UserID, p.Name))
+			}
+			if err != nil || strings.Join(got, " ") != want {
+				t.Errorf("peers of %d with memory held back: %v, %v; want %s", ws, got, err, want)
+			}
+		}
+		db.Model(&model.WorkspaceShare{}).Where("id IN ?", []int64{3, 10}).Update("hide_memory", false)
 		// A peer archived drops out.
 		db.Model(&model.Workspace{}).Where("id = 200").Update("archived_at", teamT0)
 		rows, _ := r.ListTeamPeerWorkspaces(ctx, 100)
@@ -131,6 +150,12 @@ func TestListTeamReaders(t *testing.T) {
 				t.Errorf("readers of %d: %v, %v; want %s", ws, got, err, want)
 			}
 		}
+		// A share holding its tasks back has no readers through that team.
+		db.Model(&model.WorkspaceShare{}).Where("id = 5").Update("hide_tasks", true)
+		if got, _ := r.ListTeamReaders(ctx, 101); fmt.Sprint(got) != "[{1 10} {1 11}]" {
+			t.Errorf("readers of 101 once its own share holds tasks back: %v, want its parent's team", got)
+		}
+		db.Model(&model.WorkspaceShare{}).Where("id = 5").Update("hide_tasks", false)
 		// A fork whose parent is archived is read by nobody through it.
 		db.Model(&model.Workspace{}).Where("id = ?", 100).Update("archived_at", teamT0)
 		if got, _ := r.ListTeamReaders(ctx, 101); fmt.Sprint(got) != "[{2 12}]" {

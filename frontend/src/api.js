@@ -1565,14 +1565,16 @@ export function declineInvitation(invitationId) {
   return teamCall(`/invitations/${enc(invitationId)}/decline`, 'Failed to decline the invitation', { method: 'POST' });
 }
 
-// The teams a workspace is shared with: { shares: [{ teamId, teamName, workspaceId, createdAt, updatedAt }] }.
+// The teams a workspace is shared with: { shares: [{ teamId, teamName, workspaceId, tasks, skills, memory, createdAt, updatedAt }] }.
 export function listWorkspaceShares(workspaceId) {
   return teamCall(`/workspaces/${enc(workspaceId)}/shares`, 'Failed to load sharing');
 }
 
-// The share, with the team's new `version`.
-export function shareWorkspace(workspaceId, teamId, version) {
-  return teamCall(`/workspaces/${enc(workspaceId)}/shares/${enc(teamId)}`, 'Failed to share the workspace', { method: 'PUT', body: { version } });
+// The share, with the team's new `version`. `parts` ({ tasks, skills, memory })
+// says what the team reads, each shared unless false; on a workspace already
+// shared it sets them.
+export function shareWorkspace(workspaceId, teamId, version, parts = {}) {
+  return teamCall(`/workspaces/${enc(workspaceId)}/shares/${enc(teamId)}`, 'Failed to share the workspace', { method: 'PUT', body: { ...parts, version } });
 }
 
 // { version }.

@@ -196,11 +196,11 @@ func (f failing) GetWorkspace(ctx context.Context, id, userID int64) (model.Work
 	return f.Repository.GetWorkspace(ctx, id, userID)
 }
 
-func (f failing) CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error) {
-	if f.method == "CanReadWorkspaceInTeam" {
+func (f failing) CanReadTasksInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error) {
+	if f.method == "CanReadTasksInTeam" {
 		return false, errDB
 	}
-	return f.Repository.CanReadWorkspaceInTeam(ctx, userID, teamID, workspaceID)
+	return f.Repository.CanReadTasksInTeam(ctx, userID, teamID, workspaceID)
 }
 
 func (f failing) ListTeamWorkspaces(ctx context.Context, teamID int64) ([]base.TeamWorkspaceRow, error) {
@@ -346,26 +346,26 @@ func TestRepositoryFailuresReachTheCaller(t *testing.T) {
 		}},
 		{"reading a workspace to share", "GetWorkspace", func(f *fixture) error {
 			workspace(f)
-			return errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100))
+			return errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, allParts))
 		}},
 		{"storing a share", "SetWorkspaceShare", func(f *fixture) error {
 			workspace(f)
-			return errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100))
+			return errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, allParts))
 		}},
 		{"reading a workspace to unshare", "", func(f *fixture) error {
 			workspace(f)
-			must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100))
+			must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, allParts))
 			f.c.(*controller).repo = failing{f.repo, "GetWorkspace"}
 			return errOf(f.c.UnshareWorkspace(f.ctx, f.ch(alice), 100))
 		}},
 		{"deleting a share", "", func(f *fixture) error {
 			workspace(f)
-			must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100))
+			must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, allParts))
 			f.c.(*controller).repo = failing{f.repo, "DeleteWorkspaceShare"}
 			return errOf(f.c.UnshareWorkspace(f.ctx, f.ch(alice), 100))
 		}},
-		{"checking a team read", "CanReadWorkspaceInTeam", func(f *fixture) error {
-			return errOf(f.c.CanReadWorkspaceInTeam(f.ctx, alice, f.team, 100))
+		{"checking a team read", "CanReadTasksInTeam", func(f *fixture) error {
+			return errOf(f.c.CanReadTasksInTeam(f.ctx, alice, f.team, 100))
 		}},
 		{"reading a doc to list its shares", "GetPanoDoc", func(f *fixture) error {
 			f.panoDoc(500, alice, "Plan")

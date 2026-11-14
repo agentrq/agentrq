@@ -240,8 +240,9 @@ func TestTeamRoutes(t *testing.T) {
 	expectStatus(t, "changing a role, which no longer exists", status, http.StatusMethodNotAllowed, body)
 
 	// Shares.
-	status, body = call(t, app, aliceID, http.MethodPut, "/workspaces/"+wsID+"/shares/"+team, `{"version":6}`)
-	if status != http.StatusOK || body["group"] != nil || body["teamName"] != "platform" || body["workspaceId"] != wsID || body["version"] != float64(7) {
+	status, body = call(t, app, aliceID, http.MethodPut, "/workspaces/"+wsID+"/shares/"+team, `{"version":6,"memory":false}`)
+	if status != http.StatusOK || body["group"] != nil || body["teamName"] != "platform" || body["workspaceId"] != wsID || body["version"] != float64(7) ||
+		body["tasks"] != true || body["skills"] != true || body["memory"] != false {
 		t.Errorf("sharing answered %d %v", status, body)
 	}
 	status, body = call(t, app, aliceID, http.MethodPut, "/workspaces/"+wsID+"/shares/"+team, `{"version":6}`)
@@ -255,7 +256,7 @@ func TestTeamRoutes(t *testing.T) {
 	status, body = call(t, app, bobID, http.MethodPut, "/workspaces/"+wsID+"/shares/"+team, `{"version":7}`)
 	expectStatus(t, "Bob sharing Alice's workspace", status, http.StatusNotFound, body)
 	status, body = call(t, app, aliceID, http.MethodGet, "/workspaces/"+wsID+"/shares", "")
-	if shares, _ := body["shares"].([]any); status != http.StatusOK || len(shares) != 1 || shares[0].(map[string]any)["version"] != nil {
+	if shares, _ := body["shares"].([]any); status != http.StatusOK || len(shares) != 1 || shares[0].(map[string]any)["version"] != nil || shares[0].(map[string]any)["memory"] != false {
 		t.Errorf("listing shares answered %d %v", status, body)
 	}
 	status, body = call(t, app, aliceID, http.MethodDelete, "/workspaces/"+wsID+"/shares/"+team, "")
@@ -305,7 +306,7 @@ func TestTeamRoutes(t *testing.T) {
 		renamed, _ := acts[8].(map[string]any)
 		invited, _ := acts[7].(map[string]any)
 		if actor["name"] != "Dave" || target["name"] != "Bob" || target["userId"] != bobID ||
-			shared["targetWorkspaceId"] != wsID || fmt.Sprint(shared["details"]) != "map[workspaceName:backend]" ||
+			shared["targetWorkspaceId"] != wsID || fmt.Sprint(shared["details"]) != "map[memory:off skills:on tasks:on workspaceName:backend]" ||
 			fmt.Sprint(renamed["details"]) != "map[from:core to:platform]" || invited["targetEmail"] != "bob@example.com" {
 			t.Errorf("the activities read %v", acts)
 		}

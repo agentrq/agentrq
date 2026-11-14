@@ -43,6 +43,9 @@ var t0 = time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 
 var errDB = errors.New("database unavailable")
 
+// allParts shares a workspace's tasks, skills and memory.
+var allParts = entity.SharedParts{Tasks: true, Skills: true, Memory: true}
+
 type testConn struct{ db *gorm.DB }
 
 func (c testConn) Conn(context.Context) *gorm.DB { return c.db }
@@ -503,8 +506,8 @@ func TestLeavingAndRemovalUnshare(t *testing.T) {
 	each(t, func(f *fixture) {
 		f.db.Create(&model.Workspace{ID: 300, UserID: carol, Name: "carol-ws"})
 		f.db.Create(&model.Workspace{ID: 200, UserID: bob, Name: "bob-ws"})
-		must(f.c.ShareWorkspace(f.ctx, f.ch(carol), 300))
-		must(f.c.ShareWorkspace(f.ctx, f.ch(bob), 200))
+		must(f.c.ShareWorkspace(f.ctx, f.ch(carol), 300, allParts))
+		must(f.c.ShareWorkspace(f.ctx, f.ch(bob), 200, allParts))
 		expectNotFound(t, "Dave, outside, leaving", f.c.LeaveTeam(f.ctx, f.ch(dave)))
 		expectOK(t, "Carol leaving", f.c.LeaveTeam(f.ctx, f.ch(carol)))
 		if shares := must(f.c.ListShares(f.ctx, carol, 300)); len(shares) != 0 {
@@ -911,21 +914,21 @@ func TestSharingAWorkspace(t *testing.T) {
 		f.db.Create(&model.Workspace{ID: 102, UserID: alice, Name: "old", ArchivedAt: &archived})
 		other := must(f.c.CreateTeam(f.ctx, dave, "ops"))
 
-		s := must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100))
+		s := must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, allParts))
 		if s.TeamName != "core" || s.TeamID != f.team || s.WorkspaceID != 100 || s.Version != 6 || !s.CreatedAt.Equal(t0) {
 			t.Errorf("sharing gave %+v, want backend in core at version 6", s)
 		}
 		// Sharing again changes nothing and records nothing.
-		if s := must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100)); s.WorkspaceID != 100 || s.Version != 7 {
+		if s := must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, allParts)); s.WorkspaceID != 100 || s.Version != 7 {
 			t.Errorf("sharing again gave %+v", s)
 		}
-		expectConflict(t, "sharing from the version before", errOf(f.c.ShareWorkspace(f.ctx, f.stale(alice), 100)), 7)
-		expectNotFound(t, "Carol sharing Alice's workspace", errOf(f.c.ShareWorkspace(f.ctx, f.ch(carol), 100)))
-		expectNotFound(t, "Alice sharing with a team she is not in", errOf(f.c.ShareWorkspace(f.ctx, f.chOf(alice, other.ID), 100)))
-		expectNotFound(t, "sharing an unknown workspace", errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 424242)))
-		expectNotFound(t, "sharing with an unknown team", errOf(f.c.ShareWorkspace(f.ctx, entity.TeamChange{UserID: alice, TeamID: 424242, Version: 1}, 100)))
-		expectKind(t, "sharing a fork", errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 101)), entity.TeamInvalid)
-		expectKind(t, "sharing an archived workspace", errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 102)), entity.TeamInvalid)
+		expectConflict(t, "sharing from the version before", errOf(f.c.ShareWorkspace(f.ctx, f.stale(alice), 100, allParts)), 7)
+		expectNotFound(t, "Carol sharing Alice's workspace", errOf(f.c.ShareWorkspace(f.ctx, f.ch(carol), 100, allParts)))
+		expectNotFound(t, "Alice sharing with a team she is not in", errOf(f.c.ShareWorkspace(f.ctx, f.chOf(alice, other.ID), 100, allParts)))
+		expectNotFound(t, "sharing an unknown workspace", errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 424242, allParts)))
+		expectNotFound(t, "sharing with an unknown team", errOf(f.c.ShareWorkspace(f.ctx, entity.TeamChange{UserID: alice, TeamID: 424242, Version: 1}, 100, allParts)))
+		expectKind(t, "sharing a fork", errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 101, allParts)), entity.TeamInvalid)
+		expectKind(t, "sharing an archived workspace", errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 102, allParts)), entity.TeamInvalid)
 
 		shares := must(f.c.ListShares(f.ctx, alice, 100))
 		if len(shares) != 1 || shares[0].TeamName != "core" || shares[0].Version != 0 {
@@ -959,15 +962,48 @@ func TestSharingAWorkspace(t *testing.T) {
 	})
 }
 
+// A share lets the team read the parts given; sharing again sets them, and
+// the list, the team's workspaces and the record say which.
+func TestSharingParts(t *testing.T) {
+	each(t, func(f *fixture) {
+		f.db.Create(&model.Workspace{ID: 100, UserID: alice, Name: "backend"})
+		f.db.Create(&model.Workspace{ID: 101, UserID: alice, Name: "fork", ForkOfID: 100})
+		s := must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, entity.SharedParts{Skills: true}))
+		if s.SharedParts != (entity.SharedParts{Skills: true}) {
+			t.Errorf("sharing skills alone gave %+v", s.SharedParts)
+		}
+		if must(f.c.CanReadTasksInTeam(f.ctx, bob, f.team, 101)) {
+			t.Error("Bob reads the tasks of a fork of a share holding tasks back")
+		}
+		list := must(f.c.ListTeamWorkspaces(f.ctx, bob, f.team))
+		if len(list) != 2 || list[0].Tasks || !list[0].Skills || list[1].Tasks || !list[1].Skills {
+			t.Errorf("the team's workspaces are %+v, want skills alone, the fork too", list)
+		}
+		s = must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, entity.SharedParts{Tasks: true, Memory: true}))
+		if s.SharedParts != (entity.SharedParts{Tasks: true, Memory: true}) {
+			t.Errorf("setting tasks and memory gave %+v", s.SharedParts)
+		}
+		if shares := must(f.c.ListShares(f.ctx, alice, 100)); len(shares) != 1 || shares[0].SharedParts != (entity.SharedParts{Tasks: true, Memory: true}) {
+			t.Errorf("Alice's shares are %+v", shares)
+		}
+		as := must(f.c.ListActivities(f.ctx, entity.ListTeamActivitiesRequest{UserID: bob, TeamID: f.team, Limit: 2}))
+		ch, sh := as.Activities[0], as.Activities[1]
+		if ch.Action != model.TeamActivityShareChanged || fmt.Sprint(ch.Details) != "map[memory:on skills:off tasks:on workspaceName:backend]" ||
+			sh.Action != model.TeamActivityWorkspaceShared || fmt.Sprint(sh.Details) != "map[memory:off skills:on tasks:off workspaceName:backend]" {
+			t.Errorf("the share and its change are recorded as %+v and %+v", sh, ch)
+		}
+	})
+}
+
 func TestTheTeamReadCheck(t *testing.T) {
 	each(t, func(f *fixture) {
 		f.db.Create(&model.Workspace{ID: 100, UserID: alice, Name: "Backend"})
 		f.db.Create(&model.Workspace{ID: 101, UserID: alice, Name: "fork", ForkOfID: 100})
 		f.db.Create(&model.Workspace{ID: 103, UserID: alice, Name: "private"})
 		f.db.Create(&model.Workspace{ID: 200, UserID: carol, Name: "docs"})
-		must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100))
-		must(f.c.ShareWorkspace(f.ctx, f.ch(carol), 200))
-		can := func(user, ws int64) bool { return must(f.c.CanReadWorkspaceInTeam(f.ctx, user, f.team, ws)) }
+		must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, allParts))
+		must(f.c.ShareWorkspace(f.ctx, f.ch(carol), 200, allParts))
+		can := func(user, ws int64) bool { return must(f.c.CanReadTasksInTeam(f.ctx, user, f.team, ws)) }
 		if !can(bob, 100) || !can(bob, 101) || can(bob, 103) || can(dave, 100) {
 			t.Errorf("Bob reads backend %v, its fork %v, private %v; Dave, outside, reads backend %v; want true, true, false, false",
 				can(bob, 100), can(bob, 101), can(bob, 103), can(dave, 100))

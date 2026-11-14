@@ -153,6 +153,7 @@ type Repository interface {
 	PanoDocOwnerInTeam(ctx context.Context, userID, teamID, docID int64) (PanoDocOwner, error)
 	ListTeamActivities(ctx context.Context, teamID int64, limit int, before int64) ([]TeamActivityRow, error)
 	CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
+	CanReadTasksInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
 	ListTeamWorkspaces(ctx context.Context, teamID int64) ([]TeamWorkspaceRow, error)
 	// Team mode reads, over workspaces the two checks above allowed.
 	TeamWorkspaceInfo(ctx context.Context, workspaceID int64) (TeamWorkspaceRow, error)

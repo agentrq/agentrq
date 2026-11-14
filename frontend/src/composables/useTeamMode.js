@@ -137,6 +137,12 @@ const personName = (p) => p?.name || p?.email || 'Someone';
  * One line of a team's activity log: who did what. The workspace or doc a
  * share names is the name it had then, as the server kept it.
  */
+// The parts an activity's details say a share lets the team read.
+function sharedParts(d) {
+  const on = ['tasks', 'skills', 'memory'].filter((p) => d[p] === 'on');
+  return on.length ? on.join(', ') : 'nothing but the workspace';
+}
+
 export function describeActivity(a = {}) {
   const who = personName(a.actor);
   const d = a.details || {};
@@ -153,6 +159,7 @@ export function describeActivity(a = {}) {
     case 'member.removed': return `${who} removed ${target || 'a member'}`;
     case 'member.left': return `${who} left`;
     case 'workspace.shared': return `${who} shared ${workspace}`;
+    case 'workspace.shareChanged': return `${who} changed what is shared of ${workspace}: ${sharedParts(d)}`;
     case 'workspace.unshared': return `${who} stopped sharing ${workspace}`;
     case 'pano.shared': return `${who} shared ${doc}`;
     case 'pano.unshared': return `${who} stopped sharing ${doc}`;

@@ -7,6 +7,7 @@ package teamview
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -28,6 +29,7 @@ type fake struct {
 	skillRows []base.WorkspaceSkillRow
 	tasks     []entity.Task // what a task list returns
 	listedIn  []int64       // the workspaces the last list read
+	skillsIn  []int64       // the workspaces the last skills read took
 	published []entity.CRUDEvent
 	missing   string                              // the attachment whose file is gone
 	created   entity.CreateTaskRequest            // the last task created
@@ -45,8 +47,8 @@ func (f *fake) err(name string) error {
 func (f *fake) GetTeam(_ context.Context, _, teamID int64) (entity.Team, error) {
 	return entity.Team{ID: teamID, Name: "core"}, f.err("GetTeam")
 }
-func (f *fake) CanReadWorkspaceInTeam(context.Context, int64, int64, int64) (bool, error) {
-	return f.canRead, f.err("CanReadWorkspaceInTeam")
+func (f *fake) CanReadTasksInTeam(context.Context, int64, int64, int64) (bool, error) {
+	return f.canRead, f.err("CanReadTasksInTeam")
 }
 func (f *fake) ListTeamWorkspaces(context.Context, int64, int64) ([]entity.TeamWorkspace, error) {
 	return f.visible, f.err("ListTeamWorkspaces")
@@ -89,7 +91,8 @@ func (f *fake) SystemGetTask(context.Context, int64) (model.Task, error) {
 func (f *fake) TeamWorkspaceInfo(_ context.Context, workspaceID int64) (base.TeamWorkspaceRow, error) {
 	return base.TeamWorkspaceRow{ID: workspaceID, UserID: 1, Name: "api fork", SharedName: "API", OwnerName: "Alice"}, f.err("TeamWorkspaceInfo")
 }
-func (f *fake) ListSkillsOnInWorkspaces(context.Context, []int64) ([]base.WorkspaceSkillRow, error) {
+func (f *fake) ListSkillsOnInWorkspaces(_ context.Context, ids []int64) ([]base.WorkspaceSkillRow, error) {
+	f.skillsIn = ids
 	return f.skillRows, f.err("ListSkillsOnInWorkspaces")
 }
 
@@ -101,7 +104,7 @@ func (f *fake) Publish(_ context.Context, req pubsub.PublishRequest) (*pubsub.Pu
 func newFake() (*fake, Controller) {
 	f := &fake{
 		canRead: true,
-		visible: []entity.TeamWorkspace{{ID: 100, OwnerID: 1, SharedName: "g"}},
+		visible: []entity.TeamWorkspace{{ID: 100, Tasks: true, Skills: true, OwnerID: 1, SharedName: "g"}},
 		task:    model.Task{ID: 1000, WorkspaceID: 100, Attachments: []byte(`[{"id":"a","filename":"f.txt"}]`)},
 		skillRows: []base.WorkspaceSkillRow{
 			{WorkspaceID: 100, UserID: 1, Name: "deploy"},
@@ -123,7 +126,7 @@ func TestFailures(t *testing.T) {
 			return err
 		}},
 		{"SystemGetTask", func(c Controller) error { _, err := c.GetTask(ctx, 2, 10, 1000); return err }},
-		{"CanReadWorkspaceInTeam", func(c Controller) error { _, err := c.GetTask(ctx, 2, 10, 1000); return err }},
+		{"CanReadTasksInTeam", func(c Controller) error { _, err := c.GetTask(ctx, 2, 10, 1000); return err }},
 		{"TeamWorkspaceInfo", func(c Controller) error { _, err := c.GetTask(ctx, 2, 10, 1000); return err }},
 		{"GetTask", func(c Controller) error { _, err := c.GetTask(ctx, 2, 10, 1000); return err }},
 		{"GetTaskPlan", func(c Controller) error { _, err := c.GetTask(ctx, 2, 10, 1000); return err }},
@@ -307,9 +310,9 @@ func TestListTasksFilters(t *testing.T) {
 	ctx := context.Background()
 	f, c := newFake()
 	f.visible = []entity.TeamWorkspace{
-		{ID: 1, SharedName: "API", OwnerID: 7},
-		{ID: 2, SharedName: " api ", OwnerID: 8},
-		{ID: 3, SharedName: "docs", OwnerID: 7},
+		{ID: 1, Tasks: true, Skills: true, SharedName: "API", OwnerID: 7},
+		{ID: 2, Tasks: true, Skills: true, SharedName: " api ", OwnerID: 8},
+		{ID: 3, Tasks: true, Skills: true, SharedName: "docs", OwnerID: 7},
 	}
 	f.tasks = []entity.Task{{ID: 50, WorkspaceID: 2}}
 	got, err := c.ListTasks(ctx, entity.ListTeamTasksRequest{UserID: 2, TeamID: 10, Workspace: "Api"})
@@ -338,9 +341,9 @@ func TestGetStatsScope(t *testing.T) {
 	ctx := context.Background()
 	f, c := newFake()
 	f.visible = []entity.TeamWorkspace{
-		{ID: 1, SharedName: "API", OwnerID: 7},
-		{ID: 2, SharedName: " api ", OwnerID: 8},
-		{ID: 3, SharedName: "docs", OwnerID: 7},
+		{ID: 1, Tasks: true, Skills: true, SharedName: "API", OwnerID: 7},
+		{ID: 2, Tasks: true, Skills: true, SharedName: " api ", OwnerID: 8},
+		{ID: 3, Tasks: true, Skills: true, SharedName: "docs", OwnerID: 7},
 	}
 	rs, err := c.GetStats(ctx, entity.GetTeamStatsRequest{UserID: 2, TeamID: 10, Workspace: "Api", Range: "custom", From: 5, To: 9})
 	if err != nil || rs.Summary.TasksCompleted != 3 {
@@ -357,6 +360,27 @@ func TestGetStatsScope(t *testing.T) {
 	}
 }
 
+// A workspace whose share holds its tasks back is left out of the task list
+// and the statistics; one holding its skills back, out of the skills.
+func TestSharePartsLeaveWorkspacesOut(t *testing.T) {
+	ctx := context.Background()
+	f, c := newFake()
+	f.visible = []entity.TeamWorkspace{
+		{ID: 1, SharedName: "api", OwnerID: 7, Tasks: true},
+		{ID: 2, SharedName: "api", OwnerID: 8, Skills: true},
+	}
+	if _, err := c.ListTasks(ctx, entity.ListTeamTasksRequest{UserID: 2, TeamID: 10}); err != nil || fmt.Sprint(f.listedIn) != "[1]" {
+		t.Errorf("tasks read in %v, %v; want 1 alone", f.listedIn, err)
+	}
+	if _, err := c.GetStats(ctx, entity.GetTeamStatsRequest{UserID: 2, TeamID: 10}); err != nil || fmt.Sprint(f.statsReq.WorkspaceIDs) != "[1]" {
+		t.Errorf("statistics of %v, %v; want 1 alone", f.statsReq.WorkspaceIDs, err)
+	}
+	f.skillRows = nil
+	if _, err := c.ListSkills(ctx, 2, 10); err != nil || fmt.Sprint(f.skillsIn) != "[2]" {
+		t.Errorf("skills read in %v, %v; want 2 alone", f.skillsIn, err)
+	}
+}
+
 func TestWorkspaceKey(t *testing.T) {
 	if WorkspaceKey("  API Server ") != "api server" {
 		t.Errorf("WorkspaceKey: %q", WorkspaceKey("  API Server "))
@@ -366,7 +390,7 @@ func TestWorkspaceKey(t *testing.T) {
 // A skill two workspaces of one owner have on names that owner once.
 func TestSkillOwnersOnce(t *testing.T) {
 	f, c := newFake()
-	f.visible = []entity.TeamWorkspace{{ID: 100, OwnerID: 1}, {ID: 101, OwnerID: 1}, {ID: 200, OwnerID: 2}}
+	f.visible = []entity.TeamWorkspace{{ID: 100, Tasks: true, Skills: true, OwnerID: 1}, {ID: 101, Tasks: true, Skills: true, OwnerID: 1}, {ID: 200, Tasks: true, Skills: true, OwnerID: 2}}
 	f.skillRows = []base.WorkspaceSkillRow{
 		{WorkspaceID: 100, UserID: 1, Name: "deploy"}, {WorkspaceID: 101, UserID: 1, Name: "deploy"}, {WorkspaceID: 200, UserID: 2, Name: "deploy"},
 	}

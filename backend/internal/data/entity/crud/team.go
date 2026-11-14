@@ -57,15 +57,23 @@ type TeamInvitationPreview struct {
 	ExpiresAt     time.Time
 }
 
+// SharedParts is what a share lets the team read of the workspace.
+type SharedParts struct {
+	Tasks  bool
+	Skills bool
+	Memory bool
+}
+
 // WorkspaceShare is a workspace shared with a team. Version is the team's
 // after the share was made, when it was just made.
 type WorkspaceShare struct {
 	TeamID      int64
 	TeamName    string
 	WorkspaceID int64
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	Version     int64
+	SharedParts
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Version   int64
 }
 
 // PanoDocShare is a Pano doc shared with a team. Version is the team's
@@ -98,6 +106,9 @@ type TeamWorkspace struct {
 	OwnerID      int64
 	OwnerName    string
 	OwnerPicture string
+	// Tasks and Skills are whether its share lets the team read them.
+	Tasks  bool
+	Skills bool
 }
 
 // TeamMembers is a team's members at Version.
