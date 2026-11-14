@@ -35,6 +35,7 @@ tags:
   - name: Attachments
   - name: Events
   - name: Hooks
+  - name: Teams
   - name: Workflows
   - name: Skills
   - name: Pano
@@ -2894,6 +2895,327 @@ paths:
               schema: { type: string }
         '401': { description: Unauthenticated }
 
+  /teams:
+    get:
+      tags: [Teams]
+      summary: List the teams the account is in, with its role in each
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: 
+                type: object
+                properties:
+                  teams:
+                    type: array
+                    items: { $ref: '#/components/schemas/Team' }
+    post:
+      tags: [Teams]
+      summary: Create a team, owned by the account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TeamNameRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '422': { $ref: '#/components/responses/TeamRefused' }
+
+  /teams/{teamId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Teams]
+      summary: Get a team
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Teams]
+      summary: Rename a team
+      description: Owners and admins.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TeamNameRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '403': { $ref: '#/components/responses/TeamRefused' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/TeamRefused' }
+    delete:
+      tags: [Teams]
+      summary: Delete a team with its members, invitations and shares
+      description: Owners only.
+      responses:
+        '204': { description: Done }
+        '403': { $ref: '#/components/responses/TeamRefused' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /teams/{teamId}/members:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Teams]
+      summary: List a team's members
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: 
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items: { $ref: '#/components/schemas/TeamMember' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /teams/{teamId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/TeamUserId'
+    patch:
+      tags: [Teams]
+      summary: Change a member's role
+      description: Owners and admins; making, demoting or removing an owner takes an owner. A team keeps at least one owner (409).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TeamMemberRoleRequest' }
+      responses:
+        '204': { description: Done }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '403': { $ref: '#/components/responses/TeamRefused' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/TeamRefused' }
+        '422': { $ref: '#/components/responses/TeamRefused' }
+    delete:
+      tags: [Teams]
+      summary: Remove a member
+      description: Owners and admins; removing yourself is leaving. The member's workspaces are unshared from the team.
+      responses:
+        '204': { description: Done }
+        '403': { $ref: '#/components/responses/TeamRefused' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/TeamRefused' }
+
+  /teams/{teamId}/leave:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    post:
+      tags: [Teams]
+      summary: Leave a team
+      description: Unshares the account's workspaces from the team. The last owner cannot leave (409).
+      responses:
+        '204': { description: Done }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/TeamRefused' }
+
+  /teams/{teamId}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Teams]
+      summary: List a team's pending invitations
+      description: Owners and admins.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: 
+                type: object
+                properties:
+                  invitations:
+                    type: array
+                    items: { $ref: '#/components/schemas/TeamInvitation' }
+        '403': { $ref: '#/components/responses/TeamRefused' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Teams]
+      summary: Invite an email address to a team
+      description: Owners and admins; inviting an owner takes an owner. The answer is the same whether or not the address has an account. A team creates at most `teams.maxInvitesPerDay` invitations in any 24 hours (429); 0 turns invitations off (403).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTeamInvitationRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateTeamInvitationResponse' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '403': { $ref: '#/components/responses/TeamRefused' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/TeamRefused' }
+        '422': { $ref: '#/components/responses/TeamRefused' }
+        '429': { $ref: '#/components/responses/TeamRefused' }
+
+  /teams/{teamId}/invitations/{invitationId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/InvitationId'
+    delete:
+      tags: [Teams]
+      summary: Revoke a pending invitation
+      responses:
+        '204': { description: Done }
+        '403': { $ref: '#/components/responses/TeamRefused' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /invitations:
+    get:
+      tags: [Teams]
+      summary: List the invitations waiting for the account's email
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: 
+                type: object
+                properties:
+                  invitations:
+                    type: array
+                    items: { $ref: '#/components/schemas/TeamInvitation' }
+
+  /invitations/preview:
+    post:
+      tags: [Teams]
+      summary: Show what an invitation link is for
+      description: The token is the part of the link after `#`. Gone (410) as accepting it would be.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TeamInvitationTokenRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamInvitationPreview' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/TeamRefused' }
+
+  /invitations/accept:
+    post:
+      tags: [Teams]
+      summary: Accept an invitation by its link's token
+      description: The account's email must be the invited address, ignoring case (403). Works once, within 7 days, and only while the inviter is still in the team with a role that may grant the invited one (410).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TeamInvitationTokenRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '403': { $ref: '#/components/responses/TeamRefused' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/TeamRefused' }
+
+  /invitations/{invitationId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      tags: [Teams]
+      summary: Accept one of the account's invitations
+      description: Works once, within 7 days, and only while the inviter is still in the team with a role that may grant the invited one (410).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/TeamRefused' }
+
+  /invitations/{invitationId}/decline:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      tags: [Teams]
+      summary: Decline one of the account's invitations
+      responses:
+        '204': { description: Done }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/TeamRefused' }
+
+  /workspaces/{id}/shares:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Teams]
+      summary: List the teams a workspace is shared with
+      description: The workspace's owner only.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: 
+                type: object
+                properties:
+                  shares:
+                    type: array
+                    items: { $ref: '#/components/schemas/WorkspaceShare' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{id}/shares/{teamId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TeamId'
+    put:
+      tags: [Teams]
+      summary: Share a workspace with a team, or change its group there
+      description: The workspace's owner, in the team. The body is optional; `group` defaults to the workspace's name. Forks follow their parent and archived workspaces cannot be shared (422).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceShareRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceShare' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/TeamRefused' }
+    delete:
+      tags: [Teams]
+      summary: Stop sharing a workspace with a team
+      responses:
+        '204': { description: Done }
+        '404': { $ref: '#/components/responses/NotFound' }
+
 components:
   securitySchemes:
     sessionCookie:
@@ -2970,8 +3292,31 @@ components:
       required: true
       schema: { type: string, maxLength: 64, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
       description: The skill's name, unique among the skills a workspace can use.
+    TeamId:
+      name: teamId
+      in: path
+      required: true
+      schema: { type: string }
+      description: Team ID (base62).
+    TeamUserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string }
+      description: The member's account ID (base62).
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      schema: { type: string }
+      description: Invitation ID (base62).
 
   responses:
+    TeamRefused:
+      description: A team request refused; the message says why.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
     InvalidPayload:
       description: Invalid request payload
       content:
@@ -3915,6 +4260,88 @@ components:
         body: { type: string }
         assignee: { type: string, enum: [human, agent] }
         allowAllCommands: { type: boolean }
+
+    Team:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [owner, admin, member], description: The account's role in the team. }
+        memberCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+    TeamNameRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+    TeamMember:
+      type: object
+      properties:
+        userId: { type: string }
+        name: { type: string }
+        email: { type: string }
+        picture: { type: string }
+        role: { type: string, enum: [owner, admin, member] }
+        joinedAt: { type: string, format: date-time }
+    TeamMemberRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [owner, admin, member] }
+    TeamInvitation:
+      type: object
+      properties:
+        id: { type: string }
+        teamId: { type: string }
+        teamName: { type: string }
+        email: { type: string, description: 'The invited address, lowercased.' }
+        role: { type: string, enum: [owner, admin, member] }
+        invitedBy: { type: string }
+        invitedByName: { type: string }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    CreateTeamInvitationRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string }
+        role: { type: string, enum: [owner, admin, member], default: member }
+    CreateTeamInvitationResponse:
+      type: object
+      properties:
+        invitation: { $ref: '#/components/schemas/TeamInvitation' }
+        emailSent: { type: boolean }
+        link:
+          type: string
+          description: Set when no email was sent, the only time the link is shown. `<baseUrl>/invite#<token>`.
+    TeamInvitationTokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+    TeamInvitationPreview:
+      type: object
+      properties:
+        teamId: { type: string }
+        teamName: { type: string }
+        role: { type: string, enum: [owner, admin, member] }
+        invitedByName: { type: string }
+        email: { type: string, description: 'The invited address, masked: b***@acme.com.' }
+        emailMatches: { type: boolean, description: Whether it is the signed-in account's email. }
+        expiresAt: { type: string, format: date-time }
+    WorkspaceShare:
+      type: object
+      properties:
+        teamId: { type: string }
+        teamName: { type: string }
+        workspaceId: { type: string }
+        group: { type: string, description: What the team sees the workspace under. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    WorkspaceShareRequest:
+      type: object
+      properties:
+        group: { type: string, maxLength: 128, description: Defaults to the workspace's name. }
 
 security:
   - sessionCookie: []
