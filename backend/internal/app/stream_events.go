@@ -145,14 +145,15 @@ const teamEventPrefix = "team."
 // teamReaders is what publishToTeams reads.
 type teamReaders interface {
 	ListTeamReaders(ctx context.Context, workspaceID int64) ([]base.TeamReader, error)
-	TeamWorkspaceInfo(ctx context.Context, teamID, workspaceID int64) (base.TeamWorkspaceRow, error)
+	TeamWorkspaceInfo(ctx context.Context, workspaceID int64) (base.TeamWorkspaceRow, error)
 }
 
 // publishToTeams sends a task event of the workspace to every member of a
 // team who reads it there and has their account stream open, tagged with the
 // team. Who reads it is asked at every event, so a share withdrawn, a member
 // gone or a workspace archived stops the events at once. A task is sent as
-// the team's task list shows it, with its owner and group.
+// the team's task list shows it, with its owner and shared name, the same
+// in every team.
 func publishToTeams(ctx context.Context, repo teamReaders, bus *eventbus.Bus, workspaceID int64, evt eventbus.Event) {
 	if !bus.AnyUserSubscribed() {
 		return
@@ -162,7 +163,7 @@ func publishToTeams(ctx context.Context, repo teamReaders, bus *eventbus.Bus, wo
 		zlog.Warn().Err(err).Int64("workspace", workspaceID).Msg("[teams] failed to list a workspace's team readers")
 		return
 	}
-	shown := map[int64]entity.TeamWorkspace{}
+	var shown *entity.TeamWorkspace
 	for _, rd := range readers {
 		userID := monoflake.ID(rd.UserID).String()
 		if !bus.UserSubscribed(userID) {
@@ -170,17 +171,16 @@ func publishToTeams(ctx context.Context, repo teamReaders, bus *eventbus.Bus, wo
 		}
 		payload := evt.Payload
 		if task, ok := payload.(view.Task); ok {
-			w, ok := shown[rd.TeamID]
-			if !ok {
-				row, err := repo.TeamWorkspaceInfo(ctx, rd.TeamID, workspaceID)
+			if shown == nil {
+				row, err := repo.TeamWorkspaceInfo(ctx, workspaceID)
 				if err != nil {
-					continue
+					zlog.Warn().Err(err).Int64("workspace", workspaceID).Msg("[teams] failed to read a shared workspace")
+					return
 				}
-				w = entity.TeamWorkspace{ID: row.ID, Name: row.Name, ForkOfID: row.ForkOfID, Group: row.GroupName,
+				shown = &entity.TeamWorkspace{ID: row.ID, Name: row.Name, ForkOfID: row.ForkOfID, SharedName: row.SharedName,
 					OwnerID: row.UserID, OwnerName: row.OwnerName, OwnerPicture: row.OwnerPicture}
-				shown[rd.TeamID] = w
 			}
-			payload = mapper.FromTaskViewToTeamTaskView(task, w, rd.TeamID)
+			payload = mapper.FromTaskViewToTeamTaskView(task, *shown, rd.TeamID)
 		}
 		bus.Publish(0, userID, eventbus.Event{Type: teamEventPrefix + evt.Type, Payload: payload, TeamID: monoflake.ID(rd.TeamID).String()})
 	}

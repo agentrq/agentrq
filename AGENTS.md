@@ -83,10 +83,12 @@ Each line says what the note will stop you getting wrong.
   settings but reads its memory, skills and files from the parent. REST and
   CoreMCP share one merge, which stops the fork's agent first. A fork never
   starts on an agentrqd without the `fork` capability, or older than 0.9.3.
-- **[Teams](docs/agents/teams.md)** — why a foreign id is 404 and not 403,
-  why every counted write locks the team row first, and why the daily invite
-  cap counts revoked invitations. In team mode, the two checks every read
-  starts from, and why a teammate's task events carry a type of their own.
+- **[Teams](docs/agents/teams.md)** — why a foreign id is 404 and not 403
+  or 409, why there are no roles, why every change starts with the version
+  check that also locks the team row, and why the daily invite cap counts
+  revoked invitations. In team mode, the two checks every read starts from,
+  why a teammate's task events carry a type of their own, and why a team's
+  memory is an index built at each load.
 - **[Hooks](docs/agents/hooks.md)** — requests from outside services firing
   events through WebAssembly hooks. Why a hook URL's id is no credential, why
   the token is never cached, why a request is answered before its hook runs,

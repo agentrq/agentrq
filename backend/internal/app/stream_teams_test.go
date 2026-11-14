@@ -102,12 +102,12 @@ func TestForwardCRUDEvent_Teams(t *testing.T) {
 				&model.Workspace{ID: 101, UserID: 1, Name: "fork", ForkOfID: 100},
 				&model.Workspace{ID: 102, UserID: 1, Name: "secret"},
 				&model.Team{ID: 10, Name: "core"}, &model.Team{ID: 20, Name: "ops"},
-				&model.TeamMember{ID: 11, TeamID: 10, UserID: 1, Role: "owner"},
-				&model.TeamMember{ID: 12, TeamID: 10, UserID: 2, Role: "member"},
-				&model.TeamMember{ID: 21, TeamID: 20, UserID: 1, Role: "owner"},
-				&model.TeamMember{ID: 25, TeamID: 20, UserID: 5, Role: "member"},
-				&model.WorkspaceShare{ID: 31, TeamID: 10, WorkspaceID: 100, UserID: 1, GroupName: "Backend"},
-				&model.WorkspaceShare{ID: 32, TeamID: 20, WorkspaceID: 100, UserID: 1, GroupName: "Services"},
+				&model.TeamMember{ID: 11, TeamID: 10, UserID: 1},
+				&model.TeamMember{ID: 12, TeamID: 10, UserID: 2},
+				&model.TeamMember{ID: 21, TeamID: 20, UserID: 1},
+				&model.TeamMember{ID: 25, TeamID: 20, UserID: 5},
+				&model.WorkspaceShare{ID: 31, TeamID: 10, WorkspaceID: 100, UserID: 1},
+				&model.WorkspaceShare{ID: 32, TeamID: 20, WorkspaceID: 100, UserID: 1},
 				&model.Task{ID: 1000, WorkspaceID: 100, UserID: 1, Title: "shared", Status: "ongoing",
 					Attachments: []byte(`[{"id":"f1","filename":"a.html","mimeType":"text/html","url":"/storage/artifacts/w-1/1000/f1"}]`)},
 				&model.Message{ID: 900, TaskID: 1000, UserID: 1, Sender: "agent", Text: "see",
@@ -171,15 +171,15 @@ func TestForwardCRUDEvent_Teams(t *testing.T) {
 			es := expect("Bob, in team 10", bob, "team.task.updated@"+ten)
 			if len(es) == 1 {
 				owner, _ := es[0].Payload["owner"].(map[string]any)
-				if es[0].Payload["id"] != monoflake.ID(1000).String() || es[0].Payload["group"] != "Backend" || owner["name"] != "Alice" {
+				if es[0].Payload["id"] != monoflake.ID(1000).String() || es[0].Payload["sharedName"] != "backend" || es[0].Payload["group"] != nil || owner["name"] != "Alice" {
 					t.Errorf("Bob's event carries %v", es[0].Payload)
 				}
 				if got := files(es[0]); got != teamFiles(ten) {
 					t.Errorf("Bob's event links to %q", got)
 				}
 			}
-			if es := expect("Erin, in team 20", erin, "team.task.updated@"+twenty); len(es) == 1 && es[0].Payload["group"] != "Services" {
-				t.Errorf("Erin's event is in group %v, want her team's", es[0].Payload["group"])
+			if es := expect("Erin, in team 20", erin, "team.task.updated@"+twenty); len(es) == 1 && es[0].Payload["sharedName"] != "backend" {
+				t.Errorf("Erin's event is under %v, want the workspace's own name", es[0].Payload["sharedName"])
 			}
 			expect("Dave, in no team", dave, "")
 
@@ -194,7 +194,9 @@ func TestForwardCRUDEvent_Teams(t *testing.T) {
 			drain(t, erin)
 
 			update(101, 1010)
-			expect("Bob, for the fork of a shared workspace", bob, "team.task.updated@"+ten)
+			if es := expect("Bob, for the fork of a shared workspace", bob, "team.task.updated@"+ten); len(es) == 1 && es[0].Payload["sharedName"] != "backend" {
+				t.Errorf("the fork's task is under %v, want its parent's name", es[0].Payload["sharedName"])
+			}
 			update(102, 1020)
 			expect("Bob, for an unshared workspace", bob, "")
 			drain(t, alice)
@@ -219,7 +221,7 @@ func TestForwardCRUDEvent_Teams(t *testing.T) {
 			update(101, 1010)
 			expect("Bob, just removed from the team", bob, "")
 
-			db.Create(&model.TeamMember{ID: 13, TeamID: 10, UserID: 2, Role: "member"})
+			db.Create(&model.TeamMember{ID: 13, TeamID: 10, UserID: 2})
 			update(100, 1000)
 			expect("Bob, back in the team", bob, "team.task.updated@"+ten)
 			db.Model(&model.Workspace{}).Where("id = ?", 100).Update("archived_at", time.Now())
@@ -236,6 +238,7 @@ type teamReadersStub struct {
 	err       error
 	infoErr   error
 	listCalls int
+	infoCalls int
 }
 
 func (s *teamReadersStub) ListTeamReaders(context.Context, int64) ([]base.TeamReader, error) {
@@ -243,12 +246,13 @@ func (s *teamReadersStub) ListTeamReaders(context.Context, int64) ([]base.TeamRe
 	return s.readers, s.err
 }
 
-func (s *teamReadersStub) TeamWorkspaceInfo(_ context.Context, teamID, workspaceID int64) (base.TeamWorkspaceRow, error) {
-	return base.TeamWorkspaceRow{ID: workspaceID, GroupName: "g", OwnerName: "Alice"}, s.infoErr
+func (s *teamReadersStub) TeamWorkspaceInfo(_ context.Context, workspaceID int64) (base.TeamWorkspaceRow, error) {
+	s.infoCalls++
+	return base.TeamWorkspaceRow{ID: workspaceID, SharedName: "g", OwnerName: "Alice"}, s.infoErr
 }
 
 // With no account stream open nothing is read; a failed read sends nothing;
-// a teammate whose workspace cannot be read is skipped.
+// a workspace that cannot be read sends nothing to anyone.
 func TestPublishToTeams_Failures(t *testing.T) {
 	evt := eventbus.Event{Type: "task.updated", Payload: view.Task{ID: "x"}}
 
@@ -268,18 +272,25 @@ func TestPublishToTeams_Failures(t *testing.T) {
 	}
 
 	repo.err, repo.infoErr = nil, errors.New("database unavailable")
+	repo.readers = []base.TeamReader{{TeamID: 10, UserID: 2}, {TeamID: 20, UserID: 2}}
 	publishToTeams(context.Background(), repo, bus, 100, evt)
-	if got := drain(t, bob); len(got) != 0 {
-		t.Errorf("a failed read of the workspace sent %v", got)
+	if got := drain(t, bob); len(got) != 0 || repo.infoCalls != 1 {
+		t.Errorf("a failed read of the workspace sent %v after %d reads, want nothing after one", got, repo.infoCalls)
 	}
 
-	// Two readers of one team read the workspace once; one with no stream
-	// open is passed over.
-	repo.infoErr = nil
-	repo.readers = []base.TeamReader{{TeamID: 10, UserID: 2}, {TeamID: 10, UserID: 4}, {TeamID: 10, UserID: 6}}
+	// Readers in two teams read the workspace once; one with no stream open
+	// is passed over; an event that carries no task is sent as it is.
+	repo.infoErr, repo.infoCalls = nil, 0
+	repo.readers = []base.TeamReader{{TeamID: 10, UserID: 2}, {TeamID: 20, UserID: 4}, {TeamID: 10, UserID: 6}}
 	carol := bus.Subscribe(0, monoflake.ID(4).String())
 	publishToTeams(context.Background(), repo, bus, 100, evt)
-	if b, c := drain(t, bob), drain(t, carol); len(b) != 1 || len(c) != 1 || b[0].Payload["group"] != "g" || c[0].Type != "team.task.updated" {
-		t.Errorf("Bob got %v, Carol %v", b, c)
+	b, c := drain(t, bob), drain(t, carol)
+	if len(b) != 1 || len(c) != 1 || b[0].Payload["sharedName"] != "g" || c[0].Payload["sharedName"] != "g" || c[0].Type != "team.task.updated" ||
+		c[0].TeamID != monoflake.ID(20).String() || repo.infoCalls != 1 {
+		t.Errorf("Bob got %v, Carol %v, after %d reads of the workspace", b, c, repo.infoCalls)
+	}
+	publishToTeams(context.Background(), repo, bus, 100, eventbus.Event{Type: "task.deleted", Payload: map[string]any{"id": "x"}})
+	if b := drain(t, bob); len(b) != 1 || b[0].Payload["id"] != "x" || repo.infoCalls != 1 {
+		t.Errorf("a delete sent Bob %v after %d reads", b, repo.infoCalls)
 	}
 }
