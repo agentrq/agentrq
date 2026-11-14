@@ -11,7 +11,8 @@
        against this element. Clipped, not hidden: `hidden` makes it a scroll
        container, and in WebKitGTK the timeline's ping inside one cost ~45% of
        a core beside the panel, idle. `min-h-0` keeps a scroll container's height. -->
-  <div class="@container h-full flex flex-col w-full max-w-full min-h-0 overflow-x-hidden supports-[overflow:clip]:overflow-x-clip relative page-surface" v-if="task && workspace"
+  <!-- A teammate's task that stopped being shared while it was open (§9). -->
+  <div class="@container h-full flex flex-col w-full max-w-full min-h-0 overflow-x-hidden supports-[overflow:clip]:overflow-x-clip relative page-surface" v-if="!noLongerShared && task && workspace"
        @dragenter="onDragEnter"
        @dragover="onDragOver"
        @dragleave="onDragLeave"
@@ -37,17 +38,30 @@
                  hover or keyboard focus; a phone, with no hover, just taps. -->
             <h1 v-else class="flex items-baseline gap-2 flex-1 min-w-0 text-lg @min-[48rem]:text-xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight">
               <span data-test="task-title"
-                    :role="renamable ? 'button' : undefined" :tabindex="renamable ? 0 : undefined"
-                    @click="renamable && startRename()"
-                    @keydown.enter.prevent="renamable && startRename()"
-                    :class="renamable ? 'peer cursor-text outline-none focus-visible:underline' : ''"
+                    :role="canRename ? 'button' : undefined" :tabindex="canRename ? 0 : undefined"
+                    @click="canRename && startRename()"
+                    @keydown.enter.prevent="canRename && startRename()"
+                    :class="canRename ? 'peer cursor-text outline-none focus-visible:underline' : ''"
                     class="truncate min-w-0">{{ task.title }}</span>
-              <span v-if="renamable" data-test="task-title-hint" aria-hidden="true"
+              <span v-if="canRename" data-test="task-title-hint" aria-hidden="true"
                     class="shrink-0 text-[9px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 opacity-0 peer-hover:opacity-100 peer-focus-visible:opacity-100 transition-opacity pointer-events-none">Click to rename</span>
             </h1>
           </div>
 
           <div class="flex items-center gap-1.5 shrink-0 relative z-10">
+            <!-- Team mode: a teammate's task, read-only. Its status, and the
+                 one thing to do with it. -->
+            <template v-if="isTeamMode">
+              <span data-test="team-task-status" class="px-2 @min-[48rem]:px-4 text-[8px] font-black text-gray-700 dark:text-zinc-200 bg-gray-100 dark:bg-zinc-800 rounded-lg flex items-center gap-1.5 uppercase tracking-tighter h-7">
+                <span class="w-1.5 h-1.5 rounded-full" :class="taskDotClass(task.status)"></span>
+                <span class="hidden @min-[48rem]:inline">{{ task.status }}</span>
+              </span>
+              <button type="button" data-test="clone-task" @click="cloning = true"
+                      class="px-2.5 h-7 rounded-lg bg-black dark:bg-white text-white dark:text-black text-[9px] font-black uppercase tracking-widest hover:opacity-90 whitespace-nowrap">
+                Clone to my workspace
+              </button>
+            </template>
+            <template v-else>
             <!-- Assignee Toggle -->
             <div class="flex p-0.5 bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700/50 rounded-lg h-7">
               <button @click.stop="updateAssignee('agent')"
@@ -90,6 +104,7 @@
                 </button>
               </div>
             </div>
+            </template>
 
             <!-- Chat / Trajectory view toggle -->
             <div class="flex p-0.5 bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700/50 rounded-lg h-7">
@@ -124,6 +139,12 @@
               </svg>
             </button>
           </div>
+        </div>
+
+        <!-- Whose it is, in team mode: the owner and their workspace. -->
+        <div v-if="isTeamMode" data-test="team-task-owner" class="flex items-center gap-1.5 min-w-0 text-[10px] text-gray-500 dark:text-zinc-400">
+          <OwnerAvatar :owner="teamOwner" label />
+          <span class="truncate">· {{ workspace.name }}</span>
         </div>
 
         <!-- Body Content (Collapsed) -->
@@ -175,7 +196,7 @@
           </div>
 
           <!-- The agent's plan, pinned here so it stays in view however long the conversation gets -->
-          <TaskPlanPanel v-if="taskPlan" class="mb-1" :plan="taskPlan" :messages="task.messages || []" :disabled="offline" @comment="commentOnPlan" />
+          <TaskPlanPanel v-if="taskPlan" class="mb-1" :plan="taskPlan" :messages="task.messages || []" :disabled="offline || isTeamMode" @comment="commentOnPlan" />
 
           <!-- Every link the task mentions. Pinned over the conversation where
                there is room for it; here, under the plan, where there is not. -->
@@ -187,7 +208,7 @@
                  @click="previewAttachment(att)"
                  class="flex items-center gap-3 max-w-full min-w-0 px-4 py-2 rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-all cursor-pointer group shadow-sm">
               <div class="w-6 h-6 shrink-0 flex items-center justify-center overflow-hidden rounded-lg">
-                <img v-if="att.mimeType && att.mimeType.startsWith('image/')" :src="getAttachmentUrl(workspaceId, taskId, att.id)" class="w-full h-full object-cover" />
+                <img v-if="att.mimeType && att.mimeType.startsWith('image/')" :src="attachmentUrl(att.id)" class="w-full h-full object-cover" />
                 <svg v-else class="w-4 h-4 text-gray-500 group-hover:text-black dark:group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
               </div>
               <span class="min-w-0 truncate text-[10px] font-bold text-gray-500 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors uppercase tracking-widest" :title="att.filename">{{ att.filename }}</span>
@@ -307,7 +328,7 @@
                      </div>
 
                      <!-- Pending verdict buttons -->
-                     <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+                     <div v-if="!isTeamMode" class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
                         <button @click="handleVerdict(permMeta(m).requestId, 'allow')"
                                 :disabled="!!workspace.archivedAt"
                                 class="px-3 py-1.5 rounded-sm bg-gray-900 hover:bg-black dark:bg-white dark:hover:bg-gray-100 text-white dark:text-black text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
@@ -386,7 +407,7 @@
                  <div class="p-3 flex flex-col gap-3 min-w-0">
                    <template v-if="m.metadata.status === 'pending' && isElicitExpired(m, elicitNow)">
                      <p class="text-[11px] text-gray-600 dark:text-zinc-400">The agent stopped waiting for this answer. It has to ask again.</p>
-                     <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+                     <div v-if="!isTeamMode" class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
                         <button @click="submitElicitation(m, 'cancel')" :disabled="!!workspace.archivedAt"
                                 class="px-3 py-1.5 rounded-sm bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
                           Dismiss
@@ -452,7 +473,7 @@
                                 :value="getElicitFormValue(m, field.name)" @input="setElicitFormValue(m, field.name, $event.target.value)"
                                 class="w-full mt-0.5 px-2 py-1.5 text-[11px] bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm text-gray-800 dark:text-zinc-200" />
                        </div>
-                       <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+                       <div v-if="!isTeamMode" class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
                           <button @click="submitElicitation(m, 'accept')" :disabled="!!workspace.archivedAt"
                                   class="px-3 py-1.5 rounded-sm bg-gray-900 hover:bg-black dark:bg-white dark:hover:bg-gray-100 text-white dark:text-black text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
                             Submit
@@ -466,7 +487,7 @@
                      <template v-else>
                        <a :href="m.metadata.url" target="_blank" rel="noopener noreferrer"
                           class="text-[11px] text-blue-600 dark:text-blue-400 underline break-all">{{ m.metadata.url }}</a>
-                       <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+                       <div v-if="!isTeamMode" class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
                           <button @click="submitElicitation(m, 'accept')" :disabled="!!workspace.archivedAt"
                                   class="px-3 py-1.5 rounded-sm bg-gray-900 hover:bg-black dark:bg-white dark:hover:bg-gray-100 text-white dark:text-black text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
                             I'm Done
@@ -543,7 +564,7 @@
                        <svg v-if="!copiedMessages.has(m.id)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                        <svg v-else class="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                      </button>
-                     <button type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
+                     <button v-if="!isTeamMode" type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
                              class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 disabled:opacity-40 transition-colors p-0.5 rounded" title="Fork into a new task from here">
                        <svg class="w-2.5 h-2.5" :class="forkingMessageId === m.id ? 'animate-pulse' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="5" r="2.5"/><circle cx="12" cy="19" r="2.5"/><path d="M6 7.5v1.5a3 3 0 003 3h6a3 3 0 003-3V7.5M12 12v4.5"/></svg>
                      </button>
@@ -608,7 +629,7 @@
                        <svg v-if="!copiedMessages.has(m.id)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                        <svg v-else class="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                      </button>
-                     <button type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
+                     <button v-if="!isTeamMode" type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
                              class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 disabled:opacity-40 transition-colors p-0.5 rounded" title="Fork into a new task from here">
                        <svg class="w-2.5 h-2.5" :class="forkingMessageId === m.id ? 'animate-pulse' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="5" r="2.5"/><circle cx="12" cy="19" r="2.5"/><path d="M6 7.5v1.5a3 3 0 003 3h6a3 3 0 003-3V7.5M12 12v4.5"/></svg>
                      </button>
@@ -701,7 +722,7 @@
                        <svg v-if="!copiedMessages.has(m.id)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                        <svg v-else class="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                      </button>
-                     <button v-if="!m._pending && !m._queued" type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
+                     <button v-if="!m._pending && !m._queued && !isTeamMode" type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
                              class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 disabled:opacity-40 transition-colors p-0.5 rounded" title="Fork into a new task from here">
                        <svg class="w-2.5 h-2.5" :class="forkingMessageId === m.id ? 'animate-pulse' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="5" r="2.5"/><circle cx="12" cy="19" r="2.5"/><path d="M6 7.5v1.5a3 3 0 003 3h6a3 3 0 003-3V7.5M12 12v4.5"/></svg>
                      </button>
@@ -748,7 +769,7 @@
                      @load-earlier="loadEarlierToolCalls" />
 
     <!-- Reply Box -->
-    <footer v-if="activeView === 'chat' && !workspace.archivedAt" class="px-1 @min-[40rem]:px-4 py-2 @min-[40rem]:py-4 @min-[48rem]:pb-0 border-t border-gray-100 dark:border-zinc-800 shrink-0 z-20 bg-white dark:bg-zinc-900/50">
+    <footer v-if="activeView === 'chat' && !workspace.archivedAt && !isTeamMode" class="px-1 @min-[40rem]:px-4 py-2 @min-[40rem]:py-4 @min-[48rem]:pb-0 border-t border-gray-100 dark:border-zinc-800 shrink-0 z-20 bg-white dark:bg-zinc-900/50">
 
       <!-- Offline. The composer stays visible but inert: a box that silently
            accepts a reply with nowhere to send it is worse than one that says
@@ -911,6 +932,9 @@
       </form>
     </footer>
 
+    <CloneTaskModal v-if="isTeamMode" :show="cloning" :team-id="teamId" :task="task" :workspace="workspace"
+                    @close="cloning = false" />
+
     <!-- Attachment Preview Modal -->
     <div v-if="selectedAtt" class="fixed inset-0 z-[110] flex items-center justify-center">
       <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="selectedAtt = null"></div>
@@ -919,15 +943,15 @@
       </button>
       <div class="relative max-w-[90vw] max-h-[85vh] flex flex-col items-center gap-4 z-10">
         <div class="rounded-sm overflow-hidden flex items-center justify-center min-w-[min(300px,90vw)] max-w-full bg-black shadow-2xl border border-white/10">
-          <img v-if="selectedAtt.mimeType?.startsWith('image/')" :src="getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" class="max-w-full max-h-[70vh] object-scale-down" />
-          <video v-else-if="selectedAtt.mimeType?.startsWith('video/')" controls autoplay :src="getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" class="max-w-full max-h-[70vh]" />
+          <img v-if="selectedAtt.mimeType?.startsWith('image/')" :src="attachmentUrl(selectedAtt.id)" class="max-w-full max-h-[70vh] object-scale-down" />
+          <video v-else-if="selectedAtt.mimeType?.startsWith('video/')" controls autoplay :src="attachmentUrl(selectedAtt.id)" class="max-w-full max-h-[70vh]" />
           <div v-else-if="selectedAtt.mimeType?.startsWith('audio/')" class="p-16 flex flex-col items-center gap-6">
             <div class="w-20 h-20 rounded-full bg-gray-900 dark:bg-white flex items-center justify-center shadow-lg">
               <svg class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
             </div>
-            <audio controls autoplay :src="getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" class="w-[min(400px,70vw)]" />
+            <audio controls autoplay :src="attachmentUrl(selectedAtt.id)" class="w-[min(400px,70vw)]" />
           </div>
-          <iframe v-else-if="selectedAtt.mimeType?.includes('pdf')" :src="getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" class="w-[80vw] h-[75vh]" frameborder="0"></iframe>
+          <iframe v-else-if="selectedAtt.mimeType?.includes('pdf')" :src="attachmentUrl(selectedAtt.id)" class="w-[80vw] h-[75vh]" frameborder="0"></iframe>
           <div v-else class="p-8 @min-[40rem]:p-20 flex flex-col items-center gap-4 min-w-0">
             <svg class="w-24 h-24 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
             <p class="text-white font-bold text-sm text-center break-all">{{ selectedAtt.filename }}</p>
@@ -942,7 +966,7 @@
           <!-- The public link when there is one; previews above stay on the signed-in
                route, which the desktop app's CSP allows and the attachment cache serves.
                A click saves from that route instead, so the file keeps its name and type. -->
-          <a :href="selectedAtt.url || getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" :download="selectedAtt.filename"
+          <a :href="selectedAtt.url || attachmentUrl(selectedAtt.id)" :download="selectedAtt.filename"
              :target="selectedAtt.url ? '_blank' : undefined" :rel="selectedAtt.url ? 'noopener noreferrer' : undefined" @click.prevent="downloadSelected"
              title="Download" aria-label="Download"
              class="shrink-0 flex items-center gap-2 px-3 @min-[40rem]:px-4 py-2 rounded-sm bg-white text-black text-[10px] font-semibold hover:bg-gray-100 transition-all">
@@ -978,6 +1002,10 @@
   </div>
 
   <!-- Loading State -->
+  <div v-else-if="noLongerShared" data-test="no-longer-shared" class="flex-1 flex flex-col items-center justify-center m-4 p-8 text-center bg-gray-50 dark:bg-zinc-900/50 rounded-sm border border-dashed border-gray-200 dark:border-zinc-800">
+    <p class="text-lg font-bold text-gray-800 dark:text-zinc-200 tracking-tight">No longer shared</p>
+    <p class="text-sm text-gray-500 dark:text-zinc-400 mt-2 max-w-[420px] leading-relaxed">Its owner stopped sharing this workspace with the team, or archived it.</p>
+  </div>
   <div v-else class="h-full flex flex-col items-center justify-center bg-transparent">
     <div class="p-8 flex flex-col items-center gap-4 opacity-50">
       <div class="w-12 h-12 rounded-full border-4 border-gray-200 dark:border-zinc-700 border-t-gray-900 dark:border-t-white animate-spin"></div>
@@ -1022,6 +1050,10 @@ import { taskDotClass, taskStatusTone } from '../composables/useTaskStatusStyle'
 import { taskListPath } from '../composables/taskListPath';
 import { forkNotice, forkedTaskPath } from '../composables/useTaskFork';
 import { useTaskRename } from '../composables/useTaskRename';
+import { getTeamTask, getTeamAttachmentUrl } from '../api';
+import { lostTeam, useTeamMode } from '../composables/useTeamMode';
+import OwnerAvatar from '../components/OwnerAvatar.vue';
+import CloneTaskModal from '../components/CloneTaskModal.vue';
 import { elicitOutcome, elicitRows, isElicitExpired } from '../composables/useElicitAnswer';
 import { withRequestAnswered } from '../composables/useRequestAnswer';
 import MarkdownBody from '../components/MarkdownBody.vue';
@@ -1064,7 +1096,23 @@ const taskId = computed(() => route.params.taskId);
 // before the shell's workspace list has landed.
 const workspaceStore = useWorkspaceStore();
 const localWorkspace = ref(null);
-const workspace = computed(() => workspaceStore.getWorkspace(workspaceId.value) || localWorkspace.value);
+// Team mode (?team=): a teammate's task, read through the team and shown
+// read-only; the workspace is theirs, as the team answer describes it.
+const { teamId, isTeamMode, leaveTeam } = useTeamMode();
+const teamWorkspace = ref(null);
+const teamOwner = ref(null);
+const noLongerShared = ref(false);
+const cloning = ref(false);
+const workspace = computed(() => (isTeamMode.value
+  ? teamWorkspace.value
+  : workspaceStore.getWorkspace(workspaceId.value) || localWorkspace.value));
+// The local cache is your own tasks; a teammate's is merged on screen only.
+const applyTaskUpdate = (current, incoming) => (isTeamMode.value
+  ? mergeTaskUpdate(current, incoming)
+  : cacheTaskUpdate(sharedCache(), current, incoming));
+const attachmentUrl = (attachmentId) => (isTeamMode.value
+  ? getTeamAttachmentUrl(teamId.value, taskId.value, attachmentId)
+  : getAttachmentUrl(workspaceId.value, taskId.value, attachmentId));
 const task = ref(null);
 const { plan: taskPlan, load: loadTaskPlan, apply: applyTaskPlan } = useTaskPlan();
 // The task's status history, oldest first, from the single-task GET only.
@@ -1083,6 +1131,7 @@ const {
   cancel: cancelRename,
   save: saveRename,
 } = useTaskRename(task, workspaceId, { onError: notifyError });
+const canRename = computed(() => !isTeamMode.value && renamable.value);
 
 function startRename() {
   beginRename();
@@ -1274,7 +1323,7 @@ function processFiles(files) {
 
 function onDragEnter(e) {
   e.preventDefault();
-  if (workspace.value?.archivedAt) return;
+  if (isTeamMode.value || workspace.value?.archivedAt) return;
   if (!workspace.value?.agentConnected && task.value?.assignee !== 'human' && task.value?.status !== 'pending') {
     return;
   }
@@ -1299,7 +1348,7 @@ function onDrop(e) {
   e.preventDefault();
   isDragging.value = false;
   dragCounter = 0;
-  if (workspace.value?.archivedAt) return;
+  if (isTeamMode.value || workspace.value?.archivedAt) return;
   if (!workspace.value?.agentConnected && task.value?.assignee !== 'human' && task.value?.status !== 'pending') {
     return;
   }
@@ -1463,7 +1512,7 @@ const reactTargetId = computed(() => shownThread.value.thread
   .findLast((m) => m.sender === 'agent' && !isThreadTelemetry(m))?.id ?? null);
 
 // Whether a reply can go out at all, by the same rules as the send button.
-const canReply = computed(() => !offline.value && !workspace.value?.archivedAt
+const canReply = computed(() => !isTeamMode.value && !offline.value && !workspace.value?.archivedAt
   && !(task.value?.assignee !== 'human' && (!workspace.value?.agentConnected || task.value?.status === 'notstarted' || task.value?.status === 'pending')));
 
 const reactPickerOpen = ref(false);
@@ -1622,7 +1671,30 @@ watch(agentWorking, (working, wasWorking) => {
   if (wasWorking && !working) sendNextQueued();
 });
 
+// A teammate's task: through the team, never the cache (it holds your own
+// tasks), and with nothing to send. 404 is a share withdrawn while it was
+// open; any other loss of the team goes back to Me.
+async function loadTeamTask() {
+  noLongerShared.value = false;
+  try {
+    const res = await getTeamTask(teamId.value, taskId.value);
+    teamWorkspace.value = res.workspace || { id: res.task.workspaceId, name: '' };
+    teamOwner.value = res.owner || res.task.owner || null;
+    task.value = res.task;
+    isDescriptionCollapsed.value = !res.task.body || !!res.task.messages?.length;
+    stateTransitions.value = res.stateTransitions || [];
+    panoDocs.value = [];
+    // No live stream: yours carries your own workspaces, never a teammate's.
+    nextTick(scrollToBottom);
+  } catch (err) {
+    if (err.status === 404) noLongerShared.value = true;
+    else if (lostTeam(err)) leaveTeam();
+    else notifyError('Failed to load task context: ' + err.message);
+  }
+}
+
 async function load() {
+  if (isTeamMode.value) return loadTeamTask();
   try {
     // The first frame, and only the first frame. Everything below replaces
     // this; nothing merges into it.
@@ -1989,7 +2061,7 @@ function formatDateTime(dateStr) {
 // the history again rather than guess the row the server wrote, and the Pano
 // docs, which the agent may have linked meanwhile.
 watch(() => task.value?.status, async (status, previous) => {
-  if (!previous || status === previous) return;
+  if (!previous || status === previous || isTeamMode.value) return;
   const forTask = taskId.value;
   try {
     const res = await getTask(workspaceId.value, forTask);
@@ -2012,7 +2084,7 @@ watch(events, (evts) => {
       // Merged, not assigned: a payload built without the task's tool calls
       // would otherwise wipe the trajectory — see useTaskEvents. The cache gets
       // the merge for the same reason, never the raw payload.
-      task.value = cacheTaskUpdate(sharedCache(), task.value, last.payload);
+      task.value = applyTaskUpdate(task.value, last.payload);
     }
   }
 
@@ -2021,7 +2093,7 @@ watch(events, (evts) => {
   // One tool call, never the whole task: see upsertToolCall.
   if (last.type === 'toolCall.updated') {
     const updated = upsertToolCall(task.value, last.payload?.toolCall);
-    if (updated !== task.value) task.value = cacheTaskUpdate(sharedCache(), task.value, updated);
+    if (updated !== task.value) task.value = applyTaskUpdate(task.value, updated);
   }
 }, { deep: true });
 
@@ -2038,7 +2110,7 @@ useEscapeKey(() => {
 
 function downloadSelected() {
   const att = selectedAtt.value;
-  const source = getAttachmentUrl(workspaceId.value, taskId.value, att.id);
+  const source = attachmentUrl(att.id);
   return downloadAttachment(att, { source, fallback: att.url || source });
 }
 

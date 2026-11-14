@@ -21,6 +21,12 @@ import '@fontsource-variable/inter'
 import App from './App.vue'
 import { fetchUser } from './api'
 import { usePlatformStore } from './stores/platformStore'
+import { rememberedTeam } from './stores/teamStore'
+import { teamLanding } from './composables/useTeamMode'
+
+// A page about one team, rebuilt when the team changes: it is in the query,
+// which a plain `remount` (keyed by path) does not see.
+const teamPage = { remount: true, remountKey: (r) => `${r.path}?team=${r.query.team ?? ''}` }
 
 // The Pano's board, shared by its two routes below.
 const PanoView = () => import('./views/PanoView.vue')
@@ -97,6 +103,18 @@ export const routes = [
   // Skills belong to the account too; a workspace only turns each on or off.
   { path: '/skills', component: () => import('./views/SkillsView.vue') },
   { path: '/skills/:name', component: () => import('./views/SkillsView.vue'), meta: { remount: true } },
+
+  // Teams. The team on screen is `?team=<id>`, on these pages and on the ones
+  // above that show a team read-only (/tasks/*, /kanban, /skills); see
+  // useTeamMode. Creating one, and the invitations addressed to you, need none.
+  { path: '/team/new', component: () => import('./views/TeamNewView.vue') },
+  { path: '/team/settings', component: () => import('./views/TeamSettingsView.vue'), meta: teamPage },
+  { path: '/team/analytics', component: () => import('./views/TeamAnalyticsView.vue'), meta: teamPage },
+  { path: '/team/memory', component: () => import('./views/TeamMemoryView.vue'), meta: teamPage },
+  { path: '/invitations', component: () => import('./views/InvitationsView.vue') },
+  // An invitation link. Public, because it may be opened signed out: the page
+  // itself offers the sign-in, and comes back here after it.
+  { path: '/invite', component: () => import('./views/InvitationAcceptView.vue'), meta: { public: true } },
 
   // A session's terminal. Addressed by session rather than by machine: a
   // session is what a person is watching, and it outlives the page they
@@ -181,6 +199,9 @@ export function createAuthGuard(fetchUserFn = fetchUser) {
 export function createAgentRQApp({ history, platform = 'web', os = '' } = {}) {
   const router = createRouter({ history, routes: platform === 'web' ? [...routes, ...adminRoutes] : routes })
   router.beforeEach(createAuthGuard())
+  // The home page in team mode is the team's tasks, and the first page opened
+  // follows the Me | Team switch's last choice in this browser.
+  router.beforeEach((to, from) => teamLanding(to, from, rememberedTeam()))
 
   const pinia = createPinia()
   const app = createApp(App)

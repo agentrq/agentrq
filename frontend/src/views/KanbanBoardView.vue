@@ -40,15 +40,15 @@
                  narrower than that feed, so the title wraps instead of being
                  truncated — a one-line card here showed little more than the
                  first few words of most task titles. -->
-            <div :draggable="!isArchived(t)"
+            <div :draggable="canDrag(t)"
                  @dragstart="onDragStart($event, t, col.id)"
                  @dragend="onDragEnd"
                  @dragover="onCardDragOver($event, col.id, t)"
                  @click="openTask(t)"
-                 @contextmenu.prevent.stop="openContextMenu($event, t)"
+                 @contextmenu.prevent.stop="!isTeamMode && openContextMenu($event, t)"
                  :class="[
                    'group relative p-3 pl-4 rounded-xl bg-gray-100 dark:bg-zinc-800 transition-all',
-                   !isArchived(t) ? 'cursor-grab active:cursor-grabbing hover:bg-gray-200 dark:hover:bg-zinc-700' : 'cursor-pointer',
+                   canDrag(t) ? 'cursor-grab active:cursor-grabbing hover:bg-gray-200 dark:hover:bg-zinc-700' : 'cursor-pointer',
                    draggingId === t.id ? 'opacity-40' : ''
                  ]">
               <!-- The card's only edge: no border, so the shape comes from the
@@ -67,7 +67,8 @@
                   <!-- Across every workspace a card says whose it is, with the
                        same agent dot the sidebar draws beside that workspace. -->
                   <span v-if="isGlobal" data-test="card-workspace" class="flex items-center gap-1.5 min-w-0 text-[10px] font-medium text-gray-500 dark:text-zinc-400">
-                    <span class="w-1.5 h-1.5 rounded-full shrink-0"
+                    <OwnerAvatar v-if="isTeamMode" :owner="t.owner" data-test="card-owner" />
+                    <span v-else class="w-1.5 h-1.5 rounded-full shrink-0"
                           :class="isAgentConnected(t) ? 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"
                           :title="isAgentConnected(t) ? 'Agent Online' : 'Agent Offline'"></span>
                     <span class="truncate">{{ workspaceName(t) }}</span>
@@ -76,7 +77,7 @@
                 <div class="flex items-center gap-1 shrink-0">
                   <!-- The feed's Spin up button, on the card: hover on desktop,
                        always there on a touch screen, as the feed's row actions. -->
-                  <button v-if="canSpinUp(t, workspaceStore.getWorkspace(workspaceOf(t)))" @click.stop="openSpinUp($event, t)"
+                  <button v-if="!isTeamMode && canSpinUp(t, workspaceStore.getWorkspace(workspaceOf(t)))" @click.stop="openSpinUp($event, t)"
                           class="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 -my-1 rounded-sm transition-all"
                           title="Spin up in a fork">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -102,7 +103,7 @@
               </div>
               
               <!-- Quick actions for Pending -->
-              <div v-if="isPendingOnHuman(t) && requiresAllowDeny(t)" class="mt-3" @click.stop>
+              <div v-if="!isTeamMode && isPendingOnHuman(t) && requiresAllowDeny(t)" class="mt-3" @click.stop>
                 <div class="flex flex-wrap gap-2" v-if="isAgentConnected(t)">
                   <button @click="handleAction(t, 'allow')" class="px-2.5 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-gray-100 transition-all shadow-sm">
                     Allow
@@ -159,7 +160,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchTasks, fetchGlobalTasks, updateTaskStatus, updateTaskOrder, moveTask, updateTaskAssignee, sendPermissionVerdict } from '../api';
+import { fetchTasks, fetchGlobalTasks, fetchTeamTasks, updateTaskStatus, updateTaskOrder, moveTask, updateTaskAssignee, sendPermissionVerdict } from '../api';
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -177,6 +178,9 @@ import { readCachedTasks, readAllCachedTasks, shouldPaintCache } from '../compos
 import { taskAccentClass } from '../composables/useTaskStatusStyle';
 import { getOrder, sortColumn, orderBetween } from '../composables/useKanbanOrder';
 import LoadMoreButton from '../components/LoadMoreButton.vue';
+import OwnerAvatar from '../components/OwnerAvatar.vue';
+import { useTeamStore } from '../stores/teamStore';
+import { lostTeam, useTeamMode } from '../composables/useTeamMode';
 
 const route = useRoute();
 const router = useRouter();
@@ -190,9 +194,19 @@ const workspaceId = computed(() => route.params.id);
 const isGlobal = computed(() => !workspaceId.value);
 const workspaceOf = (t) => t.workspaceId || workspaceId.value;
 
+// In team mode (/kanban?team=) the board is the team's: every shared
+// workspace's tasks, read-only, each card naming whose it is.
+const teamStore = useTeamStore();
+const { teamId, isTeamMode: teamMode, leaveTeam } = useTeamMode();
+const isTeamMode = computed(() => isGlobal.value && teamMode.value);
+const teamWorkspace = (t) => teamStore.workspacesOf(teamId.value).find((w) => String(w.id) === String(t.workspaceId));
+
 const isArchived = (t) => !!workspaceStore.getWorkspace(workspaceOf(t))?.archivedAt;
+const canDrag = (t) => !isTeamMode.value && !isArchived(t);
 const isAgentConnected = (t) => workspaceStore.isAgentConnected(workspaceOf(t));
-const workspaceName = (t) => workspaceStore.getWorkspace(workspaceOf(t))?.name || '...';
+const workspaceName = (t) => (isTeamMode.value
+  ? teamWorkspace(t)?.group || teamWorkspace(t)?.name || t.group || '...'
+  : workspaceStore.getWorkspace(workspaceOf(t))?.name || '...');
 
 
 function requiresAllowDeny(t) {
@@ -331,6 +345,7 @@ function onSpinUpDone({ task, fork, failedStep }) {
  * arrive, so this is a first frame rather than a source the fetches merge into.
  */
 async function paintFromCache() {
+  if (isTeamMode.value) return;
   const cached = isGlobal.value
     ? await readAllCachedTasks(sharedCache())
     : await readCachedTasks(sharedCache(), workspaceId.value);
@@ -342,10 +357,16 @@ async function loadColumn(colId, isLoadMore = false) {
     const col = columnById[colId];
     const offset = isLoadMore ? offsets.value[colId] : 0;
     const query = { status: col.statuses.join(','), limit: PAGE_SIZE, offset };
-    const res = isGlobal.value ? await fetchGlobalTasks(query) : await fetchTasks(workspaceId.value, query);
-    // Write-through, same as the other lists: what the server just returned is
-    // what the local copy should hold.
-    cacheTasks(sharedCache(), res.tasks || []);
+    let res;
+    if (isTeamMode.value) {
+      const { group = '', member = '' } = route.query;
+      res = await fetchTeamTasks(teamId.value, { ...query, group, member });
+    } else {
+      res = isGlobal.value ? await fetchGlobalTasks(query) : await fetchTasks(workspaceId.value, query);
+      // Write-through, same as the other lists: what the server just returned is
+      // what the local copy should hold. A teammate's tasks are never in it.
+      cacheTasks(sharedCache(), res.tasks || []);
+    }
     const fetched = res.tasks || [];
     if (!isLoadMore) {
       // Drop any locally-known tasks for this column that no longer exist server-side.
@@ -355,6 +376,7 @@ async function loadColumn(colId, isLoadMore = false) {
     offsets.value[colId] = offset + fetched.length;
     hasMore.value[colId] = fetched.length === PAGE_SIZE;
   } catch (err) {
+    if (isTeamMode.value && lostTeam(err)) return leaveTeam();
     notifyError(`Failed to load ${colId} tasks: ` + err.message);
   }
 }
@@ -376,7 +398,7 @@ const dragOverColId = ref(null);
 const dragOverBeforeId = ref(undefined); // task id to insert before, or null = end of column
 
 function onDragStart(e, task, colId) {
-  if (isArchived(task)) return;
+  if (!canDrag(task)) return;
   draggingId.value = task.id;
   dragFromColId.value = colId;
   e.dataTransfer.effectAllowed = 'move';
@@ -594,7 +616,8 @@ async function onMoveConfirm(destinationWorkspaceId) {
 const { connect, disconnect, events } = useEventBus(workspaceId);
 
 watch(() => events.value.length, (newLen, oldLen) => {
-  if (newLen <= oldLen) return;
+  // Your own stream: nothing on it belongs on the team's board.
+  if (newLen <= oldLen || isTeamMode.value) return;
   events.value.slice(oldLen).forEach(ev => {
     if (ev.type === 'task.deleted') {
       removeTask(ev.payload?.id);
@@ -615,7 +638,8 @@ watch(() => events.value.length, (newLen, oldLen) => {
 onMounted(async () => {
   // The cards name their workspace, so the list has to be there to name it.
   // The shell fetches it too; this only matters on a first load straight here.
-  if (isGlobal.value && workspaceStore.workspaces.length === 0) await workspaceStore.fetchWorkspaces();
+  if (isTeamMode.value) teamStore.loadWorkspaces(teamId.value).catch(() => {});
+  else if (isGlobal.value && workspaceStore.workspaces.length === 0) await workspaceStore.fetchWorkspaces();
   loadAll();
   connect();
 });
@@ -624,7 +648,7 @@ onUnmounted(() => {
   disconnect();
 });
 
-watch(workspaceId, () => {
+watch([workspaceId, teamId], () => {
   tasks.value = [];
   offsets.value = Object.fromEntries(columns.map(c => [c.id, 0]));
   hasMore.value = Object.fromEntries(columns.map(c => [c.id, false]));

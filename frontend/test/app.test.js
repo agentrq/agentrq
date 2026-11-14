@@ -7,6 +7,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { setActivePinia, createPinia } from 'pinia'
 
 import { routes, adminRoutes, clickOutside, createAuthGuard, createAgentRQApp } from '../src/app'
+import { pageKey } from '../src/pageKey'
 import { usePlatformStore } from '../src/stores/platformStore'
 
 /** Flatten the route tree so nested paths can be asserted on directly. */
@@ -57,6 +58,12 @@ describe('routes', () => {
       '/pano/:docId/chat/:workspaceId/:taskId',
       '/skills',
       '/skills/:name',
+      '/team/new',
+      '/team/settings',
+      '/team/analytics',
+      '/team/memory',
+      '/invitations',
+      '/invite',
       '/sessions/:id',
       '/workflows',
       '/workflows/:id',
@@ -80,9 +87,22 @@ describe('routes', () => {
     expect(router.resolve('/workspaces/abc').matched[0].path).toBe('/workspaces/:id')
   })
 
-  it('marks only the login route public', () => {
+  // An invitation link may be opened signed out; the page offers the sign-in
+  // itself and comes back to the link after it.
+  it('marks only the login route and the invitation link public', () => {
     const publicRoutes = routes.filter((r) => r.meta?.public).map((r) => r.path)
-    expect(publicRoutes).toEqual(['/login'])
+    expect(publicRoutes).toEqual(['/invite', '/login'])
+  })
+
+  it('rebuilds a team page when the team in its query changes', () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    for (const path of ['/team/settings', '/team/analytics', '/team/memory']) {
+      const a = router.resolve(`${path}?team=a`)
+      const b = router.resolve(`${path}?team=b`)
+      expect(pageKey(a)).toBe(`${path}?team=a`)
+      expect(pageKey(b)).not.toBe(pageKey(a))
+      expect(pageKey(router.resolve(path))).toBe(`${path}?team=`)
+    }
   })
 
   it('lazy-loads every view, so no route pulls its component into the entry chunk', () => {

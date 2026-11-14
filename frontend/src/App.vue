@@ -129,7 +129,12 @@
           </button>
         </div>
 
+        <!-- Me | Team. Team mode is the route's ?team=; see useTeamMode. -->
+        <TeamSwitcher class="px-2 mt-3" :collapsed="isCollapsed && !isMobileMenuOpen" />
+
         <div class="space-y-0.5 overflow-y-auto custom-scrollbar flex-1 min-h-0 px-2" :class="{ 'mt-6': isCollapsed && !isMobileMenuOpen }">
+          <TeamSidebar v-if="isTeamMode" :expanded="!isCollapsed || isMobileMenuOpen" :show-tooltip="showTooltip" :hide-tooltip="hideTooltip" />
+          <template v-else>
           <div v-if="!isCollapsed || isMobileMenuOpen" class="p-2 border-gray-200/50 dark:border-zinc-600/50">
             <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Overview</span>
           </div>
@@ -336,6 +341,7 @@
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Machines</span>
           </router-link>
+          </template>
         </div>
 
         <!-- Sidebar Footer -->
@@ -464,12 +470,13 @@
     <!-- Hidden, not unmounted, while the side panel takes the whole window:
          the page is still there, scrolled where it was, when it collapses. -->
     <main v-else :class="['grow min-w-0 p-0 md:py-4 md:pr-4 h-full min-h-0 flex-col relative bg-white md:bg-zinc-100 dark:bg-zinc-950', showSidePanel && sidePanel.state.full ? 'hidden' : panoChatOpen ? 'hidden lg:flex' : 'flex']">
-      <div class="h-full overflow-y-auto min-w-0 md:rounded-sm scroll-smooth page-surface md:border border-gray-200 dark:border-zinc-800 no-scrollbar">
+      <div class="h-full overflow-y-auto min-w-0 md:rounded-sm scroll-smooth page-surface md:border border-gray-200 dark:border-zinc-800 no-scrollbar flex flex-col">
+        <TeamModeBar v-if="isTeamMode" :name="currentTeam?.name || 'Team'" />
         <!-- Never unmounted by a route change — router-view is swapped inside
              it — so its size is also the size a page navigated to next is
              about to get. useLaunchTerminalSize.js reads it before a launch
              navigates to the terminal that has not been created yet. -->
-        <div data-terminal-launch-area class="px-2 pt-4 pb-6 md:p-4 h-full flex flex-col">
+        <div data-terminal-launch-area class="px-2 pt-4 pb-6 md:p-4 flex-1 min-h-0 flex flex-col">
           <router-view v-slot="{ Component, route: page }">
             <component :is="Component" :key="pageKey(page)" class="grow flex flex-col min-h-0 min-w-0" />
           </router-view>
@@ -554,6 +561,11 @@ import { createHiddenTabNotifier, pageUnattended, showSystemNotification } from 
 import Toast from './components/Toast.vue'
 import DeleteModal from './components/DeleteModal.vue'
 import SidebarWorkspaces from './components/SidebarWorkspaces.vue'
+import TeamSwitcher from './components/TeamSwitcher.vue'
+import TeamSidebar from './components/TeamSidebar.vue'
+import TeamModeBar from './components/TeamModeBar.vue'
+import { useTeamStore } from './stores/teamStore'
+import { useTeamMode } from './composables/useTeamMode'
 import { coalesce, indexOverview } from './composables/useWorkspaceOverview'
 import DesktopTitleBar from './components/DesktopTitleBar.vue'
 import SidePanel from './components/SidePanel.vue'
@@ -1001,7 +1013,7 @@ const closeOverlaysOnEscape = (e) => {
 // Handled per event rather than by watching the buffer. Reacting to a
 // transition means seeing every event, and a watcher only ever showed the
 // handler the last one in the flush.
-const { connect, disconnect, isConnected, onEvent } = useEventBus(undefined, { buffer: false })
+const { connect, disconnect, isConnected, onEvent } = useEventBus(undefined, { buffer: false, isPublicPage: () => isLoginPage.value })
 
 // A stream toast names the workspace it happened in, as the card's eyebrow.
 const showStreamToast = (toast) => notifyEvent(toast, workspaceStore.getWorkspace(toast.workspaceId)?.name ?? '')
@@ -1176,6 +1188,12 @@ async function logout() {
 }
 
 const loadWorkspaces = () => workspaceStore.fetchWorkspaces()
+
+// Teams: the switch's list and badge, and the team on screen.
+const teamStore = useTeamStore()
+const { isTeamMode, team: currentTeam } = useTeamMode()
+// A browser agent's team change (createTeam, manageTeam) re-reads the list.
+onWebMCPChange(() => teamStore.load())
 // The sidebar and every view read this one list, so a browser agent creating,
 // renaming or archiving a workspace shows up everywhere once it is re-read.
 onWebMCPChange(loadWorkspaces)
@@ -1190,6 +1208,7 @@ const loadUser = async () => {
     // before we know who that is. Failing to open one is not an error worth
     // showing: the app reads from the network either way.
     if (user.value?.id) {
+      teamStore.load()
       const db = await connectCache(user.value.id)
       startRetentionSweep(db)
       offerWebMCPTools()

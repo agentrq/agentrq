@@ -98,6 +98,75 @@ const PANO_DOC = {
   files: PANO_FILES('Linked files: each must be linked from the markdown by its filename, as [text](name) or ![alt](name).'),
 }
 
+// ---- Teams --------------------------------------------------------------
+// Grouped by action rather than a tool per call: the catalogue must stay
+// under the 128 tools a shared site may announce, and teams alone are ~30
+// calls. Each action is one `api.js` function; `run` picks it.
+const TEAM_ID = str('The team ID, as listTeams reports it.')
+const teamPage = ({ teamId }) => `/team/settings?team=${seg(teamId)}`
+const sharingPage = ({ workspaceId }) => `/workspaces/${seg(workspaceId)}/settings?tab=sharing`
+const TEAM_FIELDS = {
+  teamId: TEAM_ID,
+  workspaceId: WORKSPACE_ID,
+  userId: str('A member\'s user ID, as the members action reports it.'),
+  invitationId: str('An invitation ID, as the invitations actions report it.'),
+  token: str('The token from an invitation link: what follows "#" in /invite#<token>.'),
+}
+
+/** One action of a grouped tool: its `api.js` call, and what it needs. */
+function dispatch(actions, toolName) {
+  return (input = {}) => {
+    const action = actions[input.action]
+    if (!action) throw new Error(`${toolName} takes an action of ${Object.keys(actions).join(', ')}, not ${JSON.stringify(input.action)}`)
+    return action(input)
+  }
+}
+
+const TEAM_READS = (api) => ({
+  list: () => api.listTeams(),
+  get: ({ teamId }) => api.getTeam(teamId),
+  members: ({ teamId }) => api.listTeamMembers(teamId),
+  invitations: ({ teamId }) => api.listTeamInvitations(teamId),
+  myInvitations: () => api.listMyInvitations(),
+  preview: ({ token }) => api.previewInvitation(token),
+  shares: ({ workspaceId }) => api.listWorkspaceShares(workspaceId),
+  workspaces: ({ teamId }) => api.fetchTeamWorkspaces(teamId),
+  tasks: ({ teamId, status = '', group = '', member = '', limit = 10, offset = 0 }) =>
+    api.fetchTeamTasks(teamId, { status, group, member, limit, offset }),
+  task: ({ teamId, taskId }) => api.getTeamTask(teamId, taskId),
+  analytics: ({ teamId, range = '7d', group = '' }) => api.fetchTeamStats(teamId, range, 0, 0, group),
+  memory: ({ teamId }) => api.getTeamMemory(teamId),
+  memoryIndex: ({ teamId }) => api.fetchTeamMemoryIndex(teamId),
+  memberMemory: ({ teamId, workspaceId, name }) => api.getTeamMemberMemory(teamId, workspaceId, name),
+  skills: ({ teamId }) => api.fetchTeamSkills(teamId),
+  skill: ({ teamId, name }) => api.getTeamSkill(teamId, name),
+})
+
+const TEAM_WRITES = (api) => ({
+  rename: ({ teamId, name }) => api.renameTeam(teamId, name),
+  delete: ({ teamId }) => api.deleteTeam(teamId),
+  setRole: ({ teamId, userId, role }) => api.setTeamMemberRole(teamId, userId, role),
+  removeMember: ({ teamId, userId }) => api.removeTeamMember(teamId, userId),
+  leave: ({ teamId }) => api.leaveTeam(teamId),
+  invite: ({ teamId, email, role = 'member' }) => api.createTeamInvitation(teamId, email, role),
+  revokeInvitation: ({ teamId, invitationId }) => api.revokeTeamInvitation(teamId, invitationId),
+  accept: ({ token, invitationId }) => (token ? api.acceptInvitation(token) : api.acceptInvitationById(invitationId)),
+  decline: ({ invitationId }) => api.declineInvitation(invitationId),
+  share: ({ workspaceId, teamId, group = '' }) => api.shareWorkspace(workspaceId, teamId, group),
+  unshare: ({ workspaceId, teamId }) => api.unshareWorkspace(workspaceId, teamId),
+  saveMemory: ({ teamId, content, baseUpdatedAt = '' }) => api.saveTeamMemory(teamId, content, baseUpdatedAt),
+  addSkill: ({ teamId, name, workspaceIds = [] }) => api.addTeamSkill(teamId, name, workspaceIds),
+})
+
+/** Where a manageTeam action shows: the page that holds what it changes. */
+function teamWritePage(input = {}) {
+  if (input.action === 'share' || input.action === 'unshare') return sharingPage(input)
+  if (input.action === 'accept' || input.action === 'decline') return '/invitations'
+  if (input.action === 'saveMemory') return `/team/memory?team=${seg(input.teamId)}`
+  if (input.action === 'addSkill') return `/skills?team=${seg(input.teamId)}`
+  return teamPage(input)
+}
+
 /**
  * The page a write tool acts on, so the person sees what the agent did.
  *
@@ -135,21 +204,20 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Go to an in-app path, ' +
-        'optionally ?query; IDs from getCurrentPage or list tools.\n' +
-        '- "/" every workspace, "/workspaces/new" creates one.\n' +
-        '- "/kanban" or "/tasks/<filter>" tasks in all workspaces; <filter> is active, notstarted, pending ' +
-        '(on the user), ongoing, completed, scheduled. Add "/<workspaceId>/<taskId>" to ' +
-        'open one beside it, then "/instances" for its runs.\n' +
-        '- "/workspaces/<workspaceId>" its tasks ("?filter=" as above); under it "/board", ' +
-        '"/analytics", "/settings", "/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
-        '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +
-        'skills, slack, input, storage or danger.\n' +
-        '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/skills", "/skills/<name>", "/{pano,events/hooks}/new", ' +
+        'Go to an in-app path (?query allowed); IDs from getCurrentPage or list tools.\n' +
+        '- "/" workspaces, "/workspaces/new".\n' +
+        '- "/kanban" or "/tasks/<filter>" (active, notstarted, pending, ongoing, completed, scheduled) of all ' +
+        'workspaces; add "/<workspaceId>/<taskId>" to open one, then "/instances".\n' +
+        '- "/workspaces/<workspaceId>" ("?filter=" as above); under it "/board", "/analytics", "/settings", ' +
+        '"/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", plus "/instances" or "/edit". Its ' +
+        '"?tab=" general, setup, automations, notifications, memories, skills, sharing, slack, input, storage or danger.\n' +
+        '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/skills[/<name>]", "/{pano,events/hooks}/new", ' +
         '"/pano/[<id>/]chat/<workspaceId>/<taskId>".\n' +
-        '- "/machines", "/machines/<id>", "/sessions/<id>" (a terminal).\n' +
-        '- "/extensions", "/extensions/<name>/<pageId>" (desktop).\n' +
-        'Others are refused. Returns the page.',
+        '- "/machines[/<id>]", "/sessions/<id>" (a terminal).\n' +
+        '- "/extensions[/<name>/<pageId>]" (desktop).\n' +
+        '- "/team/new", "/invitations"; "?team=<id>" on "/tasks/*", "/kanban", "/skills", ' +
+        '"/team/{settings,analytics,memory}" is a team, read-only.\n' +
+        'Others are refused.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
       required: ['path'],
       run: async ({ path }) => {
@@ -1423,6 +1491,75 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       destructive: true,
       screen: before(workflowPage),
       run: ({ workflowId, text }) => api.replaceWorkflowFromText(workflowId, text),
+    }),
+    // ---- Teams -------------------------------------------------------------
+    tool({
+      name: 'readTeams',
+      description:
+        'Read teams. action: list (your teams and role), get, members, invitations (a team\'s pending ones), ' +
+        'myInvitations (addressed to you), preview (a link\'s invitation, by token), shares (the teams a workspace is shared with). ' +
+        'A team\'s shared work, read-only: workspaces, tasks (status, group, member), task (taskId), analytics (range, group), ' +
+        'memory, memoryIndex, memberMemory (workspaceId, name), skills, skill (name).',
+      properties: {
+        action: { type: 'string', enum: Object.keys(TEAM_READS({})), description: 'What to read.' },
+        ...TEAM_FIELDS,
+        taskId: TASK_ID,
+        status: str('Comma-separated task statuses to keep, e.g. "ongoing,blocked".'),
+        group: str('A group name, as the workspaces action reports it.'),
+        member: str('A member\'s user ID: only their tasks.'),
+        limit: int('Page size. Defaults to 10.'),
+        offset: int('How many to skip. Defaults to 0.'),
+        range: str('Analytics range: 24h, 7d, 30d or 90d. Defaults to 7d.'),
+        name: str('A memory or skill name.'),
+      },
+      required: ['action'],
+      readOnly: true,
+      run: dispatch(TEAM_READS(api), 'readTeams'),
+    }),
+    tool({
+      name: 'createTeam',
+      description: 'Create a team, with you as its owner. Then invite members with manageTeam.',
+      properties: { name: str('The team\'s name.') },
+      required: ['name'],
+      screen: after((_input, result) => (result?.id ? teamPage({ teamId: result.id }) : '/team/new')),
+      run: ({ name }) => api.createTeam(name),
+    }),
+    tool({
+      name: 'manageTeam',
+      description:
+        'Change a team. action: rename (name), delete (owner only), setRole/removeMember (userId, role), leave, ' +
+        'invite (email, role; at most a few per team per day, 429 past it), revokeInvitation, accept (token or invitationId), ' +
+        'decline, share/unshare (workspaceId, teamId; share takes group, its "show in team as" name; owner only), ' +
+        'saveMemory (content, baseUpdatedAt: the team\'s memory.md), addSkill (name, workspaceIds: copy a teammate\'s skill into your account).',
+      properties: {
+        action: { type: 'string', enum: Object.keys(TEAM_WRITES({})), description: 'What to change.' },
+        ...TEAM_FIELDS,
+        name: str('The team\'s new name, for rename; the skill\'s, for addSkill.'),
+        content: str('The team memory\'s full markdown, for saveMemory.'),
+        baseUpdatedAt: str('The updatedAt the memory was read at; a newer save is refused (409).'),
+        workspaceIds: { type: 'array', items: { type: 'string' }, description: 'Your workspaces to turn an added skill on in.' },
+        email: str('The email to invite.'),
+        role: { type: 'string', enum: ['member', 'admin', 'owner'], description: 'A member\'s role. Invitations default to member.' },
+        group: str('The group a shared workspace shows in, in the team. Defaults to the workspace name.'),
+      },
+      required: ['action'],
+      destructive: true,
+      screen: before(teamWritePage),
+      run: dispatch(TEAM_WRITES(api), 'manageTeam'),
+    }),
+    tool({
+      name: 'cloneTeamTask',
+      description:
+        'Copy a teammate\'s task, from a team you are in, into one of your own workspaces, with a note linking back to it.',
+      properties: {
+        teamId: TEAM_ID,
+        taskId: TASK_ID,
+        workspaceId: str('Your workspace to clone it into.'),
+        status: { type: 'string', enum: ['notstarted', 'ongoing'], description: 'The clone\'s status. Defaults to notstarted.' },
+      },
+      required: ['teamId', 'taskId', 'workspaceId'],
+      screen: after(({ workspaceId }, result) => (result?.task?.id ? taskPage({ workspaceId, taskId: result.task.id }) : workspacePage({ workspaceId }))),
+      run: ({ teamId, taskId, workspaceId, status = 'notstarted' }) => api.cloneTeamTask(teamId, taskId, workspaceId, status),
     }),
   ]
 }

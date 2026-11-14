@@ -15,10 +15,11 @@ import { createApp, h, reactive, ref } from 'vue'
 import { createPinia } from 'pinia'
 
 const push = vi.fn()
+const replace = vi.fn()
 const route = reactive({ params: { filter: 'notstarted' }, query: {} })
 vi.mock('vue-router', () => ({
   useRoute: () => route,
-  useRouter: () => ({ push, currentRoute: ref(route) }),
+  useRouter: () => ({ push, replace, currentRoute: ref(route) }),
 }))
 
 const busEvents = ref([])
@@ -55,6 +56,8 @@ const fetchTasks = vi.fn(async () => ({ tasks: fetchTasksPages.shift() || [] }))
 const deleteTask = vi.fn(async () => ({}))
 const moveTask = vi.fn(async () => ({}))
 const updateTaskOrder = vi.fn(async () => ({}))
+const fetchTeamTasks = vi.fn(async () => ({ tasks: [] }))
+const fetchTeamWorkspaces = vi.fn(async () => ({ workspaces: [] }))
 
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -65,6 +68,8 @@ vi.mock('../src/api', async (importOriginal) => ({
   deleteTask: (...a) => deleteTask(...a),
   moveTask: (...a) => moveTask(...a),
   updateTaskOrder: (...a) => updateTaskOrder(...a),
+  fetchTeamTasks: (...a) => fetchTeamTasks(...a),
+  fetchTeamWorkspaces: (...a) => fetchTeamWorkspaces(...a),
 }))
 
 const { default: TaskListView } = await import('../src/views/TaskListView.vue')
@@ -98,6 +103,7 @@ beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
   route.params = { filter: 'notstarted' }
+  route.query = {}
   busEvents.value = []
   fetchGlobalTasks.mockImplementation(byPage)
   readAllCachedTasks.mockImplementation(async () => [])
@@ -375,4 +381,67 @@ describe('Move Up and Move Down', () => {
       })
     })
   }
+})
+
+describe('the team\'s task list (?team=)', () => {
+  const bob = { userId: 'u2', name: 'Bob' }
+  const shared = [
+    { id: 'tw1', name: 'api', group: 'Backend', owner: bob },
+    { id: 'tw2', name: 'site', owner: { userId: 'u3', name: 'Cy' } },
+  ]
+  const theirs = (id, extra = {}) => ({ ...task(id, 'tw1', 'notstarted'), owner: bob, assignee: 'human', createdBy: 'agent', ...extra })
+
+  beforeEach(() => {
+    route.params = { filter: 'pending' }
+    route.query = { team: 'tm1', group: 'Backend' }
+    fetchTeamWorkspaces.mockImplementation(async () => ({ workspaces: shared }))
+    fetchTeamTasks.mockImplementation(async () => ({ tasks: [theirs('t1'), theirs('t2', { owner: undefined })] }))
+  })
+
+  it('reads the team\'s tasks with no way to change them', async () => {
+    const el = await mount(TaskListView)
+    expect(fetchTeamTasks).toHaveBeenCalledWith('tm1', expect.objectContaining({ group: 'Backend', member: '' }))
+    expect(fetchGlobalTasks).not.toHaveBeenCalled()
+    expect(rows(el)).toEqual(['task t1', 'task t2'])
+    expect(el.querySelector('[data-test="new-task"]')).toBe(null)
+    expect(el.querySelector('[title="Edit Task"]')).toBe(null)
+    expect(el.querySelector('[title="Delete Task"]')).toBe(null)
+    expect(button(el, 'Allow')).toBeUndefined()
+    expect(button(el, 'Deny')).toBeUndefined()
+    expect(el.querySelectorAll('[data-test=task-owner]').length).toBe(1)
+    expect(el.querySelector('[data-test=task-owner]').textContent).toContain('Bob')
+    expect(rowOf(el, 'task t1').textContent).toContain('api')
+    // "Pending on Me" is about you: a team has no such list.
+    expect([...el.querySelectorAll('button')].some((b) => /^Pending/.test(b.textContent.trim()))).toBe(false)
+  })
+
+  it('filters by member and group in the URL, and opens a task in the team', async () => {
+    const el = await mount(TaskListView)
+    const member = el.querySelector('[data-test=team-filter-member]')
+    expect([...member.options].map((o) => o.textContent)).toEqual(['All members', 'Bob', 'Cy'])
+    expect([...el.querySelector('[data-test=team-filter-group]').options].map((o) => o.value)).toEqual(['', 'Backend', 'site'])
+    member.value = 'u2'
+    member.dispatchEvent(new Event('change'))
+    expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending', query: { team: 'tm1', group: 'Backend', member: 'u2' } })
+    const group = el.querySelector('[data-test=team-filter-group]')
+    group.value = ''
+    group.dispatchEvent(new Event('change'))
+    expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending', query: { team: 'tm1' } })
+
+    rowOf(el, 'task t1').click()
+    expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending/tw1/t1', query: { team: 'tm1', group: 'Backend' } })
+  })
+
+  it('says how a team with nothing shared fills up', async () => {
+    fetchTeamWorkspaces.mockImplementation(async () => ({ workspaces: [] }))
+    fetchTeamTasks.mockImplementation(async () => ({ tasks: [] }))
+    const el = await mount(TaskListView)
+    expect(el.querySelector('[data-test=team-empty]').textContent).toContain('Nothing shared yet.')
+  })
+
+  it('goes back to Me when you are no longer in the team', async () => {
+    fetchTeamTasks.mockImplementation(async () => { throw Object.assign(new Error('gone'), { status: 404 }) })
+    await mount(TaskListView)
+    expect(replace).toHaveBeenCalledWith('/')
+  })
 })

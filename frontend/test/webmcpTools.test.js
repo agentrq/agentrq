@@ -48,6 +48,7 @@ const EVERY_FIELD = {
   emitEventId: 'e2',
   includeArchived: true,
   range: '30d',
+  token: 'tok',
 };
 
 /** An API stand-in that records what the catalogue asked of it. */
@@ -186,6 +187,9 @@ describe('the catalogue as a whole', () => {
         // Not a delete either, but every agent connected with the old MCP URL
         // stops working, and every link to the workspace changes.
         'resetWorkspaceId',
+        // Teams' changes, grouped in one tool: it deletes a team, removes
+        // members, and unshares workspaces from teammates.
+        'manageTeam',
       ].sort()
     );
   });
@@ -217,6 +221,7 @@ describe('parity with the interface', () => {
     // Builds a URL for an <img>/<a>; the bytes are fetched by the browser with
     // the session cookie, which an agent cannot replay outside the page.
     getAttachmentUrl: 'returns a URL the page renders, not an action',
+    getTeamAttachmentUrl: 'returns a URL the page renders, not an action; the same as getAttachmentUrl',
     // Exempted deliberately, and this is the reason.
     //
     // Every other exemption here is "not really an action". This one is an
@@ -270,8 +275,21 @@ describe('parity with the interface', () => {
     });
     const drive = (input) =>
       Promise.all(catalogue.map((t) => Promise.resolve().then(() => t.execute(input, {})).catch(() => {})));
+    // A grouped tool (readTeams, manageTeam) calls one function per action,
+    // so it is driven with each action it lists, with every field and none.
+    const driveActions = () =>
+      Promise.all(
+        catalogue.flatMap((t) =>
+          (t.inputSchema.properties.action?.enum || []).flatMap((action) =>
+            [{ ...EVERY_FIELD, action }, { action }].map((input) =>
+              Promise.resolve().then(() => t.execute(input, {})).catch(() => {})
+            )
+          )
+        )
+      );
     return drive(EVERY_FIELD)
       .then(() => drive({}))
+      .then(driveActions)
       .then(() => new Set(calls.map((c) => c.method)));
   })();
 
@@ -544,6 +562,51 @@ describe('each tool calls the interface the way the UI does', () => {
       'launchAgent',
       ['ws1', { machineId: 'm1', kind: 'acp-gateway', model: '', effort: '', autocompact: '', agent: 'codex-acp', acpVersion: '1', cols: 0, rows: 0 }],
     ],
+
+    ['readTeams', { action: 'list' }, 'listTeams', []],
+    ['readTeams', { action: 'get', teamId: 'tm1' }, 'getTeam', ['tm1']],
+    ['readTeams', { action: 'members', teamId: 'tm1' }, 'listTeamMembers', ['tm1']],
+    ['readTeams', { action: 'invitations', teamId: 'tm1' }, 'listTeamInvitations', ['tm1']],
+    ['readTeams', { action: 'myInvitations' }, 'listMyInvitations', []],
+    ['readTeams', { action: 'preview', token: 'tok' }, 'previewInvitation', ['tok']],
+    ['readTeams', { action: 'shares', workspaceId: 'ws1' }, 'listWorkspaceShares', ['ws1']],
+    ['createTeam', { name: 'Core' }, 'createTeam', ['Core']],
+    ['manageTeam', { action: 'rename', teamId: 'tm1', name: 'Infra' }, 'renameTeam', ['tm1', 'Infra']],
+    ['manageTeam', { action: 'delete', teamId: 'tm1' }, 'deleteTeam', ['tm1']],
+    ['manageTeam', { action: 'setRole', teamId: 'tm1', userId: 'u1', role: 'admin' }, 'setTeamMemberRole', ['tm1', 'u1', 'admin']],
+    ['manageTeam', { action: 'removeMember', teamId: 'tm1', userId: 'u1' }, 'removeTeamMember', ['tm1', 'u1']],
+    ['manageTeam', { action: 'leave', teamId: 'tm1' }, 'leaveTeam', ['tm1']],
+    ['manageTeam', { action: 'invite', teamId: 'tm1', email: 'b@acme.com' }, 'createTeamInvitation', ['tm1', 'b@acme.com', 'member']],
+    ['manageTeam', { action: 'invite', teamId: 'tm1', email: 'b@acme.com', role: 'admin' }, 'createTeamInvitation', ['tm1', 'b@acme.com', 'admin']],
+    ['manageTeam', { action: 'revokeInvitation', teamId: 'tm1', invitationId: 'i1' }, 'revokeTeamInvitation', ['tm1', 'i1']],
+    ['manageTeam', { action: 'accept', token: 'tok' }, 'acceptInvitation', ['tok']],
+    ['manageTeam', { action: 'accept', invitationId: 'i1' }, 'acceptInvitationById', ['i1']],
+    ['manageTeam', { action: 'decline', invitationId: 'i1' }, 'declineInvitation', ['i1']],
+    ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1' }, 'shareWorkspace', ['ws1', 'tm1', '']],
+    ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', group: 'backend' }, 'shareWorkspace', ['ws1', 'tm1', 'backend']],
+    ['manageTeam', { action: 'unshare', workspaceId: 'ws1', teamId: 'tm1' }, 'unshareWorkspace', ['ws1', 'tm1']],
+    ['readTeams', { action: 'workspaces', teamId: 'tm1' }, 'fetchTeamWorkspaces', ['tm1']],
+    ['readTeams', { action: 'tasks', teamId: 'tm1' }, 'fetchTeamTasks', ['tm1', { status: '', group: '', member: '', limit: 10, offset: 0 }]],
+    [
+      'readTeams',
+      { action: 'tasks', teamId: 'tm1', status: 'ongoing', group: 'backend', member: 'u1', limit: 5, offset: 5 },
+      'fetchTeamTasks',
+      ['tm1', { status: 'ongoing', group: 'backend', member: 'u1', limit: 5, offset: 5 }],
+    ],
+    ['readTeams', { action: 'task', teamId: 'tm1', taskId: 't1' }, 'getTeamTask', ['tm1', 't1']],
+    ['readTeams', { action: 'analytics', teamId: 'tm1' }, 'fetchTeamStats', ['tm1', '7d', 0, 0, '']],
+    ['readTeams', { action: 'analytics', teamId: 'tm1', range: '30d', group: 'docs' }, 'fetchTeamStats', ['tm1', '30d', 0, 0, 'docs']],
+    ['readTeams', { action: 'memory', teamId: 'tm1' }, 'getTeamMemory', ['tm1']],
+    ['readTeams', { action: 'memoryIndex', teamId: 'tm1' }, 'fetchTeamMemoryIndex', ['tm1']],
+    ['readTeams', { action: 'memberMemory', teamId: 'tm1', workspaceId: 'ws1', name: 'memory.md' }, 'getTeamMemberMemory', ['tm1', 'ws1', 'memory.md']],
+    ['readTeams', { action: 'skills', teamId: 'tm1' }, 'fetchTeamSkills', ['tm1']],
+    ['readTeams', { action: 'skill', teamId: 'tm1', name: 'tdd' }, 'getTeamSkill', ['tm1', 'tdd']],
+    ['manageTeam', { action: 'saveMemory', teamId: 'tm1', content: '# M' }, 'saveTeamMemory', ['tm1', '# M', '']],
+    ['manageTeam', { action: 'saveMemory', teamId: 'tm1', content: '# M', baseUpdatedAt: 'x' }, 'saveTeamMemory', ['tm1', '# M', 'x']],
+    ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd' }, 'addTeamSkill', ['tm1', 'tdd', []]],
+    ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd', workspaceIds: ['ws1'] }, 'addTeamSkill', ['tm1', 'tdd', ['ws1']]],
+    ['cloneTeamTask', { teamId: 'tm1', taskId: 't1', workspaceId: 'ws1' }, 'cloneTeamTask', ['tm1', 't1', 'ws1', 'notstarted']],
+    ['cloneTeamTask', { teamId: 'tm1', taskId: 't1', workspaceId: 'ws1', status: 'ongoing' }, 'cloneTeamTask', ['tm1', 't1', 'ws1', 'ongoing']],
   ];
 
   it.each(CASES)('%s(%o) calls %s', async (toolName, input, method, args) => {
@@ -554,6 +617,42 @@ describe('each tool calls the interface the way the UI does', () => {
     await found.execute(input, { signal: undefined });
 
     expect(calls).toEqual([{ method, args }]);
+  });
+});
+
+describe('the grouped team tools', () => {
+  it.each(['readTeams', 'manageTeam'])('%s refuses an action it does not list, naming the ones it does', (name) => {
+    const found = build().find((t) => t.name === name);
+
+    expect(() => found.execute({ action: 'explode' }, {})).toThrow(/takes an action of .*list|takes an action of .*rename/);
+    expect(() => found.execute(undefined, {})).toThrow('not undefined');
+  });
+
+  it('shows each change on the page that holds it', () => {
+    const page = (input) => build().find((t) => t.name === 'manageTeam').screen.before(input);
+
+    expect(page({ action: 'share', workspaceId: 'ws1', teamId: 'tm1' })).toBe('/workspaces/ws1/settings?tab=sharing');
+    expect(page({ action: 'unshare', workspaceId: 'ws1', teamId: 'tm1' })).toBe('/workspaces/ws1/settings?tab=sharing');
+    expect(page({ action: 'accept', token: 'tok' })).toBe('/invitations');
+    expect(page({ action: 'decline', invitationId: 'i1' })).toBe('/invitations');
+    expect(page({ action: 'invite', teamId: 't/1' })).toBe('/team/settings?team=t%2F1');
+    expect(page({ action: 'saveMemory', teamId: 'tm1' })).toBe('/team/memory?team=tm1');
+    expect(page({ action: 'addSkill', teamId: 'tm1' })).toBe('/skills?team=tm1');
+    expect(page(undefined)).toBe('/team/settings?team=');
+  });
+
+  it('opens a new team\'s settings, or the create form when the answer names none', () => {
+    const after = build().find((t) => t.name === 'createTeam').screen.after;
+
+    expect(after({ name: 'Core' }, { id: 'tm8', name: 'Core' })).toBe('/team/settings?team=tm8');
+    expect(after({ name: 'Core' }, {})).toBe('/team/new');
+  });
+
+  it('opens the clone in your workspace, or the workspace when the answer names none', () => {
+    const after = build().find((t) => t.name === 'cloneTeamTask').screen.after;
+
+    expect(after({ workspaceId: 'ws1' }, { task: { id: 't9' } })).toBe('/workspaces/ws1/tasks/t9');
+    expect(after({ workspaceId: 'ws1' }, {})).toBe('/workspaces/ws1');
   });
 });
 
