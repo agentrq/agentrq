@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"mime"
 	"net/mail"
 	"net/smtp"
 	"strings"
@@ -51,8 +52,11 @@ func (s *service) Send(ctx context.Context, req SendRequest) error {
 	}
 
 	to := strings.Join(req.To, ", ")
+	// The subject is often someone's text, a team or task name: encoded, a
+	// line break in it cannot end the header and start headers or a body of
+	// its own, and a non-ASCII one reaches the reader as written.
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
-		s.cfg.From, to, req.Subject, req.Body)
+		s.cfg.From, to, mime.QEncoding.Encode("utf-8", req.Subject), req.Body)
 
 	auth := smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)

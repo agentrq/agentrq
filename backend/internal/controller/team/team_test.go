@@ -274,7 +274,7 @@ func TestCreatingATeamMakesItsCreatorOwner(t *testing.T) {
 		if got.Name != "ops" || got.Role != model.TeamRoleOwner || got.MemberCount != 1 {
 			t.Errorf("Dave's new team is %+v, want ops, owned by him, of 1", got)
 		}
-		for _, name := range []string{"", "   ", strings.Repeat("é", 129)} {
+		for _, name := range []string{"", "   ", strings.Repeat("é", 129), "ops\r\nBcc: x@example.com", "ops\tteam", "ops\x00"} {
 			_, err := f.c.CreateTeam(f.ctx, dave, name)
 			expectKind(t, fmt.Sprintf("creating a team named %q", name), err, entity.TeamInvalid)
 		}
@@ -663,6 +663,7 @@ func TestSharingAWorkspace(t *testing.T) {
 		expectKind(t, "sharing a fork", errOf(f.c.ShareWorkspace(f.ctx, alice, 101, f.team, "")), entity.TeamInvalid)
 		expectKind(t, "sharing an archived workspace", errOf(f.c.ShareWorkspace(f.ctx, alice, 102, f.team, "")), entity.TeamInvalid)
 		expectKind(t, "a group too long", errOf(f.c.ShareWorkspace(f.ctx, alice, 100, f.team, strings.Repeat("g", 129))), entity.TeamInvalid)
+		expectKind(t, "a group of two lines", errOf(f.c.ShareWorkspace(f.ctx, alice, 100, f.team, "a\nb")), entity.TeamInvalid)
 
 		shares := must(f.c.ListShares(f.ctx, alice, 100))
 		if len(shares) != 1 || shares[0].Group != "Platform" || shares[0].TeamName != "core" {
