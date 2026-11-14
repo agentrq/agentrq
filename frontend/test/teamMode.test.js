@@ -31,9 +31,9 @@ import {
   preferredWorkspace,
   isVersionConflict,
   CONFLICT_NOTICE,
-  MANAGE_TABS,
-  withManage,
-  manageTabOf,
+  SETTINGS_TABS,
+  teamSettings,
+  settingsTabOf,
   describeActivity,
   timeAgo,
   expiresIn,
@@ -337,20 +337,18 @@ describe('a change made over someone else\'s', () => {
   });
 });
 
-describe('the Manage team dialog in the URL', () => {
-  it('is ?manage=<tab>, kept beside the rest of the query', () => {
-    const route = { path: '/kanban', query: { team: 'tm1', workspace: 'docs' } };
-    expect(withManage(route, 'invitations')).toEqual({ path: '/kanban', query: { team: 'tm1', workspace: 'docs', manage: 'invitations' } });
-    expect(withManage({ path: '/kanban', query: { team: 'tm1', manage: 'members' } }, '')).toEqual({ path: '/kanban', query: { team: 'tm1' } });
-    expect(withManage(undefined, 'members')).toEqual({ path: '/', query: { manage: 'members' } });
+describe('the team settings page in the URL', () => {
+  it('is /team/settings?team=<id>&tab=<tab>, on members by default', () => {
+    expect(teamSettings('tm1', 'invitations')).toEqual({ path: '/team/settings', query: { team: 'tm1', tab: 'invitations' } });
+    expect(teamSettings(7)).toEqual({ path: '/team/settings', query: { team: '7', tab: 'members' } });
   });
 
-  it('opens on one of its tabs, and is shut for anything else', () => {
-    for (const tab of MANAGE_TABS) expect(manageTabOf({ query: { manage: tab } })).toBe(tab);
-    expect(MANAGE_TABS).toEqual(['members', 'invitations', 'activity', 'workspaces']);
-    expect(manageTabOf({ query: { manage: 'settings' } })).toBe('');
-    expect(manageTabOf({ query: {} })).toBe('');
-    expect(manageTabOf(undefined)).toBe('');
+  it('opens on one of its tabs, and on members for anything else', () => {
+    for (const tab of SETTINGS_TABS) expect(settingsTabOf({ query: { tab } })).toBe(tab);
+    expect(SETTINGS_TABS).toEqual(['members', 'invitations', 'activity', 'workspaces', 'danger']);
+    expect(settingsTabOf({ query: { tab: 'settings' } })).toBe('members');
+    expect(settingsTabOf({ query: {} })).toBe('members');
+    expect(settingsTabOf(undefined)).toBe('members');
   });
 });
 
@@ -602,17 +600,17 @@ describe('the team store\'s version', () => {
 });
 
 describe('the team routes', () => {
-  it('are in the one route table, with no page for settings or memory', () => {
+  it('are in the one route table, with no page for memory', () => {
     const paths = routes.map((r) => r.path);
     for (const p of ['/team/new', '/team/settings', '/team/analytics', '/invitations', '/invite']) {
       expect(paths).toContain(p);
     }
     expect(paths).not.toContain('/team/memory');
-    expect(routes.find((r) => r.path === '/team/settings').component).toBeUndefined();
   });
 
-  it('shows analytics only for a team: with none it is the home page', () => {
-    const { beforeEnter } = routes.find((r) => r.path === '/team/analytics');
+  it.each(['/team/analytics', '/team/settings'])('shows %s only for a team: with none it is the home page', (path) => {
+    const { beforeEnter } = routes.find((r) => r.path === path);
+    expect(typeof routes.find((r) => r.path === path).component).toBe('function');
     expect(beforeEnter({ query: { team: 'tm1' } })).toBe(true);
     expect(beforeEnter({ query: {} })).toBe('/');
   });

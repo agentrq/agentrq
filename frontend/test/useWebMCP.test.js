@@ -286,7 +286,7 @@ describe('the navigate tool\'s map of the interface', () => {
     '/extensions/acme/home',
     '/team/new',
     '/team/analytics?team=tm1',
-    '/tasks/active?team=tm1&manage=members',
+    '/team/settings?team=tm1&tab=members',
     '/invitations',
   ];
   const router = createRouter({ history: createMemoryHistory(), routes });
@@ -309,7 +309,7 @@ describe('the navigate tool\'s map of the interface', () => {
 
     for (const word of ['board', 'analytics', 'settings', 'instances', 'edit', 'new', 'events', 'workflows',
       'machines', 'sessions', 'extensions', 'notstarted', 'pending', 'ongoing', 'completed', 'scheduled',
-      '?filter=', '?tab=', 'memories', 'danger', 'sharing', '?team=', '/team/new', 'team/analytics', '/invitations']) {
+      '?filter=', '?tab=', 'memories', 'danger', 'sharing', '?team=', '/team/new', 'team/analytics', 'team/settings', '/invitations']) {
       expect(description).toContain(word);
     }
   });

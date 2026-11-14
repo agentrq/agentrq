@@ -16,7 +16,7 @@
         <span class="min-w-0 flex font-semibold text-gray-900 dark:text-white"><TeamNameEditor :team="team" :fallback="name" input-class="text-[11px] h-5" /></span>
         <span class="shrink-0">(read-only)</span>
       </span>
-      <router-link :to="withManage(route, 'members')" data-test="team-bar-manage" class="ml-auto shrink-0 font-semibold text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white">Manage</router-link>
+      <router-link :to="teamSettings(teamId)" data-test="team-bar-manage" class="ml-auto shrink-0 font-semibold text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white">Manage</router-link>
       <router-link to="/" @click="rememberTeam('')" class="shrink-0 font-semibold text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white">Back to Me</router-link>
     </div>
     <div v-if="joined" data-test="joined-banner" class="flex items-center gap-3 px-4 py-2 text-[12px] bg-gray-50 dark:bg-zinc-900 text-gray-800 dark:text-zinc-100 border-b md:border-b-0 md:border-t border-gray-100 dark:border-zinc-800">
@@ -33,22 +33,19 @@
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { rememberTeam } from '../stores/teamStore';
-import { useTeamMode, withManage } from '../composables/useTeamMode';
+import { teamSettings, useTeamMode } from '../composables/useTeamMode';
 import TeamNameEditor from './TeamNameEditor.vue';
 
 defineProps({ name: { type: String, default: 'Team' } });
 
 const route = useRoute();
 const router = useRouter();
-const { team } = useTeamMode();
+const { team, teamId } = useTeamMode();
 const joined = computed(() => route.query.joined === '1');
 
-// The welcome's offer: the Manage team dialog on your workspaces, the
-// welcome done with.
-const shareLink = computed(() => {
-  const { joined: _shown, ...query } = route.query;
-  return withManage({ path: route.path, query }, 'workspaces');
-});
+// The welcome's offer: the team's settings on your workspaces, which leaves
+// the welcome behind.
+const shareLink = computed(() => teamSettings(teamId.value, 'workspaces'));
 
 function dismiss() {
   const { joined: _shown, ...query } = route.query;

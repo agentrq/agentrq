@@ -30,15 +30,15 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   const beaTraffic = watchTraffic(bea)
   const who = await signInAs(beaContext, { email: `${unique('bea')}@qa.agentrq.local`, name: 'Bea Teammate' })
 
-  // 1. The root user creates the team, and lands in Manage team, on its invitations.
+  // 1. The root user creates the team, and lands on its settings, on its invitations.
   const teamName = unique('Core')
   await owner.goto('/team/new')
   await owner.locator('#team-name').fill(teamName)
   const created = nextResponse(owner, 'POST', '/teams')
   await owner.getByRole('button', { name: 'Create' }).click()
   expect((await created).status()).toBe(201)
-  await expect(owner).toHaveURL(/\/tasks\/active\?team=.*manage=invitations/)
-  await expect(owner.getByTestId('team-manage')).toBeVisible()
+  await expect(owner).toHaveURL(/\/team\/settings\?team=.*tab=invitations/)
+  await expect(owner.getByTestId('team-settings')).toBeVisible()
   const teamId = new URL(owner.url()).searchParams.get('team')
 
   // 2. Invites Bea: no mail is sent here, so the page shows the link once.
@@ -52,10 +52,10 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   const link = await owner.getByTestId('invite-link').inputValue()
   const token = link.split('#')[1]
   expect(token, `the invitation link ${link}`).toBeTruthy()
-  // One Escape shuts the link, and leaves Manage team open.
+  // One Escape shuts the link, and leaves the settings page open.
   await owner.keyboard.press('Escape')
   await expect(owner.getByTestId('invite-link-modal')).toHaveCount(0)
-  await expect(owner.getByTestId('team-manage')).toBeVisible()
+  await expect(owner.getByTestId('team-settings')).toBeVisible()
 
   // ...and reaches the daily cap (2 in this run) on the third.
   expect((await invite(`${unique('cy')}@qa.agentrq.local`)).status()).toBe(201)
@@ -71,9 +71,9 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   expect((await accepted).status()).toBe(200)
   await expect(bea).toHaveURL(new RegExp(`/tasks/active\\?team=${teamId}`))
 
-  // 4. The root user shares the run's workspace from Manage team, and puts a
+  // 4. The root user shares the run's workspace from the team's settings, and puts a
   //    task with two files in it.
-  await owner.goto(`/tasks/active?team=${teamId}&manage=workspaces`)
+  await owner.goto(`/team/settings?team=${teamId}&tab=workspaces`)
   const shared = nextResponse(owner, 'PUT', `/workspaces/${workspace.id}/shares/${teamId}`)
   await owner.getByRole('switch', { name: `Share ${workspace.name} with ${teamName}` }).click()
   expect((await shared).status()).toBe(200)
@@ -155,11 +155,11 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   const tab1 = bea
   const tab2 = await beaContext.newPage()
   for (const p of [tab1, tab2]) {
-    await p.goto(`/tasks/active?team=${teamId}&manage=members`)
+    await p.goto(`/team/settings?team=${teamId}&tab=members`)
     await expect(p.getByTestId('member-row')).toHaveCount(2)
   }
   const rename = async (p, name) => {
-    await p.getByTestId('team-manage').getByTestId('team-rename').click()
+    await p.getByTestId('team-settings').getByTestId('team-rename').click()
     await p.getByTestId('team-rename-input').fill(name)
     const renamed = nextResponse(p, 'PATCH', `/teams/${teamId}`)
     await p.getByTestId('team-rename-input').press('Enter')
@@ -167,12 +167,12 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   }
   const first = unique('Platform')
   expect(await rename(tab2, first)).toBe(200)
-  await expect(tab2.getByTestId('team-manage').getByTestId('team-rename')).toHaveText(first)
+  await expect(tab2.getByTestId('team-settings').getByTestId('team-rename')).toHaveText(first)
   expect(await rename(tab1, unique('Infra'))).toBe(409)
   await expect(tab1.getByText('Someone changed this team, refreshed')).toBeVisible()
-  await expect(tab1.getByTestId('team-manage').getByTestId('team-rename')).toHaveText(first)
+  await expect(tab1.getByTestId('team-settings').getByTestId('team-rename')).toHaveText(first)
   // The log says who did it.
-  await tab1.getByTestId('manage-tab-activity').click()
+  await tab1.getByTestId('settings-tab-activity').click()
   await expect(tab1.getByTestId('activity-row').first()).toContainText(`Bea Teammate renamed the team from ${teamName} to ${first}`)
   await tab1.screenshot({ path: test.info().outputPath('team-rename-conflict.png') })
   await tab2.close()
