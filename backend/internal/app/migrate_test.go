@@ -5,6 +5,7 @@
 package app
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,7 +26,7 @@ func TestMigratedModels(t *testing.T) {
 	if err := db.AutoMigrate(migratedModels()...); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	for _, table := range []string{"task_latencies", "hourly_task_latencies", "daily_task_latencies", "monthly_task_latencies", "task_state_transitions", "pano_docs", "pano_files", "pano_comments", "hooks", "hook_registrations", "hook_deliveries", "hook_delivery_keys", "teams", "team_members", "team_invitations", "workspace_shares", "team_memories"} {
+	for _, table := range []string{"task_latencies", "hourly_task_latencies", "daily_task_latencies", "monthly_task_latencies", "task_state_transitions", "pano_docs", "pano_files", "pano_comments", "hooks", "hook_registrations", "hook_deliveries", "hook_delivery_keys", "teams", "team_members", "team_invitations", "workspace_shares", "team_management_activities"} {
 		if !db.Migrator().HasTable(table) {
 			t.Errorf("%s is not migrated", table)
 		}
@@ -91,5 +92,85 @@ func TestMigrateDropsThePlainHookToken(t *testing.T) {
 	// A second run finds nothing to drop.
 	if err := migrateSchema(db); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A database migrated while teams had roles, share labels and a memory file
+// has NOT NULL role columns no insert fills; migrating drops them, the label
+// and the memory table, and keeps the rows.
+func TestMigrateDropsTeamRolesLabelsAndMemory(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "a.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type member struct {
+		model.TeamMember
+		Role string `gorm:"type:varchar(16);not null"`
+	}
+	type invitation struct {
+		model.TeamInvitation
+		Role string `gorm:"type:varchar(16);not null"`
+	}
+	type share struct {
+		model.WorkspaceShare
+		GroupName string `gorm:"type:varchar(128);not null"`
+	}
+	type memory struct {
+		ID      int64 `gorm:"primaryKey"`
+		Content string
+	}
+	for table, m := range map[string]any{"team_members": &member{}, "team_invitations": &invitation{}, "workspace_shares": &share{}, "team_memories": &memory{}} {
+		if err := db.Table(table).AutoMigrate(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Table("team_members").Create(&member{TeamMember: model.TeamMember{ID: 1, TeamID: 2, UserID: 3}, Role: "owner"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	m := db.Migrator()
+	if m.HasColumn(&model.TeamMember{}, "role") || m.HasColumn(&model.TeamInvitation{}, "role") || m.HasColumn(&model.WorkspaceShare{}, "group_name") {
+		t.Error("a role or group column is still there")
+	}
+	if m.HasTable("team_memories") {
+		t.Error("team_memories is still there")
+	}
+	var n int64
+	if err := db.Model(&model.TeamMember{}).Where("id = 1").Count(&n).Error; err != nil || n != 1 {
+		t.Errorf("the member row is gone: %d, %v", n, err)
+	}
+	if err := db.Create(&model.TeamMember{ID: 4, TeamID: 2, UserID: 5}).Error; err != nil {
+		t.Errorf("insert a member after migrating: %v", err)
+	}
+	if err := migrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A column that cannot be dropped fails the migration rather than leaving a
+// NOT NULL role behind to refuse every new member.
+func TestMigrateFailsWhenARoleCannotBeDropped(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "a.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("ALTER TABLE team_members ADD COLUMN role varchar(16) NOT NULL DEFAULT 'owner'").Error; err != nil {
+		t.Fatal(err)
+	}
+	full := errors.New("disk full")
+	if err := db.Callback().Raw().Before("gorm:raw").Register("fail_drop_role", func(tx *gorm.DB) {
+		if sql := strings.ToLower(tx.Statement.SQL.String()); strings.Contains(sql, "team_members") && strings.Contains(sql, "drop") {
+			_ = tx.AddError(full)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateSchema(db); !errors.Is(err, full) {
+		t.Errorf("migrate = %v, want the failed drop", err)
 	}
 }

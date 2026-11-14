@@ -85,43 +85,37 @@ func (c *controller) userName(ctx context.Context, userID int64) string {
 	return u.Name
 }
 
-func (c *controller) CreateInvitation(ctx context.Context, userID, teamID int64, email, role string) (entity.CreateTeamInvitationResponse, error) {
-	mine, err := c.manager(ctx, userID, teamID)
-	if err != nil {
-		return entity.CreateTeamInvitationResponse{}, err
-	}
+// CreateInvitation leaves the caller's membership to the repository, which
+// reads it under the team's lock.
+func (c *controller) CreateInvitation(ctx context.Context, ch entity.TeamChange, email string) (entity.CreateTeamInvitationResponse, error) {
 	if c.maxInvite <= 0 {
 		return entity.CreateTeamInvitationResponse{}, teamErr(entity.TeamForbidden, "invitations are turned off on this server")
 	}
-	if email, err = cleanEmail(email); err != nil {
+	email, err := cleanEmail(email)
+	if err != nil {
 		return entity.CreateTeamInvitationResponse{}, err
 	}
-	if role == "" {
-		role = model.TeamRoleMember
+	if err := c.member(ctx, ch.UserID, ch.TeamID); err != nil {
+		return entity.CreateTeamInvitationResponse{}, err
 	}
-	if !validRole(role) {
-		return entity.CreateTeamInvitationResponse{}, teamErr(entity.TeamInvalid, "a role is owner, admin or member")
-	}
-	if role == model.TeamRoleOwner && mine != model.TeamRoleOwner {
-		return entity.CreateTeamInvitationResponse{}, errForbidden
-	}
-	in, err := c.repo.TeamHasMemberWithEmail(ctx, teamID, email)
+	in, err := c.repo.TeamHasMemberWithEmail(ctx, ch.TeamID, email)
 	if err != nil {
 		return entity.CreateTeamInvitationResponse{}, err
 	}
 	if in {
 		return entity.CreateTeamInvitationResponse{}, teamErr(entity.TeamConflict, "%s is already in this team", email)
 	}
-	team, err := c.repo.GetTeam(ctx, teamID)
+	team, err := c.repo.GetTeam(ctx, ch.TeamID)
 	if err != nil {
 		return entity.CreateTeamInvitationResponse{}, err
 	}
 	token, now := newToken(), c.now()
 	inv := model.TeamInvitation{
-		ID: c.ids.NextID(), TeamID: teamID, Email: email, Role: role, InvitedBy: userID,
+		ID: c.ids.NextID(), TeamID: ch.TeamID, Email: email, InvitedBy: ch.UserID,
 		TokenHash: HashToken(token), ExpiresAt: now.Add(InvitationTTL), CreatedAt: now,
 	}
-	switch err := c.repo.CreateTeamInvitation(ctx, inv, now.Add(-capWindow), int64(c.maxInvite), int64(c.maxByUser)); {
+	next, err := c.repo.CreateTeamInvitation(ctx, inv, ch.Version, now.Add(-capWindow), int64(c.maxInvite), int64(c.maxByUser), c.activity())
+	switch {
 	case errors.Is(err, base.ErrInvitationCapReached):
 		return entity.CreateTeamInvitationResponse{}, teamErr(entity.TeamThrottled, "this team has reached its limit of %d invitations per day", c.maxInvite)
 	case errors.Is(err, base.ErrUserInvitationCapReached):
@@ -129,11 +123,11 @@ func (c *controller) CreateInvitation(ctx context.Context, userID, teamID int64,
 	case errors.Is(err, base.ErrInvitationPending):
 		return entity.CreateTeamInvitationResponse{}, teamErr(entity.TeamConflict, "%s already has a pending invitation to this team", email)
 	case err != nil:
-		return entity.CreateTeamInvitationResponse{}, err
+		return entity.CreateTeamInvitationResponse{}, fromRepo(err)
 	}
-	c.emit(ctx, entity.ActionTeamInvite, userID, 0, teamID)
-	inviter := c.userName(ctx, userID)
-	rs := entity.CreateTeamInvitationResponse{Invitation: invitationEntity(inv, team.Name, inviter)}
+	c.emit(ctx, entity.ActionTeamInvite, ch.UserID, 0, ch.TeamID)
+	inviter := c.userName(ctx, ch.UserID)
+	rs := entity.CreateTeamInvitationResponse{Invitation: invitationEntity(inv, team.Name, inviter), Version: next}
 	if c.mailer != nil {
 		err := c.mailer.Send(ctx, smtp.SendRequest{To: []string{email}, Subject: inviteSubject(inviter, team.Name), Body: c.inviteBody(team.Name, token)})
 		if err == nil {
@@ -161,7 +155,7 @@ func (c *controller) inviteBody(team, token string) string {
 
 func invitationEntity(i model.TeamInvitation, team, inviter string) entity.TeamInvitation {
 	return entity.TeamInvitation{
-		ID: i.ID, TeamID: i.TeamID, TeamName: team, Email: i.Email, Role: i.Role,
+		ID: i.ID, TeamID: i.TeamID, TeamName: team, Email: i.Email,
 		InvitedBy: i.InvitedBy, InvitedByName: inviter, CreatedAt: i.CreatedAt, ExpiresAt: i.ExpiresAt,
 	}
 }
@@ -187,22 +181,27 @@ func (c *controller) invitationEntities(ctx context.Context, rows []model.TeamIn
 	return out, nil
 }
 
-func (c *controller) ListTeamInvitations(ctx context.Context, userID, teamID int64) ([]entity.TeamInvitation, error) {
-	if _, err := c.manager(ctx, userID, teamID); err != nil {
-		return nil, err
+func (c *controller) ListTeamInvitations(ctx context.Context, userID, teamID int64) (entity.TeamInvitations, error) {
+	if err := c.member(ctx, userID, teamID); err != nil {
+		return entity.TeamInvitations{}, err
 	}
 	rows, err := c.repo.ListTeamInvitations(ctx, teamID, c.now())
 	if err != nil {
-		return nil, err
+		return entity.TeamInvitations{}, err
 	}
-	return c.invitationEntities(ctx, rows)
+	invs, err := c.invitationEntities(ctx, rows)
+	if err != nil {
+		return entity.TeamInvitations{}, err
+	}
+	v, err := c.version(ctx, teamID)
+	return entity.TeamInvitations{Invitations: invs, Version: v}, err
 }
 
-func (c *controller) RevokeInvitation(ctx context.Context, userID, teamID, invitationID int64) error {
-	if _, err := c.manager(ctx, userID, teamID); err != nil {
-		return err
-	}
-	return c.repo.RevokeTeamInvitation(ctx, teamID, invitationID, c.now())
+// RevokeInvitation leaves the caller's membership to the repository, which
+// reads it under the team's lock.
+func (c *controller) RevokeInvitation(ctx context.Context, ch entity.TeamChange, invitationID int64) (int64, error) {
+	next, err := c.repo.RevokeTeamInvitation(ctx, ch.TeamID, ch.UserID, ch.Version, invitationID, c.activity())
+	return next, fromRepo(err)
 }
 
 // myEmail is the account's email, lowercased.
@@ -237,14 +236,13 @@ func (c *controller) open(inv model.TeamInvitation) error {
 	return nil
 }
 
-// inviterMayGrant is errGone when the inviter is no longer in the team with
-// a role that may grant the invited one, as accepting would find.
-func (c *controller) inviterMayGrant(ctx context.Context, inv model.TeamInvitation) error {
-	m, err := c.repo.GetTeamMember(ctx, inv.TeamID, inv.InvitedBy)
-	if errors.Is(err, base.ErrNotFound) || (err == nil && !base.CanGrantTeamRole(m.Role, inv.Role)) {
-		return errGone
+// inviterIsMember is errGone when the inviter is no longer in the team, as
+// accepting would find.
+func (c *controller) inviterIsMember(ctx context.Context, inv model.TeamInvitation) error {
+	if err := c.member(ctx, inv.InvitedBy, inv.TeamID); !errors.Is(err, base.ErrNotFound) {
+		return err
 	}
-	return err
+	return errGone
 }
 
 // byToken is the invitation the token belongs to; base.ErrNotFound when none
@@ -264,7 +262,7 @@ func (c *controller) PreviewInvitation(ctx context.Context, userID int64, token 
 	if err := c.open(inv); err != nil {
 		return entity.TeamInvitationPreview{}, err
 	}
-	if err := c.inviterMayGrant(ctx, inv); err != nil {
+	if err := c.inviterIsMember(ctx, inv); err != nil {
 		return entity.TeamInvitationPreview{}, err
 	}
 	team, err := c.repo.GetTeam(ctx, inv.TeamID)
@@ -276,7 +274,7 @@ func (c *controller) PreviewInvitation(ctx context.Context, userID int64, token 
 		return entity.TeamInvitationPreview{}, err
 	}
 	return entity.TeamInvitationPreview{
-		TeamID: team.ID, TeamName: team.Name, Role: inv.Role, InvitedByName: c.userName(ctx, inv.InvitedBy),
+		TeamID: team.ID, TeamName: team.Name, InvitedByName: c.userName(ctx, inv.InvitedBy),
 		Email: maskEmail(inv.Email), EmailMatches: email == inv.Email, ExpiresAt: inv.ExpiresAt,
 	}, nil
 }
@@ -327,12 +325,11 @@ func (c *controller) AcceptInvitationByID(ctx context.Context, userID, invitatio
 	return c.accept(ctx, userID, inv)
 }
 
-// accept joins the account to the invitation's team, keeping the role of an
-// account already in it.
+// accept joins the account to the invitation's team, unless already in it.
 func (c *controller) accept(ctx context.Context, userID int64, inv model.TeamInvitation) (entity.Team, error) {
-	now := c.now()
-	member := model.TeamMember{ID: c.ids.NextID(), TeamID: inv.TeamID, UserID: userID, Role: inv.Role, CreatedAt: now, UpdatedAt: now}
-	if err := c.repo.AcceptTeamInvitation(ctx, inv.ID, member, now); err != nil {
+	act := c.activity()
+	member := model.TeamMember{ID: c.ids.NextID(), TeamID: inv.TeamID, UserID: userID, CreatedAt: act.CreatedAt, UpdatedAt: act.CreatedAt}
+	if err := c.repo.AcceptTeamInvitation(ctx, inv.ID, member, act.CreatedAt, act); err != nil {
 		if errors.Is(err, base.ErrInvitationNotPending) {
 			return entity.Team{}, errGone
 		}
@@ -350,5 +347,11 @@ func (c *controller) DeclineInvitation(ctx context.Context, userID, invitationID
 	if inv.AcceptedAt != nil || inv.RevokedAt != nil {
 		return errGone
 	}
-	return c.repo.RevokeTeamInvitation(ctx, inv.TeamID, inv.ID, c.now())
+	act := c.activity()
+	act.ActorUserID = userID
+	err = c.repo.DeclineTeamInvitation(ctx, inv.TeamID, inv.ID, act)
+	if errors.Is(err, base.ErrInvitationNotPending) {
+		return errGone
+	}
+	return err
 }
