@@ -396,6 +396,17 @@ describe('the Manage team dialog', () => {
       expect(document.querySelector('[data-test=invite-link-modal]')).toBe(null);
     });
 
+    it('hands over the link to share after an email went out too', async () => {
+      api.createTeamInvitation.mockResolvedValue({ emailSent: true, link: 'https://agentrq.test/invite#t0', version: 4 });
+      await mount('/tasks/active?team=tm1&manage=invitations', asTeam());
+      await type(d$('#invite-email'), 'new@acme.com');
+      await submit(d$('[data-test=invite-form]'));
+      expect(toasts()).toEqual(['Invitation sent']);
+      const modal = document.querySelector('[data-test=invite-link-modal]');
+      expect(modal.querySelector('[data-test=invite-link]').value).toBe('https://agentrq.test/invite#t0');
+      expect(text(modal.querySelector('[data-test=invite-link-text]'))).toBe('We emailed new@acme.com. You can also share this link. It works once, for that email, for 7 days.');
+    });
+
     it('lists who sent each and when it expires', async () => {
       await mount('/tasks/active?team=tm1&manage=invitations', asTeam());
       expect(d$$('[data-test=invitation-row]').map(text)).toEqual([
@@ -411,7 +422,8 @@ describe('the Manage team dialog', () => {
       await submit(d$('[data-test=invite-form]'));
       const modal = document.querySelector('[data-test=invite-link-modal]');
       expect(modal.querySelector('[data-test=invite-link]').value).toBe('https://agentrq.test/invite#t1');
-      expect(text(modal)).toContain('Send this to new@acme.com. It works once, for that email, for 7 days.');
+      expect(toasts()).toEqual(['Invitation created']);
+      expect(text(modal.querySelector('[data-test=invite-link-text]'))).toBe('No email was sent. Share this link with new@acme.com. It works once, for that email, for 7 days.');
       expect(d$$('[data-test=invitation-row]')).toHaveLength(2);
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       await flush();
@@ -434,7 +446,8 @@ describe('the Manage team dialog', () => {
       await mount('/tasks/active?team=tm1&manage=invitations', asTeam());
       await type(d$('#invite-email'), 'new@acme.com');
       await submit(d$('[data-test=invite-form]'));
-      expect(toasts()).toEqual(['Invitation sent']);
+      expect(toasts()).toEqual(['Invitation created']);
+      expect(document.querySelector('[data-test=invite-link-modal]')).toBe(null);
       expect(store.getTeam('tm1').version).toBe(3);
     });
 
@@ -619,10 +632,10 @@ describe('the invitation link dialog', () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
     await mountModal({ link: 'https://x.test/l', email: 'a@b.c' });
     const copy = document.querySelector('[data-test=invite-copy]');
-    expect(text(copy)).toBe('Copy');
+    expect(copy.getAttribute('aria-label')).toBe('Copy link');
     await click(copy);
     expect(writeText).toHaveBeenCalledWith('https://x.test/l');
-    expect(text(copy)).toBe('Copied');
+    expect(copy.getAttribute('aria-label')).toBe('Copied');
     vi.unstubAllGlobals();
   });
 
@@ -639,7 +652,7 @@ describe('the invitation link dialog', () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } });
     await mountModal({ link: 'https://x.test/l', email: 'a@b.c' });
     await click(document.querySelector('[data-test=invite-copy]'));
-    expect(text(document.querySelector('[data-test=invite-copy]'))).toBe('Copy');
+    expect(document.querySelector('[data-test=invite-copy]').getAttribute('aria-label')).toBe('Copy link');
     const input = document.querySelector('[data-test=invite-link]');
     input.select = vi.fn();
     input.dispatchEvent(new Event('focus'));
@@ -674,10 +687,10 @@ describe('the invitation link dialog', () => {
     app.mount(el);
     await flush();
     await click(document.querySelector('[data-test=invite-copy]'));
-    expect(text(document.querySelector('[data-test=invite-copy]'))).toBe('Copied');
+    expect(document.querySelector('[data-test=invite-copy]').getAttribute('aria-label')).toBe('Copied');
     link.value = 'https://x.test/2';
     await flush();
-    expect(text(document.querySelector('[data-test=invite-copy]'))).toBe('Copy');
+    expect(document.querySelector('[data-test=invite-copy]').getAttribute('aria-label')).toBe('Copy link');
     vi.unstubAllGlobals();
   });
 });

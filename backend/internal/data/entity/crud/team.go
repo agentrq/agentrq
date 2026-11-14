@@ -37,8 +37,8 @@ type TeamInvitation struct {
 }
 
 // CreateTeamInvitationResponse is a new invitation and the team's version
-// after it. Link, the only time the token is shown, is set when no email was
-// sent.
+// after it. Link, the only time the token is shown, is always set, so the
+// inviter can share it; it is the only way in when no email was sent.
 type CreateTeamInvitationResponse struct {
 	Invitation TeamInvitation
 	EmailSent  bool

@@ -124,7 +124,7 @@
   <DeleteModal :show="confirming === 'delete'" title="Delete team" confirm-label="Delete team" :confirm-text="team?.name || ''"
                :message="`Delete ${team?.name} for everyone in it? This cannot be undone.`"
                @close="confirming = ''" @confirm="destroy" />
-  <InviteLinkModal :link="inviteLink.link" :email="inviteLink.email" @close="inviteLink = { link: '', email: '' }" />
+  <InviteLinkModal :link="inviteLink.link" :email="inviteLink.email" :email-sent="inviteLink.emailSent" @close="inviteLink = { link: '', email: '', emailSent: false }" />
   </Teleport>
 </template>
 
@@ -178,7 +178,7 @@ const confirming = ref('');
 const inviteEmail = ref('');
 const inviting = ref(false);
 const inviteErr = ref('');
-const inviteLink = ref({ link: '', email: '' });
+const inviteLink = ref({ link: '', email: '', emailSent: false });
 const emailRef = ref(null);
 
 const isMe = (m) => String(m.userId) === String(me.value?.id);
@@ -243,9 +243,9 @@ async function send(email) {
     const res = await createTeamInvitation(teamId.value, email, version());
     store.setVersion(teamId.value, res?.version);
     // Always the same words, whether or not that address has an account.
-    notifySuccess('Invitation sent');
+    notifySuccess(res?.emailSent ? 'Invitation sent' : 'Invitation created');
     if (res?.invitation) invitations.value = [res.invitation, ...invitations.value.filter((i) => i.email !== email)];
-    if (!res?.emailSent && res?.link) inviteLink.value = { link: res.link, email };
+    if (res?.link) inviteLink.value = { link: res.link, email, emailSent: !!res.emailSent };
     return true;
   } catch (err) {
     if (isVersionConflict(err)) {
