@@ -4672,7 +4672,7 @@ components:
         emailSent: { type: boolean }
         link:
           type: string
-          description: Set when no email was sent, the only time the link is shown. `<baseUrl>/invite#<token>`.
+          description: The invitation link, to share; the only time it is shown, and the only way in when emailSent is false. `<baseUrl>/invite#<token>`.
         version: { type: integer, format: int64, description: The team's version after the invitation. }
     TeamInvitationTokenRequest:
       type: object

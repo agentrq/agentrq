@@ -127,16 +127,15 @@ func (c *controller) CreateInvitation(ctx context.Context, ch entity.TeamChange,
 	}
 	c.emit(ctx, entity.ActionTeamInvite, ch.UserID, 0, ch.TeamID)
 	inviter := c.userName(ctx, ch.UserID)
-	rs := entity.CreateTeamInvitationResponse{Invitation: invitationEntity(inv, team.Name, inviter), Version: next}
+	rs := entity.CreateTeamInvitationResponse{Invitation: invitationEntity(inv, team.Name, inviter), Link: c.link(token), Version: next}
 	if c.mailer != nil {
 		err := c.mailer.Send(ctx, smtp.SendRequest{To: []string{email}, Subject: inviteSubject(inviter, team.Name), Body: c.inviteBody(team.Name, token)})
 		if err == nil {
 			rs.EmailSent = true
 			return rs, nil
 		}
-		zlog.Warn().Err(err).Int64("invitation", inv.ID).Msg("team invitation email not sent; the inviter is given the link instead")
+		zlog.Warn().Err(err).Int64("invitation", inv.ID).Msg("team invitation email not sent; the inviter has only the link")
 	}
-	rs.Link = c.link(token)
 	return rs, nil
 }
 

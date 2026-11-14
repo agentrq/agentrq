@@ -1518,8 +1518,8 @@ export function listTeamInvitations(teamId) {
   return teamCall(`/teams/${enc(teamId)}/invitations`, 'Failed to load invitations');
 }
 
-// { invitation, emailSent, link, version }: the link only when no email was
-// sent, and never shown again. 429 once the team, or the inviter across all
+// { invitation, emailSent, link, version }: the link to share, emailed or not,
+// and never shown again. 429 once the team, or the inviter across all
 // their teams, has reached its daily cap; the message says which.
 export function createTeamInvitation(teamId, email, version) {
   return teamCall(`/teams/${enc(teamId)}/invitations`, 'Failed to send the invitation', { method: 'POST', body: { email, version } });

@@ -205,7 +205,7 @@ func (f *fixture) join(userID int64, email string) {
 		f.t.Fatalf("invite %s: %v", email, err)
 	}
 	accept := func() (entity.Team, error) { return f.c.AcceptInvitation(f.ctx, userID, token(rs.Link)) }
-	if rs.Link == "" { // emailed: accepted from the inbox
+	if rs.EmailSent { // emailed: accepted from the inbox
 		accept = func() (entity.Team, error) { return f.c.AcceptInvitationByID(f.ctx, userID, rs.Invitation.ID) }
 	}
 	if _, err := accept(); err != nil {
@@ -578,15 +578,18 @@ func TestInvitationsAreEmailedWhenSMTPIsSetUp(t *testing.T) {
 	each(t, func(f *fixture) {
 		m.sent = nil
 		rs := must(f.c.CreateInvitation(f.ctx, f.ch(bob), "dave@example.com"))
-		if !rs.EmailSent || rs.Link != "" || len(m.sent) != 1 || rs.Version != 6 {
-			t.Fatalf("answer %+v with %d emails, want the email sent, no link, version 6", rs, len(m.sent))
+		if !rs.EmailSent || !strings.HasPrefix(rs.Link, "https://agentrq.example/invite#") || len(m.sent) != 1 || rs.Version != 6 {
+			t.Fatalf("answer %+v with %d emails, want the email sent, the link to share, version 6", rs, len(m.sent))
+		}
+		if !strings.Contains(m.sent[0].Body, rs.Link) {
+			t.Errorf("the email's link is not the one shared: %q", m.sent[0].Body)
 		}
 		mail := m.sent[0]
 		if mail.To[0] != "dave@example.com" || mail.Subject != "Bob invited you to the core team on AgentRQ" ||
 			!strings.Contains(mail.Body, "https://agentrq.example/invite#") || !strings.Contains(mail.Body, "expires in 7 days") {
 			t.Errorf("the email is %+v", mail)
 		}
-		// An email that fails gives the link instead.
+		// An email that fails leaves only the link.
 		m.err = errors.New("network unreachable")
 		rs = must(f.c.CreateInvitation(f.ctx, f.ch(bob), "eve@example.com"))
 		if rs.EmailSent || !strings.HasPrefix(rs.Link, "https://agentrq.example/invite#") || rs.Version != 7 {
