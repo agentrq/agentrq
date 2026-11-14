@@ -349,15 +349,18 @@ describe('a team\'s settings', () => {
       expect(document.querySelector('[data-test=invite-link-modal]')).toBe(null);
     });
 
-    it('shows the daily cap in the server\'s words, in the form, and keeps what was typed', async () => {
+    it.each([
+      ['the team\'s', 'this team has reached its limit of 10 invitations per day'],
+      ['the inviter\'s', 'you have reached your limit of 20 invitations per day across all your teams'],
+    ])('shows %s daily cap in the server\'s words, in the form, and keeps what was typed', async (_, message) => {
       asTeam('owner');
-      api.createTeamInvitation.mockRejectedValue(fail(429, 'This team has sent its 20 invitations for today.'));
+      api.createTeamInvitation.mockRejectedValue(fail(429, message));
       await mount('/team/settings?team=tm1');
       await type($('#invite-email'), 'new@acme.com');
       await submit($('[data-test=invite-form]'));
       const err = $('[data-test=invite-error]');
       expect(err.getAttribute('role')).toBe('alert');
-      expect(text(err)).toBe('This team has sent its 20 invitations for today.');
+      expect(text(err)).toBe(message);
       expect($('#invite-email').value).toBe('new@acme.com');
       expect(toasts()).toEqual([]);
     });

@@ -334,9 +334,11 @@ describe('invitations', () => {
   });
 
   it('shows the daily cap in the server\'s words, with a fallback', () => {
-    const cap = Object.assign(new Error('Core has sent its 10 invitations for today. Try again tomorrow.'), { status: 429 });
+    const cap = Object.assign(new Error('this team has reached its limit of 10 invitations per day'), { status: 429 });
     expect(inviteError(cap)).toBe(cap.message);
-    expect(inviteError(Object.assign(new Error(''), { status: 429 }))).toMatch(/as many invitations as it may today/);
+    const mine = Object.assign(new Error('you have reached your limit of 20 invitations per day across all your teams'), { status: 429 });
+    expect(inviteError(mine)).toBe(mine.message);
+    expect(inviteError(Object.assign(new Error(''), { status: 429 }))).toMatch(/as many invitations as may be sent today/);
     expect(inviteError(new Error('email is not valid'))).toBe('email is not valid');
     expect(inviteError(null)).toBe('Failed to send the invitation');
   });

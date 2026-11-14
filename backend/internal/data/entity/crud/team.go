@@ -94,7 +94,7 @@ const (
 	TeamConflict
 	// TeamGone is an invitation accepted, revoked or expired.
 	TeamGone
-	// TeamThrottled is a team past its daily invitation cap.
+	// TeamThrottled is a team, or an inviter, past its daily invitation cap.
 	TeamThrottled
 )
 

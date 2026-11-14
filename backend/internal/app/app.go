@@ -166,6 +166,9 @@ type (
 			// How many invitations one team may create in any 24 hours; 0
 			// turns invitations off.
 			MaxInvitesPerDay int `yaml:"maxInvitesPerDay"`
+			// How many invitations one account may create in any 24 hours,
+			// across all its teams; 0 is no such cap.
+			MaxInvitesPerUserPerDay int `yaml:"maxInvitesPerUserPerDay"`
 		} `yaml:"teams"`
 		MCP struct {
 			// OpenAI's domain verification token for a plugin submission.
@@ -399,12 +402,13 @@ func New(cfg Config) (*App, error) {
 	})
 	hookCtrl.Start(appCtx)
 	teamCtrl := team.New(team.Params{
-		Repository:       repo,
-		IDGen:            ids,
-		PubSub:           pubsubSvc,
-		Mailer:           teamMailer(cfg.SMTP, smtpSvc),
-		BaseURL:          cfg.App.BaseURL,
-		MaxInvitesPerDay: cfg.Teams.MaxInvitesPerDay,
+		Repository:              repo,
+		IDGen:                   ids,
+		PubSub:                  pubsubSvc,
+		Mailer:                  teamMailer(cfg.SMTP, smtpSvc),
+		BaseURL:                 cfg.App.BaseURL,
+		MaxInvitesPerDay:        cfg.Teams.MaxInvitesPerDay,
+		MaxInvitesPerUserPerDay: cfg.Teams.MaxInvitesPerUserPerDay,
 	})
 	teamViewCtrl := teamview.New(teamview.Params{
 		Teams:          teamCtrl,
@@ -1493,6 +1497,8 @@ func applyLimits(cfg Config) error {
 		return fmt.Errorf("pano.maxTtlDays: %d is negative", cfg.Pano.MaxTTLDays)
 	case cfg.Teams.MaxInvitesPerDay < 0:
 		return fmt.Errorf("teams.maxInvitesPerDay: %d is negative", cfg.Teams.MaxInvitesPerDay)
+	case cfg.Teams.MaxInvitesPerUserPerDay < 0:
+		return fmt.Errorf("teams.maxInvitesPerUserPerDay: %d is negative", cfg.Teams.MaxInvitesPerUserPerDay)
 	}
 	mcp.MaxMemoryBytes = cmp.Or(cfg.Memory.MaxFileSize, mcp.DefaultMaxMemoryBytes)
 	skill.MaxSkillFileBytes = cmp.Or(cfg.Skills.MaxFileSize, skill.DefaultMaxSkillFileBytes)
