@@ -309,6 +309,11 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("hook storage: %w", err)
 	}
 
+	avatarSvc, err := newAvatars(cfg.ConfigSvc, image.New())
+	if err != nil {
+		return nil, fmt.Errorf("avatars: %w", err)
+	}
+
 	cleanupSvc, err := cleanup.New(cfg.Storage)
 	if err != nil {
 		return nil, fmt.Errorf("cleanup: %w", err)
@@ -372,6 +377,7 @@ func New(cfg Config) (*App, error) {
 		SkillStorage: skillStorageSvc,
 		PanoStorage:  panoStorageSvc,
 		Image:        imgSvc,
+		Avatars:      avatarSvc,
 		PubSub:       pubsubSvc,
 		Limiter:      rateLimiter,
 		SkillImport:  skillimport.New(),

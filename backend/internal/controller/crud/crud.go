@@ -9,6 +9,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/avatar"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/image"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
@@ -28,8 +29,11 @@ type (
 		// Storage.
 		PanoStorage storage.Service
 		Image       image.Service
-		PubSub      pubsub.Service
-		Limiter     ratelimit.Limiter
+		// Avatars keeps a copy of each sign-in picture. Nil keeps the
+		// provider's link.
+		Avatars avatar.Service
+		PubSub  pubsub.Service
+		Limiter ratelimit.Limiter
 		// SkillImport reads skills from GitHub. Nil turns importing off.
 		SkillImport skillimport.Service
 		// TaskAgents names the agents in a task's history. Nil leaves them
@@ -70,6 +74,7 @@ type (
 		repository base.Repository
 		storage    storage.Service
 		image      image.Service
+		avatars    avatar.Service
 		pubsub     pubsub.Service
 		limiter    ratelimit.Limiter
 
@@ -94,6 +99,7 @@ func New(p Params) Controller {
 		repository: p.Repository,
 		storage:    p.Storage,
 		image:      p.Image,
+		avatars:    p.Avatars,
 		pubsub:     p.PubSub,
 		limiter:    p.Limiter,
 

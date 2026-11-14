@@ -528,7 +528,7 @@ func (h *handler) googleCallback() fiber.Handler {
 		userID := monoflake.ID(dbUser.User.ID).String()
 
 		// Create JWT using centralized logic
-		tokenString, err := h.tokenSvc.CreateToken(userID, user.Email, user.Name, user.Picture)
+		tokenString, err := h.tokenSvc.CreateToken(userID, user.Email, user.Name, dbUser.User.Picture)
 		if err != nil {
 			zlog.Error().Err(err).Msg("Failed to sign token")
 			c.Set(_headerContentType, _mimeJSON)
@@ -606,7 +606,7 @@ func (h *handler) githubCallback() fiber.Handler {
 
 		userID := monoflake.ID(dbUser.User.ID).String()
 
-		tokenString, err := h.tokenSvc.CreateToken(userID, user.Email, user.Name, user.Picture)
+		tokenString, err := h.tokenSvc.CreateToken(userID, user.Email, user.Name, dbUser.User.Picture)
 		if err != nil {
 			zlog.Error().Err(err).Msg("Failed to sign GitHub token")
 			c.Set(_headerContentType, _mimeJSON)

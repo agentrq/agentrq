@@ -13,6 +13,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	mock_avatar "github.com/agentrq/agentrq/backend/internal/service/mocks/avatar"
 	"github.com/golang/mock/gomock"
 	"github.com/mustafaturan/monoflake"
 )
@@ -224,4 +225,114 @@ func TestEnsureSupervisorWorkspace_FailsWhenTheSupervisorCannotBeMade(t *testing
 	if _, err := e.controller.EnsureSupervisorWorkspace(context.Background(), entity.EnsureSupervisorWorkspaceRequest{UserID: monoflake.ID(999).String()}); err == nil {
 		t.Fatal("EnsureSupervisorWorkspace returned no error, want the create failure")
 	}
+}
+
+func newAvatarTestController(t *testing.T) (*testEnv, *mock_avatar.MockService) {
+	t.Helper()
+	e := newTestController(t)
+	avatars := mock_avatar.NewMockService(gomock.NewController(t))
+	e.controller.(*controller).avatars = avatars
+	return e, avatars
+}
+
+func TestFindOrCreateUser_Avatars(t *testing.T) {
+	const kept = "https://cdn.example/avatars/u-1/abc.png"
+	req := entity.FindOrCreateUserRequest{Email: "test@example.com", Name: "Test User", Picture: "https://provider/pic"}
+
+	t.Run("an existing user's picture becomes the kept copy", func(t *testing.T) {
+		e, avatars := newAvatarTestController(t)
+		e.repo.EXPECT().FindUserByEmail(gomock.Any(), req.Email).Return(model.User{ID: testUserID, Email: req.Email, Name: req.Name, Picture: req.Picture}, nil)
+		avatars.EXPECT().Mirror(gomock.Any(), testUserID, req.Picture, req.Picture).Return(kept, nil)
+		e.repo.EXPECT().UpdateUser(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, u model.User) (model.User, error) {
+			return u, nil
+		})
+
+		resp, err := e.controller.FindOrCreateUser(context.Background(), req)
+		if err != nil || resp.User.Picture != kept {
+			t.Fatalf("FindOrCreateUser returned %+v, %v, want the kept copy as the picture", resp, err)
+		}
+	})
+
+	t.Run("a picture already kept is not saved again", func(t *testing.T) {
+		e, avatars := newAvatarTestController(t)
+		e.repo.EXPECT().FindUserByEmail(gomock.Any(), req.Email).Return(model.User{ID: testUserID, Email: req.Email, Name: req.Name, Picture: kept}, nil)
+		avatars.EXPECT().Mirror(gomock.Any(), testUserID, req.Picture, kept).Return(kept, nil)
+
+		resp, err := e.controller.FindOrCreateUser(context.Background(), req)
+		if err != nil || resp.User.Picture != kept {
+			t.Fatalf("FindOrCreateUser returned %+v, %v, want the kept copy as the picture", resp, err)
+		}
+	})
+
+	t.Run("a copy that fails keeps the picture the user has", func(t *testing.T) {
+		e, avatars := newAvatarTestController(t)
+		e.repo.EXPECT().FindUserByEmail(gomock.Any(), req.Email).Return(model.User{ID: testUserID, Email: req.Email, Name: req.Name, Picture: kept}, nil)
+		avatars.EXPECT().Mirror(gomock.Any(), testUserID, req.Picture, kept).Return("", fmt.Errorf("provider down"))
+
+		resp, err := e.controller.FindOrCreateUser(context.Background(), req)
+		if err != nil || resp.User.Picture != kept {
+			t.Fatalf("FindOrCreateUser returned %+v, %v, want the picture the user had", resp, err)
+		}
+	})
+
+	t.Run("a copy that fails for a user with no picture keeps the provider's", func(t *testing.T) {
+		e, avatars := newAvatarTestController(t)
+		e.repo.EXPECT().FindUserByEmail(gomock.Any(), req.Email).Return(model.User{ID: testUserID, Email: req.Email, Name: req.Name}, nil)
+		avatars.EXPECT().Mirror(gomock.Any(), testUserID, req.Picture, "").Return("", fmt.Errorf("provider down"))
+		e.repo.EXPECT().UpdateUser(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, u model.User) (model.User, error) {
+			return u, nil
+		})
+
+		resp, err := e.controller.FindOrCreateUser(context.Background(), req)
+		if err != nil || resp.User.Picture != req.Picture {
+			t.Fatalf("FindOrCreateUser returned %+v, %v, want the provider's picture", resp, err)
+		}
+	})
+
+	t.Run("a new user is created with the kept copy", func(t *testing.T) {
+		e, avatars := newAvatarTestController(t)
+		e.repo.EXPECT().FindUserByEmail(gomock.Any(), req.Email).Return(model.User{}, base.ErrNotFound)
+		e.idgen.EXPECT().NextID().Return(testUserID)
+		avatars.EXPECT().Mirror(gomock.Any(), testUserID, req.Picture, "").Return(kept, nil)
+		e.repo.EXPECT().CreateUser(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, u model.User) (model.User, error) {
+			return u, nil
+		})
+		e.idgen.EXPECT().NextID().Return(int64(99))
+		e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, w model.Workspace) (model.Workspace, error) {
+			return w, nil
+		})
+
+		resp, err := e.controller.FindOrCreateUser(context.Background(), req)
+		if err != nil || resp.User.Picture != kept {
+			t.Fatalf("FindOrCreateUser returned %+v, %v, want the kept copy as the picture", resp, err)
+		}
+	})
+
+	t.Run("a new user whose copy fails is created with the provider's picture", func(t *testing.T) {
+		e, avatars := newAvatarTestController(t)
+		e.repo.EXPECT().FindUserByEmail(gomock.Any(), req.Email).Return(model.User{}, base.ErrNotFound)
+		e.idgen.EXPECT().NextID().Return(testUserID)
+		avatars.EXPECT().Mirror(gomock.Any(), testUserID, req.Picture, "").Return("", fmt.Errorf("provider down"))
+		e.repo.EXPECT().CreateUser(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, u model.User) (model.User, error) {
+			return u, nil
+		})
+		e.idgen.EXPECT().NextID().Return(int64(99))
+		e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, w model.Workspace) (model.Workspace, error) {
+			return w, nil
+		})
+
+		resp, err := e.controller.FindOrCreateUser(context.Background(), req)
+		if err != nil || resp.User.Picture != req.Picture {
+			t.Fatalf("FindOrCreateUser returned %+v, %v, want the provider's picture", resp, err)
+		}
+	})
+
+	t.Run("a sign-in with no picture copies nothing", func(t *testing.T) {
+		e, _ := newAvatarTestController(t)
+		e.repo.EXPECT().FindUserByEmail(gomock.Any(), req.Email).Return(model.User{ID: testUserID, Email: req.Email, Name: req.Name}, nil)
+
+		if _, err := e.controller.FindOrCreateUser(context.Background(), entity.FindOrCreateUserRequest{Email: req.Email, Name: req.Name}); err != nil {
+			t.Fatalf("FindOrCreateUser returned %v", err)
+		}
+	})
 }

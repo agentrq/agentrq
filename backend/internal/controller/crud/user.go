@@ -13,6 +13,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/mustafaturan/monoflake"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // defaultSupervisorWorkspaceDescription and
@@ -54,7 +55,10 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 			u.Email = req.Email
 			updated = true
 		}
-		if u.Picture == "" && req.Picture != "" {
+		if pic := c.mirrorPicture(ctx, u.ID, req.Picture, u.Picture); pic != "" {
+			updated = updated || pic != u.Picture
+			u.Picture = pic
+		} else if u.Picture == "" && req.Picture != "" {
 			u.Picture = req.Picture
 			updated = true
 		}
@@ -97,11 +101,16 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 	}
 
 	// Not found, create new
+	id := c.idgen.NextID()
+	picture := req.Picture
+	if pic := c.mirrorPicture(ctx, id, req.Picture, ""); pic != "" {
+		picture = pic
+	}
 	newUser := model.User{
-		ID:        c.idgen.NextID(),
+		ID:        id,
 		Email:     req.Email,
 		Name:      req.Name,
-		Picture:   req.Picture,
+		Picture:   picture,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -136,6 +145,21 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 			Picture:   created.Picture,
 		},
 	}, nil
+}
+
+// mirrorPicture is the link to the copy of the sign-in picture at src kept
+// for a user, or "" when none is kept: with no avatar store, or when copying
+// fails, which never stops a sign-in.
+func (c *controller) mirrorPicture(ctx context.Context, userID int64, src, current string) string {
+	if c.avatars == nil || src == "" {
+		return ""
+	}
+	link, err := c.avatars.Mirror(ctx, userID, src, current)
+	if err != nil {
+		zlog.Warn().Err(err).Msg("Could not keep a copy of the sign-in picture")
+		return ""
+	}
+	return link
 }
 
 // createSupervisorWorkspace makes the supervisor workspace with the defaults

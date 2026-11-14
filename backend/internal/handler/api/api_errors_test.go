@@ -41,6 +41,8 @@ type authPathTokens struct {
 	refreshErr error
 	mcpErr     error
 	claims     *auth.Claims
+	// sawPicture is the picture the last session was made with.
+	sawPicture string
 }
 
 func (m *authPathTokens) CreateOAuthStateToken(redirectURL, provider string) (string, error) {
@@ -58,6 +60,7 @@ func (m *authPathTokens) ValidateOAuthStateToken(tokenStr, provider string) (str
 }
 
 func (m *authPathTokens) CreateToken(userID, email, name, picture string) (string, error) {
+	m.sawPicture = picture
 	if m.tokenErr != nil {
 		return "", m.tokenErr
 	}
@@ -92,7 +95,7 @@ func (m *authPathCrud) FindOrCreateUser(_ context.Context, req entity.FindOrCrea
 	if m.err != nil {
 		return nil, m.err
 	}
-	return &entity.FindOrCreateUserResponse{User: entity.User{ID: 7, Email: req.Email}}, nil
+	return &entity.FindOrCreateUserResponse{User: entity.User{ID: 7, Email: req.Email, Picture: "https://cdn.example/avatars/u-7/abc.png"}}, nil
 }
 
 func (m *authPathCrud) FindUserByID(context.Context, int64) (entity.User, error) {
@@ -408,6 +411,20 @@ func TestOAuthCallback(t *testing.T) {
 				cookies := setCookies(resp)
 				if !strings.Contains(cookies, "at=access-token") || !strings.Contains(cookies, "rt=refresh-token") {
 					t.Errorf("Set-Cookie = %s, want both halves of a session", cookies)
+				}
+			})
+
+			t.Run("makes the session with the account's picture, not the provider's", func(t *testing.T) {
+				fromProvider := func(context.Context, string) (*auth.User, error) {
+					return &auth.User{Sub: "sub-1", Email: "a@b.com", Name: "Ada", Picture: "https://provider.example/pic"}, nil
+				}
+				tokens := &authPathTokens{}
+				app, _ := newApp("", fromProvider, nil, tokens)
+				if resp, _ := errPathDo(t, app, http.MethodGet, p.path+"?code=c1", ""); resp.StatusCode != http.StatusFound {
+					t.Fatalf("status = %d, want 302", resp.StatusCode)
+				}
+				if want := "https://cdn.example/avatars/u-7/abc.png"; tokens.sawPicture != want {
+					t.Errorf("the session's picture is %q, want the account's %q", tokens.sawPicture, want)
 				}
 			})
 
