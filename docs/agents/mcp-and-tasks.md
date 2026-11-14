@@ -240,6 +240,13 @@ A title may be `Untitled` or written by a browser's local model, so every
 message that hands a task to an agent names it by ID and body only; a new
 delivery path must too, or the agent takes a guessed title for the brief.
 
+## A follow-up goes before the body, on every hand-off
+
+The supervisor's `task.followUp` is a human message marked `{"followUp":true}`
+(never a `type`, which drops it from the conversation). The poller's push and
+`task get` put every follow-up after the task's ID, before its body; a new
+delivery path must too, or a reopened task is redone from its body alone.
+
 ## The workspace's notes go with the task, never in it
 
 A workspace's `selfLearningLoopNote` is appended to a task's body only when the

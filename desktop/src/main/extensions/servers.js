@@ -92,6 +92,7 @@ export const SUPERVISOR_ACTIONS = Object.freeze({
     'messages',
     'changes',
     'reply',
+    'followUp',
     'respond',
     'updateStatus',
     'updateSortingOrder',

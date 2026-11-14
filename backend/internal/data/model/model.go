@@ -941,6 +941,8 @@ const (
 	SubActionIDMCPDirectoryRead
 	// The supervisor task tool's changes action.
 	SubActionIDMCPTaskChanges
+	// The supervisor task tool's followUp action.
+	SubActionIDMCPFollowUpTask
 )
 
 // ForkSettings is the one list of what a workspace fork inherits from its

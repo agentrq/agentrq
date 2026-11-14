@@ -1238,7 +1238,8 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 		// The ID is part of the push because a task body can instruct the
 		// agent to quote it back when publishing an event, and this path
 		// is how workflow-step tasks are delivered.
-		msg := "Next assigned task:\n" + taskIDLine(nextTask) + "\nDetails: " + ps.AgentTaskBody(context.Background(), nextTask.Body)
+		msg := "Next assigned task:\n" + taskIDLine(nextTask) + ps.followUpBlock(context.Background(), nextTask) +
+			"\nDetails: " + ps.AgentTaskBody(context.Background(), nextTask.Body)
 		if atts := formatModelAttachments(nextTask.Attachments); atts != "" {
 			msg += "\n" + atts
 		}
@@ -2007,6 +2008,7 @@ func (ps *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolR
 	if task.Status != "" {
 		fmt.Fprintf(&sb, "\nStatus: %s", task.Status)
 	}
+	sb.WriteString(ps.followUpBlock(ctx, task))
 	fmt.Fprintf(&sb, "\nDetails: %s", ps.getTaskBody(ctx, task))
 	if atts := formatModelAttachments(task.Attachments); atts != "" {
 		sb.WriteString("\n")

@@ -35,7 +35,9 @@ type Params struct {
 	// web launch form does.
 	Launcher AgentLauncher
 	// Agents says whether an agent is attached to a workspace, and its model.
-	Agents   AgentPresence
+	Agents AgentPresence
+	// Notifier sends a follow-up to an agent working on its task.
+	Notifier TaskNotifier
 	TokenSvc auth.TokenService
 	// CIMD resolves Client ID Metadata Document URLs. Optional: a default
 	// network-backed resolver is used when nil.
@@ -100,6 +102,7 @@ func New(p Params) (Handler, error) {
 	srv.forks = p.ForkMerger
 	srv.launcher = p.Launcher
 	srv.agents = p.Agents
+	srv.notifier = p.Notifier
 	h := &handler{
 		coremcpServer: srv,
 		crud:          p.Crud,

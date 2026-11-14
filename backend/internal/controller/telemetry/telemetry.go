@@ -347,6 +347,7 @@ var subActionIDByToolName = map[string]uint8{
 	"getTask":                 model.SubActionIDMCPGetTask,
 	"getTaskMessages":         model.SubActionIDMCPGetTaskMessages,
 	"taskChanges":             model.SubActionIDMCPTaskChanges,
+	"followUpTask":            model.SubActionIDMCPFollowUpTask,
 	"getWorkflow":             model.SubActionIDMCPGetWorkflow,
 	"getWorkflowText":         model.SubActionIDMCPGetWorkflowText,
 	"getWorkspace":            model.SubActionIDMCPGetWorkspace,
