@@ -15,7 +15,8 @@
 //     workspaces from the team.
 //   - An invitation is accepted only by an account whose email is the invited
 //     address, ignoring case, once, within 7 days. A team creates at most
-//     MaxInvitesPerDay invitations in any 24 hours.
+//     MaxInvitesPerDay invitations in any 24 hours, and an account at most
+//     MaxInvitesPerUserPerDay across all its teams.
 //   - Only a workspace's owner shares it, and only with a team they are in.
 //     A fork is never shared on its own: it follows its parent.
 package team
@@ -95,7 +96,7 @@ type Repository interface {
 	TeamHasMemberWithEmail(ctx context.Context, teamID int64, email string) (bool, error)
 	SetTeamMemberRole(ctx context.Context, teamID, callerID, userID int64, role string) error
 	RemoveTeamMember(ctx context.Context, teamID, callerID, userID int64) error
-	CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, since time.Time, limit int64) error
+	CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, since time.Time, teamLimit, userLimit int64) error
 	ListTeamInvitations(ctx context.Context, teamID int64, now time.Time) ([]model.TeamInvitation, error)
 	ListInvitationsForEmail(ctx context.Context, email string, now time.Time) ([]model.TeamInvitation, error)
 	GetTeamInvitation(ctx context.Context, id int64) (model.TeamInvitation, error)
@@ -127,6 +128,9 @@ type Params struct {
 	// MaxInvitesPerDay is how many invitations a team may create in any 24
 	// hours; 0 turns invitations off.
 	MaxInvitesPerDay int
+	// MaxInvitesPerUserPerDay is how many invitations one account may create
+	// in any 24 hours, across all its teams; 0 is no such cap.
+	MaxInvitesPerUserPerDay int
 	// Now is the clock; nil is time.Now in UTC.
 	Now func() time.Time
 }
@@ -138,6 +142,7 @@ type controller struct {
 	mailer    smtp.Service
 	baseURL   string
 	maxInvite int
+	maxByUser int
 	now       func() time.Time
 }
 
@@ -145,7 +150,8 @@ type controller struct {
 func New(p Params) Controller {
 	c := &controller{
 		repo: p.Repository, ids: p.IDGen, pubsub: p.PubSub, mailer: p.Mailer,
-		baseURL: strings.TrimRight(p.BaseURL, "/"), maxInvite: p.MaxInvitesPerDay, now: p.Now,
+		baseURL: strings.TrimRight(p.BaseURL, "/"), maxInvite: p.MaxInvitesPerDay,
+		maxByUser: p.MaxInvitesPerUserPerDay, now: p.Now,
 	}
 	if c.now == nil {
 		c.now = func() time.Time { return time.Now().UTC() }
