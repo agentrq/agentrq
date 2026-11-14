@@ -92,16 +92,6 @@ describe('routes', () => {
     expect(publicRoutes).toEqual(['/invite', '/login'])
   })
 
-  // The settings page the Manage team dialog replaced: an old link opens it.
-  it('sends the old team settings page to the team, with Manage team open', () => {
-    const router = createRouter({ history: createMemoryHistory(), routes })
-    const to = router.resolve('/team/settings?team=tm1')
-    const settings = routes.find((r) => r.path === '/team/settings')
-
-    expect(settings.redirect(to)).toEqual({ path: '/tasks/active', query: { team: 'tm1', manage: 'members' } })
-    expect(settings.redirect(router.resolve('/team/settings'))).toBe('/')
-  })
-
   it('lazy-loads every view, so no route pulls its component into the entry chunk', () => {
     // A route with named views (the Pano's chat) lazy-loads each of them.
     for (const route of routes.filter((r) => !r.redirect)) {
