@@ -1580,6 +1580,18 @@ export function unshareWorkspace(workspaceId, teamId, version) {
   return teamCall(atVersion(`/workspaces/${enc(workspaceId)}/shares/${enc(teamId)}`, version), 'Failed to stop sharing the workspace', { method: 'DELETE' });
 }
 
+// The teammates in the team workspace of one of your workspaces, and whether
+// its agent's memory index includes each:
+// { teammates: [{ userId, name, picture, workspaceId, updatedAt?, included }] }.
+export function listTeammateMemories(workspaceId) {
+  return teamCall(`/workspaces/${enc(workspaceId)}/teammate-memories`, "Failed to load teammates' memory");
+}
+
+// Includes a teammate's memory in that index, or leaves it out: { teammate }.
+export function setTeammateMemory(workspaceId, userId, included) {
+  return teamCall(`/workspaces/${enc(workspaceId)}/teammate-memories/${enc(userId)}`, "Failed to change the teammate's memory", { method: 'PUT', body: { included } });
+}
+
 // ── Team mode ───────────────────────────────────────────────────────────────
 // A team's shared work, read-only: the workspaces its members shared, their
 // tasks and skills. Unknown or no-longer-shared answers 404.

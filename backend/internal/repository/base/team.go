@@ -86,13 +86,15 @@ type TeamActivityRow struct {
 	TargetPicture string
 }
 
-// TeamWorkspacePeer is a workspace shared with a team, and its owner's name.
+// TeamWorkspacePeer is a workspace shared with a team, and its owner's name
+// and picture.
 type TeamWorkspacePeer struct {
-	TeamID      int64
-	WorkspaceID int64
-	UserID      int64
-	Name        string
-	OwnerName   string
+	TeamID       int64
+	WorkspaceID  int64
+	UserID       int64
+	Name         string
+	OwnerName    string
+	OwnerPicture string
 }
 
 // pendingInvitation is an invitation neither accepted nor revoked; it may

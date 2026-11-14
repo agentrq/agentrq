@@ -3275,6 +3275,56 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/TeamVersionConflict' }
 
+  /workspaces/{id}/teammate-memories:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Teams]
+      summary: List the teammates whose memory a workspace's agent reads
+      description: The workspace's owner only (404 otherwise). In a workspace shared with a team, the agent's memory index lists every teammate's memory in its team workspace (the shared workspaces of its name); this is one row per teammate's workspace there, yours left out, and whether the index includes it. Everyone is included until you leave them out.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  teammates:
+                    type: array
+                    items: { $ref: '#/components/schemas/TeammateMemory' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{id}/teammate-memories/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TeamUserId'
+    put:
+      tags: [Teams]
+      summary: Include a teammate's memory in a workspace's memory index, or leave it out
+      description: Changes only what your own workspace's agent reads; the teammate sees no change. 404 for a workspace not yours, or someone who does not share its team workspace now.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [included]
+              properties:
+                included: { type: boolean }
+      responses:
+        '200':
+          description: OK, the teammate as now set
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  teammate: { $ref: '#/components/schemas/TeammateMemory' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /teams/{teamId}/workspaces:
     parameters:
       - $ref: '#/components/parameters/TeamId'
@@ -3674,6 +3724,15 @@ components:
         userId: { type: string }
         name: { type: string }
         picture: { type: string }
+    TeammateMemory:
+      type: object
+      properties:
+        userId: { type: string }
+        name: { type: string }
+        picture: { type: string }
+        workspaceId: { type: string, description: The teammate's workspace in the team workspace. }
+        updatedAt: { type: string, format: date-time, description: When a memory there was last written; absent when none was. }
+        included: { type: boolean, description: Whether your workspace's agent's memory index includes it. }
     TeamWorkspace:
       type: object
       properties:

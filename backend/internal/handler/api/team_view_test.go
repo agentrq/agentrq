@@ -98,7 +98,7 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{},
 		&model.Telemetry{}, &model.Memory{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.PanoDoc{}, &model.PanoDocTask{},
 		&model.Agent{}, &model.AgentModel{}, &model.TaskStateTransition{},
-		&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamManagementActivity{}); err != nil {
+		&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
@@ -254,6 +254,7 @@ func TestTeamMode(t *testing.T) {
 			t.Run("removed routes", m.removedRoutes)
 			t.Run("clone", m.clone)
 			t.Run("skills", m.skills)
+			t.Run("teammate memories", m.teammateMemories)
 			t.Run("unshare and remove", m.unshareAndRemove)
 			t.Run("a team's life", m.flow)
 		})
@@ -644,5 +645,61 @@ func (m *teamMode) flow(t *testing.T) {
 	status, body = call(t, m.app, aliceID, http.MethodPatch, "/teams/"+team, `{"name":"liftoff","version":4}`)
 	if status != http.StatusOK || body["name"] != "liftoff" || body["version"] != float64(5) {
 		t.Errorf("a rename from version 4 answered %d %v", status, body)
+	}
+}
+
+// Each member chooses, for their own shared workspace, whose memory its
+// agent reads: everyone by default, and a choice changes nobody else's.
+func (m *teamMode) teammateMemories(t *testing.T) {
+	path := func(ws string) string { return "/workspaces/" + ws + "/teammate-memories" }
+	status, body := m.get(t, aliceID, path(ws100))
+	if status != http.StatusOK || !sameList(list(body, "teammates", "userId"), bobID) || !sameList(list(body, "teammates", "workspaceId"), ws200) {
+		t.Fatalf("alice's teammates in backend: %d %v", status, body)
+	}
+	bob := body["teammates"].([]any)[0].(map[string]any)
+	if bob["name"] != "Bob" || bob["included"] != true || bob["updatedAt"] == nil {
+		t.Errorf("bob, as alice sees him: %v", bob)
+	}
+	if status, body = m.get(t, bobID, path(ws202)); status != http.StatusOK || len(list(body, "teammates", "userId")) != 0 {
+		t.Errorf("a team workspace of bob's alone: %d %v", status, body)
+	}
+	for _, ws := range []string{ws100, ws102, monoflake.ID(999).String()} {
+		if status, _ = m.get(t, bobID, path(ws)); status != http.StatusNotFound {
+			t.Errorf("bob lists %s, not his: %d, want 404", ws, status)
+		}
+	}
+
+	put := func(user, ws, who, payload string) (int, map[string]any) {
+		return call(t, m.app, user, http.MethodPut, path(ws)+"/"+who, payload)
+	}
+	if status, body = put(aliceID, ws100, bobID, `{"included":false}`); status != http.StatusOK || body["teammate"].(map[string]any)["included"] != false {
+		t.Fatalf("alice leaves bob out: %d %v", status, body)
+	}
+	if _, body = m.get(t, aliceID, path(ws100)); body["teammates"].([]any)[0].(map[string]any)["included"] != false {
+		t.Errorf("bob is still included for alice: %v", body)
+	}
+	if _, body = m.get(t, bobID, path(ws200)); !sameList(list(body, "teammates", "userId"), aliceID) || body["teammates"].([]any)[0].(map[string]any)["included"] != true {
+		t.Errorf("alice's choice changed bob's: %v", body)
+	}
+	for _, tc := range []struct{ user, ws, who, payload string }{
+		{bobID, ws100, aliceID, `{"included":false}`}, // someone else's workspace
+		{aliceID, ws100, aliceID, `{"included":false}`},
+		{aliceID, ws100, daveID, `{"included":false}`}, // not a teammate there
+		{aliceID, ws102, bobID, `{"included":false}`},  // not shared
+	} {
+		if status, _ = put(tc.user, tc.ws, tc.who, tc.payload); status != http.StatusNotFound {
+			t.Errorf("%s sets %s in %s: %d, want 404", tc.user, tc.who, tc.ws, status)
+		}
+	}
+	for _, payload := range []string{`{}`, `{"included":"no"}`} {
+		if status, _ = put(aliceID, ws100, bobID, payload); status != http.StatusBadRequest {
+			t.Errorf("payload %s: %d, want 400", payload, status)
+		}
+	}
+	if status, _ = put(aliceID, ws100, "!", `{"included":true}`); status != http.StatusBadRequest {
+		t.Errorf("a bad user id: %d, want 400", status)
+	}
+	if status, body = put(aliceID, ws100, bobID, `{"included":true}`); status != http.StatusOK || body["teammate"].(map[string]any)["included"] != true {
+		t.Errorf("alice takes bob back: %d %v", status, body)
 	}
 }

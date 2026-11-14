@@ -313,6 +313,10 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDTeamMemorySave
 	case entity.ActionTeamSkillAdd:
 		action = model.ActionIDTeamSkillAdd
+	case entity.ActionTeammateMemoryInclude:
+		action = model.ActionIDTeammateMemoryInclude
+	case entity.ActionTeammateMemoryExclude:
+		action = model.ActionIDTeammateMemoryExclude
 	default:
 		return
 	}

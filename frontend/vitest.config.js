@@ -182,6 +182,7 @@ export default defineConfig({
         'src/components/TeamModeBar.vue',
         'src/components/OwnerAvatar.vue',
         'src/components/WorkspaceSharing.vue',
+        'src/components/TeammateMemories.vue',
         'src/components/InviteLinkModal.vue',
         'src/components/CloneTaskModal.vue',
         'src/components/TeamSkills.vue',
