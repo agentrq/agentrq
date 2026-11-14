@@ -70,7 +70,7 @@
         </button>
 
         <div v-if="showMobileFilters || !isMobile" 
-             class="p-0.5 bg-gray-100 dark:bg-zinc-800 rounded-md border border-gray-200 dark:border-zinc-700/50 shadow-inner flex overflow-x-auto no-scrollbar"
+             class="p-0.5 bg-gray-100 dark:bg-zinc-800 rounded-md border border-gray-200 dark:border-zinc-700/50 flex overflow-x-auto no-scrollbar"
              :class="[showMobileFilters ? 'fixed top-[70px] right-4 z-50 flex shadow-xl border-gray-900 dark:border-white animate-in fade-in slide-in-from-top-2' : 'hidden @min-[48rem]:flex']">
           <button v-for="f in shownFilters" :key="f.id"
                   @click="router.push(link({ path: `/tasks/${f.id}`, query: teamFilterQuery })); isMobile && (showMobileFilters = false)"
