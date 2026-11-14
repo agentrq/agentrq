@@ -26,7 +26,7 @@ import (
 const (
 	// InvitationTTL is how long an invitation can be accepted.
 	InvitationTTL = 7 * 24 * time.Hour
-	// capWindow is the rolling window MaxInvitesPerDay counts in.
+	// capWindow is the rolling window both invitation caps count in.
 	capWindow = 24 * time.Hour
 	// tokenBytes is an invitation token's randomness.
 	tokenBytes = 32
@@ -121,9 +121,11 @@ func (c *controller) CreateInvitation(ctx context.Context, userID, teamID int64,
 		ID: c.ids.NextID(), TeamID: teamID, Email: email, Role: role, InvitedBy: userID,
 		TokenHash: HashToken(token), ExpiresAt: now.Add(InvitationTTL), CreatedAt: now,
 	}
-	switch err := c.repo.CreateTeamInvitation(ctx, inv, now.Add(-capWindow), int64(c.maxInvite)); {
+	switch err := c.repo.CreateTeamInvitation(ctx, inv, now.Add(-capWindow), int64(c.maxInvite), int64(c.maxByUser)); {
 	case errors.Is(err, base.ErrInvitationCapReached):
 		return entity.CreateTeamInvitationResponse{}, teamErr(entity.TeamThrottled, "this team has reached its limit of %d invitations per day", c.maxInvite)
+	case errors.Is(err, base.ErrUserInvitationCapReached):
+		return entity.CreateTeamInvitationResponse{}, teamErr(entity.TeamThrottled, "you have reached your limit of %d invitations per day across all your teams", c.maxByUser)
 	case errors.Is(err, base.ErrInvitationPending):
 		return entity.CreateTeamInvitationResponse{}, teamErr(entity.TeamConflict, "%s already has a pending invitation to this team", email)
 	case err != nil:

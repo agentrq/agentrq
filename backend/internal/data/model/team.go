@@ -36,20 +36,20 @@ type TeamMember struct {
 // its token is kept. It is pending until accepted or revoked (a decline
 // revokes it), and can be accepted until ExpiresAt. A team holds one pending
 // invitation per address; every one, revoked or not, counts toward the
-// team's daily cap.
+// team's daily cap and its inviter's.
 type TeamInvitation struct {
 	ID     int64 `gorm:"primaryKey;autoIncrement:false"`
 	TeamID int64 `gorm:"not null;index:idx_team_invitations_team_id_created_at,priority:1;uniqueIndex:uk_team_invitations_pending_email,priority:1,where:accepted_at IS NULL AND revoked_at IS NULL"`
 	// Email is stored lowercased, so matching an account ignores case.
 	Email      string `gorm:"type:varchar(255);not null;index:idx_team_invitations_email;uniqueIndex:uk_team_invitations_pending_email,priority:2"`
 	Role       string `gorm:"type:varchar(16);not null"`
-	InvitedBy  int64  `gorm:"not null"`
+	InvitedBy  int64  `gorm:"not null;index:idx_team_invitations_invited_by_created_at,priority:1"`
 	TokenHash  string `gorm:"type:char(64);not null;uniqueIndex:uk_team_invitations_token_hash"`
 	ExpiresAt  time.Time
 	AcceptedAt *time.Time
 	AcceptedBy int64 `gorm:"not null;default:0"`
 	RevokedAt  *time.Time
-	CreatedAt  time.Time `gorm:"index:idx_team_invitations_team_id_created_at,priority:2"`
+	CreatedAt  time.Time `gorm:"index:idx_team_invitations_team_id_created_at,priority:2;index:idx_team_invitations_invited_by_created_at,priority:2"`
 }
 
 // WorkspaceShare lets a team's members read a workspace, and its forks,

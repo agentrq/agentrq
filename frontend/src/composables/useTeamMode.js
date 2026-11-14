@@ -124,11 +124,12 @@ export function expiresIn(expiresAt, now = Date.now()) {
 }
 
 /**
- * What the invite form says when the server refuses: the daily cap (429) in
- * the server's own words, since it knows the number.
+ * What the invite form says when the server refuses: a daily cap (429), the
+ * team's or the inviter's across all their teams, in the server's own words,
+ * since it knows which and the number.
  */
 export function inviteError(err) {
-  if (err?.status === 429) return err.message || 'This team has sent as many invitations as it may today. Try again tomorrow.';
+  if (err?.status === 429) return err.message || 'That is as many invitations as may be sent today. Try again tomorrow.';
   return err?.message || 'Failed to send the invitation';
 }
 
