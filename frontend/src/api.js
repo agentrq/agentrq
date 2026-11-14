@@ -1435,7 +1435,7 @@ export async function deleteAdminHook(id) {
 // ── Teams ───────────────────────────────────────────────────────────────────
 // Teams, their members and invitations, and which of your workspaces a team
 // may see. Every refusal carries its HTTP status, because the screens tell
-// them apart: 429 is the team's daily invitation cap, 410 an invitation that
+// them apart: 429 is a daily invitation cap, the team's or the inviter's, 410 an invitation that
 // is no longer valid, 403 one addressed to another email.
 
 // The server's answer, { error: { message, code } }, as an Error with its
@@ -1506,7 +1506,8 @@ export function listTeamInvitations(teamId) {
 }
 
 // { invitation, emailSent, link }: the link only when no email was sent, and
-// never shown again. 429 once the team has reached its daily cap.
+// never shown again. 429 once the team, or the inviter across all their
+// teams, has reached its daily cap; the message says which.
 export function createTeamInvitation(teamId, email, role) {
   return teamCall(`/teams/${enc(teamId)}/invitations`, 'Failed to send the invitation', { method: 'POST', body: { email, role } });
 }

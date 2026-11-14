@@ -21,6 +21,9 @@ var (
 	// ErrInvitationCapReached is a team that created its most invitations in
 	// the window.
 	ErrInvitationCapReached = errors.New("the team's invitation cap is reached")
+	// ErrUserInvitationCapReached is an inviter who created their most
+	// invitations in the window, across every team.
+	ErrUserInvitationCapReached = errors.New("the inviter's invitation cap is reached")
 	// ErrInvitationPending is an address the team already has a pending
 	// invitation for.
 	ErrInvitationPending = errors.New("a pending invitation for the address exists")
@@ -83,6 +86,20 @@ const pendingInvitation = "accepted_at IS NULL AND revoked_at IS NULL"
 // is read.
 func lockTeam(tx *gorm.DB, teamID int64) error {
 	res := tx.Exec("UPDATE teams SET id = id WHERE id = ?", teamID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// lockUser holds the account's row until the transaction ends, as lockTeam
+// does a team's, so two requests counting the account's invitations across
+// teams run one after the other.
+func lockUser(tx *gorm.DB, userID int64) error {
+	res := tx.Exec("UPDATE users SET id = id WHERE id = ?", userID)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -297,12 +314,15 @@ func (r *repository) RemoveTeamMember(ctx context.Context, teamID, callerID, use
 	})
 }
 
-// CreateTeamInvitation stores an invitation unless the team created limit or
-// more since `since` (ErrInvitationCapReached), counting revoked ones, or
-// has a live pending one for the address (ErrInvitationPending). An expired
-// pending one for the address is revoked first. The team stays locked from
-// the count to the insert, so requests at once cannot pass the cap together.
-func (r *repository) CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, since time.Time, limit int64) error {
+// CreateTeamInvitation stores an invitation unless the team created teamLimit
+// or more since `since` (ErrInvitationCapReached), or its inviter created
+// userLimit or more in any team (ErrUserInvitationCapReached; 0 is no such
+// cap), counting revoked ones, or the team has a live pending one for the
+// address (ErrInvitationPending). An expired pending one for the address is
+// revoked first. The team, and the inviter when userLimit is set, stay locked
+// from the count to the insert, so requests at once cannot pass a cap
+// together.
+func (r *repository) CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, since time.Time, teamLimit, userLimit int64) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockTeam(tx, inv.TeamID); err != nil {
 			return err
@@ -311,8 +331,19 @@ func (r *repository) CreateTeamInvitation(ctx context.Context, inv model.TeamInv
 		if err := tx.Model(&model.TeamInvitation{}).Where("team_id = ? AND created_at > ?", inv.TeamID, since).Count(&n).Error; err != nil {
 			return err
 		}
-		if n >= limit {
+		if n >= teamLimit {
 			return ErrInvitationCapReached
+		}
+		if userLimit > 0 {
+			if err := lockUser(tx, inv.InvitedBy); err != nil {
+				return err
+			}
+			if err := tx.Model(&model.TeamInvitation{}).Where("invited_by = ? AND created_at > ?", inv.InvitedBy, since).Count(&n).Error; err != nil {
+				return err
+			}
+			if n >= userLimit {
+				return ErrUserInvitationCapReached
+			}
 		}
 		err := tx.Model(&model.TeamInvitation{}).
 			Where("team_id = ? AND email = ? AND expires_at <= ? AND "+pendingInvitation, inv.TeamID, inv.Email, inv.CreatedAt).

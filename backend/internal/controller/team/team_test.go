@@ -142,6 +142,7 @@ type option func(*Params)
 
 func withMailer(m *mailbox) option { return func(p *Params) { p.Mailer = m } }
 func withCap(n int) option         { return func(p *Params) { p.MaxInvitesPerDay = n } }
+func withUserCap(n int) option     { return func(p *Params) { p.MaxInvitesPerUserPerDay = n } }
 
 // each runs fn once per database, on a fresh cast.
 func each(t *testing.T, fn func(f *fixture), opts ...option) {
@@ -637,6 +638,89 @@ func TestTheCapHoldsUnderParallelRequests(t *testing.T) {
 			t.Errorf("%d invitations created and %d refused, want 5 and 15", ok, throttled)
 		}
 	}, withCap(7))
+}
+
+func TestThePerUserInvitationCapSpansTeams(t *testing.T) {
+	each(t, func(f *fixture) {
+		// The cast's two are Alice's; a second team gives her no more.
+		ops := must(f.c.CreateTeam(f.ctx, alice, "ops")).ID
+		expectOK(t, "the 3rd of 4, in another team", errOf(f.c.CreateInvitation(f.ctx, alice, ops, "u3@example.com", "")))
+		expectOK(t, "the 4th of 4", errOf(f.c.CreateInvitation(f.ctx, alice, f.team, "u4@example.com", "")))
+		_, err := f.c.CreateInvitation(f.ctx, alice, ops, "u5@example.com", "")
+		expectKind(t, "the 5th of 4", err, entity.TeamThrottled)
+		if err == nil || err.Error() != "you have reached your limit of 4 invitations per day across all your teams" {
+			t.Errorf("the refusal says %q", err)
+		}
+		// Revoking gives none back; a resend is a new invitation, so it counts.
+		list := must(f.c.ListTeamInvitations(f.ctx, alice, ops))
+		expectOK(t, "revoking", f.c.RevokeInvitation(f.ctx, alice, ops, list[0].ID))
+		expectKind(t, "resending after a revoke", errOf(f.c.CreateInvitation(f.ctx, alice, ops, "u3@example.com", "")), entity.TeamThrottled)
+		// Bob, an admin of the same team, has his own cap.
+		expectOK(t, "another inviter", errOf(f.c.CreateInvitation(f.ctx, bob, f.team, "u6@example.com", "")))
+		// The window rolls.
+		f.now = t0.Add(24 * time.Hour)
+		expectOK(t, "inviting once the window rolls", errOf(f.c.CreateInvitation(f.ctx, alice, ops, "u5@example.com", "")))
+	}, withUserCap(4))
+}
+
+// Both caps apply: whichever is reached first answers, saying which.
+func TestTheTeamCapStillAppliesUnderTheUserCap(t *testing.T) {
+	each(t, func(f *fixture) {
+		_, err := f.c.CreateInvitation(f.ctx, alice, f.team, "u3@example.com", "")
+		if err == nil || err.Error() != "this team has reached its limit of 2 invitations per day" {
+			t.Errorf("the refusal says %q", err)
+		}
+	}, withCap(2), withUserCap(20))
+}
+
+func TestAPerUserCapOfZeroIsNoCap(t *testing.T) {
+	each(t, func(f *fixture) {
+		ops := must(f.c.CreateTeam(f.ctx, alice, "ops")).ID
+		for i := range 12 { // with the cast's 2, 14: past any per-user cap a test sets
+			team := f.team
+			if i%2 == 1 {
+				team = ops
+			}
+			expectOK(t, fmt.Sprintf("invitation %d", i+3), errOf(f.c.CreateInvitation(f.ctx, alice, team, fmt.Sprintf("z%d@example.com", i), "")))
+		}
+	}, withUserCap(0))
+}
+
+// One account's parallel requests to two teams never pass its cap together.
+func TestThePerUserCapHoldsUnderParallelRequests(t *testing.T) {
+	each(t, func(f *fixture) {
+		ops := must(f.c.CreateTeam(f.ctx, alice, "ops")).ID
+		const requests = 20
+		var wg sync.WaitGroup
+		errs := make([]error, requests)
+		for i := range requests {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				team := f.team
+				if i%2 == 1 {
+					team = ops
+				}
+				_, errs[i] = f.c.CreateInvitation(f.ctx, alice, team, fmt.Sprintf("p%d@example.com", i), "")
+			}()
+		}
+		wg.Wait()
+		ok, throttled := 0, 0
+		for _, err := range errs {
+			switch {
+			case err == nil:
+				ok++
+			case kind(err) == entity.TeamThrottled && err.Error() == "you have reached your limit of 7 invitations per day across all your teams":
+				throttled++
+			default:
+				t.Errorf("a request failed with %v, want success or the per-user cap", err)
+			}
+		}
+		// The cast used 2 of 7.
+		if ok != 5 || throttled != 15 {
+			t.Errorf("%d invitations created and %d refused, want 5 and 15", ok, throttled)
+		}
+	}, withCap(100), withUserCap(7))
 }
 
 func TestSharingAWorkspace(t *testing.T) {

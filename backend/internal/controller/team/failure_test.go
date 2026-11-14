@@ -70,11 +70,11 @@ func (f failing) TeamHasMemberWithEmail(ctx context.Context, teamID int64, email
 	return f.Repository.TeamHasMemberWithEmail(ctx, teamID, email)
 }
 
-func (f failing) CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, since time.Time, limit int64) error {
+func (f failing) CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, since time.Time, teamLimit, userLimit int64) error {
 	if f.method == "CreateTeamInvitation" {
 		return errDB
 	}
-	return f.Repository.CreateTeamInvitation(ctx, inv, since, limit)
+	return f.Repository.CreateTeamInvitation(ctx, inv, since, teamLimit, userLimit)
 }
 
 func (f failing) ListTeamInvitations(ctx context.Context, teamID int64, now time.Time) ([]model.TeamInvitation, error) {

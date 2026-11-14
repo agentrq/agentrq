@@ -143,9 +143,11 @@ hooks:
 
 # Teams let accounts read the workspaces their members share with them. A team may
 # create at most maxInvitesPerDay invitations in any 24 hours, revoked ones included;
-# 0 turns invitations off.
+# 0 turns invitations off. One account may create at most maxInvitesPerUserPerDay
+# across all its teams in the same window; 0 is no per-account cap.
 teams:
   maxInvitesPerDay: ${AGENTRQ_TEAMS_MAX_INVITES_PER_DAY:10}
+  maxInvitesPerUserPerDay: ${AGENTRQ_TEAMS_MAX_INVITES_PER_USER_PER_DAY:20}
 
 # The token OpenAI gives a plugin submission to prove the MCP server's domain,
 # served at /.well-known/openai-apps-challenge. Empty serves 404.

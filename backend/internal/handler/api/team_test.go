@@ -281,3 +281,23 @@ func TestATeamFailureAnswersAGenericError(t *testing.T) {
 		t.Errorf("a database failure answered %d %v, want 500 without its cause", status, body)
 	}
 }
+
+// One account's invitations across its teams answer 429 past its own cap, in
+// words that say which cap it is.
+func TestThePerUserInvitationCapAnswers429(t *testing.T) {
+	_, db := teamServer(t, 10)
+	app := teamApp(teamctrl.New(teamctrl.Params{Repository: base.New(teamConn{db}), IDGen: &teamIDSequence{}, BaseURL: "https://rq", MaxInvitesPerDay: 10, MaxInvitesPerUserPerDay: 1}))
+	teams := make([]string, 2)
+	for i, name := range []string{"core", "ops"} {
+		status, body := call(t, app, aliceID, http.MethodPost, "/teams", `{"name":"`+name+`"}`)
+		expectStatus(t, "creating "+name, status, http.StatusCreated, body)
+		teams[i], _ = body["id"].(string)
+	}
+	status, body := call(t, app, aliceID, http.MethodPost, "/teams/"+teams[0]+"/invitations", `{"email":"bob@example.com"}`)
+	expectStatus(t, "Alice's 1st invitation", status, http.StatusCreated, body)
+	status, body = call(t, app, aliceID, http.MethodPost, "/teams/"+teams[1]+"/invitations", `{"email":"dave@example.com"}`)
+	expectStatus(t, "Alice's 2nd, to another team, with a cap of 1", status, http.StatusTooManyRequests, body)
+	if msg := errorMessage(body); msg != "you have reached your limit of 1 invitations per day across all your teams" {
+		t.Errorf("the cap's message is %q", msg)
+	}
+}

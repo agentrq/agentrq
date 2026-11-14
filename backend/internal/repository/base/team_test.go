@@ -124,16 +124,17 @@ func invitation(id int64, email string, created time.Time) model.TeamInvitation 
 func TestTeamIndexesCoverTheirColumns(t *testing.T) {
 	db := teamDBs(t)["sqlite"]
 	for name, want := range map[string]string{
-		"uk_team_members_team_id_user_id":          "(`team_id`,`user_id`)",
-		"idx_team_members_user_id":                 "(`user_id`)",
-		"idx_team_invitations_team_id_created_at":  "(`team_id`,`created_at`)",
-		"idx_team_invitations_email":               "(`email`)",
-		"uk_team_invitations_token_hash":           "(`token_hash`)",
-		"uk_team_invitations_pending_email":        "(`team_id`,`email`) WHERE accepted_at IS NULL AND revoked_at IS NULL",
-		"uk_workspace_shares_team_id_workspace_id": "(`team_id`,`workspace_id`)",
-		"idx_workspace_shares_team_id_user_id":     "(`team_id`,`user_id`)",
-		"idx_workspace_shares_workspace_id":        "(`workspace_id`)",
-		"uk_team_memories_team_id_name":            "(`team_id`,`name`)",
+		"uk_team_members_team_id_user_id":            "(`team_id`,`user_id`)",
+		"idx_team_members_user_id":                   "(`user_id`)",
+		"idx_team_invitations_team_id_created_at":    "(`team_id`,`created_at`)",
+		"idx_team_invitations_invited_by_created_at": "(`invited_by`,`created_at`)",
+		"idx_team_invitations_email":                 "(`email`)",
+		"uk_team_invitations_token_hash":             "(`token_hash`)",
+		"uk_team_invitations_pending_email":          "(`team_id`,`email`) WHERE accepted_at IS NULL AND revoked_at IS NULL",
+		"uk_workspace_shares_team_id_workspace_id":   "(`team_id`,`workspace_id`)",
+		"idx_workspace_shares_team_id_user_id":       "(`team_id`,`user_id`)",
+		"idx_workspace_shares_workspace_id":          "(`workspace_id`)",
+		"uk_team_memories_team_id_name":              "(`team_id`,`name`)",
 	} {
 		var ddl string
 		if err := db.Raw("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?", name).Scan(&ddl).Error; err != nil {
@@ -181,7 +182,7 @@ func TestDeleteTeamTakesEverythingOfTheTeam(t *testing.T) {
 		db.Create(&model.TeamMember{ID: 2, TeamID: 1, UserID: 11, Role: model.TeamRoleMember})
 		db.Create(&model.WorkspaceShare{ID: 1, TeamID: 1, WorkspaceID: 5, UserID: 10, GroupName: "g"})
 		db.Create(&model.TeamMemory{ID: 1, TeamID: 1, Name: "memory.md", Content: "x", UpdatedBy: 10})
-		if err := r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), teamT0.Add(-24*time.Hour), 10); err != nil {
+		if err := r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), teamT0.Add(-24*time.Hour), 10, 0); err != nil {
 			t.Fatal(err)
 		}
 		// Another team's rows stay.
@@ -315,21 +316,21 @@ func TestInvitationsPendingAcceptedAndRevoked(t *testing.T) {
 	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
 		ctx := context.Background()
 		since := teamT0.Add(-24 * time.Hour)
-		if err := r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10); err != nil {
+		if err := r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10, 0); err != nil {
 			t.Fatal(err)
 		}
-		if err := r.CreateTeamInvitation(ctx, invitation(2, "a@x.io", teamT0), since, 10); !errors.Is(err, ErrInvitationPending) {
+		if err := r.CreateTeamInvitation(ctx, invitation(2, "a@x.io", teamT0), since, 10, 0); !errors.Is(err, ErrInvitationPending) {
 			t.Errorf("a second pending invitation for a@x.io returned %v, want ErrInvitationPending", err)
 		}
 		// Once expired, the old one is revoked to make way.
 		later := teamT0.Add(8 * 24 * time.Hour)
-		if err := r.CreateTeamInvitation(ctx, invitation(3, "a@x.io", later), later.Add(-24*time.Hour), 10); err != nil {
+		if err := r.CreateTeamInvitation(ctx, invitation(3, "a@x.io", later), later.Add(-24*time.Hour), 10, 0); err != nil {
 			t.Fatalf("inviting again after the first expired returned %v", err)
 		}
 		if old, _ := r.GetTeamInvitation(ctx, 1); old.RevokedAt == nil || !old.RevokedAt.Equal(later) {
 			t.Errorf("the expired invitation's revoked_at is %v, want %v", old.RevokedAt, later)
 		}
-		if err := r.CreateTeamInvitation(ctx, invitation(4, "b@x.io", later), later.Add(-24*time.Hour), 10); err != nil {
+		if err := r.CreateTeamInvitation(ctx, invitation(4, "b@x.io", later), later.Add(-24*time.Hour), 10, 0); err != nil {
 			t.Fatal(err)
 		}
 		list, err := r.ListTeamInvitations(ctx, 1, later)
@@ -369,7 +370,7 @@ func TestInvitationsPendingAcceptedAndRevoked(t *testing.T) {
 			t.Errorf("an admin accepting another invitation became %q, want admin still", m.Role)
 		}
 
-		if err := r.CreateTeamInvitation(ctx, invitation(5, "c@x.io", later), later.Add(-24*time.Hour), 10); err != nil {
+		if err := r.CreateTeamInvitation(ctx, invitation(5, "c@x.io", later), later.Add(-24*time.Hour), 10, 0); err != nil {
 			t.Fatal(err)
 		}
 		if err := r.RevokeTeamInvitation(ctx, 2, 5, later); !errors.Is(err, ErrNotFound) {
@@ -381,15 +382,15 @@ func TestInvitationsPendingAcceptedAndRevoked(t *testing.T) {
 		if err := r.RevokeTeamInvitation(ctx, 1, 5, later); !errors.Is(err, ErrNotFound) {
 			t.Errorf("revoking twice returned %v, want ErrNotFound", err)
 		}
-		if err := r.CreateTeamInvitation(ctx, invitation(6, "a@x.io", later), later.Add(-24*time.Hour), 10); err != nil {
+		if err := r.CreateTeamInvitation(ctx, invitation(6, "a@x.io", later), later.Add(-24*time.Hour), 10, 0); err != nil {
 			t.Errorf("inviting an address whose invitation was accepted returned %v", err)
 		}
-		if err := r.CreateTeamInvitation(ctx, invitation(7, "a@x.io", later), later, 10); err != nil && !errors.Is(err, ErrInvitationPending) {
+		if err := r.CreateTeamInvitation(ctx, invitation(7, "a@x.io", later), later, 10, 0); err != nil && !errors.Is(err, ErrInvitationPending) {
 			t.Errorf("a duplicate returned %v, want ErrInvitationPending", err)
 		}
 		unknownTeam := invitation(8, "z@x.io", later)
 		unknownTeam.TeamID = 99
-		if err := r.CreateTeamInvitation(ctx, unknownTeam, later, 10); !errors.Is(err, ErrNotFound) {
+		if err := r.CreateTeamInvitation(ctx, unknownTeam, later, 10, 0); !errors.Is(err, ErrNotFound) {
 			t.Errorf("inviting to an unknown team returned %v, want ErrNotFound", err)
 		}
 	})
@@ -409,17 +410,17 @@ func TestInvitationCapCountsTheWindow(t *testing.T) {
 		old := invitation(1, "old@x.io", since)
 		db.Create(&old)
 		for i := int64(2); i <= 4; i++ {
-			if err := r.CreateTeamInvitation(ctx, invitation(i, fmt.Sprintf("u%d@x.io", i), teamT0), since, 3); err != nil {
+			if err := r.CreateTeamInvitation(ctx, invitation(i, fmt.Sprintf("u%d@x.io", i), teamT0), since, 3, 0); err != nil {
 				t.Fatalf("invitation %d of 3 returned %v", i-1, err)
 			}
 		}
 		if err := r.RevokeTeamInvitation(ctx, 1, 4, teamT0); err != nil {
 			t.Fatal(err)
 		}
-		if err := r.CreateTeamInvitation(ctx, invitation(5, "u5@x.io", teamT0), since, 3); !errors.Is(err, ErrInvitationCapReached) {
+		if err := r.CreateTeamInvitation(ctx, invitation(5, "u5@x.io", teamT0), since, 3, 0); !errors.Is(err, ErrInvitationCapReached) {
 			t.Errorf("a 4th invitation with a cap of 3 returned %v, want ErrInvitationCapReached", err)
 		}
-		if err := r.CreateTeamInvitation(ctx, invitation(5, "u5@x.io", teamT0), since, 4); err != nil {
+		if err := r.CreateTeamInvitation(ctx, invitation(5, "u5@x.io", teamT0), since, 4, 0); err != nil {
 			t.Errorf("a 4th invitation with a cap of 4 returned %v", err)
 		}
 	})
@@ -436,7 +437,7 @@ func TestInvitationCapHoldsUnderParallelRequests(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				errs[i] = r.CreateTeamInvitation(context.Background(), invitation(int64(i+1), fmt.Sprintf("u%d@x.io", i), teamT0), teamT0.Add(-24*time.Hour), limit)
+				errs[i] = r.CreateTeamInvitation(context.Background(), invitation(int64(i+1), fmt.Sprintf("u%d@x.io", i), teamT0), teamT0.Add(-24*time.Hour), limit, 0)
 			}()
 		}
 		wg.Wait()
@@ -459,9 +460,155 @@ func TestInvitationCapHoldsUnderParallelRequests(t *testing.T) {
 	})
 }
 
+// inviter seeds user 10, who sends the invitations, and team 2, a second
+// team for them to invite to.
+func inviter(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Create(&model.User{ID: 10, Name: "Ten", Email: "ten@x.io"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.Team{ID: 2, Name: "other", CreatedAt: teamT0}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func inTeam(inv model.TeamInvitation, teamID int64) model.TeamInvitation {
+	inv.TeamID = teamID
+	return inv
+}
+
+// The per-account cap counts the inviter's invitations in every team in the
+// window, revoked ones too, and nobody else's; 0 is no such cap.
+func TestUserInvitationCapCountsEveryTeam(t *testing.T) {
+	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
+		ctx := context.Background()
+		inviter(t, db)
+		since := teamT0.Add(-24 * time.Hour)
+		old := invitation(1, "old@x.io", since) // just outside the window
+		db.Create(&old)
+		someoneElse := invitation(2, "else@x.io", teamT0)
+		someoneElse.InvitedBy = 11
+		db.Create(&someoneElse)
+		for i, team := range []int64{1, 2, 1} {
+			id := int64(10 + i)
+			if err := r.CreateTeamInvitation(ctx, inTeam(invitation(id, fmt.Sprintf("u%d@x.io", id), teamT0), team), since, 10, 3); err != nil {
+				t.Fatalf("invitation %d of 3 returned %v", i+1, err)
+			}
+		}
+		if err := r.RevokeTeamInvitation(ctx, 2, 11, teamT0); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.CreateTeamInvitation(ctx, inTeam(invitation(20, "u20@x.io", teamT0), 2), since, 10, 3); !errors.Is(err, ErrUserInvitationCapReached) {
+			t.Errorf("a 4th invitation with a cap of 3 across teams returned %v, want ErrUserInvitationCapReached", err)
+		}
+		// The team's cap answers first when both are reached.
+		if err := r.CreateTeamInvitation(ctx, invitation(20, "u20@x.io", teamT0), since, 3, 3); !errors.Is(err, ErrInvitationCapReached) {
+			t.Errorf("both caps reached returned %v, want ErrInvitationCapReached", err)
+		}
+		if err := r.CreateTeamInvitation(ctx, inTeam(invitation(20, "u20@x.io", teamT0), 2), since, 10, 0); err != nil {
+			t.Errorf("an invitation with no per-account cap returned %v", err)
+		}
+	})
+}
+
+// An invitation the inviter sent to another team, committed while this one
+// waited for their lock, counts: the count runs under the inviter's lock.
+func TestUserInvitationCapReadsUnderTheInvitersLock(t *testing.T) {
+	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
+		inviter(t, db)
+		since := teamT0.Add(-24 * time.Hour)
+		tx := db.Begin()
+		if err := tx.Exec("UPDATE users SET id = id WHERE id = ?", 10).Error; err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		go func() {
+			done <- r.CreateTeamInvitation(context.Background(), invitation(2, "b@x.io", teamT0), since, 10, 1)
+		}()
+		time.Sleep(200 * time.Millisecond) // waiting for the lock by now
+		other := inTeam(invitation(1, "a@x.io", teamT0), 2)
+		if err := tx.Create(&other).Error; err != nil {
+			tx.Rollback()
+			t.Fatal(err)
+		}
+		if err := tx.Commit().Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := <-done; !errors.Is(err, ErrUserInvitationCapReached) {
+			t.Errorf("an invitation past the cap once the other committed returned %v, want ErrUserInvitationCapReached", err)
+		}
+	})
+}
+
+// One account's requests at once, to two teams, never pass the per-account
+// cap together.
+func TestUserInvitationCapHoldsUnderParallelRequests(t *testing.T) {
+	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
+		inviter(t, db)
+		const limit, requests = 5, 20
+		var wg sync.WaitGroup
+		errs := make([]error, requests)
+		for i := range requests {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				inv := inTeam(invitation(int64(i+1), fmt.Sprintf("u%d@x.io", i), teamT0), int64(1+i%2))
+				errs[i] = r.CreateTeamInvitation(context.Background(), inv, teamT0.Add(-24*time.Hour), 100, limit)
+			}()
+		}
+		wg.Wait()
+		ok, capped := 0, 0
+		for _, err := range errs {
+			switch {
+			case err == nil:
+				ok++
+			case errors.Is(err, ErrUserInvitationCapReached):
+				capped++
+			default:
+				t.Errorf("a request failed with %v, want only success or ErrUserInvitationCapReached", err)
+			}
+		}
+		var n int64
+		db.Model(&model.TeamInvitation{}).Count(&n)
+		if ok != limit || capped != requests-limit || n != limit {
+			t.Errorf("%d created, %d refused, %d stored; want %d, %d, %d", ok, capped, n, limit, requests-limit, limit)
+		}
+	})
+}
+
+func TestUserInvitationCapFailures(t *testing.T) {
+	since := teamT0.Add(-24 * time.Hour)
+	t.Run("an unknown inviter", func(t *testing.T) {
+		forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
+			if err := r.CreateTeamInvitation(context.Background(), invitation(1, "a@x.io", teamT0), since, 10, 5); !errors.Is(err, ErrNotFound) {
+				t.Errorf("an inviter with no account returned %v, want ErrNotFound", err)
+			}
+		})
+	})
+	t.Run("locking the inviter", func(t *testing.T) {
+		forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
+			if err := db.Migrator().DropTable(&model.User{}); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.CreateTeamInvitation(context.Background(), invitation(1, "a@x.io", teamT0), since, 10, 5); err == nil {
+				t.Error("an invitation with no users table to lock returned nil")
+			}
+		})
+	})
+	t.Run("counting the inviter's invitations", func(t *testing.T) {
+		forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
+			inviter(t, db)
+			failTeamStatement(t, db, "query", "team_invitations", 1)
+			if err := r.CreateTeamInvitation(context.Background(), invitation(1, "a@x.io", teamT0), since, 10, 5); !errors.Is(err, errTeamDB) {
+				t.Errorf("a failed count returned %v, want %v", err, errTeamDB)
+			}
+		})
+	})
+}
+
 func TestOnlyOneParallelAcceptWins(t *testing.T) {
 	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
-		if err := r.CreateTeamInvitation(context.Background(), invitation(1, "a@x.io", teamT0), teamT0.Add(-24*time.Hour), 10); err != nil {
+		if err := r.CreateTeamInvitation(context.Background(), invitation(1, "a@x.io", teamT0), teamT0.Add(-24*time.Hour), 10, 0); err != nil {
 			t.Fatal(err)
 		}
 		var wg sync.WaitGroup
@@ -666,26 +813,26 @@ func TestTeamStatementFailures(t *testing.T) {
 		{"reading the member to remove", "query", "team_members", 1, nil, func(r Repository) error { return r.RemoveTeamMember(ctx, 1, 10, 11) }},
 		{"counting owners as one leaves", "query", "team_members", 1, nil, func(r Repository) error { return r.RemoveTeamMember(ctx, 1, 10, 10) }},
 		{"counting invitations", "query", "team_invitations", 0, nil, func(r Repository) error {
-			return r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10)
+			return r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10, 0)
 		}},
 		{"revoking an expired invitation", "update", "team_invitations", 0, nil, func(r Repository) error {
-			return r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10)
+			return r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10, 0)
 		}},
 		{"storing an invitation", "create", "team_invitations", 0, nil, func(r Repository) error {
-			return r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10)
+			return r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10, 0)
 		}},
 		{"locking the team to accept", "raw", "", 0, nil, func(r Repository) error { return r.AcceptTeamInvitation(ctx, 1, member, teamT0) }},
 		{"reading the invitation to accept", "query", "team_invitations", 0, nil, func(r Repository) error {
 			return r.AcceptTeamInvitation(ctx, 1, member, teamT0)
 		}},
 		{"reading the inviter", "query", "team_members", 0, func(r Repository) {
-			_ = r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10)
+			_ = r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10, 0)
 		}, func(r Repository) error { return r.AcceptTeamInvitation(ctx, 1, member, teamT0) }},
 		{"marking an invitation accepted", "update", "team_invitations", 0, func(r Repository) {
-			_ = r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10)
+			_ = r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10, 0)
 		}, func(r Repository) error { return r.AcceptTeamInvitation(ctx, 1, member, teamT0) }},
 		{"adding the accepted member", "create", "team_members", 0, func(r Repository) {
-			_ = r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10)
+			_ = r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), since, 10, 0)
 		}, func(r Repository) error { return r.AcceptTeamInvitation(ctx, 1, member, teamT0) }},
 		{"locking the team to share", "raw", "", 0, nil, func(r Repository) error { _, err := r.SetWorkspaceShare(ctx, share); return err }},
 		{"reading the sharer's membership", "query", "team_members", 0, nil, func(r Repository) error { _, err := r.SetWorkspaceShare(ctx, share); return err }},
