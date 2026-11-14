@@ -156,3 +156,49 @@ func FromWorkspaceShareEntitiesToHTTPResponse(es []entity.WorkspaceShare) []byte
 	b, _ := json.Marshal(out)
 	return b
 }
+
+func fromPanoDocShareEntity(e entity.PanoDocShare) view.PanoDocShare {
+	return view.PanoDocShare{
+		TeamID: id62(e.TeamID), TeamName: e.TeamName, DocID: id62(e.DocID), CreatedAt: e.CreatedAt, Version: e.Version,
+	}
+}
+
+// FromPanoDocShareEntityToHTTPResponse renders a Pano doc's share.
+func FromPanoDocShareEntityToHTTPResponse(e entity.PanoDocShare) []byte {
+	b, _ := json.Marshal(fromPanoDocShareEntity(e))
+	return b
+}
+
+// FromPanoDocShareEntitiesToHTTPResponse renders a Pano doc's shares.
+func FromPanoDocShareEntitiesToHTTPResponse(es []entity.PanoDocShare) []byte {
+	out := view.ListPanoDocSharesResponse{Shares: make([]view.PanoDocShare, len(es))}
+	for i, e := range es {
+		out.Shares[i] = fromPanoDocShareEntity(e)
+	}
+	b, _ := json.Marshal(out)
+	return b
+}
+
+func fromTeamPanoDocEntity(e entity.TeamPanoDoc) view.TeamPanoDoc {
+	return view.TeamPanoDoc{
+		PanoDoc: fromEntityPanoDocToView(e.PanoDoc), OwnerID: id62(e.OwnerID), OwnerName: e.OwnerName, OwnerPicture: e.OwnerPicture,
+	}
+}
+
+// FromTeamPanoDocEntitiesToHTTPResponse renders the Pano docs shared with a
+// team.
+func FromTeamPanoDocEntitiesToHTTPResponse(es []entity.TeamPanoDoc) []byte {
+	out := view.ListTeamPanoDocsResponse{Docs: make([]view.TeamPanoDoc, len(es))}
+	for i, e := range es {
+		out.Docs[i] = fromTeamPanoDocEntity(e)
+	}
+	b, _ := json.Marshal(out)
+	return b
+}
+
+// FromTeamPanoDocEntityToHTTPResponse renders one Pano doc shared with a
+// team.
+func FromTeamPanoDocEntityToHTTPResponse(e entity.TeamPanoDoc) []byte {
+	b, _ := json.Marshal(view.TeamPanoDocResponse{Doc: fromTeamPanoDocEntity(e)})
+	return b
+}

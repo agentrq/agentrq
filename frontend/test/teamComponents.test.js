@@ -441,11 +441,12 @@ describe('the team sidebar', () => {
     await mount(TeamSidebar, { path: '/tasks/active?team=tm1', props: { showTooltip, hideTooltip } });
     expect(api.fetchTeamWorkspaces).toHaveBeenCalledWith('tm1');
 
-    expect(text($('[data-test=team-sidebar]'))).toMatch(/^Team Tasks Kanban Skills Workspaces /);
+    expect(text($('[data-test=team-sidebar]'))).toMatch(/^Team Tasks Kanban Pano Skills Workspaces /);
     const links = $$('[data-test=team-sidebar] > a').map((a) => [text(a), a.getAttribute('href')]);
     expect(links).toEqual([
       ['Tasks', '/tasks/active?team=tm1'],
       ['Kanban', '/kanban?team=tm1'],
+      ['Pano', '/team/pano?team=tm1'],
       ['Skills', '/skills?team=tm1'],
       ['Backend C D +1', '/tasks/active?workspace=Backend&team=tm1'],
       ['docs B F', '/tasks/active?workspace=docs&team=tm1'],
@@ -465,6 +466,7 @@ describe('the team sidebar', () => {
       ['/tasks/active?team=tm1&workspace=docs', 'docs B F'],
       ['/kanban?team=tm1', 'Kanban'],
       ['/skills/x?team=tm1', 'Skills'],
+      ['/team/pano/d1?team=tm1', 'Pano'],
     ]) {
       await router.push(path);
       await flush();

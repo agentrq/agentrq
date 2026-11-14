@@ -513,6 +513,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionTeamSkillAdd, model.ActionIDTeamSkillAdd, "team skill add"},
 		{entity.ActionTeammateMemoryInclude, model.ActionIDTeammateMemoryInclude, "teammate memory include"},
 		{entity.ActionTeammateMemoryExclude, model.ActionIDTeammateMemoryExclude, "teammate memory exclude"},
+		{entity.ActionPanoShare, model.ActionIDPanoShare, "pano share"},
 	}
 
 	for _, tc := range cases {

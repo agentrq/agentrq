@@ -32,6 +32,7 @@ type fake struct {
 	missing   string                              // the attachment whose file is gone
 	created   entity.CreateTaskRequest            // the last task created
 	statsReq  *entity.GetStatsOfWorkspacesRequest // the last statistics asked for
+	panoReq   string                              // the account the last Pano read was made as
 }
 
 func (f *fake) err(name string) error {

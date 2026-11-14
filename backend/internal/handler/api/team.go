@@ -18,7 +18,8 @@ import (
 )
 
 // registerTeamRoutes adds teams, their members, invitations and activity,
-// the account's own invitations, and the sharing of a workspace with a team.
+// the account's own invitations, and the sharing of a workspace or a Pano
+// doc with a team.
 // Every change sends the team's version it was made from: in its body, or
 // as ?version= on a DELETE.
 func (h *handler) registerTeamRoutes() {
@@ -46,6 +47,9 @@ func (h *handler) registerTeamRoutes() {
 	h.router.Get("/workspaces/:id/shares", h.listWorkspaceShares())
 	h.router.Put("/workspaces/:id/shares/:teamId", h.shareWorkspace())
 	h.router.Delete("/workspaces/:id/shares/:teamId", h.unshareWorkspace())
+	h.router.Get("/pano/:id/shares", h.listPanoDocShares())
+	h.router.Put("/pano/:id/shares/:teamId", h.sharePanoDoc())
+	h.router.Delete("/pano/:id/shares/:teamId", h.unsharePanoDoc())
 }
 
 // teamError answers a refused team request. A skill refused in team mode
@@ -396,6 +400,41 @@ func (h *handler) unshareWorkspace() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		v, err := h.teams.UnshareWorkspace(ctx, ch, ids[0])
+		return mapper.FromTeamVersionToHTTPResponse(v), err
+	})
+}
+
+func (h *handler) listPanoDocShares() fiber.Handler {
+	return teamRoute(teamPathWorkspace, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		ctx, cancel := newContext(c)
+		defer cancel()
+		shares, err := h.teams.ListPanoShares(ctx, sessionUser(c), ids[0])
+		return mapper.FromPanoDocShareEntitiesToHTTPResponse(shares), err
+	})
+}
+
+func (h *handler) sharePanoDoc() fiber.Handler {
+	return teamRoute(teamPathShare, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		ch, err := bodyChange(c, ids[1])
+		if err != nil {
+			return nil, err
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		s, err := h.teams.SharePanoDoc(ctx, ch, ids[0])
+		return mapper.FromPanoDocShareEntityToHTTPResponse(s), err
+	})
+}
+
+func (h *handler) unsharePanoDoc() fiber.Handler {
+	return teamRoute(teamPathShare, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		ch, err := queryChange(c, ids[1])
+		if err != nil {
+			return nil, err
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		v, err := h.teams.UnsharePanoDoc(ctx, ch, ids[0])
 		return mapper.FromTeamVersionToHTTPResponse(v), err
 	})
 }

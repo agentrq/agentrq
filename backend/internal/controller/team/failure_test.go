@@ -147,6 +147,34 @@ func (f failing) DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, 
 	return f.Repository.DeleteWorkspaceShare(ctx, workspaceID, teamID, userID, version, act)
 }
 
+func (f failing) GetPanoDoc(ctx context.Context, userID, id int64, now time.Time) (model.PanoDoc, error) {
+	if f.method == "GetPanoDoc" {
+		return model.PanoDoc{}, errDB
+	}
+	return f.Repository.GetPanoDoc(ctx, userID, id, now)
+}
+
+func (f failing) ListPanoDocShares(ctx context.Context, docID, userID int64) ([]base.PanoDocShareWithTeam, error) {
+	if f.method == "ListPanoDocShares" {
+		return nil, errDB
+	}
+	return f.Repository.ListPanoDocShares(ctx, docID, userID)
+}
+
+func (f failing) SetPanoDocShare(ctx context.Context, s model.PanoDocShare, version int64, act model.TeamManagementActivity) (base.PanoDocShareWithTeam, int64, error) {
+	if f.method == "SetPanoDocShare" {
+		return base.PanoDocShareWithTeam{}, 0, errDB
+	}
+	return f.Repository.SetPanoDocShare(ctx, s, version, act)
+}
+
+func (f failing) DeletePanoDocShare(ctx context.Context, docID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error) {
+	if f.method == "DeletePanoDocShare" {
+		return 0, errDB
+	}
+	return f.Repository.DeletePanoDocShare(ctx, docID, teamID, userID, version, act)
+}
+
 func (f failing) ListTeamActivities(ctx context.Context, teamID int64, limit int, before int64) ([]base.TeamActivityRow, error) {
 	if f.method == "ListTeamActivities" {
 		return nil, errDB
@@ -338,6 +366,34 @@ func TestRepositoryFailuresReachTheCaller(t *testing.T) {
 		}},
 		{"checking a team read", "CanReadWorkspaceInTeam", func(f *fixture) error {
 			return errOf(f.c.CanReadWorkspaceInTeam(f.ctx, alice, f.team, 100))
+		}},
+		{"reading a doc to list its shares", "GetPanoDoc", func(f *fixture) error {
+			f.panoDoc(500, alice, "Plan")
+			return errOf(f.c.ListPanoShares(f.ctx, alice, 500))
+		}},
+		{"listing a doc's shares", "ListPanoDocShares", func(f *fixture) error {
+			f.panoDoc(500, alice, "Plan")
+			return errOf(f.c.ListPanoShares(f.ctx, alice, 500))
+		}},
+		{"reading a doc to share", "GetPanoDoc", func(f *fixture) error {
+			f.panoDoc(500, alice, "Plan")
+			return errOf(f.c.SharePanoDoc(f.ctx, f.ch(alice), 500))
+		}},
+		{"storing a doc's share", "SetPanoDocShare", func(f *fixture) error {
+			f.panoDoc(500, alice, "Plan")
+			return errOf(f.c.SharePanoDoc(f.ctx, f.ch(alice), 500))
+		}},
+		{"reading a doc to unshare", "", func(f *fixture) error {
+			f.panoDoc(500, alice, "Plan")
+			must(f.c.SharePanoDoc(f.ctx, f.ch(alice), 500))
+			f.c.(*controller).repo = failing{f.repo, "GetPanoDoc"}
+			return errOf(f.c.UnsharePanoDoc(f.ctx, f.ch(alice), 500))
+		}},
+		{"deleting a doc's share", "", func(f *fixture) error {
+			f.panoDoc(500, alice, "Plan")
+			must(f.c.SharePanoDoc(f.ctx, f.ch(alice), 500))
+			f.c.(*controller).repo = failing{f.repo, "DeletePanoDocShare"}
+			return errOf(f.c.UnsharePanoDoc(f.ctx, f.ch(alice), 500))
 		}},
 		{"listing a team's workspaces", "ListTeamWorkspaces", func(f *fixture) error { return errOf(f.c.ListTeamWorkspaces(f.ctx, alice, f.team)) }},
 	}

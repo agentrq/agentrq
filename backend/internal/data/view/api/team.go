@@ -131,6 +131,38 @@ type WorkspaceShare struct {
 	Version     int64     `json:"version,omitempty"`
 }
 
+// PanoDocShare is a Pano doc shared with a team.
+type PanoDocShare struct {
+	TeamID    string    `json:"teamId"`
+	TeamName  string    `json:"teamName"`
+	DocID     string    `json:"docId"`
+	CreatedAt time.Time `json:"createdAt"`
+	Version   int64     `json:"version,omitempty"`
+}
+
+// ListPanoDocSharesResponse is a Pano doc's shares.
+type ListPanoDocSharesResponse struct {
+	Shares []PanoDocShare `json:"shares"`
+}
+
+// TeamPanoDoc is a Pano doc shared with a team, with its owner.
+type TeamPanoDoc struct {
+	PanoDoc
+	OwnerID      string `json:"ownerId"`
+	OwnerName    string `json:"ownerName,omitempty"`
+	OwnerPicture string `json:"ownerPicture,omitempty"`
+}
+
+// ListTeamPanoDocsResponse is the Pano docs shared with a team.
+type ListTeamPanoDocsResponse struct {
+	Docs []TeamPanoDoc `json:"docs"`
+}
+
+// TeamPanoDocResponse is one Pano doc shared with a team.
+type TeamPanoDocResponse struct {
+	Doc TeamPanoDoc `json:"doc"`
+}
+
 // ListWorkspaceSharesResponse is a workspace's shares.
 type ListWorkspaceSharesResponse struct {
 	Shares []WorkspaceShare `json:"shares"`

@@ -1888,6 +1888,9 @@ const (
 	// one of the account's shared workspaces, which it carries.
 	ActionTeammateMemoryInclude Action = 122
 	ActionTeammateMemoryExclude Action = 123
+	// A Pano doc shared with a team; workspace 0, as the Pano is the
+	// account's.
+	ActionPanoShare Action = 124
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2132,6 +2135,8 @@ func (a Action) String() string {
 		return "teammate_memory_include"
 	case ActionTeammateMemoryExclude:
 		return "teammate_memory_exclude"
+	case ActionPanoShare:
+		return "pano_share"
 	}
 	return "unknown"
 }

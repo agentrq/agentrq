@@ -600,6 +600,11 @@ describe('each tool calls the interface the way the UI does', () => {
     ['readTeams', { action: 'skill', teamId: 'tm1', name: 'tdd' }, 'getTeamSkill', ['tm1', 'tdd']],
     ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd' }, 'addTeamSkill', ['tm1', 'tdd', []]],
     ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd', workspaceIds: ['ws1'] }, 'addTeamSkill', ['tm1', 'tdd', ['ws1']]],
+    ['readTeams', { action: 'panoShares', docId: 'd1' }, 'listPanoShares', ['d1']],
+    ['readTeams', { action: 'panoDocs', teamId: 'tm1' }, 'listTeamPanoDocs', ['tm1']],
+    ['readTeams', { action: 'panoDoc', teamId: 'tm1', docId: 'd1' }, 'getTeamPanoDoc', ['tm1', 'd1']],
+    ['manageTeam', { action: 'sharePano', docId: 'd1', teamId: 'tm1', version: 3 }, 'sharePanoDoc', ['d1', 'tm1', 3]],
+    ['manageTeam', { action: 'unsharePano', docId: 'd1', teamId: 'tm1', version: 3 }, 'unsharePanoDoc', ['d1', 'tm1', 3]],
     ['cloneTeamTask', { teamId: 'tm1', taskId: 't1', workspaceId: 'ws1' }, 'cloneTeamTask', ['tm1', 't1', 'ws1', 'human']],
     ['cloneTeamTask', { teamId: 'tm1', taskId: 't1', workspaceId: 'ws1', assignee: 'agent' }, 'cloneTeamTask', ['tm1', 't1', 'ws1', 'agent']],
   ];
@@ -635,6 +640,8 @@ describe('the grouped team tools', () => {
     expect(page({ action: 'revokeInvitation', teamId: 'tm1' })).toBe('/team/settings?team=tm1&tab=invitations');
     expect(page({ action: 'removeMember', teamId: 'tm1' })).toBe('/team/settings?team=tm1&tab=members');
     expect(page({ action: 'addSkill', teamId: 'tm1' })).toBe('/skills?team=tm1');
+    expect(page({ action: 'sharePano', docId: 'd/1', teamId: 'tm1' })).toBe('/pano/d%2F1');
+    expect(page({ action: 'unsharePano', docId: 'd1', teamId: 'tm1' })).toBe('/pano/d1');
     expect(page(undefined)).toBe('/team/settings?team=&tab=members');
   });
 
