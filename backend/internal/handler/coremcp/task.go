@@ -22,7 +22,7 @@ import (
 const taskToolDescription = "Hand out, follow and steer the work of every workspace on the account. A task is one piece of work, assigned to a workspace's agent or to the human, with a conversation between them. " +
 	"Use it to give a workspace work, check on it, answer an agent that is waiting, and close it. " + twoInputs +
 	"An action on one task takes its workspaceId and taskId; workspaceId comes from workspace list. " +
-	"list (workspaceId) and listAll list one workspace's tasks or every workspace's, 5 by default and at most 50, filtered by text, status, creator or awaitingReply; " +
+	"list (workspaceId) and listAll list one workspace's tasks or every workspace's, 5 by default and at most 50, filtered by text, status, creator or awaitingReply, each as a summary without its body unless includeBody is true: poll with them and messages, not get; " +
 	"create (workspaceId, title, body) adds a task, assigned to the human unless assignee says agent, once or on a cronSchedule; get reads a task in full; " +
 	"messages reads only a task's conversation, far smaller than get, to follow up on a task; reply posts to it; " +
 	"respond answers the permission request a task is waiting on; updateStatus, updateSortingOrder, updateAssignee, updateAllowAll and updateSchedule change one thing about a task; " +
@@ -36,6 +36,11 @@ const awaitingReplyHelp = "Each task has awaitingReply: true while a question or
 	"lastMessageAt and lastMessageBy say when that newest message was sent, and by whom; a supervisor's reply counts as the human's. " +
 	"An agent often waits on an answer with its task still ongoing, so check awaitingReply, not only the status."
 
+// taskListHelp is what list and listAll take and answer.
+const taskListHelp = "filter keeps the tasks whose title or body contains it, ignoring case; status, createdBy ('human' or 'agent'), createdByWorkspaceId (the workspace that delegated it through create) and awaitingReply narrow the list further; limit (default 5, at most 50) and offset page through it. " +
+	"Each task is a summary: id, workspaceId, title, status, assignee, createdAt, updatedAt, lastMessageAt, lastMessageBy, awaitingReply and, for a scheduled one, cronSchedule. " +
+	"includeBody: true answers each task whole, its body included; to check on tasks, the summary is enough. " + awaitingReplyHelp
+
 // TaskParams is the input to the task tool.
 type TaskParams struct {
 	Action  string         `json:"action" jsonschema:"What to do: one of the actions this tool's description lists, or help for each action's fields and an example."`
@@ -47,11 +52,11 @@ type TaskParams struct {
 func (s *WorkspaceServer) taskActions() []mcpevent.ToolAction {
 	return []mcpevent.ToolAction{
 		mcpevent.NewToolAction("list", "List a workspace's tasks.", s.handleListTasks).
-			WithDetails("filter keeps the tasks whose title or body contains it, ignoring case; status, createdBy ('human' or 'agent'), createdByWorkspaceId (the workspace that delegated it through create) and awaitingReply narrow the list further; limit (default 5, at most 50) and offset page through it. " + awaitingReplyHelp).
+			WithDetails(taskListHelp).
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "status": "blocked", "limit": 10}`).
 			ReadOnly(),
 		mcpevent.NewToolAction("listAll", "List the tasks of every workspace.", s.handleListAllTasks).
-			WithDetails("filter keeps the tasks whose title or body contains it, ignoring case; status, createdBy ('human' or 'agent'), createdByWorkspaceId (the workspace that delegated it through create) and awaitingReply narrow the list further; limit (default 5, at most 50) and offset page through it. " + awaitingReplyHelp).
+			WithDetails(taskListHelp).
 			WithExample(`{"status": "ongoing"}`).
 			ReadOnly(),
 		mcpevent.NewToolAction("create", "Create a task in a workspace, assigned to the human unless assignee says otherwise.", s.handleCreateTask).
@@ -187,4 +192,15 @@ func replyStates(tasks []entity.Task) []entity.TaskReplyState {
 		tasks[i].Messages = nil
 	}
 	return states
+}
+
+// taskList answers list and listAll with the tasks res holds: with
+// includeBody, each task whole; otherwise a summary of where each stands,
+// a task's body being most of its size.
+func taskList(includeBody bool, res *entity.ListTasksResponse) *mcp.CallToolResult {
+	states := replyStates(res.Tasks)
+	if includeBody {
+		return textResponse(string(apiMapper.FromListTasksResponseEntityToMCPResponse(res, states)))
+	}
+	return textResponse(string(apiMapper.FromListTasksResponseEntityToTaskListMCPResponse(res, states)))
 }

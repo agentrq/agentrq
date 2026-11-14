@@ -261,6 +261,7 @@ type ListTasksParams struct {
 	AwaitingReply        bool   `json:"awaitingReply,omitempty" jsonschema:"true keeps only the tasks awaiting a reply: a question or permission request still pending, or an agent's last message ending in a question mark."`
 	Limit                int    `json:"limit,omitempty" jsonschema:"Maximum number of tasks to return, default 5, capped at 50"`
 	Offset               int    `json:"offset,omitempty" jsonschema:"Number of tasks to skip"`
+	IncludeBody          bool   `json:"includeBody,omitempty" jsonschema:"true answers each task whole, its body included; left out, a summary of where each task stands."`
 }
 
 type ListAllTasksParams struct {
@@ -271,6 +272,7 @@ type ListAllTasksParams struct {
 	AwaitingReply        bool   `json:"awaitingReply,omitempty" jsonschema:"true keeps only the tasks awaiting a reply: a question or permission request still pending, or an agent's last message ending in a question mark."`
 	Limit                int    `json:"limit,omitempty" jsonschema:"Maximum number of tasks to return, default 5, capped at 50"`
 	Offset               int    `json:"offset,omitempty" jsonschema:"Number of tasks to skip"`
+	IncludeBody          bool   `json:"includeBody,omitempty" jsonschema:"true answers each task whole, its body included; left out, a summary of where each task stands."`
 }
 
 type CreateTaskParams struct {
@@ -632,7 +634,7 @@ func (s *WorkspaceServer) handleListTasks(ctx context.Context, req *mcp.CallTool
 		return errorResponse(err), nil, nil
 	}
 
-	return textResponse(string(apiMapper.FromListTasksResponseEntityToMCPResponse(res, replyStates(res.Tasks)))), nil, nil
+	return taskList(args.IncludeBody, res), nil, nil
 }
 
 func (s *WorkspaceServer) handleListAllTasks(ctx context.Context, req *mcp.CallToolRequest, args ListAllTasksParams) (*mcp.CallToolResult, any, error) {
@@ -668,7 +670,7 @@ func (s *WorkspaceServer) handleListAllTasks(ctx context.Context, req *mcp.CallT
 		return errorResponse(err), nil, nil
 	}
 
-	return textResponse(string(apiMapper.FromListTasksResponseEntityToMCPResponse(res, replyStates(res.Tasks)))), nil, nil
+	return taskList(args.IncludeBody, res), nil, nil
 }
 
 func (s *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToolRequest, args CreateTaskParams) (*mcp.CallToolResult, any, error) {
