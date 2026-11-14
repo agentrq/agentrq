@@ -103,8 +103,8 @@ const PANO_DOC = {
 // under the 128 tools a shared site may announce, and teams alone are ~30
 // calls. Each action is one `api.js` function; `run` picks it.
 const TEAM_ID = str('The team ID, as listTeams reports it.')
-// A team is managed in a dialog over its tasks, open on one tab.
-const teamPage = ({ teamId } = {}, tab = 'members') => `/tasks/active?team=${seg(teamId)}&manage=${tab}`
+// A team is managed on its settings page, open on one tab.
+const teamPage = ({ teamId } = {}, tab = 'members') => `/team/settings?team=${seg(teamId)}&tab=${tab}`
 const sharingPage = ({ workspaceId }) => `/workspaces/${seg(workspaceId)}/settings?tab=sharing`
 const TEAM_FIELDS = {
   teamId: TEAM_ID,
@@ -203,20 +203,20 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Go to an in-app path (?query ok); IDs from getCurrentPage or list tools.\n' +
+        'Go to an in-app path (?query ok); IDs from getCurrentPage/list tools.\n' +
         '- "/" workspaces, "/workspaces/new".\n' +
-        '- "/kanban" or "/tasks/<filter>" (active, notstarted, pending, ongoing, completed, scheduled) of all ' +
+        '- "/kanban", "/tasks/<filter>" (active|notstarted|pending|ongoing|completed|scheduled) of all ' +
         'workspaces; add "/<workspaceId>/<taskId>" to open one, then "/instances".\n' +
         '- "/workspaces/<workspaceId>" ("?filter=" as above); under it "/board", "/analytics", "/settings", ' +
         '"/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", plus "/instances" or "/edit". Its ' +
-        '"?tab=" general, setup, automations, notifications, memories, skills, sharing, slack, input, storage or danger.\n' +
+        '"?tab=" general|setup|automations|notifications|memories|skills|sharing|slack|input|storage|danger.\n' +
         '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/skills[/<name>]", "/{pano,events/hooks}/new", ' +
         '"/pano/[<id>/]chat/<workspaceId>/<taskId>".\n' +
         '- "/machines[/<id>]", "/sessions/<id>" (terminal).\n' +
         '- "/extensions[/<name>/<pageId>]" (desktop).\n' +
-        '- "/team/new", "/invitations"; "?team=<id>" on "/{tasks/*,kanban,skills,team/analytics}" is a team; ' +
-        '"&manage=members|invitations|activity|workspaces".\n' +
-        'Others are refused.',
+        '- "/team/new", "/invitations"; "?team=<id>" on "/{tasks/*,kanban,skills,team/analytics,team/settings}" is a team; ' +
+        'settings "&tab=members|invitations|activity|workspaces|danger".\n' +
+        'Others refused.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
       required: ['path'],
       run: async ({ path }) => {

@@ -627,17 +627,17 @@ describe('the grouped team tools', () => {
     expect(page({ action: 'unshare', workspaceId: 'ws1', teamId: 'tm1' })).toBe('/workspaces/ws1/settings?tab=sharing');
     expect(page({ action: 'accept', token: 'tok' })).toBe('/invitations');
     expect(page({ action: 'decline', invitationId: 'i1' })).toBe('/invitations');
-    expect(page({ action: 'invite', teamId: 't/1' })).toBe('/tasks/active?team=t%2F1&manage=invitations');
-    expect(page({ action: 'revokeInvitation', teamId: 'tm1' })).toBe('/tasks/active?team=tm1&manage=invitations');
-    expect(page({ action: 'removeMember', teamId: 'tm1' })).toBe('/tasks/active?team=tm1&manage=members');
+    expect(page({ action: 'invite', teamId: 't/1' })).toBe('/team/settings?team=t%2F1&tab=invitations');
+    expect(page({ action: 'revokeInvitation', teamId: 'tm1' })).toBe('/team/settings?team=tm1&tab=invitations');
+    expect(page({ action: 'removeMember', teamId: 'tm1' })).toBe('/team/settings?team=tm1&tab=members');
     expect(page({ action: 'addSkill', teamId: 'tm1' })).toBe('/skills?team=tm1');
-    expect(page(undefined)).toBe('/tasks/active?team=&manage=members');
+    expect(page(undefined)).toBe('/team/settings?team=&tab=members');
   });
 
   it('opens a new team\'s invitations, or the create form when the answer names none', () => {
     const after = build().find((t) => t.name === 'createTeam').screen.after;
 
-    expect(after({ name: 'Core' }, { id: 'tm8', name: 'Core' })).toBe('/tasks/active?team=tm8&manage=invitations');
+    expect(after({ name: 'Core' }, { id: 'tm8', name: 'Core' })).toBe('/team/settings?team=tm8&tab=invitations');
     expect(after({ name: 'Core' }, {})).toBe('/team/new');
   });
 

@@ -265,7 +265,7 @@ describe('the Me | Team switch', () => {
     expect($('[data-test=team-badge]').getAttribute('title')).toBe('1 pending invitation');
   });
 
-  it('lists your teams by size, never by role, and opens Manage team over the page', async () => {
+  it('lists your teams by size, never by role, and opens the team settings', async () => {
     await withTeams([core, docs, { id: 'tm3', name: 'Zed' }], [{ id: 'i1' }], { path: '/kanban?team=tm1' });
     await click($('[data-test=switch-menu]'));
     const menu = $('[data-test=team-menu]');
@@ -277,7 +277,7 @@ describe('the Me | Team switch', () => {
     expect(menu.querySelectorAll('svg path[d="M5 13l4 4L19 7"]').length).toBe(1);
 
     await click($('[data-test=manage-team]'));
-    expect(here().fullPath).toBe('/kanban?team=tm1&manage=members');
+    expect(here().fullPath).toBe('/team/settings?team=tm1&tab=members');
     expect($('[data-test=team-menu]')).toBe(null);
 
     await click($('[data-test=switch-menu]'));
@@ -294,12 +294,12 @@ describe('the Me | Team switch', () => {
     expect(here().path).toBe('/team/new');
   });
 
-  it('opens Manage team from Me on the team it would open, remembering it', async () => {
+  it('opens the settings from Me of the team it would open, remembering it', async () => {
     rememberTeam('tm2');
     await withTeams([core, docs]);
     await click($('[data-test=switch-menu]'));
     await click($('[data-test=manage-team]'));
-    expect(here().fullPath).toBe('/tasks/active?team=tm2&manage=members');
+    expect(here().fullPath).toBe('/team/settings?team=tm2&tab=members');
     expect(rememberedTeam()).toBe('tm2');
   });
 
@@ -496,7 +496,7 @@ describe('the team sidebar', () => {
 });
 
 describe('the team-mode bar', () => {
-  it('says whose work this is, renames it in place, opens Manage team, and goes back to Me', async () => {
+  it('says whose work this is, renames it in place, opens the team settings, and goes back to Me', async () => {
     rememberTeam('tm1');
     await mount(TeamModeBar, { path: '/kanban?team=tm1', props: { name: 'Core' } });
     expect(text($('[data-test=team-mode-bar]'))).toBe('Viewing Core (read-only) Manage Back to Me');
@@ -505,18 +505,18 @@ describe('the team-mode bar', () => {
     await flush();
     expect($('[data-test=team-rename]').disabled).toBe(false);
     expect($('[data-test=joined-banner]')).toBe(null);
-    expect($('[data-test=team-bar-manage]').getAttribute('href')).toBe('/kanban?team=tm1&manage=members');
+    expect($('[data-test=team-bar-manage]').getAttribute('href')).toBe('/team/settings?team=tm1&tab=members');
 
     await click([...$$('a')].find((a) => text(a) === 'Back to Me'));
     expect(here().path).toBe('/');
     expect(rememberedTeam()).toBe('');
   });
 
-  it('offers to share once, right after joining, in Manage team', async () => {
+  it('offers to share once, right after joining, in the team settings', async () => {
     await mount(TeamModeBar, { path: '/tasks/active?team=tm1&joined=1' });
     const banner = $('[data-test=joined-banner]');
     expect(banner.textContent.replace(/\s+/g, ' ').trim()).toBe('You joined Team. Share your workspaces?Share');
-    expect(banner.querySelector('a').getAttribute('href')).toBe('/tasks/active?team=tm1&manage=workspaces');
+    expect(banner.querySelector('a').getAttribute('href')).toBe('/team/settings?team=tm1&tab=workspaces');
     await click(banner.querySelector('button'));
     expect(here().fullPath).toBe('/tasks/active?team=tm1');
     expect($('[data-test=joined-banner]')).toBe(null);

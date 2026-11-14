@@ -112,7 +112,7 @@
         <!-- A team with nothing shared yet (§9): say how it fills up. -->
         <div v-else-if="teamIsEmpty" data-test="team-empty" class="mx-4 py-6 px-4 border border-dashed border-gray-200 dark:border-zinc-800 rounded-xl text-[12px] text-gray-500 dark:text-zinc-400 font-medium space-y-3">
           <p>Nothing shared yet. Members choose which workspaces to share.</p>
-          <router-link :to="withManage(route, 'workspaces')"
+          <router-link :to="teamSettings(teamId, 'workspaces')"
                        class="inline-flex px-3 py-1.5 rounded-lg bg-black dark:bg-white text-white dark:text-black text-[10px] font-black uppercase tracking-widest">Share your workspaces</router-link>
         </div>
 
@@ -259,7 +259,7 @@ import { readAllCachedTasks, shouldPaintCache } from '../composables/useCachedRe
 import OwnerAvatar from '../components/OwnerAvatar.vue';
 import TeamTaskFilters from '../components/TeamTaskFilters.vue';
 import { useTeamStore } from '../stores/teamStore';
-import { lostTeam, teamEvent, useTeamMode, withManage } from '../composables/useTeamMode';
+import { lostTeam, teamEvent, teamSettings, useTeamMode } from '../composables/useTeamMode';
 
 const { getNextRunLabel, getNextRunDateTime, getNextRunDate } = useCron();
 const route = useRoute();

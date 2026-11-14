@@ -83,7 +83,7 @@ test('a stranger gets nothing; any member can invite, rename, remove, leave and 
   await expect(dee.page.getByText(title)).toHaveCount(0)
 
   // 2. Any member can invite: Bea, who did not make the team, invites Cy.
-  await bea.page.goto(`/tasks/active?team=${team.id}&manage=invitations`)
+  await bea.page.goto(`/team/settings?team=${team.id}&tab=invitations`)
   await bea.page.locator('#invite-email').fill(cy.email)
   const invited = nextResponse(bea.page, 'POST', `/teams/${team.id}/invitations`)
   await bea.page.getByTestId('invite-form').getByRole('button', { name: 'Send' }).click()
@@ -91,17 +91,19 @@ test('a stranger gets nothing; any member can invite, rename, remove, leave and 
   const token = (await bea.page.getByTestId('invite-link').inputValue()).split('#')[1]
   await ok(await cy.page.request.post(`${API}/invitations/accept`, { data: { token } }), 'Cy accepting')
 
-  // 3. Every member sees the same dialog: no role anywhere, Remove on
+  // 3. Every member sees the same settings: no role anywhere, Remove on
   //    everyone else, and Leave and Delete for themselves.
-  await cy.page.goto(`/tasks/active?team=${team.id}&manage=members`)
-  const dialog = cy.page.getByTestId('team-manage')
+  await cy.page.goto(`/team/settings?team=${team.id}&tab=members`)
+  const dialog = cy.page.getByTestId('team-settings')
   await expect(dialog.getByTestId('member-row')).toHaveCount(3)
   await expect(dialog.getByTestId('member-remove')).toHaveCount(2)
   await expect(dialog.getByTestId('member-row').filter({ hasText: '(you)' }).getByTestId('member-remove')).toHaveCount(0)
-  await expect(dialog.getByTestId('leave')).toBeVisible()
-  await expect(dialog.getByTestId('delete')).toBeVisible()
   // Whole words: the root user is called Root Administrator.
   await expect(dialog).not.toContainText(/\b(owner|admin)\b/i)
+  await dialog.getByTestId('settings-tab-danger').click()
+  await expect(dialog.getByTestId('leave')).toBeVisible()
+  await expect(dialog.getByTestId('delete')).toBeVisible()
+  await dialog.getByTestId('settings-tab-members').click()
   const { members } = await ok(await cy.page.request.get(`${t}/members`), 'listing members')
   for (const m of members) expect(m.role, 'a member has no role').toBeUndefined()
 
@@ -122,7 +124,7 @@ test('a stranger gets nothing; any member can invite, rename, remove, leave and 
   const cyTitle = unique('Cy task')
   await createTask(cy.page, cyWs.id, cyTitle)
   expect(await teamTitles(bea.page, team.id)).toContain(cyTitle)
-  await cy.page.goto(`/tasks/active?team=${team.id}&manage=members`)
+  await cy.page.goto(`/team/settings?team=${team.id}&tab=danger`)
   await cy.page.getByTestId('leave').click()
   const left = nextResponse(cy.page, 'POST', `/teams/${team.id}/leave`)
   await cy.page.getByRole('button', { name: 'Leave', exact: true }).click()
@@ -137,20 +139,20 @@ test('a stranger gets nothing; any member can invite, rename, remove, leave and 
   //    Bea removes the root user, after asking, and the log says so.
   const { members: now } = await ok(await bea.page.request.get(`${t}/members`), 'listing members')
   const maker = now.find((m) => String(m.userId) !== String(bea.userId))
-  await bea.page.goto(`/tasks/active?team=${team.id}&manage=members`)
-  const beaDialog = bea.page.getByTestId('team-manage')
+  await bea.page.goto(`/team/settings?team=${team.id}&tab=members`)
+  const beaDialog = bea.page.getByTestId('team-settings')
   await beaDialog.getByTestId('member-row').filter({ hasText: maker.email }).getByTestId('member-remove').click()
   const removed = nextResponse(bea.page, 'DELETE', `/teams/${team.id}/members/${maker.userId}`)
   await bea.page.getByRole('button', { name: 'Remove', exact: true }).last().click()
   expect((await removed).status()).toBe(200)
   await expect(beaDialog.getByTestId('member-row')).toHaveCount(1)
   expect((await owner.request.get(t)).status()).toBe(404)
-  await beaDialog.getByTestId('manage-tab-activity').click()
+  await beaDialog.getByTestId('settings-tab-activity').click()
   await expect(beaDialog.getByTestId('activity-row').first()).toContainText('Bea QA removed')
 
   // 7. Bea deletes the team, once its name is typed. The root user's next
   //    look takes them back to Me.
-  await beaDialog.getByTestId('manage-tab-members').click()
+  await beaDialog.getByTestId('settings-tab-danger').click()
   await beaDialog.getByTestId('delete').click()
   await bea.page.getByTestId('confirm-text').fill(renamedTo)
   const deleted = nextResponse(bea.page, 'DELETE', `/teams/${team.id}`)
