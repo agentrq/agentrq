@@ -733,33 +733,41 @@ describe('a team\'s memory', () => {
     expect(text(document.body)).toContain(`Saved ${new Date('2026-11-02T00:00:00Z').toLocaleString()}`);
   });
 
-  it('says when someone saved first, and replaces theirs only on a second save', async () => {
-    api.saveTeamMemory.mockRejectedValueOnce(failure(409)).mockResolvedValueOnce(undefined);
-    await open();
+  it('sends the save it loaded, and says when another came in between: the save still wins', async () => {
+    const carol = { userId: 'u3', name: 'Carol' };
+    api.saveTeamMemory
+      .mockResolvedValueOnce({ content: 'mine', updatedAt: '2026-11-03T00:00:00Z', updatedBy: carol, conflict: true })
+      .mockResolvedValueOnce({ content: 'mine again', updatedAt: '2026-11-04T00:00:00Z', updatedBy: carol, conflict: false });
+    await open({ memory: { content: '# Team', updatedAt: '2026-11-01T00:00:00Z', updatedBy: alice } });
+    expect(text($('[data-test=team-memory-saved]'))).toContain(`by ${alice.name}`);
     const editor = $('[data-test=team-memory-editor]');
     editor.value = 'mine';
     editor.dispatchEvent(new Event('input'));
     await flush();
     await click($('[data-test=team-memory-save]'));
-    expect($('[data-test=team-memory-conflict]')).not.toBe(null);
+    expect(api.saveTeamMemory).toHaveBeenLastCalledWith('tm1', 'mine', '2026-11-01T00:00:00Z');
+    expect(text($('[data-test=team-memory-conflict]'))).toContain('your save replaced theirs');
+    expect(text($('[data-test=team-memory-saved]'))).toContain('by Carol');
+    editor.value = 'mine again';
+    editor.dispatchEvent(new Event('input'));
+    await flush();
     await click($('[data-test=team-memory-save]'));
-    expect(api.saveTeamMemory).toHaveBeenLastCalledWith('tm1', 'mine', '');
+    expect(api.saveTeamMemory).toHaveBeenLastCalledWith('tm1', 'mine again', '2026-11-03T00:00:00Z');
     expect($('[data-test=team-memory-conflict]')).toBe(null);
-    expect(text(document.body)).toContain(`Saved ${new Date('2026-11-01T00:00:00Z').toLocaleString()}`);
   });
 
-  it('loads theirs over a conflict', async () => {
-    api.saveTeamMemory.mockRejectedValue(failure(409));
-    await open();
+  it('sends no base for a memory nobody had saved', async () => {
+    api.saveTeamMemory.mockResolvedValue(undefined);
+    await open({ memory: { content: '', updatedAt: null, updatedBy: null } });
+    expect($('[data-test=team-memory-saved]')).toBe(null);
     const editor = $('[data-test=team-memory-editor]');
-    editor.value = 'mine';
+    editor.value = 'first';
     editor.dispatchEvent(new Event('input'));
     await flush();
     await click($('[data-test=team-memory-save]'));
-    api.getTeamMemory.mockResolvedValue({ content: 'theirs', updatedAt: '2026-11-03T00:00:00Z' });
-    await click($('[data-test=team-memory-reload]'));
-    expect($('[data-test=team-memory-editor]').value).toBe('theirs');
+    expect(api.saveTeamMemory).toHaveBeenLastCalledWith('tm1', 'first', '');
     expect($('[data-test=team-memory-conflict]')).toBe(null);
+    expect($('[data-test=team-memory-saved]')).toBe(null);
   });
 
   it('says why a save failed, or goes back to Me without the team', async () => {

@@ -13,7 +13,7 @@
       <section class="space-y-3">
         <div class="flex items-center gap-3">
           <h1 class="text-lg font-black text-gray-900 dark:text-white">Team memory</h1>
-          <span v-if="updatedAt" class="text-[11px] text-gray-400 dark:text-zinc-500">Saved {{ new Date(updatedAt).toLocaleString() }}</span>
+          <span v-if="updatedAt" data-test="team-memory-saved" class="text-[11px] text-gray-400 dark:text-zinc-500">Saved {{ new Date(updatedAt).toLocaleString() }}<template v-if="updatedBy?.name"> by {{ updatedBy.name }}</template></span>
         </div>
         <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">What the team's agents read first. Any member may edit it.</p>
         <p v-if="loadError" data-test="team-memory-error" class="text-[11px] font-bold text-red-600 dark:text-red-400">{{ loadError }}</p>
@@ -22,8 +22,7 @@
                     class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm p-3 text-[12px] font-mono text-gray-900 dark:text-zinc-100 outline-none focus:border-gray-900 dark:focus:border-white"></textarea>
           <div v-if="conflict" data-test="team-memory-conflict" role="alert"
                class="flex flex-wrap items-center gap-3 p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-sm text-[11px] text-amber-800 dark:text-amber-200">
-            <span class="flex-1 min-w-0">Someone saved it since you opened it. Load theirs to see it, or save again to replace it.</span>
-            <button type="button" data-test="team-memory-reload" @click="load" class="font-black uppercase tracking-widest underline">Load theirs</button>
+            <span class="flex-1 min-w-0">Someone else saved it after you opened it, and your save replaced theirs.</span>
           </div>
           <div class="flex justify-end">
             <button type="button" data-test="team-memory-save" :disabled="saving || loading || draft === saved" @click="save"
@@ -76,7 +75,10 @@ const { teamId, leaveTeam } = useTeamMode();
 
 const draft = ref('');
 const saved = ref('');
+// The save you loaded, sent back with yours so the server can tell you when
+// another came in between.
 const updatedAt = ref('');
+const updatedBy = ref(null);
 const loading = ref(true);
 const saving = ref(false);
 const conflict = ref(false);
@@ -97,6 +99,7 @@ async function load() {
     const res = await getTeamMemory(teamId.value);
     draft.value = saved.value = res?.content ?? '';
     updatedAt.value = res?.updatedAt ?? '';
+    updatedBy.value = res?.updatedBy ?? null;
   } catch (err) {
     if (lostTeam(err)) return leaveTeam();
     loadError.value = err.message;
@@ -113,18 +116,19 @@ async function loadIndex() {
   }
 }
 
-// Saving again over a conflict replaces theirs: the human has seen the notice.
+// The last save wins. The answer says when it replaced one made after this
+// page loaded, which is the notice.
 async function save() {
   saving.value = true;
   try {
-    const res = await saveTeamMemory(teamId.value, draft.value, conflict.value ? '' : updatedAt.value);
+    const res = await saveTeamMemory(teamId.value, draft.value, updatedAt.value);
     saved.value = draft.value;
     updatedAt.value = res?.updatedAt ?? updatedAt.value;
-    conflict.value = false;
+    updatedBy.value = res?.updatedBy ?? updatedBy.value;
+    conflict.value = !!res?.conflict;
     notifySuccess('Team memory saved');
   } catch (err) {
-    if (err.status === 409) conflict.value = true;
-    else failed(err);
+    failed(err);
   } finally {
     saving.value = false;
   }

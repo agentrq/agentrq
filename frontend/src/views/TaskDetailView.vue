@@ -208,7 +208,7 @@
                  @click="previewAttachment(att)"
                  class="flex items-center gap-3 max-w-full min-w-0 px-4 py-2 rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-all cursor-pointer group shadow-sm">
               <div class="w-6 h-6 shrink-0 flex items-center justify-center overflow-hidden rounded-lg">
-                <img v-if="att.mimeType && att.mimeType.startsWith('image/')" :src="attachmentUrl(att.id)" class="w-full h-full object-cover" />
+                <img v-if="isInlineImage(att)" :src="attachmentUrl(att)" class="w-full h-full object-cover" />
                 <svg v-else class="w-4 h-4 text-gray-500 group-hover:text-black dark:group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
               </div>
               <span class="min-w-0 truncate text-[10px] font-bold text-gray-500 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors uppercase tracking-widest" :title="att.filename">{{ att.filename }}</span>
@@ -943,15 +943,15 @@
       </button>
       <div class="relative max-w-[90vw] max-h-[85vh] flex flex-col items-center gap-4 z-10">
         <div class="rounded-sm overflow-hidden flex items-center justify-center min-w-[min(300px,90vw)] max-w-full bg-black shadow-2xl border border-white/10">
-          <img v-if="selectedAtt.mimeType?.startsWith('image/')" :src="attachmentUrl(selectedAtt.id)" class="max-w-full max-h-[70vh] object-scale-down" />
-          <video v-else-if="selectedAtt.mimeType?.startsWith('video/')" controls autoplay :src="attachmentUrl(selectedAtt.id)" class="max-w-full max-h-[70vh]" />
+          <img v-if="isInlineImage(selectedAtt)" :src="attachmentUrl(selectedAtt)" class="max-w-full max-h-[70vh] object-scale-down" />
+          <video v-else-if="selectedAtt.mimeType?.startsWith('video/')" controls autoplay :src="attachmentUrl(selectedAtt)" class="max-w-full max-h-[70vh]" />
           <div v-else-if="selectedAtt.mimeType?.startsWith('audio/')" class="p-16 flex flex-col items-center gap-6">
             <div class="w-20 h-20 rounded-full bg-gray-900 dark:bg-white flex items-center justify-center shadow-lg">
               <svg class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
             </div>
-            <audio controls autoplay :src="attachmentUrl(selectedAtt.id)" class="w-[min(400px,70vw)]" />
+            <audio controls autoplay :src="attachmentUrl(selectedAtt)" class="w-[min(400px,70vw)]" />
           </div>
-          <iframe v-else-if="selectedAtt.mimeType?.includes('pdf')" :src="attachmentUrl(selectedAtt.id)" class="w-[80vw] h-[75vh]" frameborder="0"></iframe>
+          <iframe v-else-if="selectedAtt.mimeType?.includes('pdf')" :src="attachmentUrl(selectedAtt)" class="w-[80vw] h-[75vh]" frameborder="0"></iframe>
           <div v-else class="p-8 @min-[40rem]:p-20 flex flex-col items-center gap-4 min-w-0">
             <svg class="w-24 h-24 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
             <p class="text-white font-bold text-sm text-center break-all">{{ selectedAtt.filename }}</p>
@@ -966,8 +966,8 @@
           <!-- The public link when there is one; previews above stay on the signed-in
                route, which the desktop app's CSP allows and the attachment cache serves.
                A click saves from that route instead, so the file keeps its name and type. -->
-          <a :href="selectedAtt.url || attachmentUrl(selectedAtt.id)" :download="selectedAtt.filename"
-             :target="selectedAtt.url ? '_blank' : undefined" :rel="selectedAtt.url ? 'noopener noreferrer' : undefined" @click.prevent="downloadSelected"
+          <a :href="publicLink(selectedAtt) || attachmentUrl(selectedAtt)" :download="selectedAtt.filename"
+             :target="publicLink(selectedAtt) ? '_blank' : undefined" :rel="publicLink(selectedAtt) ? 'noopener noreferrer' : undefined" @click.prevent="downloadSelected"
              title="Download" aria-label="Download"
              class="shrink-0 flex items-center gap-2 px-3 @min-[40rem]:px-4 py-2 rounded-sm bg-white text-black text-[10px] font-semibold hover:bg-gray-100 transition-all">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
@@ -975,14 +975,14 @@
           </a>
           <!-- The public link, never the signed-in route: in the desktop app that route is
                on app:// and would open in-app, not in the browser. -->
-          <a v-if="selectedAtt.url" :href="selectedAtt.url" target="_blank" rel="noopener noreferrer"
+          <a v-if="publicLink(selectedAtt)" :href="selectedAtt.url" target="_blank" rel="noopener noreferrer"
              title="Open in browser" aria-label="Open in browser"
              class="shrink-0 flex items-center justify-center gap-2 px-3 @min-[40rem]:px-4 py-2 rounded-sm border border-zinc-700 text-white text-[10px] font-semibold hover:bg-zinc-800 transition-all">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
             <span class="hidden @min-[40rem]:inline">Open in browser</span>
           </a>
           <!-- Only a public link is worth sharing: the signed-in route opens for nobody else. -->
-          <button v-if="selectedAtt.url" type="button" @click="copyAttachmentLink(selectedAtt)"
+          <button v-if="publicLink(selectedAtt)" type="button" @click="copyAttachmentLink(selectedAtt)"
                   :title="copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link'" :aria-label="copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link'"
                   class="shrink-0 flex items-center justify-center gap-2 @min-[40rem]:min-w-[7.5rem] px-3 @min-[40rem]:px-4 py-2 rounded-sm border border-zinc-700 text-white text-[10px] font-semibold hover:bg-zinc-800 transition-all">
             <svg v-if="!copiedMessages.has('att-' + selectedAtt.id)" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
@@ -1016,7 +1016,7 @@
 
 <script setup>
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
-import { downloadAttachment } from '../composables/useAttachmentDownload';
+import { downloadAttachment, isInlineImage } from '../composables/useAttachmentDownload';
 import { useEscapeKey } from '../composables/useEscapeKey';
 import { useRoute, useRouter } from 'vue-router';
 import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT, TELEMETRY_UI_PLAN_COMMENT, TELEMETRY_UI_TASK_LINK_OPEN } from '../api';
@@ -1050,8 +1050,8 @@ import { taskDotClass, taskStatusTone } from '../composables/useTaskStatusStyle'
 import { taskListPath } from '../composables/taskListPath';
 import { forkNotice, forkedTaskPath } from '../composables/useTaskFork';
 import { useTaskRename } from '../composables/useTaskRename';
-import { getTeamTask, getTeamAttachmentUrl } from '../api';
-import { lostTeam, useTeamMode } from '../composables/useTeamMode';
+import { getTeamTask, teamFileUrl } from '../api';
+import { lostTeam, teamEvent, useTeamMode } from '../composables/useTeamMode';
 import OwnerAvatar from '../components/OwnerAvatar.vue';
 import CloneTaskModal from '../components/CloneTaskModal.vue';
 import { elicitOutcome, elicitRows, isElicitExpired } from '../composables/useElicitAnswer';
@@ -1110,9 +1110,11 @@ const workspace = computed(() => (isTeamMode.value
 const applyTaskUpdate = (current, incoming) => (isTeamMode.value
   ? mergeTaskUpdate(current, incoming)
   : cacheTaskUpdate(sharedCache(), current, incoming));
-const attachmentUrl = (attachmentId) => (isTeamMode.value
-  ? getTeamAttachmentUrl(teamId.value, taskId.value, attachmentId)
-  : getAttachmentUrl(workspaceId.value, taskId.value, attachmentId));
+// In team mode a file's link is the server's, the team route that checks the
+// share on every read: used as given, never built here.
+const attachmentUrl = (att) => (isTeamMode.value
+  ? teamFileUrl(att)
+  : getAttachmentUrl(workspaceId.value, taskId.value, att.id));
 const task = ref(null);
 const { plan: taskPlan, load: loadTaskPlan, apply: applyTaskPlan } = useTaskPlan();
 // The task's status history, oldest first, from the single-task GET only.
@@ -1147,7 +1149,9 @@ const replyText = ref('');
 // The agent's own slash commands and the workspace's skills, offered as you
 // type `/`. An agent's command wins a name a skill also has.
 const agentCommands = computed(() => workspace.value?.agentCommands?.commands ?? []);
-const skillCommands = useSkillCommands(workspaceId);
+// None for a teammate's task: their workspace's skills are theirs, and there is
+// no composer to offer them in.
+const skillCommands = useSkillCommands(computed(() => (isTeamMode.value ? '' : workspaceId.value)));
 const slashMenu = useSlashCommands({
   text: replyText,
   commands: computed(() => mergeCommands(agentCommands, skillCommands)),
@@ -1403,7 +1407,8 @@ const hideTooltip = () => {
 const { isMobile } = useViewport();
 const showHeader = ref(true);
 
-const { connect, disconnect, events } = useEventBus(workspaceId);
+// A teammate's task's events come on your account stream, as team.<type>.
+const { connect, disconnect, events } = useEventBus(computed(() => (isTeamMode.value ? '' : workspaceId.value)));
 
 const sortedMessages = computed(() => {
   if (!task.value || !task.value.messages) return [];
@@ -1684,7 +1689,8 @@ async function loadTeamTask() {
     isDescriptionCollapsed.value = !res.task.body || !!res.task.messages?.length;
     stateTransitions.value = res.stateTransitions || [];
     panoDocs.value = [];
-    // No live stream: yours carries your own workspaces, never a teammate's.
+    applyTaskPlan({ taskId: taskId.value, plan: res.plan ?? null }, taskId.value);
+    connect();
     nextTick(scrollToBottom);
   } catch (err) {
     if (err.status === 404) noLongerShared.value = true;
@@ -2076,9 +2082,13 @@ watch(() => task.value?.status, async (status, previous) => {
 
 // Global SSE listener to update local task state
 watch(events, (evts) => {
-  const last = evts[evts.length - 1];
+  // In team mode, the team's events and nothing else.
+  const last = isTeamMode.value ? teamEvent(evts[evts.length - 1], teamId.value) : evts[evts.length - 1];
   if (!last) return;
-  
+
+  // Gone from the team: deleted, and no other event will say so.
+  if (isTeamMode.value && last.type === 'task.deleted' && last.payload?.id === taskId.value) loadTeamTask();
+
   if (['task.updated', 'task.created', 'reply.received', 'respond.ack', 'status.updated'].includes(last.type)) {
     if (last.payload && last.payload.id === taskId.value) {
       // Merged, not assigned: a payload built without the task's tool calls
@@ -2099,6 +2109,10 @@ watch(events, (evts) => {
 
 const selectedAtt = ref(null);
 
+// A file's public link, '' when it has none: a team file's link is the
+// session-checked team route, which opens for nobody else.
+const publicLink = (att) => (isTeamMode.value ? '' : att.url || '');
+
 function previewAttachment(att) {
   selectedAtt.value = att;
 }
@@ -2110,8 +2124,8 @@ useEscapeKey(() => {
 
 function downloadSelected() {
   const att = selectedAtt.value;
-  const source = attachmentUrl(att.id);
-  return downloadAttachment(att, { source, fallback: att.url || source });
+  const source = attachmentUrl(att);
+  return downloadAttachment(att, { source, fallback: publicLink(att) || source });
 }
 
 function copyAttachmentLink(att) {

@@ -6,13 +6,15 @@ import { defineConfig } from '@playwright/test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { apiPort, rootToken, webPort } from './lib/settings.js'
+import { apiPort, jwtSecret, rootToken, webPort } from './lib/settings.js'
 
 // The suite runs its own backend and frontend, on ports of their own, so it
 // never talks to (or kills) the dev server somebody is already using on
 // 3000/5173. Each run starts from an empty SQLite database in a temp folder.
 const repo = resolve(import.meta.dirname, '..')
-const dataDir = process.env.QA_DATA_DIR || mkdtempSync(join(tmpdir(), 'agentrq-qa-'))
+// Kept in the environment, so the test workers, which load this file again,
+// get the same folder rather than a new one (lib/users.js writes to it).
+const dataDir = process.env.QA_DATA_DIR ||= mkdtempSync(join(tmpdir(), 'agentrq-qa-'))
 
 // A host without Chromium's system libraries can point at a folder holding
 // them. It is given to the browser alone: set for the whole run, it would
@@ -62,11 +64,13 @@ export default defineConfig({
         AGENTRQ_AUTH_ROOT_ACCESS_TOKEN: rootToken,
         // The server refuses to start without one; this one signs only the
         // run's own throwaway sessions.
-        AGENTRQ_AUTH_JWT_SECRET: process.env.AGENTRQ_AUTH_JWT_SECRET || 'agentrq-qa-jwt-secret',
+        AGENTRQ_AUTH_JWT_SECRET: jwtSecret,
         AGENTRQ_SQLITE_DSN: join(dataDir, 'agentrq.db'),
         AGENTRQ_STORAGE_DIR: dataDir,
         AGENTRQ_RATELIMIT_ENABLED: 'false',
         AGENTRQ_DDOS_ENABLED: 'false',
+        // Low, so teams.spec.js reaches a team's daily invitation cap.
+        AGENTRQ_TEAMS_MAX_INVITES_PER_DAY: '2',
         // The admin sign-in allows one try per client every ten minutes; each
         // test names a client of its own with X-Real-IP, believed from here.
         AGENTRQ_TRUSTED_PROXIES: '127.0.0.1,::1',

@@ -16,6 +16,16 @@
  * name is better than no file.
  */
 
+/**
+ * The image types the server sends as images. Any other, SVG included, comes
+ * as a download (so no script in it runs on the app's origin), and an <img>
+ * of it would show broken.
+ */
+const INLINE_IMAGES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp'])
+
+/** Whether an attachment is drawn as an image rather than offered as a file. */
+export const isInlineImage = (att) => INLINE_IMAGES.has(String(att?.mimeType || '').trim().toLowerCase())
+
 /** Long enough for the browser to start reading the blob before it goes. */
 export const REVOKE_DELAY_MS = 40_000
 
