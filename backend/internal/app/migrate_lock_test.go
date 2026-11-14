@@ -19,6 +19,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 )
 
@@ -242,5 +243,32 @@ func TestConcurrentInstancesMigrateOneAtATime(t *testing.T) {
 	}
 	if !dbs[0].Migrator().HasTable("tasks") {
 		t.Error("tasks was not migrated")
+	}
+}
+
+// An agents table made while a name was 16 characters is widened by the
+// migration, keeping its rows, so a longer client name is stored whole. Only
+// Postgres enforces a varchar's width.
+func TestMigrateWidensTheAgentName(t *testing.T) {
+	db := openPostgres(t, freshPostgres(t))
+	if err := db.Exec("CREATE TABLE agents (id bigint PRIMARY KEY, name varchar(16), created_at timestamptz)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO agents (id, name) VALUES (1, 'claude-code')").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateSchema(db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	long := strings.Repeat("a", 32)
+	if err := db.Create(&model.Agent{ID: 2, Name: long}).Error; err != nil {
+		t.Fatalf("a 32-character name after migrating: %v", err)
+	}
+	var names []string
+	if err := db.Model(&model.Agent{}).Order("id").Pluck("name", &names).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 2 || names[0] != "claude-code" || names[1] != long {
+		t.Errorf("names = %q, want the old row and the long one", names)
 	}
 }
