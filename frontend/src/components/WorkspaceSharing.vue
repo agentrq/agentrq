@@ -10,7 +10,8 @@
      workspaces for one team (`team-id`). A workspace shows in the team under
      its own name, as one team workspace with any teammate's of the same name.
      Turning one off asks first. A fork follows its parent, so it has no switch
-     of its own. -->
+     of its own. In Workspace settings a share also says what the team reads of
+     the workspace: its tasks, skills and memory, each a switch of its own. -->
 <template>
   <div data-test="workspace-sharing">
     <p v-if="rows.length === 0 && !loading" data-test="sharing-empty" class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">
@@ -24,6 +25,19 @@
         <div class="flex-1 min-w-0">
           <p class="text-sm font-bold text-gray-900 dark:text-zinc-100 truncate">{{ row.label }}</p>
           <p v-if="row.fork" data-test="share-fork" class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">Shared with parent</p>
+          <div v-if="row.parts" data-test="share-parts" class="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+            <span v-for="p in PARTS" :key="p.key" class="flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 dark:text-zinc-300">
+              <button type="button" role="switch" :data-test="`share-part-${p.key}`" :aria-checked="row.parts[p.key]"
+                      :aria-label="`Share the ${p.key} of ${row.workspaceName} with ${row.teamName}`" :disabled="pending.has(row.key)"
+                      @click="togglePart(row, p)"
+                      class="shrink-0 w-7 h-4 rounded-full border transition-colors relative disabled:opacity-50"
+                      :class="row.parts[p.key] ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
+                <span class="absolute top-[2px] w-2.5 h-2.5 rounded-full transition-all"
+                      :class="row.parts[p.key] ? 'left-[14px] bg-white dark:bg-zinc-900' : 'left-[2px] bg-white dark:bg-zinc-400'"></span>
+              </button>
+              {{ p.label }}
+            </span>
+          </div>
         </div>
         <button v-if="!row.fork" type="button" role="switch" data-test="share-switch" :aria-checked="row.on"
                 :aria-label="`Share ${row.workspaceName} with ${row.teamName}`" :disabled="pending.has(row.key)"
@@ -69,6 +83,18 @@ const { changeFailed } = useTeamMode();
 
 // What is shared, keyed `${workspaceId}:${teamId}`.
 const shared = ref(new Set());
+// What each share lets the team read, by the same key; Workspace settings only.
+const parts = ref(new Map());
+
+// The parts of a workspace a share can hold back from the team.
+const PARTS = [
+  { key: 'tasks', label: 'Tasks' },
+  { key: 'skills', label: 'Skills' },
+  { key: 'memory', label: 'Memory' },
+];
+
+// What a share's answer says the team reads; a part it does not name is shared.
+const partsOf = (s) => ({ tasks: s?.tasks !== false, skills: s?.skills !== false, memory: s?.memory !== false });
 const loading = ref(true);
 const pending = ref(new Set());
 const unsharing = ref(null);
@@ -88,6 +114,7 @@ const rows = computed(() => {
 
 function row(ws, t) {
   const key = keyOf(ws?.id ?? props.workspaceId, t?.id ?? props.teamId);
+  const on = shared.value.has(key);
   return {
     key,
     workspaceId: String(ws?.id ?? props.workspaceId),
@@ -96,17 +123,22 @@ function row(ws, t) {
     teamName: t?.name || '',
     label: props.workspaceId ? t?.name : ws?.name,
     fork: !!ws?.forkOfId,
-    on: shared.value.has(key),
+    on,
+    parts: on && props.workspaceId && !ws?.forkOfId ? parts.value.get(key) : null,
   };
 }
 
 async function load() {
   loading.value = true;
   const next = new Set();
+  const nextParts = new Map();
   try {
     if (props.workspaceId) {
       const res = await listWorkspaceShares(props.workspaceId);
-      for (const s of res?.shares || []) next.add(keyOf(props.workspaceId, s.teamId));
+      for (const s of res?.shares || []) {
+        next.add(keyOf(props.workspaceId, s.teamId));
+        nextParts.set(keyOf(props.workspaceId, s.teamId), partsOf(s));
+      }
     } else {
       if (workspaceStore.workspaces.length === 0) await workspaceStore.fetchWorkspaces();
       // Yours among the team's shared workspaces are the ones shared.
@@ -116,6 +148,7 @@ async function load() {
       }
     }
     shared.value = next;
+    parts.value = nextParts;
   } catch (err) {
     notifyError(err.message);
   } finally {
@@ -133,7 +166,7 @@ async function change(row, work, done) {
   try {
     const res = await work(teamStore.getTeam(row.teamId)?.version);
     teamStore.setVersion(row.teamId, res?.version);
-    done();
+    done(res);
     emit('changed');
   } catch (err) {
     if (await changeFailed(err, row.teamId) === 'conflict') await load();
@@ -149,9 +182,21 @@ function toggle(row) {
     unsharing.value = row;
     return undefined;
   }
-  return change(row, (v) => shareWorkspace(row.workspaceId, row.teamId, v), () => {
+  return change(row, (v) => shareWorkspace(row.workspaceId, row.teamId, v), (res) => {
     shared.value = new Set(shared.value).add(row.key);
+    parts.value = new Map(parts.value).set(row.key, partsOf(res));
     notifySuccess(`Shared ${row.workspaceName} with ${row.teamName}`);
+  });
+}
+
+// Shares one part of a shared workspace with the team, or holds it back.
+function togglePart(row, part) {
+  const next = { ...row.parts, [part.key]: !row.parts[part.key] };
+  return change(row, (v) => shareWorkspace(row.workspaceId, row.teamId, v, next), () => {
+    parts.value = new Map(parts.value).set(row.key, next);
+    notifySuccess(next[part.key]
+      ? `${row.teamName} now reads the ${part.key} of ${row.workspaceName}`
+      : `${row.teamName} no longer reads the ${part.key} of ${row.workspaceName}`);
   });
 }
 

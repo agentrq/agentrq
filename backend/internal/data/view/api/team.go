@@ -34,6 +34,16 @@ type TeamVersionRequest struct {
 	Version int64 `json:"version"`
 }
 
+// ShareWorkspaceRequest shares a workspace with a team, or sets what an
+// existing share lets the team read: its tasks, skills and memory, each
+// shared unless sent false.
+type ShareWorkspaceRequest struct {
+	Version int64 `json:"version"`
+	Tasks   *bool `json:"tasks,omitempty"`
+	Skills  *bool `json:"skills,omitempty"`
+	Memory  *bool `json:"memory,omitempty"`
+}
+
 // TeamVersionResponse is the team's version after a change.
 type TeamVersionResponse struct {
 	Version int64 `json:"version"`
@@ -120,12 +130,16 @@ type TeamInvitationPreview struct {
 	ExpiresAt     time.Time `json:"expiresAt"`
 }
 
-// WorkspaceShare is a workspace shared with a team. version, the team's
-// after the share, is set when the share was just made.
+// WorkspaceShare is a workspace shared with a team, and whether the team
+// reads its tasks, skills and memory. version, the team's after the share,
+// is set when the share was just made.
 type WorkspaceShare struct {
 	TeamID      string    `json:"teamId"`
 	TeamName    string    `json:"teamName"`
 	WorkspaceID string    `json:"workspaceId"`
+	Tasks       bool      `json:"tasks"`
+	Skills      bool      `json:"skills"`
+	Memory      bool      `json:"memory"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 	Version     int64     `json:"version,omitempty"`

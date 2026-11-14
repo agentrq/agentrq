@@ -157,7 +157,7 @@ const TEAM_WRITES = (api) => ({
   revokeInvitation: ({ teamId, invitationId, version }) => api.revokeTeamInvitation(teamId, invitationId, version),
   accept: ({ token, invitationId }) => (token ? api.acceptInvitation(token) : api.acceptInvitationById(invitationId)),
   decline: ({ invitationId }) => api.declineInvitation(invitationId),
-  share: ({ workspaceId, teamId, version }) => api.shareWorkspace(workspaceId, teamId, version),
+  share: ({ workspaceId, teamId, version, tasks, skills, memory }) => api.shareWorkspace(workspaceId, teamId, version, { tasks, skills, memory }),
   unshare: ({ workspaceId, teamId, version }) => api.unshareWorkspace(workspaceId, teamId, version),
   teammateMemory: ({ workspaceId, userId, included }) => api.setTeammateMemory(workspaceId, userId, included !== false),
   addSkill: ({ teamId, name, workspaceIds = [] }) => api.addTeamSkill(teamId, name, workspaceIds),
@@ -1541,7 +1541,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description:
         'Change a team; any member may. action: rename (name), delete, removeMember (userId), leave, ' +
         'invite (email; at most a few per team per day, 429 past it), revokeInvitation (invitationId), ' +
-        'share/unshare (workspaceId: one of yours), accept (token or invitationId), decline (invitationId), ' +
+        'share/unshare (workspaceId: one of yours; share takes tasks, skills, memory, false to hold that back, and sets them on a shared one), accept (token or invitationId), decline (invitationId), ' +
         'teammateMemory (workspaceId: one of yours, userId, included: whether its agent\'s memory index lists that teammate\'s memory), ' +
         'addSkill (name, workspaceIds: copy a teammate\'s skill into your account), sharePano/unsharePano (docId: a Pano doc of yours). ' +
         'Every change but accept, decline, addSkill and teammateMemory takes the team\'s version, from get, members or invitations; ' +
@@ -1554,6 +1554,9 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         workspaceIds: { type: 'array', items: { type: 'string' }, description: 'Your workspaces to turn an added skill on in. Optional.' },
         email: str('The email to invite.'),
         included: bool('For teammateMemory: true to include the teammate\'s memory, false to leave it out. Defaults to true.'),
+        tasks: bool('For share: false holds the workspace\'s tasks back from the team. Defaults to true.'),
+        skills: bool('For share: false holds its skills back. Defaults to true.'),
+        memory: bool('For share: false holds its memory back from teammates\' agents. Defaults to true.'),
       },
       required: ['action'],
       destructive: true,

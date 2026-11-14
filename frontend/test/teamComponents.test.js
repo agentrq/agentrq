@@ -897,6 +897,65 @@ describe('sharing a workspace', () => {
     expect(toggle('api').getAttribute('aria-label')).toBe('Share api with ');
   });
 
+  const part = (label, key) => row(label).querySelector(`[data-test=share-part-${key}]`);
+  const checked = (label) => ['tasks', 'skills', 'memory'].map((k) => part(label, k).getAttribute('aria-checked'));
+
+  it('shows what each share lets the team read, a part the answer does not name shared', async () => {
+    await inWorkspace({ shares: [{ teamId: 'tm1', tasks: true, skills: false }] });
+    expect(checked('Core')).toEqual(['true', 'false', 'true']);
+    expect(text(row('Core').querySelector('[data-test=share-parts]'))).toBe('Tasks Skills Memory');
+    expect(part('Core', 'skills').getAttribute('aria-label')).toBe('Share the skills of api with Core');
+    expect(row('Docs').querySelector('[data-test=share-parts]')).toBe(null);
+  });
+
+  it('holds a part back, or shares it again, against the version, sending all three', async () => {
+    api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 4 });
+    await inWorkspace({ shares: [{ teamId: 'tm1', tasks: true, skills: true, memory: true }] });
+    await click(part('Core', 'memory'));
+    expect(api.shareWorkspace).toHaveBeenCalledWith('w1', 'tm1', 3, { tasks: true, skills: true, memory: false });
+    expect(useTeamStore().getTeam('tm1').version).toBe(4);
+    expect(checked('Core')).toEqual(['true', 'true', 'false']);
+    expect(toasts()).toContain('Core no longer reads the memory of api');
+
+    api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 5 });
+    await click(part('Core', 'memory'));
+    expect(api.shareWorkspace).toHaveBeenLastCalledWith('w1', 'tm1', 4, { tasks: true, skills: true, memory: true });
+    expect(checked('Core')).toEqual(['true', 'true', 'true']);
+    expect(toasts()).toContain('Core now reads the memory of api');
+  });
+
+  it('keeps a part as it was when holding it back fails', async () => {
+    api.shareWorkspace.mockRejectedValue(failure(500, 'Share failed'));
+    await inWorkspace({ shares: [{ teamId: 'tm1' }] });
+    await click(part('Core', 'tasks'));
+    expect(toasts()).toEqual(['Share failed']);
+    expect(checked('Core')).toEqual(['true', 'true', 'true']);
+    expect(part('Core', 'tasks').disabled).toBe(false);
+  });
+
+  it('shows the parts a new share answers with, and none for a fork or in Manage team', async () => {
+    api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 4, tasks: true, skills: true, memory: true });
+    await inWorkspace({ shares: [] });
+    expect(row('Core').querySelector('[data-test=share-parts]')).toBe(null);
+    await click(toggle('Core'));
+    expect(checked('Core')).toEqual(['true', 'true', 'true']);
+    app.unmount();
+
+    await inWorkspace({ shares: [{ teamId: 'tm1' }] }, { id: 'w2' });
+    expect(row('Core').querySelector('[data-test=share-parts]')).toBe(null);
+    app.unmount();
+
+    api.fetchTeamWorkspaces.mockResolvedValue({ workspaces: [{ id: 'w1' }] });
+    await mount(defineComponent({
+      setup() {
+        useWorkspaceStore().workspaces = [api1];
+        return () => h(WorkspaceSharing, { teamId: 'tm1' });
+      },
+    }));
+    expect(toggle('api').getAttribute('aria-checked')).toBe('true');
+    expect($('[data-test=share-parts]')).toBe(null);
+  });
+
   it('says so when the shares cannot be read', async () => {
     api.listWorkspaceShares.mockRejectedValue(failure(500, 'Could not read'));
     await mount(defineComponent({ render: () => h(WorkspaceSharing, { workspaceId: 'w1' }) }));

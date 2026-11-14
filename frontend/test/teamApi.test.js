@@ -40,6 +40,7 @@ describe('the team API', () => {
     ['declineInvitation', ['inv1'], 'POST', '/invitations/inv1/decline'],
     ['listWorkspaceShares', ['ws1'], 'GET', '/workspaces/ws1/shares'],
     ['shareWorkspace', ['ws1', 'tm1', 4], 'PUT', '/workspaces/ws1/shares/tm1', { version: 4 }],
+    ['shareWorkspace', ['ws1', 'tm1', 4, { tasks: true, skills: false, memory: true }], 'PUT', '/workspaces/ws1/shares/tm1', { tasks: true, skills: false, memory: true, version: 4 }],
     ['unshareWorkspace', ['ws1', 'tm1', 4], 'DELETE', '/workspaces/ws1/shares/tm1?version=4'],
     ['listPanoShares', ['d1'], 'GET', '/pano/d1/shares'],
     ['sharePanoDoc', ['d1', 'tm1', 4], 'PUT', '/pano/d1/shares/tm1', { version: 4 }],

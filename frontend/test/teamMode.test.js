@@ -371,6 +371,10 @@ describe('the activity log', () => {
     expect(line('member.removed')).toBe('Alice removed a member');
     expect(line('member.left')).toBe('Alice left');
     expect(line('workspace.shared', { details: { workspaceName: 'docs' } })).toBe('Alice shared docs');
+    expect(line('workspace.shareChanged', { details: { workspaceName: 'docs', tasks: 'on', skills: 'off', memory: 'on' } }))
+      .toBe('Alice changed what is shared of docs: tasks, memory');
+    expect(line('workspace.shareChanged', { details: { tasks: 'off', skills: 'off', memory: 'off' } }))
+      .toBe('Alice changed what is shared of a workspace: nothing but the workspace');
     expect(line('workspace.unshared')).toBe('Alice stopped sharing a workspace');
     expect(line('pano.shared', { details: { docTitle: 'Plan' } })).toBe('Alice shared the Pano doc Plan');
     expect(line('pano.unshared')).toBe('Alice stopped sharing a Pano doc');
