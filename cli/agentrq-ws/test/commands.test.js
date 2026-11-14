@@ -400,8 +400,29 @@ test('memory save needs content and takes it from anywhere', async () => {
     stdin: stdinOf('the whole note'),
     client,
   })
-  assert.deepEqual(client.calls[0].args, { action: 'save', name: 'notes.md', content: 'the whole note' })
+  assert.deepEqual(client.calls[0].args, { action: 'save', name: 'notes.md', content: 'the whole note', version: undefined })
   assert.equal(client.legacy[0][0], 'saveMemory')
+})
+
+test('memory save sends the version it read, and checks it', async () => {
+  const client = stubClient()
+  await invoke('memory save', { values: { content: 'x', version: '3' }, client })
+  assert.deepEqual(client.calls[0].args, { action: 'save', name: undefined, content: 'x', version: 3 })
+  for (const version of ['0', '-1', '2.5', 'three']) {
+    await assert.rejects(() => invoke('memory save', { values: { content: 'x', version }, client }), /--version must be a whole number/)
+  }
+})
+
+test('memory load from a server that sends no version prints what it sent', async () => {
+  const client = stubClient({ load: 'No memory saved under "memory.md" yet.' })
+  const outcome = await invoke('memory load', { client })
+  assert.equal(outcome.text, 'No memory saved under "memory.md" yet.')
+  assert.equal(outcome.note, undefined)
+
+  const bare = { async callAction() { return { text: 'just text' } } }
+  assert.deepEqual(await invoke('memory load', { client: bare }), { text: 'just text' })
+  const odd = { async callAction() { return { text: 'm', result: { content: [null, { type: 'text', text: 'm' }, { type: 'image' }] } } } }
+  assert.equal((await invoke('memory load', { client: odd })).note, undefined)
 })
 
 test('memory delete defaults to the index', async () => {

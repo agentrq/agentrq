@@ -50,8 +50,8 @@ Node 20.6 or newer.
 | `task help [action]` | The server's help for its `task` tool: every action, or one action's payload |
 | `reply <taskId> <text>` | Send a message to a task |
 | `attachment get <id> --task <taskId>` | Download an attachment to a file |
-| `memory load [name]` | Read a workspace memory (defaults to the index) |
-| `memory save [name] --content …` | Replace a workspace memory |
+| `memory load [name]` | Read a workspace memory (defaults to the index); its version goes to stderr |
+| `memory save [name] --content … [--version N]` | Replace a workspace memory; `--version` is the one `memory load` printed, required to change one that exists |
 | `memory delete [name]` | Delete a workspace memory |
 | `skill search [q]` | Find the skills this workspace can use, by name or description; `--limit`/`--offset` page |
 | `skill load <uri>` | Read a skill file (`skill://<name>` reads its `SKILL.md`) |

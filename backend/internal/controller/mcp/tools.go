@@ -46,7 +46,7 @@ type (
 
 const (
 	MemoryToolDescription = "This workspace's memory: notes that outlive a task, shared by every agent working here. Two inputs: action, and payload, the action's fields; help gives an action's payload and an example. " +
-		"load: a memory by name, " + DefaultMemoryName + " (the index) when none is given; call it at the start of a task. save: replaces a memory whole. delete: removes one."
+		"load: a memory by name, " + DefaultMemoryName + " (the index) when none is given; call it at the start of a task. save: replaces a memory whole; changing one needs the version load showed, and if refused, load again, merge, retry. delete: removes one."
 	SkillsToolDescription = "The skills this workspace can use. Two inputs: action, and payload, the action's fields; help gives an action's payload and an example. " +
 		"search: at the start of a task, to find skills that match the work. load: a skill's SKILL.md or one of its files, by skill:// URI, when the work needs it. save: writes a skill file. delete: removes a skill or a file."
 	WorkspaceToolDescription = "This workspace. Two inputs: action, and payload, the action's fields; help gives an action's payload and an example. " +
@@ -59,14 +59,14 @@ const (
 
 func (ps *WorkspaceServer) memoryActions() []ToolAction {
 	return []ToolAction{
-		NewToolAction("load", "Read a memory; with no name, "+DefaultMemoryName+", the index.", ps.handleLoadMemory).
+		NewToolAction("load", "Read a memory and its version; with no name, "+DefaultMemoryName+", the index.", ps.handleLoadMemory).
 			WithDetails("Call it at the start of a task, before asking the human something they may already have told you. The index links the other memories as memory://<name>: load the ones that look relevant. A name never written is not an error.").
 			WithExample(`{"name": "deploys.md"}`),
-		NewToolAction("save", "Write a memory, replacing it completely.", ps.handleSaveMemory).
-			WithDetails("There is no append: pass the full new content. With no name it writes " + DefaultMemoryName + ", which should stay an index linking named memories as [title](memory://<name>). " +
+		NewToolAction("save", "Write a memory, replacing it completely; changing one needs the version you loaded.", ps.handleSaveMemory).
+			WithDetails("There is no append: pass the full new content. Send the version load showed; leave it out only to create a memory. If another agent saved it since, the save is refused: load it again, merge your change in, and retry with the new version, so neither agent's learnings are lost. With no name it writes " + DefaultMemoryName + ", which should stay an index linking named memories as [title](memory://<name>). " +
 				"Names are lowercase words joined by single hyphens and ending in .md. " +
 				fmt.Sprintf("A memory holds at most %d KiB; a larger one is refused rather than truncated, so split it and index the parts.", MaxMemoryBytes/1024)).
-			WithExample(`{"name": "deploys.md", "content": "# How we ship\n\nTag main, then ..."}`),
+			WithExample(`{"name": "deploys.md", "content": "# How we ship\n\nTag main, then ...", "version": 3}`),
 		NewToolAction("delete", "Delete a memory; with no name, "+DefaultMemoryName+" itself.", ps.handleDeleteMemory).
 			WithDetails("Think before deleting " + DefaultMemoryName + ": the other memories are linked from it. Deleting a name nobody wrote under is not an error.").
 			WithExample(`{"name": "deploys.md"}`),

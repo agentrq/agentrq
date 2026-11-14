@@ -6,11 +6,13 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -57,11 +59,13 @@ var MaxMemoryBytes = DefaultMaxMemoryBytes
 // the ordinary case, not a failure: every agent's first call on a fresh
 // workspace misses, and answering that with an error would teach agents to
 // stop asking.
-type LoadMemoryFunc func(ctx context.Context, name string) (content string, found bool, err error)
+type LoadMemoryFunc func(ctx context.Context, name string) (content string, version int64, found bool, err error)
 
-// SaveMemoryFunc writes one of the workspace's memories, replacing whatever
-// was stored under that name.
-type SaveMemoryFunc func(ctx context.Context, name string, content string) error
+// SaveMemoryFunc writes one of the workspace's memories if it is still at
+// version, the one its writer read (0 creates it), and returns its new
+// version. A memory changed or created since is base.ErrVersionConflict, one
+// deleted since base.ErrNotFound.
+type SaveMemoryFunc func(ctx context.Context, name string, content string, version int64) (int64, error)
 
 // DeleteMemoryFunc removes one of the workspace's memories.
 //
@@ -79,6 +83,7 @@ type LoadMemoryParams struct {
 type SaveMemoryParams struct {
 	Name    string `json:"name,omitempty" jsonschema:"Which memory to write. Defaults to MEMORY.md, the index that says what else this workspace remembers."`
 	Content string `json:"content" jsonschema:"The full new content. This replaces the memory entirely — there is no append, so include everything worth keeping."`
+	Version int64  `json:"version,omitempty" jsonschema:"The memory's version, as load last showed it. Required to change a memory that exists, refused if it has changed since; leave it out to create one."`
 }
 
 // DeleteMemoryParams is the input to the deleteMemory tool.
@@ -156,7 +161,7 @@ func (ps *WorkspaceServer) handleLoadMemory(ctx context.Context, req *mcp.CallTo
 		return toolError("memory is not available on this server"), nil, nil
 	}
 
-	content, found, err := ps.loadMemory(ctx, name)
+	content, version, found, err := ps.loadMemory(ctx, name)
 	if err != nil {
 		return toolError("failed to load memory %q: %v", name, err), nil, nil
 	}
@@ -170,8 +175,13 @@ func (ps *WorkspaceServer) handleLoadMemory(ctx context.Context, req *mcp.CallTo
 		}, nil, nil
 	}
 
+	// The version is a block of its own, so the first block is the memory
+	// exactly as saved.
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: content}},
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: content},
+			&mcp.TextContent{Text: fmt.Sprintf("Version %d: send \"version\": %d with memory save.", version, version)},
+		},
 	}, nil, nil
 }
 
@@ -189,13 +199,21 @@ func (ps *WorkspaceServer) handleSaveMemory(ctx context.Context, req *mcp.CallTo
 		return toolError("memory is not available on this server"), nil, nil
 	}
 
-	if err := ps.saveMemory(ctx, name, params.Content); err != nil {
+	version, err := ps.saveMemory(ctx, name, params.Content, params.Version)
+	switch {
+	case errors.Is(err, base.ErrVersionConflict) && params.Version == 0:
+		return toolError("memory %q already exists. Load it, merge your change into what is there, and save with the version load shows.", name), nil, nil
+	case errors.Is(err, base.ErrVersionConflict):
+		return toolError("memory %q has changed since version %d, probably saved by another agent. Load it again, merge your change into what is there now, and save with the new version.", name, params.Version), nil, nil
+	case errors.Is(err, base.ErrNotFound):
+		return toolError("memory %q was deleted since you read it. Save it without a version to create it again.", name), nil, nil
+	case err != nil:
 		return toolError("failed to save memory %q: %v", name, err), nil, nil
 	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
-			Text: fmt.Sprintf("Saved %q (%d bytes).", name, len(params.Content)),
+			Text: fmt.Sprintf("Saved %q (%d bytes), now at version %d.", name, len(params.Content), version),
 		}},
 	}, nil, nil
 }

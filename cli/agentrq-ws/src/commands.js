@@ -194,6 +194,11 @@ async function panoEditOps(ctx) {
 /** The doc's version, as a flag: required to change a doc that exists. */
 function panoVersion(value) {
   if (value === undefined) throw new UserError('--version is required to change a doc: the version you read (pano read prints it)')
+  return wholeVersion(value)
+}
+
+/** A --version flag's value: a whole number, 1 or more. */
+function wholeVersion(value) {
   const version = Number(value)
   if (!Number.isInteger(version) || version < 1) throw new UserError('--version must be a whole number, 1 or more')
   return version
@@ -351,23 +356,30 @@ export const COMMANDS = [
   },
   {
     path: ['memory', 'load'],
-    summary: 'Read a workspace memory (defaults to the index)',
+    summary: 'Read a workspace memory (defaults to the index); its version goes to stderr',
     usage: 'agentrq-ws memory load [name]',
     async run(ctx) {
-      return act(ctx, 'memory', 'load', { name: ctx.positionals[0] }, 'loadMemory')
+      const outcome = await act(ctx, 'memory', 'load', { name: ctx.positionals[0] }, 'loadMemory')
+      // The server sends the memory, then its version in a block of its own:
+      // the version goes to stderr, so `memory load > notes.md` is the memory.
+      const blocks = (outcome.result?.content || []).filter((block) => typeof block?.text === 'string')
+      if (blocks.length < 2) return outcome
+      return { ...outcome, text: blocks[0].text, note: blocks.slice(1).map((block) => block.text).join('\n') }
     },
   },
   {
     path: ['memory', 'save'],
     summary: 'Replace a workspace memory',
-    usage: 'agentrq-ws memory save [name] --content TEXT|@file|-',
+    usage: 'agentrq-ws memory save [name] --content TEXT|@file|- [--version N]',
     options: {
       content: { type: 'string', short: 'C', description: 'The full new content (@file or - for stdin)' },
+      version: { type: 'string', short: 'v', description: 'The version memory load printed; required to change a memory that exists, refused if it changed since' },
     },
     async run(ctx) {
       if (ctx.values.content === undefined) throw new UserError('--content is required (use @file or - to read from stdin)')
       const content = await resolveText(ctx.values.content, { stdin: ctx.stdin, what: 'the memory content' })
-      return act(ctx, 'memory', 'save', { name: ctx.positionals[0], content }, 'saveMemory')
+      const version = ctx.values.version === undefined ? undefined : wholeVersion(ctx.values.version)
+      return act(ctx, 'memory', 'save', { name: ctx.positionals[0], content, version }, 'saveMemory')
     },
   },
   {
