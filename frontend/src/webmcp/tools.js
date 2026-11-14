@@ -136,6 +136,7 @@ const TEAM_READS = (api) => ({
   tasks: ({ teamId, status = '', workspace = '', member = '', limit = 10, offset = 0 }) =>
     api.fetchTeamTasks(teamId, { status, workspace, member, limit, offset }),
   task: ({ teamId, taskId }) => api.getTeamTask(teamId, taskId),
+  analytics: ({ teamId, range = '7d', workspace = '' }) => api.fetchTeamStats(teamId, range, 0, 0, workspace),
   skills: ({ teamId }) => api.fetchTeamSkills(teamId),
   skill: ({ teamId, name }) => api.getTeamSkill(teamId, name),
 })
@@ -202,7 +203,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Go to an in-app path (?query allowed); IDs from getCurrentPage or list tools.\n' +
+        'Go to an in-app path (?query ok); IDs from getCurrentPage or list tools.\n' +
         '- "/" workspaces, "/workspaces/new".\n' +
         '- "/kanban" or "/tasks/<filter>" (active, notstarted, pending, ongoing, completed, scheduled) of all ' +
         'workspaces; add "/<workspaceId>/<taskId>" to open one, then "/instances".\n' +
@@ -211,9 +212,9 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         '"?tab=" general, setup, automations, notifications, memories, skills, sharing, slack, input, storage or danger.\n' +
         '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/skills[/<name>]", "/{pano,events/hooks}/new", ' +
         '"/pano/[<id>/]chat/<workspaceId>/<taskId>".\n' +
-        '- "/machines[/<id>]", "/sessions/<id>" (a terminal).\n' +
+        '- "/machines[/<id>]", "/sessions/<id>" (terminal).\n' +
         '- "/extensions[/<name>/<pageId>]" (desktop).\n' +
-        '- "/team/new", "/invitations"; "?team=<id>" on "/tasks/*", "/kanban", "/skills" is a team; ' +
+        '- "/team/new", "/invitations"; "?team=<id>" on "/{tasks/*,kanban,skills,team/analytics}" is a team; ' +
         '"&manage=members|invitations|activity|workspaces".\n' +
         'Others are refused.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
@@ -1498,13 +1499,14 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'activities (the team\'s log, newest first; limit, before: the last id of the page before), ' +
         'myInvitations (addressed to you), preview (a link\'s invitation, by token), shares (the teams a workspace is shared with). ' +
         'A team\'s shared work, read-only: workspaces (each with the sharedName it shows under), ' +
-        'tasks (status, workspace, member), task (taskId), skills, skill (name).',
+        'tasks (status, workspace, member), task (taskId), analytics (range; workspace: one team workspace), skills, skill (name).',
       properties: {
         action: { type: 'string', enum: Object.keys(TEAM_READS({})), description: 'What to read.' },
         ...TEAM_FIELDS,
         taskId: TASK_ID,
         status: str('Comma-separated task statuses to keep, e.g. "ongoing,blocked".'),
-        workspace: str('A team workspace\'s sharedName, as the workspaces action reports it: only its tasks.'),
+        workspace: str('A team workspace\'s sharedName, as the workspaces action reports it: only its tasks, or its analytics.'),
+        range: str('For analytics: a range such as "7d" or "30d". Defaults to "7d".'),
         member: str('A member\'s user ID: only their tasks.'),
         limit: int('Page size. Defaults to 10, and 20 for activities.'),
         offset: int('How many to skip. Defaults to 0.'),

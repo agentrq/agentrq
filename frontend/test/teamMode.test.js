@@ -602,14 +602,19 @@ describe('the team store\'s version', () => {
 });
 
 describe('the team routes', () => {
-  it('are in the one route table, with no page for settings, analytics or memory', () => {
+  it('are in the one route table, with no page for settings or memory', () => {
     const paths = routes.map((r) => r.path);
-    for (const p of ['/team/new', '/team/settings', '/invitations', '/invite']) {
+    for (const p of ['/team/new', '/team/settings', '/team/analytics', '/invitations', '/invite']) {
       expect(paths).toContain(p);
     }
-    expect(paths).not.toContain('/team/analytics');
     expect(paths).not.toContain('/team/memory');
     expect(routes.find((r) => r.path === '/team/settings').component).toBeUndefined();
+  });
+
+  it('shows analytics only for a team: with none it is the home page', () => {
+    const { beforeEnter } = routes.find((r) => r.path === '/team/analytics');
+    expect(beforeEnter({ query: { team: 'tm1' } })).toBe(true);
+    expect(beforeEnter({ query: {} })).toBe('/');
   });
 });
 

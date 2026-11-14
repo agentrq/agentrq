@@ -130,3 +130,10 @@ func FromAddTeamSkillResponseEntityToHTTPResponse(s entity.Skill) []byte {
 	b, _ := json.Marshal(view.AddTeamSkillResponse{Skill: fromEntitySkillToView(s)})
 	return b
 }
+
+// FromTeamStatsEntityToHTTPResponse renders a team's statistics in the shape
+// of one workspace's, so the same panels draw both.
+func FromTeamStatsEntityToHTTPResponse(rs *entity.GetDetailedWorkspaceStatsResponse) []byte {
+	b, _ := json.Marshal(rs)
+	return b
+}

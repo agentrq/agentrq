@@ -641,12 +641,11 @@ describe('the grouped team tools', () => {
     expect(after({ name: 'Core' }, {})).toBe('/team/new');
   });
 
-  it('names no role, memory or analytics, and every change but accept, decline and addSkill takes a version', () => {
+  it('names no role or memory, and every change but accept, decline and addSkill takes a version', () => {
     const tools = build();
     const reads = tools.find((t) => t.name === 'readTeams');
     const writes = tools.find((t) => t.name === 'manageTeam');
 
-    expect(reads.inputSchema.properties.action.enum).not.toEqual(expect.arrayContaining(['analytics']));
     expect(reads.inputSchema.properties.action.enum).not.toContain('memory');
     expect(writes.inputSchema.properties.action.enum).not.toContain('setRole');
     expect(writes.inputSchema.properties.role).toBeUndefined();

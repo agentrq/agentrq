@@ -84,6 +84,11 @@
           </button>
         </div>
 
+        <!-- The team's analytics, or the team workspace's when one is picked. -->
+        <button v-if="isTeamMode" data-test="team-analytics" @click="router.push(link({ path: '/team/analytics', query: teamWorkspace ? { workspace: teamWorkspace } : {} }))"
+                class="h-9.5 w-9.5 @max-[48rem]:h-8.5 @max-[48rem]:w-8.5 text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0" title="Analytics">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
+        </button>
         <!-- Team mode: whose, and which team workspace. -->
         <TeamTaskFilters v-if="isTeamMode" />
         <template v-if="!isTeamMode">
