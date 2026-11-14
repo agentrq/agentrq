@@ -3062,7 +3062,7 @@ paths:
     post:
       tags: [Teams]
       summary: Invite an email address to a team
-      description: Owners and admins; inviting an owner takes an owner. The answer is the same whether or not the address has an account. A team creates at most `teams.maxInvitesPerDay` invitations in any 24 hours (429); 0 turns invitations off (403).
+      description: Owners and admins; inviting an owner takes an owner. The answer is the same whether or not the address has an account. A team creates at most `teams.maxInvitesPerDay` invitations in any 24 hours, and one account at most `teams.maxInvitesPerUserPerDay` across all its teams (429, saying which cap); revoked and declined ones count. A team cap of 0 turns invitations off (403); a per-account cap of 0 is none.
       requestBody:
         required: true
         content:

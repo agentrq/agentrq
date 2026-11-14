@@ -5,6 +5,7 @@
 - **A role or membership a write depends on is read in the repository, after `lockTeam`, never in the controller first.** Read before the lock, an admin removes a member made an owner meanwhile, and a member removed meanwhile re-shares a workspace. `whileLocked` in `team_rules_test.go` proves each check sees a change committed while it waited.
 - **An invitation is accepted only while its inviter may still grant its role.** Checked at accept, so demoting or removing the inviter voids what they sent without revoking it.
 - **The daily cap counts every invitation created in the last 24 hours, revoked and declined ones included.** Otherwise revoking would reset it.
+- **The per-account cap locks the inviter's `users` row too (`lockUser`, after `lockTeam`).** The team lock alone lets one account's parallel invites to two teams both pass it on Postgres.
 - **Only the SHA-256 of an invitation token is stored.** The link carries the token in its `#fragment`, so it never reaches a server log. It is shown once, when no mail was sent.
 - **Read access goes through `CanReadWorkspaceInTeam`, never through an owner check.** It sees a fork through its parent's share and hides archived workspaces. The existing owner checks must stay as they are.
 

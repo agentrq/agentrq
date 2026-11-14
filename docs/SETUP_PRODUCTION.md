@@ -317,6 +317,7 @@ A team's members read the workspaces they share with it. Invitations go by email
 | Variable | Default | Description |
 |---|---|---|
 | `AGENTRQ_TEAMS_MAX_INVITES_PER_DAY` | `10` | Most invitations one team may create in any 24 hours, revoked and declined ones included. `0` turns invitations off. |
+| `AGENTRQ_TEAMS_MAX_INVITES_PER_USER_PER_DAY` | `20` | Most invitations one account may create in any 24 hours across all its teams, revoked and declined ones included, so creating more teams sends no more. `0` is no per-account cap. Both caps apply: the first one reached answers 429, saying which. |
 
 The server refuses to start on a negative value.
 

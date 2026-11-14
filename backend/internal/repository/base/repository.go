@@ -133,7 +133,7 @@ type Repository interface {
 	TeamHasMemberWithEmail(ctx context.Context, teamID int64, email string) (bool, error)
 	SetTeamMemberRole(ctx context.Context, teamID, callerID, userID int64, role string) error
 	RemoveTeamMember(ctx context.Context, teamID, callerID, userID int64) error
-	CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, since time.Time, limit int64) error
+	CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, since time.Time, teamLimit, userLimit int64) error
 	ListTeamInvitations(ctx context.Context, teamID int64, now time.Time) ([]model.TeamInvitation, error)
 	ListInvitationsForEmail(ctx context.Context, email string, now time.Time) ([]model.TeamInvitation, error)
 	GetTeamInvitation(ctx context.Context, id int64) (model.TeamInvitation, error)
