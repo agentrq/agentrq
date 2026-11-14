@@ -182,6 +182,11 @@ var substitutions = []string{"$(", "`", "<(", ">(", "=("}
 // *(+func). It must touch the word before it, so "fix (scope)" is not caught.
 var zshExecQualifier = regexp.MustCompile(`[^\s(]\([^)]*(?:e[^\w\s)]|\+\w)`)
 
+// reevaluation matches an expansion that evaluates its value again, running a
+// command no substitution shows: bash's ${x@P}, zsh's (e), (%) and (~) flags
+// and ${~x}.
+var reevaluation = regexp.MustCompile(`@P\}|\$\{\([^)]*[e%~]|\$\{~`)
+
 // runsUnnamedCode reports whether command runs, or plants, code that a rule
 // matching its text never named.
 func runsUnnamedCode(command string, subcommands []string) bool {
@@ -190,7 +195,7 @@ func runsUnnamedCode(command string, subcommands []string) bool {
 			return true
 		}
 	}
-	if zshExecQualifier.MatchString(command) || writesFile(command) {
+	if zshExecQualifier.MatchString(command) || reevaluation.MatchString(command) || writesFile(command) {
 		return true
 	}
 	for _, sub := range subcommands {
@@ -239,6 +244,14 @@ func writesFile(command string) bool {
 	return false
 }
 
+// opaqueWord matches a word whose text the shell rewrites into something the
+// option checks cannot read: ${x:-c}, $'\x2dc' and brace expansion {-c,…}.
+var opaqueWord = regexp.MustCompile(`\$[{']|\{[^{}]*(?:,|\.\.)[^{}]*\}`)
+
+// unquote drops the quotes and backslashes the shell removes, so '-c', \-c
+// and $"-c" are read as the -c git receives.
+var unquote = strings.NewReplacer(`$"`, "", `'`, "", `"`, "", `\`, "")
+
 // hasExecOption reports whether a subcommand hands its program an option that
 // runs a command or changes what will run, which "git *" or "find *" would
 // otherwise let through.
@@ -247,15 +260,42 @@ func hasExecOption(subcommand string) bool {
 	for len(fields) > 1 && strings.Contains(fields[0], "=") {
 		fields = fields[1:]
 	}
+	var check func(args []string) bool
 	switch path.Base(fields[0]) { // subcommands are trimmed and never empty
 	case "git":
-		return gitHasExecOption(fields[1:])
+		check = gitHasExecOption
 	case "find":
-		for _, a := range fields[1:] {
-			switch a {
-			case "-exec", "-execdir", "-ok", "-okdir", "-delete", "-fls", "-fprint", "-fprint0", "-fprintf":
-				return true
-			}
+		check = findHasExecOption
+	default:
+		return false
+	}
+	args := make([]string, len(fields)-1)
+	for i, f := range fields[1:] {
+		if opaqueWord.MatchString(f) {
+			return true
+		}
+		args[i] = unquote.Replace(f)
+	}
+	return check(args)
+}
+
+func findHasExecOption(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "-exec", "-execdir", "-ok", "-okdir", "-delete", "-fls", "-fprint", "-fprint0", "-fprintf":
+			return true
+		}
+	}
+	return false
+}
+
+// hasLongOption reports whether args hold the long option opt, in full or
+// shortened as git accepts it: --templ=dir is --template=dir.
+func hasLongOption(args []string, opt string) bool {
+	for _, a := range args {
+		name, _, _ := strings.Cut(a, "=")
+		if len(name) > 2 && strings.HasPrefix(opt, name) {
+			return true
 		}
 	}
 	return false
@@ -263,7 +303,8 @@ func hasExecOption(subcommand string) bool {
 
 // gitHasExecOption covers git's own ways to run a command: config it reads (-c,
 // a config write, another --git-dir), helpers it starts (--upload-pack, rebase
-// --exec, bisect run…) and files it writes (--output, another --work-tree).
+// --exec, bisect run…), hooks it installs (clone or init --template) and files
+// it writes (--output, another --work-tree).
 func gitHasExecOption(args []string) bool {
 	i := 0
 	for ; i < len(args) && strings.HasPrefix(args[i], "-"); i++ {
@@ -281,14 +322,9 @@ func gitHasExecOption(args []string) bool {
 		return false
 	}
 	sub, rest := args[i], args[i+1:]
-	for _, a := range rest {
-		if a == "--output" {
+	for _, opt := range []string{"--upload-pack", "--receive-pack", "--exec", "--output", "--output-directory", "--extcmd", "--open-files-in-pager"} {
+		if hasLongOption(rest, opt) {
 			return true
-		}
-		for _, p := range []string{"--upload-pack", "--receive-pack", "--exec", "--output=", "--extcmd", "--open-files-in-pager"} {
-			if strings.HasPrefix(a, p) {
-				return true
-			}
 		}
 	}
 	switch sub {
@@ -309,7 +345,12 @@ func gitHasExecOption(args []string) bool {
 	case "grep":
 		return hasShortFlag(rest, 'O')
 	case "clone":
-		return hasShortFlag(rest, 'u')
+		// clone's own -c/--config applies before the fetch, so it runs core.sshCommand.
+		return hasShortFlag(rest, 'u') || hasShortFlag(rest, 'c') || hasLongOption(rest, "--config") || hasLongOption(rest, "--template")
+	case "init":
+		return hasLongOption(rest, "--template")
+	case "archive", "format-patch":
+		return hasShortFlag(rest, 'o')
 	}
 	return false
 }
