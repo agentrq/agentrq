@@ -148,6 +148,7 @@ hooks:
 teams:
   maxInvitesPerDay: ${AGENTRQ_TEAMS_MAX_INVITES_PER_DAY:10}
   maxInvitesPerUserPerDay: ${AGENTRQ_TEAMS_MAX_INVITES_PER_USER_PER_DAY:20}
+  emailInvites: ${AGENTRQ_TEAMS_EMAIL_INVITES:true}
 
 # The token OpenAI gives a plugin submission to prove the MCP server's domain,
 # served at /.well-known/openai-apps-challenge. Empty serves 404.

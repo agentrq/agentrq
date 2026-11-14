@@ -314,12 +314,13 @@ gzip -c agentrq-hook-github_1.0.0.wasm | curl -s "$AGENTRQ_BASE_URL/admin/v1/hoo
 
 ### Teams
 
-A team's members read the workspaces they share with it. Invitations go by email when SMTP is set up (`AGENTRQ_SMTP_HOST`); either way the inviter is given the link to share, which is the only way in without SMTP. A link is `<AGENTRQ_BASE_URL>/invite#<token>` and works once, for the invited address, for 7 days.
+A team's members read the workspaces they share with it. Invitations go by email when SMTP is set up (`AGENTRQ_SMTP_HOST`) and `AGENTRQ_TEAMS_EMAIL_INVITES` is on; either way the inviter is given the link to share, which is the only way in without SMTP. A link is `<AGENTRQ_BASE_URL>/invite#<token>` and works once, for the invited address, for 7 days.
 
 | Variable | Default | Description |
 |---|---|---|
 | `AGENTRQ_TEAMS_MAX_INVITES_PER_DAY` | `10` | Most invitations one team may create in any 24 hours, revoked and declined ones included. `0` turns invitations off. |
 | `AGENTRQ_TEAMS_MAX_INVITES_PER_USER_PER_DAY` | `20` | Most invitations one account may create in any 24 hours across all its teams, revoked and declined ones included, so creating more teams sends no more. `0` is no per-account cap. Both caps apply: the first one reached answers 429, saying which. |
+| `AGENTRQ_TEAMS_EMAIL_INVITES` | `true` | Email each invitation when SMTP is set up. `false` sends none: the inviter shares the link by hand. Other emails are unaffected. |
 
 The server refuses to start on a negative value.
 
