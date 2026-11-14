@@ -510,8 +510,8 @@ the agent you name.
 
 ```bash
 # Using Antigravity
-npx -y @agentrq/acp-gateway@latest --login --agent antigravity-acp --allow-unverified-agent
-npx -y @agentrq/acp-gateway@latest --agent antigravity-acp --allow-unverified-agent
+npx -y @agentrq/acp-gateway@latest --login --agent antigravity-acp
+npx -y @agentrq/acp-gateway@latest --agent antigravity-acp
 ```
 
 ```bash
@@ -520,9 +520,7 @@ npx -y @agentrq/acp-gateway@latest --login --agent codex-acp
 npx -y @agentrq/acp-gateway@latest --agent codex-acp
 ```
 
-Antigravity is published as a binary the registry carries no checksum for, so it
-needs `--allow-unverified-agent` on every command; Codex ships as an npm package
-and does not. Sign out again with `--logout` in place of `--login`.
+Sign out again with `--logout` in place of `--login`.
 
 The gateway will automatically:
 - Connect to your AgentRQ workspace via the URL in `.mcp.json`.
@@ -564,8 +562,7 @@ npx -y @agentrq/acp-gateway@latest --agent codex-acp
 ```
 
 Sign out again with `--logout` in place of `--login`. The registry publishes
-Codex as an npm package, so npx fetches it on first use and keeps it current —
-unlike the binary agents, it needs no `--allow-unverified-agent`.
+Codex as an npm package, so npx fetches it on first use and keeps it current.
 
 ## 👑 Supervisor (CoreMCP)
 

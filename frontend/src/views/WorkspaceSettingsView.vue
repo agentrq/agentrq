@@ -463,7 +463,7 @@
                           </button>
                         </div>
                       </div>
-                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium"><code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">--allow-unverified-agent</code> is on both because the registry publishes no checksum for Antigravity, and the gateway will not install a download it cannot verify without being told to. Only the first run fetches it. Sign out again with <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">--logout</code> in place of <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">--login</code>.</p>
+                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">Only the first run fetches Antigravity. Sign out again with <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">--logout</code> in place of <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">--login</code>.</p>
                     </div>
 
                     <div v-else class="space-y-4 min-w-0">
@@ -512,7 +512,7 @@
                           </button>
                         </div>
                       </div>
-                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">Downloads are checked against the registry's checksum before they run. Google Antigravity publishes none and needs a login first, so it has a tab of its own.</p>
+                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">Downloads are checked against the registry's checksum before they run. Google Antigravity needs a login first, so it has a tab of its own.</p>
                     </div>
                   </section>
                 </div>
@@ -1251,25 +1251,15 @@ const startCommand = computed(() => `claude --dangerously-load-development-chann
 
 // The ACP gateway bridges any agent that speaks the Agent Client Protocol, so
 // the example names one rather than implying the bridge belongs to it.
-// Antigravity is published to the ACP registry as a binary with no checksum,
-// and the gateway refuses to install an unverifiable download unless told to —
-// so the flag is part of the command rather than a footnote someone hits as an
-// error.
 const ACP_GATEWAY = 'npx -y @agentrq/acp-gateway@latest';
 const acpStartCommand = `${ACP_GATEWAY} --agent harn`;
 const acpListAgentsCommand = `${ACP_GATEWAY} --list-agents`;
 const acpLoginCommand = `${ACP_GATEWAY} --login --agent harn`;
 const acpInstalledAgentCommand = `${ACP_GATEWAY} -- harn serve acp`;
 
-// Antigravity gets its own tab because it needs two things the other ACP
-// agents do not: a login before it will open a session, and permission to
-// install a binary the registry publishes no checksum for. Both flags travel
-// on every command, since leaving either off is an error rather than a
-// different behaviour.
-const ANTIGRAVITY_AGENT = '--agent antigravity-acp --allow-unverified-agent';
-// Codex ships through the registry as an npm package, so unlike Antigravity
-// it needs no --allow-unverified-agent: the gateway only checksums binary
-// downloads, and an npx distribution never reaches that path.
+// Antigravity gets its own tab because it needs a login before it will open a
+// session.
+const ANTIGRAVITY_AGENT = '--agent antigravity-acp';
 const CODEX_AGENT = '--agent codex-acp';
 const codexLoginCommand = `${ACP_GATEWAY} --login ${CODEX_AGENT}`;
 const codexStartCommand = `${ACP_GATEWAY} ${CODEX_AGENT}`;
