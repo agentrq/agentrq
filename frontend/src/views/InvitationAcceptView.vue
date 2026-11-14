@@ -30,7 +30,7 @@
         <h1 class="text-xl font-black text-gray-900 dark:text-white leading-tight">
           {{ preview.invitedByName || 'Someone' }} invited you to {{ preview.teamName }}
         </h1>
-        <p class="text-sm text-gray-500 dark:text-zinc-400">As {{ preview.role || 'member' }}. You will see what its members share with it, read-only, and choose what of yours to share.</p>
+        <p class="text-sm text-gray-500 dark:text-zinc-400">You will see what its members share with it, read-only, and choose what of yours to share.</p>
         <div class="flex gap-2">
           <router-link to="/" class="px-4 py-2 rounded-lg border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest text-gray-700 dark:text-zinc-200">Not now</router-link>
           <button type="button" data-test="accept-button" :disabled="busy" @click="accept"

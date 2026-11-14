@@ -13,7 +13,8 @@
         <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">Kanban</h1>
         <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">{{ isTeamMode ? 'Every shared workspace\'s tasks on one board.' : 'Every workspace\'s tasks on one board.' }}</p>
       </div>
-      <NewTaskButton v-if="!isTeamMode" />
+      <TeamTaskFilters v-if="isTeamMode" />
+      <NewTaskButton v-else />
     </div>
     <KanbanBoardView />
   </div>
@@ -25,6 +26,7 @@ import { useRouter } from 'vue-router';
 import { useViewport } from '../composables/useViewport';
 import KanbanBoardView from './KanbanBoardView.vue';
 import NewTaskButton from '../components/NewTaskButton.vue';
+import TeamTaskFilters from '../components/TeamTaskFilters.vue';
 import { useTeamMode } from '../composables/useTeamMode';
 
 const router = useRouter();

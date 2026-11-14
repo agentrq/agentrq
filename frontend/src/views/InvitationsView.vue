@@ -25,7 +25,7 @@
         <div class="flex-1 min-w-0">
           <p class="text-sm text-gray-700 dark:text-zinc-200">
             <span class="font-semibold">{{ i.invitedByName || 'Someone' }}</span> invited you to
-            <span class="font-bold text-gray-900 dark:text-white">{{ i.teamName }}</span> as {{ i.role }}
+            <span class="font-bold text-gray-900 dark:text-white">{{ i.teamName }}</span>
           </p>
           <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">Expires {{ expiresIn(i.expiresAt) }}</p>
         </div>

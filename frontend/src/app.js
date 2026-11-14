@@ -22,11 +22,7 @@ import App from './App.vue'
 import { fetchUser } from './api'
 import { usePlatformStore } from './stores/platformStore'
 import { rememberedTeam } from './stores/teamStore'
-import { teamLanding } from './composables/useTeamMode'
-
-// A page about one team, rebuilt when the team changes: it is in the query,
-// which a plain `remount` (keyed by path) does not see.
-const teamPage = { remount: true, remountKey: (r) => `${r.path}?team=${r.query.team ?? ''}` }
+import { teamHome, teamLanding, withManage } from './composables/useTeamMode'
 
 // The Pano's board, shared by its two routes below.
 const PanoView = () => import('./views/PanoView.vue')
@@ -104,13 +100,13 @@ export const routes = [
   { path: '/skills', component: () => import('./views/SkillsView.vue') },
   { path: '/skills/:name', component: () => import('./views/SkillsView.vue'), meta: { remount: true } },
 
-  // Teams. The team on screen is `?team=<id>`, on these pages and on the ones
-  // above that show a team read-only (/tasks/*, /kanban, /skills); see
-  // useTeamMode. Creating one, and the invitations addressed to you, need none.
+  // Teams. The team on screen is `?team=<id>` on the pages above that show a
+  // team read-only (/tasks/*, /kanban, /skills); see useTeamMode. It is
+  // managed in a dialog over them, `?manage=<tab>`. Creating one, and the
+  // invitations addressed to you, need none.
   { path: '/team/new', component: () => import('./views/TeamNewView.vue') },
-  { path: '/team/settings', component: () => import('./views/TeamSettingsView.vue'), meta: teamPage },
-  { path: '/team/analytics', component: () => import('./views/TeamAnalyticsView.vue'), meta: teamPage },
-  { path: '/team/memory', component: () => import('./views/TeamMemoryView.vue'), meta: teamPage },
+  // The settings page the dialog replaced: an old link opens the dialog.
+  { path: '/team/settings', redirect: (to) => (to.query.team ? withManage(teamHome(to.query.team), 'members') : '/') },
   { path: '/invitations', component: () => import('./views/InvitationsView.vue') },
   // An invitation link. Public, because it may be opened signed out: the page
   // itself offers the sign-in, and comes back here after it.
