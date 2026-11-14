@@ -202,34 +202,34 @@ func TestATeamWorkspacesMemoryIsAnIndexOfItsMembers(t *testing.T) {
 		"alice: " + id(aliceAPI) + "/memory.md\n" +
 		"Bob: " + id(memParent) + "/memory.md (your actual memory that you can update)\n"
 	for _, m := range []workspaceMemory{bob, fork} {
-		if got, found, err := m.load(ctx, "memory.md"); err != nil || !found || got != want {
+		if got, _, found, err := m.load(ctx, "memory.md"); err != nil || !found || got != want {
 			t.Fatalf("the index: %v %v\n%s\nwant\n%s", found, err, got, want)
 		}
 	}
-	if got, found, err := bob.load(ctx, id(aliceAPI)+"/memory.md"); err != nil || !found || got != "alice's" {
+	if got, _, found, err := bob.load(ctx, id(aliceAPI)+"/memory.md"); err != nil || !found || got != "alice's" {
 		t.Errorf("a member's memory: %q %v %v", got, found, err)
 	}
-	if _, found, err := bob.load(ctx, id(erinAPI)+"/memory.md"); err != nil || found {
+	if _, _, found, err := bob.load(ctx, id(erinAPI)+"/memory.md"); err != nil || found {
 		t.Errorf("a member's memory never written: %v %v", found, err)
 	}
-	if got, found, err := bob.load(ctx, id(memParent)+"/memory.md"); err != nil || !found || got != "mine" {
+	if got, _, found, err := bob.load(ctx, id(memParent)+"/memory.md"); err != nil || !found || got != "mine" {
 		t.Errorf("the agent's own memory by its id: %q %v %v", got, found, err)
 	}
 	for _, other := range []int64{carolWeb, carolOld, daveAPI, 999} {
-		if _, _, err := bob.load(ctx, id(other)+"/memory.md"); err != errNotTeammate {
+		if _, _, _, err := bob.load(ctx, id(other)+"/memory.md"); err != errNotTeammate {
 			t.Errorf("workspace %d is no member's of the team workspace: %v", other, err)
 		}
 	}
-	if err := bob.save(ctx, id(aliceAPI)+"/memory.md", "x"); err != errTeammateMemoryReadOnly {
+	if _, err := bob.save(ctx, id(aliceAPI)+"/memory.md", "x", 0); err != errTeammateMemoryReadOnly {
 		t.Errorf("save to a member's: %v", err)
 	}
 	if _, err := bob.delete(ctx, id(aliceAPI)+"/memory.md"); err != errTeammateMemoryReadOnly {
 		t.Errorf("delete a member's: %v", err)
 	}
-	if err := fork.save(ctx, id(memParent)+"/notes.md", "n"); err != nil {
+	if _, err := fork.save(ctx, id(memParent)+"/notes.md", "n", 0); err != nil {
 		t.Fatal(err)
 	}
-	if got, _, _ := bob.load(ctx, "notes.md"); got != "n" {
+	if got, _, _, _ := bob.load(ctx, "notes.md"); got != "n" {
 		t.Errorf("saved by its own id, read plainly: %q", got)
 	}
 	if deleted, err := bob.delete(ctx, id(memParent)+"/notes.md"); err != nil || !deleted {
@@ -241,12 +241,12 @@ func TestATeamWorkspacesMemoryIsAnIndexOfItsMembers(t *testing.T) {
 	if err := db.Where("team_id = ? AND user_id = ?", team2, memUser).Delete(&model.TeamMember{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := bob.load(ctx, id(erinAPI)+"/memory.md"); err != errNotTeammate {
+	if _, _, _, err := bob.load(ctx, id(erinAPI)+"/memory.md"); err != errNotTeammate {
 		t.Errorf("a team that no longer lets the owner read it: %v", err)
 	}
 
 	// Shared nowhere, memory.md is the workspace's own.
-	if got, found, err := memoryOf(daveAPI).load(ctx, "memory.md"); err != nil || !found || got != "dave's" {
+	if got, _, found, err := memoryOf(daveAPI).load(ctx, "memory.md"); err != nil || !found || got != "dave's" {
 		t.Errorf("a workspace in no team: %q %v %v", got, found, err)
 	}
 }
@@ -259,18 +259,18 @@ func TestATeamWorkspacesMemoryReportsStorageFailures(t *testing.T) {
 	other := monoflake.ID(31).String() + "/memory.md"
 
 	repo.EXPECT().ListTeamPeerWorkspaces(gomock.Any(), memParent).Return(nil, errRepo)
-	if _, _, err := m.load(ctx, "memory.md"); err != errRepo {
+	if _, _, _, err := m.load(ctx, "memory.md"); err != errRepo {
 		t.Errorf("the index: %v", err)
 	}
 	repo.EXPECT().ListTeamPeerWorkspaces(gomock.Any(), memParent).Return(nil, errRepo)
-	if _, _, err := m.load(ctx, other); err != errRepo {
+	if _, _, _, err := m.load(ctx, other); err != errRepo {
 		t.Errorf("a member's, listing: %v", err)
 	}
 	repo.EXPECT().ListTeamPeerWorkspaces(gomock.Any(), memParent).Return([]base.TeamWorkspacePeer{
 		{TeamID: 7, WorkspaceID: memParent, Name: "api"}, {TeamID: 7, WorkspaceID: 31, Name: "api"},
 	}, nil)
 	repo.EXPECT().CanReadWorkspaceInTeam(gomock.Any(), memUser, int64(7), int64(31)).Return(false, errRepo)
-	if _, _, err := m.load(ctx, other); err != errRepo {
+	if _, _, _, err := m.load(ctx, other); err != errRepo {
 		t.Errorf("a member's, the check: %v", err)
 	}
 }
