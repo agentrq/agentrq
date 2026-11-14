@@ -591,6 +591,30 @@ describe('the team\'s board (/kanban?team=)', () => {
     expect(el.textContent).not.toContain('Task mine')
   })
 
+  it('follows the team\'s live updates, inside its filters', async () => {
+    const { el } = await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
+    const send = async (ev) => { events.value = [...events.value, ev]; await settle() }
+    await send({ type: 'team.task.created', teamId: 'tm2', payload: theirs('other', 'ongoing', { group: 'Backend' }) })
+    expect(el.textContent).not.toContain('Task other')
+    await send({ type: 'team.task.created', teamId: 'tm1', payload: theirs('new', 'ongoing', { group: 'backend ' }) })
+    expect(el.textContent).toContain('Task new')
+    // Moved to another group: off a board filtered to this one.
+    await send({ type: 'team.task.updated', teamId: 'tm1', payload: theirs('new', 'ongoing', { group: 'Web' }) })
+    expect(el.textContent).not.toContain('Task new')
+    await send({ type: 'team.task.deleted', teamId: 'tm1', payload: { id: 'o1' } })
+    expect(el.textContent).not.toContain('Task o1')
+  })
+
+  it('keeps a member filter to that member\'s tasks', async () => {
+    route.query = { team: 'tm1', member: 'u2' }
+    const { el } = await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
+    const send = async (ev) => { events.value = [...events.value, ev]; await settle() }
+    await send({ type: 'team.status.updated', teamId: 'tm1', payload: theirs('cy', 'ongoing', { owner: { userId: 'u3', name: 'Cy' } }) })
+    expect(el.textContent).not.toContain('Task cy')
+    await send({ type: 'team.status.updated', teamId: 'tm1', payload: theirs('bob', 'ongoing') })
+    expect(el.textContent).toContain('Task bob')
+  })
+
   it('sends a phone to the team\'s task list', async () => {
     const width = window.innerWidth
     window.innerWidth = 390

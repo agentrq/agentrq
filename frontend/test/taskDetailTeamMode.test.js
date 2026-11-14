@@ -19,9 +19,15 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push, replace, back: vi.fn() }),
 }))
 
+import { unref } from 'vue'
 const connect = vi.fn()
+const events = ref([])
+let streamOf = null
 vi.mock('../src/useEventBus', () => ({
-  useEventBus: () => ({ connect, disconnect() {}, events: ref([]) }),
+  useEventBus: (workspaceId) => {
+    streamOf = workspaceId
+    return { connect, disconnect() {}, events }
+  },
 }))
 
 vi.mock('../src/composables/useSpeechToText', () => ({
@@ -63,6 +69,7 @@ const teamTask = () => ({
 
 const getTeamTask = vi.fn()
 const getTask = vi.fn()
+const getTaskPlan = vi.fn()
 const updateTaskTitle = vi.fn()
 const updateTaskStatus = vi.fn()
 
@@ -70,6 +77,7 @@ vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal()),
   getTeamTask: (...a) => getTeamTask(...a),
   getTask: (...a) => getTask(...a),
+  getTaskPlan: (...a) => getTaskPlan(...a),
   getWorkspace: vi.fn(),
   fetchUser: () => Promise.resolve({ id: 'u1', name: 'Dev' }),
   fetchTasks: () => Promise.resolve({ tasks: [] }),
@@ -104,6 +112,7 @@ const buttons = (el, label) => [...el.querySelectorAll('button')].filter((b) => 
 
 beforeEach(() => {
   vi.clearAllMocks()
+  events.value = []
   useToasts().toasts.value = []
   getTeamTask.mockImplementation(() => Promise.resolve(teamTask()))
 })
@@ -114,12 +123,13 @@ afterEach(() => {
 })
 
 describe('a teammate\'s task in team mode', () => {
-  it('is read through the team, never cached, and has no live stream', async () => {
+  it('is read through the team, never cached, and live on your account stream', async () => {
     const el = await mount()
     expect(getTeamTask).toHaveBeenCalledWith('tm1', 't1')
     expect(getTask).not.toHaveBeenCalled()
     expect(cacheTask).not.toHaveBeenCalled()
-    expect(connect).not.toHaveBeenCalled()
+    expect(connect).toHaveBeenCalled()
+    expect(unref(streamOf)).toBe('')
     expect(el.querySelector('[data-test="task-title"]').textContent.trim()).toBe('Fix the login page')
   })
 
@@ -161,5 +171,59 @@ describe('a teammate\'s task in team mode', () => {
     getTeamTask.mockImplementation(() => Promise.reject(Object.assign(new Error('down'), { status: 500 })))
     await mount()
     expect(useToasts().toasts.value.map((t) => t.message)).toContain('Failed to load task context: down')
+  })
+
+  it('follows the team\'s events for it, and nothing else', async () => {
+    const el = await mount()
+    const title = () => el.querySelector('[data-test="task-title"]').textContent.trim()
+    const send = async (ev) => { events.value = [...events.value, ev]; await settle() }
+    await send({ type: 'task.updated', payload: { id: 't1', title: 'Your own event' } })
+    await send({ type: 'team.task.updated', teamId: 'tm2', payload: { id: 't1', title: 'Another team' } })
+    await send({ type: 'team.task.updated', teamId: 'tm1', payload: { id: 't9', title: 'Another task' } })
+    expect(title()).toBe('Fix the login page')
+    await send({ type: 'team.task.updated', teamId: 'tm1', payload: { id: 't1', title: 'Renamed by Bob', status: 'ongoing' } })
+    expect(title()).toBe('Renamed by Bob')
+    expect(el.querySelector('[data-test="team-task-status"]').textContent).toMatch(/ongoing/i)
+  })
+
+  it('reads it again when the team says it was deleted', async () => {
+    const el = await mount()
+    getTeamTask.mockImplementation(() => Promise.reject(Object.assign(new Error('gone'), { status: 404 })))
+    events.value = [{ type: 'team.task.deleted', teamId: 'tm1', payload: { id: 't9' } }]
+    await settle()
+    expect(getTeamTask).toHaveBeenCalledTimes(1)
+    events.value = [...events.value, { type: 'team.task.deleted', teamId: 'tm1', payload: { id: 't1' } }]
+    await settle()
+    expect(getTeamTask).toHaveBeenCalledTimes(2)
+    expect(el.querySelector('[data-test="no-longer-shared"]')).not.toBe(null)
+  })
+
+  it('shows its plan from the team\'s answer, never the owner\'s route', async () => {
+    getTeamTask.mockImplementation(() => Promise.resolve({ ...teamTask(), plan: { id: 'p1', content: '- [x] Find it\n- [ ] Fix it', version: 2 } }))
+    const el = await mount()
+    expect(getTaskPlan).not.toHaveBeenCalled()
+    expect(el.querySelector('[data-testid="task-plan-progress"]').textContent).toContain('1 / 2')
+  })
+
+  it('reads its files from the links the team gave, and never offers them as public', async () => {
+    const link = (id) => `/api/v1/teams/tm1/tasks/t1/attachments/${id}`
+    getTeamTask.mockImplementation(() => {
+      const t = teamTask()
+      t.task.attachments = [
+        { id: 'a1', filename: 'shot.png', mimeType: 'image/png', url: link('a1') },
+        { id: 'a2', filename: 'logo.svg', mimeType: 'image/svg+xml', url: link('a2') },
+      ]
+      return Promise.resolve(t)
+    })
+    const el = await mount()
+    const imgs = [...el.querySelectorAll('img')].map((i) => i.getAttribute('src'))
+    expect(imgs).toContain(link('a1'))
+    expect(imgs).not.toContain(link('a2'))
+    ;[...el.querySelectorAll('span')].find((s) => s.textContent.trim() === 'logo.svg').click()
+    await settle()
+    expect(document.body.querySelector('[aria-label="Download"]').getAttribute('href')).toBe(link('a2'))
+    expect(document.body.querySelector('[aria-label="Download"]').getAttribute('target')).toBe(null)
+    expect(document.body.querySelector('[aria-label="Open in browser"]')).toBe(null)
+    expect(document.body.querySelector('[aria-label="Copy link"]')).toBe(null)
   })
 })
