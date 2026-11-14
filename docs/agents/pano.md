@@ -11,6 +11,9 @@
   not a write: `SyncPanoTask` stores only `checklist_done`. `edit` reads, applies its ops
   and goes through the same save, so it cannot skip the checks; the version is
   checked before the ops, or a stale doc answers "not found" instead.
+- **A `replace` matches a task link's title, and its item's box, loosely**
+  (`panoFind`): the server rewrites both as the task moves, so a writer
+  quoting what it read would otherwise miss. `newString` is saved as given.
 - **The markdown is in the database, the files in storage.** A file's blob is
   written before its row and purged if the row fails, as with skills; the
   other order leaves a row whose file cannot be read. Lists `Omit("markdown")`.

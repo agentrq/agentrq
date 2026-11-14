@@ -1091,6 +1091,76 @@ func (e *panoEnv) replace(t *testing.T, doc entity.PanoDoc, old, new string) ent
 	return rs.Doc
 }
 
+// A replace quoting an assigned item as its writer read it still finds the
+// item after the server moved its status and ticked its box; one that finds
+// nothing names the closest line.
+func TestPano_EditMatchesTaskLinksWhateverTheirStatus(t *testing.T) {
+	e := newPanoEnv(t)
+	tasks := e.panoTasks(t, "ongoing", "ongoing")
+	link := func(task model.Task, title string) string {
+		return " → [@alpha](" + panoTaskPath(skWS, task.ID) + title + ")"
+	}
+	doc := e.save(t, entity.SavePanoDocRequest{Title: "Plan", Markdown: "# Plan\n" + taskItem("ship", tasks[0]) + "\n- [ ] mine"})
+	read := "# Plan\n- [ ] ship" + link(tasks[0], ` "ongoing"`)
+	e.setStatus(t, tasks[0], "completed")
+	doc = e.get(t, doc.ID)
+
+	doc = e.replace(t, doc, read, "# Plan\n- [ ] ship it"+link(tasks[0], ` "ongoing"`))
+	want := "# Plan\n- [x] ship it" + link(tasks[0], ` "completed"`) + "\n- [ ] mine"
+	if doc.Markdown != want || len(e.unticked(t)) != 0 {
+		t.Fatalf("after a replace quoting the old status the doc is %q, unticked %v, want %q: its writer never saw it completed", doc.Markdown, e.unticked(t), want)
+	}
+	doc = e.replace(t, doc, "ship it"+link(tasks[0], ""), "shipped"+link(tasks[0], ""))
+	if !strings.HasPrefix(doc.Markdown, "# Plan\n- [x] shipped"+link(tasks[0], ` "completed"`)) {
+		t.Errorf("after a replace quoting no status the doc is %q, want the item renamed and still completed", doc.Markdown)
+	}
+
+	refused := func(t *testing.T, old string) string {
+		t.Helper()
+		_, err := e.c.EditPanoDoc(e.ctx, entity.EditPanoDocRequest{UserID: skUserStr, ID: doc.ID, Version: doc.Version, Ops: []entity.PanoEditOp{{Op: "replace", OldString: old, NewString: "x"}}})
+		var refusal *entity.PanoError
+		if !errors.As(err, &refusal) {
+			t.Fatalf("EditPanoDoc returned %v, want a refusal", err)
+		}
+		return refusal.Message
+	}
+	if got, want := refused(t, "- [ ] shiped"+link(tasks[0], ` "ongoing"`)), `closest to "- [ ] shiped`+link(tasks[0], ` \"ongoing\"`)+`" is line 2: "- [x] shipped`; !strings.Contains(got, want) {
+		t.Errorf("a missed replace says %q, want it to contain %q", got, want)
+	}
+	if got := refused(t, strings.Repeat("x", PanoMaxMarkdownBytes)+link(tasks[0], "")); !strings.Contains(got, "not in the markdown") {
+		t.Errorf("an oldString longer than a doc can be says %q, want it not found", got)
+	}
+
+	doc = e.save(t, entity.SavePanoDocRequest{ID: doc.ID, Version: doc.Version, Title: "Plan", Markdown: "- [ ] a" + link(tasks[1], "") + "\n- [ ] a" + link(tasks[1], ` "notstarted"`)})
+	if got := refused(t, "a"+link(tasks[1], ` "ongoing"`)); !strings.Contains(got, "occurs 2 times") {
+		t.Errorf("a replace matching two items says %q, want it refused as ambiguous", got)
+	}
+}
+
+func TestPanoClosest(t *testing.T) {
+	md := "# Plan\n- [ ] tag the release\n- [ ] write the notes\n- [ ] tell the team\n- [ ] close it"
+	for _, tc := range []struct{ old, want string }{
+		{"- [ ] tag the release", ""},
+		{"zzz", ""},
+		{"tag x\nwrite x\ntell x\nclose x", `; closest to "tag x" is line 2: "- [ ] tag the release"; closest to "write x" is line 3: "- [ ] write the notes"; closest to "tell x" is line 4: "- [ ] tell the team"`},
+		{"\n- [ ] write notes", `; closest to "- [ ] write notes" is line 3: "- [ ] write the notes"`},
+		{"- [ ] tag release\n# Plan\n- [ ] tell team\nzzz\n- [ ] close", `; closest to "- [ ] tag release" is line 2: "- [ ] tag the release"; closest to "- [ ] tell team" is line 4: "- [ ] tell the team"`},
+	} {
+		if got := panoClosest(md, tc.old); got != tc.want {
+			t.Errorf("panoClosest(%q) = %q, want %q", tc.old, got, tc.want)
+		}
+	}
+}
+
+func TestPanoShort(t *testing.T) {
+	if got := panoShort("short"); got != "short" {
+		t.Errorf("panoShort kept %q, want it whole", got)
+	}
+	if got := panoShort(strings.Repeat("a", 159) + "→ more"); got != strings.Repeat("a", 159)+"…" {
+		t.Errorf("panoShort cut to %q, want 159 bytes and the ellipsis, before the arrow", got)
+	}
+}
+
 // A completed task's item unticked by hand stays unticked, through its task's
 // updates and later saves, until its status changes; then it follows the task
 // again, and ticks when it is completed once more.

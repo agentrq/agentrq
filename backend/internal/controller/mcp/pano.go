@@ -32,7 +32,7 @@ var PanoToolDescription = "Read and write the Pano: markdown docs shared by ever
 	"Inputs: action, and payload, its fields; help with payload {\"topic\": \"<action>\"} gives an action's payload. " +
 	"save: no id creates a doc, returning its id and version; with an id it replaces title and markdown, both required. " +
 	"Every write changes a doc's version; save or edit needs the version you read, and if refused, read again, redo your change, retry with the new version. " +
-	"edit: id, version and ops, all or none: {op: append, text} adds at the end; {op: replace, oldString, newString} swaps oldString, which must occur once. Tick an item by replacing \"- [ ] x\" with \"- [x] x\". " +
+	"edit: id, version and ops, all or none: {op: append, text} adds at the end; {op: replace, oldString, newString} swaps oldString, which must occur once; a task link's status and box match any. Tick an item by replacing \"- [ ] x\" with \"- [x] x\". " +
 	"A checklist item ending → [@workspace](/workspaces/<id>/tasks/<id> \"status\") is assigned to that task: keep the link. " +
 	"A read shows the task's status now, and the box ticks when it completes; unticked by hand, it stays so until the status changes. " +
 	"With manual after the status (\"completed manual\") it never ticks itself: tick it when the work is really done, such as its PR merged. " +
@@ -87,7 +87,7 @@ type (
 type PanoEditOp struct {
 	Op        string `json:"op" jsonschema:"enum: append, replace"`
 	Text      string `json:"text,omitempty" jsonschema:"append: the text added at the end of the markdown, as is: start it with a newline to begin a new line."`
-	OldString string `json:"oldString,omitempty" jsonschema:"replace: the text to replace. It must occur exactly once in the markdown."`
+	OldString string `json:"oldString,omitempty" jsonschema:"replace: the text to replace. It must occur exactly once in the markdown. In an item assigned to a task, the link's status and the box match whatever the doc says now, so the text as you read it still finds the item. If it is not found, the refusal names the closest line."`
 	NewString string `json:"newString,omitempty" jsonschema:"replace: what it becomes. Empty deletes it."`
 }
 

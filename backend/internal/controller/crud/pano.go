@@ -427,11 +427,11 @@ func (c *controller) EditPanoDoc(ctx context.Context, req entity.EditPanoDocRequ
 			if op.OldString == "" {
 				return nil, panoRefuse("op %d: replace needs an oldString", i+1)
 			}
-			switch n := strings.Count(markdown, op.OldString); n {
+			switch n, start, end := panoFind(markdown, op.OldString); n {
 			case 1:
-				markdown = strings.Replace(markdown, op.OldString, op.NewString, 1)
+				markdown = markdown[:start] + op.NewString + markdown[end:]
 			case 0:
-				return nil, panoRefuse("op %d: oldString is not in the markdown, nothing was changed", i+1)
+				return nil, panoRefuse("op %d: oldString is not in the markdown, nothing was changed%s", i+1, panoClosest(markdown, op.OldString))
 			default:
 				return nil, panoRefuse("op %d: oldString occurs %d times, it must occur once: add the text around it, nothing was changed", i+1, n)
 			}
@@ -440,6 +440,113 @@ func (c *controller) EditPanoDoc(ctx context.Context, req entity.EditPanoDocRequ
 		}
 	}
 	return c.SavePanoDoc(ctx, entity.SavePanoDocRequest{UserID: req.UserID, WorkspaceID: req.WorkspaceID, ID: req.ID, Version: req.Version, Title: d.Title, Markdown: markdown})
+}
+
+// panoTaskLink is a link to a task, titled or not.
+var panoTaskLink = regexp.MustCompile(`\]\((/workspaces/[0-9A-Za-z]+/tasks/[0-9A-Za-z]+)(?: "[^"\n]*")?\)`)
+
+// panoFind is how often old occurs in the markdown, and where when once. The
+// server rewrites an assigned item's status, and its box, as its task moves,
+// so a task link's title in old, and the box of an item whose line links a
+// task, match whatever the markdown has now: a writer quoting the doc as it
+// read it still finds the item. An old longer than a doc can be is matched as
+// is, sparing a regexp of that size.
+func panoFind(markdown, old string) (n, start, end int) {
+	if len(old) > PanoMaxMarkdownBytes || !panoTaskLink.MatchString(old) {
+		if n = strings.Count(markdown, old); n == 1 {
+			start = strings.Index(markdown, old)
+			end = start + len(old)
+		}
+		return n, start, end
+	}
+	var b strings.Builder
+	for i, line := range strings.Split(old, "\n") {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		if item := panoTaskItem.FindStringSubmatchIndex(line); item != nil && panoTaskLink.MatchString(line) {
+			b.WriteString(regexp.QuoteMeta(line[:item[2]]) + "[ xX]")
+			line = line[item[3]:]
+		}
+		last := 0
+		for _, m := range panoTaskLink.FindAllStringSubmatchIndex(line, -1) {
+			b.WriteString(regexp.QuoteMeta(line[last:m[0]]) + `\]\(` + regexp.QuoteMeta(line[m[2]:m[3]]) + `(?: "[^"\n]*")?\)`)
+			last = m[1]
+		}
+		b.WriteString(regexp.QuoteMeta(line[last:]))
+	}
+	at := regexp.MustCompile(b.String()).FindAllStringIndex(markdown, -1)
+	if len(at) == 1 {
+		return 1, at[0][0], at[0][1]
+	}
+	return len(at), 0, 0
+}
+
+// panoClosest names, for each line of old the markdown lacks (three at
+// most), the markdown's line sharing the most words with it, cut short:
+// enough to retry a replace without reading the doc again.
+func panoClosest(markdown, old string) string {
+	lines := strings.Split(markdown, "\n")
+	words := make([]map[string]bool, len(lines))
+	for i, line := range lines {
+		words[i] = panoWords(line)
+	}
+	var b strings.Builder
+	missing := 0
+	for _, want := range strings.Split(old, "\n") {
+		if strings.TrimSpace(want) == "" {
+			continue
+		}
+		if n, _, _ := panoFind(markdown, want); n > 0 {
+			continue
+		}
+		if missing++; missing > 3 {
+			break
+		}
+		wanted := panoWords(want)
+		best, score := -1, 0.0
+		for i, w := range words {
+			common := 0
+			for x := range wanted {
+				if w[x] {
+					common++
+				}
+			}
+			if s := 2 * float64(common) / float64(len(wanted)+len(w)); s > score {
+				best, score = i, s
+			}
+		}
+		if best >= 0 {
+			fmt.Fprintf(&b, "; closest to %q is line %d: %q", panoShort(want), best+1, panoShort(lines[best]))
+		}
+	}
+	return b.String()
+}
+
+// panoWords is the set of a line's words, leaving out a checklist item's
+// marker and box and a task link's title, which every item shares or the
+// server rewrites.
+func panoWords(line string) map[string]bool {
+	if item := panoTaskItem.FindStringIndex(line); item != nil {
+		line = line[item[1]:]
+	}
+	words := map[string]bool{}
+	for _, w := range strings.Fields(panoTaskLink.ReplaceAllString(line, "](${1})")) {
+		words[w] = true
+	}
+	return words
+}
+
+// panoShort is s cut to 160 bytes, on a character boundary.
+func panoShort(s string) string {
+	cut := 160
+	if len(s) <= cut {
+		return s
+	}
+	for !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }
 
 func (c *controller) DeletePanoDoc(ctx context.Context, req entity.DeletePanoDocRequest) error {
