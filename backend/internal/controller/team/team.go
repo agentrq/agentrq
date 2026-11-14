@@ -76,7 +76,7 @@ type Controller interface {
 	ListActivities(ctx context.Context, req entity.ListTeamActivitiesRequest) (entity.TeamActivities, error)
 
 	ListShares(ctx context.Context, userID, workspaceID int64) ([]entity.WorkspaceShare, error)
-	ShareWorkspace(ctx context.Context, ch entity.TeamChange, workspaceID int64) (entity.WorkspaceShare, error)
+	ShareWorkspace(ctx context.Context, ch entity.TeamChange, workspaceID int64, parts entity.SharedParts) (entity.WorkspaceShare, error)
 	UnshareWorkspace(ctx context.Context, ch entity.TeamChange, workspaceID int64) (int64, error)
 	// ListPanoShares, SharePanoDoc and UnsharePanoDoc are the account's own
 	// Pano doc's shares, as for a workspace's.
@@ -84,12 +84,14 @@ type Controller interface {
 	SharePanoDoc(ctx context.Context, ch entity.TeamChange, docID int64) (entity.PanoDocShare, error)
 	UnsharePanoDoc(ctx context.Context, ch entity.TeamChange, docID int64) (int64, error)
 
-	// CanReadWorkspaceInTeam is the one check behind every team read: the
-	// account is in the team, and the workspace, or the parent it is a fork
-	// of, is shared with it, and neither is archived or deleted.
-	CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
-	// ListTeamWorkspaces is the workspaces CanReadWorkspaceInTeam allows in
-	// the team, by shared name; base.ErrNotFound unless the account is in it.
+	// CanReadTasksInTeam is the one check behind every read of a task in
+	// the team: the account is in the team, and the workspace, or the parent
+	// it is a fork of, is shared with it, its tasks not held back, and
+	// neither is archived or deleted.
+	CanReadTasksInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
+	// ListTeamWorkspaces is the workspaces shared with the team, and their
+	// forks, by shared name, each with the parts its share lets the team
+	// read; base.ErrNotFound unless the account is in it.
 	ListTeamWorkspaces(ctx context.Context, userID, teamID int64) ([]entity.TeamWorkspace, error)
 }
 
@@ -123,7 +125,7 @@ type Repository interface {
 	ListPanoDocShares(ctx context.Context, docID, userID int64) ([]base.PanoDocShareWithTeam, error)
 	DeletePanoDocShare(ctx context.Context, docID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error)
 	ListTeamActivities(ctx context.Context, teamID int64, limit int, before int64) ([]base.TeamActivityRow, error)
-	CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
+	CanReadTasksInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
 	ListTeamWorkspaces(ctx context.Context, teamID int64) ([]base.TeamWorkspaceRow, error)
 }
 

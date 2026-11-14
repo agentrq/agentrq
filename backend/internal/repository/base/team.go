@@ -77,6 +77,8 @@ type TeamWorkspaceRow struct {
 	SharedName   string
 	OwnerName    string
 	OwnerPicture string
+	HideTasks    bool
+	HideSkills   bool
 }
 
 // TeamActivityRow is a team's activity with its actor's and its target's
@@ -574,7 +576,8 @@ func (r *repository) AcceptTeamInvitation(ctx context.Context, id int64, m model
 func sharesWithTeams(tx *gorm.DB) *gorm.DB {
 	return tx.Model(&model.WorkspaceShare{}).
 		Select("workspace_shares.id, workspace_shares.created_at, workspace_shares.updated_at, workspace_shares.team_id, " +
-			"workspace_shares.workspace_id, workspace_shares.user_id, teams.name AS team_name").
+			"workspace_shares.workspace_id, workspace_shares.user_id, workspace_shares.hide_tasks, workspace_shares.hide_skills, " +
+			"workspace_shares.hide_memory, teams.name AS team_name").
 		Joins("JOIN teams ON teams.id = workspace_shares.team_id")
 }
 
@@ -582,7 +585,8 @@ func sharesWithTeams(tx *gorm.DB) *gorm.DB {
 // the share and the new version. The sharer's membership is read under the
 // team's lock, so a removal committed meanwhile is seen and no share
 // outlives it: ErrNotFound when the team is gone or the sharer is not in it.
-// Sharing a workspace already shared changes nothing and records nothing.
+// Sharing a workspace already shared sets what it holds back from the team,
+// recorded only when that changed.
 func (r *repository) SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, version int64, act model.TeamManagementActivity) (WorkspaceShareWithTeam, int64, error) {
 	var out WorkspaceShareWithTeam
 	var next int64
@@ -595,8 +599,18 @@ func (r *repository) SetWorkspaceShare(ctx context.Context, s model.WorkspaceSha
 		if res.Error != nil {
 			return res.Error
 		}
+		act.TeamID, act.ActorUserID, act.Action, act.TargetWorkspaceID = s.TeamID, s.UserID, model.TeamActivityWorkspaceShared, &s.WorkspaceID
+		if res.RowsAffected == 0 {
+			act.Action = model.TeamActivityShareChanged
+			res = tx.Model(&model.WorkspaceShare{}).
+				Where("team_id = ? AND workspace_id = ? AND user_id = ?", s.TeamID, s.WorkspaceID, s.UserID).
+				Where("hide_tasks <> ? OR hide_skills <> ? OR hide_memory <> ?", s.HideTasks, s.HideSkills, s.HideMemory).
+				Updates(map[string]any{"hide_tasks": s.HideTasks, "hide_skills": s.HideSkills, "hide_memory": s.HideMemory, "updated_at": s.UpdatedAt})
+			if res.Error != nil {
+				return res.Error
+			}
+		}
 		if res.RowsAffected > 0 {
-			act.TeamID, act.ActorUserID, act.Action, act.TargetWorkspaceID = s.TeamID, s.UserID, model.TeamActivityWorkspaceShared, &s.WorkspaceID
 			if err := record(tx, act); err != nil {
 				return err
 			}
@@ -679,13 +693,26 @@ const sharedWorkspace = "JOIN workspace_shares ON " +
 // workspace, not archived, is shared with it, itself or as a fork of a
 // shared workspace.
 func (r *repository) CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error) {
+	return r.canReadInTeam(ctx, userID, teamID, workspaceID, false)
+}
+
+// CanReadTasksInTeam is CanReadWorkspaceInTeam for a share that does not
+// hold its tasks back from the team.
+func (r *repository) CanReadTasksInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error) {
+	return r.canReadInTeam(ctx, userID, teamID, workspaceID, true)
+}
+
+func (r *repository) canReadInTeam(ctx context.Context, userID, teamID, workspaceID int64, tasks bool) (bool, error) {
 	var n int64
-	err := r.conn(ctx).Model(&model.Workspace{}).
+	q := r.conn(ctx).Model(&model.Workspace{}).
 		Joins(sharedWorkspace).
 		Where("workspace_shares.team_id = ?", teamID).
 		Joins("JOIN team_members ON team_members.team_id = workspace_shares.team_id AND team_members.user_id = ?", userID).
-		Where("workspaces.id = ? AND workspaces.archived_at IS NULL", workspaceID).
-		Count(&n).Error
+		Where("workspaces.id = ? AND workspaces.archived_at IS NULL", workspaceID)
+	if tasks {
+		q = q.Where("workspace_shares.hide_tasks = ?", false)
+	}
+	err := q.Count(&n).Error
 	return n > 0, err
 }
 
@@ -696,7 +723,7 @@ func (r *repository) ListTeamWorkspaces(ctx context.Context, teamID int64) ([]Te
 	rows := []TeamWorkspaceRow{}
 	err := r.conn(ctx).Model(&model.Workspace{}).
 		Select("workspaces.id, workspaces.name, workspaces.fork_of_id, workspaces.user_id, shared.name AS shared_name, "+
-			"users.name AS owner_name, users.picture AS owner_picture").
+			"users.name AS owner_name, users.picture AS owner_picture, workspace_shares.hide_tasks, workspace_shares.hide_skills").
 		Joins(sharedWorkspace).
 		Where("workspace_shares.team_id = ?", teamID).
 		Joins("LEFT JOIN users ON users.id = workspaces.user_id").

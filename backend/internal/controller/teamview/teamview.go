@@ -10,10 +10,12 @@
 // Who may read what is decided in exactly two places, both in
 // controller/team:
 //
-//   - A read of one workspace's row (a task, an attachment, a memory) passes
-//     CanReadWorkspaceInTeam for the row's own workspace first.
+//   - A read of one task (its detail, an attachment, a clone) passes
+//     CanReadTasksInTeam for the task's own workspace first.
 //   - A read across the team takes its workspaces from ListTeamWorkspaces,
-//     which refuses anyone not in the team, and reads nothing else.
+//     which refuses anyone not in the team, and reads nothing else: tasks
+//     only of those whose share lets the team read tasks, skills only of
+//     those whose share lets it read skills.
 //
 // Past that, the owner's own read is reused, made as the owner, so a team
 // sees a task, a memory or a fork exactly as its owner does. Anything the
@@ -82,7 +84,7 @@ type Controller interface {
 // Teams is the team check, and the team a clone note names.
 type Teams interface {
 	GetTeam(ctx context.Context, userID, teamID int64) (entity.Team, error)
-	CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
+	CanReadTasksInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
 	ListTeamWorkspaces(ctx context.Context, userID, teamID int64) ([]entity.TeamWorkspace, error)
 }
 
@@ -156,10 +158,10 @@ func (c *controller) emit(ctx context.Context, action entity.Action, userID, wor
 }
 
 // readable is the workspace, with its owner and shared name, when the
-// user reads it there; base.ErrNotFound when not. Every read of one
-// workspace's row starts here.
+// user reads its tasks there; base.ErrNotFound when not. Every read of one
+// task starts here.
 func (c *controller) readable(ctx context.Context, userID, teamID, workspaceID int64) (entity.TeamWorkspace, error) {
-	ok, err := c.teams.CanReadWorkspaceInTeam(ctx, userID, teamID, workspaceID)
+	ok, err := c.teams.CanReadTasksInTeam(ctx, userID, teamID, workspaceID)
 	if err != nil {
 		return entity.TeamWorkspace{}, err
 	}
@@ -205,7 +207,7 @@ func (c *controller) ListTasks(ctx context.Context, req entity.ListTeamTasksRequ
 	byID := make(map[int64]entity.TeamWorkspace, len(visible))
 	ids := make([]int64, 0, len(visible))
 	for _, w := range visible {
-		if req.Workspace != "" && WorkspaceKey(w.SharedName) != WorkspaceKey(req.Workspace) {
+		if !w.Tasks || req.Workspace != "" && WorkspaceKey(w.SharedName) != WorkspaceKey(req.Workspace) {
 			continue
 		}
 		if req.Member != 0 && w.OwnerID != req.Member {
@@ -237,7 +239,7 @@ func (c *controller) GetStats(ctx context.Context, req entity.GetTeamStatsReques
 	}
 	ids := []int64{}
 	for _, w := range visible {
-		if req.Workspace == "" || WorkspaceKey(w.SharedName) == WorkspaceKey(req.Workspace) {
+		if w.Tasks && (req.Workspace == "" || WorkspaceKey(w.SharedName) == WorkspaceKey(req.Workspace)) {
 			ids = append(ids, w.ID)
 		}
 	}
@@ -346,13 +348,14 @@ func (c *controller) cloneAttachments(ctx context.Context, t model.Task, w entit
 	return out
 }
 
-// ownWorkspaces is the visible workspaces that keep their own skills: a
-// fork reads its parent's, which the team sees whenever it sees the fork.
+// ownWorkspaces is the visible workspaces that keep their own skills and
+// share them with the team: a fork reads its parent's, which the team sees
+// whenever it sees the fork.
 func ownWorkspaces(visible []entity.TeamWorkspace) (map[int64]entity.TeamWorkspace, []int64) {
 	byID := make(map[int64]entity.TeamWorkspace, len(visible))
 	ids := []int64{}
 	for _, w := range visible {
-		if w.ForkOfID == 0 {
+		if w.ForkOfID == 0 && w.Skills {
 			byID[w.ID] = w
 			ids = append(ids, w.ID)
 		}

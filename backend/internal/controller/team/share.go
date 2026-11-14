@@ -15,8 +15,17 @@ import (
 func shareEntity(s base.WorkspaceShareWithTeam) entity.WorkspaceShare {
 	return entity.WorkspaceShare{
 		TeamID: s.TeamID, TeamName: s.TeamName, WorkspaceID: s.WorkspaceID,
-		CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
+		SharedParts: entity.SharedParts{Tasks: !s.HideTasks, Skills: !s.HideSkills, Memory: !s.HideMemory},
+		CreatedAt:   s.CreatedAt, UpdatedAt: s.UpdatedAt,
 	}
+}
+
+// onOff is how an activity's details name a part shared or held back.
+func onOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
 }
 
 func (c *controller) ListShares(ctx context.Context, userID, workspaceID int64) ([]entity.WorkspaceShare, error) {
@@ -43,9 +52,10 @@ func (c *controller) workspaceActivity(ws model.Workspace) model.TeamManagementA
 }
 
 // ShareWorkspace shares the account's workspace with a team it is in, where
-// it shows by its own name. The repository checks the account is in the
-// team, under the team's lock.
-func (c *controller) ShareWorkspace(ctx context.Context, ch entity.TeamChange, workspaceID int64) (entity.WorkspaceShare, error) {
+// it shows by its own name, letting the team read the parts given; on a
+// workspace already shared, it sets the parts. The repository checks the
+// account is in the team, under the team's lock.
+func (c *controller) ShareWorkspace(ctx context.Context, ch entity.TeamChange, workspaceID int64, parts entity.SharedParts) (entity.WorkspaceShare, error) {
 	ws, err := c.repo.GetWorkspace(ctx, workspaceID, ch.UserID)
 	if err != nil {
 		return entity.WorkspaceShare{}, err
@@ -57,9 +67,14 @@ func (c *controller) ShareWorkspace(ctx context.Context, ch entity.TeamChange, w
 		return entity.WorkspaceShare{}, teamErr(entity.TeamInvalid, "an archived workspace cannot be shared")
 	}
 	now := c.now()
+	act := c.activity()
+	act.Details = base.TeamActivityDetails(map[string]string{
+		"workspaceName": ws.Name, "tasks": onOff(parts.Tasks), "skills": onOff(parts.Skills), "memory": onOff(parts.Memory),
+	})
 	s, next, err := c.repo.SetWorkspaceShare(ctx, model.WorkspaceShare{
 		ID: c.ids.NextID(), TeamID: ch.TeamID, WorkspaceID: workspaceID, UserID: ch.UserID, CreatedAt: now, UpdatedAt: now,
-	}, ch.Version, c.workspaceActivity(ws))
+		HideTasks: !parts.Tasks, HideSkills: !parts.Skills, HideMemory: !parts.Memory,
+	}, ch.Version, act)
 	if err != nil {
 		return entity.WorkspaceShare{}, fromRepo(err)
 	}
@@ -78,8 +93,8 @@ func (c *controller) UnshareWorkspace(ctx context.Context, ch entity.TeamChange,
 	return next, fromRepo(err)
 }
 
-func (c *controller) CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error) {
-	return c.repo.CanReadWorkspaceInTeam(ctx, userID, teamID, workspaceID)
+func (c *controller) CanReadTasksInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error) {
+	return c.repo.CanReadTasksInTeam(ctx, userID, teamID, workspaceID)
 }
 
 func (c *controller) ListTeamWorkspaces(ctx context.Context, userID, teamID int64) ([]entity.TeamWorkspace, error) {
@@ -95,6 +110,7 @@ func (c *controller) ListTeamWorkspaces(ctx context.Context, userID, teamID int6
 		out[i] = entity.TeamWorkspace{
 			ID: w.ID, Name: w.Name, ForkOfID: w.ForkOfID, SharedName: w.SharedName,
 			OwnerID: w.UserID, OwnerName: w.OwnerName, OwnerPicture: w.OwnerPicture,
+			Tasks: !w.HideTasks, Skills: !w.HideSkills,
 		}
 	}
 	return out, nil

@@ -1195,6 +1195,73 @@ func TestWorkspaceShares(t *testing.T) {
 	})
 }
 
+// A share stores what it holds back from the team; sharing again sets it,
+// recorded only when it changed, and the list reads it back.
+func TestWorkspaceShareParts(t *testing.T) {
+	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
+		ctx := context.Background()
+		parts := func(s WorkspaceShareWithTeam) string {
+			return fmt.Sprintf("tasks hidden %v, skills hidden %v, memory hidden %v", s.HideTasks, s.HideSkills, s.HideMemory)
+		}
+		s, v, err := r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 1, TeamID: 1, WorkspaceID: 100, UserID: 10, HideTasks: true, HideMemory: true, CreatedAt: teamT0, UpdatedAt: teamT0}, 1, act())
+		if err != nil || parts(s) != "tasks hidden true, skills hidden false, memory hidden true" {
+			t.Fatalf("a share holding tasks and memory back is %s (%v)", parts(s), err)
+		}
+		logged := len(activities(db, 1))
+		later := teamT0.Add(time.Hour)
+		s, v, err = r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 2, TeamID: 1, WorkspaceID: 100, UserID: 10, HideSkills: true, CreatedAt: later, UpdatedAt: later}, v, act())
+		if err != nil || s.ID != 1 || parts(s) != "tasks hidden false, skills hidden true, memory hidden false" || !s.UpdatedAt.Equal(later) || !s.CreatedAt.Equal(teamT0) {
+			t.Fatalf("setting the parts gave share %d, %s, updated %v (%v)", s.ID, parts(s), s.UpdatedAt, err)
+		}
+		if got := lastActivity(db, 1); got != "workspace.shareChanged 10 ws:100 {}" || len(activities(db, 1)) != logged+1 {
+			t.Errorf("changing the parts recorded %q", got)
+		}
+		if _, v, err = r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 3, TeamID: 1, WorkspaceID: 100, UserID: 10, HideSkills: true, CreatedAt: later, UpdatedAt: later}, v, act()); err != nil || v != 4 {
+			t.Fatalf("setting the same parts again: version %d, %v", v, err)
+		}
+		if len(activities(db, 1)) != logged+1 {
+			t.Error("setting the parts a share already has was recorded")
+		}
+		list, err := r.ListWorkspaceShares(ctx, 100, 10)
+		if err != nil || len(list) != 1 || parts(list[0]) != "tasks hidden false, skills hidden true, memory hidden false" {
+			t.Errorf("the list reads %+v (%v)", list, err)
+		}
+	})
+}
+
+// A share holding tasks back keeps the workspace from task reads, but not
+// from CanReadWorkspaceInTeam, which the memory reads use; the list of the
+// team's workspaces says what each share holds back, a fork its parent's.
+func TestSharePartsInTeamReads(t *testing.T) {
+	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
+		ctx := context.Background()
+		seedTeamWorkspaces(t, db)
+		if got, err := r.CanReadTasksInTeam(ctx, 11, 1, 101); err != nil || !got {
+			t.Errorf("a fork of a share holding nothing back: tasks read %v, %v", got, err)
+		}
+		if got, _ := r.CanReadTasksInTeam(ctx, 12, 1, 100); got {
+			t.Error("someone outside the team reads tasks")
+		}
+		db.Model(&model.WorkspaceShare{}).Where("id = 1").Updates(map[string]any{"hide_tasks": true, "hide_skills": true})
+		for _, ws := range []int64{100, 101} {
+			if got, err := r.CanReadTasksInTeam(ctx, 11, 1, ws); err != nil || got {
+				t.Errorf("workspace %d, its tasks held back: read %v, %v", ws, got, err)
+			}
+			if got, err := r.CanReadWorkspaceInTeam(ctx, 11, 1, ws); err != nil || !got {
+				t.Errorf("workspace %d, its tasks held back: no longer read at all (%v, %v)", ws, got, err)
+			}
+		}
+		rows, err := r.ListTeamWorkspaces(ctx, 1)
+		got := []string{}
+		for _, w := range rows {
+			got = append(got, fmt.Sprintf("%d:%v:%v", w.ID, w.HideTasks, w.HideSkills))
+		}
+		if err != nil || strings.Join(got, " ") != "100:true:true 101:true:true 200:false:false" {
+			t.Errorf("team workspaces are %v (%v)", got, err)
+		}
+	})
+}
+
 // A team's log reads newest first, a page at a time, with each actor's and
 // target's account; a page starts after the activity it names.
 func TestTeamActivitiesPaging(t *testing.T) {
@@ -1259,6 +1326,9 @@ func TestTeamStatementFailures(t *testing.T) {
 	since := teamT0.Add(-24 * time.Hour)
 	member := model.TeamMember{ID: 30, TeamID: 1, UserID: 11}
 	share := model.WorkspaceShare{ID: 1, TeamID: 1, WorkspaceID: 100, UserID: 10}
+	holdTasks := model.WorkspaceShare{ID: 2, TeamID: 1, WorkspaceID: 100, UserID: 10, HideTasks: true}
+	// After shareOnce the team is at version 2.
+	shareOnce := func(r Repository) { _, _, _ = r.SetWorkspaceShare(ctx, share, 1, act()) }
 	panoShare := model.PanoDocShare{ID: 1, TeamID: 1, DocID: 7, UserID: 10, CreatedAt: teamT0}
 	invite := func(r Repository) {
 		_, _ = r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), 1, since, 10, 0, act())
@@ -1382,6 +1452,11 @@ func TestTeamStatementFailures(t *testing.T) {
 		{"storing a share", "create", "workspace_shares", 0, nil, func(r Repository) error { _, _, err := r.SetWorkspaceShare(ctx, share, 1, act()); return err }},
 		{"recording a share", "create", "team_management_activities", 0, nil, func(r Repository) error { _, _, err := r.SetWorkspaceShare(ctx, share, 1, act()); return err }},
 		{"reading the share back", "query", "workspace_shares", 0, nil, func(r Repository) error { _, _, err := r.SetWorkspaceShare(ctx, share, 1, act()); return err }},
+		{"changing what a share holds back", "update", "workspace_shares", 0, shareOnce, func(r Repository) error { _, _, err := r.SetWorkspaceShare(ctx, holdTasks, 2, act()); return err }},
+		{"recording a share change", "create", "team_management_activities", 0, shareOnce, func(r Repository) error {
+			_, _, err := r.SetWorkspaceShare(ctx, holdTasks, 2, act())
+			return err
+		}},
 		{"deleting a share", "delete", "workspace_shares", 0, nil, func(r Repository) error { _, err := r.DeleteWorkspaceShare(ctx, 5, 1, 11, 1, act()); return err }},
 		{"recording an unshare", "create", "team_management_activities", 0, nil, func(r Repository) error { _, err := r.DeleteWorkspaceShare(ctx, 5, 1, 11, 1, act()); return err }},
 		{"reading the doc to share", "query", "pano_docs", 0, nil, func(r Repository) error { _, _, err := r.SetPanoDocShare(ctx, panoShare, 1, act()); return err }},

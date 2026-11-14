@@ -49,7 +49,9 @@ type TeamInvitation struct {
 // WorkspaceShare lets a team's members read a workspace, and its forks.
 // UserID is the workspace's owner, who alone shares and unshares it. In the
 // team it shows by its own name, as one team workspace with every other
-// shared workspace of the same name.
+// shared workspace of the same name. The Hide flags hold its tasks, skills
+// or memory back from the team; stored as what is held back, so a share made
+// before they existed reads as sharing all three.
 type WorkspaceShare struct {
 	ID          int64 `gorm:"primaryKey;autoIncrement:false"`
 	CreatedAt   time.Time
@@ -57,6 +59,9 @@ type WorkspaceShare struct {
 	TeamID      int64 `gorm:"not null;uniqueIndex:uk_workspace_shares_team_id_workspace_id,priority:1;index:idx_workspace_shares_team_id_user_id,priority:1"`
 	WorkspaceID int64 `gorm:"not null;uniqueIndex:uk_workspace_shares_team_id_workspace_id,priority:2;index:idx_workspace_shares_workspace_id"`
 	UserID      int64 `gorm:"not null;index:idx_workspace_shares_team_id_user_id,priority:2"`
+	HideTasks   bool  `gorm:"not null;default:false"`
+	HideSkills  bool  `gorm:"not null;default:false"`
+	HideMemory  bool  `gorm:"not null;default:false"`
 }
 
 // PanoDocShare lets a team's members read one of UserID's Pano docs, and
@@ -93,6 +98,7 @@ const (
 	TeamActivityMemberLeft         = "member.left"
 	TeamActivityWorkspaceShared    = "workspace.shared"
 	TeamActivityWorkspaceUnshared  = "workspace.unshared"
+	TeamActivityShareChanged       = "workspace.shareChanged"
 	TeamActivityPanoShared         = "pano.shared"
 	TeamActivityPanoUnshared       = "pano.unshared"
 	TeamActivityTeamDeleted        = "team.deleted"
