@@ -68,3 +68,22 @@ func TestTeamTaskFilesLinkThroughTheTeam(t *testing.T) {
 		t.Errorf("the list links to %q, want %q", got, want)
 	}
 }
+
+// A team's workspace, task and task page carry the shared name the team
+// workspace is matched by, and never a group.
+func TestTeamWorkspaceCarriesItsSharedName(t *testing.T) {
+	w := entity.TeamWorkspace{ID: 2, Name: "api fork", ForkOfID: 1, SharedName: "api", OwnerID: 3, OwnerName: "Bob", OwnerPicture: "b"}
+	b := string(FromTeamWorkspaceEntitiesToHTTPResponse([]entity.TeamWorkspace{w, {ID: 1, Name: "api", SharedName: "api"}}))
+	if want := `{"workspaces":[{"id":"00000000002","name":"api fork","sharedName":"api","owner":{"userId":"00000000003","name":"Bob","picture":"b"},"forkOfId":"00000000001"},` +
+		`{"id":"00000000001","name":"api","sharedName":"api","owner":{"userId":"00000000000","name":"","picture":""}}]}`; b != want {
+		t.Errorf("the workspaces render\n %s\nwant\n %s", b, want)
+	}
+	if got := FromTaskViewToTeamTaskView(view.Task{ID: "T"}, w, 10); got.SharedName != "api" || got.Owner.Name != "Bob" {
+		t.Errorf("the task is %+v", got)
+	}
+	var detail view.GetTeamTaskResponse
+	if err := json.Unmarshal(FromTeamTaskDetailEntityToHTTPResponse(entity.TeamTaskDetail{Workspace: w}, 10), &detail); err != nil ||
+		detail.Workspace.SharedName != "api" || detail.Owner.Name != "Bob" {
+		t.Errorf("the task page is %+v (%v)", detail, err)
+	}
+}

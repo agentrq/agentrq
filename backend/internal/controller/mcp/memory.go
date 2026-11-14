@@ -72,7 +72,7 @@ type DeleteMemoryFunc func(ctx context.Context, name string) (deleted bool, err 
 
 // LoadMemoryParams is the input to the loadMemory tool.
 type LoadMemoryParams struct {
-	Name string `json:"name,omitempty" jsonschema:"Which memory to read. Defaults to MEMORY.md, the index that says what else this workspace remembers."`
+	Name string `json:"name,omitempty" jsonschema:"Which memory to read. Defaults to MEMORY.md, the index that says what else this workspace remembers. In a workspace shared with a team the index lists each member's memory as <workspaceId>/memory.md, which this reads."`
 }
 
 // SaveMemoryParams is the input to the saveMemory tool.
@@ -95,6 +95,11 @@ type DeleteMemoryParams struct {
 // than a list of individual refusals.
 var memoryNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*\.md$`)
 
+// workspaceIDPattern is a workspace id as a memory name may start with one,
+// "<workspaceId>/memory.md": 11 base62 characters, as ids are written, case
+// kept. Any other first part, like "notes/", is still refused.
+var workspaceIDPattern = regexp.MustCompile(`^[0-9A-Za-z]{11}$`)
+
 // resolveMemoryName turns what an agent asked for into the name to store under.
 //
 // Strict about what is kept, forgiving about what is accepted: case is folded
@@ -108,8 +113,28 @@ var memoryNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*\.md$`)
 // Postgres, `=` is case-sensitive by default in both, and a NOCASE collation
 // does not port between them — so canonicalising once at this boundary is what
 // makes the unique key behave the same on either database.
+//
+// A name may start with a workspace id and a slash, as a team's memory index
+// lists a member's: the id keeps its case, and the rest is resolved as any
+// name is.
 func resolveMemoryName(name string) (string, error) {
 	trimmed := strings.TrimSpace(name)
+	if id, rest, ok := strings.Cut(trimmed, "/"); ok {
+		if !workspaceIDPattern.MatchString(id) {
+			return "", fmt.Errorf("memory name %q is not usable; a name may start with a workspace id and a slash, like %q", name, "0ZzhYQG2qtl/"+DefaultMemoryName)
+		}
+		rest, err := resolvePlainMemoryName(rest)
+		if err != nil {
+			return "", err
+		}
+		return id + "/" + rest, nil
+	}
+	return resolvePlainMemoryName(trimmed)
+}
+
+// resolvePlainMemoryName is resolveMemoryName for a name with no workspace.
+func resolvePlainMemoryName(trimmed string) (string, error) {
+	trimmed = strings.TrimSpace(trimmed)
 	if trimmed == "" {
 		return DefaultMemoryName, nil
 	}
@@ -121,7 +146,7 @@ func resolveMemoryName(name string) (string, error) {
 	if !memoryNamePattern.MatchString(canonical) {
 		return "", fmt.Errorf(
 			"memory name %q is not usable; names are lowercase words joined by single hyphens and ending in .md, like %q or %q",
-			name, DefaultMemoryName, "release-notes.md",
+			trimmed, DefaultMemoryName, "release-notes.md",
 		)
 	}
 	return canonical, nil

@@ -231,6 +231,9 @@ func TestMemoryNamesThatMustBeRefused(t *testing.T) {
 	for _, tc := range []struct{ name, why string }{
 		{strings.Repeat("n", MaxMemoryNameLength+1) + ".md", "longer than the column"},
 		{"notes/deploys.md", "a path separator"},
+		{"0ZzhYQG2qt/memory.md", "a workspace id one character short"},
+		{"0ZzhYQG2qtl/notes/deploys.md", "a path after a workspace id"},
+		{"0ZzhYQG2qtl/release notes.md", "an unusable name after a workspace id"},
 		{`notes\deploys.md`, "a windows path separator"},
 		{"notes\x00.md", "a control character"},
 		{"release notes.md", "a space"},
@@ -546,5 +549,28 @@ func TestConfiguredLimitsAreEnforcedAndAdvertised(t *testing.T) {
 		if text := resultText(t, res); !strings.Contains(text, w) {
 			t.Errorf("help for %s %q should contain %q", topic, text, w)
 		}
+	}
+}
+
+// A teammate's memory, as a team's index lists it, is named by its
+// workspace's id: the id keeps its case, the name is folded, and an empty
+// name is the index.
+func TestMemoryNamesMayStartWithAWorkspaceID(t *testing.T) {
+	store := &memoryStore{saved: map[string]string{"0ZzhYQG2qtl/memory.md": "theirs"}}
+	ps := newMemoryServer(t, store)
+	ctx := context.Background()
+
+	for _, spelling := range []string{"0ZzhYQG2qtl/Memory.MD", " 0ZzhYQG2qtl/ ", "0ZzhYQG2qtl/memory.md"} {
+		res, _, err := ps.handleLoadMemory(ctx, &mcp.CallToolRequest{}, LoadMemoryParams{Name: spelling})
+		if err != nil {
+			t.Fatalf("%q: %v", spelling, err)
+		}
+		if store.loadName != "0ZzhYQG2qtl/memory.md" || resultText(t, res) != "theirs" {
+			t.Errorf("%q loaded %q: %q", spelling, store.loadName, resultText(t, res))
+		}
+	}
+	res, _, err := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{Name: "0ZzhYQG2qtl/Deploys.md", Content: "x"})
+	if err != nil || res.IsError || store.saveName != "0ZzhYQG2qtl/deploys.md" {
+		t.Errorf("save: %v %v %q", err, res.IsError, store.saveName)
 	}
 }

@@ -11,3 +11,9 @@ func TestTeamErrorIsItsMessage(t *testing.T) {
 		t.Errorf("TeamError.Error returned %q, want its message", got)
 	}
 }
+
+func TestTeamVersionErrorSaysToReload(t *testing.T) {
+	if got := (&TeamVersionError{Version: 4}).Error(); got != "someone changed this team: reload it and try again" {
+		t.Errorf("TeamVersionError.Error returned %q", got)
+	}
+}

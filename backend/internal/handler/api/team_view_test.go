@@ -63,9 +63,10 @@ func teamModeDatabases(t *testing.T) map[string]*gorm.DB {
 
 // teamMode is the cast: Alice and Bob in team 10, Dave outside it.
 //
-//   - 100 "backend", Alice's, shared as "Backend"; 101 is its fork.
+//   - 100 "backend", Alice's, shared; 101 "backend fork" is its fork.
 //   - 102 "secret", Alice's, not shared; 103 "old", shared, then archived.
-//   - 200 "api", Bob's, shared as "backend " — the same group.
+//   - 200 "Backend ", Bob's, shared: the same team workspace as 100.
+//   - 202 "api", Bob's, shared: a team workspace of its own.
 //   - 201 "mine", Bob's, not shared: where he clones to.
 type teamMode struct {
 	app        *fiber.App
@@ -83,6 +84,7 @@ var (
 	ws103    = monoflake.ID(103).String()
 	ws200    = monoflake.ID(200).String()
 	ws201    = monoflake.ID(201).String()
+	ws202    = monoflake.ID(202).String()
 	task1010 = monoflake.ID(1010).String() // in 101, the fork
 	task1020 = monoflake.ID(1020).String() // in 102, unshared
 	task1030 = monoflake.ID(1030).String() // in 103, archived
@@ -96,7 +98,7 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{},
 		&model.Telemetry{}, &model.Memory{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.PanoDoc{}, &model.PanoDocTask{},
 		&model.Agent{}, &model.AgentModel{}, &model.TaskStateTransition{},
-		&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamMemory{}); err != nil {
+		&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamManagementActivity{}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
@@ -115,19 +117,21 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 		&model.Workspace{ID: 101, UserID: 1, Name: "backend fork", ForkOfID: 100},
 		&model.Workspace{ID: 102, UserID: 1, Name: "secret"},
 		&model.Workspace{ID: 103, UserID: 1, Name: "old", ArchivedAt: &archived},
-		&model.Workspace{ID: 200, UserID: 2, Name: "api"},
+		&model.Workspace{ID: 200, UserID: 2, Name: "Backend "},
 		&model.Workspace{ID: 201, UserID: 2, Name: "mine"},
-		&model.Team{ID: 10, Name: "core", CreatedAt: now, UpdatedAt: now},
-		&model.TeamMember{ID: 11, TeamID: 10, UserID: 1, Role: "owner"},
-		&model.TeamMember{ID: 12, TeamID: 10, UserID: 2, Role: "member"},
-		&model.WorkspaceShare{ID: 21, TeamID: 10, WorkspaceID: 100, UserID: 1, GroupName: "Backend"},
-		&model.WorkspaceShare{ID: 22, TeamID: 10, WorkspaceID: 103, UserID: 1, GroupName: "Backend"},
-		&model.WorkspaceShare{ID: 23, TeamID: 10, WorkspaceID: 200, UserID: 2, GroupName: "backend "},
+		&model.Workspace{ID: 202, UserID: 2, Name: "api"},
+		&model.Team{ID: 10, Name: "core", Version: 1, CreatedAt: now, UpdatedAt: now},
+		&model.TeamMember{ID: 11, TeamID: 10, UserID: 1},
+		&model.TeamMember{ID: 12, TeamID: 10, UserID: 2},
+		&model.WorkspaceShare{ID: 21, TeamID: 10, WorkspaceID: 100, UserID: 1},
+		&model.WorkspaceShare{ID: 22, TeamID: 10, WorkspaceID: 103, UserID: 1},
+		&model.WorkspaceShare{ID: 23, TeamID: 10, WorkspaceID: 200, UserID: 2},
+		&model.WorkspaceShare{ID: 24, TeamID: 10, WorkspaceID: 202, UserID: 2},
 		// Dave's own team, and what it shares, is no business of team 10.
-		&model.Workspace{ID: 300, UserID: 3, Name: "daves"},
-		&model.Team{ID: 30, Name: "other", CreatedAt: now, UpdatedAt: now},
-		&model.TeamMember{ID: 31, TeamID: 30, UserID: 3, Role: "owner"},
-		&model.WorkspaceShare{ID: 33, TeamID: 30, WorkspaceID: 300, UserID: 3, GroupName: "Backend"},
+		&model.Workspace{ID: 300, UserID: 3, Name: "backend"},
+		&model.Team{ID: 30, Name: "other", Version: 1, CreatedAt: now, UpdatedAt: now},
+		&model.TeamMember{ID: 31, TeamID: 30, UserID: 3},
+		&model.WorkspaceShare{ID: 33, TeamID: 30, WorkspaceID: 300, UserID: 3},
 		&model.Task{ID: 3000, UserID: 3, WorkspaceID: 300, Title: "dave's", Status: "notstarted", CreatedAt: now, UpdatedAt: now},
 		&model.Task{ID: 1010, UserID: 1, WorkspaceID: 101, Title: "in the fork", Status: "ongoing", CreatedAt: now, UpdatedAt: now.Add(-3 * time.Minute)},
 		&model.Task{ID: 1020, UserID: 1, WorkspaceID: 102, Title: "secret", Status: "notstarted", CreatedAt: now, UpdatedAt: now},
@@ -164,9 +168,7 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 	must(err)
 	crudCtrl := crud.New(crud.Params{IDGen: ids, Repository: repo, Storage: atts, SkillStorage: skillFiles})
 	teams := teamctrl.New(teamctrl.Params{Repository: repo, IDGen: ids, BaseURL: "https://rq", MaxInvitesPerDay: 5})
-	clock := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
-	tv := teamview.New(teamview.Params{Teams: teams, Owner: crudCtrl, Repository: repo, IDGen: ids, MaxMemoryBytes: 64,
-		Now: func() time.Time { clock = clock.Add(time.Second); return clock }})
+	tv := teamview.New(teamview.Params{Teams: teams, Owner: crudCtrl, Repository: repo})
 
 	// Alice's task with a file, a message and a plan.
 	rs, err := crudCtrl.CreateTask(ctx, entity.CreateTaskRequest{UserID: aliceID, Task: entity.Task{
@@ -248,12 +250,11 @@ func TestTeamMode(t *testing.T) {
 			t.Run("tasks", m.tasks)
 			t.Run("task", m.task)
 			t.Run("attachment", m.attachmentRoute)
-			t.Run("analytics", m.analytics)
+			t.Run("removed routes", m.removedRoutes)
 			t.Run("clone", m.clone)
-			t.Run("memory", m.memory)
-			t.Run("member memory", m.memberMemory)
 			t.Run("skills", m.skills)
 			t.Run("unshare and remove", m.unshareAndRemove)
+			t.Run("a team's life", m.flow)
 		})
 	}
 }
@@ -261,14 +262,17 @@ func TestTeamMode(t *testing.T) {
 func (m *teamMode) workspaces(t *testing.T) {
 	status, body := m.get(t, bobID, "/teams/"+teamTen+"/workspaces")
 	expectStatus(t, "Bob listing the team's workspaces", status, http.StatusOK, body)
-	if got := list(body, "workspaces", "id"); !sameList(got, ws100, ws101, ws200) {
-		t.Errorf("Bob sees %v, want 100, its fork and 200: never the unshared 102 or the archived 103", got)
+	if got := list(body, "workspaces", "id"); !sameList(got, ws202, ws100, ws101, ws200) {
+		t.Errorf("Bob sees %v, want 202, then 100, its fork and 200 by shared name: never the unshared 102 or the archived 103", got)
+	}
+	if got := list(body, "workspaces", "sharedName"); !sameList(got, "api", "backend", "backend", "Backend ") {
+		t.Errorf("the shared names are %v: a fork's is its parent's", got)
 	}
 	ws, _ := body["workspaces"].([]any)
-	if len(ws) == 3 {
-		fork, _ := ws[1].(map[string]any)
+	if len(ws) == 4 {
+		fork, _ := ws[2].(map[string]any)
 		owner, _ := fork["owner"].(map[string]any)
-		if fork["forkOfId"] != ws100 || fork["group"] != "Backend" || owner["name"] != "Alice" || owner["userId"] != aliceID {
+		if fork["forkOfId"] != ws100 || fork["name"] != "backend fork" || fork["group"] != nil || owner["name"] != "Alice" || owner["userId"] != aliceID {
 			t.Errorf("the fork reads %v", fork)
 		}
 	}
@@ -288,7 +292,7 @@ func (m *teamMode) tasks(t *testing.T) {
 	if ts, _ := body["tasks"].([]any); len(ts) > 0 {
 		first, _ := ts[0].(map[string]any)
 		owner, _ := first["owner"].(map[string]any)
-		if owner["name"] != "Alice" || first["group"] != "Backend" || first["title"] != "ship it" {
+		if owner["name"] != "Alice" || first["sharedName"] != "backend" || first["group"] != nil || first["title"] != "ship it" {
 			t.Errorf("the first task reads %v", first)
 		}
 		if got, want := fileLinks(first), m.teamLinks(); got != want {
@@ -299,8 +303,10 @@ func (m *teamMode) tasks(t *testing.T) {
 		"?status=completed":                 {task2000},
 		"?status=ongoing,notstarted":        {m.attachTask, task1010},
 		"?member=" + bobID:                  {task2000},
-		"?group=BACKEND":                    {m.attachTask, task2000, task1010},
-		"?group=frontend":                   {},
+		"?workspace=%20BACKEND":             {m.attachTask, task2000, task1010},
+		"?workspace=api":                    {},
+		"?workspace=frontend":               {},
+		"?group=frontend":                   {m.attachTask, task2000, task1010},
 		"?limit=1&offset=1":                 {task2000},
 		"?limit=0&offset=-4":                {m.attachTask, task2000, task1010},
 		"?member=" + daveID:                 {},
@@ -325,7 +331,7 @@ func (m *teamMode) task(t *testing.T) {
 	owner, _ := body["owner"].(map[string]any)
 	ws, _ := body["workspace"].(map[string]any)
 	task, _ := body["task"].(map[string]any)
-	if task["title"] != "ship it" || plan["content"] != "1. ship" || owner["name"] != "Alice" || ws["id"] != ws100 || ws["group"] != "Backend" {
+	if task["title"] != "ship it" || plan["content"] != "1. ship" || owner["name"] != "Alice" || ws["id"] != ws100 || ws["sharedName"] != "backend" {
 		t.Errorf("Alice's task reads %v", body)
 	}
 	if msgs, _ := task["messages"].([]any); len(msgs) != 1 {
@@ -449,44 +455,24 @@ func (m *teamMode) attachmentRoute(t *testing.T) {
 	}
 }
 
-func (m *teamMode) analytics(t *testing.T) {
-	path := "/teams/" + teamTen + "/analytics"
-	status, body := m.get(t, bobID, path+"?range=7d")
-	expectStatus(t, "Bob reading the team's analytics", status, http.StatusOK, body)
-	summary, _ := body["summary"].(map[string]any)
-	if summary["tasksCompleted"] != float64(3) || summary["messages"] != float64(1) {
-		t.Errorf("the summary is %v: want 3 completions (100, its fork and 200) and 1 message, nothing from 102, 103 or 201", summary)
+// Team analytics, the team's memory and the members' memory index are
+// gone: their routes answer as any unknown route does.
+func (m *teamMode) removedRoutes(t *testing.T) {
+	for _, r := range []struct{ method, path string }{
+		{http.MethodGet, "/analytics"}, {http.MethodGet, "/memory"}, {http.MethodPut, "/memory"},
+		{http.MethodGet, "/memory/index"}, {http.MethodGet, "/workspaces/" + ws100 + "/memory/memory.md"},
+	} {
+		status, body := call(t, m.app, bobID, r.method, "/teams/"+teamTen+r.path, "")
+		if status != http.StatusNotFound && status != http.StatusMethodNotAllowed {
+			t.Errorf("%s %s answered %d %v, want it gone", r.method, r.path, status, body)
+		}
 	}
-	byMember := map[string][2]float64{}
-	members, _ := body["byMember"].([]any)
-	for _, it := range members {
-		o, _ := it.(map[string]any)
-		owner, _ := o["owner"].(map[string]any)
-		name, _ := owner["name"].(string)
-		tc, _ := o["tasksCompleted"].(float64)
-		ms, _ := o["messages"].(float64)
-		byMember[name] = [2]float64{tc, ms}
-	}
-	if byMember["Alice"] != [2]float64{2, 0} || byMember["Bob"] != [2]float64{1, 1} || len(byMember) != 2 {
-		t.Errorf("by member: %v", byMember)
-	}
-	status, body = m.get(t, bobID, path+"?group=nothing")
-	if summary, _ := body["summary"].(map[string]any); status != http.StatusOK || summary["tasksCompleted"] != float64(0) {
-		t.Errorf("a group with no workspaces answered %d %v", status, body)
-	}
-	from := time.Now().Add(-2 * time.Hour).Unix()
-	status, body = m.get(t, aliceID, fmt.Sprintf("%s?range=custom&from=%d&to=%d&group=backend", path, from, time.Now().Unix()))
-	if summary, _ := body["summary"].(map[string]any); status != http.StatusOK || summary["tasksCompleted"] != float64(3) {
-		t.Errorf("a custom window answered %d %v", status, body)
-	}
-	status, body = m.get(t, daveID, path)
-	expectStatus(t, "Dave, outside, reading analytics", status, http.StatusNotFound, body)
 }
 
 func (m *teamMode) clone(t *testing.T) {
 	path := "/teams/" + teamTen + "/tasks/" + m.attachTask + "/clone"
-	status, body := call(t, m.app, bobID, http.MethodPost, path, `{"workspaceId":"`+ws201+`","status":"ongoing"}`)
-	expectStatus(t, "Bob cloning Alice's task into his workspace", status, http.StatusCreated, body)
+	status, body := call(t, m.app, bobID, http.MethodPost, path, `{"workspaceId":"`+ws201+`","assignee":"agent","status":"ongoing"}`)
+	expectStatus(t, "Bob cloning Alice's task into his workspace, for his agent", status, http.StatusCreated, body)
 	created, _ := body["task"].(map[string]any)
 	id, _ := created["id"].(string)
 	var clone model.Task
@@ -494,8 +480,8 @@ func (m *teamMode) clone(t *testing.T) {
 		t.Fatalf("the clone %v: %v", body, err)
 	}
 	note := "the body\n\n---\nCloned from [core / Alice / backend](/workspaces/" + ws100 + "/tasks/" + m.attachTask + "?team=" + teamTen + ")"
-	if clone.WorkspaceID != 201 || clone.UserID != 2 || clone.Status != "ongoing" || clone.Title != "ship it" || clone.Body != note || clone.Assignee != "agent" {
-		t.Errorf("the clone is %+v", clone)
+	if clone.WorkspaceID != 201 || clone.UserID != 2 || clone.Status != "notstarted" || clone.Title != "ship it" || clone.Body != note || clone.Assignee != "agent" {
+		t.Errorf("the clone is %+v: want it not started, whatever status was sent", clone)
 	}
 	if got := string(clone.Attachments); !strings.Contains(got, "notes.txt") || !strings.Contains(got, "page.html") ||
 		strings.Contains(got, "text/html") || strings.Contains(got, "image/svg") {
@@ -503,13 +489,15 @@ func (m *teamMode) clone(t *testing.T) {
 	}
 
 	status, body = call(t, m.app, bobID, http.MethodPost, "/teams/"+teamTen+"/tasks/"+task2000+"/clone", `{"workspaceId":"`+ws201+`"}`)
-	if created, _ := body["task"].(map[string]any); status != http.StatusCreated || created["status"] != "notstarted" {
-		t.Errorf("a clone with no status answered %d %v, want notstarted", status, body)
+	if created, _ := body["task"].(map[string]any); status != http.StatusCreated || created["status"] != "notstarted" || created["assignee"] != "human" {
+		t.Errorf("a clone with no assignee answered %d %v, want it a human's, not started", status, body)
 	}
 	status, body = call(t, m.app, bobID, http.MethodPost, path, `{"workspaceId":"`+ws100+`"}`)
 	expectStatus(t, "Bob cloning into Alice's workspace", status, http.StatusNotFound, body)
-	status, body = call(t, m.app, bobID, http.MethodPost, path, `{"workspaceId":"`+ws201+`","status":"completed"}`)
-	expectStatus(t, "a clone that starts completed", status, http.StatusUnprocessableEntity, body)
+	status, body = call(t, m.app, bobID, http.MethodPost, path, `{"workspaceId":"`+ws201+`","assignee":"robot"}`)
+	if status != http.StatusUnprocessableEntity || errorMessage(body) != `a clone is for a human or an agent, not "robot"` {
+		t.Errorf("a clone for a robot answered %d %v", status, body)
+	}
 	status, body = call(t, m.app, bobID, http.MethodPost, "/teams/"+teamTen+"/tasks/"+task1020+"/clone", `{"workspaceId":"`+ws201+`"}`)
 	expectStatus(t, "cloning an unshared task", status, http.StatusNotFound, body)
 	status, body = call(t, m.app, daveID, http.MethodPost, path, `{"workspaceId":"`+ws201+`"}`)
@@ -518,79 +506,6 @@ func (m *teamMode) clone(t *testing.T) {
 	expectStatus(t, "a workspace id that is not one", status, http.StatusBadRequest, body)
 	status, body = call(t, m.app, bobID, http.MethodPost, path, `{`)
 	expectStatus(t, "a body that is not JSON", status, http.StatusBadRequest, body)
-}
-
-func (m *teamMode) memory(t *testing.T) {
-	path := "/teams/" + teamTen + "/memory"
-	status, body := m.get(t, bobID, path)
-	if status != http.StatusOK || body["content"] != "" || body["updatedAt"] != nil || body["updatedBy"] != nil {
-		t.Errorf("the memory before anyone saved it answered %d %v", status, body)
-	}
-	status, body = call(t, m.app, aliceID, http.MethodPut, path, `{"content":"first"}`)
-	first, _ := body["updatedAt"].(string)
-	if status != http.StatusOK || body["content"] != "first" || body["conflict"] != false || first == "" {
-		t.Fatalf("Alice's save answered %d %v", status, body)
-	}
-	// Bob loaded the memory empty, before Alice's first save: his save,
-	// with no base, replaces hers and says so.
-	status, body = call(t, m.app, bobID, http.MethodPut, path, `{"content":"bob's first"}`)
-	raced, _ := body["updatedAt"].(string)
-	if status != http.StatusOK || body["content"] != "bob's first" || body["conflict"] != true || raced == "" {
-		t.Fatalf("Bob's first save over Alice's answered %d %v, want it saved with conflict", status, body)
-	}
-	status, body = call(t, m.app, bobID, http.MethodPut, path, `{"content":"second","baseUpdatedAt":"`+raced+`"}`)
-	by, _ := body["updatedBy"].(map[string]any)
-	if status != http.StatusOK || body["conflict"] != false || by["name"] != "Bob" {
-		t.Errorf("Bob's save on what he read answered %d %v", status, body)
-	}
-	status, body = call(t, m.app, aliceID, http.MethodPut, path, `{"content":"third","baseUpdatedAt":"`+first+`"}`)
-	if status != http.StatusOK || body["conflict"] != true || body["content"] != "third" {
-		t.Errorf("Alice's save over Bob's newer one answered %d %v, want it saved with conflict", status, body)
-	}
-	status, body = m.get(t, bobID, path)
-	by, _ = body["updatedBy"].(map[string]any)
-	if status != http.StatusOK || body["content"] != "third" || by["name"] != "Alice" || by["picture"] != "a.png" || body["conflict"] != false {
-		t.Errorf("the memory now reads %d %v", status, body)
-	}
-
-	status, body = call(t, m.app, aliceID, http.MethodPut, path, `{"content":"`+strings.Repeat("x", 65)+`"}`)
-	expectStatus(t, "a memory over the limit", status, http.StatusUnprocessableEntity, body)
-	status, body = call(t, m.app, aliceID, http.MethodPut, path, `{"content":"x","baseUpdatedAt":"yesterday"}`)
-	expectStatus(t, "a baseUpdatedAt that is not a time", status, http.StatusBadRequest, body)
-	status, body = call(t, m.app, aliceID, http.MethodPut, path, `{`)
-	expectStatus(t, "a body that is not JSON", status, http.StatusBadRequest, body)
-	status, body = call(t, m.app, daveID, http.MethodPut, path, `{"content":"mine now"}`)
-	expectStatus(t, "Dave, outside, saving", status, http.StatusNotFound, body)
-	status, body = m.get(t, daveID, path)
-	expectStatus(t, "Dave, outside, reading", status, http.StatusNotFound, body)
-}
-
-func (m *teamMode) memberMemory(t *testing.T) {
-	status, body := m.get(t, bobID, "/teams/"+teamTen+"/memory/index")
-	expectStatus(t, "the memory index", status, http.StatusOK, body)
-	if got := list(body, "memories", "workspaceId"); !sameList(got, ws100, ws200) {
-		t.Errorf("the index lists %v: want 100 then 200, by owner within the group, and no fork or unshared workspace", got)
-	}
-	status, body = m.get(t, daveID, "/teams/"+teamTen+"/memory/index")
-	expectStatus(t, "Dave, outside, reading the index", status, http.StatusNotFound, body)
-
-	path := func(ws string) string { return "/teams/" + teamTen + "/workspaces/" + ws + "/memory/memory.md" }
-	status, body = m.get(t, bobID, path(ws100))
-	if status != http.StatusOK || body["content"] != "alice's notes" {
-		t.Errorf("Bob reading Alice's memory answered %d %v", status, body)
-	}
-	status, body = m.get(t, bobID, path(ws101))
-	if status != http.StatusOK || body["content"] != "alice's notes" {
-		t.Errorf("the fork's memory, its parent's, answered %d %v", status, body)
-	}
-	for what, ws := range map[string]string{"unshared": ws102, "archived": ws103, "Bob's unshared": ws201} {
-		status, body := m.get(t, aliceID, path(ws))
-		expectStatus(t, "the memory of an "+what+" workspace", status, http.StatusNotFound, body)
-	}
-	status, body = m.get(t, daveID, path(ws100))
-	expectStatus(t, "Dave, outside, reading a memory", status, http.StatusNotFound, body)
-	status, body = m.get(t, bobID, "/teams/"+teamTen+"/workspaces/!/memory/memory.md")
-	expectStatus(t, "a workspace id that is not one", status, http.StatusBadRequest, body)
 }
 
 func (m *teamMode) skills(t *testing.T) {
@@ -643,8 +558,10 @@ func pathEscape(s string) string { return strings.ReplaceAll(s, " ", "%20") }
 
 // An unshared workspace and a removed member stop reading at once.
 func (m *teamMode) unshareAndRemove(t *testing.T) {
-	status, body := call(t, m.app, bobID, http.MethodDelete, "/workspaces/"+ws200+"/shares/"+teamTen, "")
-	if status != http.StatusNoContent && status != http.StatusOK {
+	_, body := m.get(t, bobID, "/teams/"+teamTen)
+	version, _ := body["version"].(float64)
+	status, body := call(t, m.app, bobID, http.MethodDelete, fmt.Sprintf("/workspaces/%s/shares/%s?version=%d", ws200, teamTen, int(version)), "")
+	if status != http.StatusOK || body["version"] != version+1 {
 		t.Fatalf("Bob unsharing 200 answered %d %v", status, body)
 	}
 	status, body = m.get(t, aliceID, "/teams/"+teamTen+"/tasks/"+task2000)
@@ -654,15 +571,51 @@ func (m *teamMode) unshareAndRemove(t *testing.T) {
 		t.Errorf("after the unshare Alice lists %d %v", status, got)
 	}
 
-	status, body = call(t, m.app, aliceID, http.MethodDelete, "/teams/"+teamTen+"/members/"+bobID, "")
-	if status != http.StatusNoContent && status != http.StatusOK {
+	status, body = call(t, m.app, aliceID, http.MethodDelete, fmt.Sprintf("/teams/%s/members/%s?version=%d", teamTen, bobID, int(version)+1), "")
+	if status != http.StatusOK || body["version"] != version+2 {
 		t.Fatalf("Alice removing Bob answered %d %v", status, body)
 	}
 	for _, p := range []string{"/tasks", "/tasks/" + m.attachTask, "/tasks/" + m.attachTask + "/attachments/" + m.attachment,
-		"/workspaces", "/memory", "/skills", "/analytics", "/memory/index"} {
+		"/workspaces", "/skills", "/activities"} {
 		status, body := m.get(t, bobID, "/teams/"+teamTen+p)
 		expectStatus(t, "Bob, just removed, reading "+p, status, http.StatusNotFound, body)
 	}
-	status, body = call(t, m.app, bobID, http.MethodPut, "/teams/"+teamTen+"/memory", `{"content":"after"}`)
-	expectStatus(t, "Bob, just removed, saving the memory", status, http.StatusNotFound, body)
+}
+
+// A team from the start: made, an invitation sent and accepted, a workspace
+// shared, every step in the activity, and a change from a version another
+// change replaced refused with the version now.
+func (m *teamMode) flow(t *testing.T) {
+	status, body := call(t, m.app, aliceID, http.MethodPost, "/teams", `{"name":"launch"}`)
+	expectStatus(t, "Alice making a team", status, http.StatusCreated, body)
+	team, _ := body["id"].(string)
+	status, body = call(t, m.app, aliceID, http.MethodPost, "/teams/"+team+"/invitations", `{"email":"dave@example.com","version":1}`)
+	expectStatus(t, "Alice inviting Dave", status, http.StatusCreated, body)
+	link, _ := body["link"].(string)
+	_, token, _ := strings.Cut(link, "#")
+	status, body = call(t, m.app, daveID, http.MethodPost, "/invitations/accept", `{"token":"`+token+`"}`)
+	if status != http.StatusOK || body["version"] != float64(3) || body["memberCount"] != float64(2) {
+		t.Fatalf("Dave accepting answered %d %v", status, body)
+	}
+	status, body = call(t, m.app, daveID, http.MethodPut, "/workspaces/"+monoflake.ID(300).String()+"/shares/"+team, `{"version":3}`)
+	if status != http.StatusOK || body["version"] != float64(4) {
+		t.Fatalf("Dave sharing answered %d %v", status, body)
+	}
+	status, body = m.get(t, aliceID, "/teams/"+team+"/workspaces")
+	if got := list(body, "workspaces", "sharedName"); status != http.StatusOK || !sameList(got, "backend") {
+		t.Errorf("the new team's workspaces answered %d %v", status, got)
+	}
+	status, body = m.get(t, aliceID, "/teams/"+team+"/activities")
+	if got := list(body, "activities", "action"); status != http.StatusOK || body["version"] != float64(4) ||
+		!sameList(got, "workspace.shared", "invitation.accepted", "member.invited", "team.created") {
+		t.Errorf("the activity answered %d %v at %v", status, got, body["version"])
+	}
+	status, body = call(t, m.app, aliceID, http.MethodPatch, "/teams/"+team, `{"name":"liftoff","version":2}`)
+	if status != http.StatusConflict || body["conflict"] != true || body["version"] != float64(4) {
+		t.Errorf("a rename from version 2 answered %d %v, want 409 at version 4", status, body)
+	}
+	status, body = call(t, m.app, aliceID, http.MethodPatch, "/teams/"+team, `{"name":"liftoff","version":4}`)
+	if status != http.StatusOK || body["name"] != "liftoff" || body["version"] != float64(5) {
+		t.Errorf("a rename from version 4 answered %d %v", status, body)
+	}
 }

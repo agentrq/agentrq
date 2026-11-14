@@ -25,13 +25,6 @@ func TestTeamReads_Failures(t *testing.T) {
 		_, err := e.controller.SystemListTasksInWorkspaces(ctx, entity.ListTasksRequest{}, []int64{1})
 		wantErrIs(t, "SystemListTasksInWorkspaces", err, errDBDown)
 	})
-	t.Run("stats", func(t *testing.T) {
-		e := newTestController(t)
-		e.repo.EXPECT().GetDetailedStatsOfWorkspaces(gomock.Any(), []int64{1}, gomock.Any(), gomock.Any()).
-			Return(entity.GetDetailedWorkspaceStatsResponse{}, nil, errDBDown)
-		_, err := e.controller.SystemGetDetailedStatsOfWorkspaces(ctx, entity.GetStatsOfWorkspacesRequest{WorkspaceIDs: []int64{1}})
-		wantErrIs(t, "SystemGetDetailedStatsOfWorkspaces", err, errDBDown)
-	})
 	t.Run("skill file", func(t *testing.T) {
 		e := newTestController(t)
 		e.repo.EXPECT().GetSkill(gomock.Any(), int64(7), "deploy").Return(model.Skill{}, base.ErrNotFound)

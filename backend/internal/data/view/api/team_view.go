@@ -14,25 +14,28 @@ type TeamOwner struct {
 }
 
 // TeamWorkspace is a workspace a team reads: shared with it, or a fork of
-// one, shown in the group it is shared as.
+// one. sharedName is the name of the shared workspace it shows under, its
+// own or its parent's: the shared workspaces of one name, ignoring case and
+// surrounding spaces, are one team workspace.
 type TeamWorkspace struct {
-	ID       string    `json:"id"`
-	Name     string    `json:"name"`
-	Group    string    `json:"group"`
-	Owner    TeamOwner `json:"owner"`
-	ForkOfID string    `json:"forkOfId,omitempty"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	SharedName string    `json:"sharedName"`
+	Owner      TeamOwner `json:"owner"`
+	ForkOfID   string    `json:"forkOfId,omitempty"`
 }
 
-// ListTeamWorkspacesResponse is a team's workspaces, by group.
+// ListTeamWorkspacesResponse is a team's workspaces, by shared name.
 type ListTeamWorkspacesResponse struct {
 	Workspaces []TeamWorkspace `json:"workspaces"`
 }
 
-// TeamTask is a task in team mode: the task, whose it is and its group.
+// TeamTask is a task in team mode: the task, whose it is and the team
+// workspace it is in.
 type TeamTask struct {
 	Task
-	Owner TeamOwner `json:"owner"`
-	Group string    `json:"group"`
+	Owner      TeamOwner `json:"owner"`
+	SharedName string    `json:"sharedName"`
 }
 
 // ListTeamTasksResponse is a page of a team's tasks, newest activity first.
@@ -49,92 +52,11 @@ type GetTeamTaskResponse struct {
 	Plan      *TaskPlan     `json:"plan"`
 }
 
-// TeamMemberStats is one member's completions and messages.
-type TeamMemberStats struct {
-	Owner          TeamOwner `json:"owner"`
-	TasksCompleted int64     `json:"tasksCompleted"`
-	Messages       int64     `json:"messages"`
-}
-
-// TeamStatsResponse is the workspace statistics summed over a team's
-// workspaces, in the shape of a workspace's, and by member.
-type TeamStatsResponse struct {
-	Summary    StatsSummary      `json:"summary"`
-	Timeseries StatsTimeseries   `json:"timeseries"`
-	Heatmap    StatsHeatmap      `json:"heatmap"`
-	ByMember   []TeamMemberStats `json:"byMember"`
-}
-
-// StatsSummary is the totals over a window.
-type StatsSummary struct {
-	TasksCompleted  int64 `json:"tasksCompleted"`
-	TasksScheduled  int64 `json:"tasksScheduled"`
-	Messages        int64 `json:"messages"`
-	ManualApprovals int64 `json:"manualApprovals"`
-	AutoApprovals   int64 `json:"autoApprovals"`
-	Denies          int64 `json:"denies"`
-}
-
-// StatsCount is a count in one date or bucket.
-type StatsCount struct {
-	Date   string `json:"date,omitempty"`
-	Bucket string `json:"bucket,omitempty"`
-	Count  int64  `json:"count"`
-}
-
-// StatsTimeseries is completions and messages by day.
-type StatsTimeseries struct {
-	TasksCompleted []StatsCount `json:"tasksCompleted"`
-	Messages       []StatsCount `json:"messages"`
-}
-
-// StatsHeatmap is completions and messages by hour, for a week or less, or
-// by day.
-type StatsHeatmap struct {
-	Granularity    string       `json:"granularity"`
-	RangeStart     int64        `json:"rangeStart"`
-	RangeEnd       int64        `json:"rangeEnd"`
-	TasksCompleted []StatsCount `json:"tasksCompleted"`
-	Messages       []StatsCount `json:"messages"`
-}
-
-// CloneTeamTaskRequest clones a teammate's task into one of your workspaces.
+// CloneTeamTaskRequest clones a teammate's task into one of your
+// workspaces, not started, for assignee: human (when empty) or agent.
 type CloneTeamTaskRequest struct {
 	WorkspaceID string `json:"workspaceId"`
-	Status      string `json:"status"`
-}
-
-// TeamMemory is a team's memory.md. updatedAt and updatedBy are null before
-// anyone saved it; conflict says a save replaced one its writer had not read.
-type TeamMemory struct {
-	Content   string     `json:"content"`
-	UpdatedAt *time.Time `json:"updatedAt"`
-	UpdatedBy *TeamOwner `json:"updatedBy"`
-	Conflict  bool       `json:"conflict"`
-}
-
-// SaveTeamMemoryRequest saves a team's memory; baseUpdatedAt is the
-// updatedAt the writer read, empty when there was none. A save with none
-// that replaces a memory reports a conflict.
-type SaveTeamMemoryRequest struct {
-	Content       string `json:"content"`
-	BaseUpdatedAt string `json:"baseUpdatedAt"`
-}
-
-// TeamMemoryIndexEntry is one shared workspace's memories.
-type TeamMemoryIndexEntry struct {
-	WorkspaceID   string    `json:"workspaceId"`
-	WorkspaceName string    `json:"workspaceName"`
-	Group         string    `json:"group"`
-	Owner         TeamOwner `json:"owner"`
-	Names         []string  `json:"names"`
-	UpdatedAt     time.Time `json:"updatedAt"`
-}
-
-// TeamMemoryIndexResponse is the shared workspaces' memories, by group, then
-// owner.
-type TeamMemoryIndexResponse struct {
-	Memories []TeamMemoryIndexEntry `json:"memories"`
+	Assignee    string `json:"assignee"`
 }
 
 // TeamSkill is a skill on in a team's workspaces, and who has it on.

@@ -27,8 +27,9 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// The cast: Alice owns the "core" team, Bob is its admin and Carol a member.
-// Dave and Eve are in no team; Nobody has no account at all.
+// The cast: Alice, Bob and Carol are in the "core" team, which Alice made.
+// Every member is equal. Dave and Eve are in no team; Nobody has no account
+// at all.
 const (
 	alice  int64 = 1
 	bob    int64 = 2
@@ -156,7 +157,7 @@ func each(t *testing.T, fn func(f *fixture), opts ...option) {
 
 func newFixture(t *testing.T, db *gorm.DB, opts ...option) *fixture {
 	t.Helper()
-	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamMemory{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamManagementActivity{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, u := range []model.User{
@@ -183,8 +184,8 @@ func newFixture(t *testing.T, db *gorm.DB, opts ...option) *fixture {
 	}
 	f.c = New(p)
 	f.team = must(f.c.CreateTeam(f.ctx, alice, "  core  ")).ID
-	f.join(bob, "bob@example.com", model.TeamRoleAdmin)
-	f.join(carol, "carol@example.com", model.TeamRoleMember)
+	f.join(bob, "bob@example.com")
+	f.join(carol, "carol@example.com")
 	return f
 }
 
@@ -197,9 +198,9 @@ func must[T any](v T, err error) T {
 
 // join invites the account and accepts as it, through the link, or the inbox
 // when the invitation was emailed.
-func (f *fixture) join(userID int64, email, role string) {
+func (f *fixture) join(userID int64, email string) {
 	f.t.Helper()
-	rs, err := f.c.CreateInvitation(f.ctx, alice, f.team, email, role)
+	rs, err := f.c.CreateInvitation(f.ctx, f.ch(alice), email)
 	if err != nil {
 		f.t.Fatalf("invite %s: %v", email, err)
 	}
@@ -210,6 +211,50 @@ func (f *fixture) join(userID int64, email, role string) {
 	if _, err := accept(); err != nil {
 		f.t.Fatalf("accept as %d: %v", userID, err)
 	}
+}
+
+// version is the team's version in the database now; 0 when it is gone.
+func (f *fixture) version(teamID int64) int64 {
+	var t model.Team
+	f.db.Where("id = ?", teamID).Limit(1).Find(&t)
+	return t.Version
+}
+
+// ch is a change to the cast's team by userID, from its version now.
+func (f *fixture) ch(userID int64) entity.TeamChange { return f.chOf(userID, f.team) }
+
+// chOf is a change to teamID by userID, from its version now.
+func (f *fixture) chOf(userID, teamID int64) entity.TeamChange {
+	return entity.TeamChange{UserID: userID, TeamID: teamID, Version: f.version(teamID)}
+}
+
+// stale is ch from the version before the one now.
+func (f *fixture) stale(userID int64) entity.TeamChange {
+	c := f.ch(userID)
+	c.Version--
+	return c
+}
+
+// activities are the team's activities, newest first, as "action actor
+// target", the target its user, email or workspace.
+func (f *fixture) activities(teamID int64) []string {
+	f.t.Helper()
+	var rows []model.TeamManagementActivity
+	f.db.Where("team_id = ?", teamID).Order("created_at DESC, id DESC").Find(&rows)
+	out := []string{}
+	for _, r := range rows {
+		s := fmt.Sprintf("%s %d", r.Action, r.ActorUserID)
+		switch {
+		case r.TargetUserID != nil:
+			s += fmt.Sprintf(" %d", *r.TargetUserID)
+		case r.TargetEmail != nil:
+			s += " " + *r.TargetEmail
+		case r.TargetWorkspaceID != nil:
+			s += fmt.Sprintf(" ws%d", *r.TargetWorkspaceID)
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 func token(link string) string {
@@ -247,17 +292,29 @@ func expectOK(t *testing.T, what string, err error) {
 	}
 }
 
+// expectConflict is err a version conflict that names the version now.
+func expectConflict(t *testing.T, what string, err error, now int64) {
+	t.Helper()
+	var ve *entity.TeamVersionError
+	if !errors.As(err, &ve) || ve.Version != now {
+		t.Errorf("%s returned %v, want a version conflict at %d", what, err, now)
+	}
+}
+
+func errOf[T any](_ T, err error) error { return err }
+
 func TestTeamsAreSeenOnlyByTheirMembers(t *testing.T) {
 	each(t, func(f *fixture) {
+		// Made at 1, two invitations and two accepts: 5.
 		teams := must(f.c.ListTeams(f.ctx, carol))
-		if len(teams) != 1 || teams[0].Name != "core" || teams[0].Role != model.TeamRoleMember || teams[0].MemberCount != 3 {
-			t.Errorf("Carol's teams are %+v, want core as member, of 3", teams)
+		if len(teams) != 1 || teams[0].Name != "core" || teams[0].Version != 5 || teams[0].MemberCount != 3 {
+			t.Errorf("Carol's teams are %+v, want core at version 5, of 3", teams)
 		}
 		if teams := must(f.c.ListTeams(f.ctx, dave)); len(teams) != 0 {
 			t.Errorf("Dave, in no team, lists %+v", teams)
 		}
 		got := must(f.c.GetTeam(f.ctx, bob, f.team))
-		if got.Name != "core" || got.Role != model.TeamRoleAdmin || got.MemberCount != 3 || !got.CreatedAt.Equal(t0) {
+		if got.Name != "core" || got.Version != 5 || got.MemberCount != 3 || !got.CreatedAt.Equal(t0) {
 			t.Errorf("Bob sees the team as %+v", got)
 		}
 		_, err := f.c.GetTeam(f.ctx, dave, f.team)
@@ -266,14 +323,24 @@ func TestTeamsAreSeenOnlyByTheirMembers(t *testing.T) {
 		expectNotFound(t, "reading an unknown team", err)
 		_, err = f.c.ListMembers(f.ctx, dave, f.team)
 		expectNotFound(t, "Dave listing a team's members", err)
+		_, err = f.c.ListTeamInvitations(f.ctx, dave, f.team)
+		expectNotFound(t, "Dave listing a team's invitations", err)
+		_, err = f.c.ListActivities(f.ctx, entity.ListTeamActivitiesRequest{UserID: dave, TeamID: f.team})
+		expectNotFound(t, "Dave listing a team's activity", err)
 	})
 }
 
-func TestCreatingATeamMakesItsCreatorOwner(t *testing.T) {
+func TestCreatingATeam(t *testing.T) {
 	each(t, func(f *fixture) {
 		got := must(f.c.CreateTeam(f.ctx, dave, " ops "))
-		if got.Name != "ops" || got.Role != model.TeamRoleOwner || got.MemberCount != 1 {
-			t.Errorf("Dave's new team is %+v, want ops, owned by him, of 1", got)
+		if got.Name != "ops" || got.Version != 1 || got.MemberCount != 1 || !got.CreatedAt.Equal(t0) {
+			t.Errorf("Dave's new team is %+v, want ops at version 1, of 1", got)
+		}
+		if v := f.version(got.ID); v != 1 {
+			t.Errorf("the stored team is at version %d, want 1", v)
+		}
+		if acts := f.activities(got.ID); strings.Join(acts, ",") != "team.created 4" {
+			t.Errorf("the new team's activity is %v, want team.created by Dave", acts)
 		}
 		for _, name := range []string{"", "   ", strings.Repeat("é", 129), "ops\r\nBcc: x@example.com", "ops\tteam", "ops\x00"} {
 			_, err := f.c.CreateTeam(f.ctx, dave, name)
@@ -288,29 +355,75 @@ func TestCreatingATeamMakesItsCreatorOwner(t *testing.T) {
 	})
 }
 
-func TestRenamingTakesAnOwnerOrAdmin(t *testing.T) {
+func TestAnyMemberRenames(t *testing.T) {
 	each(t, func(f *fixture) {
-		got, err := f.c.RenameTeam(f.ctx, bob, f.team, " platform ")
-		if err != nil || got.Name != "platform" || got.Role != model.TeamRoleAdmin || got.MemberCount != 3 {
-			t.Errorf("Bob, an admin, renaming returned %+v, %v", got, err)
+		got, err := f.c.RenameTeam(f.ctx, f.ch(carol), " platform ")
+		if err != nil || got.Name != "platform" || got.Version != 6 || got.MemberCount != 3 || got.ID != f.team {
+			t.Errorf("Carol renaming returned %+v, %v; want platform at version 6", got, err)
 		}
-		expectOK(t, "Alice, the owner, renaming", errOf(f.c.RenameTeam(f.ctx, alice, f.team, "core")))
-		expectKind(t, "Carol, a member, renaming", errOf(f.c.RenameTeam(f.ctx, carol, f.team, "x")), entity.TeamForbidden)
-		expectNotFound(t, "Dave, outside, renaming", errOf(f.c.RenameTeam(f.ctx, dave, f.team, "x")))
-		expectKind(t, "renaming to nothing", errOf(f.c.RenameTeam(f.ctx, alice, f.team, " ")), entity.TeamInvalid)
+		expectConflict(t, "Bob renaming from the version before", errOf(f.c.RenameTeam(f.ctx, f.stale(bob), "x")), 6)
+		expectNotFound(t, "Dave, outside, renaming from the right version", errOf(f.c.RenameTeam(f.ctx, f.ch(dave), "x")))
+		expectNotFound(t, "Dave, outside, renaming from a stale one", errOf(f.c.RenameTeam(f.ctx, f.stale(dave), "x")))
+		expectKind(t, "renaming to nothing", errOf(f.c.RenameTeam(f.ctx, f.ch(alice), " ")), entity.TeamInvalid)
+		if v := f.version(f.team); v != 6 {
+			t.Errorf("after refused renames the team is at %d, want 6", v)
+		}
+		as := must(f.c.ListActivities(f.ctx, entity.ListTeamActivitiesRequest{UserID: alice, TeamID: f.team, Limit: 1}))
+		if len(as.Activities) != 1 || as.Version != 6 {
+			t.Fatalf("the latest activity is %+v", as)
+		}
+		a := as.Activities[0]
+		if a.Action != model.TeamActivityTeamRenamed || a.Actor.UserID != carol || a.Actor.Name != "Carol" ||
+			a.Details["from"] != "core" || a.Details["to"] != "platform" || a.Target.UserID != 0 || a.TargetEmail != "" || a.TargetWorkspaceID != 0 {
+			t.Errorf("the rename is recorded as %+v", a)
+		}
 	})
 }
 
-func errOf[T any](_ T, err error) error { return err }
-
-func TestOnlyAnOwnerDeletesTheTeam(t *testing.T) {
+// Changes made at once from one version: exactly one lands, and every
+// other is told the version it landed at.
+func TestConcurrentChangesFromOneVersion(t *testing.T) {
 	each(t, func(f *fixture) {
-		expectKind(t, "Bob, an admin, deleting", f.c.DeleteTeam(f.ctx, bob, f.team), entity.TeamForbidden)
-		expectNotFound(t, "Dave, outside, deleting", f.c.DeleteTeam(f.ctx, dave, f.team))
-		expectOK(t, "Alice, the owner, deleting", f.c.DeleteTeam(f.ctx, alice, f.team))
+		const writers = 8
+		from := f.ch(alice)
+		var wg sync.WaitGroup
+		errs := make([]error, writers)
+		for i := range writers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ch := from
+				ch.UserID = []int64{alice, bob, carol}[i%3]
+				_, errs[i] = f.c.RenameTeam(f.ctx, ch, fmt.Sprintf("name %d", i))
+			}()
+		}
+		wg.Wait()
+		ok := 0
+		for _, err := range errs {
+			if err == nil {
+				ok++
+				continue
+			}
+			expectConflict(t, "a rename that lost", err, from.Version+1)
+		}
+		if ok != 1 || f.version(f.team) != from.Version+1 {
+			t.Errorf("%d renames landed and the team is at %d, want 1 at %d", ok, f.version(f.team), from.Version+1)
+		}
+	})
+}
+
+func TestAnyMemberDeletesTheTeam(t *testing.T) {
+	each(t, func(f *fixture) {
+		expectNotFound(t, "Dave, outside, deleting", f.c.DeleteTeam(f.ctx, f.ch(dave)))
+		expectConflict(t, "Carol deleting from the version before", f.c.DeleteTeam(f.ctx, f.stale(carol)), 5)
+		expectOK(t, "Carol deleting", f.c.DeleteTeam(f.ctx, f.ch(carol)))
 		expectNotFound(t, "reading the deleted team", errOf(f.c.GetTeam(f.ctx, alice, f.team)))
-		if teams := must(f.c.ListTeams(f.ctx, carol)); len(teams) != 0 {
-			t.Errorf("Carol still lists %+v after the team was deleted", teams)
+		if teams := must(f.c.ListTeams(f.ctx, alice)); len(teams) != 0 {
+			t.Errorf("Alice still lists %+v after the team was deleted", teams)
+		}
+		// The record stays.
+		if acts := f.activities(f.team); len(acts) != 6 || acts[0] != "team.deleted 3" {
+			t.Errorf("the deleted team's activity is %v, want team.deleted by Carol on top of 5", acts)
 		}
 	})
 }
@@ -319,48 +432,70 @@ func TestMembersAreListedWithTheirAccounts(t *testing.T) {
 	each(t, func(f *fixture) {
 		members := must(f.c.ListMembers(f.ctx, carol, f.team))
 		got := []string{}
-		for _, m := range members {
-			got = append(got, fmt.Sprintf("%d:%s:%s:%s:%s", m.UserID, m.Name, m.Email, m.Picture, m.Role))
+		for _, m := range members.Members {
+			got = append(got, fmt.Sprintf("%d:%s:%s:%s", m.UserID, m.Name, m.Email, m.Picture))
 		}
-		want := "1:Alice:alice@example.com:https://img/alice:owner 2:Bob:bob@example.com::admin 3:Carol:Carol@Example.com::member"
-		if strings.Join(got, " ") != want {
-			t.Errorf("members are %v, want %s", got, want)
+		want := "1:Alice:alice@example.com:https://img/alice 2:Bob:bob@example.com: 3:Carol:Carol@Example.com:"
+		if strings.Join(got, " ") != want || members.Version != 5 {
+			t.Errorf("members are %v at %d, want %s at 5", got, members.Version, want)
 		}
-	})
-}
-
-func TestChangingRoles(t *testing.T) {
-	each(t, func(f *fixture) {
-		expectKind(t, "Carol, a member, changing a role", f.c.SetMemberRole(f.ctx, carol, f.team, bob, model.TeamRoleMember), entity.TeamForbidden)
-		expectNotFound(t, "Dave, outside, changing a role", f.c.SetMemberRole(f.ctx, dave, f.team, carol, model.TeamRoleAdmin))
-		expectKind(t, "a role that is not one", f.c.SetMemberRole(f.ctx, alice, f.team, carol, "boss"), entity.TeamInvalid)
-		expectNotFound(t, "changing the role of Dave, not in the team", f.c.SetMemberRole(f.ctx, alice, f.team, dave, model.TeamRoleAdmin))
-		expectKind(t, "Bob, an admin, making Carol an owner", f.c.SetMemberRole(f.ctx, bob, f.team, carol, model.TeamRoleOwner), entity.TeamForbidden)
-		expectKind(t, "Bob, an admin, demoting Alice, the owner", f.c.SetMemberRole(f.ctx, bob, f.team, alice, model.TeamRoleMember), entity.TeamForbidden)
-		expectKind(t, "Alice demoting herself, the last owner", f.c.SetMemberRole(f.ctx, alice, f.team, alice, model.TeamRoleAdmin), entity.TeamConflict)
-		expectOK(t, "Bob, an admin, making Carol an admin", f.c.SetMemberRole(f.ctx, bob, f.team, carol, model.TeamRoleAdmin))
-		expectOK(t, "Alice making Bob an owner", f.c.SetMemberRole(f.ctx, alice, f.team, bob, model.TeamRoleOwner))
-		expectOK(t, "Alice stepping down, with Bob an owner", f.c.SetMemberRole(f.ctx, alice, f.team, alice, model.TeamRoleMember))
-		if r := must(f.c.GetTeam(f.ctx, carol, f.team)).Role; r != model.TeamRoleAdmin {
-			t.Errorf("Carol is %q, want admin", r)
+		if !members.Members[1].JoinedAt.Equal(t0) {
+			t.Errorf("Bob joined at %v, want %v", members.Members[1].JoinedAt, t0)
 		}
 	})
 }
 
-func TestRemovingMembers(t *testing.T) {
+func TestAnyMemberRemovesAMember(t *testing.T) {
 	each(t, func(f *fixture) {
-		f.join(dave, "dave@example.com", model.TeamRoleMember)
-		expectKind(t, "Carol, a member, removing Dave", f.c.RemoveMember(f.ctx, carol, f.team, dave), entity.TeamForbidden)
-		expectNotFound(t, "Eve, outside, removing Dave", f.c.RemoveMember(f.ctx, eve, f.team, dave))
-		expectKind(t, "Bob, an admin, removing Alice, the owner", f.c.RemoveMember(f.ctx, bob, f.team, alice), entity.TeamForbidden)
-		expectNotFound(t, "removing Eve, not in the team", f.c.RemoveMember(f.ctx, alice, f.team, eve))
-		expectKind(t, "Alice removing herself, the last owner", f.c.RemoveMember(f.ctx, alice, f.team, alice), entity.TeamConflict)
-		expectOK(t, "Bob, an admin, removing Dave", f.c.RemoveMember(f.ctx, bob, f.team, dave))
+		f.join(dave, "dave@example.com")
+		expectNotFound(t, "Eve, outside, removing Dave", errOf(f.c.RemoveMember(f.ctx, f.ch(eve), dave)))
+		expectNotFound(t, "removing Eve, not in the team", errOf(f.c.RemoveMember(f.ctx, f.ch(alice), eve)))
+		expectConflict(t, "Carol removing Dave from the version before", errOf(f.c.RemoveMember(f.ctx, f.stale(carol), dave)), 7)
+		v, err := f.c.RemoveMember(f.ctx, f.ch(carol), dave)
+		if err != nil || v != 8 {
+			t.Errorf("Carol removing Dave returned %d, %v; want version 8", v, err)
+		}
 		expectNotFound(t, "Dave reading the team he was removed from", errOf(f.c.GetTeam(f.ctx, dave, f.team)))
-		expectOK(t, "Carol removing herself", f.c.RemoveMember(f.ctx, carol, f.team, carol))
-		// Another owner can be removed by an owner.
-		expectOK(t, "Alice making Bob an owner", f.c.SetMemberRole(f.ctx, alice, f.team, bob, model.TeamRoleOwner))
-		expectOK(t, "Alice removing Bob, an owner", f.c.RemoveMember(f.ctx, alice, f.team, bob))
+		expectNotFound(t, "Dave, removed, removing Carol", errOf(f.c.RemoveMember(f.ctx, f.ch(dave), carol)))
+		v, err = f.c.RemoveMember(f.ctx, f.ch(carol), carol)
+		if err != nil || v != 9 {
+			t.Errorf("Carol removing herself returned %d, %v; want version 9", v, err)
+		}
+		// Bob removes Alice, who made the team.
+		expectOK(t, "Bob removing Alice", errOf(f.c.RemoveMember(f.ctx, f.ch(bob), alice)))
+		if acts := f.activities(f.team); strings.Join(acts[:3], ",") != "member.removed 2 1,member.left 3,member.removed 3 4" {
+			t.Errorf("the activity is %v", acts)
+		}
+		if must(f.c.GetTeam(f.ctx, bob, f.team)).MemberCount != 1 {
+			t.Error("Bob is not alone in the team")
+		}
+	})
+}
+
+// The last member to go deletes the team, recorded after their leaving.
+func TestTheLastMemberLeavingDeletesTheTeam(t *testing.T) {
+	each(t, func(f *fixture) {
+		expectOK(t, "Bob leaving", f.c.LeaveTeam(f.ctx, f.ch(bob)))
+		expectOK(t, "Carol leaving", f.c.LeaveTeam(f.ctx, f.ch(carol)))
+		expectNotFound(t, "Carol, gone, leaving again", f.c.LeaveTeam(f.ctx, f.ch(carol)))
+		expectConflict(t, "Alice leaving from the version before", f.c.LeaveTeam(f.ctx, f.stale(alice)), 7)
+		expectOK(t, "Alice, the last, leaving", f.c.LeaveTeam(f.ctx, f.ch(alice)))
+		if _, err := f.repo.GetTeam(f.ctx, f.team); !errors.Is(err, base.ErrNotFound) {
+			t.Errorf("the team is still there: %v", err)
+		}
+		acts := f.activities(f.team)
+		if len(acts) < 2 || acts[0] != "team.deleted 1" || acts[1] != "member.left 1" {
+			t.Errorf("the activity is %v, want Alice leaving, then the team deleted", acts)
+		}
+		var ids []int64
+		f.db.Model(&model.TeamManagementActivity{}).Where("team_id = ?", f.team).Pluck("id", &ids)
+		seen := map[int64]bool{}
+		for _, id := range ids {
+			if seen[id] {
+				t.Errorf("activity id %d is used twice", id)
+			}
+			seen[id] = true
+		}
 	})
 }
 
@@ -368,41 +503,39 @@ func TestLeavingAndRemovalUnshare(t *testing.T) {
 	each(t, func(f *fixture) {
 		f.db.Create(&model.Workspace{ID: 300, UserID: carol, Name: "carol-ws"})
 		f.db.Create(&model.Workspace{ID: 200, UserID: bob, Name: "bob-ws"})
-		must(f.c.ShareWorkspace(f.ctx, carol, 300, f.team, ""))
-		must(f.c.ShareWorkspace(f.ctx, bob, 200, f.team, ""))
-		expectNotFound(t, "Dave, outside, leaving", f.c.LeaveTeam(f.ctx, dave, f.team))
-		expectKind(t, "Alice, the last owner, leaving", f.c.LeaveTeam(f.ctx, alice, f.team), entity.TeamConflict)
-		expectOK(t, "Carol leaving", f.c.LeaveTeam(f.ctx, carol, f.team))
+		must(f.c.ShareWorkspace(f.ctx, f.ch(carol), 300))
+		must(f.c.ShareWorkspace(f.ctx, f.ch(bob), 200))
+		expectNotFound(t, "Dave, outside, leaving", f.c.LeaveTeam(f.ctx, f.ch(dave)))
+		expectOK(t, "Carol leaving", f.c.LeaveTeam(f.ctx, f.ch(carol)))
 		if shares := must(f.c.ListShares(f.ctx, carol, 300)); len(shares) != 0 {
 			t.Errorf("Carol's workspace is still shared after she left: %+v", shares)
 		}
-		expectOK(t, "Alice removing Bob", f.c.RemoveMember(f.ctx, alice, f.team, bob))
+		expectOK(t, "Alice removing Bob", errOf(f.c.RemoveMember(f.ctx, f.ch(alice), bob)))
 		if shares := must(f.c.ListShares(f.ctx, bob, 200)); len(shares) != 0 {
 			t.Errorf("Bob's workspace is still shared after his removal: %+v", shares)
 		}
 	})
 }
 
-func TestInvitingTakesAnOwnerOrAdmin(t *testing.T) {
+func TestAnyMemberInvites(t *testing.T) {
 	each(t, func(f *fixture) {
-		expectKind(t, "Carol, a member, inviting", errOf(f.c.CreateInvitation(f.ctx, carol, f.team, "x@example.com", "")), entity.TeamForbidden)
-		expectNotFound(t, "Dave, outside, inviting", errOf(f.c.CreateInvitation(f.ctx, dave, f.team, "x@example.com", "")))
-		expectKind(t, "Carol, a member, listing invitations", errOf(f.c.ListTeamInvitations(f.ctx, carol, f.team)), entity.TeamForbidden)
-		expectKind(t, "Bob, an admin, inviting an owner", errOf(f.c.CreateInvitation(f.ctx, bob, f.team, "x@example.com", model.TeamRoleOwner)), entity.TeamForbidden)
-		expectKind(t, "a role that is not one", errOf(f.c.CreateInvitation(f.ctx, bob, f.team, "x@example.com", "boss")), entity.TeamInvalid)
+		expectNotFound(t, "Dave, outside, inviting", errOf(f.c.CreateInvitation(f.ctx, f.ch(dave), "x@example.com")))
+		// An outsider learns nothing of who is in the team.
+		expectNotFound(t, "Dave, outside, inviting Carol", errOf(f.c.CreateInvitation(f.ctx, f.ch(dave), "carol@example.com")))
 		for _, bad := range []string{"", "not an address", "Name <x@example.com>", strings.Repeat("a", 250) + "@example.com"} {
-			expectKind(t, fmt.Sprintf("inviting %q", bad), errOf(f.c.CreateInvitation(f.ctx, bob, f.team, bad, "")), entity.TeamInvalid)
+			expectKind(t, fmt.Sprintf("inviting %q", bad), errOf(f.c.CreateInvitation(f.ctx, f.ch(carol), bad)), entity.TeamInvalid)
 		}
-		expectKind(t, "inviting Carol, already in, by another case", errOf(f.c.CreateInvitation(f.ctx, bob, f.team, "CAROL@example.com", "")), entity.TeamConflict)
+		expectKind(t, "inviting Bob, already in, by another case", errOf(f.c.CreateInvitation(f.ctx, f.ch(carol), "BOB@example.com")), entity.TeamConflict)
+		expectConflict(t, "Carol inviting from the version before", errOf(f.c.CreateInvitation(f.ctx, f.stale(carol), "dave@example.com")), 5)
 
-		rs, err := f.c.CreateInvitation(f.ctx, bob, f.team, " Dave@Example.com ", "")
+		rs, err := f.c.CreateInvitation(f.ctx, f.ch(carol), " Dave@Example.com ")
 		if err != nil {
 			t.Fatal(err)
 		}
 		inv := rs.Invitation
-		if inv.Email != "dave@example.com" || inv.Role != model.TeamRoleMember || inv.TeamName != "core" || inv.InvitedBy != bob ||
-			inv.InvitedByName != "Bob" || !inv.ExpiresAt.Equal(t0.Add(7*24*time.Hour)) || rs.EmailSent {
-			t.Errorf("the invitation is %+v (email sent %v)", inv, rs.EmailSent)
+		if inv.Email != "dave@example.com" || inv.TeamName != "core" || inv.InvitedBy != carol || inv.TeamID != f.team ||
+			inv.InvitedByName != "Carol" || !inv.ExpiresAt.Equal(t0.Add(7*24*time.Hour)) || !inv.CreatedAt.Equal(t0) || rs.EmailSent || rs.Version != 6 {
+			t.Errorf("the invitation is %+v (email sent %v, version %d)", inv, rs.EmailSent, rs.Version)
 		}
 		if !strings.HasPrefix(rs.Link, "https://agentrq.example/invite#") || len(token(rs.Link)) != 43 {
 			t.Errorf("the link is %q, want https://agentrq.example/invite#<43 base64url characters>", rs.Link)
@@ -412,12 +545,16 @@ func TestInvitingTakesAnOwnerOrAdmin(t *testing.T) {
 		if stored.TokenHash != HashToken(token(rs.Link)) || strings.Contains(stored.TokenHash, token(rs.Link)) {
 			t.Errorf("the stored token is %q, want only the token's SHA-256", stored.TokenHash)
 		}
-		expectKind(t, "inviting Dave again", errOf(f.c.CreateInvitation(f.ctx, alice, f.team, "dave@example.com", "")), entity.TeamConflict)
-		expectOK(t, "Alice inviting an owner", errOf(f.c.CreateInvitation(f.ctx, alice, f.team, "eve@example.com", model.TeamRoleOwner)))
+		expectKind(t, "inviting Dave again", errOf(f.c.CreateInvitation(f.ctx, f.ch(alice), "dave@example.com")), entity.TeamConflict)
+		expectOK(t, "Bob inviting Eve", errOf(f.c.CreateInvitation(f.ctx, f.ch(bob), "eve@example.com")))
 
-		list := must(f.c.ListTeamInvitations(f.ctx, bob, f.team))
-		if len(list) != 2 || list[0].Email != "eve@example.com" || list[1].Email != "dave@example.com" || list[1].InvitedByName != "Bob" {
-			t.Errorf("pending invitations are %+v, want Eve's then Dave's", list)
+		list := must(f.c.ListTeamInvitations(f.ctx, carol, f.team))
+		if len(list.Invitations) != 2 || list.Invitations[0].Email != "eve@example.com" || list.Invitations[1].Email != "dave@example.com" ||
+			list.Invitations[1].InvitedByName != "Carol" || list.Version != 7 {
+			t.Errorf("pending invitations are %+v, want Eve's then Dave's at version 7", list)
+		}
+		if acts := f.activities(f.team); acts[0] != "member.invited 2 eve@example.com" || acts[1] != "member.invited 3 dave@example.com" {
+			t.Errorf("the activity is %v", acts)
 		}
 		if acts := strings.Join(f.events.actions(), " "); !strings.Contains(acts, "team_invite:0") {
 			t.Errorf("events are %s, want a team_invite", acts)
@@ -428,8 +565,8 @@ func TestInvitingTakesAnOwnerOrAdmin(t *testing.T) {
 // The inviter learns nothing about whether the address has an account.
 func TestTheAnswerIsTheSameWithOrWithoutAnAccount(t *testing.T) {
 	each(t, func(f *fixture) {
-		withAccount := must(f.c.CreateInvitation(f.ctx, alice, f.team, "dave@example.com", ""))
-		without := must(f.c.CreateInvitation(f.ctx, alice, f.team, "stranger@example.com", ""))
+		withAccount := must(f.c.CreateInvitation(f.ctx, f.ch(alice), "dave@example.com"))
+		without := must(f.c.CreateInvitation(f.ctx, f.ch(alice), "stranger@example.com"))
 		if withAccount.EmailSent != without.EmailSent || (withAccount.Link == "") != (without.Link == "") {
 			t.Errorf("answers differ: %+v and %+v", withAccount, without)
 		}
@@ -440,9 +577,9 @@ func TestInvitationsAreEmailedWhenSMTPIsSetUp(t *testing.T) {
 	m := &mailbox{}
 	each(t, func(f *fixture) {
 		m.sent = nil
-		rs := must(f.c.CreateInvitation(f.ctx, bob, f.team, "dave@example.com", ""))
-		if !rs.EmailSent || rs.Link != "" || len(m.sent) != 1 {
-			t.Fatalf("answer %+v with %d emails, want the email sent and no link", rs, len(m.sent))
+		rs := must(f.c.CreateInvitation(f.ctx, f.ch(bob), "dave@example.com"))
+		if !rs.EmailSent || rs.Link != "" || len(m.sent) != 1 || rs.Version != 6 {
+			t.Fatalf("answer %+v with %d emails, want the email sent, no link, version 6", rs, len(m.sent))
 		}
 		mail := m.sent[0]
 		if mail.To[0] != "dave@example.com" || mail.Subject != "Bob invited you to the core team on AgentRQ" ||
@@ -451,8 +588,8 @@ func TestInvitationsAreEmailedWhenSMTPIsSetUp(t *testing.T) {
 		}
 		// An email that fails gives the link instead.
 		m.err = errors.New("network unreachable")
-		rs = must(f.c.CreateInvitation(f.ctx, bob, f.team, "eve@example.com", ""))
-		if rs.EmailSent || !strings.HasPrefix(rs.Link, "https://agentrq.example/invite#") {
+		rs = must(f.c.CreateInvitation(f.ctx, f.ch(bob), "eve@example.com"))
+		if rs.EmailSent || !strings.HasPrefix(rs.Link, "https://agentrq.example/invite#") || rs.Version != 7 {
 			t.Errorf("after a failed email the answer is %+v, want the link", rs)
 		}
 		m.err = nil
@@ -475,12 +612,13 @@ func TestMaskEmail(t *testing.T) {
 
 func TestAcceptingByLink(t *testing.T) {
 	each(t, func(f *fixture) {
-		rs := must(f.c.CreateInvitation(f.ctx, bob, f.team, "dave@example.com", model.TeamRoleAdmin))
+		rs := must(f.c.CreateInvitation(f.ctx, f.ch(carol), "dave@example.com"))
 		tok := token(rs.Link)
 
 		p := must(f.c.PreviewInvitation(f.ctx, eve, tok))
-		if p.TeamID != f.team || p.TeamName != "core" || p.Role != model.TeamRoleAdmin || p.InvitedByName != "Bob" || p.Email != "d***@example.com" || p.EmailMatches {
-			t.Errorf("Eve previews %+v, want core, admin, from Bob, for d***@example.com, not hers", p)
+		if p.TeamID != f.team || p.TeamName != "core" || p.InvitedByName != "Carol" || p.Email != "d***@example.com" || p.EmailMatches ||
+			!p.ExpiresAt.Equal(t0.Add(InvitationTTL)) {
+			t.Errorf("Eve previews %+v, want core, from Carol, for d***@example.com, not hers", p)
 		}
 		if p := must(f.c.PreviewInvitation(f.ctx, dave, tok)); !p.EmailMatches {
 			t.Errorf("Dave previews %+v, want it to match his email", p)
@@ -494,35 +632,46 @@ func TestAcceptingByLink(t *testing.T) {
 		expectNotFound(t, "accepting no token", errOf(f.c.AcceptInvitation(f.ctx, dave, "")))
 		expectNotFound(t, "previewing an unknown token", errOf(f.c.PreviewInvitation(f.ctx, dave, "nope")))
 
+		// The invitee names no version; accepting moves it on.
 		got := must(f.c.AcceptInvitation(f.ctx, dave, tok))
-		if got.ID != f.team || got.Role != model.TeamRoleAdmin || got.MemberCount != 4 {
-			t.Errorf("Dave accepting got %+v, want core as admin, of 4", got)
+		if got.ID != f.team || got.MemberCount != 4 || got.Version != 7 {
+			t.Errorf("Dave accepting got %+v, want core of 4 at version 7", got)
 		}
 		expectKind(t, "accepting a used link", errOf(f.c.AcceptInvitation(f.ctx, dave, tok)), entity.TeamGone)
 		expectKind(t, "previewing a used link", errOf(f.c.PreviewInvitation(f.ctx, dave, tok)), entity.TeamGone)
 		if acts := strings.Join(f.events.actions(), " "); !strings.Contains(acts, "team_join:0") {
 			t.Errorf("events are %s, want a team_join", acts)
 		}
+		if acts := f.activities(f.team); acts[0] != "invitation.accepted 4 dave@example.com" {
+			t.Errorf("the activity is %v", acts)
+		}
 
 		// The account's email in another case still matches.
 		f.db.Model(&model.User{}).Where("id = ?", eve).Update("email", "EVE@example.com")
-		rs = must(f.c.CreateInvitation(f.ctx, alice, f.team, "eve@example.com", ""))
+		rs = must(f.c.CreateInvitation(f.ctx, f.ch(alice), "eve@example.com"))
 		expectOK(t, "Eve accepting with her email in capitals", errOf(f.c.AcceptInvitation(f.ctx, eve, token(rs.Link))))
 	})
 }
 
 func TestRevokedAndExpiredInvitationsAreRefused(t *testing.T) {
 	each(t, func(f *fixture) {
-		revoked := must(f.c.CreateInvitation(f.ctx, bob, f.team, "dave@example.com", ""))
-		expectKind(t, "Carol, a member, revoking", f.c.RevokeInvitation(f.ctx, carol, f.team, revoked.Invitation.ID), entity.TeamForbidden)
-		expectNotFound(t, "revoking an unknown invitation", f.c.RevokeInvitation(f.ctx, bob, f.team, 424242))
-		expectOK(t, "Bob revoking", f.c.RevokeInvitation(f.ctx, bob, f.team, revoked.Invitation.ID))
+		revoked := must(f.c.CreateInvitation(f.ctx, f.ch(bob), "dave@example.com"))
+		expectNotFound(t, "Dave, outside, revoking", errOf(f.c.RevokeInvitation(f.ctx, f.ch(dave), revoked.Invitation.ID)))
+		expectNotFound(t, "revoking an unknown invitation", errOf(f.c.RevokeInvitation(f.ctx, f.ch(bob), 424242)))
+		expectConflict(t, "Carol revoking from the version before", errOf(f.c.RevokeInvitation(f.ctx, f.stale(carol), revoked.Invitation.ID)), 6)
+		if v, err := f.c.RevokeInvitation(f.ctx, f.ch(carol), revoked.Invitation.ID); err != nil || v != 7 {
+			t.Errorf("Carol revoking returned %d, %v; want version 7", v, err)
+		}
+		expectNotFound(t, "revoking it twice", errOf(f.c.RevokeInvitation(f.ctx, f.ch(carol), revoked.Invitation.ID)))
 		expectKind(t, "accepting a revoked invitation", errOf(f.c.AcceptInvitation(f.ctx, dave, token(revoked.Link))), entity.TeamGone)
-		if list := must(f.c.ListTeamInvitations(f.ctx, alice, f.team)); len(list) != 0 {
+		if list := must(f.c.ListTeamInvitations(f.ctx, alice, f.team)); len(list.Invitations) != 0 {
 			t.Errorf("a revoked invitation is still listed: %+v", list)
 		}
+		if acts := f.activities(f.team); acts[0] != "invitation.revoked 3 dave@example.com" {
+			t.Errorf("the activity is %v", acts)
+		}
 
-		expired := must(f.c.CreateInvitation(f.ctx, bob, f.team, "eve@example.com", ""))
+		expired := must(f.c.CreateInvitation(f.ctx, f.ch(bob), "eve@example.com"))
 		f.now = t0.Add(InvitationTTL)
 		expectKind(t, "accepting at the very moment it expires", errOf(f.c.AcceptInvitation(f.ctx, eve, token(expired.Link))), entity.TeamGone)
 		expectKind(t, "accepting an expired invitation by id", errOf(f.c.AcceptInvitationByID(f.ctx, eve, expired.Invitation.ID)), entity.TeamGone)
@@ -534,9 +683,9 @@ func TestRevokedAndExpiredInvitationsAreRefused(t *testing.T) {
 func TestTheInboxAcceptsAndDeclines(t *testing.T) {
 	each(t, func(f *fixture) {
 		other := must(f.c.CreateTeam(f.ctx, eve, "ops"))
-		first := must(f.c.CreateInvitation(f.ctx, alice, f.team, "dave@example.com", ""))
+		first := must(f.c.CreateInvitation(f.ctx, f.ch(alice), "dave@example.com"))
 		f.now = t0.Add(time.Minute)
-		second := must(f.c.CreateInvitation(f.ctx, eve, other.ID, "DAVE@example.com", model.TeamRoleAdmin))
+		second := must(f.c.CreateInvitation(f.ctx, f.chOf(eve, other.ID), "DAVE@example.com"))
 
 		inbox := must(f.c.ListMyInvitations(f.ctx, dave))
 		if len(inbox) != 2 || inbox[0].TeamName != "ops" || inbox[0].InvitedByName != "Eve" || inbox[1].TeamName != "core" || inbox[1].InvitedByName != "Alice" {
@@ -551,16 +700,27 @@ func TestTheInboxAcceptsAndDeclines(t *testing.T) {
 		expectNotFound(t, "declining an unknown id", f.c.DeclineInvitation(f.ctx, dave, 424242))
 
 		got := must(f.c.AcceptInvitationByID(f.ctx, dave, first.Invitation.ID))
-		if got.ID != f.team || got.Role != model.TeamRoleMember {
+		if got.ID != f.team || got.MemberCount != 4 {
 			t.Errorf("Dave accepting from his inbox got %+v", got)
 		}
 		expectKind(t, "declining an accepted invitation", f.c.DeclineInvitation(f.ctx, dave, first.Invitation.ID), entity.TeamGone)
+		before := f.version(other.ID)
 		expectOK(t, "Dave declining ops", f.c.DeclineInvitation(f.ctx, dave, second.Invitation.ID))
+		if v := f.version(other.ID); v != before+1 {
+			t.Errorf("declining left ops at %d, want %d", v, before+1)
+		}
+		if acts := f.activities(other.ID); acts[0] != "invitation.declined 4 dave@example.com" {
+			t.Errorf("ops' activity is %v, want Dave declining", acts)
+		}
 		expectKind(t, "declining twice", f.c.DeclineInvitation(f.ctx, dave, second.Invitation.ID), entity.TeamGone)
 		expectKind(t, "accepting a declined invitation", errOf(f.c.AcceptInvitationByID(f.ctx, dave, second.Invitation.ID)), entity.TeamGone)
 		if inbox := must(f.c.ListMyInvitations(f.ctx, dave)); len(inbox) != 0 {
 			t.Errorf("Dave's inbox after answering both is %+v", inbox)
 		}
+		// An expired invitation may still be declined.
+		late := must(f.c.CreateInvitation(f.ctx, f.chOf(eve, other.ID), "carol@example.com"))
+		f.now = t0.Add(InvitationTTL + time.Hour)
+		expectOK(t, "Carol declining an expired invitation", f.c.DeclineInvitation(f.ctx, carol, late.Invitation.ID))
 		// An account with no email has no inbox.
 		f.db.Model(&model.User{}).Where("id = ?", eve).Update("email", "")
 		if inbox := must(f.c.ListMyInvitations(f.ctx, eve)); len(inbox) != 0 {
@@ -572,24 +732,28 @@ func TestTheInboxAcceptsAndDeclines(t *testing.T) {
 func TestTheDailyInvitationCap(t *testing.T) {
 	each(t, func(f *fixture) {
 		// The cast's two invitations count: one more fits under 3.
-		expectOK(t, "the 3rd invitation of 3", errOf(f.c.CreateInvitation(f.ctx, alice, f.team, "u3@example.com", "")))
-		_, err := f.c.CreateInvitation(f.ctx, alice, f.team, "u4@example.com", "")
+		expectOK(t, "the 3rd invitation of 3", errOf(f.c.CreateInvitation(f.ctx, f.ch(alice), "u3@example.com")))
+		_, err := f.c.CreateInvitation(f.ctx, f.ch(alice), "u4@example.com")
 		expectKind(t, "the 4th invitation of 3", err, entity.TeamThrottled)
 		if err == nil || err.Error() != "this team has reached its limit of 3 invitations per day" {
 			t.Errorf("the refusal says %q", err)
 		}
+		// A refused invitation leaves the version where it was.
+		if v := f.version(f.team); v != 6 {
+			t.Errorf("after the refusal the team is at %d, want 6", v)
+		}
 		// Revoking gives none back.
 		list := must(f.c.ListTeamInvitations(f.ctx, alice, f.team))
-		expectOK(t, "revoking", f.c.RevokeInvitation(f.ctx, alice, f.team, list[0].ID))
-		expectKind(t, "inviting after a revoke", errOf(f.c.CreateInvitation(f.ctx, alice, f.team, "u4@example.com", "")), entity.TeamThrottled)
+		expectOK(t, "revoking", errOf(f.c.RevokeInvitation(f.ctx, f.ch(alice), list.Invitations[0].ID)))
+		expectKind(t, "inviting after a revoke", errOf(f.c.CreateInvitation(f.ctx, f.ch(alice), "u4@example.com")), entity.TeamThrottled)
 		// The window rolls: the cast's two were made at t0.
 		f.now = t0.Add(24*time.Hour - time.Second)
-		expectKind(t, "inviting a second before the window rolls", errOf(f.c.CreateInvitation(f.ctx, alice, f.team, "u4@example.com", "")), entity.TeamThrottled)
+		expectKind(t, "inviting a second before the window rolls", errOf(f.c.CreateInvitation(f.ctx, f.ch(alice), "u4@example.com")), entity.TeamThrottled)
 		f.now = t0.Add(24 * time.Hour)
-		expectOK(t, "inviting once the window rolls", errOf(f.c.CreateInvitation(f.ctx, alice, f.team, "u4@example.com", "")))
+		expectOK(t, "inviting once the window rolls", errOf(f.c.CreateInvitation(f.ctx, f.ch(alice), "u4@example.com")))
 		// Another team has its own cap.
 		other := must(f.c.CreateTeam(f.ctx, dave, "ops"))
-		expectOK(t, "another team inviting", errOf(f.c.CreateInvitation(f.ctx, dave, other.ID, "u5@example.com", "")))
+		expectOK(t, "another team inviting", errOf(f.c.CreateInvitation(f.ctx, f.chOf(dave, other.ID), "u5@example.com")))
 	}, withCap(3))
 }
 
@@ -598,17 +762,30 @@ func TestACapOfZeroTurnsInvitationsOff(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t, db) // the cast joins under the default cap
 			f.c.(*controller).maxInvite = 0
-			_, err := f.c.CreateInvitation(f.ctx, alice, f.team, "dave@example.com", "")
+			_, err := f.c.CreateInvitation(f.ctx, f.ch(alice), "dave@example.com")
 			expectKind(t, "inviting with a cap of 0", err, entity.TeamForbidden)
 			if err == nil || err.Error() != "invitations are turned off on this server" {
 				t.Errorf("the refusal says %q", err)
 			}
-			expectKind(t, "a member inviting with a cap of 0", errOf(f.c.CreateInvitation(f.ctx, carol, f.team, "dave@example.com", "")), entity.TeamForbidden)
 		})
 	}
 }
 
-// Parallel requests never pass the cap together.
+// invite creates an invitation from the team's version now, loading it
+// again whenever another invitation landed first, until it lands or is
+// refused for another reason.
+func (f *fixture) invite(userID, teamID int64, email string) error {
+	for {
+		_, err := f.c.CreateInvitation(f.ctx, f.chOf(userID, teamID), email)
+		var ve *entity.TeamVersionError
+		if !errors.As(err, &ve) {
+			return err
+		}
+	}
+}
+
+// Parallel requests, each reloading on a conflict, never pass the cap
+// together.
 func TestTheCapHoldsUnderParallelRequests(t *testing.T) {
 	each(t, func(f *fixture) {
 		const requests = 20
@@ -618,7 +795,7 @@ func TestTheCapHoldsUnderParallelRequests(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_, errs[i] = f.c.CreateInvitation(f.ctx, alice, f.team, fmt.Sprintf("p%d@example.com", i), "")
+				errs[i] = f.invite([]int64{alice, bob, carol}[i%3], f.team, fmt.Sprintf("p%d@example.com", i))
 			}()
 		}
 		wg.Wait()
@@ -644,29 +821,29 @@ func TestThePerUserInvitationCapSpansTeams(t *testing.T) {
 	each(t, func(f *fixture) {
 		// The cast's two are Alice's; a second team gives her no more.
 		ops := must(f.c.CreateTeam(f.ctx, alice, "ops")).ID
-		expectOK(t, "the 3rd of 4, in another team", errOf(f.c.CreateInvitation(f.ctx, alice, ops, "u3@example.com", "")))
-		expectOK(t, "the 4th of 4", errOf(f.c.CreateInvitation(f.ctx, alice, f.team, "u4@example.com", "")))
-		_, err := f.c.CreateInvitation(f.ctx, alice, ops, "u5@example.com", "")
+		expectOK(t, "the 3rd of 4, in another team", errOf(f.c.CreateInvitation(f.ctx, f.chOf(alice, ops), "u3@example.com")))
+		expectOK(t, "the 4th of 4", errOf(f.c.CreateInvitation(f.ctx, f.ch(alice), "u4@example.com")))
+		_, err := f.c.CreateInvitation(f.ctx, f.chOf(alice, ops), "u5@example.com")
 		expectKind(t, "the 5th of 4", err, entity.TeamThrottled)
 		if err == nil || err.Error() != "you have reached your limit of 4 invitations per day across all your teams" {
 			t.Errorf("the refusal says %q", err)
 		}
 		// Revoking gives none back; a resend is a new invitation, so it counts.
 		list := must(f.c.ListTeamInvitations(f.ctx, alice, ops))
-		expectOK(t, "revoking", f.c.RevokeInvitation(f.ctx, alice, ops, list[0].ID))
-		expectKind(t, "resending after a revoke", errOf(f.c.CreateInvitation(f.ctx, alice, ops, "u3@example.com", "")), entity.TeamThrottled)
-		// Bob, an admin of the same team, has his own cap.
-		expectOK(t, "another inviter", errOf(f.c.CreateInvitation(f.ctx, bob, f.team, "u6@example.com", "")))
+		expectOK(t, "revoking", errOf(f.c.RevokeInvitation(f.ctx, f.chOf(alice, ops), list.Invitations[0].ID)))
+		expectKind(t, "resending after a revoke", errOf(f.c.CreateInvitation(f.ctx, f.chOf(alice, ops), "u3@example.com")), entity.TeamThrottled)
+		// Bob, in the same team, has his own cap.
+		expectOK(t, "another inviter", errOf(f.c.CreateInvitation(f.ctx, f.ch(bob), "u6@example.com")))
 		// The window rolls.
 		f.now = t0.Add(24 * time.Hour)
-		expectOK(t, "inviting once the window rolls", errOf(f.c.CreateInvitation(f.ctx, alice, ops, "u5@example.com", "")))
+		expectOK(t, "inviting once the window rolls", errOf(f.c.CreateInvitation(f.ctx, f.chOf(alice, ops), "u5@example.com")))
 	}, withUserCap(4))
 }
 
 // Both caps apply: whichever is reached first answers, saying which.
 func TestTheTeamCapStillAppliesUnderTheUserCap(t *testing.T) {
 	each(t, func(f *fixture) {
-		_, err := f.c.CreateInvitation(f.ctx, alice, f.team, "u3@example.com", "")
+		_, err := f.c.CreateInvitation(f.ctx, f.ch(alice), "u3@example.com")
 		if err == nil || err.Error() != "this team has reached its limit of 2 invitations per day" {
 			t.Errorf("the refusal says %q", err)
 		}
@@ -681,7 +858,7 @@ func TestAPerUserCapOfZeroIsNoCap(t *testing.T) {
 			if i%2 == 1 {
 				team = ops
 			}
-			expectOK(t, fmt.Sprintf("invitation %d", i+3), errOf(f.c.CreateInvitation(f.ctx, alice, team, fmt.Sprintf("z%d@example.com", i), "")))
+			expectOK(t, fmt.Sprintf("invitation %d", i+3), errOf(f.c.CreateInvitation(f.ctx, f.chOf(alice, team), fmt.Sprintf("z%d@example.com", i))))
 		}
 	}, withUserCap(0))
 }
@@ -701,7 +878,7 @@ func TestThePerUserCapHoldsUnderParallelRequests(t *testing.T) {
 				if i%2 == 1 {
 					team = ops
 				}
-				_, errs[i] = f.c.CreateInvitation(f.ctx, alice, team, fmt.Sprintf("p%d@example.com", i), "")
+				errs[i] = f.invite(alice, team, fmt.Sprintf("p%d@example.com", i))
 			}()
 		}
 		wg.Wait()
@@ -729,28 +906,26 @@ func TestSharingAWorkspace(t *testing.T) {
 		f.db.Create(&model.Workspace{ID: 100, UserID: alice, Name: "backend"})
 		f.db.Create(&model.Workspace{ID: 101, UserID: alice, Name: "fork", ForkOfID: 100})
 		f.db.Create(&model.Workspace{ID: 102, UserID: alice, Name: "old", ArchivedAt: &archived})
-		f.db.Create(&model.Workspace{ID: 200, UserID: dave, Name: "dave-ws"})
 		other := must(f.c.CreateTeam(f.ctx, dave, "ops"))
 
-		s := must(f.c.ShareWorkspace(f.ctx, alice, 100, f.team, ""))
-		if s.Group != "backend" || s.TeamName != "core" || s.TeamID != f.team || s.WorkspaceID != 100 {
-			t.Errorf("sharing with no group gave %+v, want group backend in core", s)
+		s := must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100))
+		if s.TeamName != "core" || s.TeamID != f.team || s.WorkspaceID != 100 || s.Version != 6 || !s.CreatedAt.Equal(t0) {
+			t.Errorf("sharing gave %+v, want backend in core at version 6", s)
 		}
-		s = must(f.c.ShareWorkspace(f.ctx, alice, 100, f.team, "  Platform "))
-		if s.Group != "Platform" {
-			t.Errorf("sharing again gave group %q, want Platform", s.Group)
+		// Sharing again changes nothing and records nothing.
+		if s := must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100)); s.WorkspaceID != 100 || s.Version != 7 {
+			t.Errorf("sharing again gave %+v", s)
 		}
-		expectNotFound(t, "Carol sharing Alice's workspace", errOf(f.c.ShareWorkspace(f.ctx, carol, 100, f.team, "")))
-		expectNotFound(t, "Alice sharing with a team she is not in", errOf(f.c.ShareWorkspace(f.ctx, alice, 100, other.ID, "")))
-		expectNotFound(t, "sharing an unknown workspace", errOf(f.c.ShareWorkspace(f.ctx, alice, 424242, f.team, "")))
-		expectNotFound(t, "sharing with an unknown team", errOf(f.c.ShareWorkspace(f.ctx, alice, 100, 424242, "")))
-		expectKind(t, "sharing a fork", errOf(f.c.ShareWorkspace(f.ctx, alice, 101, f.team, "")), entity.TeamInvalid)
-		expectKind(t, "sharing an archived workspace", errOf(f.c.ShareWorkspace(f.ctx, alice, 102, f.team, "")), entity.TeamInvalid)
-		expectKind(t, "a group too long", errOf(f.c.ShareWorkspace(f.ctx, alice, 100, f.team, strings.Repeat("g", 129))), entity.TeamInvalid)
-		expectKind(t, "a group of two lines", errOf(f.c.ShareWorkspace(f.ctx, alice, 100, f.team, "a\nb")), entity.TeamInvalid)
+		expectConflict(t, "sharing from the version before", errOf(f.c.ShareWorkspace(f.ctx, f.stale(alice), 100)), 7)
+		expectNotFound(t, "Carol sharing Alice's workspace", errOf(f.c.ShareWorkspace(f.ctx, f.ch(carol), 100)))
+		expectNotFound(t, "Alice sharing with a team she is not in", errOf(f.c.ShareWorkspace(f.ctx, f.chOf(alice, other.ID), 100)))
+		expectNotFound(t, "sharing an unknown workspace", errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 424242)))
+		expectNotFound(t, "sharing with an unknown team", errOf(f.c.ShareWorkspace(f.ctx, entity.TeamChange{UserID: alice, TeamID: 424242, Version: 1}, 100)))
+		expectKind(t, "sharing a fork", errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 101)), entity.TeamInvalid)
+		expectKind(t, "sharing an archived workspace", errOf(f.c.ShareWorkspace(f.ctx, f.ch(alice), 102)), entity.TeamInvalid)
 
 		shares := must(f.c.ListShares(f.ctx, alice, 100))
-		if len(shares) != 1 || shares[0].Group != "Platform" || shares[0].TeamName != "core" {
+		if len(shares) != 1 || shares[0].TeamName != "core" || shares[0].Version != 0 {
 			t.Errorf("Alice's shares of backend are %+v", shares)
 		}
 		expectNotFound(t, "Carol listing Alice's shares", errOf(f.c.ListShares(f.ctx, carol, 100)))
@@ -758,23 +933,37 @@ func TestSharingAWorkspace(t *testing.T) {
 			t.Errorf("events are %s, want a workspace_share of workspace 100", acts)
 		}
 
-		expectNotFound(t, "Carol unsharing Alice's workspace", f.c.UnshareWorkspace(f.ctx, carol, 100, f.team))
-		expectNotFound(t, "unsharing from a team it is not shared with", f.c.UnshareWorkspace(f.ctx, alice, 100, other.ID))
-		expectOK(t, "Alice unsharing", f.c.UnshareWorkspace(f.ctx, alice, 100, f.team))
+		expectNotFound(t, "Carol unsharing Alice's workspace", errOf(f.c.UnshareWorkspace(f.ctx, f.ch(carol), 100)))
+		expectNotFound(t, "unsharing from a team she is not in", errOf(f.c.UnshareWorkspace(f.ctx, f.chOf(alice, other.ID), 100)))
+		expectConflict(t, "unsharing from the version before", errOf(f.c.UnshareWorkspace(f.ctx, f.stale(alice), 100)), 7)
+		f.db.Model(&model.Workspace{}).Where("id = ?", 100).Update("name", "backend v2")
+		if v, err := f.c.UnshareWorkspace(f.ctx, f.ch(alice), 100); err != nil || v != 8 {
+			t.Errorf("Alice unsharing returned %d, %v; want version 8", v, err)
+		}
+		expectNotFound(t, "unsharing it twice", errOf(f.c.UnshareWorkspace(f.ctx, f.ch(alice), 100)))
 		if shares := must(f.c.ListShares(f.ctx, alice, 100)); len(shares) != 0 {
 			t.Errorf("shares after unsharing are %+v", shares)
+		}
+		as := must(f.c.ListActivities(f.ctx, entity.ListTeamActivitiesRequest{UserID: bob, TeamID: f.team, Limit: 2}))
+		if len(as.Activities) != 2 {
+			t.Fatalf("the activity is %+v", as)
+		}
+		un, sh := as.Activities[0], as.Activities[1]
+		if un.Action != model.TeamActivityWorkspaceUnshared || un.TargetWorkspaceID != 100 || un.Details["workspaceName"] != "backend v2" || un.Actor.UserID != alice ||
+			sh.Action != model.TeamActivityWorkspaceShared || sh.TargetWorkspaceID != 100 || sh.Details["workspaceName"] != "backend" {
+			t.Errorf("the share and unshare are recorded as %+v and %+v", sh, un)
 		}
 	})
 }
 
 func TestTheTeamReadCheck(t *testing.T) {
 	each(t, func(f *fixture) {
-		f.db.Create(&model.Workspace{ID: 100, UserID: alice, Name: "backend"})
+		f.db.Create(&model.Workspace{ID: 100, UserID: alice, Name: "Backend"})
 		f.db.Create(&model.Workspace{ID: 101, UserID: alice, Name: "fork", ForkOfID: 100})
 		f.db.Create(&model.Workspace{ID: 103, UserID: alice, Name: "private"})
 		f.db.Create(&model.Workspace{ID: 200, UserID: carol, Name: "docs"})
-		must(f.c.ShareWorkspace(f.ctx, alice, 100, f.team, "Backend"))
-		must(f.c.ShareWorkspace(f.ctx, carol, 200, f.team, ""))
+		must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100))
+		must(f.c.ShareWorkspace(f.ctx, f.ch(carol), 200))
 		can := func(user, ws int64) bool { return must(f.c.CanReadWorkspaceInTeam(f.ctx, user, f.team, ws)) }
 		if !can(bob, 100) || !can(bob, 101) || can(bob, 103) || can(dave, 100) {
 			t.Errorf("Bob reads backend %v, its fork %v, private %v; Dave, outside, reads backend %v; want true, true, false, false",
@@ -783,9 +972,9 @@ func TestTheTeamReadCheck(t *testing.T) {
 		list := must(f.c.ListTeamWorkspaces(f.ctx, bob, f.team))
 		got := []string{}
 		for _, w := range list {
-			got = append(got, fmt.Sprintf("%s/%s/%d/%s/%s", w.Group, w.Name, w.ForkOfID, w.OwnerName, w.OwnerPicture))
+			got = append(got, fmt.Sprintf("%s/%s/%d/%s/%s", w.SharedName, w.Name, w.ForkOfID, w.OwnerName, w.OwnerPicture))
 		}
-		want := "Backend/backend/0/Alice/https://img/alice Backend/fork/100/Alice/https://img/alice docs/docs/0/Carol/"
+		want := "Backend/Backend/0/Alice/https://img/alice Backend/fork/100/Alice/https://img/alice docs/docs/0/Carol/"
 		if strings.Join(got, " ") != want {
 			t.Errorf("the team's workspaces are %v, want %s", got, want)
 		}
@@ -794,62 +983,76 @@ func TestTheTeamReadCheck(t *testing.T) {
 		}
 		expectNotFound(t, "Dave listing the team's workspaces", errOf(f.c.ListTeamWorkspaces(f.ctx, dave, f.team)))
 		// Carol leaves: her workspace goes with her.
-		expectOK(t, "Carol leaving", f.c.LeaveTeam(f.ctx, carol, f.team))
+		expectOK(t, "Carol leaving", f.c.LeaveTeam(f.ctx, f.ch(carol)))
 		if can(bob, 200) {
 			t.Error("Bob still reads Carol's workspace after she left")
 		}
 	})
 }
 
-// An invitation grants a role only while its inviter may still grant it:
-// demoted, removed or gone, their pending invitations are no longer valid.
-func TestAnInvitationNeedsAnInviterWhoMayStillGrantItsRole(t *testing.T) {
+// An invitation is valid only while its inviter is still in the team.
+func TestAnInvitationNeedsAnInviterStillInTheTeam(t *testing.T) {
 	each(t, func(f *fixture) {
-		admin := must(f.c.CreateInvitation(f.ctx, bob, f.team, "dave@example.com", model.TeamRoleAdmin))
-		member := must(f.c.CreateInvitation(f.ctx, bob, f.team, "eve@example.com", ""))
-		expectOK(t, "Alice making Bob a member", f.c.SetMemberRole(f.ctx, alice, f.team, bob, model.TeamRoleMember))
+		toDave := must(f.c.CreateInvitation(f.ctx, f.ch(bob), "dave@example.com"))
+		toEve := must(f.c.CreateInvitation(f.ctx, f.ch(bob), "eve@example.com"))
+		expectOK(t, "accepting while Bob is in", errOf(f.c.AcceptInvitation(f.ctx, dave, token(toDave.Link))))
+		expectOK(t, "Alice removing Bob", errOf(f.c.RemoveMember(f.ctx, f.ch(alice), bob)))
 		for name, err := range map[string]error{
-			"previewing a demoted admin's invitation":     errOf(f.c.PreviewInvitation(f.ctx, dave, token(admin.Link))),
-			"accepting it by link":                        errOf(f.c.AcceptInvitation(f.ctx, dave, token(admin.Link))),
-			"accepting it from the inbox":                 errOf(f.c.AcceptInvitationByID(f.ctx, dave, admin.Invitation.ID)),
-			"accepting a member's invitation of a member": errOf(f.c.AcceptInvitation(f.ctx, eve, token(member.Link))),
+			"previewing a removed member's invitation": errOf(f.c.PreviewInvitation(f.ctx, eve, token(toEve.Link))),
+			"accepting it by link":                     errOf(f.c.AcceptInvitation(f.ctx, eve, token(toEve.Link))),
+			"accepting it from the inbox":              errOf(f.c.AcceptInvitationByID(f.ctx, eve, toEve.Invitation.ID)),
 		} {
 			expectKind(t, name, err, entity.TeamGone)
 		}
-		// Made an admin again, Bob's invitations hold again.
-		expectOK(t, "Alice making Bob an admin", f.c.SetMemberRole(f.ctx, alice, f.team, bob, model.TeamRoleAdmin))
-		expectOK(t, "accepting once Bob is an admin again", errOf(f.c.AcceptInvitation(f.ctx, dave, token(admin.Link))))
-		// Removed, nothing he sent is valid.
-		expectOK(t, "Alice removing Bob", f.c.RemoveMember(f.ctx, alice, f.team, bob))
-		expectKind(t, "previewing a removed admin's invitation", errOf(f.c.PreviewInvitation(f.ctx, eve, token(member.Link))), entity.TeamGone)
-		expectKind(t, "accepting a removed admin's invitation", errOf(f.c.AcceptInvitationByID(f.ctx, eve, member.Invitation.ID)), entity.TeamGone)
 	})
 }
 
-// An owner making a member an owner while an admin removes them: the admin
-// never removes an owner.
-func TestAnAdminNeverRemovesAnOwnerMadeAtTheSameTime(t *testing.T) {
+// The activity is paged newest first: 20 unless the page says, never more
+// than 100, older than the activity before names.
+func TestTheActivityIsPaged(t *testing.T) {
 	each(t, func(f *fixture) {
-		for round := range 10 {
-			var wg sync.WaitGroup
-			var promoted, removed error
-			wg.Add(2)
-			go func() {
-				defer wg.Done()
-				promoted = f.c.SetMemberRole(f.ctx, alice, f.team, carol, model.TeamRoleOwner)
-			}()
-			go func() { defer wg.Done(); removed = f.c.RemoveMember(f.ctx, bob, f.team, carol) }()
-			wg.Wait()
-			switch {
-			case promoted == nil && removed == nil:
-				t.Fatalf("round %d: Carol was made an owner and removed by Bob, an admin", round)
-			case promoted == nil:
-				expectKind(t, "Bob removing Carol, an owner by then", removed, entity.TeamForbidden)
-				expectOK(t, "Alice making Carol a member again", f.c.SetMemberRole(f.ctx, alice, f.team, carol, model.TeamRoleMember))
-			default:
-				expectNotFound(t, "Alice promoting Carol, removed by then", promoted)
-				f.join(carol, "carol@example.com", model.TeamRoleMember)
-			}
+		for i := range 20 {
+			f.now = t0.Add(time.Duration(i+1) * time.Second)
+			must(f.c.RenameTeam(f.ctx, f.ch([]int64{alice, bob, carol}[i%3]), fmt.Sprintf("core %d", i)))
 		}
-	}, withCap(100))
+		// 5 from the cast and 20 renames.
+		page := must(f.c.ListActivities(f.ctx, entity.ListTeamActivitiesRequest{UserID: carol, TeamID: f.team}))
+		if len(page.Activities) != 20 || page.Version != 25 || page.Activities[0].Details["to"] != "core 19" {
+			t.Fatalf("the first page has %d at %d, starting %+v", len(page.Activities), page.Version, page.Activities[0])
+		}
+		rest := must(f.c.ListActivities(f.ctx, entity.ListTeamActivitiesRequest{UserID: carol, TeamID: f.team, Before: page.Activities[19].ID, Limit: 100}))
+		if len(rest.Activities) != 5 || rest.Activities[4].Action != model.TeamActivityTeamCreated || rest.Activities[4].Actor.Name != "Alice" {
+			t.Errorf("the second page is %+v", rest.Activities)
+		}
+		accepted := rest.Activities[0]
+		if accepted.Action != model.TeamActivityInvitationAccepted || accepted.Actor.UserID != carol || accepted.TargetEmail != "carol@example.com" {
+			t.Errorf("Carol's accept is recorded as %+v", accepted)
+		}
+		spy := &limits{Repository: f.repo}
+		f.c.(*controller).repo = spy
+		for _, limit := range []int{0, -3, 1, 100, 101, 5000} {
+			must(f.c.ListActivities(f.ctx, entity.ListTeamActivitiesRequest{UserID: carol, TeamID: f.team, Limit: limit}))
+		}
+		if fmt.Sprint(spy.asked) != "[20 20 1 100 100 100]" {
+			t.Errorf("the limits asked for are %v", spy.asked)
+		}
+		// A removal names its target.
+		f.c.(*controller).repo = f.repo
+		must(f.c.RemoveMember(f.ctx, f.ch(alice), bob))
+		a := must(f.c.ListActivities(f.ctx, entity.ListTeamActivitiesRequest{UserID: carol, TeamID: f.team, Limit: 1})).Activities[0]
+		if a.Action != model.TeamActivityMemberRemoved || a.Target.UserID != bob || a.Target.Name != "Bob" || a.Actor.UserID != alice {
+			t.Errorf("the removal is recorded as %+v", a)
+		}
+	})
+}
+
+// limits records the limit each activity page asks for.
+type limits struct {
+	Repository
+	asked []int
+}
+
+func (l *limits) ListTeamActivities(ctx context.Context, teamID int64, limit int, before int64) ([]base.TeamActivityRow, error) {
+	l.asked = append(l.asked, limit)
+	return l.Repository.ListTeamActivities(ctx, teamID, limit, before)
 }

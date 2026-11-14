@@ -22,9 +22,6 @@ type TeamReadController interface {
 	// SystemListTasksInWorkspaces is ListTasks over the given workspaces,
 	// whoever owns them, newest activity first.
 	SystemListTasksInWorkspaces(ctx context.Context, req entity.ListTasksRequest, workspaceIDs []int64) (*entity.ListTasksResponse, error)
-	// SystemGetDetailedStatsOfWorkspaces is GetDetailedUserStats over the
-	// given workspaces, with a breakdown by owner instead of by workspace.
-	SystemGetDetailedStatsOfWorkspaces(ctx context.Context, req entity.GetStatsOfWorkspacesRequest) (*entity.GetStatsOfWorkspacesResponse, error)
 	// SystemGetSkillFile reads one file of an account's skill, counting
 	// nothing: it is not the owner looking.
 	SystemGetSkillFile(ctx context.Context, req entity.SystemGetSkillFileRequest) (*entity.GetSkillFileResponse, error)
@@ -41,19 +38,6 @@ func (c *controller) SystemListTasksInWorkspaces(ctx context.Context, req entity
 		return nil, err
 	}
 	return c.taskListResponse(ctx, ms, req.PreloadAgents)
-}
-
-func (c *controller) SystemGetDetailedStatsOfWorkspaces(ctx context.Context, req entity.GetStatsOfWorkspacesRequest) (*entity.GetStatsOfWorkspacesResponse, error) {
-	startTime, endTime := statsWindow(req.Range, req.From, req.To, time.Now())
-	stats, rows, err := c.repository.GetDetailedStatsOfWorkspaces(ctx, req.WorkspaceIDs, startTime, endTime)
-	if err != nil {
-		return nil, err
-	}
-	out := &entity.GetStatsOfWorkspacesResponse{Stats: stats, ByMember: make([]entity.MemberStats, len(rows))}
-	for i, r := range rows {
-		out.ByMember[i] = entity.MemberStats{UserID: r.UserID, Name: r.Name, Picture: r.Picture, TasksCompleted: r.TasksCompleted, Messages: r.Messages}
-	}
-	return out, nil
 }
 
 func (c *controller) SystemGetSkillFile(ctx context.Context, req entity.SystemGetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
