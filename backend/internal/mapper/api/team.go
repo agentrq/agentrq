@@ -6,6 +6,7 @@ package api
 
 import (
 	"encoding/json"
+	"net/http"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
@@ -21,7 +22,7 @@ func FromHTTPRequestToTeamRequestView(body []byte, v any) bool {
 func id62(id int64) string { return monoflake.ID(id).String() }
 
 func fromTeamEntity(e entity.Team) view.Team {
-	return view.Team{ID: id62(e.ID), Name: e.Name, Role: e.Role, MemberCount: e.MemberCount, CreatedAt: e.CreatedAt}
+	return view.Team{ID: id62(e.ID), Name: e.Name, Version: e.Version, MemberCount: e.MemberCount, CreatedAt: e.CreatedAt}
 }
 
 // FromTeamEntityToHTTPResponse renders a team.
@@ -41,11 +42,11 @@ func FromTeamEntitiesToHTTPResponse(es []entity.Team) []byte {
 	return b
 }
 
-// FromTeamMemberEntitiesToHTTPResponse renders a team's members.
-func FromTeamMemberEntitiesToHTTPResponse(es []entity.TeamMember) []byte {
-	out := view.ListTeamMembersResponse{Members: make([]view.TeamMember, len(es))}
-	for i, e := range es {
-		out.Members[i] = view.TeamMember{UserID: id62(e.UserID), Name: e.Name, Email: e.Email, Picture: e.Picture, Role: e.Role, JoinedAt: e.JoinedAt}
+// FromTeamMembersEntityToHTTPResponse renders a team's members.
+func FromTeamMembersEntityToHTTPResponse(e entity.TeamMembers) []byte {
+	out := view.ListTeamMembersResponse{Members: make([]view.TeamMember, len(e.Members)), Version: e.Version}
+	for i, m := range e.Members {
+		out.Members[i] = view.TeamMember{UserID: id62(m.UserID), Name: m.Name, Email: m.Email, Picture: m.Picture, JoinedAt: m.JoinedAt}
 	}
 	b, _ := json.Marshal(out)
 	return b
@@ -53,7 +54,7 @@ func FromTeamMemberEntitiesToHTTPResponse(es []entity.TeamMember) []byte {
 
 func fromTeamInvitationEntity(e entity.TeamInvitation) view.TeamInvitation {
 	return view.TeamInvitation{
-		ID: id62(e.ID), TeamID: id62(e.TeamID), TeamName: e.TeamName, Email: e.Email, Role: e.Role,
+		ID: id62(e.ID), TeamID: id62(e.TeamID), TeamName: e.TeamName, Email: e.Email,
 		InvitedBy: id62(e.InvitedBy), InvitedByName: e.InvitedByName, CreatedAt: e.CreatedAt, ExpiresAt: e.ExpiresAt,
 	}
 }
@@ -68,11 +69,58 @@ func FromTeamInvitationEntitiesToHTTPResponse(es []entity.TeamInvitation) []byte
 	return b
 }
 
+// FromTeamInvitationsEntityToHTTPResponse renders a team's invitations.
+func FromTeamInvitationsEntityToHTTPResponse(e entity.TeamInvitations) []byte {
+	out := view.TeamInvitationsResponse{Invitations: make([]view.TeamInvitation, len(e.Invitations)), Version: e.Version}
+	for i, inv := range e.Invitations {
+		out.Invitations[i] = fromTeamInvitationEntity(inv)
+	}
+	b, _ := json.Marshal(out)
+	return b
+}
+
 // FromCreateTeamInvitationEntityToHTTPResponse renders a new invitation.
 func FromCreateTeamInvitationEntityToHTTPResponse(e entity.CreateTeamInvitationResponse) []byte {
 	b, _ := json.Marshal(view.CreateTeamInvitationResponse{
-		Invitation: fromTeamInvitationEntity(e.Invitation), EmailSent: e.EmailSent, Link: e.Link,
+		Invitation: fromTeamInvitationEntity(e.Invitation), EmailSent: e.EmailSent, Link: e.Link, Version: e.Version,
 	})
+	return b
+}
+
+// FromTeamVersionToHTTPResponse renders the team's version after a change.
+func FromTeamVersionToHTTPResponse(version int64) []byte {
+	b, _ := json.Marshal(view.TeamVersionResponse{Version: version})
+	return b
+}
+
+// FromTeamVersionErrorToHTTPResponse renders a change refused because the
+// team changed first: the error, and the version to reload at.
+func FromTeamVersionErrorToHTTPResponse(e *entity.TeamVersionError) []byte {
+	v := view.TeamConflictResponse{Conflict: true, Version: e.Version}
+	v.Error.Message, v.Error.Code = e.Error(), http.StatusConflict
+	b, _ := json.Marshal(v)
+	return b
+}
+
+// FromTeamActivitiesEntityToHTTPResponse renders a page of a team's
+// activities.
+func FromTeamActivitiesEntityToHTTPResponse(e entity.TeamActivities) []byte {
+	out := view.ListTeamActivitiesResponse{Activities: make([]view.TeamActivity, len(e.Activities)), Version: e.Version}
+	for i, a := range e.Activities {
+		v := view.TeamActivity{
+			ID: id62(a.ID), Action: a.Action, Actor: fromTeamOwner(a.Actor.UserID, a.Actor.Name, a.Actor.Picture),
+			TargetEmail: a.TargetEmail, Details: a.Details, CreatedAt: a.CreatedAt,
+		}
+		if a.Target.UserID != 0 {
+			t := fromTeamOwner(a.Target.UserID, a.Target.Name, a.Target.Picture)
+			v.TargetUser = &t
+		}
+		if a.TargetWorkspaceID != 0 {
+			v.TargetWorkspaceID = id62(a.TargetWorkspaceID)
+		}
+		out.Activities[i] = v
+	}
+	b, _ := json.Marshal(out)
 	return b
 }
 
@@ -80,7 +128,7 @@ func FromCreateTeamInvitationEntityToHTTPResponse(e entity.CreateTeamInvitationR
 // preview.
 func FromTeamInvitationPreviewEntityToHTTPResponse(e entity.TeamInvitationPreview) []byte {
 	b, _ := json.Marshal(view.TeamInvitationPreview{
-		TeamID: id62(e.TeamID), TeamName: e.TeamName, Role: e.Role, InvitedByName: e.InvitedByName,
+		TeamID: id62(e.TeamID), TeamName: e.TeamName, InvitedByName: e.InvitedByName,
 		Email: e.Email, EmailMatches: e.EmailMatches, ExpiresAt: e.ExpiresAt,
 	})
 	return b
@@ -88,8 +136,8 @@ func FromTeamInvitationPreviewEntityToHTTPResponse(e entity.TeamInvitationPrevie
 
 func fromWorkspaceShareEntity(e entity.WorkspaceShare) view.WorkspaceShare {
 	return view.WorkspaceShare{
-		TeamID: id62(e.TeamID), TeamName: e.TeamName, WorkspaceID: id62(e.WorkspaceID), Group: e.Group,
-		CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
+		TeamID: id62(e.TeamID), TeamName: e.TeamName, WorkspaceID: id62(e.WorkspaceID),
+		CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt, Version: e.Version,
 	}
 }
 

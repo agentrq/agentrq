@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // Package teamview is team mode: what a team's members read of the
-// workspaces shared with it, and the three writes it allows: cloning a
-// teammate's task into a workspace of your own, the team's own memory, and
-// adding a teammate's skill to your account.
+// workspaces shared with it, and the two writes it allows: cloning a
+// teammate's task into a workspace of your own, and adding a teammate's
+// skill to your account.
 //
 // Who may read what is decided in exactly two places, both in
 // controller/team:
@@ -26,23 +26,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
-	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 )
-
-// MemoryName is the team's one memory file.
-const MemoryName = "memory.md"
 
 // skillFile is the file a teammate's skill is read by.
 const skillFile = "SKILL.md"
@@ -52,18 +46,10 @@ type Controller interface {
 	ListTasks(ctx context.Context, req entity.ListTeamTasksRequest) ([]entity.TeamTask, error)
 	GetTask(ctx context.Context, userID, teamID, taskID int64) (entity.TeamTaskDetail, error)
 	GetAttachment(ctx context.Context, userID, teamID, taskID int64, attachmentID string) (*entity.GetAttachmentResponse, error)
-	GetStats(ctx context.Context, req entity.GetTeamStatsRequest) (*entity.GetStatsOfWorkspacesResponse, error)
 	// CloneTask creates a copy of a teammate's task in one of the caller's
-	// workspaces, through the normal task creation, noting where it came
-	// from.
+	// workspaces, not started, through the normal task creation, noting
+	// where it came from.
 	CloneTask(ctx context.Context, req entity.CloneTeamTaskRequest) (*entity.CreateTaskResponse, error)
-
-	GetMemory(ctx context.Context, userID, teamID int64) (entity.TeamMemory, error)
-	// SaveMemory saves the team's memory: the last save wins, and Conflict
-	// says it replaced one saved after BaseUpdatedAt.
-	SaveMemory(ctx context.Context, req entity.SaveTeamMemoryRequest) (entity.TeamMemory, error)
-	MemoryIndex(ctx context.Context, userID, teamID int64) ([]entity.TeamMemoryIndexEntry, error)
-	GetMemberMemory(ctx context.Context, userID, teamID, workspaceID int64, name string) (entity.Memory, error)
 
 	ListSkills(ctx context.Context, userID, teamID int64) ([]entity.TeamSkill, error)
 	GetSkill(ctx context.Context, userID, teamID int64, name string) (entity.TeamSkill, error)
@@ -85,10 +71,8 @@ type Owner interface {
 	GetTask(ctx context.Context, req entity.GetTaskRequest) (*entity.GetTaskResponse, error)
 	GetTaskPlan(ctx context.Context, req entity.GetTaskPlanRequest) (*entity.GetTaskPlanResponse, error)
 	GetAttachment(ctx context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error)
-	GetMemory(ctx context.Context, req entity.GetMemoryRequest) (*entity.GetMemoryResponse, error)
 	CreateTask(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error)
 	SystemListTasksInWorkspaces(ctx context.Context, req entity.ListTasksRequest, workspaceIDs []int64) (*entity.ListTasksResponse, error)
-	SystemGetDetailedStatsOfWorkspaces(ctx context.Context, req entity.GetStatsOfWorkspacesRequest) (*entity.GetStatsOfWorkspacesResponse, error)
 	SystemGetSkillFile(ctx context.Context, req entity.SystemGetSkillFileRequest) (*entity.GetSkillFileResponse, error)
 	CopySkill(ctx context.Context, req entity.CopySkillRequest) (*entity.CopySkillResponse, error)
 }
@@ -96,11 +80,7 @@ type Owner interface {
 // Repository is what team mode reads and writes itself.
 type Repository interface {
 	SystemGetTask(ctx context.Context, id int64) (model.Task, error)
-	SystemGetUser(ctx context.Context, id int64) (model.User, error)
-	TeamWorkspaceInfo(ctx context.Context, teamID, workspaceID int64) (base.TeamWorkspaceRow, error)
-	GetTeamMemory(ctx context.Context, teamID int64, name string) (model.TeamMemory, error)
-	SaveTeamMemory(ctx context.Context, mem model.TeamMemory) (model.TeamMemory, bool, error)
-	ListWorkspaceMemoryNames(ctx context.Context, workspaceIDs []int64) ([]base.WorkspaceMemoryRow, error)
+	TeamWorkspaceInfo(ctx context.Context, workspaceID int64) (base.TeamWorkspaceRow, error)
 	ListSkillsOnInWorkspaces(ctx context.Context, workspaceIDs []int64) ([]base.WorkspaceSkillRow, error)
 }
 
@@ -114,31 +94,19 @@ type Params struct {
 	Teams      Teams
 	Owner      Owner
 	Repository Repository
-	IDGen      idgen.Service
 	PubSub     Publisher
-	// MaxMemoryBytes caps the team's memory, as a workspace's is capped.
-	MaxMemoryBytes int
-	// Now is the clock; nil is time.Now.
-	Now func() time.Time
 }
 
 type controller struct {
-	teams     Teams
-	owner     Owner
-	repo      Repository
-	ids       idgen.Service
-	pubsub    Publisher
-	maxMemory int
-	now       func() time.Time
+	teams  Teams
+	owner  Owner
+	repo   Repository
+	pubsub Publisher
 }
 
 // New returns team mode over p.
 func New(p Params) Controller {
-	now := p.Now
-	if now == nil {
-		now = time.Now
-	}
-	return &controller{teams: p.Teams, owner: p.Owner, repo: p.Repository, ids: p.IDGen, pubsub: p.PubSub, maxMemory: p.MaxMemoryBytes, now: now}
+	return &controller{teams: p.Teams, owner: p.Owner, repo: p.Repository, pubsub: p.PubSub}
 }
 
 func invalid(format string, args ...any) error {
@@ -155,7 +123,7 @@ func (c *controller) emit(ctx context.Context, action entity.Action, userID, wor
 	}})
 }
 
-// readable is the workspace, with its owner and group in the team, when the
+// readable is the workspace, with its owner and shared name, when the
 // user reads it there; base.ErrNotFound when not. Every read of one
 // workspace's row starts here.
 func (c *controller) readable(ctx context.Context, userID, teamID, workspaceID int64) (entity.TeamWorkspace, error) {
@@ -166,12 +134,12 @@ func (c *controller) readable(ctx context.Context, userID, teamID, workspaceID i
 	if !ok {
 		return entity.TeamWorkspace{}, base.ErrNotFound
 	}
-	w, err := c.repo.TeamWorkspaceInfo(ctx, teamID, workspaceID)
+	w, err := c.repo.TeamWorkspaceInfo(ctx, workspaceID)
 	if err != nil {
 		return entity.TeamWorkspace{}, err
 	}
 	return entity.TeamWorkspace{
-		ID: w.ID, Name: w.Name, ForkOfID: w.ForkOfID, Group: w.GroupName,
+		ID: w.ID, Name: w.Name, ForkOfID: w.ForkOfID, SharedName: w.SharedName,
 		OwnerID: w.UserID, OwnerName: w.OwnerName, OwnerPicture: w.OwnerPicture,
 	}, nil
 }
@@ -186,9 +154,9 @@ func (c *controller) readableTask(ctx context.Context, userID, teamID, taskID in
 	return t, w, err
 }
 
-// groupKey is the key a group is matched by: its name, ignoring case and
-// surrounding spaces.
-func groupKey(name string) string {
+// WorkspaceKey is the key a team workspace is matched by: its shared name,
+// ignoring case and surrounding spaces.
+func WorkspaceKey(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }
 
@@ -205,7 +173,7 @@ func (c *controller) ListTasks(ctx context.Context, req entity.ListTeamTasksRequ
 	byID := make(map[int64]entity.TeamWorkspace, len(visible))
 	ids := make([]int64, 0, len(visible))
 	for _, w := range visible {
-		if req.Group != "" && groupKey(w.Group) != groupKey(req.Group) {
+		if req.Workspace != "" && WorkspaceKey(w.SharedName) != WorkspaceKey(req.Workspace) {
 			continue
 		}
 		if req.Member != 0 && w.OwnerID != req.Member {
@@ -259,36 +227,20 @@ func (c *controller) GetAttachment(ctx context.Context, userID, teamID, taskID i
 	return c.owner.GetAttachment(ctx, entity.GetAttachmentRequest{WorkspaceID: t.WorkspaceID, TaskID: t.ID, AttachmentID: attachmentID, UserID: ownerID(w)})
 }
 
-func (c *controller) GetStats(ctx context.Context, req entity.GetTeamStatsRequest) (*entity.GetStatsOfWorkspacesResponse, error) {
-	visible, err := c.teams.ListTeamWorkspaces(ctx, req.UserID, req.TeamID)
-	if err != nil {
-		return nil, err
-	}
-	ids := []int64{}
-	for _, w := range visible {
-		if req.Group == "" || groupKey(w.Group) == groupKey(req.Group) {
-			ids = append(ids, w.ID)
-		}
-	}
-	return c.owner.SystemGetDetailedStatsOfWorkspaces(ctx, entity.GetStatsOfWorkspacesRequest{
-		WorkspaceIDs: ids, Range: req.Range, From: req.From, To: req.To,
-	})
-}
-
-// cloneStatuses are what a clone may start as.
-var cloneStatuses = map[string]bool{"notstarted": true, "ongoing": true}
+// cloneAssignees are who a clone may be for; empty is a human.
+var cloneAssignees = map[string]bool{"human": true, "agent": true}
 
 func (c *controller) CloneTask(ctx context.Context, req entity.CloneTeamTaskRequest) (*entity.CreateTaskResponse, error) {
 	t, w, err := c.readableTask(ctx, req.UserID, req.TeamID, req.TaskID)
 	if err != nil {
 		return nil, err
 	}
-	status := req.Status
-	if status == "" {
-		status = "notstarted"
+	assignee := req.Assignee
+	if assignee == "" {
+		assignee = "human"
 	}
-	if !cloneStatuses[status] {
-		return nil, invalid("a clone starts as notstarted or ongoing, not %q", req.Status)
+	if !cloneAssignees[assignee] {
+		return nil, invalid("a clone is for a human or an agent, not %q", req.Assignee)
 	}
 	team, err := c.teams.GetTeam(ctx, req.UserID, req.TeamID)
 	if err != nil {
@@ -300,8 +252,8 @@ func (c *controller) CloneTask(ctx context.Context, req entity.CloneTeamTaskRequ
 			WorkspaceID: req.WorkspaceID,
 			Title:       t.Title,
 			Body:        cloneBody(t, w, team),
-			Status:      status,
-			Assignee:    "agent",
+			Status:      "notstarted",
+			Assignee:    assignee,
 			CreatedBy:   "human",
 			Attachments: c.cloneAttachments(ctx, t, w),
 		},
@@ -346,56 +298,8 @@ func (c *controller) cloneAttachments(ctx context.Context, t model.Task, w entit
 	return out
 }
 
-// teamMemory is the stored memory as the team reads it, with its writer.
-func (c *controller) teamMemory(ctx context.Context, m model.TeamMemory) entity.TeamMemory {
-	out := entity.TeamMemory{Content: m.Content, UpdatedAt: m.UpdatedAt, UpdatedBy: m.UpdatedBy}
-	// A writer whose account is gone is still named by id.
-	if u, err := c.repo.SystemGetUser(ctx, m.UpdatedBy); err == nil {
-		out.UpdatedByName, out.UpdatedByPicture = u.Name, u.Picture
-	}
-	return out
-}
-
-func (c *controller) GetMemory(ctx context.Context, userID, teamID int64) (entity.TeamMemory, error) {
-	if _, err := c.teams.GetTeam(ctx, userID, teamID); err != nil {
-		return entity.TeamMemory{}, err
-	}
-	m, err := c.repo.GetTeamMemory(ctx, teamID, MemoryName)
-	if errors.Is(err, base.ErrNotFound) {
-		return entity.TeamMemory{}, nil
-	}
-	if err != nil {
-		return entity.TeamMemory{}, err
-	}
-	return c.teamMemory(ctx, m), nil
-}
-
-func (c *controller) SaveMemory(ctx context.Context, req entity.SaveTeamMemoryRequest) (entity.TeamMemory, error) {
-	if n := len(req.Content); n > c.maxMemory {
-		return entity.TeamMemory{}, invalid("the team's memory is %d bytes; the limit is %d bytes (%d KiB)", n, c.maxMemory, c.maxMemory/1024)
-	}
-	// Microseconds are what Postgres keeps, so the time handed back is the
-	// one the next save compares against.
-	now := c.now().UTC().Truncate(time.Microsecond)
-	m := model.TeamMemory{
-		ID: c.ids.NextID(), CreatedAt: now, UpdatedAt: now,
-		TeamID: req.TeamID, Name: MemoryName, Content: req.Content, UpdatedBy: req.UserID,
-	}
-	prev, found, err := c.repo.SaveTeamMemory(ctx, m)
-	if err != nil {
-		return entity.TeamMemory{}, err
-	}
-	out := c.teamMemory(ctx, m)
-	// A save with no base replaced one it never loaded, as a first save
-	// does when another member saved first.
-	out.Conflict = found && (req.BaseUpdatedAt.IsZero() || prev.UpdatedAt.After(req.BaseUpdatedAt))
-	c.emit(ctx, entity.ActionTeamMemorySave, req.UserID, 0, req.TeamID)
-	return out, nil
-}
-
-// ownWorkspaces is the visible workspaces that keep their own memories and
-// skills: a fork reads its parent's, which the team sees whenever it sees
-// the fork.
+// ownWorkspaces is the visible workspaces that keep their own skills: a
+// fork reads its parent's, which the team sees whenever it sees the fork.
 func ownWorkspaces(visible []entity.TeamWorkspace) (map[int64]entity.TeamWorkspace, []int64) {
 	byID := make(map[int64]entity.TeamWorkspace, len(visible))
 	ids := []int64{}
@@ -406,57 +310,6 @@ func ownWorkspaces(visible []entity.TeamWorkspace) (map[int64]entity.TeamWorkspa
 		}
 	}
 	return byID, ids
-}
-
-func (c *controller) MemoryIndex(ctx context.Context, userID, teamID int64) ([]entity.TeamMemoryIndexEntry, error) {
-	visible, err := c.teams.ListTeamWorkspaces(ctx, userID, teamID)
-	if err != nil {
-		return nil, err
-	}
-	byID, ids := ownWorkspaces(visible)
-	rows, err := c.repo.ListWorkspaceMemoryNames(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	at := map[int64]int{}
-	out := []entity.TeamMemoryIndexEntry{}
-	for _, r := range rows {
-		i, ok := at[r.WorkspaceID]
-		if !ok {
-			i = len(out)
-			at[r.WorkspaceID] = i
-			out = append(out, entity.TeamMemoryIndexEntry{Workspace: byID[r.WorkspaceID]})
-		}
-		e := &out[i]
-		e.Names = append(e.Names, r.Name)
-		if r.UpdatedAt.After(e.UpdatedAt) {
-			e.UpdatedAt = r.UpdatedAt
-		}
-	}
-	// By group, then owner, then workspace.
-	sort.SliceStable(out, func(i, j int) bool {
-		a, b := out[i].Workspace, out[j].Workspace
-		if ka, kb := groupKey(a.Group), groupKey(b.Group); ka != kb {
-			return ka < kb
-		}
-		if ka, kb := strings.ToLower(a.OwnerName), strings.ToLower(b.OwnerName); ka != kb {
-			return ka < kb
-		}
-		return a.ID < b.ID
-	})
-	return out, nil
-}
-
-func (c *controller) GetMemberMemory(ctx context.Context, userID, teamID, workspaceID int64, name string) (entity.Memory, error) {
-	w, err := c.readable(ctx, userID, teamID, workspaceID)
-	if err != nil {
-		return entity.Memory{}, err
-	}
-	rs, err := c.owner.GetMemory(ctx, entity.GetMemoryRequest{WorkspaceID: workspaceID, UserID: ownerID(w), Name: name})
-	if err != nil {
-		return entity.Memory{}, err
-	}
-	return rs.Memory, nil
 }
 
 // teamSkills is the skills on in the team's workspaces, by name, each with

@@ -1810,7 +1810,8 @@ const (
 	// A teammate's task cloned into one of the account's workspaces, which
 	// it carries.
 	ActionTeamTaskClone Action = 119
-	// A team's memory saved by a member; workspace 0.
+	// A team's memory saved by a member; workspace 0. Teams no longer have
+	// a memory of their own: kept so the rows recorded still read.
 	ActionTeamMemorySave Action = 120
 	// A teammate's skill copied into the account; workspace 0.
 	ActionTeamSkillAdd Action = 121

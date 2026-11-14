@@ -411,12 +411,10 @@ func New(cfg Config) (*App, error) {
 		MaxInvitesPerUserPerDay: cfg.Teams.MaxInvitesPerUserPerDay,
 	})
 	teamViewCtrl := teamview.New(teamview.Params{
-		Teams:          teamCtrl,
-		Owner:          crudCtrl,
-		Repository:     repo,
-		IDGen:          ids,
-		PubSub:         pubsubSvc,
-		MaxMemoryBytes: mcp.MaxMemoryBytes,
+		Teams:      teamCtrl,
+		Owner:      crudCtrl,
+		Repository: repo,
+		PubSub:     pubsubSvc,
 	})
 	moveLegacySkills(context.Background(), crudCtrl)
 	startPanoSweep(appCtx, crudCtrl, panoSweepInterval, sweepJitter)
@@ -1470,7 +1468,7 @@ func migratedModels() []any {
 		&model.TeamMember{},
 		&model.TeamInvitation{},
 		&model.WorkspaceShare{},
-		&model.TeamMemory{},
+		&model.TeamManagementActivity{},
 	}
 }
 

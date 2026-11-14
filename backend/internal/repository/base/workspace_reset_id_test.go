@@ -37,7 +37,7 @@ func resetDB(t *testing.T) (*gorm.DB, Repository) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	tables := append([]any{&model.Workspace{}, &model.Message{}, &model.SkillShare{}, &model.PanoDoc{}}, workspaceIDTables...)
+	tables := append([]any{&model.Workspace{}, &model.Message{}, &model.SkillShare{}, &model.PanoDoc{}, &model.TeamManagementActivity{}}, workspaceIDTables...)
 	if err := db.AutoMigrate(tables...); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -66,6 +66,8 @@ func resetDB(t *testing.T) (*gorm.DB, Repository) {
 		&model.SkillShare{ID: 1, SkillID: 1, TargetWorkspaceID: rsOld},
 		&model.PanoDoc{ID: 1, CreatedByWorkspaceID: rsOld, UpdatedByWorkspaceID: rsOld},
 		&model.PanoDoc{ID: 2, CreatedByWorkspaceID: rsOther, UpdatedByWorkspaceID: rsOld},
+		&model.TeamManagementActivity{ID: 1, TeamID: 1, Action: model.TeamActivityWorkspaceShared, TargetWorkspaceID: ptrTo(rsOld), Details: "{}"},
+		&model.TeamManagementActivity{ID: 2, TeamID: 1, Action: model.TeamActivityWorkspaceShared, TargetWorkspaceID: ptrTo(rsOther), Details: "{}"},
 	}
 	for _, r := range rows {
 		if err := db.Create(r).Error; err != nil {
@@ -74,6 +76,8 @@ func resetDB(t *testing.T) (*gorm.DB, Repository) {
 	}
 	return db, New(&mockDB{db: db})
 }
+
+func ptrTo[T any](v T) *T { return &v }
 
 // attachments is an attachment list whose link names the file's key.
 func attachments(workspaceID int64) datatypes.JSON {
@@ -140,6 +144,11 @@ func TestResetWorkspaceID_MovesEveryRowNamingTheWorkspace(t *testing.T) {
 	db.First(&share, 1)
 	if share.TargetWorkspaceID != rsNew {
 		t.Errorf("the skill share targets %d, want the new id %d", share.TargetWorkspaceID, rsNew)
+	}
+	var acts []model.TeamManagementActivity
+	db.Order("id").Find(&acts)
+	if len(acts) != 2 || *acts[0].TargetWorkspaceID != rsNew || *acts[1].TargetWorkspaceID != rsOther {
+		t.Errorf("the team activities target %v, want the new id %d and %d untouched", acts, rsNew, rsOther)
 	}
 	var docs []model.PanoDoc
 	db.Order("id").Find(&docs)
@@ -244,11 +253,12 @@ func TestResetWorkspaceID_CoversEveryColumnNamingAWorkspace(t *testing.T) {
 		}
 	}
 	covered := map[string]bool{
-		"Workspace.ForkOfID":           true,
-		"SkillShare.TargetWorkspaceID": true,
-		"PanoDoc.CreatedByWorkspaceID": true,
-		"PanoDoc.UpdatedByWorkspaceID": true,
-		"Task.CreatedByWorkspaceID":    true,
+		"Workspace.ForkOfID":                       true,
+		"SkillShare.TargetWorkspaceID":             true,
+		"TeamManagementActivity.TargetWorkspaceID": true,
+		"PanoDoc.CreatedByWorkspaceID":             true,
+		"PanoDoc.UpdatedByWorkspaceID":             true,
+		"Task.CreatedByWorkspaceID":                true,
 	}
 	for _, m := range workspaceIDTables {
 		covered[reflect.TypeOf(m).Elem().Name()+".WorkspaceID"] = true
