@@ -335,8 +335,8 @@ Gateway 再拉取你指定的 Agent。先登录一次，然后在 `.mcp.json` �
 
 ```bash
 # Antigravity
-npx -y @agentrq/acp-gateway@latest --login --agent antigravity-acp --allow-unverified-agent
-npx -y @agentrq/acp-gateway@latest --agent antigravity-acp --allow-unverified-agent
+npx -y @agentrq/acp-gateway@latest --login --agent antigravity-acp
+npx -y @agentrq/acp-gateway@latest --agent antigravity-acp
 ```
 
 ```bash
@@ -345,9 +345,7 @@ npx -y @agentrq/acp-gateway@latest --login --agent codex-acp
 npx -y @agentrq/acp-gateway@latest --agent codex-acp
 ```
 
-Antigravity 以二进制形式发布且 registry 未提供校验和，因此每条命令都需要
-`--allow-unverified-agent`；Codex 以 npm 包发布，不需要该参数。把 `--login`
-换成 `--logout` 即可登出。旧版本的 `@agentrq/codex-gateway` 和
+把 `--login` 换成 `--logout` 即可登出。旧版本的 `@agentrq/codex-gateway` 和
 `.codex/config.toml` 均已不再需要。
 
 详细说明见英文 [README.md](README.md) 的 `ACP Gateway` 部分。
