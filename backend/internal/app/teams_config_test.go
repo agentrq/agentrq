@@ -35,14 +35,32 @@ func loadTeams(t *testing.T, name, env string) teamsConfig {
 }
 
 type teamsConfig = struct {
-	MaxInvitesPerDay        int `yaml:"maxInvitesPerDay"`
-	MaxInvitesPerUserPerDay int `yaml:"maxInvitesPerUserPerDay"`
+	MaxInvitesPerDay        int  `yaml:"maxInvitesPerDay"`
+	MaxInvitesPerUserPerDay int  `yaml:"maxInvitesPerUserPerDay"`
+	EmailInvites            bool `yaml:"emailInvites"`
 }
 
 const (
 	teamCapEnv = "AGENTRQ_TEAMS_MAX_INVITES_PER_DAY"
 	userCapEnv = "AGENTRQ_TEAMS_MAX_INVITES_PER_USER_PER_DAY"
+	emailEnv   = "AGENTRQ_TEAMS_EMAIL_INVITES"
 )
+
+func TestTeamsEmailInvitesDefaultsToOn(t *testing.T) {
+	if !loadTeams(t, emailEnv, "").EmailInvites {
+		t.Error("teams.emailInvites is off with no env, want on")
+	}
+}
+
+func TestTeamsEmailInvitesComesFromTheEnv(t *testing.T) {
+	for env, want := range map[string]bool{"false": false, "true": true} {
+		t.Run(env, func(t *testing.T) {
+			if got := loadTeams(t, emailEnv, env).EmailInvites; got != want {
+				t.Errorf("teams.emailInvites = %v with %q, want %v", got, env, want)
+			}
+		})
+	}
+}
 
 func TestTeamsInviteCapDefaultsToTen(t *testing.T) {
 	if got := loadTeams(t, teamCapEnv, "").MaxInvitesPerDay; got != 10 {
@@ -93,17 +111,21 @@ func TestNewRefusesANegativeInviteCap(t *testing.T) {
 	}
 }
 
-// Invitations are mailed only by a mailer that can send.
-func TestTeamMailerNeedsSMTPWithAHost(t *testing.T) {
+// Invitations are mailed only when email invitations are on, by a mailer
+// that can send.
+func TestTeamMailerNeedsEmailInvitesAndSMTPWithAHost(t *testing.T) {
 	for name, c := range map[string]struct {
-		cfg  smtp.Config
-		mail bool
+		emailInvites bool
+		cfg          smtp.Config
+		mail         bool
 	}{
-		"disabled":         {smtp.Config{Host: "mail.example.com"}, false},
-		"enabled, no host": {smtp.Config{Enabled: true}, false},
-		"enabled":          {smtp.Config{Enabled: true, Host: "mail.example.com"}, true},
+		"disabled":          {true, smtp.Config{Host: "mail.example.com"}, false},
+		"enabled, no host":  {true, smtp.Config{Enabled: true}, false},
+		"enabled":           {true, smtp.Config{Enabled: true, Host: "mail.example.com"}, true},
+		"email invites off": {false, smtp.Config{Enabled: true, Host: "mail.example.com"}, false},
+		"off and no smtp":   {false, smtp.Config{}, false},
 	} {
-		if got := teamMailer(c.cfg, smtp.New(c.cfg)) != nil; got != c.mail {
+		if got := teamMailer(c.emailInvites, c.cfg, smtp.New(c.cfg)) != nil; got != c.mail {
 			t.Errorf("%s: mailer set is %v, want %v", name, got, c.mail)
 		}
 	}

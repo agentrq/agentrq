@@ -169,6 +169,9 @@ type (
 			// How many invitations one account may create in any 24 hours,
 			// across all its teams; 0 is no such cap.
 			MaxInvitesPerUserPerDay int `yaml:"maxInvitesPerUserPerDay"`
+			// Whether invitations are emailed when SMTP is set up; off, the
+			// inviter shares the link by hand.
+			EmailInvites bool `yaml:"emailInvites"`
 		} `yaml:"teams"`
 		MCP struct {
 			// OpenAI's domain verification token for a plugin submission.
@@ -411,7 +414,7 @@ func New(cfg Config) (*App, error) {
 		Repository:              repo,
 		IDGen:                   ids,
 		PubSub:                  pubsubSvc,
-		Mailer:                  teamMailer(cfg.SMTP, smtpSvc),
+		Mailer:                  teamMailer(cfg.Teams.EmailInvites, cfg.SMTP, smtpSvc),
 		BaseURL:                 cfg.App.BaseURL,
 		MaxInvitesPerDay:        cfg.Teams.MaxInvitesPerDay,
 		MaxInvitesPerUserPerDay: cfg.Teams.MaxInvitesPerUserPerDay,
@@ -1506,10 +1509,11 @@ func migratedModels() []any {
 	}
 }
 
-// teamMailer is the mailer team invitations are sent with; nil when SMTP is
-// not set up, and the inviter is given the link instead.
-func teamMailer(cfg smtp.Config, svc smtp.Service) smtp.Service {
-	if !cfg.Enabled || cfg.Host == "" {
+// teamMailer is the mailer team invitations are sent with; nil when email
+// invitations are off or SMTP is not set up, and the inviter is given the link
+// instead.
+func teamMailer(emailInvites bool, cfg smtp.Config, svc smtp.Service) smtp.Service {
+	if !emailInvites || !cfg.Enabled || cfg.Host == "" {
 		return nil
 	}
 	return svc
