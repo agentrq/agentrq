@@ -150,6 +150,26 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   expect(copy, 'the clone in Bea\'s workspace').toBeTruthy()
   expect(copy.assignee).toBe('human')
 
+  // 8b. Bea shares a workspace of the same name: one team workspace with the
+  //     root user's. Her agent reads the root user's memory until she turns it
+  //     off in Settings › Sharing, which changes nothing on the root user's side.
+  const twin = await ok(await bea.request.post(`${API}/workspaces`, { data: { workspace: { name: workspace.name, description: 'QA' } } }), 'creating Bea\'s twin')
+  await ok(await bea.request.put(`${API}/workspaces/${twin.workspace.id}/shares/${teamId}`, { data: { version: await versionOf(bea, teamId) } }), 'sharing Bea\'s twin')
+  await bea.goto(`/workspaces/${twin.workspace.id}/settings?tab=sharing`)
+  const memories = bea.getByTestId('teammate-memories')
+  await expect(memories.getByTestId('teammate-memory-row')).toHaveCount(1)
+  const memorySwitch = memories.getByTestId('teammate-memory-switch')
+  await expect(memorySwitch).toHaveAttribute('aria-checked', 'true')
+  const excluded = bea.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes(`/workspaces/${twin.workspace.id}/teammate-memories/`))
+  await memorySwitch.click()
+  expect((await excluded).status()).toBe(200)
+  await expect(memorySwitch).toHaveAttribute('aria-checked', 'false')
+  await bea.screenshot({ path: test.info().outputPath('teammate-memory.png') })
+  const theirs = await ok(await owner.request.get(`${API}/workspaces/${workspace.id}/teammate-memories`), 'the root user\'s teammates')
+  expect(theirs.teammates.map((t) => [t.userId, t.included])).toEqual([[who.userId, true]])
+  expect((await bea.request.get(`${API}/workspaces/${workspace.id}/teammate-memories`)).status()).toBe(404)
+  await ok(await bea.request.delete(`${API}/workspaces/${twin.workspace.id}/shares/${teamId}?version=${await versionOf(bea, teamId)}`), 'unsharing Bea\'s twin')
+
   // 9. A rename from two tabs: the second, made over the first, is refused,
   //    and the tab reads the team again and says so.
   const tab1 = bea
@@ -195,6 +215,6 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   traffic.expectClean({ allow: ['429 /invitations'] })
   // The refused rename, and 404s from the team once the share and the
   // membership are gone, as asked.
-  beaTraffic.expectClean({ allow: ['409 /teams/', '404 /teams/'] })
+  beaTraffic.expectClean({ allow: ['409 /teams/', '404 /teams/', '404 /workspaces/'] })
   await beaContext.close()
 })

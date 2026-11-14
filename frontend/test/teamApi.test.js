@@ -41,6 +41,8 @@ describe('the team API', () => {
     ['listWorkspaceShares', ['ws1'], 'GET', '/workspaces/ws1/shares'],
     ['shareWorkspace', ['ws1', 'tm1', 4], 'PUT', '/workspaces/ws1/shares/tm1', { version: 4 }],
     ['unshareWorkspace', ['ws1', 'tm1', 4], 'DELETE', '/workspaces/ws1/shares/tm1?version=4'],
+    ['listTeammateMemories', ['ws1'], 'GET', '/workspaces/ws1/teammate-memories'],
+    ['setTeammateMemory', ['ws1', 'u1', false], 'PUT', '/workspaces/ws1/teammate-memories/u1', { included: false }],
     ['fetchTeamWorkspaces', ['tm1'], 'GET', '/teams/tm1/workspaces'],
     ['fetchTeamTasks', ['tm1'], 'GET', '/teams/tm1/tasks?limit=10&offset=0'],
     ['fetchTeamTasks', ['tm1', { status: 'ongoing', workspace: 'Back end', member: 'u1', limit: 5, offset: 5 }], 'GET',

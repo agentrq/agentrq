@@ -684,7 +684,9 @@
                     <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Sharing</h3>
                     <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium ml-1">Teammates see a shared workspace and its tasks, read-only.</p>
                   </div>
-                  <WorkspaceSharing :workspace-id="String(workspaceId)" />
+                  <WorkspaceSharing :workspace-id="String(workspaceId)" @changed="teammateMemories?.reload()" />
+                  <!-- A fork reads its parent's memory, so it has none of its own to choose. -->
+                  <TeammateMemories v-if="workspace && !isFork" ref="teammateMemories" :workspace-id="String(workspaceId)" class="pt-4" />
                 </div>
 
                 <!-- Slack Integration -->
@@ -982,6 +984,7 @@ import { isFork as isForkWorkspace, mergeBlockedReason, parentName, useForkActio
 import DeleteModal from '../components/DeleteModal.vue';
 import WorkspaceMemoryPage from '../components/WorkspaceMemoryPage.vue';
 import WorkspaceSharing from '../components/WorkspaceSharing.vue';
+import TeammateMemories from '../components/TeammateMemories.vue';
 import SkillPage from '../components/SkillPage.vue';
 import SkillsPanel from '../components/SkillsPanel.vue';
 import StartAgentPanel from '../components/StartAgentPanel.vue';
@@ -1035,6 +1038,8 @@ const activeTab = ref('general');
 // A fork's inherited settings are shown and not edited. The list's copy of the
 // workspace is the one that carries the parent's name and the unfinished count.
 const isFork = computed(() => isForkWorkspace(workspace.value));
+// Settings › Sharing's teammates, read again when a share changes who they are.
+const teammateMemories = ref(null);
 const forkListEntry = computed(() => workspaceStore.getWorkspace(workspaceId.value) ?? workspace.value);
 const forkParentName = computed(() => parentName(forkListEntry.value, workspaceStore.workspaces));
 const forkParent = computed(() => workspaceStore.getWorkspace(workspace.value?.forkOfId));

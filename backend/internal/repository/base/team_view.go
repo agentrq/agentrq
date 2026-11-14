@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"gorm.io/gorm/clause"
 )
 
 // Team mode reads: what a team's members see of the workspaces shared with
@@ -51,7 +52,8 @@ func (r *repository) TeamWorkspaceInfo(ctx context.Context, workspaceID int64) (
 func (r *repository) ListTeamPeerWorkspaces(ctx context.Context, workspaceID int64) ([]TeamWorkspacePeer, error) {
 	rows := []TeamWorkspacePeer{}
 	err := r.conn(ctx).Table("workspace_shares AS mine").
-		Select("peer_shares.team_id, peers.id AS workspace_id, peers.user_id, peers.name, COALESCE(users.name, '') AS owner_name").
+		Select("peer_shares.team_id, peers.id AS workspace_id, peers.user_id, peers.name, "+
+			"COALESCE(users.name, '') AS owner_name, COALESCE(users.picture, '') AS owner_picture").
 		Joins("JOIN workspaces AS me ON me.id = mine.workspace_id AND me.archived_at IS NULL").
 		Joins("JOIN workspace_shares AS peer_shares ON peer_shares.team_id = mine.team_id").
 		Joins("JOIN workspaces AS peers ON peers.id = peer_shares.workspace_id AND peers.archived_at IS NULL").
@@ -92,4 +94,48 @@ func (r *repository) ListTeamReaders(ctx context.Context, workspaceID int64) ([]
 		Order("workspace_shares.team_id ASC, team_members.user_id ASC").
 		Scan(&rows).Error
 	return rows, err
+}
+
+// ListMemoryExclusions is the teammates the user left out of the memory
+// index of their workspace, by id.
+func (r *repository) ListMemoryExclusions(ctx context.Context, userID, workspaceID int64) ([]int64, error) {
+	ids := []int64{}
+	err := r.conn(ctx).Model(&model.MemoryExclusion{}).
+		Where("workspace_id = ? AND user_id = ?", workspaceID, userID).
+		Order("excluded_user_id ASC").
+		Pluck("excluded_user_id", &ids).Error
+	return ids, err
+}
+
+// ExcludeTeammateMemory leaves a teammate out of the memory index of the
+// user's workspace. Leaving them out again is not an error.
+func (r *repository) ExcludeTeammateMemory(ctx context.Context, e model.MemoryExclusion) error {
+	return r.conn(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&e).Error
+}
+
+// IncludeTeammateMemory takes a teammate back into the memory index of the
+// user's workspace. Including them again is not an error.
+func (r *repository) IncludeTeammateMemory(ctx context.Context, userID, workspaceID, teammateID int64) error {
+	return r.conn(ctx).
+		Where("workspace_id = ? AND user_id = ? AND excluded_user_id = ?", workspaceID, userID, teammateID).
+		Delete(&model.MemoryExclusion{}).Error
+}
+
+// MemoryUpdates is when each of the workspaces last had a memory written,
+// by workspace id; a workspace with no memory is not in it. The latest is
+// taken here rather than with MAX in SQL, which SQLite answers as text.
+func (r *repository) MemoryUpdates(ctx context.Context, workspaceIDs []int64) (map[int64]time.Time, error) {
+	out := map[int64]time.Time{}
+	if len(workspaceIDs) == 0 {
+		return out, nil
+	}
+	rows := []model.Memory{}
+	err := r.conn(ctx).Model(&model.Memory{}).Select("workspace_id, updated_at").
+		Where("workspace_id IN ?", workspaceIDs).Find(&rows).Error
+	for _, m := range rows {
+		if m.UpdatedAt.After(out[m.WorkspaceID]) {
+			out[m.WorkspaceID] = m.UpdatedAt
+		}
+	}
+	return out, err
 }

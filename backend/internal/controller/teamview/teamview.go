@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -59,6 +60,15 @@ type Controller interface {
 	// AddSkill copies a teammate's skill into the caller's account, on in
 	// the given workspaces of theirs.
 	AddSkill(ctx context.Context, userID, teamID int64, name string, workspaceIDs []int64) (entity.Skill, error)
+
+	// ListTeammateMemories is the teammates in the team workspace of one of
+	// the caller's own workspaces, and whether its agent's memory index
+	// includes each. base.ErrNotFound for a workspace not the caller's.
+	ListTeammateMemories(ctx context.Context, userID, workspaceID int64) ([]entity.TeammateMemory, error)
+	// SetTeammateMemory includes a teammate in, or leaves them out of, that
+	// index. base.ErrNotFound for a workspace not the caller's, or someone
+	// not a teammate there.
+	SetTeammateMemory(ctx context.Context, userID, workspaceID, teammateID int64, included bool) (entity.TeammateMemory, error)
 }
 
 // Teams is the team check, and the team a clone note names.
@@ -86,6 +96,12 @@ type Repository interface {
 	SystemGetTask(ctx context.Context, id int64) (model.Task, error)
 	TeamWorkspaceInfo(ctx context.Context, workspaceID int64) (base.TeamWorkspaceRow, error)
 	ListSkillsOnInWorkspaces(ctx context.Context, workspaceIDs []int64) ([]base.WorkspaceSkillRow, error)
+	GetWorkspace(ctx context.Context, id int64, userID int64) (model.Workspace, error)
+	ListTeamPeerWorkspaces(ctx context.Context, workspaceID int64) ([]base.TeamWorkspacePeer, error)
+	ListMemoryExclusions(ctx context.Context, userID, workspaceID int64) ([]int64, error)
+	ExcludeTeammateMemory(ctx context.Context, e model.MemoryExclusion) error
+	IncludeTeammateMemory(ctx context.Context, userID, workspaceID, teammateID int64) error
+	MemoryUpdates(ctx context.Context, workspaceIDs []int64) (map[int64]time.Time, error)
 }
 
 // Publisher carries telemetry.

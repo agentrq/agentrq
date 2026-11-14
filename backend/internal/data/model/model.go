@@ -835,6 +835,10 @@ const (
 	ActionIDTeamTaskClone
 	ActionIDTeamMemorySave
 	ActionIDTeamSkillAdd
+	// A teammate's memory included in or left out of the memory index of
+	// one of the account's workspaces; emitted by the backend.
+	ActionIDTeammateMemoryInclude
+	ActionIDTeammateMemoryExclude
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

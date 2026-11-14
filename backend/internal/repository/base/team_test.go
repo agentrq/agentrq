@@ -27,7 +27,7 @@ var errTeamDB = errors.New("database unavailable")
 
 var teamT0 = time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 
-var teamTables = []any{&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamManagementActivity{}}
+var teamTables = []any{&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}}
 
 func openTeamDB(t *testing.T, d gorm.Dialector) *gorm.DB {
 	t.Helper()

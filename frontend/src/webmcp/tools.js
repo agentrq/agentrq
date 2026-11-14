@@ -132,6 +132,7 @@ const TEAM_READS = (api) => ({
   myInvitations: () => api.listMyInvitations(),
   preview: ({ token }) => api.previewInvitation(token),
   shares: ({ workspaceId }) => api.listWorkspaceShares(workspaceId),
+  teammateMemories: ({ workspaceId }) => api.listTeammateMemories(workspaceId),
   workspaces: ({ teamId }) => api.fetchTeamWorkspaces(teamId),
   tasks: ({ teamId, status = '', workspace = '', member = '', limit = 10, offset = 0 }) =>
     api.fetchTeamTasks(teamId, { status, workspace, member, limit, offset }),
@@ -154,12 +155,13 @@ const TEAM_WRITES = (api) => ({
   decline: ({ invitationId }) => api.declineInvitation(invitationId),
   share: ({ workspaceId, teamId, version }) => api.shareWorkspace(workspaceId, teamId, version),
   unshare: ({ workspaceId, teamId, version }) => api.unshareWorkspace(workspaceId, teamId, version),
+  teammateMemory: ({ workspaceId, userId, included }) => api.setTeammateMemory(workspaceId, userId, included !== false),
   addSkill: ({ teamId, name, workspaceIds = [] }) => api.addTeamSkill(teamId, name, workspaceIds),
 })
 
 /** Where a manageTeam action shows: the page that holds what it changes. */
 function teamWritePage(input = {}) {
-  if (input.action === 'share' || input.action === 'unshare') return sharingPage(input)
+  if (['share', 'unshare', 'teammateMemory'].includes(input.action)) return sharingPage(input)
   if (input.action === 'accept' || input.action === 'decline') return '/invitations'
   if (input.action === 'addSkill') return `/skills?team=${seg(input.teamId)}`
   if (input.action === 'invite' || input.action === 'revokeInvitation') return teamPage(input, 'invitations')
@@ -1497,7 +1499,8 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description:
         'Read teams. action: list (your teams), get (with its version), members, invitations (a team\'s pending ones), ' +
         'activities (the team\'s log, newest first; limit, before: the last id of the page before), ' +
-        'myInvitations (addressed to you), preview (a link\'s invitation, by token), shares (the teams a workspace is shared with). ' +
+        'myInvitations (addressed to you), preview (a link\'s invitation, by token), shares (the teams a workspace is shared with), ' +
+        'teammateMemories (workspaceId: the teammates whose memory that workspace\'s agent reads, each with included). ' +
         'A team\'s shared work, read-only: workspaces (each with the sharedName it shows under), ' +
         'tasks (status, workspace, member), task (taskId), analytics (range; workspace: one team workspace), skills, skill (name).',
       properties: {
@@ -1531,8 +1534,9 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'Change a team; any member may. action: rename (name), delete, removeMember (userId), leave, ' +
         'invite (email; at most a few per team per day, 429 past it), revokeInvitation (invitationId), ' +
         'share/unshare (workspaceId: one of yours), accept (token or invitationId), decline (invitationId), ' +
+        'teammateMemory (workspaceId: one of yours, userId, included: whether its agent\'s memory index lists that teammate\'s memory), ' +
         'addSkill (name, workspaceIds: copy a teammate\'s skill into your account). ' +
-        'Every change but accept, decline and addSkill takes the team\'s version, from get, members or invitations; ' +
+        'Every change but accept, decline, addSkill and teammateMemory takes the team\'s version, from get, members or invitations; ' +
         'one made after someone else\'s is refused with 409, conflict: true and the current version: read again, then retry.',
       properties: {
         action: { type: 'string', enum: Object.keys(TEAM_WRITES({})), description: 'What to change.' },
@@ -1541,6 +1545,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         name: str('The team\'s new name, for rename; the skill\'s, for addSkill.'),
         workspaceIds: { type: 'array', items: { type: 'string' }, description: 'Your workspaces to turn an added skill on in. Optional.' },
         email: str('The email to invite.'),
+        included: bool('For teammateMemory: true to include the teammate\'s memory, false to leave it out. Defaults to true.'),
       },
       required: ['action'],
       destructive: true,

@@ -89,3 +89,31 @@ type AddTeamSkillRequest struct {
 type AddTeamSkillResponse struct {
 	Skill Skill `json:"skill"`
 }
+
+// TeammateMemory is a teammate in the team workspace of one of your
+// workspaces, and whether its agent's memory index includes their memory.
+// updatedAt is when a memory of theirs there was last written, absent when
+// none was.
+type TeammateMemory struct {
+	UserID      string     `json:"userId"`
+	Name        string     `json:"name"`
+	Picture     string     `json:"picture"`
+	WorkspaceID string     `json:"workspaceId"`
+	UpdatedAt   *time.Time `json:"updatedAt,omitempty"`
+	Included    bool       `json:"included"`
+}
+
+// ListTeammateMemoriesResponse is the teammates of a workspace of yours.
+type ListTeammateMemoriesResponse struct {
+	Teammates []TeammateMemory `json:"teammates"`
+}
+
+// SetTeammateMemoryRequest includes a teammate's memory, or leaves it out.
+type SetTeammateMemoryRequest struct {
+	Included *bool `json:"included"`
+}
+
+// SetTeammateMemoryResponse is the teammate, as now set.
+type SetTeammateMemoryResponse struct {
+	Teammate TeammateMemory `json:"teammate"`
+}
