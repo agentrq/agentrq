@@ -63,7 +63,7 @@ const teamTask = () => ({
     messages: [{ id: 'm1', sender: 'agent', text: 'Allow this?', metadata: { type: 'permission_request', status: 'pending', requestId: 'r1' } }],
     toolCalls: [],
   },
-  workspace: { id: 'tw1', name: 'api', group: 'Backend' },
+  workspace: { id: 'tw1', name: 'api', sharedName: 'Backend' },
   owner: bob,
 })
 
@@ -72,6 +72,7 @@ const getTask = vi.fn()
 const getTaskPlan = vi.fn()
 const updateTaskTitle = vi.fn()
 const updateTaskStatus = vi.fn()
+const cloneTeamTask = vi.fn()
 
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -87,6 +88,7 @@ vi.mock('../src/api', async (importOriginal) => ({
   listMyInvitations: () => Promise.resolve({ invitations: [] }),
   updateTaskTitle: (...a) => updateTaskTitle(...a),
   updateTaskStatus: (...a) => updateTaskStatus(...a),
+  cloneTeamTask: (...a) => cloneTeamTask(...a),
   recordTelemetry: () => {},
 }))
 
@@ -148,13 +150,35 @@ describe('a teammate\'s task in team mode', () => {
     expect(updateTaskStatus).not.toHaveBeenCalled()
   })
 
-  it('clones it into one of your workspaces', async () => {
+  it('clones it into one of your workspaces, for a human unless you choose an agent', async () => {
+    cloneTeamTask.mockResolvedValue({ task: { id: 'c1', workspaceId: 'm1' } })
     const el = await mount()
-    el.querySelector('[data-test="clone-task"]').click()
+    const clone = el.querySelector('[data-test="clone-task"]')
+    // Its words are hidden where the header is narrow; its name never is.
+    expect(clone.getAttribute('aria-label')).toBe('Clone to my workspace')
+    expect(clone.querySelector('[data-test="clone-icon"]')).not.toBe(null)
+    expect(clone.querySelector('span.hidden').textContent).toBe('Clone to my workspace')
+    clone.dispatchEvent(new MouseEvent('mouseenter'))
+    clone.dispatchEvent(new MouseEvent('mouseleave'))
+
+    clone.click()
     await settle()
     const modal = document.body.querySelector('[data-test="clone-modal"]')
     expect(modal.textContent).toContain('Fix the login page')
-    expect(modal.querySelector('[data-test="clone-workspace"]').value).toBe('m1')
+    expect(modal.querySelector('select')).toBe(null)
+    expect(modal.querySelector('[data-test="clone-status"]')).toBe(null)
+    expect(modal.querySelector('[data-test="clone-workspace"]').textContent).toContain('API')
+    expect(modal.querySelector('[data-test="clone-assignee-human"]').getAttribute('aria-checked')).toBe('true')
+
+    modal.querySelector('[data-test="clone-assignee-agent"]').click()
+    await settle()
+    expect(modal.querySelector('[data-test="clone-assignee-agent"]').getAttribute('aria-checked')).toBe('true')
+    modal.querySelector('[data-test="clone-confirm"]').click()
+    await settle()
+
+    expect(cloneTeamTask).toHaveBeenCalledWith('tm1', 't1', 'm1', 'agent')
+    expect(useToasts().toasts.value.at(-1).message).toBe('Task cloned')
+    expect(document.body.querySelector('[data-test="clone-modal"]')).toBe(null)
   })
 
   it('says when it is no longer shared', async () => {
