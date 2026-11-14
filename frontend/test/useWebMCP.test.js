@@ -285,9 +285,7 @@ describe('the navigate tool\'s map of the interface', () => {
     '/extensions',
     '/extensions/acme/home',
     '/team/new',
-    '/team/settings?team=tm1',
-    '/team/analytics?team=tm1',
-    '/team/memory?team=tm1',
+    '/tasks/active?team=tm1&manage=members',
     '/invitations',
   ];
   const router = createRouter({ history: createMemoryHistory(), routes });

@@ -2,12 +2,13 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// The team-mode pieces outside the settings and invitation pages: the switch,
-// the sidebar and bar, sharing, cloning, and the team's analytics, memory and
-// skills pages. Mounted for real, against a mocked API.
+// The team-mode pieces outside the Manage team dialog and the invitation
+// pages: the switch, renaming in place, the sidebar and bar, the pickers,
+// sharing, cloning, and the team's skills. Mounted for real, against a
+// mocked API.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createApp, defineComponent, h, nextTick } from 'vue';
+import { createApp, defineComponent, h, nextTick, ref } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { createRouter, createMemoryHistory } from 'vue-router';
 
@@ -15,56 +16,36 @@ vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal()),
   listTeams: vi.fn(),
   listMyInvitations: vi.fn(),
+  getTeam: vi.fn(),
+  renameTeam: vi.fn(),
   fetchTeamWorkspaces: vi.fn(),
   fetchWorkspaces: vi.fn(),
   listWorkspaceShares: vi.fn(),
   shareWorkspace: vi.fn(),
   unshareWorkspace: vi.fn(),
   cloneTeamTask: vi.fn(),
-  fetchTeamStats: vi.fn(),
-  getTeamMemory: vi.fn(),
-  saveTeamMemory: vi.fn(),
-  fetchTeamMemoryIndex: vi.fn(),
-  getTeamMemberMemory: vi.fn(),
   fetchTeamSkills: vi.fn(),
   getTeamSkill: vi.fn(),
   addTeamSkill: vi.fn(),
+  searchSkills: vi.fn(),
 }));
-
-// The panels draw charts jsdom cannot; what matters here is what the page
-// hands them and does with what they emit.
-vi.mock('../src/components/StatsPanels.vue', async () => {
-  const { defineComponent: dc, h: hh } = await import('vue');
-  return {
-    default: dc({
-      props: ['stats', 'loading', 'activeRange', 'customFrom', 'customTo'],
-      emits: ['update:activeRange', 'update:customFrom', 'update:customTo', 'apply'],
-      setup(props, { emit, slots }) {
-        return () => hh('div', { 'data-test': 'stats-panels', 'data-range': props.activeRange }, [
-          hh('button', { 'data-test': 'range-custom', onClick: () => emit('update:activeRange', 'custom') }),
-          hh('button', { 'data-test': 'custom-from', onClick: () => emit('update:customFrom', '2026-01-01') }),
-          hh('button', { 'data-test': 'custom-to', onClick: () => emit('update:customTo', '2026-01-31') }),
-          slots['after-summary']?.(),
-        ]);
-      },
-    }),
-  };
-});
 
 import * as api from '../src/api';
 import { useTeamStore, rememberedTeam, rememberTeam } from '../src/stores/teamStore';
 import { useWorkspaceStore } from '../src/stores/workspaceStore';
 import { useToasts } from '../src/composables/useToasts';
 import { inviterName, joinedHome, teamOwners, teamLanding } from '../src/composables/useTeamMode';
+import { SEARCH_THRESHOLD, filterPickerItems, isTypeaheadKey, stepIndex, typeaheadIndex } from '../src/composables/usePicker';
 import TeamSwitcher from '../src/components/TeamSwitcher.vue';
 import TeamSidebar from '../src/components/TeamSidebar.vue';
 import TeamModeBar from '../src/components/TeamModeBar.vue';
+import TeamNameEditor from '../src/components/TeamNameEditor.vue';
+import TeamTaskFilters from '../src/components/TeamTaskFilters.vue';
+import ItemPicker from '../src/components/ItemPicker.vue';
 import OwnerAvatar from '../src/components/OwnerAvatar.vue';
 import WorkspaceSharing from '../src/components/WorkspaceSharing.vue';
 import CloneTaskModal from '../src/components/CloneTaskModal.vue';
 import TeamSkills from '../src/components/TeamSkills.vue';
-import TeamAnalyticsView from '../src/views/TeamAnalyticsView.vue';
-import TeamMemoryView from '../src/views/TeamMemoryView.vue';
 
 const alice = { userId: 'u1', name: 'Alice', picture: 'https://x/a.png' };
 const bob = { userId: 'u2', name: 'Bob' };
@@ -77,6 +58,7 @@ const flush = async () => {
 };
 
 const failure = (status, message = 'nope') => Object.assign(new Error(message), { status });
+const conflict = () => Object.assign(new Error('someone changed this team: reload it and try again'), { status: 409, conflict: true, version: 9 });
 
 let app;
 let el;
@@ -115,6 +97,15 @@ const click = async (node) => {
   node.click();
   await flush();
 };
+const key = async (node, k, init = {}) => {
+  node.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init }));
+  await flush();
+};
+const type = async (input, value) => {
+  input.value = value;
+  input.dispatchEvent(new Event('input'));
+  await flush();
+};
 const here = () => router.currentRoute.value;
 const toasts = () => useToasts().toasts.value.map((t) => t.message);
 
@@ -125,6 +116,7 @@ beforeEach(() => {
   api.listTeams.mockResolvedValue({ teams: [] });
   api.listMyInvitations.mockResolvedValue({ invitations: [] });
   api.fetchTeamWorkspaces.mockResolvedValue({ workspaces: [] });
+  api.searchSkills.mockResolvedValue({ skills: [] });
 });
 
 afterEach(() => {
@@ -132,6 +124,7 @@ afterEach(() => {
   app = null;
   el?.remove();
   document.body.innerHTML = '';
+  vi.restoreAllMocks();
 });
 
 describe('the rest of the team helpers', () => {
@@ -182,8 +175,8 @@ describe('an owner\'s avatar', () => {
 });
 
 describe('the Me | Team switch', () => {
-  const core = { id: 'tm1', name: 'Core', role: 'owner' };
-  const docs = { id: 'tm2', name: 'Docs', role: 'member' };
+  const core = { id: 'tm1', name: 'Core', version: 3, memberCount: 2 };
+  const docs = { id: 'tm2', name: 'Docs', version: 1, memberCount: 1 };
 
   async function withTeams(teams, invitations = [], opts = {}) {
     await mount(TeamSwitcher, opts);
@@ -219,7 +212,8 @@ describe('the Me | Team switch', () => {
   it('goes back to Me from team mode, and forgets the team', async () => {
     rememberTeam('tm1');
     await withTeams([core], [], { path: '/tasks/active?team=tm1' });
-    expect(text($('[data-test=switch-team]'))).toBe('Team: Core');
+    expect(text($('[data-test=switch-team-current]'))).toBe('Team: Core');
+    expect($('[data-test=switch-team]')).toBe(null);
     await click($('[data-test=switch-me]'));
     expect(here().path).toBe('/');
     expect(rememberedTeam()).toBe('');
@@ -242,24 +236,25 @@ describe('the Me | Team switch', () => {
     expect($('[data-test=team-badge]').getAttribute('title')).toBe('1 pending invitation');
   });
 
-  it('lists your teams with your role, and the team pages, in its menu', async () => {
-    await withTeams([core, docs], [{ id: 'i1' }], { path: '/tasks/active?team=tm1' });
+  it('lists your teams by size, never by role, and opens Manage team over the page', async () => {
+    await withTeams([core, docs, { id: 'tm3', name: 'Zed' }], [{ id: 'i1' }], { path: '/kanban?team=tm1' });
     await click($('[data-test=switch-menu]'));
     const menu = $('[data-test=team-menu]');
     expect(text(menu)).toContain('Your teams');
-    expect(text(menu)).toContain('Core owner');
-    expect(text(menu)).toContain('Docs member');
+    expect(text(menu)).toContain('Core 2 members');
+    expect(text(menu)).toContain('Docs 1 member');
+    expect(text(menu)).not.toMatch(/owner|admin/);
     expect(text(menu)).toContain('Invitations (1)');
     expect(menu.querySelectorAll('svg path[d="M5 13l4 4L19 7"]').length).toBe(1);
 
-    const item = (label) => [...menu.querySelectorAll('[role=menuitem]')].find((b) => text(b).includes(label));
-    await click(item('Docs'));
-    expect(here().fullPath).toBe('/tasks/active?team=tm2');
+    await click($('[data-test=manage-team]'));
+    expect(here().fullPath).toBe('/kanban?team=tm1&manage=members');
     expect($('[data-test=team-menu]')).toBe(null);
 
     await click($('[data-test=switch-menu]'));
-    await click([...$$('[role=menuitem]')].find((b) => text(b) === 'Team settings'));
-    expect(here().fullPath).toBe('/team/settings?team=tm2');
+    const item = (label) => [...$$('[role=menuitem]')].find((b) => text(b).includes(label));
+    await click(item('Docs'));
+    expect(here().fullPath).toBe('/tasks/active?team=tm2');
 
     await click($('[data-test=switch-menu]'));
     await click([...$$('[role=menuitem]')].find((b) => text(b).startsWith('Invitations')));
@@ -270,11 +265,20 @@ describe('the Me | Team switch', () => {
     expect(here().path).toBe('/team/new');
   });
 
-  it('has no team pages to offer before you are in one', async () => {
+  it('opens Manage team from Me on the team it would open, remembering it', async () => {
+    rememberTeam('tm2');
+    await withTeams([core, docs]);
+    await click($('[data-test=switch-menu]'));
+    await click($('[data-test=manage-team]'));
+    expect(here().fullPath).toBe('/tasks/active?team=tm2&manage=members');
+    expect(rememberedTeam()).toBe('tm2');
+  });
+
+  it('has no team to manage before you are in one', async () => {
     await withTeams([]);
     await click($('[data-test=switch-menu]'));
     expect(text($('[data-test=team-menu]'))).not.toContain('Your teams');
-    expect(text($('[data-test=team-menu]'))).not.toContain('Team settings');
+    expect($('[data-test=manage-team]')).toBe(null);
   });
 
   it('is one button with its menu beside it in a folded sidebar', async () => {
@@ -301,16 +305,106 @@ describe('the Me | Team switch', () => {
   });
 });
 
+describe('renaming a team in place', () => {
+  const core = { id: 'tm1', name: 'Core', version: 3, memberCount: 2 };
+
+  async function inSwitch() {
+    await mount(TeamSwitcher, { path: '/tasks/active?team=tm1' });
+    useTeamStore().teams = [{ ...core }];
+    await flush();
+  }
+
+  it('opens on a click of the name, and Escape or leaving the field puts it back', async () => {
+    await inSwitch();
+    const name = $('[data-test=team-rename]');
+    expect(name.getAttribute('aria-label')).toBe('Rename Core');
+    await click(name);
+    const input = $('[data-test=team-rename-input]');
+    expect(input.value).toBe('Core');
+    expect(document.activeElement).toBe(input);
+
+    await type(input, 'Infra');
+    await key(input, 'Escape');
+    expect($('[data-test=team-rename-input]')).toBe(null);
+    expect(text($('[data-test=team-rename]'))).toBe('Core');
+
+    await click($('[data-test=team-rename]'));
+    $('[data-test=team-rename-input]').dispatchEvent(new Event('blur'));
+    await flush();
+    expect($('[data-test=team-rename-input]')).toBe(null);
+    expect(api.renameTeam).not.toHaveBeenCalled();
+  });
+
+  it('saves on Enter, against the version it has, and moves to the new one', async () => {
+    api.renameTeam.mockResolvedValue({ ...core, name: 'Infra', version: 4 });
+    await inSwitch();
+    await click($('[data-test=team-rename]'));
+    await type($('[data-test=team-rename-input]'), '  Infra ');
+    $('[data-test=team-rename-form]').dispatchEvent(new Event('submit'));
+    await flush();
+
+    expect(api.renameTeam).toHaveBeenCalledWith('tm1', 'Infra', 3);
+    expect(useTeamStore().getTeam('tm1')).toMatchObject({ name: 'Infra', version: 4 });
+    expect(text($('[data-test=switch-team-current]'))).toBe('Team: Infra');
+    expect(toasts()).toEqual(['Team renamed']);
+  });
+
+  it('sends nothing for the same name, or none', async () => {
+    await inSwitch();
+    for (const value of ['Core', '   ']) {
+      await click($('[data-test=team-rename]'));
+      await type($('[data-test=team-rename-input]'), value);
+      $('[data-test=team-rename-form]').dispatchEvent(new Event('submit'));
+      await flush();
+      expect($('[data-test=team-rename-input]')).toBe(null);
+    }
+    expect(api.renameTeam).not.toHaveBeenCalled();
+  });
+
+  it('reads the team again when someone changed it first, and says so', async () => {
+    api.renameTeam.mockRejectedValue(conflict());
+    api.getTeam.mockResolvedValue({ ...core, name: 'Platform', version: 9 });
+    await inSwitch();
+    await click($('[data-test=team-rename]'));
+    await type($('[data-test=team-rename-input]'), 'Infra');
+    $('[data-test=team-rename-form]').dispatchEvent(new Event('submit'));
+    await flush();
+
+    expect(api.getTeam).toHaveBeenCalledWith('tm1');
+    expect(toasts()).toEqual(['Someone changed this team, refreshed']);
+    expect(text($('[data-test=switch-team-current]'))).toBe('Team: Platform');
+    expect(useTeamStore().getTeam('tm1').version).toBe(9);
+  });
+
+  it('says why any other rename failed', async () => {
+    api.renameTeam.mockRejectedValue(failure(400, 'name is too long'));
+    await inSwitch();
+    await click($('[data-test=team-rename]'));
+    await type($('[data-test=team-rename-input]'), 'Infra');
+    $('[data-test=team-rename-form]').dispatchEvent(new Event('submit'));
+    await flush();
+    expect(toasts()).toEqual(['name is too long']);
+    expect(text($('[data-test=team-rename]'))).toBe('Core');
+  });
+
+  it('cannot be opened for a team not loaded yet, which shows its fallback', async () => {
+    await mount(TeamNameEditor, { props: { team: null, fallback: 'Team' } });
+    expect($('[data-test=team-rename]').disabled).toBe(true);
+    expect($('[data-test=team-rename]').getAttribute('aria-label')).toBe('Rename the team');
+    expect(text($('[data-test=team-rename]'))).toBe('Team');
+  });
+});
+
 describe('the team sidebar', () => {
-  it('lists the team\'s pages and its groups, with owners', async () => {
+  it('lists the team\'s pages, then its workspaces with their owners', async () => {
     api.fetchTeamWorkspaces.mockResolvedValue({
       workspaces: [
-        { id: 'w1', name: 'api', group: 'Backend', owner: alice },
+        { id: 'w1', name: 'api', sharedName: 'Backend', owner: alice },
         { id: 'w2', name: 'docs', owner: bob },
         { id: 'w6', name: 'docs', owner: { id: 'o9', name: 'Fi' } },
-        { id: 'w3', name: 'b2', group: 'Backend', owner: { userId: 'u3', name: 'Cy' } },
-        { id: 'w4', name: 'b3', group: 'Backend', owner: { userId: 'u4', name: 'Di' } },
-        { id: 'w5', name: 'b4', group: 'Backend', owner: { userId: 'u5', name: 'Ed' } },
+        { id: 'w3', name: 'b2', sharedName: 'backend ', owner: { userId: 'u3', name: 'Cy' } },
+        { id: 'w4', name: 'b3', sharedName: 'Backend', owner: { userId: 'u4', name: 'Di' } },
+        { id: 'w5', name: 'b4', sharedName: 'Backend', owner: { userId: 'u5', name: 'Ed' } },
       ],
     });
     const showTooltip = vi.fn();
@@ -318,35 +412,30 @@ describe('the team sidebar', () => {
     await mount(TeamSidebar, { path: '/tasks/active?team=tm1', props: { showTooltip, hideTooltip } });
     expect(api.fetchTeamWorkspaces).toHaveBeenCalledWith('tm1');
 
+    expect(text($('[data-test=team-sidebar]'))).toMatch(/^Team Tasks Kanban Skills Workspaces /);
     const links = $$('[data-test=team-sidebar] > a').map((a) => [text(a), a.getAttribute('href')]);
     expect(links).toEqual([
       ['Tasks', '/tasks/active?team=tm1'],
       ['Kanban', '/kanban?team=tm1'],
-      ['Analytics', '/team/analytics?team=tm1'],
-      ['Memory', '/team/memory?team=tm1'],
       ['Skills', '/skills?team=tm1'],
-      ['Settings', '/team/settings?team=tm1'],
-      ['Backend C D +1', '/tasks/active?group=Backend&team=tm1'],
-      ['docs B F', '/tasks/active?group=docs&team=tm1'],
+      ['Backend C D +1', '/tasks/active?workspace=Backend&team=tm1'],
+      ['docs B F', '/tasks/active?workspace=docs&team=tm1'],
     ]);
-    expect($$('[data-test=team-group]')[0].querySelectorAll('[data-test=owner-avatar]').length).toBe(3);
+    expect($$('[data-test=team-workspace]')[0].querySelectorAll('[data-test=owner-avatar]').length).toBe(3);
     expect($$('[data-test=team-sidebar] > a')[0].classList.contains('bg-gray-200')).toBe(true);
 
     const first = $$('[data-test=team-sidebar] > a')[0];
     first.dispatchEvent(new Event('mouseenter'));
     first.dispatchEvent(new Event('mouseleave'));
-    $$('[data-test=team-group]')[0].dispatchEvent(new Event('mouseenter'));
-    $$('[data-test=team-group]')[0].dispatchEvent(new Event('mouseleave'));
+    $$('[data-test=team-workspace]')[0].dispatchEvent(new Event('mouseenter'));
+    $$('[data-test=team-workspace]')[0].dispatchEvent(new Event('mouseleave'));
     expect(showTooltip).toHaveBeenCalledTimes(2);
     expect(hideTooltip).toHaveBeenCalledTimes(2);
 
     for (const [path, label] of [
-      ['/tasks/active?team=tm1&group=docs', 'docs B F'],
+      ['/tasks/active?team=tm1&workspace=docs', 'docs B F'],
       ['/kanban?team=tm1', 'Kanban'],
-      ['/team/analytics?team=tm1', 'Analytics'],
-      ['/team/memory?team=tm1', 'Memory'],
       ['/skills/x?team=tm1', 'Skills'],
-      ['/team/settings?team=tm1', 'Settings'],
     ]) {
       await router.push(path);
       await flush();
@@ -378,30 +467,253 @@ describe('the team sidebar', () => {
 });
 
 describe('the team-mode bar', () => {
-  it('says whose work this is, and goes back to Me', async () => {
+  it('says whose work this is, renames it in place, opens Manage team, and goes back to Me', async () => {
     rememberTeam('tm1');
-    await mount(TeamModeBar, { path: '/tasks/active?team=tm1', props: { name: 'Core' } });
-    expect(text($('[data-test=team-mode-bar]'))).toBe('Viewing Core (read-only) Back to Me');
+    await mount(TeamModeBar, { path: '/kanban?team=tm1', props: { name: 'Core' } });
+    expect(text($('[data-test=team-mode-bar]'))).toBe('Viewing Core (read-only) Manage Back to Me');
+    expect($('[data-test=team-rename]').disabled).toBe(true);
+    useTeamStore().teams = [{ id: 'tm1', name: 'Core', version: 1 }];
+    await flush();
+    expect($('[data-test=team-rename]').disabled).toBe(false);
     expect($('[data-test=joined-banner]')).toBe(null);
+    expect($('[data-test=team-bar-manage]').getAttribute('href')).toBe('/kanban?team=tm1&manage=members');
+
     await click([...$$('a')].find((a) => text(a) === 'Back to Me'));
     expect(here().path).toBe('/');
     expect(rememberedTeam()).toBe('');
   });
 
-  it('offers to share once, right after joining', async () => {
+  it('offers to share once, right after joining, in Manage team', async () => {
     await mount(TeamModeBar, { path: '/tasks/active?team=tm1&joined=1' });
     const banner = $('[data-test=joined-banner]');
     expect(banner.textContent.replace(/\s+/g, ' ').trim()).toBe('You joined Team. Share your workspaces?Share');
-    expect(banner.querySelector('a').getAttribute('href')).toBe('/team/settings?team=tm1&tab=workspaces');
+    expect(banner.querySelector('a').getAttribute('href')).toBe('/tasks/active?team=tm1&manage=workspaces');
     await click(banner.querySelector('button'));
     expect(here().fullPath).toBe('/tasks/active?team=tm1');
     expect($('[data-test=joined-banner]')).toBe(null);
   });
 });
 
+describe('the picker', () => {
+  const people = [
+    { value: '', label: 'All members' },
+    { value: 'u1', label: 'Alice', owner: alice },
+    { value: 'u2', label: 'Bob', owner: bob },
+  ];
+  const many = 'Alpha Bravo Charlie Delta Echo Foxtrot Golf Hotel India'.split(' ').map((l) => ({ value: l.toLowerCase(), label: l }));
+
+  let chosen;
+  async function pick(items, props = {}, start = '') {
+    chosen = ref(start);
+    await mount(defineComponent({
+      render: () => h('div', [
+        h(ItemPicker, { items, modelValue: chosen.value, 'onUpdate:modelValue': (v) => { chosen.value = v; }, ariaLabel: 'Member', ...props }),
+        h('p', { 'data-test': 'outside' }, 'elsewhere'),
+      ]),
+    }));
+  }
+  const trigger = () => $('[data-test=picker]');
+  const options = () => $$('[data-test=picker-option]');
+  const active = () => options().find((o) => o.dataset.active === 'true');
+
+  it('shows the choice with its avatar, and ticks it in the open menu', async () => {
+    await pick(people, {}, 'u1');
+    expect(text(trigger())).toBe('Alice');
+    expect(trigger().querySelector('[data-test=owner-avatar]')).not.toBe(null);
+    expect(trigger().getAttribute('aria-expanded')).toBe('false');
+
+    await click(trigger());
+    expect(trigger().getAttribute('aria-expanded')).toBe('true');
+    expect(options().map((o) => o.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false']);
+    expect(options()[1].querySelector('[data-test=picker-check]')).not.toBe(null);
+    expect(active().dataset.value).toBe('u1');
+    expect($('[data-test=picker-search]')).toBe(null);
+
+    options()[2].dispatchEvent(new Event('mousemove'));
+    await flush();
+    expect(active().dataset.value).toBe('u2');
+    await click(options()[2]);
+    expect(chosen.value).toBe('u2');
+    expect($('[data-test=picker-menu]')).toBe(null);
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it('draws a team workspace with its owners, a few and a count', async () => {
+    const owners = [alice, bob, { userId: 'u3', name: 'Cy' }, { userId: 'u4', name: 'Di' }];
+    await pick([{ value: '', label: 'All workspaces' }, { value: 'api', label: 'api', owners }], { align: 'right' }, 'api');
+    expect(trigger().querySelectorAll('[data-test=owner-avatar]').length).toBe(3);
+    await click(trigger());
+    expect($('[data-test=picker-menu]').className).toContain('right-0');
+    expect(text(options()[1])).toContain('+1');
+  });
+
+  it('says what to choose when nothing is chosen, and fills a form row as a block', async () => {
+    await pick([{ value: 'a', label: 'A' }], { block: true, placeholder: 'Pick one' }, 'zz');
+    expect(text(trigger())).toBe('Pick one');
+    expect(trigger().parentElement.className).toContain('w-full');
+    await click(trigger());
+    expect(active().dataset.value).toBe('a');
+  });
+
+  it('opens from the keyboard, and moves, picks and closes as a select does', async () => {
+    await pick(people);
+    await key(trigger(), 'x');
+    expect($('[data-test=picker-menu]')).toBe(null);
+    await key(trigger(), 'ArrowDown');
+    expect(active().dataset.value).toBe('');
+    await key(trigger(), 'ArrowDown');
+    expect(active().dataset.value).toBe('u1');
+    await key(trigger(), 'ArrowUp');
+    await key(trigger(), 'ArrowUp');
+    expect(active().dataset.value).toBe('u2');
+    await key(trigger(), 'Home');
+    expect(active().dataset.value).toBe('');
+    await key(trigger(), 'End');
+    expect(active().dataset.value).toBe('u2');
+    await key(trigger(), 'Enter');
+    expect(chosen.value).toBe('u2');
+    expect($('[data-test=picker-menu]')).toBe(null);
+
+    await key(trigger(), ' ');
+    expect($('[data-test=picker-menu]')).not.toBe(null);
+    await key(trigger(), 'Tab');
+    expect($('[data-test=picker-menu]')).toBe(null);
+
+    await key(trigger(), 'Enter');
+    await click(trigger());
+    expect($('[data-test=picker-menu]')).toBe(null);
+  });
+
+  it('closes on Escape without closing the dialog around it', async () => {
+    const outer = vi.fn();
+    window.addEventListener('keydown', outer);
+    try {
+      await pick(people);
+      await click(trigger());
+      await key(trigger(), 'Escape');
+      expect($('[data-test=picker-menu]')).toBe(null);
+      expect(outer).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', outer);
+    }
+  });
+
+  it('closes on a click outside it, and not on one inside', async () => {
+    await pick(people);
+    await click(trigger());
+    $('[data-test=picker-menu]').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    await flush();
+    expect($('[data-test=picker-menu]')).not.toBe(null);
+    $('[data-test=outside]').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    await flush();
+    expect($('[data-test=picker-menu]')).toBe(null);
+    expect(document.activeElement).not.toBe(trigger());
+  });
+
+  it('jumps to an item by its first letters', async () => {
+    const now = vi.spyOn(Date, 'now');
+    await pick([{ value: 'a', label: 'Bea' }, { value: 'b', label: 'Ben' }, { value: 'c', label: 'Bob' }, { value: 'd', label: 'Cy' }]);
+    await click(trigger());
+    now.mockReturnValue(1000);
+    await key(trigger(), 'b');
+    expect(active().dataset.value).toBe('b');
+    now.mockReturnValue(1100);
+    await key(trigger(), 'o');
+    expect(active().dataset.value).toBe('c');
+    now.mockReturnValue(5000);
+    await key(trigger(), 'b');
+    expect(active().dataset.value).toBe('a');
+    now.mockReturnValue(9000);
+    await key(trigger(), 'z');
+    expect(active().dataset.value).toBe('a');
+    await key(trigger(), 'c', { ctrlKey: true });
+    expect(active().dataset.value).toBe('a');
+  });
+
+  it('offers a search past eight items, which narrows the list', async () => {
+    expect(SEARCH_THRESHOLD).toBe(8);
+    await pick(many, {}, 'golf');
+    await click(trigger());
+    const search = $('[data-test=picker-search]');
+    expect(document.activeElement).toBe(search);
+    expect(active().dataset.value).toBe('golf');
+
+    await type(search, 'ha');
+    expect(options().map((o) => o.dataset.value)).toEqual(['alpha', 'charlie']);
+    expect(active().dataset.value).toBe('alpha');
+    // Typing in the box is a search, not a jump; Home and End stay in the box.
+    await key(search, 'c');
+    await key(search, 'End');
+    expect(active().dataset.value).toBe('alpha');
+    await key(search, 'ArrowDown');
+    await key(search, 'Enter');
+    expect(chosen.value).toBe('charlie');
+
+    await click(trigger());
+    await type($('[data-test=picker-search]'), 'zulu');
+    expect(options()).toEqual([]);
+    expect(text($('[data-test=picker-empty]'))).toBe('No match');
+    await key($('[data-test=picker-search]'), 'Enter');
+    expect(chosen.value).toBe('charlie');
+    await key($('[data-test=picker-search]'), 'ArrowDown');
+    expect(active()).toBeUndefined();
+  });
+
+  it('does not open while disabled', async () => {
+    await pick(people, { disabled: true });
+    await key(trigger(), 'ArrowDown');
+    expect($('[data-test=picker-menu]')).toBe(null);
+  });
+
+  it('keeps its list logic in pure helpers', () => {
+    expect(filterPickerItems(people, '  BO ')).toEqual([people[2]]);
+    expect(filterPickerItems(people)).toBe(people);
+    expect(filterPickerItems(undefined, 'x')).toEqual([]);
+    expect(filterPickerItems([{ value: 'x' }], 'x')).toEqual([]);
+    expect(stepIndex(0, 1, 0)).toBe(-1);
+    expect(stepIndex(-1, 1, 3)).toBe(0);
+    expect(stepIndex(-1, -1, 3)).toBe(2);
+    expect(stepIndex(2, 1, 3)).toBe(0);
+    expect(stepIndex(0, -1, 3)).toBe(2);
+    expect(typeaheadIndex(people, '')).toBe(-1);
+    expect(typeaheadIndex(people, 'b', 2)).toBe(2);
+    expect(typeaheadIndex([{ value: 'x' }], 'b')).toBe(-1);
+    expect(typeaheadIndex()).toBe(-1);
+    expect(isTypeaheadKey({ key: 'a' })).toBe(true);
+    expect(isTypeaheadKey({ key: ' ' })).toBe(false);
+    expect(isTypeaheadKey({ key: 'ArrowDown' })).toBe(false);
+    expect(isTypeaheadKey({ key: 'a', metaKey: true })).toBe(false);
+    expect(isTypeaheadKey({ key: 'a', altKey: true })).toBe(false);
+  });
+});
+
+describe('the team task filters', () => {
+  it('pick a member and a team workspace into the URL, and clear them', async () => {
+    api.fetchTeamWorkspaces.mockResolvedValue({ workspaces: [{ id: 'w1', name: 'api', owner: alice }] });
+    await mount(defineComponent({
+      setup() {
+        useTeamStore().loadWorkspaces('tm1');
+        return () => h(TeamTaskFilters, { align: 'left' });
+      },
+    }), { path: '/kanban?team=tm1&member=u1&workspace=api' });
+    expect(text($('[data-test=team-filter-member]'))).toContain('Alice');
+    expect(text($('[data-test=team-filter-workspace]'))).toContain('api');
+
+    await click($('[data-test=team-filter-member]'));
+    expect($('[data-test=team-filter-member-menu]').className).toContain('left-0');
+    await click($('[data-test=team-filter-member-option][data-value=""]'));
+    expect(here().fullPath).toBe('/kanban?team=tm1&workspace=api');
+
+    await click($('[data-test=team-filter-workspace]'));
+    await click($('[data-test=team-filter-workspace-option][data-value=""]'));
+    expect(here().fullPath).toBe('/kanban?team=tm1');
+    expect(text($('[data-test=team-filter-member]'))).toBe('All members');
+  });
+});
+
 describe('sharing a workspace', () => {
-  const core = { id: 'tm1', name: 'Core', role: 'owner' };
-  const docs = { id: 'tm2', name: 'Docs', role: 'member' };
+  const core = { id: 'tm1', name: 'Core', version: 3 };
+  const docs = { id: 'tm2', name: 'Docs', version: 1 };
   const api1 = { id: 'w1', name: 'api' };
   const fork = { id: 'w2', name: 'api-fork', forkOfId: 'w1' };
 
@@ -409,7 +721,7 @@ describe('sharing a workspace', () => {
     api.listWorkspaceShares.mockResolvedValue(shares);
     await mount(defineComponent({
       setup() {
-        useTeamStore().teams = teams;
+        useTeamStore().teams = teams.map((t) => ({ ...t }));
         useWorkspaceStore().workspaces = workspaces;
         return () => h(WorkspaceSharing, { workspaceId: id });
       },
@@ -418,21 +730,22 @@ describe('sharing a workspace', () => {
 
   const rows = () => $$('[data-test=share-row]');
   const row = (label) => rows().find((r) => text(r).startsWith(label));
+  const toggle = (label) => row(label).querySelector('[data-test=share-switch]');
 
-  it('lists your teams with the workspace\'s share in each', async () => {
-    await inWorkspace({ shares: [{ teamId: 'tm1', group: 'Backend' }, { teamId: 'tm2' }] });
+  it('lists your teams with the workspace\'s share in each, and no name to show it under', async () => {
+    await inWorkspace({ shares: [{ teamId: 'tm1' }] });
     expect(api.listWorkspaceShares).toHaveBeenCalledWith('w1');
     expect(rows().length).toBe(2);
-    expect(row('Core').querySelector('[data-test=share-switch]').getAttribute('aria-checked')).toBe('true');
-    expect(row('Core').querySelector('[data-test=share-group]').value).toBe('Backend');
-    expect(row('Docs').querySelector('[data-test=share-group]').value).toBe('');
-    expect(row('Core').querySelector('[data-test=share-switch]').getAttribute('aria-label')).toBe('Share api with Core');
+    expect(toggle('Core').getAttribute('aria-checked')).toBe('true');
+    expect(toggle('Docs').getAttribute('aria-checked')).toBe('false');
+    expect(toggle('Core').getAttribute('aria-label')).toBe('Share api with Core');
+    expect($('[data-test=workspace-sharing] input')).toBe(null);
+    expect(text($('[data-test=workspace-sharing]'))).not.toContain('Show in team as');
   });
 
   it('reads an answer with no shares as none', async () => {
     await inWorkspace({});
-    expect(row('Core').querySelector('[data-test=share-switch]').getAttribute('aria-checked')).toBe('false');
-    expect(row('Core').querySelector('[data-test=share-group]')).toBe(null);
+    expect(toggle('Core').getAttribute('aria-checked')).toBe('false');
   });
 
   it('says so when you are in no team', async () => {
@@ -443,86 +756,74 @@ describe('sharing a workspace', () => {
   it('greys a fork out, with no switch: it follows its parent', async () => {
     await inWorkspace({ shares: [] }, { id: 'w2' });
     expect(text(row('Core').querySelector('[data-test=share-fork]'))).toBe('Shared with parent');
-    expect(row('Core').querySelector('[data-test=share-switch]')).toBe(null);
+    expect(toggle('Core')).toBe(null);
     expect(row('Core').className).toContain('opacity-60');
   });
 
-  it('shares with the team group of the same name prefilled', async () => {
-    api.fetchTeamWorkspaces.mockResolvedValue({ workspaces: [{ id: 'x', name: 'other', group: 'API', owner: bob }] });
-    api.shareWorkspace.mockResolvedValue({});
+  it('shares against the team\'s version, and moves to the one the answer names', async () => {
+    api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 4 });
     await inWorkspace({ shares: [] });
-    await click(row('Core').querySelector('[data-test=share-switch]'));
-    expect(api.shareWorkspace).toHaveBeenCalledWith('w1', 'tm1', 'API');
-    expect(row('Core').querySelector('[data-test=share-group]').value).toBe('API');
-    expect([...row('Core').querySelectorAll('datalist option')].map((o) => o.value)).toEqual(['API']);
+    await click(toggle('Core'));
+    expect(api.shareWorkspace).toHaveBeenCalledWith('w1', 'tm1', 3);
+    expect(useTeamStore().getTeam('tm1').version).toBe(4);
+    expect(toggle('Core').getAttribute('aria-checked')).toBe('true');
     expect(toasts()).toContain('Shared api with Core');
-  });
-
-  it('shares under its own name when the team\'s groups cannot be read', async () => {
-    api.fetchTeamWorkspaces.mockRejectedValue(failure(500));
-    api.shareWorkspace.mockResolvedValue({});
-    await inWorkspace({ shares: [] });
-    await click(row('Docs').querySelector('[data-test=share-switch]'));
-    expect(api.shareWorkspace).toHaveBeenCalledWith('w1', 'tm2', 'api');
   });
 
   it('says why a share failed, and stays off', async () => {
     api.shareWorkspace.mockRejectedValue(failure(500, 'Share failed'));
     await inWorkspace({ shares: [] });
-    await click(row('Core').querySelector('[data-test=share-switch]'));
+    await click(toggle('Core'));
     expect(toasts()).toEqual(['Share failed']);
-    expect(row('Core').querySelector('[data-test=share-switch]').getAttribute('aria-checked')).toBe('false');
-    expect(row('Core').querySelector('[data-test=share-switch]').disabled).toBe(false);
+    expect(toggle('Core').getAttribute('aria-checked')).toBe('false');
+    expect(toggle('Core').disabled).toBe(false);
   });
 
-  it('renames the group it shows in, or puts back its name when cleared', async () => {
-    api.shareWorkspace.mockResolvedValue({});
-    await inWorkspace({ shares: [{ teamId: 'tm1', group: 'Backend' }] });
-    const input = row('Core').querySelector('[data-test=share-group]');
-    input.value = '  Platform ';
-    input.dispatchEvent(new Event('change'));
-    await flush();
-    expect(api.shareWorkspace).toHaveBeenLastCalledWith('w1', 'tm1', 'Platform');
-    input.value = 'Platform';
-    input.dispatchEvent(new Event('change'));
-    await flush();
-    expect(api.shareWorkspace).toHaveBeenCalledTimes(1);
-    input.value = '';
-    input.dispatchEvent(new Event('change'));
-    await flush();
-    expect(api.shareWorkspace).toHaveBeenLastCalledWith('w1', 'tm1', 'api');
+  it('reads the team and the shares again when someone changed the team first', async () => {
+    api.shareWorkspace.mockRejectedValue(conflict());
+    api.getTeam.mockResolvedValue({ ...core, version: 9 });
+    await inWorkspace({ shares: [] });
+    api.listWorkspaceShares.mockResolvedValue({ shares: [{ teamId: 'tm1' }] });
+    await click(toggle('Core'));
+    expect(toasts()).toEqual(['Someone changed this team, refreshed']);
+    expect(useTeamStore().getTeam('tm1').version).toBe(9);
+    expect(api.listWorkspaceShares).toHaveBeenCalledTimes(2);
+    expect(toggle('Core').getAttribute('aria-checked')).toBe('true');
   });
 
-  it('asks before it stops sharing, and stops at once on yes', async () => {
-    api.unshareWorkspace.mockResolvedValue({});
-    await inWorkspace({ shares: [{ teamId: 'tm1', group: 'api' }] });
-    await click(row('Core').querySelector('[data-test=share-switch]'));
+  it('asks before it stops sharing, and stops at once on yes, against the version', async () => {
+    api.unshareWorkspace.mockResolvedValue({ version: 5 });
+    await inWorkspace({ shares: [{ teamId: 'tm1' }] });
+    await click(toggle('Core'));
     expect(document.body.textContent).toContain('Teammates in Core will stop seeing api and its tasks immediately.');
-    const cancel = [...$$('button')].find((b) => text(b) === 'Cancel');
-    await click(cancel);
+    await click([...$$('button')].find((b) => text(b) === 'Cancel'));
     expect(api.unshareWorkspace).not.toHaveBeenCalled();
 
-    await click(row('Core').querySelector('[data-test=share-switch]'));
+    await click(toggle('Core'));
     await click([...$$('button')].filter((b) => text(b) === 'Stop sharing').pop());
-    expect(api.unshareWorkspace).toHaveBeenCalledWith('w1', 'tm1');
-    expect(row('Core').querySelector('[data-test=share-switch]').getAttribute('aria-checked')).toBe('false');
+    expect(api.unshareWorkspace).toHaveBeenCalledWith('w1', 'tm1', 3);
+    expect(useTeamStore().getTeam('tm1').version).toBe(5);
+    expect(toggle('Core').getAttribute('aria-checked')).toBe('false');
     expect(toasts()).toContain('Stopped sharing api with Core');
   });
 
   it('draws a workspace or team it does not know yet by id alone', async () => {
     api.listWorkspaceShares.mockResolvedValue({ shares: [] });
+    api.shareWorkspace.mockResolvedValue(null);
     await mount(defineComponent({
       setup() {
-        useTeamStore().teams = [core];
+        useTeamStore().teams = [{ id: 'tm1', name: 'Core' }];
         return () => h(WorkspaceSharing, { workspaceId: 'w9' });
       },
     }));
-    expect(row('Core').querySelector('[data-test=share-switch]').getAttribute('aria-label')).toBe('Share  with Core');
+    expect(toggle('Core').getAttribute('aria-label')).toBe('Share  with Core');
+    await click(toggle('Core'));
+    expect(api.shareWorkspace).toHaveBeenCalledWith('w9', 'tm1', undefined);
     app.unmount();
 
     api.fetchWorkspaces.mockResolvedValue({ workspaces: [api1] });
     await mount(defineComponent({ render: () => h(WorkspaceSharing, { teamId: 'tm9' }) }));
-    expect(row('api').querySelector('[data-test=share-switch]').getAttribute('aria-label')).toBe('Share api with ');
+    expect(toggle('api').getAttribute('aria-label')).toBe('Share api with ');
   });
 
   it('says so when the shares cannot be read', async () => {
@@ -531,18 +832,19 @@ describe('sharing a workspace', () => {
     expect(toasts()).toEqual(['Could not read']);
   });
 
-  it('lists your workspaces in a team\'s settings, the shared ones on', async () => {
+  it('lists your workspaces in Manage team, the shared ones on', async () => {
     api.fetchWorkspaces.mockResolvedValue({ workspaces: [api1, fork, { id: 'w3', name: 'old', archivedAt: '2026-01-01' }] });
-    api.fetchTeamWorkspaces.mockResolvedValue({ workspaces: [{ id: 'w1', name: 'api', group: 'Backend' }, { id: 'zz', name: 'theirs' }, { id: 'w2', name: 'api-fork' }] });
+    api.fetchTeamWorkspaces.mockResolvedValue({ workspaces: [{ id: 'w1', name: 'api', sharedName: 'Backend' }, { id: 'zz', name: 'theirs' }, { id: 'w2', name: 'api-fork' }] });
     await mount(defineComponent({
       setup() {
-        useTeamStore().teams = [core];
+        useTeamStore().teams = [{ ...core }];
         return () => h(WorkspaceSharing, { teamId: 'tm1' });
       },
     }));
     expect(rows().map((r) => text(r).split(' ')[0])).toEqual(['api', 'api-fork']);
-    expect(row('api ').querySelector('[data-test=share-group]').value).toBe('Backend');
-    expect(row('api ').querySelector('[data-test=share-switch]').getAttribute('aria-label')).toBe('Share api with Core');
+    const first = rows()[0].querySelector('[data-test=share-switch]');
+    expect(first.getAttribute('aria-checked')).toBe('true');
+    expect(first.getAttribute('aria-label')).toBe('Share api with Core');
   });
 
   it('reads your workspaces once they are known, or says you have none', async () => {
@@ -554,7 +856,7 @@ describe('sharing a workspace', () => {
       },
     }));
     expect(api.fetchWorkspaces).not.toHaveBeenCalled();
-    expect(row('api').querySelector('[data-test=share-group]').value).toBe('');
+    expect(toggle('api').getAttribute('aria-checked')).toBe('true');
     app.unmount();
 
     api.fetchWorkspaces.mockResolvedValue({ workspaces: [] });
@@ -567,7 +869,7 @@ describe('cloning a teammate\'s task', () => {
   const task = { id: 't1', title: 'Fix login' };
   const mine = [{ id: 'm1', name: 'scratch' }, { id: 'm2', name: 'API' }, { id: 'm3', name: 'old', archivedAt: 'x' }];
 
-  async function open({ workspaces = mine, workspace = { name: 'api', group: 'Backend' }, show = true } = {}) {
+  async function open({ workspaces = mine, workspace = { name: 'web', sharedName: 'api' }, show = true } = {}) {
     await mount(defineComponent({
       setup() {
         useWorkspaceStore().workspaces = workspaces;
@@ -578,32 +880,58 @@ describe('cloning a teammate\'s task', () => {
   let closed;
   beforeEach(() => { closed = vi.fn(); });
 
-  it('picks your workspace named like theirs, and clones into it', async () => {
-    api.cloneTeamTask.mockResolvedValue({ task: { id: 'c1', workspaceId: 'm2' } });
+  it('picks your workspace named like the team workspace, for a human, and clones into the one chosen', async () => {
+    api.cloneTeamTask.mockResolvedValue({ task: { id: 'c1', workspaceId: 'm1' } });
     await open();
     expect(text($('[data-test=clone-modal]'))).toContain('A copy of Fix login');
-    expect($('[data-test=clone-workspace]').value).toBe('m2');
-    expect([...$('[data-test=clone-workspace]').options].map((o) => o.value)).toEqual(['m1', 'm2']);
-    const picker = $('[data-test=clone-workspace]');
-    picker.value = 'm1';
-    picker.dispatchEvent(new Event('change'));
-    picker.value = 'm2';
-    picker.dispatchEvent(new Event('change'));
-    const status = $('[data-test=clone-status]');
-    status.value = 'ongoing';
-    status.dispatchEvent(new Event('change'));
+    expect($('[data-test=clone-modal] select')).toBe(null);
+    expect($('[data-test=clone-status]')).toBe(null);
+    expect(text($('[data-test=clone-workspace]'))).toBe('API');
+    expect($('[data-test=clone-assignee-human]').getAttribute('aria-checked')).toBe('true');
+    expect($('[data-test=clone-assignee-agent]').getAttribute('aria-checked')).toBe('false');
+
+    await click($('[data-test=clone-workspace]'));
+    expect($$('[data-test=clone-workspace-option]').map((o) => o.dataset.value)).toEqual(['m1', 'm2']);
+    await click($('[data-test=clone-workspace-option][data-value=m1]'));
+    expect(text($('[data-test=clone-workspace]'))).toBe('scratch');
+    // Escape in the open menu closes the menu, not the dialog.
+    await click($('[data-test=clone-workspace]'));
+    await key($('[data-test=clone-workspace]'), 'Escape');
+    expect($('[data-test=clone-workspace-menu]')).toBe(null);
+    expect(closed).not.toHaveBeenCalled();
+
     await click($('[data-test=clone-confirm]'));
-    expect(api.cloneTeamTask).toHaveBeenCalledWith('tm1', 't1', 'm2', 'ongoing');
+    expect(api.cloneTeamTask).toHaveBeenCalledWith('tm1', 't1', 'm1', 'human');
     const toast = useToasts().toasts.value.at(-1);
     expect(toast.message).toBe('Task cloned');
-    expect(toast.link).toEqual({ taskId: 'c1', workspaceId: 'm2', label: 'Open' });
+    expect(toast.link).toEqual({ taskId: 'c1', workspaceId: 'm1', label: 'Open' });
     expect(closed).toHaveBeenCalled();
+  });
+
+  it('assigns the clone to an agent when you choose one, and to a human again each time it opens', async () => {
+    api.cloneTeamTask.mockResolvedValue({ task: { id: 'c1' } });
+    const show = ref(true);
+    await mount(defineComponent({
+      setup() {
+        useWorkspaceStore().workspaces = mine;
+        return () => h(CloneTaskModal, { show: show.value, teamId: 'tm1', task, workspace: { name: 'api' }, onClose: () => { show.value = false; } });
+      },
+    }));
+    await click($('[data-test=clone-assignee-agent]'));
+    expect($('[data-test=clone-assignee-agent]').getAttribute('aria-checked')).toBe('true');
+    await click($('[data-test=clone-confirm]'));
+    expect(api.cloneTeamTask).toHaveBeenCalledWith('tm1', 't1', 'm2', 'agent');
+    expect(useToasts().toasts.value.at(-1).link).toEqual({ taskId: 'c1', workspaceId: 'm2', label: 'Open' });
+
+    show.value = true;
+    await flush();
+    expect($('[data-test=clone-assignee-human]').getAttribute('aria-checked')).toBe('true');
   });
 
   it('links the clone to the workspace chosen when the answer names none, or not at all', async () => {
     api.cloneTeamTask.mockResolvedValueOnce({ id: 'c2' }).mockResolvedValueOnce(undefined);
     await open({ workspace: null });
-    expect($('[data-test=clone-workspace]').value).toBe('m1');
+    expect(text($('[data-test=clone-workspace]'))).toBe('scratch');
     await click($('[data-test=clone-confirm]'));
     expect(useToasts().toasts.value.at(-1).link).toEqual({ taskId: 'c2', workspaceId: 'm1', label: 'Open' });
     await click($('[data-test=clone-confirm]'));
@@ -624,6 +952,7 @@ describe('cloning a teammate\'s task', () => {
     await open({ workspaces: [] });
     expect(api.fetchWorkspaces).toHaveBeenCalled();
     expect(text($('[data-test=clone-no-workspace]'))).toBe('You have no workspace to clone into. Create one first.');
+    expect($('[data-test=clone-assignee]')).toBe(null);
     expect($('[data-test=clone-confirm]').disabled).toBe(true);
     await click($('[data-test=clone-no-workspace] a'));
     expect(closed).toHaveBeenCalled();
@@ -649,196 +978,71 @@ describe('cloning a teammate\'s task', () => {
   });
 });
 
-describe('a team\'s analytics', () => {
-  it('reads the team\'s numbers, by group, with who did what', async () => {
-    api.fetchTeamWorkspaces.mockResolvedValue({ workspaces: [{ id: 'w1', name: 'api', group: 'Backend' }, { id: 'w2', name: 'docs' }] });
-    api.fetchTeamStats.mockResolvedValue({
-      summary: {},
-      byMember: [
-        { owner: alice, tasksCompleted: 1200, messages: 4 },
-        { userId: 'u2', name: 'Bob' },
-        { owner: { name: 'Guest' }, tasksCompleted: 1 },
-      ],
-    });
-    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
-    expect(api.fetchTeamStats).toHaveBeenCalledWith('tm1', expect.any(String), 0, 0, '');
-    expect([...$('[data-test=team-analytics-group]').options].map((o) => o.value)).toEqual(['', 'Backend', 'docs']);
-    expect($$('[data-test=team-member-row]').map(text)).toEqual([`Alice ${(1200).toLocaleString()} 4`, 'B Bob 0 0', 'G Guest 1 0']);
-
-    const select = $('[data-test=team-analytics-group]');
-    select.value = 'Backend';
-    select.dispatchEvent(new Event('change'));
-    await flush();
-    expect(here().fullPath).toBe('/team/analytics?team=tm1&group=Backend');
-    expect(api.fetchTeamStats).toHaveBeenLastCalledWith('tm1', expect.any(String), 0, 0, 'Backend');
-
-    select.value = '';
-    select.dispatchEvent(new Event('change'));
-    await flush();
-    expect(here().fullPath).toBe('/team/analytics?team=tm1');
-  });
-
-  it('loads a custom range once both ends are set', async () => {
-    api.fetchTeamStats.mockResolvedValue({ summary: {} });
-    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
-    expect($('[data-test=team-by-member]')).toBe(null);
-    await click($('[data-test=range-custom]'));
-    const calls = api.fetchTeamStats.mock.calls.length;
-    await click($('[data-test=custom-from]'));
-    expect(api.fetchTeamStats.mock.calls.length).toBe(calls);
-    await click($('[data-test=custom-to]'));
-    expect(api.fetchTeamStats.mock.calls.length).toBe(calls + 1);
-  });
-
-  it('goes back to Me without the team, and says other failures', async () => {
-    api.fetchTeamWorkspaces.mockRejectedValue(failure(500));
-    api.fetchTeamStats.mockRejectedValueOnce(failure(500, 'Stats down'));
-    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
-    expect(toasts()).toContain('Stats down');
-    app.unmount();
-    api.fetchTeamStats.mockRejectedValueOnce(failure(404));
-    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
-    expect(here().path).toBe('/');
-  });
-});
-
-describe('a team\'s memory', () => {
-  const index = {
-    memories: [
-      { workspaceId: 'w1', workspaceName: 'api', group: 'Backend', owner: alice, names: ['deploy.md'] },
-      { workspaceId: 'w2', workspaceName: 'docs', group: 'docs', owner: bob },
-      { workspaceId: 'w3', workspaceName: 'web', owner: bob, names: [] },
-    ],
-  };
-
-  async function open({ memory = { content: '# Team', updatedAt: '2026-11-01T00:00:00Z' }, memories = index } = {}) {
-    api.getTeamMemory.mockResolvedValue(memory);
-    api.fetchTeamMemoryIndex.mockResolvedValue(memories);
-    await mount(TeamMemoryView, { path: '/team/memory?team=tm1' });
-  }
-
-  it('edits the team\'s memory.md, saving only a change', async () => {
-    api.saveTeamMemory.mockResolvedValue({ updatedAt: '2026-11-02T00:00:00Z' });
-    await open();
-    const editor = $('[data-test=team-memory-editor]');
-    expect(editor.value).toBe('# Team');
-    expect($('[data-test=team-memory-save]').disabled).toBe(true);
-    editor.value = '# Team\nMore';
-    editor.dispatchEvent(new Event('input'));
-    await flush();
-    await click($('[data-test=team-memory-save]'));
-    expect(api.saveTeamMemory).toHaveBeenCalledWith('tm1', '# Team\nMore', '2026-11-01T00:00:00Z');
-    expect(toasts()).toContain('Team memory saved');
-    expect($('[data-test=team-memory-save]').disabled).toBe(true);
-    expect(text(document.body)).toContain(`Saved ${new Date('2026-11-02T00:00:00Z').toLocaleString()}`);
-  });
-
-  it('sends the save it loaded, and says when another came in between: the save still wins', async () => {
-    const carol = { userId: 'u3', name: 'Carol' };
-    api.saveTeamMemory
-      .mockResolvedValueOnce({ content: 'mine', updatedAt: '2026-11-03T00:00:00Z', updatedBy: carol, conflict: true })
-      .mockResolvedValueOnce({ content: 'mine again', updatedAt: '2026-11-04T00:00:00Z', updatedBy: carol, conflict: false });
-    await open({ memory: { content: '# Team', updatedAt: '2026-11-01T00:00:00Z', updatedBy: alice } });
-    expect(text($('[data-test=team-memory-saved]'))).toContain(`by ${alice.name}`);
-    const editor = $('[data-test=team-memory-editor]');
-    editor.value = 'mine';
-    editor.dispatchEvent(new Event('input'));
-    await flush();
-    await click($('[data-test=team-memory-save]'));
-    expect(api.saveTeamMemory).toHaveBeenLastCalledWith('tm1', 'mine', '2026-11-01T00:00:00Z');
-    expect(text($('[data-test=team-memory-conflict]'))).toContain('your save replaced theirs');
-    expect(text($('[data-test=team-memory-saved]'))).toContain('by Carol');
-    editor.value = 'mine again';
-    editor.dispatchEvent(new Event('input'));
-    await flush();
-    await click($('[data-test=team-memory-save]'));
-    expect(api.saveTeamMemory).toHaveBeenLastCalledWith('tm1', 'mine again', '2026-11-03T00:00:00Z');
-    expect($('[data-test=team-memory-conflict]')).toBe(null);
-  });
-
-  it('sends no base for a memory nobody had saved', async () => {
-    api.saveTeamMemory.mockResolvedValue(undefined);
-    await open({ memory: { content: '', updatedAt: null, updatedBy: null } });
-    expect($('[data-test=team-memory-saved]')).toBe(null);
-    const editor = $('[data-test=team-memory-editor]');
-    editor.value = 'first';
-    editor.dispatchEvent(new Event('input'));
-    await flush();
-    await click($('[data-test=team-memory-save]'));
-    expect(api.saveTeamMemory).toHaveBeenLastCalledWith('tm1', 'first', '');
-    expect($('[data-test=team-memory-conflict]')).toBe(null);
-    expect($('[data-test=team-memory-saved]')).toBe(null);
-  });
-
-  it('says why a save failed, or goes back to Me without the team', async () => {
-    api.saveTeamMemory.mockRejectedValueOnce(failure(500, 'Save failed')).mockRejectedValueOnce(failure(403));
-    await open();
-    const editor = $('[data-test=team-memory-editor]');
-    editor.value = 'x';
-    editor.dispatchEvent(new Event('input'));
-    await flush();
-    await click($('[data-test=team-memory-save]'));
-    expect(toasts()).toContain('Save failed');
-    await click($('[data-test=team-memory-save]'));
-    expect(here().path).toBe('/');
-  });
-
-  it('starts empty, and says when it cannot be read', async () => {
-    await open({ memory: null, memories: null });
-    expect($('[data-test=team-memory-editor]').value).toBe('');
-    expect(text($('[data-test=team-memory-index-empty]'))).toBe('No shared workspace has memories yet.');
-    expect(text(document.body)).not.toContain('Saved');
-    app.unmount();
-    api.getTeamMemory.mockRejectedValue(failure(500, 'Memory down'));
-    await mount(TeamMemoryView, { path: '/team/memory?team=tm1' });
-    expect(text($('[data-test=team-memory-error]'))).toBe('Memory down');
-    app.unmount();
-    api.getTeamMemory.mockRejectedValue(failure(404));
-    await mount(TeamMemoryView, { path: '/team/memory?team=tm1' });
-    expect(here().path).toBe('/');
-  });
-
-  it('lists the members\' memories by group, and opens one read-only', async () => {
-    await open();
-    expect($$('[data-test=team-memory-workspace]').map(text)).toEqual(['Backend api deploy.md', 'B docs', 'B web']);
-    api.getTeamMemberMemory.mockResolvedValueOnce({ content: '# Deploy' }).mockResolvedValueOnce(undefined).mockRejectedValueOnce(failure(500, 'Gone'));
-    await click($('[data-test=team-memory-item]'));
-    expect(api.getTeamMemberMemory).toHaveBeenCalledWith('tm1', 'w1', 'deploy.md');
-    expect($('[data-test=team-memory-opened] .md-body').innerHTML).toContain('Deploy');
-    await click($('[data-test=team-memory-item]'));
-    expect($('[data-test=team-memory-opened] .md-body').innerHTML).toBe('');
-    await click($('[data-test=team-memory-item]'));
-    expect(text($('[data-test=team-memory-opened]'))).toContain('Gone');
-    await click([...$$('[data-test=team-memory-opened] button')].find((b) => text(b) === 'Close'));
-    expect($('[data-test=team-memory-opened]')).toBe(null);
-  });
-
-  it('says when the index cannot be read, or goes back to Me', async () => {
-    api.getTeamMemory.mockResolvedValue({});
-    api.fetchTeamMemoryIndex.mockRejectedValueOnce(failure(500, 'Index down'));
-    await mount(TeamMemoryView, { path: '/team/memory?team=tm1' });
-    expect(toasts()).toContain('Index down');
-    app.unmount();
-    api.fetchTeamMemoryIndex.mockRejectedValueOnce(failure(403));
-    await mount(TeamMemoryView, { path: '/team/memory?team=tm1' });
-    expect(here().path).toBe('/');
-  });
-});
-
 describe('a team\'s skills', () => {
-  it('lists the skills its shared workspaces use, with who has each', async () => {
-    api.fetchTeamSkills.mockResolvedValue({ skills: [{ name: 'deploy', description: 'Ship it', owners: [alice, { name: 'Anon' }] }, { name: 'lint' }] });
+  const deploy = { name: 'deploy', description: 'Ship it', owners: [alice, { name: 'Anon' }] };
+  const lint = { name: 'lint', owners: [bob] };
+
+  it('draws the skills its shared workspaces use as /skills draws yours, with who has each', async () => {
+    api.fetchTeamSkills.mockResolvedValue({ skills: [deploy, lint, { name: 'misc' }] });
+    api.searchSkills.mockResolvedValue({ skills: [{ name: 'lint' }] });
     await mount(TeamSkills, { path: '/skills?team=tm1' });
     expect(api.fetchTeamSkills).toHaveBeenCalledWith('tm1');
-    const rows = $$('[data-test=team-skill-row]');
-    expect(rows.map((r) => r.querySelector('a').getAttribute('href'))).toEqual(['/skills/deploy?team=tm1', '/skills/lint?team=tm1']);
-    expect(rows[0].querySelectorAll('[data-test=owner-avatar]').length).toBe(2);
+    expect($('[data-test=team-skill-grid]').className).toContain('grid-cols-1');
+    const cards = $$('[data-test=team-skill-row]');
+    expect(cards.map((c) => c.getAttribute('href'))).toEqual(['/skills/deploy?team=tm1', '/skills/lint?team=tm1', '/skills/misc?team=tm1']);
+    expect(cards.map((c) => text(c.querySelector('[data-test=skill-card-name]')))).toEqual(['deploy', 'lint', 'misc']);
+    expect(cards[0].querySelectorAll('[data-test=owner-avatar]').length).toBe(2);
+    expect(text(cards[0])).toContain('Ship it');
+    expect(text(cards[0])).toContain('· 2 teammates');
+    expect(text(cards[1])).toContain('· Bob');
+    expect(text(cards[2])).toContain('· 0 teammates');
+    app.unmount();
+
+    api.fetchTeamSkills.mockResolvedValue({ skills: [{ name: 'anon', owners: [{ userId: 'u9' }] }] });
+    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    expect(text($('[data-test=team-skill-row]'))).toContain('· a teammate');
+    app.unmount();
+    api.fetchTeamSkills.mockResolvedValue({ skills: [deploy, lint, { name: 'misc' }] });
+    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    // One you have says so; the others add in a click.
+    expect($$('[data-test=team-skill-mine]').length).toBe(1);
+    expect($$('[data-test=team-skill-add]').map((b) => b.getAttribute('aria-label'))).toEqual(['Add deploy to my skills', 'Add misc to my skills']);
+  });
+
+  it('adds one in a click, on in no workspace, and then says you have it', async () => {
+    api.fetchTeamSkills.mockResolvedValue({ skills: [deploy] });
+    let answer;
+    api.addTeamSkill.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    $('[data-test=team-skill-add]').click();
+    await flush();
+    expect(text($('[data-test=team-skill-add]'))).toBe('Adding…');
+    expect($('[data-test=team-skill-add]').disabled).toBe(true);
+    answer({});
+    await flush();
+    expect(api.addTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', []);
+    const toast = useToasts().toasts.value.at(-1);
+    expect(toast.message).toBe('Added deploy to your skills');
+    expect(toast.link).toEqual({ path: '/skills/deploy', label: 'Open' });
+    expect($('[data-test=team-skill-add]')).toBe(null);
+    expect(text($('[data-test=team-skill-mine]'))).toBe('Added');
+    expect(here().fullPath).toBe('/skills?team=tm1');
+  });
+
+  it('says why a one-click add failed, and offers it again', async () => {
+    api.fetchTeamSkills.mockResolvedValue({ skills: [deploy] });
+    api.searchSkills.mockRejectedValue(failure(500));
+    api.addTeamSkill.mockRejectedValue(failure(409, 'You already have deploy'));
+    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    await click($('[data-test=team-skill-add]'));
+    expect(toasts()).toEqual(['You already have deploy']);
+    expect($('[data-test=team-skill-add]').disabled).toBe(false);
   });
 
   it('says when there are none, or none could be read', async () => {
     api.fetchTeamSkills.mockResolvedValueOnce({}).mockRejectedValueOnce(failure(500, 'Skills down')).mockRejectedValueOnce(failure(404));
     await mount(TeamSkills, { path: '/skills?team=tm1' });
-    expect(text($('[data-test=team-skills-empty]'))).toBe('No skill is on in a shared workspace yet.');
+    expect(text($('[data-test=team-skills-empty]'))).toBe('No skills yet. A skill shows here once it is on in a shared workspace.');
     app.unmount();
     await mount(TeamSkills, { path: '/skills?team=tm1' });
     expect(text($('[data-test=team-skill-error]'))).toBe('Skills down');
@@ -847,30 +1051,32 @@ describe('a team\'s skills', () => {
     expect(here().path).toBe('/');
   });
 
-  it('shows one skill read-only, and adds a copy to yours', async () => {
-    api.getTeamSkill.mockResolvedValue({ skill: { name: 'deploy', content: '---\nname: deploy\n---\n# Deploy steps', owners: [alice, { name: 'Anon' }] } });
-    api.fetchWorkspaces.mockResolvedValue({ workspaces: [{ id: 'm1', name: 'scratch' }] });
+  it('shows one skill read-only, and adds it with the workspaces you choose, none chosen first', async () => {
+    api.getTeamSkill.mockResolvedValue({ skill: { ...deploy, content: '---\nname: deploy\n---\n# Deploy steps' } });
+    api.fetchWorkspaces.mockResolvedValue({ workspaces: [{ id: 'm1', name: 'scratch' }, { id: 'm2', name: 'fork', forkOfId: 'm1' }] });
     api.addTeamSkill.mockResolvedValue({});
     await mount(TeamSkills, { path: '/skills/deploy?team=tm1', props: { name: 'deploy' } });
     expect(api.getTeamSkill).toHaveBeenCalledWith('tm1', 'deploy');
+    expect(api.fetchWorkspaces).toHaveBeenCalled();
     expect($('[data-test=team-skill-body]').innerHTML).toContain('Deploy steps');
     expect($('[data-test=team-skill-body]').innerHTML).not.toContain('name: deploy');
+    expect(text($('[data-test=team-skills]'))).toContain('Ship it');
     expect($$('a').find((a) => text(a) === '← All skills').getAttribute('href')).toBe('/skills?team=tm1');
 
+    expect(text($('[data-test=team-skill-workspaces] legend'))).toBe('Turn on in (optional)');
+    const boxes = $$('[data-test=team-skill-workspace] input');
+    expect(boxes.length).toBe(1);
+    expect(boxes[0].checked).toBe(false);
+    boxes[0].checked = true;
+    boxes[0].dispatchEvent(new Event('change'));
+    await flush();
     await click($('[data-test=team-skill-add]'));
-    expect(api.fetchWorkspaces).toHaveBeenCalled();
-    const box = $('[data-test=team-skill-workspace]');
-    box.checked = true;
-    box.dispatchEvent(new Event('change'));
-    await click($('[data-test=team-skill-add-confirm]'));
     expect(api.addTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', ['m1']);
-    const toast = useToasts().toasts.value.at(-1);
-    expect(toast.message).toBe('Added deploy to your skills');
-    expect(toast.link).toEqual({ path: '/skills/deploy', label: 'Open' });
-    expect($('[data-test=team-skill-add-form]')).toBe(null);
+    expect(text($('[data-test=team-skill-mine]'))).toBe('In your skills. Open yours');
+    expect($('[data-test=team-skill-mine] a').getAttribute('href')).toBe('/skills/deploy');
   });
 
-  it('says why an add failed, and reads your workspaces only once', async () => {
+  it('says why an add failed on the skill\'s page, and never reads workspaces it has', async () => {
     api.getTeamSkill.mockResolvedValue({ content: 'Body' });
     api.addTeamSkill.mockRejectedValue(failure(409, 'You already have deploy'));
     await mount(defineComponent({
@@ -880,21 +1086,22 @@ describe('a team\'s skills', () => {
       },
     }), { path: '/skills/deploy?team=tm1' });
     expect(text($('[data-test=team-skills] h2'))).toBe('deploy');
-    await click($('[data-test=team-skill-add]'));
     expect(api.fetchWorkspaces).not.toHaveBeenCalled();
-    await click($('[data-test=team-skill-add-confirm]'));
-    expect(text($('[data-test=team-skill-add-error]'))).toBe('You already have deploy');
     await click($('[data-test=team-skill-add]'));
-    expect($('[data-test=team-skill-add-form]')).toBe(null);
+    expect(api.addTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', []);
+    expect(text($('[data-test=team-skill-add-error]'))).toBe('You already have deploy');
+    expect(toasts()).toEqual([]);
   });
 
-  it('adds with no workspace to turn it on in, and says when the skill is gone', async () => {
+  it('says you have it already, with no add, and says when the skill is gone', async () => {
+    api.searchSkills.mockResolvedValue({ skills: [{ name: 'deploy' }] });
     api.getTeamSkill.mockResolvedValueOnce({ name: 'deploy', content: '' }).mockRejectedValueOnce(failure(404, 'No such skill'));
     api.fetchWorkspaces.mockRejectedValue(failure(500));
     await mount(TeamSkills, { path: '/skills/deploy?team=tm1', props: { name: 'deploy' } });
-    await click($('[data-test=team-skill-add]'));
-    expect($('[data-test=team-skill-add-form] fieldset')).toBe(null);
+    expect($('[data-test=team-skill-add]')).toBe(null);
+    expect($('[data-test=team-skill-mine]')).not.toBe(null);
     app.unmount();
+    api.searchSkills.mockResolvedValue({});
     await mount(TeamSkills, { path: '/skills/deploy?team=tm1', props: { name: 'deploy' } });
     expect(text($('[data-test=team-skill-error]'))).toBe('No such skill');
     expect(here().path).toBe('/skills/deploy');

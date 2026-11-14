@@ -12,6 +12,7 @@ vi.mock('../src/api', async (importOriginal) => ({
   listTeams: vi.fn(),
   listMyInvitations: vi.fn(),
   fetchTeamWorkspaces: vi.fn(),
+  getTeam: vi.fn(),
 }));
 
 import * as api from '../src/api';
@@ -21,13 +22,20 @@ import {
   withTeam,
   teamHome,
   teamLanding,
-  groupOf,
-  teamGroups,
+  sharedNameOf,
+  sameSharedName,
+  teamWorkspaceList,
   teamOwners,
-  suggestGroup,
+  memberChoices,
+  workspaceChoices,
   preferredWorkspace,
-  canManage,
-  assignableRoles,
+  isVersionConflict,
+  CONFLICT_NOTICE,
+  MANAGE_TABS,
+  withManage,
+  manageTabOf,
+  describeActivity,
+  timeAgo,
   expiresIn,
   inviteError,
   lostTeam,
@@ -243,28 +251,34 @@ describe('landing on the home page', () => {
   });
 });
 
-describe('groups and owners', () => {
+describe('team workspaces and owners', () => {
   const shared = [
     { id: 'w1', name: 'backend', owner: alice },
-    { id: 'w2', name: 'api', group: 'Backend ', owner: bob },
+    { id: 'w2', name: 'api', sharedName: 'Backend ', owner: bob },
     { id: 'w3', name: 'docs', owner: alice },
     { id: 'w4', name: 'backend', owner: alice },
     { id: 'w5', name: 'orphan' },
   ];
 
-  it('names a group by its "show in team as", else the workspace', () => {
-    expect(groupOf({ name: 'x', group: 'y' })).toBe('y');
-    expect(groupOf({ name: ' x ' })).toBe('x');
-    expect(groupOf(null)).toBe('');
+  it('names a team workspace by the name it is shared under, else its own', () => {
+    expect(sharedNameOf({ name: 'x', sharedName: 'y' })).toBe('y');
+    expect(sharedNameOf({ name: ' x ' })).toBe('x');
+    expect(sharedNameOf(null)).toBe('');
   });
 
-  it('groups workspaces by name, ignoring case, each owner once', () => {
-    expect(teamGroups(shared)).toEqual([
+  it('takes two names as one team workspace ignoring case and spaces', () => {
+    expect(sameSharedName(' Backend', 'backend ')).toBe(true);
+    expect(sameSharedName('backend', 'web')).toBe(false);
+    expect(sameSharedName(undefined, '')).toBe(true);
+  });
+
+  it('lists workspaces by name, ignoring case, each owner once', () => {
+    expect(teamWorkspaceList(shared)).toEqual([
       { name: 'backend', owners: [alice, bob], workspaceIds: ['w1', 'w2', 'w4'] },
       { name: 'docs', owners: [alice], workspaceIds: ['w3'] },
       { name: 'orphan', owners: [], workspaceIds: ['w5'] },
     ]);
-    expect(teamGroups()).toEqual([]);
+    expect(teamWorkspaceList()).toEqual([]);
   });
 
   it('lists each owner once, by name, for the member filter', () => {
@@ -273,11 +287,22 @@ describe('groups and owners', () => {
     expect(teamOwners()).toEqual([]);
   });
 
-  it('offers a team group of the same name when sharing, else the workspace name', () => {
-    expect(suggestGroup('Backend', ['docs', ' backend '])).toBe(' backend ');
-    expect(suggestGroup(' infra ', ['docs'])).toBe('infra');
-    expect(suggestGroup('', [])).toBe('');
-    expect(suggestGroup(undefined)).toBe('');
+  it('offers any member, then each owner with their avatar, to the member picker', () => {
+    expect(memberChoices([alice, { userId: 7, email: 'c@x.io' }, { userId: 8 }])).toEqual([
+      { value: '', label: 'All members' },
+      { value: 'u1', label: 'Alice', owner: alice },
+      { value: '7', label: 'c@x.io', owner: { userId: 7, email: 'c@x.io' } },
+      { value: '8', label: '8', owner: { userId: 8 } },
+    ]);
+    expect(memberChoices()).toEqual([{ value: '', label: 'All members' }]);
+  });
+
+  it('offers any workspace, then each team workspace with its owners, to the workspace picker', () => {
+    expect(workspaceChoices(teamWorkspaceList(shared.slice(2, 3)))).toEqual([
+      { value: '', label: 'All workspaces' },
+      { value: 'docs', label: 'docs', owners: [alice] },
+    ]);
+    expect(workspaceChoices()).toEqual([{ value: '', label: 'All workspaces' }]);
   });
 });
 
@@ -289,9 +314,9 @@ describe('the workspace a clone goes to', () => {
     { id: 'd', name: 'Docs' },
   ];
 
-  it('prefers one named like theirs, then like its group, then the first open one', () => {
-    expect(preferredWorkspace(mine, { workspaceName: 'backend', group: 'docs' })).toBe('c');
-    expect(preferredWorkspace(mine, { workspaceName: 'api', group: 'DOCS' })).toBe('d');
+  it('prefers one named like theirs, then like the team workspace, then the first open one', () => {
+    expect(preferredWorkspace(mine, { workspaceName: 'backend', sharedName: 'docs' })).toBe('c');
+    expect(preferredWorkspace(mine, { workspaceName: 'api', sharedName: 'DOCS' })).toBe('d');
     expect(preferredWorkspace(mine, { workspaceName: 'api' })).toBe('b');
     expect(preferredWorkspace(mine)).toBe('b');
   });
@@ -302,18 +327,73 @@ describe('the workspace a clone goes to', () => {
   });
 });
 
-describe('roles', () => {
-  it('lets owners and admins manage, and members only read', () => {
-    expect(canManage('owner')).toBe(true);
-    expect(canManage('admin')).toBe(true);
-    expect(canManage('member')).toBe(false);
-    expect(canManage(undefined)).toBe(false);
+describe('a change made over someone else\'s', () => {
+  it('is a 409 the server marks as a conflict, and nothing else', () => {
+    expect(isVersionConflict({ status: 409, conflict: true })).toBe(true);
+    expect(isVersionConflict({ status: 409 })).toBe(false);
+    expect(isVersionConflict({ status: 400, conflict: true })).toBe(false);
+    expect(isVersionConflict(undefined)).toBe(false);
+    expect(CONFLICT_NOTICE).toBe('Someone changed this team, refreshed');
+  });
+});
+
+describe('the Manage team dialog in the URL', () => {
+  it('is ?manage=<tab>, kept beside the rest of the query', () => {
+    const route = { path: '/kanban', query: { team: 'tm1', workspace: 'docs' } };
+    expect(withManage(route, 'invitations')).toEqual({ path: '/kanban', query: { team: 'tm1', workspace: 'docs', manage: 'invitations' } });
+    expect(withManage({ path: '/kanban', query: { team: 'tm1', manage: 'members' } }, '')).toEqual({ path: '/kanban', query: { team: 'tm1' } });
+    expect(withManage(undefined, 'members')).toEqual({ path: '/', query: { manage: 'members' } });
   });
 
-  it('lets only an owner make another owner', () => {
-    expect(assignableRoles('owner')).toEqual(['member', 'admin', 'owner']);
-    expect(assignableRoles('admin')).toEqual(['member', 'admin']);
-    expect(assignableRoles('member')).toEqual([]);
+  it('opens on one of its tabs, and is shut for anything else', () => {
+    for (const tab of MANAGE_TABS) expect(manageTabOf({ query: { manage: tab } })).toBe(tab);
+    expect(MANAGE_TABS).toEqual(['members', 'invitations', 'activity', 'workspaces']);
+    expect(manageTabOf({ query: { manage: 'settings' } })).toBe('');
+    expect(manageTabOf({ query: {} })).toBe('');
+    expect(manageTabOf(undefined)).toBe('');
+  });
+});
+
+describe('the activity log', () => {
+  const actor = { userId: 'u1', name: 'Alice' };
+  const line = (action, more = {}) => describeActivity({ action, actor, ...more });
+
+  it('says who did what, in a sentence', () => {
+    expect(line('team.created')).toBe('Alice created the team');
+    expect(line('team.renamed', { details: { from: 'Core', to: 'Infra' } })).toBe('Alice renamed the team from Core to Infra');
+    expect(line('team.renamed')).toBe('Alice renamed the team');
+    expect(line('member.invited', { targetEmail: 'b@x.io' })).toBe('Alice invited b@x.io');
+    expect(line('member.invited')).toBe('Alice invited someone');
+    expect(line('invitation.revoked', { targetEmail: 'b@x.io' })).toBe('Alice revoked the invitation to b@x.io');
+    expect(line('invitation.revoked')).toBe('Alice revoked the invitation to someone');
+    expect(line('invitation.accepted')).toBe('Alice joined');
+    expect(line('invitation.declined')).toBe('Alice declined the invitation');
+    expect(line('member.removed', { targetUser: { email: 'bob@x.io' } })).toBe('Alice removed bob@x.io');
+    expect(line('member.removed', { targetUser: {} })).toBe('Alice removed Someone');
+    expect(line('member.removed')).toBe('Alice removed a member');
+    expect(line('member.left')).toBe('Alice left');
+    expect(line('workspace.shared', { details: { workspaceName: 'docs' } })).toBe('Alice shared docs');
+    expect(line('workspace.unshared')).toBe('Alice stopped sharing a workspace');
+    expect(line('team.deleted', { details: { name: 'Core' } })).toBe('Alice deleted the team');
+    expect(line('team.archived')).toBe('Alice: team.archived');
+    expect(describeActivity()).toBe('Someone: a change');
+    expect(describeActivity({ action: 'member.left', actor: { email: 'c@x.io' } })).toBe('c@x.io left');
+  });
+
+  it('says when, in words, then as a date', () => {
+    const now = Date.parse('2026-11-13T12:00:00Z');
+    const ago = (ms) => new Date(now - ms).toISOString();
+    expect(timeAgo(ago(10000), now)).toBe('just now');
+    expect(timeAgo(ago(60000), now)).toBe('1 minute ago');
+    expect(timeAgo(ago(12 * 60000), now)).toBe('12 minutes ago');
+    expect(timeAgo(ago(3600000), now)).toBe('1 hour ago');
+    expect(timeAgo(ago(3 * 3600000), now)).toBe('3 hours ago');
+    expect(timeAgo(ago(86400000), now)).toBe('1 day ago');
+    expect(timeAgo(ago(6 * 86400000), now)).toBe('6 days ago');
+    expect(timeAgo(ago(40 * 86400000), now)).toBe(new Date(now - 40 * 86400000).toLocaleDateString());
+    expect(timeAgo(ago(-60000), now)).toBe('');
+    expect(timeAgo('not a date', now)).toBe('');
+    expect(timeAgo(new Date().toISOString())).toBe('just now');
   });
 });
 
@@ -435,12 +515,101 @@ describe('useTeamMode', () => {
   });
 });
 
+describe('changeFailed', () => {
+  async function mountAt(path) {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { render: () => null } }] });
+    await router.push(path);
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    let mode;
+    const app = createApp({ setup() { mode = useTeamMode(); return () => h('div'); } });
+    app.use(router).use(pinia).mount(document.createElement('div'));
+    return { mode, router, app, store: useTeamStore() };
+  }
+  const conflict = Object.assign(new Error('someone changed this team'), { status: 409, conflict: true, version: 9 });
+
+  it('reads the team again on a conflict, and says so', async () => {
+    const { mode, store, app } = await mountAt('/tasks/active?team=tm1');
+    store.teams = [{ id: 'tm1', name: 'Core', version: 8 }];
+    api.getTeam.mockResolvedValue({ id: 'tm1', name: 'Infra', version: 9 });
+    const { toasts } = useToasts();
+
+    expect(await mode.changeFailed(conflict)).toBe('conflict');
+
+    expect(api.getTeam).toHaveBeenCalledWith('tm1');
+    expect(store.getTeam('tm1')).toMatchObject({ name: 'Infra', version: 9 });
+    expect(toasts.value.at(-1)).toMatchObject({ message: 'Someone changed this team, refreshed', type: 'info' });
+    app.unmount();
+  });
+
+  it('still says so when the team cannot be read again', async () => {
+    const { mode, app } = await mountAt('/tasks/active?team=tm1');
+    api.getTeam.mockRejectedValue(new Error('down'));
+    const { toasts } = useToasts();
+
+    expect(await mode.changeFailed(conflict, 'tm1')).toBe('conflict');
+    expect(toasts.value.at(-1).message).toBe('Someone changed this team, refreshed');
+    app.unmount();
+  });
+
+  it('goes back to Me when the team on screen is gone', async () => {
+    const { mode, router, app } = await mountAt('/tasks/active?team=tm1');
+
+    expect(await mode.changeFailed({ status: 404 })).toBe('lost');
+    expect(router.currentRoute.value.fullPath).toBe('/');
+    app.unmount();
+  });
+
+  it('shows anything else in the server\'s words, as for another team\'s 404', async () => {
+    const { mode, router, app } = await mountAt('/tasks/active?team=tm1');
+    const { toasts } = useToasts();
+
+    expect(await mode.changeFailed(Object.assign(new Error('gone'), { status: 404 }), 'tm2')).toBe('error');
+    expect(toasts.value.at(-1)).toMatchObject({ message: 'gone', type: 'error' });
+    expect(await mode.changeFailed(undefined)).toBe('error');
+    expect(toasts.value.at(-1).message).toBe('Something went wrong');
+    expect(router.currentRoute.value.fullPath).toBe('/tasks/active?team=tm1');
+    app.unmount();
+  });
+});
+
+describe('the team store\'s version', () => {
+  it('reads one team again, adding it when it was not known', async () => {
+    const store = useTeamStore();
+    store.teams = [{ id: 'tm1', name: 'Core', version: 1, memberCount: 2 }];
+    api.getTeam.mockResolvedValueOnce({ id: 'tm1', name: 'Core', version: 3 });
+
+    await store.refresh('tm1');
+    expect(store.getTeam('tm1')).toMatchObject({ version: 3, memberCount: 2 });
+
+    api.getTeam.mockResolvedValueOnce({ id: 'tm2', name: 'Alpha', version: 1 });
+    await store.refresh('tm2');
+    expect(store.teams.map((t) => t.id)).toEqual(['tm2', 'tm1']);
+  });
+
+  it('moves a team on to the version an answer names, and ignores one that names none', () => {
+    const store = useTeamStore();
+    store.teams = [{ id: 'tm1', name: 'Core', version: 1 }];
+
+    store.setVersion('tm1', 4);
+    expect(store.getTeam('tm1').version).toBe(4);
+    store.setVersion('tm1', undefined);
+    store.setVersion('tm1', null);
+    store.setVersion('tm9', 2);
+    expect(store.getTeam('tm1').version).toBe(4);
+    expect(store.getTeam('tm9')).toBeFalsy();
+  });
+});
+
 describe('the team routes', () => {
-  it('are in the one route table', () => {
+  it('are in the one route table, with no page for settings, analytics or memory', () => {
     const paths = routes.map((r) => r.path);
-    for (const p of ['/team/new', '/team/settings', '/team/analytics', '/team/memory', '/invitations', '/invite']) {
+    for (const p of ['/team/new', '/team/settings', '/invitations', '/invite']) {
       expect(paths).toContain(p);
     }
+    expect(paths).not.toContain('/team/analytics');
+    expect(paths).not.toContain('/team/memory');
+    expect(routes.find((r) => r.path === '/team/settings').component).toBeUndefined();
   });
 });
 
@@ -454,14 +623,14 @@ describe('a team\'s events on your account stream', () => {
     expect(teamEvent(undefined, 'tm1')).toBe(null);
   });
 
-  it('keeps a task to the group and member filters, any when unset', () => {
-    const t = { group: ' Backend', owner: { userId: 'u2' } };
+  it('keeps a task to the workspace and member filters, any when unset', () => {
+    const t = { sharedName: ' Backend', owner: { userId: 'u2' } };
     expect(inTeamFilter(t)).toBe(true);
-    expect(inTeamFilter(t, { group: 'backend' })).toBe(true);
-    expect(inTeamFilter(t, { group: 'Web' })).toBe(false);
+    expect(inTeamFilter(t, { workspace: 'backend' })).toBe(true);
+    expect(inTeamFilter(t, { workspace: 'Web' })).toBe(false);
     expect(inTeamFilter(t, { member: 'u2' })).toBe(true);
     expect(inTeamFilter(t, { member: 'u3' })).toBe(false);
-    expect(inTeamFilter({}, { group: 'Web' })).toBe(false);
+    expect(inTeamFilter({}, { workspace: 'Web' })).toBe(false);
     expect(inTeamFilter(undefined, { member: 'u2' })).toBe(false);
   });
 });
