@@ -85,8 +85,8 @@ func (c *controller) userName(ctx context.Context, userID int64) string {
 	return u.Name
 }
 
-// CreateInvitation leaves the caller's membership to the repository, which
-// reads it under the team's lock.
+// CreateInvitation leaves the caller's membership and the invitee check to
+// the repository, which reads both under the team's lock.
 func (c *controller) CreateInvitation(ctx context.Context, ch entity.TeamChange, email string) (entity.CreateTeamInvitationResponse, error) {
 	if c.maxInvite <= 0 {
 		return entity.CreateTeamInvitationResponse{}, teamErr(entity.TeamForbidden, "invitations are turned off on this server")
@@ -94,16 +94,6 @@ func (c *controller) CreateInvitation(ctx context.Context, ch entity.TeamChange,
 	email, err := cleanEmail(email)
 	if err != nil {
 		return entity.CreateTeamInvitationResponse{}, err
-	}
-	if err := c.member(ctx, ch.UserID, ch.TeamID); err != nil {
-		return entity.CreateTeamInvitationResponse{}, err
-	}
-	in, err := c.repo.TeamHasMemberWithEmail(ctx, ch.TeamID, email)
-	if err != nil {
-		return entity.CreateTeamInvitationResponse{}, err
-	}
-	if in {
-		return entity.CreateTeamInvitationResponse{}, teamErr(entity.TeamConflict, "%s is already in this team", email)
 	}
 	team, err := c.repo.GetTeam(ctx, ch.TeamID)
 	if err != nil {
@@ -116,6 +106,8 @@ func (c *controller) CreateInvitation(ctx context.Context, ch entity.TeamChange,
 	}
 	next, err := c.repo.CreateTeamInvitation(ctx, inv, ch.Version, now.Add(-capWindow), int64(c.maxInvite), int64(c.maxByUser), c.activity())
 	switch {
+	case errors.Is(err, base.ErrAlreadyTeamMember):
+		return entity.CreateTeamInvitationResponse{}, teamErr(entity.TeamConflict, "%s is already in this team", email)
 	case errors.Is(err, base.ErrInvitationCapReached):
 		return entity.CreateTeamInvitationResponse{}, teamErr(entity.TeamThrottled, "this team has reached its limit of %d invitations per day", c.maxInvite)
 	case errors.Is(err, base.ErrUserInvitationCapReached):

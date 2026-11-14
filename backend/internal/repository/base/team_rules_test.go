@@ -119,6 +119,46 @@ func TestTeamChecksSeeWhatChangedWhileTheyWaitedForTheLock(t *testing.T) {
 			},
 		},
 		{
+			name:   "a member removed meanwhile inviting",
+			change: removeMember(11),
+			op: func(r Repository) error {
+				inv := invitation(1, "new@x.io", teamT0)
+				inv.InvitedBy = 11
+				_, err := r.CreateTeamInvitation(ctx, inv, 1, teamT0.Add(-24*time.Hour), 10, 0, act())
+				return err
+			},
+			want: ErrNotFound,
+			check: func(t *testing.T, db *gorm.DB) {
+				if n := countTeamRows(db, &model.TeamInvitation{}, "team_id = 1"); n != 0 {
+					t.Errorf("the removed member's invitation left %d rows, want none", n)
+				}
+				unchanged(t, db)
+			},
+		},
+		{
+			name: "inviting someone who joined meanwhile",
+			seed: func(t *testing.T, db *gorm.DB) {
+				if err := db.Create(&model.User{ID: newcomer.UserID, Name: "Newcomer", Email: "New@x.io"}).Error; err != nil {
+					t.Fatal(err)
+				}
+			},
+			change: func(tx *gorm.DB) error {
+				m := newcomer
+				return tx.Create(&m).Error
+			},
+			op: func(r Repository) error {
+				_, err := r.CreateTeamInvitation(ctx, invitation(1, "new@x.io", teamT0), 1, teamT0.Add(-24*time.Hour), 10, 0, act())
+				return err
+			},
+			want: ErrAlreadyTeamMember,
+			check: func(t *testing.T, db *gorm.DB) {
+				if n := countTeamRows(db, &model.TeamInvitation{}, "team_id = 1"); n != 0 {
+					t.Errorf("the refused invitation left %d rows, want none", n)
+				}
+				unchanged(t, db)
+			},
+		},
+		{
 			name:   "accepting an invitation whose inviter was removed meanwhile",
 			seed:   invite(1, 11),
 			change: removeMember(11),

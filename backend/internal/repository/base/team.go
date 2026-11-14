@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -18,6 +19,8 @@ import (
 )
 
 var (
+	// ErrAlreadyTeamMember is an address whose account is already in the team.
+	ErrAlreadyTeamMember = errors.New("an account with the address is already in the team")
 	// ErrInvitationCapReached is a team that created its most invitations in
 	// the window.
 	ErrInvitationCapReached = errors.New("the team's invitation cap is reached")
@@ -318,13 +321,13 @@ func (r *repository) ListTeamMembers(ctx context.Context, teamID int64) ([]TeamM
 	return rows, err
 }
 
-// TeamHasMemberWithEmail reports whether an account with the email, in any
-// case, is in the team. email is lowercase.
-func (r *repository) TeamHasMemberWithEmail(ctx context.Context, teamID int64, email string) (bool, error) {
+// teamHasMemberWithEmail reports whether an account with the email, in any
+// case, is in the team.
+func teamHasMemberWithEmail(tx *gorm.DB, teamID int64, email string) (bool, error) {
 	var n int64
-	err := r.conn(ctx).Model(&model.TeamMember{}).
+	err := tx.Model(&model.TeamMember{}).
 		Joins("JOIN users ON users.id = team_members.user_id").
-		Where("team_members.team_id = ? AND lower(users.email) = ?", teamID, email).
+		Where("team_members.team_id = ? AND lower(users.email) = ?", teamID, strings.ToLower(email)).
 		Count(&n).Error
 	return n > 0, err
 }
@@ -382,19 +385,28 @@ func (r *repository) RemoveTeamMember(ctx context.Context, teamID, callerID, use
 }
 
 // CreateTeamInvitation stores an invitation from version, as the inviter, a
-// member, unless the team created teamLimit or more since `since`
+// member, unless the team already has a member with the address
+// (ErrAlreadyTeamMember), the team created teamLimit or more since `since`
 // (ErrInvitationCapReached), or its inviter created userLimit or more in any
 // team (ErrUserInvitationCapReached; 0 is no such cap), counting revoked
 // ones, or the team has a live pending one for the address
 // (ErrInvitationPending). An expired pending one for the address is revoked
 // first. The team, and the inviter when userLimit is set, stay locked from
-// the count to the insert, so requests at once cannot pass a cap together.
+// the checks and counts to the insert, so requests at once cannot pass a
+// cap or invite an existing member together.
 func (r *repository) CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, version int64, since time.Time, teamLimit, userLimit int64, act model.TeamManagementActivity) (int64, error) {
 	var next int64
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		if next, err = changeTeam(tx, inv.TeamID, inv.InvitedBy, version, inv.CreatedAt); err != nil {
 			return err
+		}
+		in, err := teamHasMemberWithEmail(tx, inv.TeamID, inv.Email)
+		if err != nil {
+			return err
+		}
+		if in {
+			return ErrAlreadyTeamMember
 		}
 		var n int64
 		if err := tx.Model(&model.TeamInvitation{}).Where("team_id = ? AND created_at > ?", inv.TeamID, since).Count(&n).Error; err != nil {
