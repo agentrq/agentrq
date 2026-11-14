@@ -69,6 +69,7 @@ func teamModeDatabases(t *testing.T) map[string]*gorm.DB {
 //   - 202 "api", Bob's, shared: a team workspace of its own.
 //   - 201 "mine", Bob's, not shared: where he clones to.
 type teamMode struct {
+	crud       crud.Controller
 	app        *fiber.App
 	db         *gorm.DB
 	attachTask string // Alice's task in 100 with a file
@@ -96,9 +97,9 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 	t.Helper()
 	ctx := context.Background()
 	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{},
-		&model.Telemetry{}, &model.Memory{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.PanoDoc{}, &model.PanoDocTask{},
+		&model.Telemetry{}, &model.Memory{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.PanoDoc{}, &model.PanoDocTask{}, &model.PanoFile{}, &model.PanoComment{},
 		&model.Agent{}, &model.AgentModel{}, &model.TaskStateTransition{},
-		&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}); err != nil {
+		&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
@@ -166,7 +167,9 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 	must(err)
 	skillFiles, err := storage.NewNestedPublic(filepath.Join(dir, "skills"), "u")
 	must(err)
-	crudCtrl := crud.New(crud.Params{IDGen: ids, Repository: repo, Storage: atts, SkillStorage: skillFiles})
+	panoFiles, err := storage.NewNestedPublic(filepath.Join(dir, "pano"), "u")
+	must(err)
+	crudCtrl := crud.New(crud.Params{IDGen: ids, Repository: repo, Storage: atts, SkillStorage: skillFiles, PanoStorage: panoFiles})
 	teams := teamctrl.New(teamctrl.Params{Repository: repo, IDGen: ids, BaseURL: "https://rq", MaxInvitesPerDay: 5})
 	tv := teamview.New(teamview.Params{Teams: teams, Owner: crudCtrl, Repository: repo})
 
@@ -180,7 +183,7 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 		},
 	}})
 	must(err)
-	m := &teamMode{db: db, attachTask: monoflake.ID(rs.Task.ID).String(), attachment: rs.Task.Attachments[0].ID,
+	m := &teamMode{crud: crudCtrl, db: db, attachTask: monoflake.ID(rs.Task.ID).String(), attachment: rs.Task.Attachments[0].ID,
 		html: rs.Task.Attachments[1].ID, svg: rs.Task.Attachments[2].ID}
 	must(db.Create(&model.Message{ID: 41, TaskID: rs.Task.ID, UserID: 1, Sender: "agent", Text: "on it", CreatedAt: now,
 		Attachments: []byte(`[{"id":"m1","filename":"log.txt","mimeType":"text/plain","url":"/storage/artifacts/w-1/x/m1"}]`)}).Error)
@@ -255,6 +258,7 @@ func TestTeamMode(t *testing.T) {
 			t.Run("clone", m.clone)
 			t.Run("skills", m.skills)
 			t.Run("teammate memories", m.teammateMemories)
+			t.Run("pano", m.pano)
 			t.Run("unshare and remove", m.unshareAndRemove)
 			t.Run("a team's life", m.flow)
 		})

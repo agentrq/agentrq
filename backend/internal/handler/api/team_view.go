@@ -26,6 +26,9 @@ func (h *handler) registerTeamViewRoutes() {
 	r.Get("/tasks/:taskId", h.getTeamTask())
 	r.Get("/tasks/:taskId/attachments/:attachmentId", h.getTeamAttachment())
 	r.Post("/tasks/:taskId/clone", h.cloneTeamTask())
+	r.Get("/pano", h.listTeamPanoDocs())
+	r.Get("/pano/:docId", h.getTeamPanoDoc())
+	r.Get("/pano/:docId/files/:fileId", h.getTeamPanoFile())
 	r.Get("/skills", h.listTeamSkills())
 	r.Get("/skills/:name", h.getTeamSkill())
 	r.Post("/skills/:name/add", h.addTeamSkill())
@@ -33,7 +36,11 @@ func (h *handler) registerTeamViewRoutes() {
 	h.router.Put("/workspaces/:id/teammate-memories/:userId", h.setTeammateMemory())
 }
 
-var teamPathTask = []string{"teamId", "taskId"}
+var (
+	teamPathTask     = []string{"teamId", "taskId"}
+	teamPathPanoDoc  = []string{"teamId", "docId"}
+	teamPathPanoFile = []string{"teamId", "docId", "fileId"}
+)
 
 func (h *handler) listTeamWorkspaces() fiber.Handler {
 	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
@@ -205,4 +212,41 @@ func (h *handler) setTeammateMemory() fiber.Handler {
 		m, err := h.teamView.SetTeammateMemory(ctx, sessionUser(c), ids[0], ids[1], *rq.Included)
 		return mapper.FromTeammateMemoryEntityToHTTPResponse(m), err
 	})
+}
+
+func (h *handler) listTeamPanoDocs() fiber.Handler {
+	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		ctx, cancel := newContext(c)
+		defer cancel()
+		docs, err := h.teamView.ListPanoDocs(ctx, sessionUser(c), ids[0])
+		return mapper.FromTeamPanoDocEntitiesToHTTPResponse(docs), err
+	})
+}
+
+func (h *handler) getTeamPanoDoc() fiber.Handler {
+	return teamRoute(teamPathPanoDoc, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		ctx, cancel := newContext(c)
+		defer cancel()
+		doc, err := h.teamView.GetPanoDoc(ctx, sessionUser(c), ids[0], ids[1])
+		return mapper.FromTeamPanoDocEntityToHTTPResponse(doc), err
+	})
+}
+
+// getTeamPanoFile serves a shared doc's file, sandboxed as a task's
+// attachment is.
+func (h *handler) getTeamPanoFile() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		ids, ok := pathIDs(c, teamPathPanoFile...)
+		if !ok {
+			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		res, err := h.teamView.GetPanoFile(ctx, sessionUser(c), ids[0], ids[1], ids[2])
+		if err != nil {
+			return teamError(c, err)
+		}
+		c.Set(fiber.HeaderContentDisposition, contentDisposition(sandboxFile(c, res.MimeType), res.Filename))
+		return c.Send(res.Data)
+	}
 }

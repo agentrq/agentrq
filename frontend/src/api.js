@@ -1580,6 +1580,21 @@ export function unshareWorkspace(workspaceId, teamId, version) {
   return teamCall(atVersion(`/workspaces/${enc(workspaceId)}/shares/${enc(teamId)}`, version), 'Failed to stop sharing the workspace', { method: 'DELETE' });
 }
 
+// The teams a Pano doc of yours is shared with: { shares: [{ teamId, teamName, docId, createdAt }] }.
+export function listPanoShares(docId) {
+  return teamCall(`/pano/${enc(docId)}/shares`, 'Failed to load sharing');
+}
+
+// The share, with the team's new `version`.
+export function sharePanoDoc(docId, teamId, version) {
+  return teamCall(`/pano/${enc(docId)}/shares/${enc(teamId)}`, 'Failed to share the doc', { method: 'PUT', body: { version } });
+}
+
+// { version }: the team's new one.
+export function unsharePanoDoc(docId, teamId, version) {
+  return teamCall(atVersion(`/pano/${enc(docId)}/shares/${enc(teamId)}`, version), 'Failed to stop sharing the doc', { method: 'DELETE' });
+}
+
 // The teammates in the team workspace of one of your workspaces, and whether
 // its agent's memory index includes each:
 // { teammates: [{ userId, name, picture, workspaceId, updatedAt?, included }] }.
@@ -1655,4 +1670,16 @@ export function getTeamSkill(teamId, name) {
 // Copies a teammate's skill into your account, on in the workspaces given.
 export function addTeamSkill(teamId, name, workspaceIds = []) {
   return teamCall(`/teams/${enc(teamId)}/skills/${enc(name)}/add`, 'Failed to add the skill', { method: 'POST', body: { workspaceIds } });
+}
+
+// The Pano docs members shared with the team, newest update first, each with
+// its owner (ownerId, ownerName, ownerPicture) and no markdown: { docs }.
+export function listTeamPanoDocs(teamId) {
+  return teamCall(`/teams/${enc(teamId)}/pano`, 'Failed to load the team\'s Pano');
+}
+
+// { doc }: its markdown, files and attachments, each file's `url` its team
+// route (see teamFileUrl); no comments or tasks, which stay the owner's.
+export function getTeamPanoDoc(teamId, docId) {
+  return teamCall(`/teams/${enc(teamId)}/pano/${enc(docId)}`, 'Failed to load the doc');
 }

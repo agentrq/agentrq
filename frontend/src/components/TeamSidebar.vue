@@ -70,6 +70,7 @@ const rowClass = (active) => (active
 const items = [
   { label: 'Tasks', to: '/tasks/active', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', active: () => route.path.startsWith('/tasks/') && !route.query.workspace },
   { label: 'Kanban', to: '/kanban', desktopOnly: true, icon: 'M4 5a1 1 0 011-1h3a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM15 5a1 1 0 011-1h3a1 1 0 011 1v9a1 1 0 01-1 1h-3a1 1 0 01-1-1V5z', active: () => route.path === '/kanban' },
+  { label: 'Pano', to: '/team/pano', icon: 'M5 4h14a1 1 0 0 1 1 1v10l-5 5H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM20 15h-4a1 1 0 0 0-1 1v4', active: () => route.path.startsWith('/team/pano') },
   { label: 'Skills', to: '/skills', icon: 'M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zM10 3v3M14 3v3M10 18v3M14 18v3M3 10h3M3 14h3M18 10h3M18 14h3M9.5 12.2l1.8 1.8 3.4-3.6', active: () => route.path.startsWith('/skills') },
 ];
 

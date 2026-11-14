@@ -24,10 +24,12 @@ import PanoTaskButton from '../components/PanoTaskButton.vue'
 import PanoProgress from '../components/PanoProgress.vue'
 import { renderMarkdown } from '../utils/markdown'
 import { useWorkspaceStore } from '../stores/workspaceStore'
+import { useTeamStore } from '../stores/teamStore'
 import { useEventBus } from '../useEventBus'
 import { useToasts } from '../composables/useToasts'
 import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import DeleteModal from '../components/DeleteModal.vue'
+import PanoSharing from '../components/PanoSharing.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -37,6 +39,8 @@ const {
   load, startEditing, cancelEditing, reloadEditing, addDraftFile, removeDraftFile, save, checkItem, tickByHand, assignItem, remove, comment, attach,
 } = usePanoDoc(id, { api, color: route.query.color })
 const { workspaces } = storeToRefs(useWorkspaceStore())
+// Shared with a team, a doc is read by its members; in none, there is no one to share with.
+const { teams } = storeToRefs(useTeamStore())
 const { notifySuccess, notifyError } = useToasts()
 const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false })
 
@@ -492,6 +496,12 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
             <dt class="text-gray-400 dark:text-zinc-500">Expires</dt><dd class="text-gray-700 dark:text-zinc-300">{{ expiresLabel(doc.expiresAt) }}</dd>
             <dt class="text-gray-400 dark:text-zinc-500">Paper</dt><dd class="text-gray-700 dark:text-zinc-300">{{ color.label }}</dd>
           </dl>
+
+          <section v-if="teams.length" data-test="pano-share" class="space-y-1">
+            <h3 :class="section">Share with a team</h3>
+            <p class="text-[11px] text-gray-400 dark:text-zinc-500">Its members read it on the team's Pano, without editing it.</p>
+            <PanoSharing :doc-id="doc.id" :title="doc.title" />
+          </section>
 
           <section v-if="doc.files?.length" class="space-y-2">
             <h3 :class="section">Linked files</h3>

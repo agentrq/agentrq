@@ -27,7 +27,7 @@ var errTeamDB = errors.New("database unavailable")
 
 var teamT0 = time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 
-var teamTables = []any{&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}}
+var teamTables = []any{&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.PanoDoc{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}}
 
 func openTeamDB(t *testing.T, d gorm.Dialector) *gorm.DB {
 	t.Helper()
@@ -195,6 +195,9 @@ func TestTeamIndexesCoverTheirColumns(t *testing.T) {
 		"uk_workspace_shares_team_id_workspace_id":          "(`team_id`,`workspace_id`)",
 		"idx_workspace_shares_team_id_user_id":              "(`team_id`,`user_id`)",
 		"idx_workspace_shares_workspace_id":                 "(`workspace_id`)",
+		"uk_pano_doc_shares_team_id_doc_id":                 "(`team_id`,`doc_id`)",
+		"idx_pano_doc_shares_team_id_user_id":               "(`team_id`,`user_id`)",
+		"idx_pano_doc_shares_doc_id":                        "(`doc_id`)",
 		"idx_team_management_activities_team_id_created_at": "(`team_id`,`created_at`)",
 	} {
 		var ddl string
@@ -1256,6 +1259,7 @@ func TestTeamStatementFailures(t *testing.T) {
 	since := teamT0.Add(-24 * time.Hour)
 	member := model.TeamMember{ID: 30, TeamID: 1, UserID: 11}
 	share := model.WorkspaceShare{ID: 1, TeamID: 1, WorkspaceID: 100, UserID: 10}
+	panoShare := model.PanoDocShare{ID: 1, TeamID: 1, DocID: 7, UserID: 10, CreatedAt: teamT0}
 	invite := func(r Repository) {
 		_, _ = r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), 1, since, 10, 0, act())
 	}
@@ -1307,6 +1311,10 @@ func TestTeamStatementFailures(t *testing.T) {
 			return err
 		}},
 		{"removing a member's shares", "delete", "workspace_shares", 0, nil, func(r Repository) error {
+			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0)
+			return err
+		}},
+		{"removing a member's doc shares", "delete", "pano_doc_shares", 0, nil, func(r Repository) error {
 			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0)
 			return err
 		}},
@@ -1376,12 +1384,21 @@ func TestTeamStatementFailures(t *testing.T) {
 		{"reading the share back", "query", "workspace_shares", 0, nil, func(r Repository) error { _, _, err := r.SetWorkspaceShare(ctx, share, 1, act()); return err }},
 		{"deleting a share", "delete", "workspace_shares", 0, nil, func(r Repository) error { _, err := r.DeleteWorkspaceShare(ctx, 5, 1, 11, 1, act()); return err }},
 		{"recording an unshare", "create", "team_management_activities", 0, nil, func(r Repository) error { _, err := r.DeleteWorkspaceShare(ctx, 5, 1, 11, 1, act()); return err }},
+		{"reading the doc to share", "query", "pano_docs", 0, nil, func(r Repository) error { _, _, err := r.SetPanoDocShare(ctx, panoShare, 1, act()); return err }},
+		{"storing a doc share", "create", "pano_doc_shares", 0, nil, func(r Repository) error { _, _, err := r.SetPanoDocShare(ctx, panoShare, 1, act()); return err }},
+		{"recording a doc share", "create", "team_management_activities", 0, nil, func(r Repository) error { _, _, err := r.SetPanoDocShare(ctx, panoShare, 1, act()); return err }},
+		{"reading the doc share back", "query", "pano_doc_shares", 0, nil, func(r Repository) error { _, _, err := r.SetPanoDocShare(ctx, panoShare, 1, act()); return err }},
+		{"deleting a doc share", "delete", "pano_doc_shares", 0, nil, func(r Repository) error { _, err := r.DeletePanoDocShare(ctx, 8, 1, 10, 1, act()); return err }},
+		{"recording a doc unshare", "create", "team_management_activities", 0, nil, func(r Repository) error { _, err := r.DeletePanoDocShare(ctx, 8, 1, 10, 1, act()); return err }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
 				db.Create(&model.TeamMember{ID: 2, TeamID: 1, UserID: 11})
 				db.Create(&model.WorkspaceShare{ID: 9, TeamID: 1, WorkspaceID: 5, UserID: 11})
+				db.Create(&model.PanoDoc{ID: 7, UserID: 10, Title: "plan", ExpiresAt: teamT0.Add(time.Hour)})
+				db.Create(&model.PanoDocShare{ID: 19, TeamID: 1, DocID: 9, UserID: 11})
+				db.Create(&model.PanoDocShare{ID: 20, TeamID: 1, DocID: 8, UserID: 10})
 				if c.setup != nil {
 					c.setup(r)
 				}

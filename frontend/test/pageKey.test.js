@@ -35,6 +35,7 @@ describe('pageKey', () => {
       '/pano/:id',
       '/pano/:docId/chat/:workspaceId/:taskId',
       '/skills/:name',
+      '/team/pano/:docId',
       '/sessions/:id',
       '/workflows/:id',
     ])

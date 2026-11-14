@@ -41,6 +41,9 @@ describe('the team API', () => {
     ['listWorkspaceShares', ['ws1'], 'GET', '/workspaces/ws1/shares'],
     ['shareWorkspace', ['ws1', 'tm1', 4], 'PUT', '/workspaces/ws1/shares/tm1', { version: 4 }],
     ['unshareWorkspace', ['ws1', 'tm1', 4], 'DELETE', '/workspaces/ws1/shares/tm1?version=4'],
+    ['listPanoShares', ['d1'], 'GET', '/pano/d1/shares'],
+    ['sharePanoDoc', ['d1', 'tm1', 4], 'PUT', '/pano/d1/shares/tm1', { version: 4 }],
+    ['unsharePanoDoc', ['d1', 'tm1', 4], 'DELETE', '/pano/d1/shares/tm1?version=4'],
     ['listTeammateMemories', ['ws1'], 'GET', '/workspaces/ws1/teammate-memories'],
     ['setTeammateMemory', ['ws1', 'u1', false], 'PUT', '/workspaces/ws1/teammate-memories/u1', { included: false }],
     ['fetchTeamWorkspaces', ['tm1'], 'GET', '/teams/tm1/workspaces'],
@@ -54,6 +57,8 @@ describe('the team API', () => {
     ['cloneTeamTask', ['tm1', 't1', 'ws1', 'agent'], 'POST', '/teams/tm1/tasks/t1/clone', { workspaceId: 'ws1', assignee: 'agent' }],
     ['fetchTeamSkills', ['tm1'], 'GET', '/teams/tm1/skills'],
     ['getTeamSkill', ['tm1', 'a b'], 'GET', '/teams/tm1/skills/a%20b'],
+    ['listTeamPanoDocs', ['tm1'], 'GET', '/teams/tm1/pano'],
+    ['getTeamPanoDoc', ['tm1', 'd1'], 'GET', '/teams/tm1/pano/d1'],
     ['addTeamSkill', ['tm1', 'tdd'], 'POST', '/teams/tm1/skills/tdd/add', { workspaceIds: [] }],
   ];
 
