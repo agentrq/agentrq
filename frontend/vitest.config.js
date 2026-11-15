@@ -189,6 +189,7 @@ export default defineConfig({
         'src/views/TeamNewView.vue',
         'src/views/TeamSettingsView.vue',
         'src/views/TeamAnalyticsView.vue',
+        'src/components/TeamWorkspaceActions.vue',
         'src/views/TeamMemoryView.vue',
         'src/views/InvitationsView.vue',
         'src/views/InvitationAcceptView.vue',

@@ -60,7 +60,7 @@
                  give up its space. Not a button — it says which key to press,
                  and pressing it is the thing being taught. -->
             <span v-if="findTaskHint" class="hidden @min-[64rem]:flex items-center gap-1.5 mr-1 text-gray-400 dark:text-zinc-500 select-none">
-              <kbd class="font-sans text-[9px] font-black uppercase tracking-widest border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-0.5 bg-white dark:bg-zinc-900">{{ findTaskHint.keys }}</kbd>
+              <kbd class="font-sans text-[9px] font-black uppercase tracking-widest border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-[5px] [text-box:trim-both_cap_alphabetic] bg-white dark:bg-zinc-900">{{ findTaskHint.keys }}</kbd>
               <span class="text-[10px] font-medium">{{ findTaskHint.label }}</span>
             </span>
 
