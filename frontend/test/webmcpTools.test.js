@@ -253,6 +253,8 @@ describe('parity with the interface', () => {
     uploadAdminHook: 'needs the operator session above; the same non-grant',
     setAdminHookEnabled: 'needs the operator session above; the same non-grant',
     deleteAdminHook: 'needs the operator session above; the same non-grant',
+    fetchAdminConfigurations: 'needs the operator session above; the same non-grant',
+    updateAdminConfiguration: 'needs the operator session above; the same non-grant',
   };
 
   const apiFunctions = Object.entries(api)

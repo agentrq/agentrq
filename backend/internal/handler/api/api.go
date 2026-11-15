@@ -7,6 +7,7 @@ package api
 import (
 	"context"
 	"errors"
+	"github.com/agentrq/agentrq/backend/internal/controller/appconfig"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -74,6 +75,9 @@ type (
 		Teams     teamctrl.Controller
 		// TeamView is team mode: a team's shared work, read-only.
 		TeamView teamview.Controller
+		// AppConfig is the stored config, for the admin pages; nil, they have
+		// no config page.
+		AppConfig appconfig.Controller
 	}
 
 	Handler interface{}
@@ -118,6 +122,7 @@ type (
 		hooks            hookctrl.Controller
 		teams            teamctrl.Controller
 		teamView         teamview.Controller
+		appConfig        appconfig.Controller
 	}
 )
 
@@ -167,6 +172,7 @@ func New(p Params) (Handler, error) {
 		hooks:            p.Hooks,
 		teams:            p.Teams,
 		teamView:         p.TeamView,
+		appConfig:        p.AppConfig,
 	}
 	hosts, err := redirectHosts(p.RedirectDomains)
 	if err != nil {

@@ -39,6 +39,7 @@ func (fakeConfig) Env() string          { return "test" }
 func (fakeConfig) App() string          { return "agentrq" }
 func (fakeConfig) AppShortName() string { return "arq" }
 func (fakeConfig) Version() string      { return "0.0.0" }
+func (fakeConfig) Keys() []string       { return nil }
 
 // counterIDs hands out 1000, 1001, ...
 type counterIDs struct{ n atomic.Int64 }

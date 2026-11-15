@@ -11,3 +11,9 @@ func TestHookErrorIsItsMessage(t *testing.T) {
 		t.Errorf("Error() = %q", got)
 	}
 }
+
+func TestAppConfigurationErrorIsItsMessage(t *testing.T) {
+	if got := (&AppConfigurationError{Message: "memory.maxFileSize: -1 is negative"}).Error(); got != "memory.maxFileSize: -1 is negative" {
+		t.Errorf("Error() = %q", got)
+	}
+}

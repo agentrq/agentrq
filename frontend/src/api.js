@@ -1432,6 +1432,29 @@ export async function deleteAdminHook(id) {
   return true;
 }
 
+// The server's config, one block per yaml namespace, as the database holds it;
+// null once the admin session has ended.
+export async function fetchAdminConfigurations() {
+  const res = await fetch(`${ADMIN_BASE_URL}/configurations`);
+  if (res.status === 401) return null;
+  if (!res.ok) throw await responseError(res, 'Failed to fetch the config');
+  return (await res.json()).configurations;
+}
+
+// Replaces one block, which takes effect when the server next starts. A value
+// the server could not start with is refused, saying which setting. The block
+// as stored, or null once the admin session has ended.
+export async function updateAdminConfiguration(key, value) {
+  const res = await fetch(`${ADMIN_BASE_URL}/configurations/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value })
+  });
+  if (res.status === 401) return null;
+  if (!res.ok) throw await responseError(res, 'Failed to save the config');
+  return res.json();
+}
+
 // ── Teams ───────────────────────────────────────────────────────────────────
 // Teams, their members and invitations, and which of your workspaces a team
 // may see. Every member may change a team. Every refusal carries its HTTP

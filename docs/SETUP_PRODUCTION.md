@@ -25,6 +25,21 @@ Will prompt you for:
 - PostgreSQL connection details (optional)
 - Slack integration (optional)
 
+### Where the settings live
+
+The first time the server starts, it copies its settings from the yaml config
+and env vars into its database, in the `_app_configurations` table, encrypted
+with `AGENTRQ_AUTH_WORKSPACE_TOKEN_KEY`. From then on **the database wins**:
+changing an env var does nothing, and settings are changed at `/admin/config`
+(signed in with the root access token), taking effect at the next restart.
+A setting added by a later release is copied in when that release first starts.
+
+These stay in env vars and are never stored: the database (`AGENTRQ_POSTGRES_*`,
+`AGENTRQ_SQLITE_*`), the node id (`MONOFLAKE_NODE`), the root access token
+(`AGENTRQ_AUTH_ROOT_ACCESS_TOKEN`) and the encryption key
+(`AGENTRQ_AUTH_WORKSPACE_TOKEN_KEY`, 32 bytes). Changing the encryption key
+leaves the stored settings unreadable, and the server refuses to start.
+
 ### 2. Enable PostgreSQL (Recommended)
 
 SQLite, the default, runs only on a single host: its database is a file on
