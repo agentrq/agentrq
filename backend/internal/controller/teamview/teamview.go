@@ -65,11 +65,13 @@ type Controller interface {
 	GetPanoDoc(ctx context.Context, userID, teamID, docID int64) (entity.TeamPanoDoc, error)
 	GetPanoFile(ctx context.Context, userID, teamID, docID, fileID int64) (*entity.GetAttachmentResponse, error)
 
-	ListSkills(ctx context.Context, userID, teamID int64) ([]entity.TeamSkill, error)
-	GetSkill(ctx context.Context, userID, teamID int64, name string) (entity.TeamSkill, error)
+	// The skills on in one team workspace, named by workspace as
+	// WorkspaceKey matches it; every team workspace's when it is empty.
+	ListSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeamSkill, error)
+	GetSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeamSkill, error)
 	// AddSkill copies a teammate's skill into the caller's account, on in
 	// the given workspaces of theirs.
-	AddSkill(ctx context.Context, userID, teamID int64, name string, workspaceIDs []int64) (entity.Skill, error)
+	AddSkill(ctx context.Context, userID, teamID int64, workspace, name string, workspaceIDs []int64) (entity.Skill, error)
 
 	// ListTeammateMemories is the teammates in the team workspace of one of
 	// the caller's own workspaces, and whether its agent's memory index
@@ -348,14 +350,15 @@ func (c *controller) cloneAttachments(ctx context.Context, t model.Task, w entit
 	return out
 }
 
-// ownWorkspaces is the visible workspaces that keep their own skills and
-// share them with the team: a fork reads its parent's, which the team sees
-// whenever it sees the fork.
-func ownWorkspaces(visible []entity.TeamWorkspace) (map[int64]entity.TeamWorkspace, []int64) {
+// ownWorkspaces is the visible workspaces of the team workspace named
+// workspace ("" = any) that keep their own skills and share them with the
+// team: a fork reads its parent's, which the team sees whenever it sees the
+// fork.
+func ownWorkspaces(visible []entity.TeamWorkspace, workspace string) (map[int64]entity.TeamWorkspace, []int64) {
 	byID := make(map[int64]entity.TeamWorkspace, len(visible))
 	ids := []int64{}
 	for _, w := range visible {
-		if w.ForkOfID == 0 && w.Skills {
+		if w.ForkOfID == 0 && w.Skills && (workspace == "" || WorkspaceKey(w.SharedName) == WorkspaceKey(workspace)) {
 			byID[w.ID] = w
 			ids = append(ids, w.ID)
 		}
@@ -363,14 +366,15 @@ func ownWorkspaces(visible []entity.TeamWorkspace) (map[int64]entity.TeamWorkspa
 	return byID, ids
 }
 
-// teamSkills is the skills on in the team's workspaces, by name, each with
-// its owners, and the row of the owner who changed it last.
-func (c *controller) teamSkills(ctx context.Context, userID, teamID int64) ([]entity.TeamSkill, map[string]base.WorkspaceSkillRow, error) {
+// teamSkills is the skills on in the team workspace named workspace ("" =
+// every one), by name, each with its owners, and the row of the owner who
+// changed it last.
+func (c *controller) teamSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeamSkill, map[string]base.WorkspaceSkillRow, error) {
 	visible, err := c.teams.ListTeamWorkspaces(ctx, userID, teamID)
 	if err != nil {
 		return nil, nil, err
 	}
-	byID, ids := ownWorkspaces(visible)
+	byID, ids := ownWorkspaces(visible, workspace)
 	rows, err := c.repo.ListSkillsOnInWorkspaces(ctx, ids)
 	if err != nil {
 		return nil, nil, err
@@ -405,19 +409,20 @@ func hasOwner(owners []entity.TeamOwner, userID int64) bool {
 	return false
 }
 
-func (c *controller) ListSkills(ctx context.Context, userID, teamID int64) ([]entity.TeamSkill, error) {
-	out, _, err := c.teamSkills(ctx, userID, teamID)
+func (c *controller) ListSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeamSkill, error) {
+	out, _, err := c.teamSkills(ctx, userID, teamID, workspace)
 	return out, err
 }
 
 // teamSkill is the team's skill by name, and whose copy is read: the one
-// changed last. base.ErrNotFound when no shared workspace has it on.
-func (c *controller) teamSkill(ctx context.Context, userID, teamID int64, name string) (entity.TeamSkill, base.WorkspaceSkillRow, error) {
+// changed last. base.ErrNotFound when no shared workspace of the team
+// workspace has it on.
+func (c *controller) teamSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeamSkill, base.WorkspaceSkillRow, error) {
 	canonical, err := skill.CanonicalName(name)
 	if err != nil {
 		return entity.TeamSkill{}, base.WorkspaceSkillRow{}, base.ErrNotFound
 	}
-	skills, latest, err := c.teamSkills(ctx, userID, teamID)
+	skills, latest, err := c.teamSkills(ctx, userID, teamID, workspace)
 	if err != nil {
 		return entity.TeamSkill{}, base.WorkspaceSkillRow{}, err
 	}
@@ -429,8 +434,8 @@ func (c *controller) teamSkill(ctx context.Context, userID, teamID int64, name s
 	return entity.TeamSkill{}, base.WorkspaceSkillRow{}, base.ErrNotFound
 }
 
-func (c *controller) GetSkill(ctx context.Context, userID, teamID int64, name string) (entity.TeamSkill, error) {
-	s, src, err := c.teamSkill(ctx, userID, teamID, name)
+func (c *controller) GetSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeamSkill, error) {
+	s, src, err := c.teamSkill(ctx, userID, teamID, workspace, name)
 	if err != nil {
 		return entity.TeamSkill{}, err
 	}
@@ -442,8 +447,8 @@ func (c *controller) GetSkill(ctx context.Context, userID, teamID int64, name st
 	return s, nil
 }
 
-func (c *controller) AddSkill(ctx context.Context, userID, teamID int64, name string, workspaceIDs []int64) (entity.Skill, error) {
-	s, src, err := c.teamSkill(ctx, userID, teamID, name)
+func (c *controller) AddSkill(ctx context.Context, userID, teamID int64, workspace, name string, workspaceIDs []int64) (entity.Skill, error) {
+	s, src, err := c.teamSkill(ctx, userID, teamID, workspace, name)
 	if err != nil {
 		return entity.Skill{}, err
 	}

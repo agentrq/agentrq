@@ -1660,18 +1660,21 @@ export function cloneTeamTask(teamId, taskId, workspaceId, assignee = 'human') {
   return teamCall(`/teams/${enc(teamId)}/tasks/${enc(taskId)}/clone`, 'Failed to clone the task', { method: 'POST', body: { workspaceId, assignee } });
 }
 
-// Skills on in shared workspaces, one per name with who has it: { skills }.
-export function fetchTeamSkills(teamId) {
-  return teamCall(`/teams/${enc(teamId)}/skills`, 'Failed to load the team\'s skills');
+// Skills on in a team workspace's shared workspaces (`workspace`, its shared
+// name; every one's when empty), one per name with who has it: { skills }.
+const teamSkillsQuery = (workspace) => (workspace ? `?${new URLSearchParams({ workspace })}` : '');
+
+export function fetchTeamSkills(teamId, workspace = '') {
+  return teamCall(`/teams/${enc(teamId)}/skills${teamSkillsQuery(workspace)}`, 'Failed to load the team\'s skills');
 }
 
-export function getTeamSkill(teamId, name) {
-  return teamCall(`/teams/${enc(teamId)}/skills/${enc(name)}`, 'Failed to load the skill');
+export function getTeamSkill(teamId, name, workspace = '') {
+  return teamCall(`/teams/${enc(teamId)}/skills/${enc(name)}${teamSkillsQuery(workspace)}`, 'Failed to load the skill');
 }
 
 // Copies a teammate's skill into your account, on in the workspaces given.
-export function addTeamSkill(teamId, name, workspaceIds = []) {
-  return teamCall(`/teams/${enc(teamId)}/skills/${enc(name)}/add`, 'Failed to add the skill', { method: 'POST', body: { workspaceIds } });
+export function addTeamSkill(teamId, name, workspaceIds = [], workspace = '') {
+  return teamCall(`/teams/${enc(teamId)}/skills/${enc(name)}/add${teamSkillsQuery(workspace)}`, 'Failed to add the skill', { method: 'POST', body: { workspaceIds } });
 }
 
 // The Pano docs members shared with the team, newest update first, each with

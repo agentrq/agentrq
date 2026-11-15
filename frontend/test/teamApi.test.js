@@ -61,6 +61,9 @@ describe('the team API', () => {
     ['listTeamPanoDocs', ['tm1'], 'GET', '/teams/tm1/pano'],
     ['getTeamPanoDoc', ['tm1', 'd1'], 'GET', '/teams/tm1/pano/d1'],
     ['addTeamSkill', ['tm1', 'tdd'], 'POST', '/teams/tm1/skills/tdd/add', { workspaceIds: [] }],
+    ['fetchTeamSkills', ['tm1', 'Back end'], 'GET', '/teams/tm1/skills?workspace=Back+end'],
+    ['getTeamSkill', ['tm1', 'a b', 'Back end'], 'GET', '/teams/tm1/skills/a%20b?workspace=Back+end'],
+    ['addTeamSkill', ['tm1', 'tdd', ['ws1'], 'Back end'], 'POST', '/teams/tm1/skills/tdd/add?workspace=Back+end', { workspaceIds: ['ws1'] }],
   ];
 
   it.each(CASES)('%s(%j) is %s %s', async (name, args, method, path, body) => {
