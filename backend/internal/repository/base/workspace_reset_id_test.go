@@ -260,7 +260,8 @@ func TestResetWorkspaceID_CoversEveryColumnNamingAWorkspace(t *testing.T) {
 			continue
 		}
 		for i := 0; i < st.NumFields(); i++ {
-			if f := st.Field(i).Name(); strings.HasSuffix(f, "WorkspaceID") || f == "ForkOfID" {
+			// A TeamWorkspaceID names a team workspace, which no reset moves.
+			if f := st.Field(i).Name(); strings.HasSuffix(f, "WorkspaceID") && !strings.HasSuffix(f, "TeamWorkspaceID") || f == "ForkOfID" {
 				found = append(found, name+"."+f)
 			}
 		}

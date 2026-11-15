@@ -6,7 +6,9 @@ package team
 
 import (
 	"context"
+	"strings"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/teamview"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
@@ -52,7 +54,7 @@ func (c *controller) workspaceActivity(ws model.Workspace) model.TeamManagementA
 }
 
 // ShareWorkspace shares the account's workspace with a team it is in, where
-// it shows by its own name, letting the team read the parts given; on a
+// it shows in the team workspace of its name, created when the team has none, letting the team read the parts given; on a
 // workspace already shared, it sets the parts. The repository checks the
 // account is in the team, under the team's lock.
 func (c *controller) ShareWorkspace(ctx context.Context, ch entity.TeamChange, workspaceID int64, parts entity.SharedParts) (entity.WorkspaceShare, error) {
@@ -67,6 +69,11 @@ func (c *controller) ShareWorkspace(ctx context.Context, ch entity.TeamChange, w
 		return entity.WorkspaceShare{}, teamErr(entity.TeamInvalid, "an archived workspace cannot be shared")
 	}
 	now := c.now()
+	// Its id is taken first, so a team workspace created by the share is
+	// recorded before the share.
+	tw := model.TeamWorkspace{
+		ID: c.ids.NextID(), CreatedAt: now, UpdatedAt: now, Name: strings.TrimSpace(ws.Name), NameKey: teamview.WorkspaceKey(ws.Name), Version: 1,
+	}
 	act := c.activity()
 	act.Details = base.TeamActivityDetails(map[string]string{
 		"workspaceName": ws.Name, "tasks": onOff(parts.Tasks), "skills": onOff(parts.Skills), "memory": onOff(parts.Memory),
@@ -74,7 +81,7 @@ func (c *controller) ShareWorkspace(ctx context.Context, ch entity.TeamChange, w
 	s, next, err := c.repo.SetWorkspaceShare(ctx, model.WorkspaceShare{
 		ID: c.ids.NextID(), TeamID: ch.TeamID, WorkspaceID: workspaceID, UserID: ch.UserID, CreatedAt: now, UpdatedAt: now,
 		HideTasks: !parts.Tasks, HideSkills: !parts.Skills, HideMemory: !parts.Memory,
-	}, ch.Version, act)
+	}, tw, ch.Version, act)
 	if err != nil {
 		return entity.WorkspaceShare{}, fromRepo(err)
 	}
@@ -108,7 +115,7 @@ func (c *controller) ListTeamWorkspaces(ctx context.Context, userID, teamID int6
 	out := make([]entity.TeamWorkspace, len(rows))
 	for i, w := range rows {
 		out[i] = entity.TeamWorkspace{
-			ID: w.ID, Name: w.Name, ForkOfID: w.ForkOfID, SharedName: w.SharedName,
+			ID: w.ID, Name: w.Name, ForkOfID: w.ForkOfID, TeamWorkspaceID: w.TeamWorkspaceID, SharedName: w.SharedName,
 			OwnerID: w.UserID, OwnerName: w.OwnerName, OwnerPicture: w.OwnerPicture,
 			Tasks: !w.HideTasks, Skills: !w.HideSkills,
 		}

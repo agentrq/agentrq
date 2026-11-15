@@ -95,17 +95,17 @@ type TeamPanoDoc struct {
 }
 
 // TeamWorkspace is a workspace a team's members may read: one shared with
-// it, or a fork of one. SharedName is the name of the shared workspace it
-// shows under, its own or its parent's: every shared workspace of one name,
-// ignoring case and surrounding spaces, is one team workspace.
+// it, or a fork of one. TeamWorkspaceID is the team workspace its share (its
+// parent's, for a fork) is in, and SharedName that team workspace's name.
 type TeamWorkspace struct {
-	ID           int64
-	Name         string
-	ForkOfID     int64
-	SharedName   string
-	OwnerID      int64
-	OwnerName    string
-	OwnerPicture string
+	ID              int64
+	Name            string
+	ForkOfID        int64
+	TeamWorkspaceID int64
+	SharedName      string
+	OwnerID         int64
+	OwnerName       string
+	OwnerPicture    string
 	// Tasks and Skills are whether its share lets the team read them.
 	Tasks  bool
 	Skills bool

@@ -92,7 +92,7 @@ func (f *fake) SystemGetTask(context.Context, int64) (model.Task, error) {
 	return f.task, f.err("SystemGetTask")
 }
 func (f *fake) TeamWorkspaceInfo(_ context.Context, workspaceID int64) (base.TeamWorkspaceRow, error) {
-	return base.TeamWorkspaceRow{ID: workspaceID, UserID: 1, Name: "api fork", SharedName: "API", OwnerName: "Alice"}, f.err("TeamWorkspaceInfo")
+	return base.TeamWorkspaceRow{ID: workspaceID, UserID: 1, Name: "api fork", SharedName: "API", TeamWorkspaceID: 1, OwnerName: "Alice"}, f.err("TeamWorkspaceInfo")
 }
 func (f *fake) ListSkillsOnInWorkspaces(_ context.Context, ids []int64) ([]base.WorkspaceSkillRow, error) {
 	f.skillsIn = ids
@@ -107,7 +107,7 @@ func (f *fake) Publish(_ context.Context, req pubsub.PublishRequest) (*pubsub.Pu
 func newFake() (*fake, Controller) {
 	f := &fake{
 		canRead: true,
-		visible: []entity.TeamWorkspace{{ID: 100, Tasks: true, Skills: true, OwnerID: 1, SharedName: "g"}},
+		visible: []entity.TeamWorkspace{{ID: 100, Tasks: true, Skills: true, OwnerID: 1, SharedName: "g", TeamWorkspaceID: 2}},
 		task:    model.Task{ID: 1000, WorkspaceID: 100, Attachments: []byte(`[{"id":"a","filename":"f.txt"}]`)},
 		skillRows: []base.WorkspaceSkillRow{
 			{WorkspaceID: 100, UserID: 1, SkillID: 70, Name: "deploy"},
@@ -313,9 +313,9 @@ func TestListTasksFilters(t *testing.T) {
 	ctx := context.Background()
 	f, c := newFake()
 	f.visible = []entity.TeamWorkspace{
-		{ID: 1, Tasks: true, Skills: true, SharedName: "API", OwnerID: 7},
-		{ID: 2, Tasks: true, Skills: true, SharedName: " api ", OwnerID: 8},
-		{ID: 3, Tasks: true, Skills: true, SharedName: "docs", OwnerID: 7},
+		{ID: 1, Tasks: true, Skills: true, SharedName: "API", TeamWorkspaceID: 1, OwnerID: 7},
+		{ID: 2, Tasks: true, Skills: true, SharedName: " api ", TeamWorkspaceID: 1, OwnerID: 8},
+		{ID: 3, Tasks: true, Skills: true, SharedName: "docs", TeamWorkspaceID: 3, OwnerID: 7},
 	}
 	f.tasks = []entity.Task{{ID: 50, WorkspaceID: 2}}
 	got, err := c.ListTasks(ctx, entity.ListTeamTasksRequest{UserID: 2, TeamID: 10, Workspace: "Api"})
@@ -344,9 +344,9 @@ func TestGetStatsScope(t *testing.T) {
 	ctx := context.Background()
 	f, c := newFake()
 	f.visible = []entity.TeamWorkspace{
-		{ID: 1, Tasks: true, Skills: true, SharedName: "API", OwnerID: 7},
-		{ID: 2, Tasks: true, Skills: true, SharedName: " api ", OwnerID: 8},
-		{ID: 3, Tasks: true, Skills: true, SharedName: "docs", OwnerID: 7},
+		{ID: 1, Tasks: true, Skills: true, SharedName: "API", TeamWorkspaceID: 1, OwnerID: 7},
+		{ID: 2, Tasks: true, Skills: true, SharedName: " api ", TeamWorkspaceID: 1, OwnerID: 8},
+		{ID: 3, Tasks: true, Skills: true, SharedName: "docs", TeamWorkspaceID: 3, OwnerID: 7},
 	}
 	rs, err := c.GetStats(ctx, entity.GetTeamStatsRequest{UserID: 2, TeamID: 10, Workspace: "Api", Range: "custom", From: 5, To: 9})
 	if err != nil || rs.Summary.TasksCompleted != 3 {
@@ -369,8 +369,8 @@ func TestSharePartsLeaveWorkspacesOut(t *testing.T) {
 	ctx := context.Background()
 	f, c := newFake()
 	f.visible = []entity.TeamWorkspace{
-		{ID: 1, SharedName: "api", OwnerID: 7, Tasks: true},
-		{ID: 2, SharedName: "api", OwnerID: 8, Skills: true},
+		{ID: 1, SharedName: "api", TeamWorkspaceID: 1, OwnerID: 7, Tasks: true},
+		{ID: 2, SharedName: "api", TeamWorkspaceID: 1, OwnerID: 8, Skills: true},
 	}
 	if _, err := c.ListTasks(ctx, entity.ListTeamTasksRequest{UserID: 2, TeamID: 10}); err != nil || fmt.Sprint(f.listedIn) != "[1]" {
 		t.Errorf("tasks read in %v, %v; want 1 alone", f.listedIn, err)
@@ -408,8 +408,8 @@ func TestSkillOwnersOnce(t *testing.T) {
 func TestSkillsOfOneTeamWorkspace(t *testing.T) {
 	f, c := newFake()
 	f.visible = []entity.TeamWorkspace{
-		{ID: 100, OwnerID: 1, SharedName: "backend", Skills: true}, {ID: 101, OwnerID: 1, SharedName: "backend", ForkOfID: 100, Skills: true},
-		{ID: 200, OwnerID: 2, SharedName: " Backend", Skills: true}, {ID: 300, OwnerID: 2, SharedName: "api", Skills: true},
+		{ID: 100, OwnerID: 1, SharedName: "backend", TeamWorkspaceID: 4, Skills: true}, {ID: 101, OwnerID: 1, SharedName: "backend", TeamWorkspaceID: 4, ForkOfID: 100, Skills: true},
+		{ID: 200, OwnerID: 2, SharedName: " Backend", TeamWorkspaceID: 4, Skills: true}, {ID: 300, OwnerID: 2, SharedName: "api", TeamWorkspaceID: 1, Skills: true},
 	}
 	for workspace, want := range map[string][]int64{"BACKEND ": {100, 200}, "api": {300}, "": {100, 200, 300}, "none": {}} {
 		if _, err := c.ListSkills(context.Background(), 2, 10, workspace); err != nil || fmt.Sprint(f.skillsIn) != fmt.Sprint(want) {
@@ -440,7 +440,7 @@ func TestAddSkillLinks(t *testing.T) {
 // to refuse.
 func TestAddSkillLinksATeammatesCopy(t *testing.T) {
 	f, c := newFake()
-	f.visible = append(f.visible, entity.TeamWorkspace{ID: 200, Skills: true, OwnerID: 2, SharedName: "g"})
+	f.visible = append(f.visible, entity.TeamWorkspace{ID: 200, Skills: true, OwnerID: 2, SharedName: "g", TeamWorkspaceID: 2})
 	f.skillRows = []base.WorkspaceSkillRow{
 		{WorkspaceID: 200, UserID: 2, SkillID: 80, Name: "deploy"},
 		{WorkspaceID: 100, UserID: 1, SkillID: 70, Name: "deploy"},

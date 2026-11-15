@@ -51,7 +51,7 @@ func teamServer(t *testing.T, maxInvites int) (*fiber.App, *gorm.DB) {
 			_ = sqlDB.Close()
 		}
 	})
-	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamWorkspace{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}); err != nil {
 		t.Fatal(err)
 	}
 	db.Create(&model.User{ID: 1, Name: "Alice", Email: "alice@example.com"})
@@ -294,19 +294,21 @@ func TestTeamRoutes(t *testing.T) {
 	status, body = call(t, app, aliceID, http.MethodGet, "/teams/"+team+"/activities", "")
 	actions := list(body, "activities", "action")
 	if status != http.StatusOK || body["version"] != float64(10) || !sameList(actions, "member.left", "member.removed", "workspace.unshared",
-		"workspace.shared", "invitation.accepted", "invitation.accepted", "member.invited", "member.invited", "team.renamed", "team.created") {
+		"workspace.shared", "teamWorkspace.created", "invitation.accepted", "invitation.accepted", "member.invited", "member.invited", "team.renamed", "team.created") {
 		t.Errorf("the activity answered %d %v", status, actions)
 	}
 	acts, _ := body["activities"].([]any)
-	if len(acts) == 10 {
+	if len(acts) == 11 {
 		removed, _ := acts[1].(map[string]any)
 		actor, _ := removed["actor"].(map[string]any)
 		target, _ := removed["targetUser"].(map[string]any)
 		shared, _ := acts[3].(map[string]any)
-		renamed, _ := acts[8].(map[string]any)
-		invited, _ := acts[7].(map[string]any)
+		created, _ := acts[4].(map[string]any)
+		renamed, _ := acts[9].(map[string]any)
+		invited, _ := acts[8].(map[string]any)
 		if actor["name"] != "Dave" || target["name"] != "Bob" || target["userId"] != bobID ||
 			shared["targetWorkspaceId"] != wsID || fmt.Sprint(shared["details"]) != "map[memory:off skills:on tasks:on workspaceName:backend]" ||
+			fmt.Sprint(created["details"]) != "map[name:backend]" ||
 			fmt.Sprint(renamed["details"]) != "map[from:core to:platform]" || invited["targetEmail"] != "bob@example.com" {
 			t.Errorf("the activities read %v", acts)
 		}

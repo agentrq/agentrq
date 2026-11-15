@@ -419,6 +419,8 @@ describe('the activity log', () => {
     expect(line('workspace.shareChanged', { details: { tasks: 'off', skills: 'off', memory: 'off' } }))
       .toBe('Alice changed what is shared of a workspace: nothing but the workspace');
     expect(line('workspace.unshared')).toBe('Alice stopped sharing a workspace');
+    expect(line('teamWorkspace.created', { details: { name: 'api' } })).toBe('Alice started the team workspace api');
+    expect(line('teamWorkspace.created')).toBe('Alice started a team workspace');
     expect(line('pano.shared', { details: { docTitle: 'Plan' } })).toBe('Alice shared the Pano doc Plan');
     expect(line('pano.unshared')).toBe('Alice stopped sharing a Pano doc');
     expect(line('team.deleted', { details: { name: 'Core' } })).toBe('Alice deleted the team');

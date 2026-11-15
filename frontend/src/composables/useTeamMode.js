@@ -193,6 +193,7 @@ export function describeActivity(a = {}) {
     case 'workspace.shared': return `${who} shared ${workspace}`;
     case 'workspace.shareChanged': return `${who} changed what is shared of ${workspace}: ${sharedParts(d)}`;
     case 'workspace.unshared': return `${who} stopped sharing ${workspace}`;
+    case 'teamWorkspace.created': return d.name ? `${who} started the team workspace ${d.name}` : `${who} started a team workspace`;
     case 'pano.shared': return `${who} shared ${doc}`;
     case 'pano.unshared': return `${who} stopped sharing ${doc}`;
     case 'team.deleted': return `${who} deleted the team`;

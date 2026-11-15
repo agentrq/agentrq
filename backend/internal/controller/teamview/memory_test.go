@@ -34,12 +34,13 @@ func (f *fake) mem() *memoryState {
 	if memories[f] == nil {
 		memories[f] = &memoryState{
 			peers: []base.TeamWorkspacePeer{
-				{TeamID: 10, WorkspaceID: 100, UserID: 1, Name: "API", OwnerName: "Alice", OwnerPicture: "a.png"},
-				{TeamID: 10, WorkspaceID: 200, UserID: 2, Name: "api", OwnerName: "Bob"},
-				{TeamID: 10, WorkspaceID: 300, UserID: 3, Name: " Api", OwnerName: "Carol"},
-				{TeamID: 10, WorkspaceID: 400, UserID: 4, Name: "Web", OwnerName: "Dan"},
-				{TeamID: 11, WorkspaceID: 100, UserID: 1, Name: "API", OwnerName: "Alice", OwnerPicture: "a.png"},
-				{TeamID: 11, WorkspaceID: 101, UserID: 1, Name: "api ", OwnerName: "Alice", OwnerPicture: "a.png"},
+				{TeamID: 10, TeamWorkspaceID: 5, WorkspaceID: 100, UserID: 1, Name: "API", OwnerName: "Alice", OwnerPicture: "a.png"},
+				{TeamID: 10, TeamWorkspaceID: 5, WorkspaceID: 200, UserID: 2, Name: "api", OwnerName: "Bob"},
+				{TeamID: 10, TeamWorkspaceID: 5, WorkspaceID: 300, UserID: 3, Name: " Api", OwnerName: "Carol"},
+				{TeamID: 10, TeamWorkspaceID: 6, WorkspaceID: 400, UserID: 4, Name: "Web", OwnerName: "Dan"},
+				{TeamID: 11, TeamWorkspaceID: 7, WorkspaceID: 200, UserID: 2, Name: "api", OwnerName: "Bob"},
+				{TeamID: 11, TeamWorkspaceID: 7, WorkspaceID: 100, UserID: 1, Name: "API", OwnerName: "Alice", OwnerPicture: "a.png"},
+				{TeamID: 11, TeamWorkspaceID: 7, WorkspaceID: 101, UserID: 1, Name: "api ", OwnerName: "Alice", OwnerPicture: "a.png"},
 			},
 			excluded: map[[3]int64]bool{},
 			updates:  map[int64]time.Time{100: memoryAt},

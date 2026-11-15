@@ -143,7 +143,7 @@ type Repository interface {
 	RevokeTeamInvitation(ctx context.Context, teamID, callerID, version, id int64, act model.TeamManagementActivity) (int64, error)
 	DeclineTeamInvitation(ctx context.Context, teamID, id int64, act model.TeamManagementActivity) error
 	AcceptTeamInvitation(ctx context.Context, id int64, member model.TeamMember, now time.Time, act model.TeamManagementActivity) error
-	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, version int64, act model.TeamManagementActivity) (WorkspaceShareWithTeam, int64, error)
+	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, tw model.TeamWorkspace, version int64, act model.TeamManagementActivity) (WorkspaceShareWithTeam, int64, error)
 	ListWorkspaceShares(ctx context.Context, workspaceID, userID int64) ([]WorkspaceShareWithTeam, error)
 	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error)
 	SetPanoDocShare(ctx context.Context, s model.PanoDocShare, version int64, act model.TeamManagementActivity) (PanoDocShareWithTeam, int64, error)
