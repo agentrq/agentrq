@@ -390,21 +390,21 @@ describe('AdminConfigView sign-in providers', () => {
     expect(q(el, 'config-list').querySelector('[data-test="config-help"]').textContent).toContain('OpenID Connect')
     const idInput = q(el, 'config-auth.oauth2Providers.0.id')
     expect(document.getElementById(idInput.getAttribute('aria-describedby')).textContent).toContain('lowercase letters')
-    expect(q(el, 'config-callback-url').querySelector('code').textContent).toBe('https://app.example/api/v1/auth/oauth2/gitlab/callback')
+    expect(q(q(el, 'config-list-item'), 'config-callback-url').querySelector('code').textContent).toBe('https://app.example/api/v1/auth/oauth2/gitlab/callback')
 
     q(el, 'config-list-add').click()
     await nextTick()
     const items = qa(el, 'config-list-item')
     expect(items).toHaveLength(2)
     expect(items[1].textContent).toContain('New provider')
-    expect(qa(el, 'config-callback-url')[1].querySelector('code').textContent).toBe('https://app.example/api/v1/auth/oauth2/<id>/callback')
-    expect(qa(el, 'config-callback-copy')[1].disabled).toBe(true)
+    expect(q(items[1], 'config-callback-url').querySelector('code').textContent).toBe('https://app.example/api/v1/auth/oauth2/<id>/callback')
+    expect(q(items[1], 'config-callback-copy').disabled).toBe(true)
     expect(q(el, 'config-auth.oauth2Providers.1.scopes').value).toBe('openid, email, profile')
     expect(q(el, 'config-auth.oauth2Providers.1.clientSecret').placeholder).toBe('')
     await type(q(el, 'config-auth.oauth2Providers.1.id'), 'okta')
     await type(q(el, 'config-auth.oauth2Providers.1.name'), 'Okta')
     expect(qa(el, 'config-list-item')[1].textContent).toContain('Okta')
-    expect(qa(el, 'config-callback-url')[1].querySelector('code').textContent).toBe('https://app.example/api/v1/auth/oauth2/okta/callback')
+    expect(q(qa(el, 'config-list-item')[1], 'config-callback-url').querySelector('code').textContent).toBe('https://app.example/api/v1/auth/oauth2/okta/callback')
 
     qa(el, 'config-list-remove')[0].click()
     await nextTick()
@@ -420,20 +420,59 @@ describe('AdminConfigView sign-in providers', () => {
     const writeText = vi.fn(() => Promise.resolve())
     vi.stubGlobal('navigator', { clipboard: { writeText } })
     const { toasts } = useToasts()
-    q(el, 'config-callback-copy').click()
+    q(q(el, 'config-list-item'), 'config-callback-copy').click()
     await settle()
     expect(writeText).toHaveBeenCalledWith('https://app.example/api/v1/auth/oauth2/gitlab/callback')
     expect(toasts.value.at(-1).message).toBe('Copied the callback URL.')
 
     vi.stubGlobal('navigator', { clipboard: { writeText: () => Promise.reject(new Error('denied')) } })
-    q(el, 'config-callback-copy').click()
+    q(q(el, 'config-list-item'), 'config-callback-copy').click()
     await settle()
     expect(toasts.value.at(-1).message).toBe('Could not copy. Select the URL and copy it.')
   })
 
   it('starts a callback URL with the page origin before the app block is known', async () => {
     const { el } = await openAuth({ [`GET ${CONFIGS}`]: [[{ configurations: withProviders([provider]).slice(1) }, 200]] })
-    expect(q(el, 'config-callback-url').querySelector('code').textContent).toBe(`${window.location.origin}/api/v1/auth/oauth2/gitlab/callback`)
+    expect(q(q(el, 'config-list-item'), 'config-callback-url').querySelector('code').textContent).toBe(`${window.location.origin}/api/v1/auth/oauth2/gitlab/callback`)
+  })
+
+  it('shows the Google and GitHub callback URLs in their groups', async () => {
+    const configs = withProviders([])
+    configs[1].value.google = { clientId: '', clientSecret: '' }
+    const { el } = await openAuth({ [`GET ${CONFIGS}`]: [[{ configurations: configs }, 200]] })
+    const shown = qa(el, 'config-group').map((g) => [g.querySelector('legend').textContent, q(g, 'config-callback-url').querySelector('code').textContent])
+    expect(shown).toEqual([
+      [expect.stringContaining('auth.github'), 'https://app.example/api/v1/auth/github/callback'],
+      [expect.stringContaining('auth.google'), 'https://app.example/api/v1/auth/google/callback'],
+    ])
+    expect(qa(el, 'config-callback-copy').every((b) => !b.disabled)).toBe(true)
+  })
+
+  it("shows the Slack app's redirect and request URLs, and copies one", async () => {
+    const configs = [withProviders([])[0], { key: 'slack', value: { appId: '', clientId: '', clientSecret: MASK, enabled: false, signingSecret: MASK } }]
+    const { el } = await openAuth({ [`GET ${CONFIGS}`]: [[{ configurations: configs }, 200]] })
+    await openTab(el, 'slack')
+    const urls = qa(el, 'config-callback-url')
+    expect(urls.map((u) => [u.querySelector('p').textContent, u.querySelector('code').textContent])).toEqual([
+      ['Redirect URL', 'https://app.example/slack/oauth/callback'],
+      ['Events request URL', 'https://app.example/slack/events'],
+      ['Interactivity request URL', 'https://app.example/slack/interactions'],
+      ['Slash command request URL', 'https://app.example/slack/commands'],
+    ])
+    const writeText = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const { toasts } = useToasts()
+    q(urls[1], 'config-callback-copy').click()
+    await settle()
+    expect(writeText).toHaveBeenCalledWith('https://app.example/slack/events')
+    expect(toasts.value.at(-1).message).toBe('Copied the events request URL.')
+  })
+
+  it('shows no URLs on a block that registers with no provider', async () => {
+    const configs = [withProviders([])[0], { key: 'smtp', value: { host: '' } }]
+    const { el } = await openAuth({ [`GET ${CONFIGS}`]: [[{ configurations: configs }, 200]] })
+    await openTab(el, 'smtp')
+    expect(q(el, 'config-urls')).toBeNull()
   })
 
   it('uploads an icon into the provider, or says why not', async () => {

@@ -7,6 +7,21 @@
 <template>
   <!-- A container, so a row stacks wherever it is narrow: on a phone, or in a group's card. -->
   <div class="@container divide-y divide-gray-100 dark:divide-zinc-800">
+    <!-- The URLs this block's app is registered with, at the provider. -->
+    <div v-if="urls.length" data-test="config-urls" class="flex flex-col gap-3 py-5 first:pt-0 last:pb-0">
+      <div v-for="u in urls" :key="u.label" data-test="config-callback-url"
+        class="rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2.5">
+        <p class="text-xs/5 font-semibold text-gray-900 dark:text-white">{{ u.label }}</p>
+        <p class="text-xs/5 text-gray-500 dark:text-zinc-400">{{ u.hint }}</p>
+        <div class="mt-1.5 flex items-center gap-2">
+          <code class="min-w-0 flex-1 break-all font-mono text-xs/5 text-gray-900 dark:text-zinc-100">{{ u.url }}</code>
+          <button type="button" data-test="config-callback-copy" :disabled="u.url.includes('<id>')" @click="copy(u)"
+            class="shrink-0 rounded-lg border border-gray-200 dark:border-white/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/10 disabled:opacity-50">
+            Copy
+          </button>
+        </div>
+      </div>
+    </div>
     <template v-for="key in orderedKeys" :key="key">
       <fieldset v-if="isGroup(fields[key])" data-test="config-group" class="py-6 first:pt-0 last:pb-0">
         <legend class="float-left w-full">
@@ -34,18 +49,6 @@
                 class="shrink-0 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-1.5 text-[11px] font-black uppercase tracking-widest text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10">
                 Remove
               </button>
-            </div>
-            <div v-if="list(key).callback" data-test="config-callback-url"
-              class="mb-5 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2.5">
-              <p class="text-xs/5 font-semibold text-gray-900 dark:text-white">Callback URL</p>
-              <p class="text-xs/5 text-gray-500 dark:text-zinc-400">Register this as the redirect (callback) URL of the OAuth app at the provider.</p>
-              <div class="mt-1.5 flex items-center gap-2">
-                <code class="min-w-0 flex-1 break-all font-mono text-xs/5 text-gray-900 dark:text-zinc-100">{{ list(key).callback(item) }}</code>
-                <button type="button" data-test="config-callback-copy" :disabled="!item.id" @click="copy(list(key).callback(item))"
-                  class="shrink-0 rounded-lg border border-gray-200 dark:border-white/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/10 disabled:opacity-50">
-                  Copy
-                </button>
-              </div>
             </div>
             <AdminConfigFields :fields="item" :original="storedItem(key, item)" :path="`${path}.${key}.${i}`" />
           </div>
@@ -208,13 +211,39 @@ const baseUrl = inject('configBaseUrl', { value: '' })
 const LISTS = {
   'auth.oauth2Providers': {
     noun: 'provider',
-    callback: (item) => `${(baseUrl.value || window.location.origin).replace(/\/+$/, '')}/api/v1/auth/oauth2/${item.id || '<id>'}/callback`,
     item: () => ({
       id: '', name: '', clientId: '', clientSecret: '', authUrl: '', tokenUrl: '', userInfoUrl: '',
       scopes: ['openid', 'email', 'profile'], iconUrl: '',
     }),
   },
 }
+
+/** A path on this server, as the provider reaches it. */
+const at = (path) => `${(baseUrl.value || window.location.origin).replace(/\/+$/, '')}${path}`
+
+/**
+ * The URLs a block's app must be registered with at its provider, shown at
+ * the top of the block, by setting path: what each is called there, and where.
+ */
+const URLS = {
+  'auth.google': () => [
+    { label: 'Callback URL', hint: 'Add this as an authorized redirect URI of the OAuth client in the Google Cloud console.', url: at('/api/v1/auth/google/callback') },
+  ],
+  'auth.github': () => [
+    { label: 'Callback URL', hint: 'Set this as the authorization callback URL of the GitHub OAuth app.', url: at('/api/v1/auth/github/callback') },
+  ],
+  'auth.oauth2Providers': (item) => [
+    { label: 'Callback URL', hint: 'Register this as the redirect (callback) URL of the OAuth app at the provider.', url: at(`/api/v1/auth/oauth2/${item.id || '<id>'}/callback`) },
+  ],
+  slack: () => [
+    { label: 'Redirect URL', hint: 'Add this under OAuth & Permissions, Redirect URLs, in the Slack app.', url: at('/slack/oauth/callback') },
+    { label: 'Events request URL', hint: 'The Request URL under Event Subscriptions.', url: at('/slack/events') },
+    { label: 'Interactivity request URL', hint: 'The Request URL under Interactivity & Shortcuts.', url: at('/slack/interactions') },
+    { label: 'Slash command request URL', hint: 'The Request URL of each slash command.', url: at('/slack/commands') },
+  ],
+}
+
+const urls = computed(() => URLS[props.path.replace(/\.\d+(?=\.|$)/g, '')]?.(props.fields) ?? [])
 
 const list = (key) => LISTS[settingPath(key)]
 const isList = (key, value) => Array.isArray(value) && !!list(key)
@@ -227,10 +256,10 @@ function storedItem(key, item) {
 
 const { addToast } = useToasts()
 
-async function copy(text) {
+async function copy({ label, url }) {
   try {
-    await navigator.clipboard.writeText(text)
-    addToast('Copied the callback URL.', 'success')
+    await navigator.clipboard.writeText(url)
+    addToast(`Copied the ${label.charAt(0).toLowerCase()}${label.slice(1)}.`, 'success')
   } catch {
     addToast('Could not copy. Select the URL and copy it.', 'error')
   }
