@@ -105,6 +105,17 @@ func TestActionString(t *testing.T) {
 		{ActionHookReceive, "hook_receive"},
 		{ActionHookReject, "hook_reject"},
 		{ActionHookPublish, "hook_publish"},
+		{ActionTeamCreate, "team_create"},
+		{ActionTeamInvite, "team_invite"},
+		{ActionTeamJoin, "team_join"},
+		{ActionWorkspaceShare, "workspace_share"},
+		{ActionTeamTaskClone, "team_task_clone"},
+		{ActionTeamMemorySave, "team_memory_save"},
+		{ActionTeamSkillAdd, "team_skill_add"},
+		{ActionTeammateMemoryInclude, "teammate_memory_include"},
+		{ActionTeammateMemoryExclude, "teammate_memory_exclude"},
+		{ActionTeammateMemoryView, "teammate_memory_view"},
+		{ActionPanoShare, "pano_share"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

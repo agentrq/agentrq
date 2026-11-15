@@ -37,6 +37,8 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/sitetools"
 	slackctrl "github.com/agentrq/agentrq/backend/internal/controller/slack"
 	"github.com/agentrq/agentrq/backend/internal/controller/taskagent"
+	"github.com/agentrq/agentrq/backend/internal/controller/team"
+	"github.com/agentrq/agentrq/backend/internal/controller/teamview"
 	"github.com/agentrq/agentrq/backend/internal/controller/telemetry"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -160,7 +162,19 @@ type (
 		} `yaml:"pano"`
 		// Hooks turn requests from outside services into events.
 		Hooks hook.Config `yaml:"hooks"`
-		MCP   struct {
+		Teams struct {
+			// How many invitations one team may create in any 24 hours; 0
+			// turns invitations off.
+			MaxInvitesPerDay int `yaml:"maxInvitesPerDay"`
+			// How many invitations one account may create in any 24 hours,
+			// across all its teams; 0 is no such cap.
+			MaxInvitesPerUserPerDay int `yaml:"maxInvitesPerUserPerDay"`
+			MaxSkillsPerWorkspace   int `yaml:"maxSkillsPerWorkspace"`
+			// Whether invitations are emailed when SMTP is set up; off, the
+			// inviter shares the link by hand.
+			EmailInvites bool `yaml:"emailInvites"`
+		} `yaml:"teams"`
+		MCP struct {
 			// OpenAI's domain verification token for a plugin submission.
 			OpenAIAppsChallenge string `yaml:"openaiAppsChallenge"`
 		} `yaml:"mcp"`
@@ -397,6 +411,22 @@ func New(cfg Config) (*App, error) {
 		DeliveryRetention: hookSettings.DeliveryRetention,
 	})
 	hookCtrl.Start(appCtx)
+	teamCtrl := team.New(team.Params{
+		Repository:              repo,
+		IDGen:                   ids,
+		PubSub:                  pubsubSvc,
+		Skills:                  crudCtrl,
+		Mailer:                  teamMailer(cfg.Teams.EmailInvites, cfg.SMTP, smtpSvc),
+		BaseURL:                 cfg.App.BaseURL,
+		MaxInvitesPerDay:        cfg.Teams.MaxInvitesPerDay,
+		MaxInvitesPerUserPerDay: cfg.Teams.MaxInvitesPerUserPerDay,
+	})
+	teamViewCtrl := teamview.New(teamview.Params{
+		Teams:      teamCtrl,
+		Owner:      crudCtrl,
+		Repository: repo,
+		PubSub:     pubsubSvc,
+	})
 	moveLegacySkills(context.Background(), crudCtrl)
 	startPanoSweep(appCtx, crudCtrl, panoSweepInterval, sweepJitter)
 	startMachineSweep(appCtx, crudCtrl, machineSweepInterval, sweepJitter)
@@ -789,6 +819,8 @@ func New(cfg Config) (*App, error) {
 		SlackCtrl:        slackCtrl,
 		PushCtrl:         pushCtrl,
 		Hooks:            hookCtrl,
+		Teams:            teamCtrl,
+		TeamView:         teamViewCtrl,
 	}); err != nil {
 		return nil, fmt.Errorf("api handler: %w", err)
 	}
@@ -1470,7 +1502,26 @@ func migratedModels() []any {
 		&model.HookRegistration{},
 		&model.HookDelivery{},
 		&model.HookDeliveryKey{},
+		&model.Team{},
+		&model.TeamMember{},
+		&model.TeamInvitation{},
+		&model.WorkspaceShare{},
+		&model.TeamWorkspace{},
+		&model.TeamSkillChoice{},
+		&model.PanoDocShare{},
+		&model.TeamManagementActivity{},
+		&model.MemoryExclusion{},
 	}
+}
+
+// teamMailer is the mailer team invitations are sent with; nil when email
+// invitations are off or SMTP is not set up, and the inviter is given the link
+// instead.
+func teamMailer(emailInvites bool, cfg smtp.Config, svc smtp.Service) smtp.Service {
+	if !emailInvites || !cfg.Enabled || cfg.Host == "" {
+		return nil
+	}
+	return svc
 }
 
 // applyLimits sets the memory and skill limits from the config, refusing a
@@ -1485,10 +1536,17 @@ func applyLimits(cfg Config) error {
 		return fmt.Errorf("skills.maxFiles: %d is negative", cfg.Skills.MaxFiles)
 	case cfg.Pano.MaxTTLDays < 0:
 		return fmt.Errorf("pano.maxTtlDays: %d is negative", cfg.Pano.MaxTTLDays)
+	case cfg.Teams.MaxInvitesPerDay < 0:
+		return fmt.Errorf("teams.maxInvitesPerDay: %d is negative", cfg.Teams.MaxInvitesPerDay)
+	case cfg.Teams.MaxInvitesPerUserPerDay < 0:
+		return fmt.Errorf("teams.maxInvitesPerUserPerDay: %d is negative", cfg.Teams.MaxInvitesPerUserPerDay)
+	case cfg.Teams.MaxSkillsPerWorkspace < 0:
+		return fmt.Errorf("teams.maxSkillsPerWorkspace: %d is negative", cfg.Teams.MaxSkillsPerWorkspace)
 	}
 	mcp.MaxMemoryBytes = cmp.Or(cfg.Memory.MaxFileSize, mcp.DefaultMaxMemoryBytes)
 	skill.MaxSkillFileBytes = cmp.Or(cfg.Skills.MaxFileSize, skill.DefaultMaxSkillFileBytes)
 	skill.MaxFiles = cmp.Or(cfg.Skills.MaxFiles, skill.DefaultMaxFiles)
 	crud.PanoMaxTTLDays = cmp.Or(cfg.Pano.MaxTTLDays, crud.DefaultPanoMaxTTLDays)
+	crud.TeamSkillsPerWorkspace = cmp.Or(cfg.Teams.MaxSkillsPerWorkspace, crud.DefaultTeamSkillsPerWorkspace)
 	return nil
 }

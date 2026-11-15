@@ -351,11 +351,17 @@ func (c *controller) ListTasks(ctx context.Context, req entity.ListTasksRequest)
 	if err != nil {
 		return nil, err
 	}
+	return c.taskListResponse(ctx, ms, req.PreloadAgents)
+}
+
+// taskListResponse is the listed tasks, each named with the agent that last
+// worked on it when withAgents.
+func (c *controller) taskListResponse(ctx context.Context, ms []model.Task, withAgents bool) (*entity.ListTasksResponse, error) {
 	tasks := make([]entity.Task, len(ms))
 	for i, m := range ms {
 		tasks[i] = c.fromModelTaskToEntity(m)
 	}
-	if req.PreloadAgents && len(tasks) > 0 {
+	if withAgents && len(tasks) > 0 {
 		ids := make([]int64, len(tasks))
 		for i, t := range tasks {
 			ids[i] = t.ID

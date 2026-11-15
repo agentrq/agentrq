@@ -23,6 +23,10 @@ never 3000/5173, so a dev server you are already running is left alone. If
 something is already listening on those ports, it is reused instead, except
 under `CI`.
 
+On Postgres 18, with docker: `./postgres.sh tests/teams.spec.js` builds the
+server and runs the specs named, or all of them, in a container beside a
+Postgres one, on a fresh database each run.
+
 ## What it covers
 
 | Spec | Checks |
@@ -34,6 +38,10 @@ under `CI`.
 | `tasks.spec.js` | Dragging a card into Done completes the task. Deleting from the task list removes the row. A delete the server refuses (the task was deleted elsewhere) is reported. |
 | `admin-hooks.spec.js` | The operator adds the built-in hooks on the admin page, upgrades one, is refused a module that is another hook, turns one off and deletes one. |
 | `hooks.spec.js` | A registration of the generic hook made on the Events page, routed to an event. A request to its URL with the right token and secret becomes a task, once: a resend is a duplicate. A wrong secret is taken and then rejected; no token, a wrong token or a deleted registration is 404. The delivery log shows each. |
+| `teams.spec.js` | Two people: the owner creates a team and invites; the invitee accepts by the link and reads the shared workspace's tasks, live, with files from the team's route only (an SVG is a download). Clone, team memory from two tabs, unsharing, removal. The invitation cap answers 429. |
+| `teams-roles.spec.js` | Someone not in the team gets 404 from every team route and sees nothing of it. Settings offer owners, admins and members only what their role allows, and the server refuses the rest (403). Leaving unshares the leaver's workspaces; deleting sends everyone back to Me. A fork is seen through its parent and never shared alone; an archived workspace leaves the team. A teammate's skill is added to your own, once. |
+| `team-skills.spec.js` | Two people in one team workspace: an agent's new skill there is the team's; the other's agent reads it and improves it on the version it read, and she reads that on the team's Skills page. A workspace opted out of it from its Skills tab no longer sees it; one of the owner's own skills is given to the team; with auto opt-in off, what the agent saw stays and a later skill is not on; a member deletes the first for everyone; she leaves and keeps the rest, on in her workspace. |
+| `team-pano.spec.js` | The owner shares one Pano doc with a team from its page; a teammate finds it on the team's Pano from the team sidebar and reads it, and its picture, on the team's route, never the owner's other docs or shares. Switched off, the doc and its file answer 404. |
 | `skills.spec.js` | The skills tab lists the account's skills, with the workspace ticked for an import. An import the server refuses shows the server's own reason. The sidebar's Skills link opens the account's Skills page. |
 
 Every test also fails if the page made an API call that failed, or logged a
@@ -48,6 +56,8 @@ console error, other than the failures it causes on purpose.
 | `QA_ROOT_TOKEN` | `agentrq-qa` | The root login token. Set it to your server's token when reusing a server you started yourself. |
 | `QA_DATA_DIR` | a new temp folder | Where the backend keeps its database and files. |
 | `QA_SERVER_LOGS` | unset | Set it to show the servers' logs. |
+| `QA_POSTGRES_HOST` | unset | Runs the server on the Postgres at this host instead of SQLite (user, password `postgres`, database `agentrq`). Set by `postgres.sh`. |
+| `QA_BACKEND_CMD` | `go run .` | The command that starts the server, such as a prebuilt binary. Set by `postgres.sh`. |
 | `QA_BROWSER_LIBRARY_PATH` | unset | A folder of shared libraries for Chromium on a host without its system dependencies. It is given to the browser only. |
 
 ## Writing a test

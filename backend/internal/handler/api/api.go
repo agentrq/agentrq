@@ -24,6 +24,8 @@ import (
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	pushctrl "github.com/agentrq/agentrq/backend/internal/controller/push"
 	slackctrl "github.com/agentrq/agentrq/backend/internal/controller/slack"
+	teamctrl "github.com/agentrq/agentrq/backend/internal/controller/team"
+	"github.com/agentrq/agentrq/backend/internal/controller/teamview"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
@@ -69,6 +71,9 @@ type (
 		SlackCtrl slackctrl.Controller // optional; nil = Slack disabled
 		PushCtrl  pushctrl.Controller  // optional; nil = push disabled
 		Hooks     hookctrl.Controller
+		Teams     teamctrl.Controller
+		// TeamView is team mode: a team's shared work, read-only.
+		TeamView teamview.Controller
 	}
 
 	Handler interface{}
@@ -111,6 +116,8 @@ type (
 		slackCtrl        slackctrl.Controller
 		pushCtrl         pushctrl.Controller
 		hooks            hookctrl.Controller
+		teams            teamctrl.Controller
+		teamView         teamview.Controller
 	}
 )
 
@@ -158,6 +165,8 @@ func New(p Params) (Handler, error) {
 		slackCtrl:        p.SlackCtrl,
 		pushCtrl:         p.PushCtrl,
 		hooks:            p.Hooks,
+		teams:            p.Teams,
+		teamView:         p.TeamView,
 	}
 	hosts, err := redirectHosts(p.RedirectDomains)
 	if err != nil {
@@ -193,6 +202,8 @@ func New(p Params) (Handler, error) {
 	h.registerMachineRoutes()
 	h.registerPanoRoutes()
 	h.registerHookRoutes()
+	h.registerTeamRoutes()
+	h.registerTeamViewRoutes()
 	h.registerSessionRoutes()
 	h.registerAgentLaunchRoutes()
 	h.registerBrowserRoutes()

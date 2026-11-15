@@ -980,6 +980,8 @@ type (
 		ResourceID   int64        `json:"resourceId"`
 		Actor        Actor        `json:"actor"`  // 1: Human, 2: Agent, 3: Extension
 		Origin       Origin       `json:"origin"` // 1: API, 2: MCP, 3: Scheduler, 4: Slack
+		// TeamID is the team a team skill event goes to, its members.
+		TeamID int64 `json:"teamId,omitempty"`
 	}
 
 	// Push subscription entities
@@ -1089,8 +1091,12 @@ type (
 		SizeBytes int
 		UpdatedAt time.Time
 		Content   string
-		// URL is where anyone can read the file, when skills are public.
+		// URL is where anyone can read the file, when skills are public. A
+		// linked skill's files have none: a link stops reading them when the
+		// team stops sharing them, and a public link would not.
 		URL string
+		// Version counts the file's writes, from 1.
+		Version int64
 	}
 
 	SkillImportSkip struct {
@@ -1148,17 +1154,21 @@ type (
 		Path        string
 	}
 
+	// GetSkillFileResponse is a file with its skill.
 	GetSkillFileResponse struct {
 		Skill Skill
 		File  SkillFile
 	}
 
+	// SaveSkillFileRequest writes a file. Version is the one the writer read,
+	// 0 for no file yet; without it a file is replaced whatever its version.
 	SaveSkillFileRequest struct {
 		WorkspaceID int64
 		UserID      string
 		Name        string
 		Path        string
 		Content     string
+		Version     *int64
 	}
 
 	SaveSkillFileResponse struct {
@@ -1544,6 +1554,8 @@ const (
 	ResourceSkill
 	ResourcePano
 	ResourceHookRegistration
+	ResourceTeam
+	ResourceTeamSkill
 )
 
 func (r ResourceType) String() string {
@@ -1566,6 +1578,10 @@ func (r ResourceType) String() string {
 		return "pano"
 	case ResourceHookRegistration:
 		return "hook_registration"
+	case ResourceTeam:
+		return "team"
+	case ResourceTeamSkill:
+		return "team_skill"
 	}
 	return "unknown"
 }
@@ -1868,6 +1884,43 @@ const (
 	ActionHookReject Action = 113
 	// A request whose events were published.
 	ActionHookPublish Action = 114
+	// A team created. Emitted by the backend, like the three below; workspace
+	// 0, since a team belongs to no workspace.
+	ActionTeamCreate Action = 115
+	// An invitation to a team created.
+	ActionTeamInvite Action = 116
+	// An invitation to a team accepted.
+	ActionTeamJoin Action = 117
+	// A workspace shared with a team, or its group changed; it carries the
+	// workspace.
+	ActionWorkspaceShare Action = 118
+	// A teammate's task cloned into one of the account's workspaces, which
+	// it carries.
+	ActionTeamTaskClone Action = 119
+	// A team's memory saved by a member; workspace 0. Teams no longer have
+	// a memory of their own: kept so the rows recorded still read.
+	ActionTeamMemorySave Action = 120
+	// A teammate's skill linked into the account; workspace 0. Nothing
+	// sends it since links were retired; kept so past counts still read.
+	ActionTeamSkillAdd Action = 121
+	// A teammate's memory included in, or left out of, the memory index of
+	// one of the account's shared workspaces, which it carries.
+	ActionTeammateMemoryInclude Action = 122
+	ActionTeammateMemoryExclude Action = 123
+	// A Pano doc shared with a team; workspace 0, as the Pano is the
+	// account's.
+	ActionPanoShare Action = 124
+	// One of a teammate's memories read by a person, from the team
+	// workspace of one of the account's workspaces, which it carries.
+	ActionTeammateMemoryView Action = 125
+	// A team workspace's skill created, deleted for every workspace, given
+	// to it by a member, or opted into or out of by a workspace, which it
+	// carries (0 from the team's page).
+	ActionTeamSkillCreate Action = 126
+	ActionTeamSkillDelete Action = 127
+	ActionTeamSkillGive   Action = 128
+	ActionTeamSkillOptIn  Action = 129
+	ActionTeamSkillOptOut Action = 130
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2094,6 +2147,38 @@ func (a Action) String() string {
 		return "hook_reject"
 	case ActionHookPublish:
 		return "hook_publish"
+	case ActionTeamCreate:
+		return "team_create"
+	case ActionTeamInvite:
+		return "team_invite"
+	case ActionTeamJoin:
+		return "team_join"
+	case ActionWorkspaceShare:
+		return "workspace_share"
+	case ActionTeamTaskClone:
+		return "team_task_clone"
+	case ActionTeamMemorySave:
+		return "team_memory_save"
+	case ActionTeamSkillAdd:
+		return "team_skill_add"
+	case ActionTeammateMemoryInclude:
+		return "teammate_memory_include"
+	case ActionTeammateMemoryExclude:
+		return "teammate_memory_exclude"
+	case ActionPanoShare:
+		return "pano_share"
+	case ActionTeammateMemoryView:
+		return "teammate_memory_view"
+	case ActionTeamSkillCreate:
+		return "team_skill_create"
+	case ActionTeamSkillDelete:
+		return "team_skill_delete"
+	case ActionTeamSkillGive:
+		return "team_skill_give"
+	case ActionTeamSkillOptIn:
+		return "team_skill_opt_in"
+	case ActionTeamSkillOptOut:
+		return "team_skill_opt_out"
 	}
 	return "unknown"
 }

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -48,7 +49,7 @@ func newPanoEnv(t *testing.T) *panoEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Task{}, &model.PanoDoc{}, &model.PanoFile{}, &model.PanoComment{}, &model.PanoDocTask{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Task{}, &model.PanoDoc{}, &model.PanoFile{}, &model.PanoComment{}, &model.PanoDocTask{}, &model.PanoDocShare{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, ws := range []model.Workspace{{ID: skWS, UserID: skUser, Name: "alpha"}, {ID: skForgn, UserID: skOther, Name: "theirs"}} {
@@ -1586,5 +1587,52 @@ func TestCreateTask_LinkedToAPanoDoc(t *testing.T) {
 	e.db.Model(&model.Task{}).Count(&n)
 	if n != 1 {
 		t.Errorf("%d tasks exist, want only the first: a refused link makes no task", n)
+	}
+}
+
+// A doc's file is read by its doc and its id, for the account's own docs
+// only.
+func TestPano_GetPanoFile(t *testing.T) {
+	e := newPanoEnv(t)
+	doc := e.save(t, entity.SavePanoDocRequest{Title: "t", Markdown: "![c](c.png)", Files: []entity.PanoUpload{{Filename: "c.png", MimeType: "image/png", Data: b64("png bytes")}}})
+	att, err := e.c.AttachPanoFiles(e.ctx, entity.AttachPanoFilesRequest{UserID: skUserStr, ID: doc.ID, Files: []entity.PanoUpload{{Filename: "n.txt", Data: b64("notes")}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[int64]string{e.get(t, doc.ID).Files[0].ID: "png bytes", att.Attachments[0].ID: "notes"} {
+		rs, err := e.c.GetPanoFile(e.ctx, entity.GetPanoFileRequest{UserID: skUserStr, DocID: doc.ID, FileID: id})
+		if err != nil || string(rs.Data) != want {
+			t.Errorf("file %d: %+v, %v; want %q", id, rs, err, want)
+		}
+	}
+	rs, _ := e.c.GetPanoFile(e.ctx, entity.GetPanoFileRequest{UserID: skUserStr, DocID: doc.ID, FileID: e.get(t, doc.ID).Files[0].ID})
+	if rs.Filename != "c.png" || rs.MimeType != "image/png" {
+		t.Errorf("file is %q %q", rs.Filename, rs.MimeType)
+	}
+	for name, req := range map[string]entity.GetPanoFileRequest{
+		"another account's doc": {UserID: monoflake.ID(skOther).String(), DocID: doc.ID, FileID: att.Attachments[0].ID},
+		"an unknown file":       {UserID: skUserStr, DocID: doc.ID, FileID: 424242},
+		"an unknown doc":        {UserID: skUserStr, DocID: 424242, FileID: att.Attachments[0].ID},
+	} {
+		if _, err := e.c.GetPanoFile(e.ctx, req); !errors.Is(err, base.ErrNotFound) {
+			t.Errorf("%s: %v, want not found", name, err)
+		}
+	}
+	if _, err := e.c.GetPanoFile(e.ctx, entity.GetPanoFileRequest{UserID: "!", DocID: doc.ID, FileID: 1}); err == nil {
+		t.Error("an invalid account read a file")
+	}
+	// A blob gone from storage is an error, not an empty file.
+	if err := os.RemoveAll(e.dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.c.GetPanoFile(e.ctx, entity.GetPanoFileRequest{UserID: skUserStr, DocID: doc.ID, FileID: att.Attachments[0].ID}); err == nil || errors.Is(err, base.ErrNotFound) {
+		t.Errorf("a missing blob: %v, want a storage error", err)
+	}
+	// A failing read of the files is passed on.
+	if err := e.db.Migrator().DropTable(&model.PanoFile{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.c.GetPanoFile(e.ctx, entity.GetPanoFileRequest{UserID: skUserStr, DocID: doc.ID, FileID: 1}); err == nil {
+		t.Error("a file was read without its table")
 	}
 }

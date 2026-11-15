@@ -98,6 +98,117 @@ const PANO_DOC = {
   files: PANO_FILES('Linked files: each must be linked from the markdown by its filename, as [text](name) or ![alt](name).'),
 }
 
+// ---- Teams --------------------------------------------------------------
+// Grouped by action rather than a tool per call: the catalogue must stay
+// under the 128 tools a shared site may announce, and teams alone are ~30
+// calls. Each action is one `api.js` function; `run` picks it.
+const TEAM_ID = str('The team ID, as listTeams reports it.')
+// A team is managed on its settings page, open on one tab.
+const teamPage = ({ teamId } = {}, tab = 'members') => `/teams/${seg(teamId)}/settings?tab=${tab}`
+const sharingPage = ({ workspaceId }) => `/workspaces/${seg(workspaceId)}/settings?tab=sharing`
+const TEAM_FIELDS = {
+  teamId: TEAM_ID,
+  workspaceId: WORKSPACE_ID,
+  userId: str('A member\'s user ID, as the members action reports it.'),
+  invitationId: str('An invitation ID, as the invitations actions report it.'),
+  token: str('The token from an invitation link: what follows "#" in /invite#<token>.'),
+  docId: str('A Pano doc ID: one of yours from listPanoDocs, or a teammate\'s from the panoDocs action.'),
+}
+
+/** One action of a grouped tool: its `api.js` call, and what it needs. */
+function dispatch(actions, toolName) {
+  return (input = {}) => {
+    const action = actions[input.action]
+    if (!action) throw new Error(`${toolName} takes an action of ${Object.keys(actions).join(', ')}, not ${JSON.stringify(input.action)}`)
+    return action(input)
+  }
+}
+
+const TEAM_READS = (api) => ({
+  list: () => api.listTeams(),
+  get: ({ teamId }) => api.getTeam(teamId),
+  members: ({ teamId }) => api.listTeamMembers(teamId),
+  invitations: ({ teamId }) => api.listTeamInvitations(teamId),
+  activities: ({ teamId, limit = 20, before = '' }) => api.fetchTeamActivities(teamId, { limit, before }),
+  myInvitations: () => api.listMyInvitations(),
+  preview: ({ token }) => api.previewInvitation(token),
+  shares: ({ workspaceId }) => api.listWorkspaceShares(workspaceId),
+  teammateMemories: ({ workspaceId }) => api.listTeammateMemories(workspaceId),
+  teammateMemory: ({ workspaceId, teammateWorkspaceId, name }) =>
+    (name ? api.getTeammateMemory(workspaceId, teammateWorkspaceId, name) : api.listTeammateMemoryNames(workspaceId, teammateWorkspaceId)),
+  workspaces: ({ teamId }) => api.fetchTeamWorkspaces(teamId),
+  tasks: ({ teamId, status = '', workspace = '', member = '', limit = 10, offset = 0 }) =>
+    api.fetchTeamTasks(teamId, { status, workspace, member, limit, offset }),
+  task: ({ teamId, taskId }) => api.getTeamTask(teamId, taskId),
+  analytics: ({ teamId, range = '7d', workspace = '' }) => api.fetchTeamStats(teamId, range, 0, 0, workspace),
+  panoShares: ({ docId }) => api.listPanoShares(docId),
+  panoDocs: ({ teamId }) => api.listTeamPanoDocs(teamId),
+  panoDoc: ({ teamId, docId }) => api.getTeamPanoDoc(teamId, docId),
+})
+
+// A change to a team names the version it was read at; the server refuses one
+// made over someone else's (409, conflict: true, with the current version).
+const TEAM_WRITES = (api) => ({
+  rename: ({ teamId, name, version }) => api.renameTeam(teamId, name, version),
+  delete: ({ teamId, version }) => api.deleteTeam(teamId, version),
+  removeMember: ({ teamId, userId, version }) => api.removeTeamMember(teamId, userId, version),
+  leave: ({ teamId, version }) => api.leaveTeam(teamId, version),
+  invite: ({ teamId, email, version }) => api.createTeamInvitation(teamId, email, version),
+  revokeInvitation: ({ teamId, invitationId, version }) => api.revokeTeamInvitation(teamId, invitationId, version),
+  accept: ({ token, invitationId }) => (token ? api.acceptInvitation(token) : api.acceptInvitationById(invitationId)),
+  decline: ({ invitationId }) => api.declineInvitation(invitationId),
+  share: ({ workspaceId, teamId, version, tasks, memory, autoOptInSkills }) =>
+    api.shareWorkspace(workspaceId, teamId, version, { tasks, memory, autoOptInSkills }),
+  unshare: ({ workspaceId, teamId, version }) => api.unshareWorkspace(workspaceId, teamId, version),
+  teammateMemory: ({ workspaceId, userId, included }) => api.setTeammateMemory(workspaceId, userId, included !== false),
+  sharePano: ({ docId, teamId, version }) => api.sharePanoDoc(docId, teamId, version),
+  unsharePano: ({ docId, teamId, version }) => api.unsharePanoDoc(docId, teamId, version),
+})
+
+/** Where a manageTeam action shows: the page that holds what it changes. */
+function teamWritePage(input = {}) {
+  if (['share', 'unshare', 'teammateMemory'].includes(input.action)) return sharingPage(input)
+  if (input.action === 'accept' || input.action === 'decline') return '/invitations'
+  if (input.action === 'sharePano' || input.action === 'unsharePano') return panoDocPage({ id: input.docId })
+  if (input.action === 'invite' || input.action === 'revokeInvitation') return teamPage(input, 'invitations')
+  return teamPage(input)
+}
+
+// Team workspace skills: a team workspace's own skills, which belong to no
+// person. Grouped like the team tools, read and write apart.
+const TEAM_SKILL_READS = (api) => ({
+  workspace: ({ workspaceId, q = '' }) => api.listWorkspaceTeamSkills(workspaceId, q),
+  list: ({ teamId, teamWorkspaceId }) => api.listTeamWorkspaceSkills(teamId, teamWorkspaceId),
+  get: ({ teamId, teamWorkspaceId, skillId }) => api.getTeamWorkspaceSkill(teamId, teamWorkspaceId, skillId),
+  file: ({ teamId, teamWorkspaceId, skillId, path }) => api.getTeamWorkspaceSkillFile(teamId, teamWorkspaceId, skillId, path),
+})
+
+const TEAM_SKILL_WRITES = (api) => ({
+  optIn: ({ workspaceId, skillId, on }) => api.setWorkspaceTeamSkill(workspaceId, skillId, on !== false),
+  give: ({ workspaceId, name, teamWorkspaceId }) => api.giveSkillToTeam(workspaceId, name, teamWorkspaceId),
+  create: ({ teamId, teamWorkspaceId, content }) => api.createTeamWorkspaceSkill(teamId, teamWorkspaceId, content),
+  import: ({ teamId, teamWorkspaceId, url, overwrite = false, skills = [] }) =>
+    api.importTeamWorkspaceSkills(teamId, teamWorkspaceId, url, overwrite === true, skills),
+  delete: ({ teamId, teamWorkspaceId, skillId }) => api.deleteTeamWorkspaceSkill(teamId, teamWorkspaceId, skillId),
+  saveFile: ({ teamId, teamWorkspaceId, skillId, path, content, version }) =>
+    api.saveTeamWorkspaceSkillFile(teamId, teamWorkspaceId, skillId, path, content, version),
+  deleteFile: ({ teamId, teamWorkspaceId, skillId, path }) => api.deleteTeamWorkspaceSkillFile(teamId, teamWorkspaceId, skillId, path),
+})
+
+/** Where a manageTeamSkills action shows: the workspace's Skills tab, or the team's Skills page. */
+function teamSkillWritePage(input = {}) {
+  if (input.action === 'optIn' || input.action === 'give') return settingsPage('skills')(input)
+  return input.teamId ? `/teams/${seg(input.teamId)}/skills` : '/skills'
+}
+
+const TEAM_SKILL_FIELDS = {
+  teamId: TEAM_ID,
+  workspaceId: str('One of your workspaces, shared into a team workspace.'),
+  teamWorkspaceId: str('A team workspace\'s ID: teamWorkspaces from the workspace action, or teamWorkspaceId on readTeams workspaces.'),
+  skillId: str('A team skill\'s ID, as list or workspace reports it.'),
+  path: str('A file\'s path in the skill, e.g. "SKILL.md" or "scripts/run.sh".'),
+}
+
 /**
  * The page a write tool acts on, so the person sees what the agent did.
  *
@@ -135,21 +246,20 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Go to an in-app path, ' +
-        'optionally ?query; IDs from getCurrentPage or list tools.\n' +
-        '- "/" every workspace, "/workspaces/new" creates one.\n' +
-        '- "/kanban" or "/tasks/<filter>" tasks in all workspaces; <filter> is active, notstarted, pending ' +
-        '(on the user), ongoing, completed, scheduled. Add "/<workspaceId>/<taskId>" to ' +
-        'open one beside it, then "/instances" for its runs.\n' +
-        '- "/workspaces/<workspaceId>" its tasks ("?filter=" as above); under it "/board", ' +
-        '"/analytics", "/settings", "/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
-        '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +
-        'skills, slack, input, storage or danger.\n' +
-        '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/skills", "/skills/<name>", "/{pano,events/hooks}/new", ' +
+        'Go to an in-app path (?query ok); IDs from getCurrentPage/list tools.\n' +
+        '- "/" workspaces, "/workspaces/new".\n' +
+        '- "/kanban", "/tasks/<filter>" (active|notstarted|pending|ongoing|completed|scheduled) of all ' +
+        'workspaces; add "/<workspaceId>/<taskId>" to open one, then "/instances".\n' +
+        '- "/workspaces/<id>" ("?filter=" as above); under it "/{board,analytics,settings}", ' +
+        '"/settings/skills/<name>", "/tasks/{new,<taskId>}", plus "/instances" or "/edit". Its ' +
+        '"?tab=" general|setup|automations|notifications|memories|skills|sharing|slack|input|storage|danger.\n' +
+        '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/skills[/<name>]", "/{pano,events/hooks}/new", ' +
         '"/pano/[<id>/]chat/<workspaceId>/<taskId>".\n' +
-        '- "/machines", "/machines/<id>", "/sessions/<id>" (a terminal).\n' +
-        '- "/extensions", "/extensions/<name>/<pageId>" (desktop).\n' +
-        'Others are refused. Returns the page.',
+        '- "/machines[/<id>]", "/sessions/<id>" (terminal).\n' +
+        '- "/extensions[/<name>/<pageId>]" (desktop).\n' +
+        '- "/team/new", "/invitations"; a team: "/teams/<id>" + "/{tasks/*,kanban,skills*,workspaces/<w>/tasks/<t>,analytics,settings,pano[/<id>]}"; ' +
+        'settings "?tab=members|invitations|activity|workspaces|danger".\n' +
+        'Others refused.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
       required: ['path'],
       run: async ({ path }) => {
@@ -1423,6 +1533,125 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       destructive: true,
       screen: before(workflowPage),
       run: ({ workflowId, text }) => api.replaceWorkflowFromText(workflowId, text),
+    }),
+    // ---- Teams -------------------------------------------------------------
+    tool({
+      name: 'readTeams',
+      description:
+        'Read teams. action: list (your teams), get (with its version), members, invitations (a team\'s pending ones), ' +
+        'activities (the team\'s log, newest first; limit, before: the last id of the page before), ' +
+        'myInvitations (addressed to you), preview (a link\'s invitation, by token), shares (the teams a workspace is shared with), ' +
+        'teammateMemories (workspaceId: the teammates whose memory that workspace\'s agent reads, each with included), ' +
+        'teammateMemory (workspaceId, teammateWorkspaceId from teammateMemories: their memories; with name, one). ' +
+        'A team\'s shared work, read-only: workspaces (each with the sharedName it shows under), ' +
+        'tasks (status, workspace, member), task (taskId), analytics (range; workspace: one team workspace), ' +
+        'panoDocs (docs members shared), panoDoc (docId). panoShares (docId: the teams a doc of yours is shared with).',
+      properties: {
+        action: { type: 'string', enum: Object.keys(TEAM_READS({})), description: 'What to read.' },
+        ...TEAM_FIELDS,
+        taskId: TASK_ID,
+        status: str('Comma-separated task statuses to keep, e.g. "ongoing,blocked".'),
+        workspace: str('A team workspace\'s sharedName, as the workspaces action reports it: only its tasks or analytics.'),
+        range: str('For analytics: a range such as "7d" or "30d". Defaults to "7d".'),
+        member: str('A member\'s user ID: only their tasks.'),
+        limit: int('Page size. Defaults to 10, and 20 for activities.'),
+        offset: int('How many to skip. Defaults to 0.'),
+        before: str('For activities: the id of the last one already read, to read older ones.'),
+        name: str('For teammateMemory: a memory name.'),
+        teammateWorkspaceId: str('For teammateMemory: a teammate\'s workspaceId, as teammateMemories reports it.'),
+      },
+      required: ['action'],
+      readOnly: true,
+      run: dispatch(TEAM_READS(api), 'readTeams'),
+    }),
+    tool({
+      name: 'createTeam',
+      description: 'Create a team, with you in it. Then invite members with manageTeam.',
+      properties: { name: str('The team\'s name.') },
+      required: ['name'],
+      screen: after((_input, result) => (result?.id ? teamPage({ teamId: result.id }, 'invitations') : '/team/new')),
+      run: ({ name }) => api.createTeam(name),
+    }),
+    tool({
+      name: 'manageTeam',
+      description:
+        'Change a team; any member may. action: rename (name), delete, removeMember (userId), leave, ' +
+        'invite (email; at most a few per team per day, 429 past it), revokeInvitation (invitationId), ' +
+        'share/unshare (workspaceId: one of yours; share takes tasks, memory, false to hold that back, and sets them on a shared one), accept (token or invitationId), decline (invitationId), ' +
+        'teammateMemory (workspaceId: one of yours, userId, included: whether its agent\'s memory index lists that teammate\'s memory), ' +
+        'sharePano/unsharePano (docId: a Pano doc of yours). ' +
+        'Every change but accept, decline and teammateMemory takes the team\'s version, from get, members or invitations; ' +
+        'one made after someone else\'s is refused with 409, conflict: true and the current version: read again, then retry.',
+      properties: {
+        action: { type: 'string', enum: Object.keys(TEAM_WRITES({})), description: 'What to change.' },
+        ...TEAM_FIELDS,
+        version: int('The team\'s version, as get, members or invitations last reported it.'),
+        name: str('The team\'s new name, for rename.'),
+        email: str('The email to invite.'),
+        included: bool('For teammateMemory: true to include the teammate\'s memory, false to leave it out. Defaults to true.'),
+        tasks: bool('For share: false holds the workspace\'s tasks back from the team. Defaults to true.'),
+        memory: bool('For share: false holds its memory back from teammates\' agents. Defaults to true.'),
+        autoOptInSkills: bool('For share: false stops opting the workspace in to new team skills. Defaults to true.'),
+      },
+      required: ['action'],
+      destructive: true,
+      screen: before(teamWritePage),
+      run: dispatch(TEAM_WRITES(api), 'manageTeam'),
+    }),
+    tool({
+      name: 'readTeamSkills',
+      description:
+        'Read the skills a team workspace owns, which belong to no person. action: workspace (workspaceId: one of yours; the team ' +
+        'skills it reaches, each with on, whether it is opted in, and clash, whether your own skill of that name wins there; ' +
+        'and teamWorkspaces, those it is shared into; q filters), list (teamId, teamWorkspaceId), get (skillId: with its files), ' +
+        'file (skillId, path: its content and version).',
+      properties: {
+        action: { type: 'string', enum: Object.keys(TEAM_SKILL_READS({})), description: 'What to read.' },
+        ...TEAM_SKILL_FIELDS,
+        q: str('For workspace: matches a skill\'s name or description.'),
+      },
+      required: ['action'],
+      readOnly: true,
+      run: dispatch(TEAM_SKILL_READS(api), 'readTeamSkills'),
+    }),
+    tool({
+      name: 'manageTeamSkills',
+      description:
+        'Change a team workspace\'s skills. Of one of your workspaces (workspaceId): optIn (skillId, on: false opts it out, and it ' +
+        'stays out), give (name: one of your own skills, moved into teamWorkspaceId; 409 when it has that name). On the team ' +
+        '(teamId, teamWorkspaceId), any member: create (content: a SKILL.md with name and description frontmatter), import ' +
+        '(url, overwrite, skills: from a repository too large to import whole, the candidates to take), delete (skillId: for every ' +
+        'workspace in the team), saveFile (skillId, path, content, version: the one read, to replace a file; leave it out to add ' +
+        'one; 409 when someone saved since), deleteFile (skillId, path; not SKILL.md).',
+      properties: {
+        action: { type: 'string', enum: Object.keys(TEAM_SKILL_WRITES({})), description: 'What to change.' },
+        ...TEAM_SKILL_FIELDS,
+        on: bool('For optIn: true opts the workspace in, false out. Defaults to true.'),
+        name: str('For give: the name of one of your own skills.'),
+        content: str('For create: the SKILL.md. For saveFile: the file\'s full content.'),
+        version: int('For saveFile: the file\'s version as file read it. Leave it out to add a new file.'),
+        url: str('For import: https://github.com/owner/repo, optionally /tree/<ref>/<path>.'),
+        overwrite: bool('For import: replace the team skills of the same name. Defaults to false.'),
+        skills: { type: 'array', items: { type: 'string' }, description: 'For import: the candidates\' paths to import.' },
+      },
+      required: ['action'],
+      destructive: true,
+      screen: before(teamSkillWritePage),
+      run: dispatch(TEAM_SKILL_WRITES(api), 'manageTeamSkills'),
+    }),
+    tool({
+      name: 'cloneTeamTask',
+      description:
+        'Copy a teammate\'s task, from a team you are in, into one of your own workspaces, with a note linking back to it.',
+      properties: {
+        teamId: TEAM_ID,
+        taskId: TASK_ID,
+        workspaceId: str('Your workspace to clone it into.'),
+        assignee: { type: 'string', enum: ['human', 'agent'], description: 'Who the clone is assigned to. Defaults to human.' },
+      },
+      required: ['teamId', 'taskId', 'workspaceId'],
+      screen: after(({ workspaceId }, result) => (result?.task?.id ? taskPage({ workspaceId, taskId: result.task.id }) : workspacePage({ workspaceId }))),
+      run: ({ teamId, taskId, workspaceId, assignee = 'human' }) => api.cloneTeamTask(teamId, taskId, workspaceId, assignee),
     }),
   ]
 }

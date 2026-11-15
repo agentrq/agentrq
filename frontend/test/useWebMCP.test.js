@@ -284,6 +284,21 @@ describe('the navigate tool\'s map of the interface', () => {
     '/sessions/s1',
     '/extensions',
     '/extensions/acme/home',
+    '/team/new',
+    '/teams/tm1/analytics',
+    '/teams/tm1/pano',
+    '/teams/tm1/pano/d1',
+    '/teams/tm1/settings?tab=members',
+    '/teams/tm1',
+    '/teams/tm1/tasks/active',
+    '/teams/tm1/tasks/active/ws1/t1',
+    '/teams/tm1/tasks/scheduled/ws1/t1/instances',
+    '/teams/tm1/workspaces/ws1',
+    '/teams/tm1/workspaces/ws1/tasks/t1',
+    '/teams/tm1/kanban',
+    '/teams/tm1/skills',
+    '/teams/tm1/skills/tdd',
+    '/invitations',
   ];
   const router = createRouter({ history: createMemoryHistory(), routes });
 
@@ -305,7 +320,7 @@ describe('the navigate tool\'s map of the interface', () => {
 
     for (const word of ['board', 'analytics', 'settings', 'instances', 'edit', 'new', 'events', 'workflows',
       'machines', 'sessions', 'extensions', 'notstarted', 'pending', 'ongoing', 'completed', 'scheduled',
-      '?filter=', '?tab=', 'memories', 'danger']) {
+      '?filter=', '?tab=', 'memories', 'danger', 'sharing', '/teams/<id>', '/team/new', 'analytics', 'settings', 'pano', '/invitations']) {
       expect(description).toContain(word);
     }
   });

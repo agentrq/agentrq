@@ -57,10 +57,27 @@ describe('routes', () => {
       '/pano/:docId/chat/:workspaceId/:taskId',
       '/skills',
       '/skills/:name',
+      '/team/new',
+      '/teams/:teamId',
+      '/teams/:teamId/analytics',
+      '/teams/:teamId/pano',
+      '/teams/:teamId/pano/:docId',
+      '/teams/:teamId/settings',
+      '/invitations',
+      '/invite',
       '/sessions/:id',
       '/workflows',
       '/workflows/:id',
       '/login',
+      // A team's pages that Me has too: the same page, of its shared work.
+      '/teams/:teamId/tasks/:filter',
+      '/teams/:teamId/tasks/:filter/:workspaceId/:taskId',
+      '/teams/:teamId/tasks/:filter/:workspaceId/:taskId/instances',
+      '/teams/:teamId/workspaces/:id',
+      '/teams/:teamId/workspaces/:id/tasks/:taskId',
+      '/teams/:teamId/kanban',
+      '/teams/:teamId/skills',
+      '/teams/:teamId/skills/:name',
     ])
   })
 
@@ -80,14 +97,16 @@ describe('routes', () => {
     expect(router.resolve('/workspaces/abc').matched[0].path).toBe('/workspaces/:id')
   })
 
-  it('marks only the login route public', () => {
+  // An invitation link may be opened signed out; the page offers the sign-in
+  // itself and comes back to the link after it.
+  it('marks only the login route and the invitation link public', () => {
     const publicRoutes = routes.filter((r) => r.meta?.public).map((r) => r.path)
-    expect(publicRoutes).toEqual(['/login'])
+    expect(publicRoutes).toEqual(['/invite', '/login'])
   })
 
   it('lazy-loads every view, so no route pulls its component into the entry chunk', () => {
     // A route with named views (the Pano's chat) lazy-loads each of them.
-    for (const route of routes) {
+    for (const route of routes.filter((r) => !r.redirect)) {
       for (const component of Object.values(route.components ?? { default: route.component })) {
         expect(typeof component).toBe('function')
       }
@@ -129,7 +148,8 @@ describe('routes', () => {
     // silently, and skipping is the one failure this test cannot report.
     // A route with named views (the Pano's chat) has a loader for each.
     const extraViews = routes.filter((route) => route.components).reduce((n, route) => n + Object.keys(route.components).length - 1, 0)
-    expect(resolved.length).toBe(flatten(routes).length + extraViews)
+    // A redirect has none: it is no page.
+    expect(resolved.length).toBe(flatten(routes.filter((r) => !r.redirect)).length + extraViews)
     for (const [path, module] of resolved) {
       expect(module.default, `${path} resolved to a module with no default export`).toBeTruthy()
     }

@@ -251,12 +251,15 @@ type (
 	// a skill from before skills belonged to the account, which the startup
 	// backfill moves.
 	Skill struct {
-		ID              int64 `gorm:"primaryKey;autoIncrement:false"`
-		CreatedAt       time.Time
-		UpdatedAt       time.Time
-		UserID          int64  `gorm:"index:idx_skills_user_id;uniqueIndex:uk_skills_user_id_workspace_id_name,priority:1"`
-		WorkspaceID     int64  `gorm:"index:idx_skills_workspace_id;uniqueIndex:uk_skills_user_id_workspace_id_name,priority:2"`
-		Name            string `gorm:"type:varchar(64);uniqueIndex:uk_skills_user_id_workspace_id_name,priority:3"`
+		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt   time.Time
+		UpdatedAt   time.Time
+		UserID      int64 `gorm:"index:idx_skills_user_id;uniqueIndex:uk_skills_user_id_workspace_id_team_workspace_id_name,priority:1"`
+		WorkspaceID int64 `gorm:"index:idx_skills_workspace_id;uniqueIndex:uk_skills_user_id_workspace_id_team_workspace_id_name,priority:2"`
+		// TeamWorkspaceID makes it a team workspace's skill, with UserID and
+		// WorkspaceID 0: it belongs to no person, so it outlives any member.
+		TeamWorkspaceID int64  `gorm:"not null;default:0;index:idx_skills_team_workspace_id;uniqueIndex:uk_skills_user_id_workspace_id_team_workspace_id_name,priority:3"`
+		Name            string `gorm:"type:varchar(64);uniqueIndex:uk_skills_user_id_workspace_id_team_workspace_id_name,priority:4"`
 		Description     string `gorm:"type:varchar(1024)"`
 		SourceType      string `gorm:"type:varchar(16)"`
 		SourceRepo      string `gorm:"type:varchar(255)"`
@@ -269,6 +272,10 @@ type (
 		// Disabled hides the skill from agents while keeping it. Stored as the
 		// negative so every skill, old or new, is on without a default.
 		Disabled bool
+		// LinkedSkillID marks a link to a teammate's skill, from before team
+		// workspaces owned skills: no files of its own. ConvertSkillLinks
+		// makes each a skill of its own at startup; nothing writes one now.
+		LinkedSkillID int64 `gorm:"not null;default:0;index:idx_skills_linked_skill_id"`
 	}
 
 	// SkillFile is one file of a skill. Its content is in storage.
@@ -281,6 +288,9 @@ type (
 		SizeBytes int
 		SHA256    string `gorm:"type:varchar(64)"`
 		StorageID string `gorm:"type:varchar(64)"`
+		// Version counts the file's writes, from 1. A write to a skill that
+		// teammates write too must name the version it read.
+		Version int64 `gorm:"not null;default:1"`
 	}
 
 	// PanoDoc is a markdown document on an account's Pano, the board every
@@ -493,7 +503,7 @@ type (
 	// it on every row.
 	Agent struct {
 		ID        int64  `gorm:"primaryKey;autoIncrement:false"`
-		Name      string `gorm:"type:varchar(16)"`
+		Name      string `gorm:"type:varchar(32)"`
 		CreatedAt time.Time
 	}
 	AgentModel struct {
@@ -836,6 +846,32 @@ const (
 	ActionIDHookReceive
 	ActionIDHookReject
 	ActionIDHookPublish
+	// A team created, an invitation to one created or accepted, and a
+	// workspace shared with one; emitted by the backend.
+	ActionIDTeamCreate
+	ActionIDTeamInvite
+	ActionIDTeamJoin
+	ActionIDWorkspaceShare
+	// A teammate's task cloned, the team's memory saved, and a teammate's
+	// skill added to the account, in team mode; emitted by the backend.
+	ActionIDTeamTaskClone
+	ActionIDTeamMemorySave
+	ActionIDTeamSkillAdd
+	// A teammate's memory included in or left out of the memory index of
+	// one of the account's workspaces; emitted by the backend.
+	ActionIDTeammateMemoryInclude
+	ActionIDTeammateMemoryExclude
+	// A Pano doc shared with a team; emitted by the backend.
+	ActionIDPanoShare
+	// One of a teammate's memories read by a person; emitted by the backend.
+	ActionIDTeammateMemoryView
+	// A team workspace's skill created, deleted, given to it, or opted into
+	// or out of by a workspace; emitted by the backend.
+	ActionIDTeamSkillCreate
+	ActionIDTeamSkillDelete
+	ActionIDTeamSkillGive
+	ActionIDTeamSkillOptIn
+	ActionIDTeamSkillOptOut
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

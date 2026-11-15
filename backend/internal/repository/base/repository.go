@@ -71,6 +71,7 @@ type Repository interface {
 	// that only changes the task row (#921).
 	GetTaskRow(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error)
 	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
+	ListTasksInWorkspaces(ctx context.Context, req entity.ListTasksRequest, workspaceIDs []int64) ([]model.Task, error)
 	CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error)
 	ListTaskChanges(ctx context.Context, req entity.ListTaskChangesRequest, userID, excludeWorkspaceID int64) ([]model.Task, error)
 	CountNewMessages(ctx context.Context, taskIDs []int64, since time.Time, excludeWorkspaceID int64) (map[int64]int, error)
@@ -121,15 +122,79 @@ type Repository interface {
 	ReplayHookDelivery(ctx context.Context, id, registrationID, userID int64, now time.Time) error
 	DeleteHookDeliveriesBefore(ctx context.Context, before time.Time) error
 
+	// Teams: groups of accounts that read the workspaces their members share
+	// with them. controller/team checks who may do what, except the rules a
+	// change committed meanwhile could break: those are checked here, under
+	// the team's lock.
+	CreateTeam(ctx context.Context, team model.Team, first model.TeamMember, act model.TeamManagementActivity) error
+	GetTeam(ctx context.Context, id int64) (model.Team, error)
+	ListTeamsForUser(ctx context.Context, userID int64) ([]TeamWithCount, error)
+	CountTeamMembers(ctx context.Context, teamID int64) (int64, error)
+	RenameTeam(ctx context.Context, teamID, callerID, version int64, name string, act model.TeamManagementActivity) (int64, error)
+	DeleteTeam(ctx context.Context, teamID, callerID, version int64, act model.TeamManagementActivity, keep TeamSkillCopies) ([]string, error)
+	GetTeamMember(ctx context.Context, teamID, userID int64) (model.TeamMember, error)
+	ListTeamMembers(ctx context.Context, teamID int64) ([]TeamMemberWithUser, error)
+	RemoveTeamMember(ctx context.Context, teamID, callerID, userID, version int64, act model.TeamManagementActivity, deletedID int64, keep TeamSkillCopies) (int64, bool, []string, error)
+	CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, version int64, since time.Time, teamLimit, userLimit int64, act model.TeamManagementActivity) (int64, error)
+	ListTeamInvitations(ctx context.Context, teamID int64, now time.Time) ([]model.TeamInvitation, error)
+	ListInvitationsForEmail(ctx context.Context, email string, now time.Time) ([]model.TeamInvitation, error)
+	GetTeamInvitation(ctx context.Context, id int64) (model.TeamInvitation, error)
+	GetTeamInvitationByTokenHash(ctx context.Context, tokenHash string) (model.TeamInvitation, error)
+	RevokeTeamInvitation(ctx context.Context, teamID, callerID, version, id int64, act model.TeamManagementActivity) (int64, error)
+	DeclineTeamInvitation(ctx context.Context, teamID, id int64, act model.TeamManagementActivity) error
+	AcceptTeamInvitation(ctx context.Context, id int64, member model.TeamMember, now time.Time, act model.TeamManagementActivity) error
+	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, tw model.TeamWorkspace, ids func() int64, version int64, act model.TeamManagementActivity) (WorkspaceShareWithTeam, int64, error)
+	ListWorkspaceShares(ctx context.Context, workspaceID, userID int64) ([]WorkspaceShareWithTeam, error)
+	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity, keep TeamSkillCopies) (int64, error)
+	ListTeamSkillsToKeep(ctx context.Context, sel TeamSkillsLeaving) ([]TeamSkillToKeep, error)
+	SetPanoDocShare(ctx context.Context, s model.PanoDocShare, version int64, act model.TeamManagementActivity) (PanoDocShareWithTeam, int64, error)
+	ListPanoDocShares(ctx context.Context, docID, userID int64) ([]PanoDocShareWithTeam, error)
+	DeletePanoDocShare(ctx context.Context, docID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error)
+	ListTeamPanoDocs(ctx context.Context, teamID int64, now time.Time) ([]TeamPanoDocRow, error)
+	PanoDocOwnerInTeam(ctx context.Context, userID, teamID, docID int64) (PanoDocOwner, error)
+	ListTeamActivities(ctx context.Context, teamID int64, limit int, before int64) ([]TeamActivityRow, error)
+	CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
+	CanReadTasksInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
+	ListTeamWorkspaces(ctx context.Context, teamID int64) ([]TeamWorkspaceRow, error)
+	// Team mode reads, over workspaces the two checks above allowed.
+	TeamWorkspaceInfo(ctx context.Context, workspaceID int64) (TeamWorkspaceRow, error)
+	ListTeamPeerWorkspaces(ctx context.Context, workspaceID int64) ([]TeamWorkspacePeer, error)
+	ListMemoryExclusions(ctx context.Context, userID, workspaceID int64) ([]int64, error)
+	ExcludeTeammateMemory(ctx context.Context, e model.MemoryExclusion) error
+	IncludeTeammateMemory(ctx context.Context, userID, workspaceID, teammateID int64) error
+	MemoryUpdates(ctx context.Context, workspaceIDs []int64) (map[int64]time.Time, error)
+	ListTeamReaders(ctx context.Context, workspaceID int64) ([]TeamReader, error)
+
 	// Skill — an account's playbooks, each on in some of its workspaces.
 	// Metadata only: file content is in the storage service, and the methods
 	// that drop files return the storage ids the caller must purge once the
 	// transaction has committed.
 	GetSkill(ctx context.Context, userID int64, name string) (model.Skill, error)
+	// A link is a row left from when a skill could read a teammate's;
+	// ConvertSkillLinks makes each a skill of its own at startup.
+	GetSkillByID(ctx context.Context, id int64) (model.Skill, error)
+	CanReadLinkedSkill(ctx context.Context, userID, skillID int64) (bool, error)
+	ListSkillLinks(ctx context.Context) ([]model.Skill, error)
+	ConvertSkillLink(ctx context.Context, link model.Skill, linkedTo int64, files []model.SkillFile) (bool, error)
+	DeleteSkillLink(ctx context.Context, link, linkedTo int64) (bool, error)
 	SearchSkills(ctx context.Context, userID int64, q string, filter SkillFilter, limit, offset int) ([]model.Skill, int64, error)
 	SetSkillDisabled(ctx context.Context, skillID int64, disabled bool) error
 	ReplaceSkill(ctx context.Context, s model.Skill, files []model.SkillFile, on []model.WorkspaceSkill) (model.Skill, []string, error)
-	UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile, on []model.WorkspaceSkill) (model.Skill, string, error)
+	UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile, on []model.WorkspaceSkill, expect *int64) (model.Skill, model.SkillFile, string, error)
+	// Team workspace skills: see team_skill.go.
+	ListWorkspaceTeamSkills(ctx context.Context, workspaceID int64, q string, onlyOn bool) ([]TeamSkillRow, error)
+	GetWorkspaceTeamSkill(ctx context.Context, workspaceID int64, name string) (TeamSkillRow, error)
+	ListWorkspaceTeamWorkspaces(ctx context.Context, workspaceID int64) ([]WorkspaceTeamWorkspace, error)
+	ListTeamWorkspaceSkills(ctx context.Context, userID, teamID, teamWorkspaceID int64) ([]TeamSkillRow, error)
+	GetTeamSkill(ctx context.Context, userID, teamID, skillID int64) (TeamSkillRow, error)
+	CreateTeamSkill(ctx context.Context, a TeamSkillAccess, s model.Skill, files []model.SkillFile, maxSkills int) (model.Skill, int64, error)
+	ReplaceTeamSkill(ctx context.Context, a TeamSkillAccess, s model.Skill, files []model.SkillFile) (model.Skill, []string, error)
+	UpsertTeamSkillFile(ctx context.Context, a TeamSkillAccess, s model.Skill, f model.SkillFile, expect *int64) (model.Skill, model.SkillFile, string, error)
+	DeleteTeamSkillFile(ctx context.Context, a TeamSkillAccess, s model.Skill, path string) (model.Skill, string, error)
+	DeleteTeamSkill(ctx context.Context, a TeamSkillAccess, skillID int64) (int64, []string, error)
+	SetTeamSkillChoice(ctx context.Context, a TeamSkillAccess, c model.TeamSkillChoice) (int64, error)
+	OptOutTeamSkill(ctx context.Context, a TeamSkillAccess, c model.TeamSkillChoice) (int64, bool, []string, error)
+	GiveSkillToTeam(ctx context.Context, a TeamSkillAccess, userID, skillID, teamWorkspaceID int64, files []model.SkillFile, maxSkills int) (int64, []string, error)
 	DeleteSkillFile(ctx context.Context, s model.Skill, path string) (model.Skill, string, error)
 	DeleteSkill(ctx context.Context, skillID int64) ([]string, error)
 	GetSkillFile(ctx context.Context, skillID int64, path string) (model.SkillFile, error)
@@ -237,6 +302,9 @@ type Repository interface {
 	SystemCreateCronRun(ctx context.Context, t model.Task) (bool, error)
 	SystemStartOneTimeTask(ctx context.Context, t model.Task) (bool, error)
 	GetDetailedWorkspaceStats(ctx context.Context, workspaceID int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error)
+	// GetDetailedStatsOfWorkspaces is GetDetailedWorkspaceStats summed over
+	// the given workspaces, whoever owns them.
+	GetDetailedStatsOfWorkspaces(ctx context.Context, workspaceIDs []int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error)
 	GetDetailedUserStats(ctx context.Context, userID int64, startTime, endTime int64) (entity.GetDetailedUserStatsRows, error)
 	GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error)
 	GetWorkspaceTaskCountsByCategory(ctx context.Context, workspaceID int64, userID int64) (map[string]int64, error)
@@ -583,6 +651,15 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.SiteShare{}).Error; err != nil {
 		return err
 	}
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.WorkspaceShare{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.MemoryExclusion{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.TeamSkillChoice{}).Error; err != nil {
+		return err
+	}
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.ForkFolder{}).Error; err != nil {
 		return err
 	}
@@ -617,7 +694,8 @@ var workspaceIDTables = []any{
 	&model.HourlyTaskLatency{}, &model.DailyTaskLatency{}, &model.MonthlyTaskLatency{},
 	&model.Memory{}, &model.Skill{}, &model.WorkspaceSkill{}, &model.EventTrigger{}, &model.WorkflowStep{},
 	&model.PanoFile{}, &model.PanoComment{}, &model.PanoDocTask{}, &model.Session{}, &model.ForkFolder{},
-	&model.SiteShare{}, &model.SlackWorkspaceLink{}, &model.SlackTaskThread{}, &model.PushSubscription{},
+	&model.SiteShare{}, &model.SlackWorkspaceLink{}, &model.SlackTaskThread{}, &model.PushSubscription{}, &model.WorkspaceShare{},
+	&model.MemoryExclusion{}, &model.TeamSkillChoice{},
 	&model.Telemetry{}, &model.HourlyTelemetry{}, &model.DailyTelemetry{}, &model.MonthlyTelemetry{},
 }
 
@@ -642,6 +720,9 @@ func (r *repository) ResetWorkspaceID(ctx context.Context, oldID, newID, userID 
 			}
 		}
 		if err := tx.Model(&model.SkillShare{}).Where("target_workspace_id = ?", oldID).UpdateColumn("target_workspace_id", newID).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.TeamManagementActivity{}).Where("target_workspace_id = ?", oldID).UpdateColumn("target_workspace_id", newID).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&model.PanoDoc{}).Where("created_by_workspace_id = ?", oldID).UpdateColumn("created_by_workspace_id", newID).Error; err != nil {
@@ -745,8 +826,23 @@ func getTask(db *gorm.DB, workspaceID, taskID int64, userID int64) (model.Task, 
 }
 
 func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error) {
+	return r.listTasks(ctx, r.conn(ctx).Where("user_id = ?", userID), req, "")
+}
+
+// ListTasksInWorkspaces is ListTasks over the given workspaces, whoever owns
+// them, newest activity first. The caller has already checked who may read
+// them; none is an empty list.
+func (r *repository) ListTasksInWorkspaces(ctx context.Context, req entity.ListTasksRequest, workspaceIDs []int64) ([]model.Task, error) {
+	if len(workspaceIDs) == 0 {
+		return []model.Task{}, nil
+	}
+	return r.listTasks(ctx, r.conn(ctx).Where("workspace_id IN ?", workspaceIDs), req, "updated_at desc, id desc")
+}
+
+// listTasks finds the tasks q scopes, filtered and paged by req, in order,
+// or in the order req's filters pick when order is empty.
+func (r *repository) listTasks(ctx context.Context, q *gorm.DB, req entity.ListTasksRequest, order string) ([]model.Task, error) {
 	var tasks []model.Task
-	q := r.conn(ctx).Where("user_id = ?", userID)
 
 	if req.WorkspaceID != 0 {
 		q = q.Where("workspace_id = ?", req.WorkspaceID)
@@ -808,6 +904,10 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 		} else if status != "cron" {
 			orderBy = "updated_at desc"
 		}
+	}
+
+	if order != "" {
+		orderBy = order
 	}
 
 	limit := req.Limit
@@ -1314,6 +1414,10 @@ func (r *repository) GetDetailedWorkspaceStats(ctx context.Context, workspaceID 
 	return r.detailedStats(ctx, "workspace_id = ?", workspaceID, startTime, endTime)
 }
 
+func (r *repository) GetDetailedStatsOfWorkspaces(ctx context.Context, workspaceIDs []int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error) {
+	return r.detailedStats(ctx, "workspace_id IN ?", workspaceIDs, startTime, endTime)
+}
+
 // GetDetailedUserStats is the same five aggregations summed over every
 // workspace the user owns, plus the per-workspace breakdown.
 //
@@ -1374,10 +1478,10 @@ func (r *repository) GetDetailedUserStats(ctx context.Context, userID int64, sta
 
 // detailedStats runs the five aggregations behind both statistics endpoints.
 //
-// scopeClause is a parameterised predicate ("workspace_id = ?" or
-// "user_id = ?") rather than a column name pasted into a string, so widening
-// the scope cannot become a way to inject SQL.
-func (r *repository) detailedStats(ctx context.Context, scopeClause string, scopeValue int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error) {
+// scopeClause is a parameterised predicate ("workspace_id = ?",
+// "workspace_id IN ?" or "user_id = ?") rather than a column name pasted
+// into a string, so widening the scope cannot become a way to inject SQL.
+func (r *repository) detailedStats(ctx context.Context, scopeClause string, scopeValue any, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error) {
 	var res entity.GetDetailedWorkspaceStatsResponse
 
 	// Dialect specific date formatting

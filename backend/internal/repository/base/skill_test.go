@@ -29,7 +29,9 @@ func skillDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Skill{}, &model.SkillFile{}, &model.SkillShare{}, &model.WorkspaceSkill{}); err != nil {
+	// The workspaces, shares and members are what a link's reads join.
+	if err := db.AutoMigrate(&model.Skill{}, &model.SkillFile{}, &model.TeamSkillChoice{}, &model.SkillShare{}, &model.WorkspaceSkill{},
+		&model.Workspace{}, &model.WorkspaceShare{}, &model.TeamMember{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
@@ -66,10 +68,14 @@ func seedLegacySkill(t *testing.T, db *gorm.DB) model.Skill {
 }
 
 // failNth fails the n-th statement run on db, whatever its kind, and reports
-// how many statements ran.
+// how many statements ran. A subquery is built by a dry run of its own, which
+// runs nothing and whose error no caller sees, so it does not count.
 func failNth(db *gorm.DB, n int) *int {
 	count := 0
 	fail := func(tx *gorm.DB) {
+		if tx.Statement.DryRun {
+			return
+		}
 		count++
 		if count == n {
 			_ = tx.AddError(errInjected)
@@ -100,7 +106,20 @@ func TestSkillRepository_EveryStatementFailure(t *testing.T) {
 			return err
 		}},
 		{"upsert existing", func(r Repository, s, _ model.Skill) error {
-			_, _, err := r.UpsertSkillFile(ctx, s, model.SkillFile{ID: 14, Path: "notes.md", StorageID: "skill-14"}, on())
+			_, _, _, err := r.UpsertSkillFile(ctx, s, model.SkillFile{ID: 14, Path: "notes.md", StorageID: "skill-14"}, on(), nil)
+			return err
+		}},
+		{"upsert new", func(r Repository, s, _ model.Skill) error {
+			_, _, _, err := r.UpsertSkillFile(ctx, s, model.SkillFile{ID: 15, Path: "more.md", StorageID: "skill-15"}, on(), nil)
+			return err
+		}},
+		// s is no link, so it is "still a link to 0" for these two.
+		{"convert a link", func(r Repository, s, _ model.Skill) error {
+			_, err := r.ConvertSkillLink(ctx, s, 0, []model.SkillFile{{ID: 16, SkillID: s.ID, Path: "more.md", StorageID: "skill-16"}})
+			return err
+		}},
+		{"delete a link", func(r Repository, s, _ model.Skill) error {
+			_, err := r.DeleteSkillLink(ctx, s.ID, 0)
 			return err
 		}},
 		{"delete file", func(r Repository, s, _ model.Skill) error {
@@ -230,10 +249,8 @@ func TestSearchSkills_EnabledOnlyListsASkillFromBeforeTheSwitch(t *testing.T) {
 }
 
 // Both statements a search runs, the count and the page, report a failure.
-// Statement 2 is the dry run that builds the workspace subquery, whose own
-// error is never returned, so it is skipped.
 func TestSearchSkills_ReportsFailures(t *testing.T) {
-	for _, n := range []int{1, 3} {
+	for _, n := range []int{1, 2} {
 		db := skillDB(t)
 		r := New(&mockDB{db: db})
 		seedSkill(t, r)
@@ -386,7 +403,7 @@ func TestDeleteSkill_RemovesItsWorkspacesToo(t *testing.T) {
 // the account.
 func TestDeleteWorkspace_KeepsTheAccountsSkills(t *testing.T) {
 	db := skillDB(t)
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{}, &model.SlackTaskThread{}, &model.Task{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.SiteShare{}, &model.ForkFolder{}, &model.AgentNote{}, &model.PanoDocTask{}, &model.EventTrigger{}, &model.WorkflowStep{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{}, &model.SlackTaskThread{}, &model.Task{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.SiteShare{}, &model.ForkFolder{}, &model.WorkspaceShare{}, &model.MemoryExclusion{}, &model.AgentNote{}, &model.PanoDocTask{}, &model.PanoDocShare{}, &model.EventTrigger{}, &model.WorkflowStep{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	r := New(&mockDB{db: db})

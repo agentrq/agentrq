@@ -504,6 +504,22 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionHookReceive, model.ActionIDHookReceive, "hook receive"},
 		{entity.ActionHookReject, model.ActionIDHookReject, "hook reject"},
 		{entity.ActionHookPublish, model.ActionIDHookPublish, "hook publish"},
+		{entity.ActionTeamCreate, model.ActionIDTeamCreate, "team create"},
+		{entity.ActionTeamInvite, model.ActionIDTeamInvite, "team invite"},
+		{entity.ActionTeamJoin, model.ActionIDTeamJoin, "team join"},
+		{entity.ActionWorkspaceShare, model.ActionIDWorkspaceShare, "workspace share"},
+		{entity.ActionTeamTaskClone, model.ActionIDTeamTaskClone, "team task clone"},
+		{entity.ActionTeamMemorySave, model.ActionIDTeamMemorySave, "team memory save"},
+		{entity.ActionTeamSkillAdd, model.ActionIDTeamSkillAdd, "team skill add"},
+		{entity.ActionTeammateMemoryInclude, model.ActionIDTeammateMemoryInclude, "teammate memory include"},
+		{entity.ActionTeammateMemoryExclude, model.ActionIDTeammateMemoryExclude, "teammate memory exclude"},
+		{entity.ActionTeammateMemoryView, model.ActionIDTeammateMemoryView, "teammate memory view"},
+		{entity.ActionPanoShare, model.ActionIDPanoShare, "pano share"},
+		{entity.ActionTeamSkillCreate, model.ActionIDTeamSkillCreate, "team skill create"},
+		{entity.ActionTeamSkillDelete, model.ActionIDTeamSkillDelete, "team skill delete"},
+		{entity.ActionTeamSkillGive, model.ActionIDTeamSkillGive, "team skill give"},
+		{entity.ActionTeamSkillOptIn, model.ActionIDTeamSkillOptIn, "team skill opt in"},
+		{entity.ActionTeamSkillOptOut, model.ActionIDTeamSkillOptOut, "team skill opt out"},
 	}
 
 	for _, tc := range cases {
@@ -512,6 +528,10 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 			Action: tc.action, Actor: entity.ActorHuman,
 		}
 	}
+	// A team skill an agent changed is counted as its tool call, not again:
+	// each team skill action above stays at the one row.
+	crudChan <- entity.CRUDEvent{UserID: 7, WorkspaceID: 70, Action: entity.ActionTeamSkillCreate, Actor: entity.ActorAgent,
+		ResourceType: entity.ResourceTeamSkill, Origin: entity.OriginMCP}
 
 	time.Sleep(400 * time.Millisecond)
 	c.Close()

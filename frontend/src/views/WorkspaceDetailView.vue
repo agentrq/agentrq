@@ -60,7 +60,7 @@
                  give up its space. Not a button — it says which key to press,
                  and pressing it is the thing being taught. -->
             <span v-if="findTaskHint" class="hidden @min-[64rem]:flex items-center gap-1.5 mr-1 text-gray-400 dark:text-zinc-500 select-none">
-              <kbd class="font-sans text-[9px] font-black uppercase tracking-widest border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-0.5 bg-white dark:bg-zinc-900">{{ findTaskHint.keys }}</kbd>
+              <kbd class="font-sans text-[9px] font-black uppercase tracking-widest border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-[5px] [text-box:trim-both_cap_alphabetic] bg-white dark:bg-zinc-900">{{ findTaskHint.keys }}</kbd>
               <span class="text-[10px] font-medium">{{ findTaskHint.label }}</span>
             </span>
 
@@ -84,7 +84,7 @@
 
               <!-- Filters Segment Control (Top Right) -->
               <div v-if="showMobileFilters || !isMobile" 
-                   class="h-8 p-0.5 bg-gray-100 dark:bg-zinc-800 rounded-md border border-gray-200 dark:border-zinc-700/50 shadow-inner mr-2 overflow-x-auto no-scrollbar transition-all duration-300"
+                   class="h-8 p-0.5 bg-gray-100 dark:bg-zinc-800 rounded-md border border-gray-200 dark:border-zinc-700/50 mr-2 overflow-x-auto no-scrollbar transition-all duration-300"
                    :class="[showMobileFilters ? 'absolute top-10 left-0 z-50 flex shadow-2xl border-gray-900 dark:border-white w-max animate-in fade-in slide-in-from-top-2' : 'hidden @min-[48rem]:flex items-center']">
                 <button v-for="f in filters" :key="f.id"
                         @click="selectFilter(f.id)"
@@ -261,6 +261,7 @@ import { shortcutHint, usesCommandKey } from '../composables/useKeyboardShortcut
 import { usePlatformStore } from '../stores/platformStore';
 import { useExtensionPages } from '../composables/useExtensionPages';
 import { useWorkspaceTerminal } from '../composables/useWorkspaceTerminal';
+import { teamIdOf, withTeam } from '../composables/useTeamMode';
 import AgentConcurrencyControl from '../components/AgentConcurrencyControl.vue';
 import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
 import TaskFeed from '../components/TaskFeed.vue';
@@ -413,10 +414,10 @@ function selectFilter(filterId) {
   }
   tooltipStore.hide();
   // Navigate to unselect task and update active filter in URL
-  router.push({ 
+  router.push(withTeam({
     path: `/workspaces/${workspaceId.value}`,
-    query: { ...route.query, filter: filterId } 
-  });
+    query: { ...route.query, filter: filterId }
+  }, teamIdOf(route)));
 }
 
 watch(() => route.query.filter, (newFilter) => {

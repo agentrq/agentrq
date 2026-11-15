@@ -70,6 +70,8 @@ func registeredRoutes(t *testing.T) map[string]bool {
 	h.registerBrowserRoutes()
 	h.registerPanoRoutes()
 	h.registerHookRoutes()
+	h.registerTeamRoutes()
+	h.registerTeamViewRoutes()
 	h.registerPublicHookRoutes()
 
 	routes := map[string]bool{}

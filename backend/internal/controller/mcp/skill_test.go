@@ -29,6 +29,12 @@ type fakeSkills struct {
 	total    int
 	searched []string
 	deleted  []string
+	version  int64 // the version every load reports, 0 for a skill nobody else writes
+	// team is the team workspace every skill is in, "" for the account's;
+	// gone says a delete leaves no workspace opted in.
+	team    string
+	gone    bool
+	targets []SkillTarget
 }
 
 func (f *fakeSkills) SearchSkills(_ context.Context, q string, limit, offset int) ([]SkillSummary, int, error) {
@@ -39,17 +45,17 @@ func (f *fakeSkills) SearchSkills(_ context.Context, q string, limit, offset int
 	return f.skills, len(f.skills), f.err
 }
 
-func (f *fakeSkills) LoadSkillFile(_ context.Context, name, path string) (string, []string, bool, error) {
+func (f *fakeSkills) LoadSkillFile(_ context.Context, name, path string) (SkillFile, bool, error) {
 	if f.err != nil {
-		return "", nil, false, f.err
+		return SkillFile{}, false, f.err
 	}
 	files, ok := f.files[name]
 	if !ok {
-		return "", nil, false, nil
+		return SkillFile{}, false, nil
 	}
 	content, ok := files[path]
 	if !ok {
-		return "", nil, false, nil
+		return SkillFile{}, false, nil
 	}
 	var paths []string
 	for _, p := range []string{"SKILL.md", "references/guide.md", "scripts/run.sh"} {
@@ -57,18 +63,19 @@ func (f *fakeSkills) LoadSkillFile(_ context.Context, name, path string) (string
 			paths = append(paths, p)
 		}
 	}
-	return content, paths, true, nil
+	return SkillFile{Content: content, Files: paths, Version: f.version, TeamWorkspace: f.team}, true, nil
 }
 
-func (f *fakeSkills) SaveSkillFile(_ context.Context, name, path, content string) error {
-	f.saved = append(f.saved, name+"/"+path+"="+content)
-	return f.err
+func (f *fakeSkills) SaveSkillFile(_ context.Context, name, path, content string, version int64, to SkillTarget) (SkillSaved, error) {
+	f.saved = append(f.saved, fmt.Sprintf("%s/%s@%d=%s", name, path, version, content))
+	f.targets = append(f.targets, to)
+	return SkillSaved{Version: version + 1, TeamWorkspace: f.team}, f.err
 }
 
-func (f *fakeSkills) DeleteSkill(_ context.Context, name string) (bool, error) {
+func (f *fakeSkills) DeleteSkill(_ context.Context, name string) (SkillDeleted, error) {
 	f.deleted = append(f.deleted, name)
 	_, ok := f.files[name]
-	return ok, f.err
+	return SkillDeleted{Deleted: ok, TeamWorkspace: f.team, Gone: f.gone}, f.err
 }
 
 func (f *fakeSkills) DeleteSkillFile(_ context.Context, name, path string) (bool, error) {
@@ -175,6 +182,23 @@ func TestLoadSkill(t *testing.T) {
 	}
 }
 
+// A file of a skill others write too ends with its version, to send back
+// with skills save; the list of files still follows a SKILL.md.
+func TestLoadSkill_SharedShowsVersion(t *testing.T) {
+	store := tddSkills()
+	store.version = 3
+	ps, _ := skillServer(t, store)
+	ctx := context.Background()
+	note := "\n\n---\nThis skill is shared with your team: this file is version 3. Send \"version\": 3 with skills save to change it."
+	if text, isErr := call(ps.handleLoadSkill(ctx, nil, LoadSkillParams{URI: "skill://tdd/references/guide.md"})); isErr || text != "guide"+note {
+		t.Errorf("sub file: %v %q", isErr, text)
+	}
+	text, isErr := call(ps.handleLoadSkill(ctx, nil, LoadSkillParams{URI: "skill://tdd"}))
+	if isErr || !strings.HasPrefix(text, "---\ndescription: d\n---\nSee references/guide.md."+note+"\n\n---\nFiles in this skill:\n") {
+		t.Errorf("SKILL.md: %v %q", isErr, text)
+	}
+}
+
 func TestLoadSkill_MissIsNotAnError(t *testing.T) {
 	ps, _ := skillServer(t, tddSkills())
 	for _, uri := range []string{"skill://nope", "skill://tdd/missing.md"} {
@@ -191,14 +215,14 @@ func TestSaveSkill(t *testing.T) {
 	ctx := context.Background()
 
 	text, isErr := call(ps.handleSaveSkill(ctx, nil, SaveSkillParams{URI: "skill://Fresh", Content: "---\ndescription: d\n---\n"}))
-	if isErr || text != "Saved skill://fresh/SKILL.md (23 bytes)." {
+	if isErr || text != "Saved skill://fresh/SKILL.md (23 bytes), version 1." {
 		t.Errorf("SKILL.md: %v %q", isErr, text)
 	}
-	text, isErr = call(ps.handleSaveSkill(ctx, nil, SaveSkillParams{URI: "skill://tdd/notes.md", Content: "n"}))
-	if isErr || text != "Saved skill://tdd/notes.md (1 bytes)." {
+	text, isErr = call(ps.handleSaveSkill(ctx, nil, SaveSkillParams{URI: "skill://tdd/notes.md", Content: "n", Version: 4}))
+	if isErr || text != "Saved skill://tdd/notes.md (1 bytes), version 5." {
 		t.Errorf("sub file: %v %q", isErr, text)
 	}
-	if strings.Join(store.saved, ";") != "fresh/SKILL.md=---\ndescription: d\n---\n;tdd/notes.md=n" {
+	if strings.Join(store.saved, ";") != "fresh/SKILL.md@0=---\ndescription: d\n---\n;tdd/notes.md@4=n" {
 		t.Errorf("saved: %q", store.saved)
 	}
 	if strings.Join(*tools, ",") != "saveSkill,saveSkill" {
@@ -431,5 +455,41 @@ func TestSearchSkills_PagesAndQueries(t *testing.T) {
 	text, isErr := call(ps.handleSearchSkills(ctx, nil, SearchSkillsParams{Q: " nope "}))
 	if isErr || text != `No skill's name or description contains "nope". Call skills search with no q to see them all.` {
 		t.Errorf("no match: %v %q", isErr, text)
+	}
+}
+
+// A team skill says whose it is wherever the agent meets it, and a delete
+// tells the agent it opted this workspace out rather than deleting it.
+func TestTeamSkillsAreNamedAsTheTeams(t *testing.T) {
+	ctx := context.Background()
+	f := tddSkills()
+	f.team, f.version = "Backend", 3
+	f.skills[0].TeamWorkspace = "Backend"
+	ps, _ := skillServer(t, f)
+
+	if text, _ := call(ps.handleSearchSkills(ctx, nil, SearchSkillsParams{})); !strings.Contains(text, "- tdd (team workspace Backend): Use when writing code.") || strings.Contains(text, "review (team") {
+		t.Errorf("search reads %q, want tdd alone marked the team's", text)
+	}
+	if text, _ := call(ps.handleLoadSkill(ctx, nil, LoadSkillParams{URI: "skill://tdd"})); !strings.Contains(text, "This skill is your team's, in team workspace Backend: this file is version 3. Send \"version\": 3") {
+		t.Errorf("load reads %q", text)
+	}
+	yes := true
+	text, isErr := call(ps.handleSaveSkill(ctx, nil, SaveSkillParams{URI: "skill://new", Content: "c", Team: &yes, TeamWorkspace: "Backend"}))
+	if isErr || text != "Saved skill://new/SKILL.md (1 bytes) in team workspace Backend, version 1." {
+		t.Errorf("save reads %q", text)
+	}
+	if len(f.targets) != 1 || f.targets[0].Team != &yes || f.targets[0].TeamWorkspace != "Backend" {
+		t.Errorf("the save went to %+v, want the team workspace asked for", f.targets)
+	}
+	if text, _ := call(ps.handleDeleteSkill(ctx, nil, DeleteSkillParams{URI: "skill://tdd"})); !strings.HasPrefix(text, "This workspace is opted out of skill://tdd, the team's skill in team workspace Backend; the workspaces still opted in keep it.") {
+		t.Errorf("an opt-out reads %q", text)
+	}
+	f.gone = true
+	if text, _ := call(ps.handleDeleteSkill(ctx, nil, DeleteSkillParams{URI: "skill://tdd"})); !strings.HasSuffix(text, "as no workspace was opted into it any more, it is deleted.") {
+		t.Errorf("the last opt-out reads %q", text)
+	}
+	f.err = errors.New("db down")
+	if text, isErr := call(ps.handleDeleteSkill(ctx, nil, DeleteSkillParams{URI: "skill://tdd"})); !isErr || !strings.Contains(text, "db down") {
+		t.Errorf("a failed opt-out reads %q", text)
 	}
 }

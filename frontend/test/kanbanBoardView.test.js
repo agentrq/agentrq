@@ -9,12 +9,13 @@
  * that decides which rule a column uses and which call a drop makes.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createApp, h, ref } from 'vue'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { createApp, h, reactive, ref } from 'vue'
 import { createPinia } from 'pinia'
 
 // The board under a workspace has `id` in the route; on /kanban it has none.
-const route = { params: { id: 'ws1' }, query: {} }
+// Reactive, as the router's is: the board follows its query.
+const route = reactive({ params: { id: 'ws1' }, query: {} })
 const push = vi.fn()
 const replace = vi.fn()
 vi.mock('vue-router', () => ({
@@ -48,12 +49,16 @@ const forkWorkspace = vi.fn(() => Promise.resolve({ workspace: { id: 'f1', name:
 const launchAgent = vi.fn(() => Promise.resolve({ session: { id: 's1' } }))
 let workspaceList = []
 const fetchWorkspaces = vi.fn(() => Promise.resolve({ workspaces: workspaceList }))
+const fetchTeamTasks = vi.fn((_team, { status }) => Promise.resolve({ tasks: byStatus[status] || [] }))
+const fetchTeamWorkspaces = vi.fn(() => Promise.resolve({ workspaces: [{ id: 'theirs', name: 'api', sharedName: 'Backend' }] }))
 
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal()),
   fetchTasks: (...args) => fetchTasks(...args),
   fetchGlobalTasks: (...args) => fetchGlobalTasks(...args),
   fetchWorkspaces: (...args) => fetchWorkspaces(...args),
+  fetchTeamTasks: (...args) => fetchTeamTasks(...args),
+  fetchTeamWorkspaces: (...args) => fetchTeamWorkspaces(...args),
   moveTask: (...args) => moveTask(...args),
   fetchMachines: () => Promise.resolve({ machines: [{ id: 'm1', name: 'pi', enabled: true, online: true }] }),
   forkWorkspace: (...args) => forkWorkspace(...args),
@@ -417,7 +422,7 @@ describe('KanbanBoardView across every workspace', () => {
     } finally {
       window.innerWidth = width
     }
-    expect(replace).toHaveBeenCalledWith('/tasks/active')
+    expect(replace).toHaveBeenCalledWith({ path: '/tasks/active', query: {} })
   })
 })
 
@@ -529,5 +534,112 @@ describe('Spin up on a card', () => {
     ;[...document.body.querySelectorAll('[data-test=spin-up] button')].find((b) => b.textContent.trim() === 'Spin up').click()
     await settle()
     expect(card('Task n1').querySelector('[data-test=card-workspace]').textContent).toMatch(/task-n1/)
+  })
+})
+
+describe('the team\'s board (/teams/<id>/kanban)', () => {
+  const theirs = (id, status, extra = {}) => task(id, status, { workspaceId: 'theirs', owner: { userId: 'u2', name: 'Bob' }, ...extra })
+
+  beforeEach(() => {
+    if (app) app.unmount()
+    document.body.innerHTML = ''
+    route.params = {}
+    route.path = '/teams/tm1/kanban'
+    route.query = { workspace: 'Backend' }
+    push.mockClear()
+    replace.mockClear()
+    fetchTeamTasks.mockClear()
+    fetchGlobalTasks.mockClear()
+    updateTaskStatus.mockReset()
+    byStatus = {
+      notstarted: [theirs('n1', 'notstarted', { assignee: 'human', createdBy: 'agent' })],
+      ongoing: [theirs('o1', 'ongoing')],
+    }
+  })
+
+  afterEach(() => {
+    route.path = '/kanban'
+    route.query = {}
+  })
+
+  it('reads the team\'s tasks, read-only, each card naming whose it is', async () => {
+    const { el, card, fire } = await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
+    expect(fetchTeamTasks).toHaveBeenCalledWith('tm1', expect.objectContaining({ status: 'ongoing', workspace: 'Backend', member: '' }))
+    expect(fetchGlobalTasks).not.toHaveBeenCalled()
+    expect(el.textContent).toContain("Every shared workspace's tasks on one board.")
+    expect([...el.querySelectorAll('a, button')].some((b) => /New task/i.test(b.textContent))).toBe(false)
+
+    const n1 = card('Task n1')
+    expect(n1.getAttribute('draggable')).toBe('false')
+    expect(n1.querySelector('[data-test=card-workspace]').textContent).toMatch(/Bob|B/)
+    expect(n1.querySelector('[data-test=card-workspace]').textContent).toContain('Backend')
+    expect(n1.querySelector('[data-test=card-owner]')).not.toBe(null)
+    // As small as the agent and assignee icons beside it.
+    expect(n1.querySelector('[data-test=card-owner]').firstElementChild.className).toMatch(/\bw-3\.5 h-3\.5\b/)
+    expect(n1.querySelector('[title="Spin up in a fork"]')).toBe(null)
+    expect([...n1.querySelectorAll('button')].some((b) => /Allow|Deny/.test(b.textContent))).toBe(false)
+
+    fire(n1, 'dragstart')
+    fire(n1, 'contextmenu')
+    await settle()
+    expect(document.body.querySelector('[role=menu]')).toBe(null)
+
+    n1.click()
+    expect(push).toHaveBeenCalledWith({ path: '/teams/tm1/workspaces/theirs/tasks/n1', query: { workspace: 'Backend' } })
+    expect(updateTaskStatus).not.toHaveBeenCalled()
+  })
+
+  it('ignores your own live updates, which are not the team\'s', async () => {
+    const { el } = await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
+    events.value = [{ type: 'task.created', payload: task('mine', 'ongoing') }]
+    await settle()
+    expect(el.textContent).not.toContain('Task mine')
+  })
+
+  it('follows the team\'s live updates, inside its filters', async () => {
+    const { el } = await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
+    const send = async (ev) => { events.value = [...events.value, ev]; await settle() }
+    await send({ type: 'team.task.created', teamId: 'tm2', payload: theirs('other', 'ongoing', { sharedName: 'Backend' }) })
+    expect(el.textContent).not.toContain('Task other')
+    await send({ type: 'team.task.created', teamId: 'tm1', payload: theirs('new', 'ongoing', { sharedName: 'backend ' }) })
+    expect(el.textContent).toContain('Task new')
+    // Moved to another team workspace: off a board filtered to this one.
+    await send({ type: 'team.task.updated', teamId: 'tm1', payload: theirs('new', 'ongoing', { sharedName: 'Web' }) })
+    expect(el.textContent).not.toContain('Task new')
+    await send({ type: 'team.task.deleted', teamId: 'tm1', payload: { id: 'o1' } })
+    expect(el.textContent).not.toContain('Task o1')
+  })
+
+  it('offers its filters as pickers, and reads the board again when they change', async () => {
+    const { el } = await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
+    expect(el.querySelector('[data-test=team-task-filters]')).not.toBe(null)
+    expect(el.querySelector('[data-test=team-filter-workspace]').textContent).toContain('Backend')
+    fetchTeamTasks.mockClear()
+
+    route.query = { workspace: 'Web', member: 'u2' }
+    await settle()
+
+    expect(fetchTeamTasks).toHaveBeenCalledWith('tm1', expect.objectContaining({ workspace: 'Web', member: 'u2' }))
+  })
+
+  it('keeps a member filter to that member\'s tasks', async () => {
+    route.query = { member: 'u2' }
+    const { el } = await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
+    const send = async (ev) => { events.value = [...events.value, ev]; await settle() }
+    await send({ type: 'team.status.updated', teamId: 'tm1', payload: theirs('cy', 'ongoing', { owner: { userId: 'u3', name: 'Cy' } }) })
+    expect(el.textContent).not.toContain('Task cy')
+    await send({ type: 'team.status.updated', teamId: 'tm1', payload: theirs('bob', 'ongoing') })
+    expect(el.textContent).toContain('Task bob')
+  })
+
+  it('sends a phone to the team\'s task list', async () => {
+    const width = window.innerWidth
+    window.innerWidth = 390
+    try {
+      await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
+      expect(replace).toHaveBeenCalledWith({ path: '/teams/tm1/tasks/active', query: {} })
+    } finally {
+      window.innerWidth = width
+    }
   })
 })

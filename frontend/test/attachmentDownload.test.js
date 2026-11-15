@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { downloadAttachment, REVOKE_DELAY_MS } from '../src/composables/useAttachmentDownload'
+import { downloadAttachment, isInlineImage, REVOKE_DELAY_MS } from '../src/composables/useAttachmentDownload'
 
 const links = { source: '/api/v1/workspaces/ws1/tasks/t1/attachments/a1', fallback: 'https://agentrq.example/storage/a1' }
 
@@ -78,5 +78,13 @@ describe('downloadAttachment', () => {
     expect(fetchSpy).toHaveBeenCalledWith(links.source)
     expect(clicked[0].href).toBe(links.fallback)
     fetchSpy.mockRestore()
+  })
+})
+
+describe('isInlineImage', () => {
+  it('is true only for the image types the server sends as images', () => {
+    for (const mimeType of ['image/png', 'IMAGE/JPEG', 'image/gif', 'image/webp', 'image/bmp']) expect(isInlineImage({ mimeType })).toBe(true)
+    for (const mimeType of ['image/svg+xml', 'text/html', '', undefined]) expect(isInlineImage({ mimeType })).toBe(false)
+    expect(isInlineImage(null)).toBe(false)
   })
 })

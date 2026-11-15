@@ -223,6 +223,35 @@ func TestSend_PlainDeliversTheMessage(t *testing.T) {
 	}
 }
 
+// A subject is often someone's text: a line break in it must not end the
+// header and start headers or a body of its own.
+func TestSend_EncodesTheSubject(t *testing.T) {
+	for _, tc := range []struct{ subject, want string }{
+		{"Hello", "Subject: Hello\n"},
+		{"Ada invited you to the Café team", "Subject: =?utf-8?q?Ada_invited_you_to_the_Caf=C3=A9_team?=\n"},
+		{"x\r\nBcc: eve@example.com\r\nContent-Type: text/html\r\n\r\n<a href=x>sign in</a>", "Subject: =?utf-8?q?x=0D=0ABcc:_eve@example.com=0D=0AContent-Type:_text/html=0D=0A?= =?utf-8?q?=0D=0A<a_href=3Dx>sign_in</a>?=\n"},
+	} {
+		srv := newFakeServer(t, listenPlain(t))
+		srv.start()
+		svc := New(Config{Enabled: true, Host: "127.0.0.1", Port: srv.port(), From: "noreply@example.com"})
+		if err := svc.Send(context.Background(), SendRequest{To: []string{"ada@example.com"}, Subject: tc.subject, Body: "the body"}); err != nil {
+			t.Fatalf("Send(%q): %v", tc.subject, err)
+		}
+		srv.wait()
+		srv.mu.Lock()
+		data := srv.data
+		srv.mu.Unlock()
+		if !strings.Contains(data, tc.want) {
+			t.Errorf("subject %q: message %q lacks %q", tc.subject, data, tc.want)
+		}
+		for _, bad := range []string{"\nBcc:", "\nContent-Type: text/html", "\n<a href"} {
+			if strings.Contains(data, bad) {
+				t.Errorf("subject %q: message %q carries %q outside the subject", tc.subject, data, bad)
+			}
+		}
+	}
+}
+
 func TestSendWithTLS_DeliversTheMessage(t *testing.T) {
 	srv := newFakeServer(t, listenTLS(t))
 	srv.start()

@@ -280,9 +280,9 @@ func (r *repository) AddPanoComment(ctx context.Context, userID int64, c model.P
 	})
 }
 
-// DeletePanoDoc deletes one of an account's docs with its files and comments,
-// and returns the storage ids of its files for the caller to purge once this
-// has committed.
+// DeletePanoDoc deletes one of an account's docs with its files, comments and
+// shares, and returns the storage ids of its files for the caller to purge
+// once this has committed.
 func (r *repository) DeletePanoDoc(ctx context.Context, userID, id int64) ([]string, error) {
 	var storageIDs []string
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
@@ -304,6 +304,9 @@ func (r *repository) DeletePanoDoc(ctx context.Context, userID, id int64) ([]str
 			return err
 		}
 		if err := tx.Where("doc_id = ?", id).Delete(&model.PanoDocTask{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("doc_id = ?", id).Delete(&model.PanoDocShare{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Delete(&model.PanoDoc{}, id).Error; err != nil {

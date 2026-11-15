@@ -48,17 +48,8 @@
       </div>
       <!-- Where the imported skills are turned on. In a workspace, that one
            starts ticked, so what is imported there is on there. -->
-      <fieldset v-if="workspaceChoices.length" data-test="skill-import-workspaces" class="min-w-0">
-        <legend class="mb-1.5 text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Turn on in</legend>
-        <div class="flex flex-wrap gap-1.5">
-          <label v-for="w in workspaceChoices" :key="w.id" data-test="skill-import-workspace"
-                 :class="importWorkspaceIds.includes(String(w.id)) ? 'border-gray-900 dark:border-zinc-100 text-gray-900 dark:text-zinc-100' : 'border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-400 hover:border-gray-300 dark:hover:border-zinc-600'"
-                 class="inline-flex items-center gap-1.5 max-w-full min-w-0 px-2 py-1 border rounded-sm text-[11px] cursor-pointer transition-colors">
-            <input v-model="importWorkspaceIds" type="checkbox" :value="String(w.id)" class="shrink-0 rounded-sm border-gray-300 dark:border-zinc-600" />
-            <span class="min-w-0 truncate">{{ w.name }}</span>
-          </label>
-        </div>
-      </fieldset>
+      <SkillWorkspaceChoices v-model="importWorkspaceIds" :workspaces="workspaceChoices"
+                             data-test="skill-import-workspaces" item-test="skill-import-workspace" />
       <p v-if="importError" class="text-[11px] font-bold text-red-600 dark:text-red-400 break-words">{{ importError }}</p>
       <!-- A repository too large to import whole: choose what to take. -->
       <div v-if="choice" data-test="skill-import-choice" class="space-y-2 text-[11px] text-gray-700 dark:text-zinc-300">
@@ -112,6 +103,11 @@
       </div>
     </form>
 
+    <!-- The team workspaces' own skills, once the workspace is shared into one. -->
+    <WorkspaceTeamSkills v-if="workspaceId && teamWorkspaces.length" :workspace-id="workspaceId" :skills="teamSkills"
+                         @update="updateTeamSkill" @changed="reloadAll" />
+    <h3 v-if="workspaceId && teamWorkspaces.length" class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Your skills</h3>
+
     <p v-if="view === SkillsState.Loading" class="text-[11px] text-gray-400 dark:text-zinc-500 ml-1">Loading skills…</p>
 
     <div v-else-if="view === SkillsState.Failed" class="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-sm">
@@ -131,15 +127,10 @@
          and deleting. The switch sits beside the link, not in it, so a toggle
          never navigates. In a workspace it is that workspace's switch. -->
     <div v-else data-test="skill-grid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 sm:gap-2 divide-y sm:divide-y-0 divide-gray-100 dark:divide-zinc-800 border-y sm:border-y-0 border-gray-100 dark:border-zinc-800">
-      <div v-for="s in orderedSkills" :key="s.name" class="relative min-w-0">
-      <RouterLink :to="skillPagePath(workspaceId, s.name)" data-test="skill-card" :data-enabled="skillSwitchOn(s, workspaceId)"
-                  class="group h-full flex flex-col gap-1.5 min-w-0 py-3 sm:p-3 sm:bg-gray-50 sm:dark:bg-zinc-800/50 sm:rounded-sm sm:border border-gray-100 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-600 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
-        <!-- Dimmed when no agent sees it, here or anywhere. -->
-        <span data-test="skill-card-name" class="truncate pr-12 text-xs leading-6 font-bold font-mono"
-              :class="skillSeenByAgents(s, workspaceId) ? 'text-gray-800 dark:text-zinc-100' : 'text-gray-400 dark:text-zinc-500'">{{ s.name }}</span>
-        <span class="line-clamp-2 min-h-[2lh] text-[11px] leading-snug break-words"
-              :class="skillSeenByAgents(s, workspaceId) ? 'text-gray-500 dark:text-zinc-400' : 'text-gray-400 dark:text-zinc-500'">{{ s.description }}</span>
-        <span class="mt-auto flex items-center gap-1.5 min-w-0 text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">
+      <SkillCard v-for="s in orderedSkills" :key="s.name" :to="skillPagePath(workspaceId, s.name)"
+                 :name="s.name" :description="s.description" :muted="!skillSeenByAgents(s, workspaceId)"
+                 :enabled="skillSwitchOn(s, workspaceId)" :action-width="canGive ? 'pr-28' : 'pr-12'">
+        <template #meta>
           <span class="shrink-0">{{ formatSkillSize(s.totalBytes) }}</span>
           <!-- In a workspace the switch is its own, so the account-wide one
                being off, which hides it all the same, is said here. -->
@@ -154,26 +145,46 @@
           </span>
           <span v-if="!workspaceId" data-test="skill-card-workspaces" class="shrink-0">· {{ skillWorkspaceCount(s) }}</span>
           <span v-if="!s.locallyModified" class="min-w-0 truncate" :title="skillSource(s)">· {{ skillSource(s) }}</span>
-        </span>
-      </RouterLink>
-      <button type="button" role="switch" data-test="skill-card-enabled"
-              :aria-checked="skillSwitchOn(s, workspaceId)" :aria-label="`${workspaceId ? 'On in this workspace' : 'Available to agents'}: ${s.name}`"
-              :title="switchTitle(s)"
-              :disabled="pendingEnabled.has(s.name)" @click="toggleEnabled(s)"
-              class="absolute top-3 right-0 sm:right-3 shrink-0 w-11 h-6 rounded-full border transition-colors disabled:opacity-50"
-              :class="skillSwitchOn(s, workspaceId) ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
-        <span class="absolute top-[3px] w-4 h-4 rounded-full transition-all"
-              :class="skillSwitchOn(s, workspaceId) ? 'left-[23px] bg-white dark:bg-zinc-900' : 'left-[3px] bg-white dark:bg-zinc-400'"></span>
-      </button>
-      </div>
+        </template>
+        <template #action>
+          <span class="flex items-center gap-2">
+          <!-- Moves it into a team workspace this one is shared into. -->
+          <button v-if="canGive" type="button" data-test="skill-card-give" :aria-label="`Give ${s.name} to the team`"
+                  @click="startGive(s)"
+                  class="block px-2 py-1 rounded-lg border border-gray-300 dark:border-zinc-600 text-[8px] font-black uppercase tracking-widest text-gray-600 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800">
+            Give to team
+          </button>
+          <button type="button" role="switch" data-test="skill-card-enabled"
+                  :aria-checked="skillSwitchOn(s, workspaceId)" :aria-label="`${workspaceId ? 'On in this workspace' : 'Available to agents'}: ${s.name}`"
+                  :title="switchTitle(s)"
+                  :disabled="pendingEnabled.has(s.name)" @click="toggleEnabled(s)"
+                  class="relative block w-11 h-6 rounded-full border transition-colors disabled:opacity-50"
+                  :class="skillSwitchOn(s, workspaceId) ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
+            <span class="absolute top-[3px] w-4 h-4 rounded-full transition-all"
+                  :class="skillSwitchOn(s, workspaceId) ? 'left-[23px] bg-white dark:bg-zinc-900' : 'left-[3px] bg-white dark:bg-zinc-400'"></span>
+          </button>
+          </span>
+        </template>
+      </SkillCard>
     </div>
+
+    <GiveSkillModal :show="!!giving" :name="giving?.name || ''" :team-workspaces="teamWorkspaces"
+                    :busy="givingBusy" :error="giveError" @close="giving = null" @confirm="give" />
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
-import { importSkills, searchSkills, searchWorkspaceSkills, setSkillEnabled, setWorkspaceSkillEnabled } from '../api';
+import {
+  giveSkillToTeam,
+  importSkills,
+  listWorkspaceTeamSkills,
+  searchSkills,
+  searchWorkspaceSkills,
+  setSkillEnabled,
+  setWorkspaceSkillEnabled,
+} from '../api';
 import {
   SKILL_FILE,
   SkillsState,
@@ -198,6 +209,11 @@ import {
 import { useToasts } from '../composables/useToasts';
 import { onWebMCPChange } from '../composables/useWebMCPChanges';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useEventBus } from '../useEventBus';
+import GiveSkillModal from './GiveSkillModal.vue';
+import SkillCard from './SkillCard.vue';
+import SkillWorkspaceChoices from './SkillWorkspaceChoices.vue';
+import WorkspaceTeamSkills from './WorkspaceTeamSkills.vue';
 
 // With no workspace, the account's view: the Skills page.
 const props = defineProps({ workspaceId: { type: String, default: '' } });
@@ -229,6 +245,75 @@ async function loadSkills({ quiet = false } = {}) {
     if (mine === loadSeq) loading.value = false;
   }
 }
+
+// ── Team skills ─────────────────────────────────────────────────────────────
+// In a workspace, the team skills it reaches and the team workspaces it is
+// shared into. None until read, and none when they cannot be: the group then
+// stays hidden, and your own skills are drawn as ever.
+const teamSkills = ref([]);
+const teamWorkspaces = ref([]);
+let teamSeq = 0;
+
+async function loadTeamSkills() {
+  const mine = ++teamSeq;
+  if (!props.workspaceId) {
+    teamSkills.value = [];
+    teamWorkspaces.value = [];
+    return;
+  }
+  try {
+    const res = await listWorkspaceTeamSkills(props.workspaceId);
+    if (mine !== teamSeq) return;
+    teamSkills.value = res?.skills || [];
+    teamWorkspaces.value = res?.teamWorkspaces || [];
+  } catch {
+    if (mine !== teamSeq) return;
+    teamSkills.value = [];
+    teamWorkspaces.value = [];
+  }
+}
+
+function updateTeamSkill(skill) {
+  teamSkills.value = teamSkills.value.map((x) => (x.id === skill.id ? skill : x));
+}
+
+function reloadAll() {
+  return Promise.all([loadSkills({ quiet: true }), loadTeamSkills()]);
+}
+
+// "Give to team": the own skill being given, while the confirm is open.
+const canGive = computed(() => !!props.workspaceId && teamWorkspaces.value.length > 0);
+const giving = ref(null);
+const givingBusy = ref(false);
+const giveError = ref('');
+
+function startGive(s) {
+  giveError.value = '';
+  giving.value = s;
+}
+
+async function give(teamWorkspaceId) {
+  const s = giving.value;
+  if (!s) return;
+  givingBusy.value = true;
+  giveError.value = '';
+  try {
+    await giveSkillToTeam(props.workspaceId, s.name, teamWorkspaceId);
+    const to = teamWorkspaces.value.find((t) => t.id === teamWorkspaceId);
+    notifySuccess(`Gave ${s.name} to ${to?.name || 'the team'}`);
+    giving.value = null;
+    await reloadAll();
+  } catch (err) {
+    giveError.value = err.message;
+  } finally {
+    givingBusy.value = false;
+  }
+}
+
+// A teammate's change to a team skill, or another tab's, reads both again:
+// a skill given away leaves your list as it joins the team's.
+const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false });
+const TEAM_SKILL_EVENT = /^team\.skill\./;
 
 // ── Turning a skill on or off ───────────────────────────────────────────────
 // Skills whose switch was just flipped and whose answer is still out.
@@ -315,7 +400,18 @@ function importChosen() {
 onMounted(() => {
   loadSkills();
   if (!workspaceStore.workspaces.length) workspaceStore.fetchWorkspaces();
+  if (props.workspaceId) {
+    loadTeamSkills();
+    onEvent((event) => {
+      if (TEAM_SKILL_EVENT.test(event?.type || '')) reloadAll();
+    });
+    connect();
+  }
 });
-onWebMCPChange(() => loadSkills({ quiet: true }));
-watch(() => props.workspaceId, () => loadSkills());
+onUnmounted(() => disconnect());
+onWebMCPChange(() => reloadAll());
+watch(() => props.workspaceId, () => {
+  loadSkills();
+  loadTeamSkills();
+});
 </script>

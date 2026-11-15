@@ -28,6 +28,87 @@ type SkillFilter struct {
 	EnabledOnly bool
 }
 
+// GetSkillByID is a skill by id, whoever owns it, for ConvertSkillLinks.
+func (r *repository) GetSkillByID(ctx context.Context, id int64) (model.Skill, error) {
+	var s model.Skill
+	err := r.conn(ctx).Where("id = ? AND workspace_id = ?", id, accountSkill).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Skill{}, ErrNotFound
+	}
+	return s, err
+}
+
+// readableSkills selects the skills userID could read through a team when a
+// link to a teammate's skill still could: their owner's own, not turned off,
+// on in an unarchived workspace of that owner shared with a team userID is
+// in and not holding its skills back.
+func readableSkills(db *gorm.DB, userID int64) *gorm.DB {
+	return db.Model(&model.WorkspaceSkill{}).Select("workspace_skills.skill_id").
+		Joins("JOIN skills AS src ON src.id = workspace_skills.skill_id AND src.linked_skill_id = 0 AND (src.disabled IS NULL OR src.disabled = ?)", false).
+		Joins("JOIN workspaces AS owned ON owned.id = workspace_skills.workspace_id AND owned.user_id = src.user_id AND owned.archived_at IS NULL").
+		Joins("JOIN workspace_shares AS share ON share.workspace_id = owned.id AND share.hide_skills = ?", false).
+		Joins("JOIN team_members AS member ON member.team_id = share.team_id AND member.user_id = ?", userID)
+}
+
+// CanReadLinkedSkill reports whether a link of userID's to skillID still
+// reads it, for ConvertSkillLinks: one that does not reads nothing.
+func (r *repository) CanReadLinkedSkill(ctx context.Context, userID, skillID int64) (bool, error) {
+	var n int64
+	err := readableSkills(r.conn(ctx), userID).Where("workspace_skills.skill_id = ?", skillID).Count(&n).Error
+	return n > 0, err
+}
+
+// ListSkillLinks is every link to a teammate's skill left from before team
+// workspaces owned skills, for ConvertSkillLinks.
+func (r *repository) ListSkillLinks(ctx context.Context) ([]model.Skill, error) {
+	var links []model.Skill
+	err := r.conn(ctx).Where("linked_skill_id <> ?", 0).Order("id ASC").Find(&links).Error
+	return links, err
+}
+
+// ConvertSkillLink makes link, still a link to linkedTo, a skill of its own
+// with files, which the caller has written; false when it is no longer that
+// link.
+func (r *repository) ConvertSkillLink(ctx context.Context, link model.Skill, linkedTo int64, files []model.SkillFile) (bool, error) {
+	converted := false
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&model.Skill{}).Where("id = ? AND linked_skill_id = ?", link.ID, linkedTo).Updates(map[string]any{
+			"linked_skill_id": 0, "description": link.Description, "source_type": link.SourceType,
+			"source_repo": link.SourceRepo, "source_ref": link.SourceRef, "source_commit": link.SourceCommit, "source_path": link.SourcePath,
+			"locally_modified": link.LocallyModified, "file_count": link.FileCount, "total_bytes": link.TotalBytes, "updated_at": link.UpdatedAt,
+		})
+		if res.Error != nil || res.RowsAffected == 0 {
+			return res.Error
+		}
+		if len(files) > 0 {
+			if err := tx.Create(&files).Error; err != nil {
+				return err
+			}
+		}
+		converted = true
+		return nil
+	})
+	return converted, err
+}
+
+// DeleteSkillLink deletes link, still a link to linkedTo, which reads
+// nothing any more; false when it is no longer that link.
+func (r *repository) DeleteSkillLink(ctx context.Context, link, linkedTo int64) (bool, error) {
+	deleted := false
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("id = ? AND linked_skill_id = ?", link, linkedTo).Delete(&model.Skill{})
+		if res.Error != nil || res.RowsAffected == 0 {
+			return res.Error
+		}
+		if err := tx.Where("skill_id = ?", link).Delete(&model.WorkspaceSkill{}).Error; err != nil {
+			return err
+		}
+		deleted = true
+		return nil
+	})
+	return deleted, err
+}
+
 func (r *repository) GetSkill(ctx context.Context, userID int64, name string) (model.Skill, error) {
 	var s model.Skill
 	err := r.conn(ctx).
@@ -56,8 +137,9 @@ func (r *repository) SearchSkills(ctx context.Context, userID int64, q string, f
 		query = query.Where(`(LOWER(name) LIKE ? ESCAPE '\' OR LOWER(description) LIKE ? ESCAPE '\')`, pattern, pattern)
 	}
 	if filter.EnabledOnly {
-		// A skill from before the switch has NULL here, and is on.
-		query = query.Where("(disabled = ? OR disabled IS NULL)", false)
+		// A skill from before the switch has NULL here, and is on. A link not
+		// yet converted by ConvertSkillLinks has no files of its own.
+		query = query.Where("(disabled = ? OR disabled IS NULL)", false).Where("linked_skill_id = ?", 0)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -83,27 +165,9 @@ var likeEscaper = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
 func (r *repository) ReplaceSkill(ctx context.Context, s model.Skill, files []model.SkillFile, on []model.WorkspaceSkill) (model.Skill, []string, error) {
 	var dropped []string
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&s).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&model.SkillFile{}).Where("skill_id = ?", s.ID).Pluck("storage_id", &dropped).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("skill_id = ?", s.ID).Delete(&model.SkillFile{}).Error; err != nil {
-			return err
-		}
-		for i := range files {
-			files[i].SkillID = s.ID
-		}
-		if len(files) > 0 {
-			if err := tx.Create(&files).Error; err != nil {
-				return err
-			}
-		}
-		if err := turnOn(tx, s.ID, on); err != nil {
-			return err
-		}
-		return recount(tx, &s)
+		var err error
+		dropped, err = replaceSkill(tx, &s, files, on)
+		return err
 	})
 	if err != nil {
 		return model.Skill{}, nil, err
@@ -111,37 +175,95 @@ func (r *repository) ReplaceSkill(ctx context.Context, s model.Skill, files []mo
 	return s, dropped, nil
 }
 
+// replaceSkill is ReplaceSkill inside tx.
+func replaceSkill(tx *gorm.DB, s *model.Skill, files []model.SkillFile, on []model.WorkspaceSkill) ([]string, error) {
+	var dropped []string
+	if err := tx.Save(s).Error; err != nil {
+		return nil, err
+	}
+	if err := tx.Model(&model.SkillFile{}).Where("skill_id = ?", s.ID).Pluck("storage_id", &dropped).Error; err != nil {
+		return nil, err
+	}
+	if err := tx.Where("skill_id = ?", s.ID).Delete(&model.SkillFile{}).Error; err != nil {
+		return nil, err
+	}
+	for i := range files {
+		files[i].SkillID = s.ID
+	}
+	if len(files) > 0 {
+		if err := tx.Create(&files).Error; err != nil {
+			return nil, err
+		}
+	}
+	if err := turnOn(tx, s.ID, on); err != nil {
+		return nil, err
+	}
+	return dropped, recount(tx, s)
+}
+
 // UpsertSkillFile writes one file of a skill, creating the skill when s.ID is
 // not stored yet, turns it on in the workspaces on names, and returns the
-// storage id of the content it replaced ("" for a new file).
-func (r *repository) UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile, on []model.WorkspaceSkill) (model.Skill, string, error) {
+// skill, the file as stored and the storage id of the content it replaced
+// ("" for a new file). Each write moves the file to its next version. With
+// expect, the write is made only on that version, 0 being no file yet:
+// another is ErrVersionConflict, as is a write that loses a race.
+func (r *repository) UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile, on []model.WorkspaceSkill, expect *int64) (model.Skill, model.SkillFile, string, error) {
 	var replaced string
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&s).Error; err != nil {
-			return err
-		}
-		var old model.SkillFile
-		err := tx.Where("skill_id = ? AND path = ?", s.ID, f.Path).First(&old).Error
-		switch {
-		case err == nil:
-			replaced = old.StorageID
-			f.ID, f.CreatedAt = old.ID, old.CreatedAt
-		case !errors.Is(err, gorm.ErrRecordNotFound):
-			return err
-		}
-		f.SkillID = s.ID
-		if err := tx.Save(&f).Error; err != nil {
-			return err
-		}
-		if err := turnOn(tx, s.ID, on); err != nil {
-			return err
-		}
-		return recount(tx, &s)
+		var err error
+		replaced, err = upsertSkillFile(tx, &s, &f, on, expect)
+		return err
 	})
 	if err != nil {
-		return model.Skill{}, "", err
+		return model.Skill{}, model.SkillFile{}, "", err
 	}
-	return s, replaced, nil
+	return s, f, replaced, nil
+}
+
+// upsertSkillFile is UpsertSkillFile inside tx: it returns the storage id
+// of the content f replaced.
+func upsertSkillFile(tx *gorm.DB, s *model.Skill, f *model.SkillFile, on []model.WorkspaceSkill, expect *int64) (string, error) {
+	var replaced string
+	if err := tx.Save(s).Error; err != nil {
+		return "", err
+	}
+	var old model.SkillFile
+	err := tx.Where("skill_id = ? AND path = ?", s.ID, f.Path).First(&old).Error
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		if expect != nil && *expect != 0 {
+			return "", ErrVersionConflict
+		}
+		f.SkillID, f.Version = s.ID, 1
+		if err := tx.Create(f).Error; err != nil {
+			return "", err
+		}
+	case err != nil:
+		return "", err
+	default:
+		if expect != nil && *expect != old.Version {
+			return "", ErrVersionConflict
+		}
+		replaced = old.StorageID
+		f.ID, f.CreatedAt, f.SkillID, f.Version = old.ID, old.CreatedAt, s.ID, old.Version+1
+		res := tx.Model(&model.SkillFile{}).Where("id = ? AND version = ?", old.ID, old.Version).Updates(map[string]any{
+			"updated_at": f.UpdatedAt,
+			"size_bytes": f.SizeBytes,
+			"sha256":     f.SHA256,
+			"storage_id": f.StorageID,
+			"version":    f.Version,
+		})
+		if res.Error != nil {
+			return "", res.Error
+		}
+		if res.RowsAffected == 0 {
+			return "", ErrVersionConflict
+		}
+	}
+	if err := turnOn(tx, s.ID, on); err != nil {
+		return "", err
+	}
+	return replaced, recount(tx, s)
 }
 
 // turnOn turns a skill on in each workspace of on; one where it is on
@@ -160,22 +282,9 @@ func turnOn(tx *gorm.DB, skillID int64, on []model.WorkspaceSkill) error {
 func (r *repository) DeleteSkillFile(ctx context.Context, s model.Skill, path string) (model.Skill, string, error) {
 	var storageID string
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		var f model.SkillFile
-		err := tx.Where("skill_id = ? AND path = ?", s.ID, path).First(&f).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		if err := tx.Delete(&f).Error; err != nil {
-			return err
-		}
-		storageID = f.StorageID
-		if err := tx.Save(&s).Error; err != nil {
-			return err
-		}
-		return recount(tx, &s)
+		var err error
+		storageID, err = deleteSkillFile(tx, &s, path)
+		return err
 	})
 	if err != nil {
 		return model.Skill{}, "", err
@@ -183,31 +292,57 @@ func (r *repository) DeleteSkillFile(ctx context.Context, s model.Skill, path st
 	return s, storageID, nil
 }
 
+// deleteSkillFile is DeleteSkillFile inside tx.
+func deleteSkillFile(tx *gorm.DB, s *model.Skill, path string) (string, error) {
+	var f model.SkillFile
+	err := tx.Where("skill_id = ? AND path = ?", s.ID, path).First(&f).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if err := tx.Delete(&f).Error; err != nil {
+		return "", err
+	}
+	if err := tx.Save(s).Error; err != nil {
+		return "", err
+	}
+	return f.StorageID, recount(tx, s)
+}
+
 // DeleteSkill removes a skill, its files and every workspace it is on in, and
 // returns the storage ids of the files' content.
 func (r *repository) DeleteSkill(ctx context.Context, skillID int64) ([]string, error) {
 	var storageIDs []string
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.SkillFile{}).Where("skill_id = ?", skillID).Pluck("storage_id", &storageIDs).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("skill_id = ?", skillID).Delete(&model.SkillFile{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("skill_id = ?", skillID).Delete(&model.WorkspaceSkill{}).Error; err != nil {
-			return err
-		}
-		res := tx.Where("id = ?", skillID).Delete(&model.Skill{})
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return ErrNotFound
-		}
-		return nil
+		var err error
+		storageIDs, err = deleteSkill(tx, skillID)
+		return err
 	})
 	if err != nil {
 		return nil, err
+	}
+	return storageIDs, nil
+}
+
+// deleteSkill is DeleteSkill inside tx; a team skill's choices go too.
+func deleteSkill(tx *gorm.DB, skillID int64) ([]string, error) {
+	var storageIDs []string
+	if err := tx.Model(&model.SkillFile{}).Where("skill_id = ?", skillID).Pluck("storage_id", &storageIDs).Error; err != nil {
+		return nil, err
+	}
+	for _, m := range []any{&model.SkillFile{}, &model.WorkspaceSkill{}, &model.TeamSkillChoice{}} {
+		if err := tx.Where("skill_id = ?", skillID).Delete(m).Error; err != nil {
+			return nil, err
+		}
+	}
+	res := tx.Where("id = ?", skillID).Delete(&model.Skill{})
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil, ErrNotFound
 	}
 	return storageIDs, nil
 }
@@ -354,7 +489,8 @@ func (r *repository) MergeLegacySkill(ctx context.Context, from model.Skill, int
 	return storageIDs, nil
 }
 
-// recount keeps a skill's file count and size in step with its files.
+// recount keeps a skill's file count and size in step with its files, and
+// the links to it in step with it.
 func recount(tx *gorm.DB, s *model.Skill) error {
 	var agg struct {
 		N     int
@@ -367,6 +503,11 @@ func recount(tx *gorm.DB, s *model.Skill) error {
 		return err
 	}
 	s.FileCount, s.TotalBytes = agg.N, agg.Bytes
-	return tx.Model(&model.Skill{}).Where("id = ?", s.ID).
-		Updates(map[string]any{"file_count": agg.N, "total_bytes": agg.Bytes}).Error
+	if err := tx.Model(&model.Skill{}).Where("id = ?", s.ID).
+		Updates(map[string]any{"file_count": agg.N, "total_bytes": agg.Bytes}).Error; err != nil {
+		return err
+	}
+	// A link shows what it links to, so a search finds it by the same words.
+	return tx.Model(&model.Skill{}).Where("linked_skill_id = ?", s.ID).
+		Updates(map[string]any{"description": s.Description, "file_count": agg.N, "total_bytes": agg.Bytes, "updated_at": s.UpdatedAt}).Error
 }

@@ -91,6 +91,14 @@ type (
 		Doc PanoDoc
 	}
 
+	// GetPanoFileRequest reads one file of one of the account's docs, linked
+	// or attached.
+	GetPanoFileRequest struct {
+		UserID string
+		DocID  int64
+		FileID int64
+	}
+
 	// SavePanoDocRequest creates a doc when ID is 0 and replaces its title
 	// and markdown otherwise. Files are linked files: each must be named by
 	// a link in Markdown, and replaces a linked file of the same name.

@@ -20,13 +20,50 @@ import (
 // because loading every skill up front would spend the context on the ones
 // the task does not need.
 
-// SkillSummary is one skill as searchSkills shows it.
+// SkillSummary is one skill as searchSkills shows it. TeamWorkspace names
+// the team workspace of a team skill; it is empty for the account's own.
 type SkillSummary struct {
-	Name        string
-	Description string
+	Name          string
+	Description   string
+	TeamWorkspace string
 }
 
-// SkillStore is the account's skills on in this workspace. It is bound to one workspace and its
+// SkillFile is a file as loadSkill reads it: for a SKILL.md, the paths of
+// every file in its skill too. Version is set when others write the skill.
+type SkillFile struct {
+	Content       string
+	Files         []string
+	Version       int64
+	TeamWorkspace string
+}
+
+// SkillTarget is where the agent asked a new skill to go: Team false keeps
+// it the account's, and TeamWorkspace names one of the team workspaces this
+// workspace is shared into. Neither applies to a skill that exists.
+type SkillTarget struct {
+	Team          *bool
+	TeamWorkspace string
+}
+
+// SkillSaved is a file written: its new version, and the team workspace of
+// its skill when the skill is the team's.
+type SkillSaved struct {
+	Version       int64
+	TeamWorkspace string
+}
+
+// SkillDeleted is a skill deleted. For a team skill, TeamWorkspace names its
+// team workspace: this workspace was opted out of it, and Gone says the
+// skill was deleted, no workspace being opted in any more.
+type SkillDeleted struct {
+	Deleted       bool
+	TeamWorkspace string
+	Gone          bool
+}
+
+// SkillStore is the account's skills on in this workspace, and the team
+// skills this workspace is opted into; of two with one name, the account's
+// wins. It is bound to one workspace and its
 // owner when the server is built, so no tool can name another workspace.
 //
 // A miss is reported as found or deleted being false, not as an error. A
@@ -37,10 +74,13 @@ type SkillStore interface {
 	// all, and a limit of 0 returns every match. total counts all matches.
 	SearchSkills(ctx context.Context, q string, limit, offset int) (skills []SkillSummary, total int, err error)
 	// LoadSkillFile returns a file's content and the paths of every file in
-	// its skill.
-	LoadSkillFile(ctx context.Context, name, path string) (content string, files []string, found bool, err error)
-	SaveSkillFile(ctx context.Context, name, path, content string) error
-	DeleteSkill(ctx context.Context, name string) (deleted bool, err error)
+	// its skill, and its version when others write the skill too (a team
+	// skill, a link to a teammate's skill, or one a teammate links to).
+	LoadSkillFile(ctx context.Context, name, path string) (file SkillFile, found bool, err error)
+	// SaveSkillFile writes a file on the version the writer read, 0 for
+	// none; a new skill goes where to says.
+	SaveSkillFile(ctx context.Context, name, path, content string, version int64, to SkillTarget) (SkillSaved, error)
+	DeleteSkill(ctx context.Context, name string) (SkillDeleted, error)
 	DeleteSkillFile(ctx context.Context, name, path string) (deleted bool, err error)
 }
 
@@ -67,6 +107,11 @@ type LoadSkillParams struct {
 type SaveSkillParams struct {
 	URI     string `json:"uri" jsonschema:"The file to write, as skill://<name>/<path>. skill://<name> alone writes its SKILL.md."`
 	Content string `json:"content" jsonschema:"The full new content of the file. This replaces it entirely — there is no append."`
+	Version int64  `json:"version,omitempty" jsonschema:"The version skills load showed for this file. Needed to replace a file of a skill shared with your team, so nobody's change is lost; leave it out to add a new file."`
+	// Team and TeamWorkspace place a new skill; they are ignored for one
+	// that exists, which stays where it is.
+	Team          *bool  `json:"team,omitempty" jsonschema:"For a new skill only. A new skill in a workspace shared into a team workspace is the team's, for every teammate's agent to use and improve; false keeps it this account's."`
+	TeamWorkspace string `json:"teamWorkspace,omitempty" jsonschema:"For a new skill only: the team workspace it belongs to, by name. Needed when this workspace is shared into more than one."`
 }
 
 // DeleteSkillParams is the input to the deleteSkill tool.
@@ -122,7 +167,11 @@ func (ps *WorkspaceServer) handleSearchSkills(ctx context.Context, req *mcp.Call
 	}
 	fmt.Fprintf(&b, " Load the %s of any whose description matches your task with skills load.\n", skill.FileName)
 	for _, s := range skills {
-		fmt.Fprintf(&b, "\n- %s: %s\n  %s", s.Name, s.Description, skill.URI(s.Name, skill.FileName))
+		team := ""
+		if s.TeamWorkspace != "" {
+			team = fmt.Sprintf(" (team workspace %s)", s.TeamWorkspace)
+		}
+		fmt.Fprintf(&b, "\n- %s%s: %s\n  %s", s.Name, team, s.Description, skill.URI(s.Name, skill.FileName))
 	}
 	return textResult("%s", b.String()), nil, nil
 }
@@ -141,7 +190,7 @@ func (ps *WorkspaceServer) handleLoadSkill(ctx context.Context, req *mcp.CallToo
 		return toolError(skillsUnavailable), nil, nil
 	}
 
-	content, files, found, err := ps.skills.LoadSkillFile(ctx, name, p)
+	file, found, err := ps.skills.LoadSkillFile(ctx, name, p)
 	if err != nil {
 		return skillFailure(err, "load "+skill.URI(name, p)), nil, nil
 	}
@@ -150,12 +199,19 @@ func (ps *WorkspaceServer) handleLoadSkill(ctx context.Context, req *mcp.CallToo
 		// answers.
 		return textResult("No skill or file at %s. Call skills search to see the skills this workspace has.", skill.URI(name, p)), nil, nil
 	}
+	content := file.Content
+	switch {
+	case file.TeamWorkspace != "":
+		content += fmt.Sprintf("\n\n---\nThis skill is your team's, in team workspace %s: this file is version %d. Send \"version\": %d with skills save to change it.", file.TeamWorkspace, file.Version, file.Version)
+	case file.Version != 0:
+		content += fmt.Sprintf("\n\n---\nThis skill is shared with your team: this file is version %d. Send \"version\": %d with skills save to change it.", file.Version, file.Version)
+	}
 	if p != skill.FileName {
 		return textResult("%s", content), nil, nil
 	}
 
 	var others []string
-	for _, f := range files {
+	for _, f := range file.Files {
 		if f != skill.FileName {
 			others = append(others, skill.URI(name, f))
 		}
@@ -181,10 +237,14 @@ func (ps *WorkspaceServer) handleSaveSkill(ctx context.Context, req *mcp.CallToo
 		return toolError(skillsUnavailable), nil, nil
 	}
 
-	if err := ps.skills.SaveSkillFile(ctx, name, p, params.Content); err != nil {
+	saved, err := ps.skills.SaveSkillFile(ctx, name, p, params.Content, params.Version, SkillTarget{Team: params.Team, TeamWorkspace: params.TeamWorkspace})
+	if err != nil {
 		return skillFailure(err, "save "+skill.URI(name, p)), nil, nil
 	}
-	return textResult("Saved %s (%d bytes).", skill.URI(name, p), len(params.Content)), nil, nil
+	if saved.TeamWorkspace != "" {
+		return textResult("Saved %s (%d bytes) in team workspace %s, version %d.", skill.URI(name, p), len(params.Content), saved.TeamWorkspace, saved.Version), nil, nil
+	}
+	return textResult("Saved %s (%d bytes), version %d.", skill.URI(name, p), len(params.Content), saved.Version), nil, nil
 }
 
 func (ps *WorkspaceServer) handleDeleteSkill(ctx context.Context, req *mcp.CallToolRequest, params DeleteSkillParams) (*mcp.CallToolResult, any, error) {
@@ -204,7 +264,15 @@ func (ps *WorkspaceServer) handleDeleteSkill(ctx context.Context, req *mcp.CallT
 	var deleted bool
 	target := "skill://" + name
 	if p == "" {
-		deleted, err = ps.skills.DeleteSkill(ctx, name)
+		var d SkillDeleted
+		d, err = ps.skills.DeleteSkill(ctx, name)
+		switch {
+		case err == nil && d.TeamWorkspace != "" && d.Gone:
+			return textResult("This workspace is opted out of %s, the team's skill in team workspace %s, and as no workspace was opted into it any more, it is deleted.", target, d.TeamWorkspace), nil, nil
+		case err == nil && d.TeamWorkspace != "":
+			return textResult("This workspace is opted out of %s, the team's skill in team workspace %s; the workspaces still opted in keep it. The human can opt this workspace back in from its Skills tab.", target, d.TeamWorkspace), nil, nil
+		}
+		deleted = d.Deleted
 	} else {
 		target = skill.URI(name, p)
 		deleted, err = ps.skills.DeleteSkillFile(ctx, name, p)

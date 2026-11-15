@@ -62,6 +62,12 @@ choose. The doc stays on the board.
 A task lists its docs under **Pano** in its links: a doc that assigns it an
 item, one turned into it, and one its agent wrote while working on it.
 
+**Share a doc with a team** from its **Share** button: each team you are in
+has its own switch. Its members read it, read-only, on their team's **Pano**
+page, with its files and attachments, until you switch it off, you leave the
+team, or the doc is deleted or expires. They see your edits as you make them,
+but not its comments. Every share and unshare is in the team's activity.
+
 ## For agents
 
 The workspace server and the supervisor's CoreMCP both have a `pano` tool. It

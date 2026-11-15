@@ -32,6 +32,7 @@ const api = vi.hoisted(() => ({
   fetchEvents: vi.fn(),
   fetchWorkflows: vi.fn(),
   fetchWorkspaceSession: vi.fn(),
+  listPanoShares: vi.fn(),
 }));
 vi.mock('../src/api', () => api);
 
@@ -67,6 +68,7 @@ vi.mock('../src/useEventBus', () => ({
 const { default: PanoView } = await import('../src/views/PanoView.vue');
 const { default: PanoDocView } = await import('../src/views/PanoDocView.vue');
 const { useWorkspaceStore } = await import('../src/stores/workspaceStore');
+const { useTeamStore } = await import('../src/stores/teamStore');
 const { notifyWebMCPChange } = await import('../src/composables/useWebMCPChanges');
 const { PANO_COLORS, PANO_MAX_FILE_BYTES, panoTilt, isPanoChatRoute } = await import('../src/composables/usePano');
 const { default: PanoChatColumn } = await import('../src/components/PanoChatColumn.vue');
@@ -91,7 +93,7 @@ const apps = [];
 const WORKSPACES = [{ id: 'ws1', name: 'Home' }, { id: 'ws2', name: 'ops' }];
 const HOUR = 60 * 60 * 1000;
 
-async function mount(at, workspaces = WORKSPACES) {
+async function mount(at, workspaces = WORKSPACES, teams = []) {
   const el = document.createElement('div');
   document.body.append(el);
   const router = createRouter({
@@ -120,6 +122,7 @@ async function mount(at, workspaces = WORKSPACES) {
   app.use(pinia);
   app.use(router);
   useWorkspaceStore(pinia).workspaces = workspaces;
+  useTeamStore(pinia).teams = teams;
   app.mount(el);
   apps.push(app);
   await settle();
@@ -815,6 +818,21 @@ describe('a doc', () => {
   });
 
   describe('reading it', () => {
+    it('offers to share it with your teams, and only when you are in one', async () => {
+      api.listPanoShares.mockResolvedValue({ shares: [{ teamId: 'tm1' }] });
+      let { el } = await mount('/pano/d1');
+      expect($(el, 'pano-share')).toBeNull();
+      expect(api.listPanoShares).not.toHaveBeenCalled();
+      apps.pop().unmount();
+
+      ({ el } = await mount('/pano/d1', WORKSPACES, [{ id: 'tm1', name: 'Core', version: 2 }]));
+      expect(api.listPanoShares).toHaveBeenCalledWith('d1');
+      expect(text($(el, 'pano-share'))).toContain('Share with a team');
+      const toggle = $(el, 'pano-share-switch');
+      expect(toggle.getAttribute('aria-label')).toBe('Share Release plan with Core');
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+    });
+
     it('shows that it is loading, then the note, its files, attachments and comments', async () => {
       const got = deferred();
       api.getPanoDoc.mockReturnValueOnce(got.promise);

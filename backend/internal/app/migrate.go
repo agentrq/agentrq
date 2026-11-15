@@ -65,14 +65,37 @@ func migrateSchema(conn *gorm.DB) error {
 	// and covers every query the task_id index served.
 	_ = conn.Exec("DROP INDEX IF EXISTS idx_tool_calls_task_id").Error
 
+	// A team workspace's skill is unique by name in its team workspace, so
+	// the unique index on skills gained team_workspace_id; AutoMigrate
+	// creates the new one but never drops the old, which would refuse two
+	// team workspaces a skill of the same name.
+	_ = conn.Exec("DROP INDEX IF EXISTS uk_skills_user_id_workspace_id_name").Error
+
 	if err := conn.AutoMigrate(migratedModels()...); err != nil {
 		return err
 	}
 	// hook_registrations.token held the plain token before it was hashed, and
 	// is NOT NULL: left in place, every new registration would fail to insert.
 	// No release had it, so nothing in it is worth keeping.
-	if m := conn.Migrator(); m.HasColumn(&model.HookRegistration{}, "token") {
-		return m.DropColumn(&model.HookRegistration{}, "token")
+	//
+	// Teams dropped roles and a share's "show in team as" label: the NOT NULL
+	// role columns would refuse every new member and invitation. The team
+	// memory file went with them.
+	m := conn.Migrator()
+	for _, col := range []struct {
+		model  any
+		column string
+	}{
+		{&model.HookRegistration{}, "token"},
+		{&model.TeamMember{}, "role"},
+		{&model.TeamInvitation{}, "role"},
+		{&model.WorkspaceShare{}, "group_name"},
+	} {
+		if m.HasColumn(col.model, col.column) {
+			if err := m.DropColumn(col.model, col.column); err != nil {
+				return err
+			}
+		}
 	}
-	return nil
+	return m.DropTable("team_memories")
 }

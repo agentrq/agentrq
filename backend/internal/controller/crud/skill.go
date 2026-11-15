@@ -43,6 +43,9 @@ type SkillController interface {
 	DeleteSkillFile(ctx context.Context, req entity.DeleteSkillFileRequest) (*entity.DeleteSkillFileResponse, error)
 	ImportSkills(ctx context.Context, req entity.ImportSkillsRequest) (*entity.ImportSkillsResponse, error)
 	MoveLegacySkills(ctx context.Context) error
+	ConvertSkillLinks(ctx context.Context) error
+	TeamSkillController
+	TeamSkillKeeper
 }
 
 const (
@@ -99,6 +102,13 @@ func (c *controller) skillWithWorkspaces(ctx context.Context, s model.Skill, sco
 		return entity.Skill{}, err
 	}
 	return fromModelSkill(s, on[s.ID], scope), nil
+}
+
+// skillFileURL is where anyone can read f, a file of an account's own skill.
+// A team skill's file never has one: a member who leaves stops reading the
+// team's, where a public link would not.
+func (c *controller) skillFileURL(f model.SkillFile) string {
+	return storage.PublicURL(c.skillStorage, f.StorageID)
 }
 
 func skillName(name string) (string, error) {
@@ -200,7 +210,7 @@ func (c *controller) GetSkill(ctx context.Context, req entity.GetSkillRequest) (
 	}
 	e.Files = make([]entity.SkillFile, len(files))
 	for i, f := range files {
-		e.Files[i] = entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, URL: storage.PublicURL(c.skillStorage, f.StorageID)}
+		e.Files[i] = entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, URL: c.skillFileURL(f), Version: f.Version}
 	}
 	return &entity.GetSkillResponse{Skill: e}, nil
 }
@@ -269,25 +279,9 @@ func (c *controller) GetSkillFile(ctx context.Context, req entity.GetSkillFileRe
 	if err != nil {
 		return nil, err
 	}
-	name, err := skillName(req.Name)
+	s, f, content, err := c.loadSkillFile(ctx, uid, req.Name, req.Path)
 	if err != nil {
 		return nil, err
-	}
-	path, err := skill.CleanPath(req.Path)
-	if err != nil {
-		return nil, skillErr(SkillInvalid, "%v", err)
-	}
-	s, err := c.repository.GetSkill(ctx, uid, name)
-	if err != nil {
-		return nil, err
-	}
-	f, err := c.repository.GetSkillFile(ctx, s.ID, path)
-	if err != nil {
-		return nil, err
-	}
-	content, err := c.skillStorage.LoadRaw(f.StorageID)
-	if err != nil {
-		return nil, fmt.Errorf("load skill file content: %w", err)
 	}
 	e, err := c.skillWithWorkspaces(ctx, s, scope)
 	if err != nil {
@@ -296,8 +290,33 @@ func (c *controller) GetSkillFile(ctx context.Context, req entity.GetSkillFileRe
 	c.emitSkillEvent(ctx, entity.ActionSkillView, uid, req.WorkspaceID, s.ID)
 	return &entity.GetSkillFileResponse{
 		Skill: e,
-		File:  entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, Content: string(content), URL: storage.PublicURL(c.skillStorage, f.StorageID)},
+		File:  entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, Content: string(content), URL: c.skillFileURL(f), Version: f.Version},
 	}, nil
+}
+
+// loadSkillFile reads one file of the account's skill, with its content.
+func (c *controller) loadSkillFile(ctx context.Context, uid int64, name, path string) (model.Skill, model.SkillFile, []byte, error) {
+	name, err := skillName(name)
+	if err != nil {
+		return model.Skill{}, model.SkillFile{}, nil, err
+	}
+	path, err = skill.CleanPath(path)
+	if err != nil {
+		return model.Skill{}, model.SkillFile{}, nil, skillErr(SkillInvalid, "%v", err)
+	}
+	s, err := c.repository.GetSkill(ctx, uid, name)
+	if err != nil {
+		return model.Skill{}, model.SkillFile{}, nil, err
+	}
+	f, err := c.repository.GetSkillFile(ctx, s.ID, path)
+	if err != nil {
+		return model.Skill{}, model.SkillFile{}, nil, err
+	}
+	content, err := c.skillStorage.LoadRaw(f.StorageID)
+	if err != nil {
+		return model.Skill{}, model.SkillFile{}, nil, fmt.Errorf("load skill file content: %w", err)
+	}
+	return s, f, content, nil
 }
 
 // SaveSkillFile writes one file of a skill. Saving SKILL.md creates the skill
@@ -376,11 +395,14 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 	if err != nil {
 		return nil, err
 	}
-	saved, replaced, err := c.repository.UpsertSkillFile(ctx, s, f, on)
+	saved, stored, replaced, err := c.repository.UpsertSkillFile(ctx, s, f, on, req.Version)
 	if err != nil {
 		_ = c.skillStorage.Delete(f.StorageID)
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return nil, skillErr(SkillConflict, "skill %q was created by someone else a moment ago; try again", name)
+		}
+		if errors.Is(err, base.ErrVersionConflict) {
+			return nil, c.skillVersionConflict(ctx, s.ID, name, path, req.Version, false)
 		}
 		return nil, err
 	}
@@ -389,8 +411,29 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 	}
 	return &entity.SaveSkillFileResponse{
 		Skill: fromModelSkill(saved, workspaces, scope),
-		File:  entity.SkillFile{Path: path, SizeBytes: len(content), UpdatedAt: now, URL: storage.PublicURL(c.skillStorage, f.StorageID)},
+		File:  entity.SkillFile{Path: path, SizeBytes: len(content), UpdatedAt: now, URL: c.skillFileURL(stored), Version: stored.Version},
 	}, nil
+}
+
+// skillVersionConflict is the refusal of a write made on a version of a file
+// that is no longer its version: read is the one the writer named, if any,
+// and shared says the skill needs one, as a team skill does. It names the
+// version there is now, to read and merge before writing again.
+func (c *controller) skillVersionConflict(ctx context.Context, skillID int64, name, path string, read *int64, shared bool) error {
+	uri := skill.URI(name, path)
+	cur, err := c.repository.GetSkillFile(ctx, skillID, path)
+	switch {
+	case errors.Is(err, base.ErrNotFound):
+		return skillErr(SkillConflict, "%s was deleted after you read it; save it with no version to create it again", uri)
+	case err != nil:
+		return err
+	case read != nil:
+		return skillErr(SkillConflict, "%s was saved by someone else after version %d; it is now version %d: read it again, merge your change, and save with that version", uri, *read, cur.Version)
+	case shared:
+		return skillErr(SkillConflict, "skill %q is shared with your team, so replacing %s needs the version you read; it is now version %d: read it, merge your change, and save with that version", name, uri, cur.Version)
+	default:
+		return skillErr(SkillConflict, "%s was saved by someone else at the same time; it is now version %d: read it again and save once more", uri, cur.Version)
+	}
 }
 
 // storeSkillFile writes content to storage and returns the row describing it.
@@ -402,6 +445,7 @@ func (c *controller) storeSkillFile(s model.Skill, path string, content []byte, 
 		CreatedAt: now,
 		UpdatedAt: now,
 		Path:      path,
+		Version:   1,
 	}
 	if err := c.storeSkillBlob(s, &f, content); err != nil {
 		return model.SkillFile{}, err
@@ -423,10 +467,16 @@ func (c *controller) storeSkillBlob(s model.Skill, f *model.SkillFile, content [
 
 const skillContentType = "text/plain; charset=utf-8"
 
-// skillStorageID keys a skill file's blob as u-<owner>/skill-<skill>/<blob>.
+// skillStorageID keys a skill file's blob as u-<owner>/skill-<skill>/<blob>,
+// or a team skill's as t-<team workspace>/skill-<skill>/<blob>.
 // The blob id is fresh on every write, because a replace stores the new blob
 // before the old one is purged.
 func skillStorageID(s model.Skill, blobID int64) string {
+	if s.TeamWorkspaceID != 0 {
+		// A team skill's: t-<team workspace>/…, which the public route
+		// never serves.
+		return "t-" + monoflake.ID(s.TeamWorkspaceID).String() + "/skill-" + monoflake.ID(s.ID).String() + "/" + monoflake.ID(blobID).String()
+	}
 	return "u-" + monoflake.ID(s.UserID).String() + "/skill-" + monoflake.ID(s.ID).String() + "/" + monoflake.ID(blobID).String()
 }
 
