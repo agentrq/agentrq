@@ -74,7 +74,7 @@ test('agents share docs on the Pano, and the person reads and comments on them',
   expect(read.comments.map((c) => c.body)).toEqual(['Backend tests pass; frontend next.'])
   expect(read.attachments.map((a) => a.filename)).toEqual(['notes.txt'])
 
-  // The board, from the sidebar's link, above Skills.
+  // The board, from the sidebar's link.
   await page.goto(`/workspaces/${workspace.id}`)
   const listed = nextResponse(page, 'GET', '/api/v1/pano')
   await page.locator('nav a[href="/pano"]').first().click()

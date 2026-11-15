@@ -120,7 +120,8 @@ describe('the Skills tab', () => {
     expect(text(el)).not.toContain('root-cause-tracing');
     // A workspace's card does not count the others; the tab says where they all are.
     expect(el.querySelector('[data-test="skill-card-workspaces"]')).toBeNull();
-    expect(el.querySelector('[data-test="skills-page-link"]').getAttribute('href')).toBe('/skills');
+    // There is no account-wide Skills page to link to.
+    expect(el.querySelector('[data-test="skills-page-link"]')).toBeNull();
   });
 
   it('names where a plain skill came from', async () => {

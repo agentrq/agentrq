@@ -96,10 +96,6 @@ export const routes = [
   { path: '/pano/:docId/chat/:workspaceId/:taskId', components: { default: () => import('./views/PanoDocView.vue'), chat: () => import('./views/TaskDetailView.vue') },
     meta: { remount: true, remountKey: (r) => `/pano/${r.params.docId}` } },
 
-  // Skills belong to the account too; a workspace only turns each on or off.
-  { path: '/skills', component: () => import('./views/SkillsView.vue') },
-  { path: '/skills/:name', component: () => import('./views/SkillsView.vue'), meta: { remount: true } },
-
   // Teams. A team's pages are under /teams/<teamId>: those it shares with Me
   // (TEAM_PAGES below) show its work read-only; see useTeamMode. It is managed
   // on its settings page. Creating one, and the invitations addressed to you,
@@ -133,8 +129,14 @@ export const routes = [
 // The pages a team shows too, under /teams/<teamId>: the same page, of the
 // team's shared work. Of a workspace's pages only its task, which the team's
 // board opens.
-const TEAM_PAGES = ['/tasks/:filter', '/workspaces/:id', '/kanban', '/skills', '/skills/:name']
-routes.push(...routes.filter((r) => TEAM_PAGES.includes(r.path)).map((r) => ({
+const TEAM_PAGES = ['/tasks/:filter', '/workspaces/:id', '/kanban']
+// A team workspace's skills. Only a team has a Skills page: your own skills
+// are reached from each workspace, on its Skills tab.
+const TEAM_ONLY_PAGES = [
+  { path: '/skills', component: () => import('./views/SkillsView.vue') },
+  { path: '/skills/:name', component: () => import('./views/SkillsView.vue'), meta: { remount: true } },
+]
+routes.push(...[...routes.filter((r) => TEAM_PAGES.includes(r.path)), ...TEAM_ONLY_PAGES].map((r) => ({
   ...r,
   path: `/teams/:teamId${r.path}`,
   ...(r.path === '/workspaces/:id' && { children: r.children.filter((c) => c.path === 'tasks/:taskId') }),

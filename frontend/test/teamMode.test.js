@@ -680,10 +680,15 @@ describe('the team routes', () => {
   });
 
   it('shows the pages a team shares with Me under /teams/<id>, as the same page', () => {
-    for (const p of ['/tasks/:filter', '/kanban', '/skills', '/skills/:name']) {
+    for (const p of ['/tasks/:filter', '/kanban']) {
       const mine = routes.find((r) => r.path === p);
       const team = routes.find((r) => r.path === `/teams/:teamId${p}`);
       expect(team).toEqual({ ...mine, path: `/teams/:teamId${p}` });
+    }
+    // Only a team has a Skills page: your own are on each workspace's Skills tab.
+    for (const p of ['/skills', '/skills/:name']) {
+      expect(routes.find((r) => r.path === p), p).toBeUndefined();
+      expect(routes.find((r) => r.path === `/teams/:teamId${p}`), p).toBeDefined();
     }
     const workspace = routes.find((r) => r.path === '/workspaces/:id');
     const teamWorkspace = routes.find((r) => r.path === '/teams/:teamId/workspaces/:id');

@@ -108,6 +108,11 @@
             <button @click="router.push(`/workspaces/${workspaceId}/analytics`)" class="h-8 w-8 text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center" title="Analytics">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
             </button>
+            <!-- This workspace's skills: the sidebar has no Skills page. Not
+                 on its settings, whose own Skills tab is the same place. -->
+            <button v-if="!workspace?.archivedAt && sectionLabel !== 'Settings'" data-test="workspace-skills-link" @click="router.push(skillsTabPath(workspaceId))" class="h-8 w-8 text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center" title="Skills" aria-label="Skills">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 11.5v9M12 11.5c-2-1.3-4.5-2-7.5-2V19c3 0 5.5.7 7.5 2M12 11.5c2-1.3 4.5-2 7.5-2V19c-3 0-5.5.7-7.5 2M15.5 1.5c.3 1.6 1.4 2.7 3 3-1.6.3-2.7 1.4-3 3-.3-1.6-1.4-2.7-3-3 1.6-.3 2.7-1.4 3-3zM8 3.5c.2.9.6 1.3 1.5 1.5-.9.2-1.3.6-1.5 1.5-.2-.9-.6-1.3-1.5-1.5.9-.2 1.3-.6 1.5-1.5z" /></svg>
+            </button>
             <!-- Watch the agent working here.
                  Beside the other workspace-wide controls, and present with a
                  task open or not, because it is the workspace's agent rather
@@ -262,6 +267,7 @@ import { usePlatformStore } from '../stores/platformStore';
 import { useExtensionPages } from '../composables/useExtensionPages';
 import { useWorkspaceTerminal } from '../composables/useWorkspaceTerminal';
 import { teamIdOf, withTeam } from '../composables/useTeamMode';
+import { skillsTabPath } from '../composables/useSkills';
 import AgentConcurrencyControl from '../components/AgentConcurrencyControl.vue';
 import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
 import TaskFeed from '../components/TaskFeed.vue';

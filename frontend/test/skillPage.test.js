@@ -61,14 +61,12 @@ const api = vi.hoisted(() => ({
 vi.mock('../src/api', () => api);
 
 const { default: SkillPage } = await import('../src/components/SkillPage.vue');
-const { default: SkillsView } = await import('../src/views/SkillsView.vue');
 const { toasts } = (await import('../src/composables/useToasts')).useToasts();
 
 const settle = () => new Promise((r) => setTimeout(r, 30));
 const apps = [];
 
-// In a workspace's settings by default; `at` opens another path, such as the
-// Skills page's /skills/<name>.
+// In a workspace's settings by default; `at` opens another path.
 async function mount(name, at = `/workspaces/ws1/settings/skills/${name}`) {
   const el = document.createElement('div');
   document.body.append(el);
@@ -76,7 +74,6 @@ async function mount(name, at = `/workspaces/ws1/settings/skills/${name}`) {
     history: createMemoryHistory(),
     routes: [
       { path: '/workspaces/:id/settings/skills/:name', component: SkillPage },
-      { path: '/skills/:name', component: SkillsView },
       { path: '/:any(.*)*', component: { render: () => h('p', { 'data-test': 'elsewhere' }, 'elsewhere') } },
     ],
   });
@@ -311,24 +308,6 @@ describe('a skill\'s page', () => {
     await click([...document.querySelectorAll('button')].find((b) => /delete|confirm/i.test(b.textContent) && b.closest('[role="dialog"]')));
     expect(toasts.value.at(-1).message).toBe('database unavailable');
     expect(router.currentRoute.value.path).toBe('/workspaces/ws1/settings/skills/systematic-debugging');
-  });
-
-  it('is the Skills page\'s too: read from the account, leading back to /skills', async () => {
-    const { el, router } = await mount('systematic-debugging', '/skills/systematic-debugging');
-    expect(el.querySelector('h1').textContent.trim()).toBe('Skills');
-    expect(el.querySelector('[data-test="skill-page-name"]').textContent).toBe('systematic-debugging');
-    expect(api.getSkill).toHaveBeenCalledWith('systematic-debugging');
-    expect(api.getSkillFile).toHaveBeenCalledWith('systematic-debugging', 'SKILL.md');
-    expect(api.getWorkspaceSkill).not.toHaveBeenCalled();
-    expect(el.querySelector('[data-test="skill-page-back-to-list"]').getAttribute('href')).toBe('/skills');
-
-    await click(skillLink(el, 'skill://systematic-debugging/root-cause-tracing.md'));
-    expect(api.getSkillFile).toHaveBeenLastCalledWith('systematic-debugging', 'root-cause-tracing.md');
-
-    await click(el.querySelector('[data-test="skill-delete"]'));
-    await click([...document.querySelectorAll('button')].find((b) => /delete|confirm/i.test(b.textContent) && b.closest('[role="dialog"]')));
-    expect(api.deleteSkill).toHaveBeenCalledWith('systematic-debugging');
-    expect(router.currentRoute.value.fullPath).toBe('/skills');
   });
 
   it('says a skill is missing only when the server says so, and retries a failure', async () => {

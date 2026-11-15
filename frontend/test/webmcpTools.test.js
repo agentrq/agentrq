@@ -668,7 +668,7 @@ describe('the grouped team tools', () => {
     expect(page({ action: 'give', workspaceId: 'w/1', name: 'deploy' })).toBe('/workspaces/w%2F1/settings?tab=skills');
     expect(page({ action: 'create', teamId: 'tm1', teamWorkspaceId: 'tw1' })).toBe('/teams/tm1/skills');
     expect(page({ action: 'deleteFile', teamId: 't/1' })).toBe('/teams/t%2F1/skills');
-    expect(page({ action: 'delete' })).toBe('/skills');
+    expect(page({ action: 'delete' })).toBe('/');
   });
 
   it('opens a new team\'s invitations, or the create form when the answer names none', () => {
@@ -831,12 +831,14 @@ describe('the page every write tool shows', () => {
     expect(by('deletePanoDoc').before({ id: 'p1' })).toBe('/pano');
   });
 
-  it('opens the Skills page, or the skill, for an account-wide skill change', () => {
+  it('opens the Skills tab of a workspace it names, or the workspaces, for an account-wide skill change', () => {
     const by = (name, input) => writes.find((t) => t.name === name).screen.before(input);
 
-    expect(by('importSkills', {})).toBe('/skills');
-    expect(by('deleteSkill', { name: 'tdd' })).toBe('/skills');
-    expect(by('setSkillEnabled', { name: 'a/b' })).toBe('/skills/a%2Fb');
+    expect(by('importSkills', { workspaceIds: ['w/1', 'w2'] })).toBe('/workspaces/w%2F1/settings?tab=skills');
+    expect(by('importSkills', { workspaceIds: [] })).toBe('/');
+    expect(by('importSkills', {})).toBe('/');
+    expect(by('deleteSkill', { name: 'tdd' })).toBe('/');
+    expect(by('setSkillEnabled', { name: 'a/b' })).toBe('/');
   });
 
   it('encodes an ID so it cannot become another page', () => {

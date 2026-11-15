@@ -30,18 +30,17 @@ test('the skills tab lists the account\'s skills and shows why an import was ref
   traffic.expectClean({ allow: [`${res.status()} /skills/import`] })
 })
 
-// The Skills page, from the sidebar: the account's list, read from the
-// account's own route.
-test('the skills page lists the account\'s skills', async ({ page, workspace }) => {
+// A workspace's skills, from its task list's Skills button: the sidebar has
+// no Skills page of its own, so this is how the list is reached.
+test('a workspace\'s Skills button opens its Skills tab', async ({ page, workspace }) => {
   const traffic = watchTraffic(page)
   await page.goto(`/workspaces/${workspace.id}`)
-  const listed = nextResponse(page, 'GET', '/api/v1/skills')
-  // By its address: the sidebar starts collapsed, where a link shows only its icon.
-  await page.locator('nav a[href="/skills"]').first().click()
-  expect((await listed).status(), 'the account\'s skills list request').toBe(200)
-  await expect(page).toHaveURL(/\/skills$/)
-  await expect(page.getByRole('heading', { level: 1, name: 'Skills' })).toBeVisible()
-  await expect(page.getByLabel('Import from GitHub'), 'skills can be imported here too').toBeVisible()
+  await expect(page.locator('nav a[href="/skills"]'), 'the sidebar has no Skills page').toHaveCount(0)
+  const listed = nextResponse(page, 'GET', `/workspaces/${workspace.id}/skills`)
+  await page.getByTestId('workspace-skills-link').click()
+  expect((await listed).status(), 'the workspace\'s skills list request').toBe(200)
+  await expect(page).toHaveURL(new RegExp(`/workspaces/${workspace.id}/settings\\?tab=skills$`))
+  await expect(page.getByLabel('Import from GitHub'), 'skills are imported here').toBeVisible()
 
   traffic.expectClean()
 })
