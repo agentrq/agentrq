@@ -617,13 +617,6 @@ describe('each tool calls the interface the way the UI does', () => {
       ['tm1', { status: 'ongoing', workspace: 'backend', member: 'u1', limit: 5, offset: 5 }],
     ],
     ['readTeams', { action: 'task', teamId: 'tm1', taskId: 't1' }, 'getTeamTask', ['tm1', 't1']],
-    ['readTeams', { action: 'skills', teamId: 'tm1' }, 'fetchTeamSkills', ['tm1', '']],
-    ['readTeams', { action: 'skill', teamId: 'tm1', name: 'tdd' }, 'getTeamSkill', ['tm1', 'tdd', '']],
-    ['readTeams', { action: 'skills', teamId: 'tm1', workspace: 'api' }, 'fetchTeamSkills', ['tm1', 'api']],
-    ['readTeams', { action: 'skill', teamId: 'tm1', name: 'tdd', workspace: 'api' }, 'getTeamSkill', ['tm1', 'tdd', 'api']],
-    ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd' }, 'addTeamSkill', ['tm1', 'tdd', [], '', false]],
-    ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd', workspaceIds: ['ws1'], workspace: 'api' }, 'addTeamSkill', ['tm1', 'tdd', ['ws1'], 'api', false]],
-    ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd', replace: true }, 'addTeamSkill', ['tm1', 'tdd', [], '', true]],
     ['readTeams', { action: 'panoShares', docId: 'd1' }, 'listPanoShares', ['d1']],
     ['readTeams', { action: 'panoDocs', teamId: 'tm1' }, 'listTeamPanoDocs', ['tm1']],
     ['readTeams', { action: 'panoDoc', teamId: 'tm1', docId: 'd1' }, 'getTeamPanoDoc', ['tm1', 'd1']],
@@ -663,8 +656,6 @@ describe('the grouped team tools', () => {
     expect(page({ action: 'invite', teamId: 't/1' })).toBe('/teams/t%2F1/settings?tab=invitations');
     expect(page({ action: 'revokeInvitation', teamId: 'tm1' })).toBe('/teams/tm1/settings?tab=invitations');
     expect(page({ action: 'removeMember', teamId: 'tm1' })).toBe('/teams/tm1/settings?tab=members');
-    expect(page({ action: 'addSkill', teamId: 'tm1' })).toBe('/teams/tm1/skills');
-    expect(page({ action: 'addSkill', teamId: 'tm1', workspace: 'my api' })).toBe('/teams/tm1/skills?workspace=my%20api');
     expect(page({ action: 'sharePano', docId: 'd/1', teamId: 'tm1' })).toBe('/pano/d%2F1');
     expect(page({ action: 'unsharePano', docId: 'd1', teamId: 'tm1' })).toBe('/pano/d1');
     expect(page(undefined)).toBe('/teams//settings?tab=members');
@@ -687,7 +678,7 @@ describe('the grouped team tools', () => {
     expect(after({ name: 'Core' }, {})).toBe('/team/new');
   });
 
-  it('names no role or memory, and every change but accept, decline and addSkill takes a version', () => {
+  it('names no role or memory, and every change but accept and decline takes a version', () => {
     const tools = build();
     const reads = tools.find((t) => t.name === 'readTeams');
     const writes = tools.find((t) => t.name === 'manageTeam');

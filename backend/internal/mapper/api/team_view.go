@@ -104,36 +104,6 @@ func FromTeamTaskDetailEntityToHTTPResponse(d entity.TeamTaskDetail, teamID int6
 	return b
 }
 
-func fromTeamSkillEntity(s entity.TeammateSkill) view.TeamSkill {
-	owners := make([]view.TeamOwner, len(s.Owners))
-	for i, o := range s.Owners {
-		owners[i] = fromTeamOwner(o.UserID, o.Name, o.Picture)
-	}
-	return view.TeamSkill{Name: s.Name, Description: s.Description, UpdatedAt: s.UpdatedAt, Owners: owners, Content: s.Content}
-}
-
-// FromTeammateSkillEntitiesToHTTPResponse renders a team's skills.
-func FromTeammateSkillEntitiesToHTTPResponse(ss []entity.TeammateSkill) []byte {
-	out := make([]view.TeamSkill, len(ss))
-	for i, s := range ss {
-		out[i] = fromTeamSkillEntity(s)
-	}
-	b, _ := json.Marshal(view.ListTeamSkillsResponse{Skills: out})
-	return b
-}
-
-// FromTeammateSkillEntityToHTTPResponse renders one of a team's skills.
-func FromTeammateSkillEntityToHTTPResponse(s entity.TeammateSkill) []byte {
-	b, _ := json.Marshal(view.GetTeamSkillResponse{Skill: fromTeamSkillEntity(s)})
-	return b
-}
-
-// FromAddTeamSkillResponseEntityToHTTPResponse renders the skill added.
-func FromAddTeamSkillResponseEntityToHTTPResponse(s entity.Skill) []byte {
-	b, _ := json.Marshal(view.AddTeamSkillResponse{Skill: fromEntitySkillToView(s)})
-	return b
-}
-
 // FromTeamStatsEntityToHTTPResponse renders a team's statistics in the shape
 // of one workspace's, so the same panels draw both.
 func FromTeamStatsEntityToHTTPResponse(rs *entity.GetDetailedWorkspaceStatsResponse) []byte {

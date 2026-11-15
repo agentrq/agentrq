@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"gorm.io/gorm"
@@ -85,18 +86,14 @@ func TestUpsertSkillFile_LosesARace(t *testing.T) {
 	}
 }
 
-// A link is a row of its own account with no files; every change to the
-// skill it links to shows on it, and deleting that skill deletes the link
-// and where it was on.
-func TestSkillLinks_FollowAndGoWithTheirSkill(t *testing.T) {
+// A link left from before team workspaces owned skills is listed for
+// ConvertSkillLinks, which turns it into a skill of its own, with files, or
+// deletes it with where it was on; either only while it is still that link.
+func TestSkillLinks_ConvertOrDelete(t *testing.T) {
 	ctx := context.Background()
 	db := skillDB(t)
 	r := New(&mockDB{db: db})
-	s := seedSkill(t, r)
-	other := model.Skill{ID: 3, UserID: skUser, Name: "other"}
-	if _, _, err := r.ReplaceSkill(ctx, other, nil, []model.WorkspaceSkill{{ID: 23, UserID: skUser, WorkspaceID: skWS}}); err != nil {
-		t.Fatal(err)
-	}
+	seedSkill(t, r)
 
 	if got, err := r.GetSkillByID(ctx, 1); err != nil || got.Name != "tdd" {
 		t.Errorf("GetSkillByID(1) = %+v, %v", got, err)
@@ -107,62 +104,110 @@ func TestSkillLinks_FollowAndGoWithTheirSkill(t *testing.T) {
 			t.Errorf("GetSkillByID(%d) = %v, want ErrNotFound: a legacy skill or none", id, err)
 		}
 	}
-	if has, err := r.HasSkillLinks(ctx, 1); err != nil || has {
-		t.Errorf("HasSkillLinks before any link = %v, %v", has, err)
+	if links, err := r.ListSkillLinks(ctx); err != nil || len(links) != 0 {
+		t.Errorf("ListSkillLinks with none = %v, %v", links, err)
 	}
 
 	reader := skUser + 1
-	link, err := r.LinkSkill(ctx, model.Skill{ID: 7, UserID: reader, Name: "tdd", LinkedSkillID: 1, SourceType: "team"},
-		[]model.WorkspaceSkill{{ID: 24, UserID: reader, WorkspaceID: skOther}})
-	if err != nil || link.ID != 7 {
-		t.Fatalf("LinkSkill = %+v, %v", link, err)
+	for _, row := range []any{
+		&model.Skill{ID: 8, UserID: reader, Name: "gone", LinkedSkillID: 99, SourceType: "team"},
+		&model.Skill{ID: 7, UserID: reader, Name: "tdd", LinkedSkillID: 1, SourceType: "team"},
+		&model.WorkspaceSkill{ID: 24, UserID: reader, SkillID: 7, WorkspaceID: skOther},
+		&model.WorkspaceSkill{ID: 25, UserID: reader, SkillID: 8, WorkspaceID: skOther},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
-	if on, err := r.ListSkillWorkspaces(ctx, []int64{7}); err != nil || fmt.Sprint(on[7]) != fmt.Sprint([]int64{skOther}) {
-		t.Errorf("the link is on in %v (%v), want [%d]", on[7], err, skOther)
-	}
-	if _, err := r.LinkSkill(ctx, model.Skill{ID: 8, UserID: reader, Name: "tdd", LinkedSkillID: 3}, nil); err == nil {
-		t.Error("a second skill of the same name in one account was stored")
-	}
-	if has, err := r.HasSkillLinks(ctx, 1); err != nil || !has {
-		t.Errorf("HasSkillLinks after a link = %v, %v", has, err)
+	links, err := r.ListSkillLinks(ctx)
+	if err != nil || len(links) != 2 || links[0].ID != 7 || links[1].ID != 8 {
+		t.Fatalf("ListSkillLinks = %+v, %v; want 7 and 8, by id", links, err)
 	}
 
-	s.Description = "now this"
-	saved, _, _, err := r.UpsertSkillFile(ctx, s, model.SkillFile{ID: 55, Path: "more.md", SizeBytes: 7, StorageID: "skill-55"}, nil, nil)
-	if err != nil {
-		t.Fatal(err)
+	own := model.Skill{ID: 7, Description: "copied", SourceType: "github", SourceRepo: "o/r", LocallyModified: true, FileCount: 1, TotalBytes: 4, UpdatedAt: time.Now()}
+	files := []model.SkillFile{{ID: 70, SkillID: 7, Path: "SKILL.md", SizeBytes: 4, StorageID: "u-x/skill-7/70", Version: 1}}
+	if ok, err := r.ConvertSkillLink(ctx, own, 3, files); err != nil || ok {
+		t.Errorf("converting a link to another skill = %v, %v; want false", ok, err)
+	}
+	if ok, err := r.ConvertSkillLink(ctx, own, 1, files); err != nil || !ok {
+		t.Fatalf("ConvertSkillLink = %v, %v", ok, err)
 	}
 	var got model.Skill
 	if err := db.First(&got, 7).Error; err != nil {
 		t.Fatal(err)
 	}
-	if got.Description != "now this" || got.FileCount != 3 || got.TotalBytes != 22 || !got.UpdatedAt.Equal(saved.UpdatedAt) || got.LinkedSkillID != 1 {
-		t.Errorf("the link after a write to its skill: %+v; want its description, 3 files, 22 bytes, updated at %v", got, saved.UpdatedAt)
+	if got.LinkedSkillID != 0 || got.UserID != reader || got.Name != "tdd" || got.Description != "copied" || got.SourceType != "github" ||
+		got.SourceRepo != "o/r" || !got.LocallyModified || got.FileCount != 1 || got.TotalBytes != 4 {
+		t.Errorf("the converted link is %+v", got)
 	}
-	var files int64
-	db.Model(&model.SkillFile{}).Where("skill_id = ?", 7).Count(&files)
-	if files != 0 {
-		t.Errorf("the link holds %d files of its own, want none", files)
+	if f, err := r.GetSkillFile(ctx, 7, "SKILL.md"); err != nil || f.StorageID != "u-x/skill-7/70" {
+		t.Errorf("the converted link's file = %+v, %v", f, err)
+	}
+	if on, err := r.ListSkillWorkspaces(ctx, []int64{7}); err != nil || fmt.Sprint(on[7]) != fmt.Sprint([]int64{skOther}) {
+		t.Errorf("the converted link is on in %v (%v), want [%d]", on[7], err, skOther)
+	}
+	if ok, err := r.ConvertSkillLink(ctx, own, 1, nil); err != nil || ok {
+		t.Errorf("converting it twice = %v, %v; want false", ok, err)
 	}
 
+	if ok, err := r.DeleteSkillLink(ctx, 8, 1); err != nil || ok {
+		t.Errorf("deleting a link to another skill = %v, %v; want false", ok, err)
+	}
+	if ok, err := r.DeleteSkillLink(ctx, 7, 1); err != nil || ok {
+		t.Errorf("deleting a converted link = %v, %v; want false", ok, err)
+	}
+	if ok, err := r.DeleteSkillLink(ctx, 8, 99); err != nil || !ok {
+		t.Errorf("DeleteSkillLink = %v, %v", ok, err)
+	}
+	var rows, on int64
+	db.Model(&model.Skill{}).Where("id = ?", 8).Count(&rows)
+	db.Model(&model.WorkspaceSkill{}).Where("skill_id = ?", 8).Count(&on)
+	if rows != 0 || on != 0 {
+		t.Errorf("the deleted link left %d rows, on in %d workspaces", rows, on)
+	}
+	if links, err := r.ListSkillLinks(ctx); err != nil || len(links) != 0 {
+		t.Errorf("ListSkillLinks after = %v, %v; want none", links, err)
+	}
 	if _, err := r.DeleteSkill(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
-	var rows, on int64
-	db.Model(&model.Skill{}).Where("id IN ?", []int64{1, 7}).Count(&rows)
-	db.Model(&model.WorkspaceSkill{}).Where("skill_id IN ?", []int64{1, 7}).Count(&on)
-	if rows != 0 || on != 0 {
-		t.Errorf("after deleting the skill, %d of it and its link remain, on in %d workspaces; want none", rows, on)
+	if _, err := r.GetSkillByID(ctx, 7); err != nil {
+		t.Errorf("deleting the teammate's skill took the converted copy: %v", err)
 	}
-	if _, err := r.GetSkillByID(ctx, 3); err != nil {
-		t.Errorf("deleting one skill took another: %v", err)
+}
+
+// A failed write leaves the link as it was.
+func TestSkillLinks_FailedWrites(t *testing.T) {
+	ctx := context.Background()
+	db := skillDB(t)
+	r := New(&mockDB{db: db})
+	seedSkill(t, r)
+	db.Create(&model.Skill{ID: 7, UserID: skUser + 1, Name: "tdd", LinkedSkillID: 1})
+	// A file whose path the skill already has breaks the unique index.
+	dup := []model.SkillFile{{ID: 70, SkillID: 7, Path: "a.md"}, {ID: 71, SkillID: 7, Path: "a.md"}}
+	if ok, err := r.ConvertSkillLink(ctx, model.Skill{ID: 7}, 1, dup); err == nil || ok {
+		t.Errorf("a conversion whose files fail = %v, %v; want the error", ok, err)
+	}
+	if got, err := r.GetSkillByID(ctx, 7); err != nil || got.LinkedSkillID != 1 {
+		t.Errorf("after the failed conversion the link is %+v, %v", got, err)
+	}
+	db.Callback().Delete().Before("gorm:delete").Register("test:fail-workspace-skills", func(tx *gorm.DB) {
+		if tx.Statement.Table == "workspace_skills" {
+			_ = tx.AddError(errors.New("database unavailable"))
+		}
+	})
+	if ok, err := r.DeleteSkillLink(ctx, 7, 1); err == nil || ok {
+		t.Errorf("a delete whose workspaces fail = %v, %v; want the error", ok, err)
+	}
+	if got, err := r.GetSkillByID(ctx, 7); err != nil || got.LinkedSkillID != 1 {
+		t.Errorf("after the failed delete the link is %+v, %v", got, err)
 	}
 }
 
 // A user reads a teammate's skill through a team only while it is the
 // teammate's own, on, and on in an unarchived workspace shared with a team
-// of the user's that does not hold its skills back. A link of theirs counts
-// for their agents only then, and the team never lists a link itself.
+// of the user's that does not hold its skills back: a link to it is
+// converted only then. No agent sees a link not yet converted.
 func TestLinkedSkills_ReadOnlyThroughASharingTeam(t *testing.T) {
 	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
 		ctx := context.Background()
@@ -227,20 +272,12 @@ func TestLinkedSkills_ReadOnlyThroughASharingTeam(t *testing.T) {
 			}
 			return fmt.Sprintf("%d %v", total, out)
 		}
-		if got := names(SkillFilter{InWorkspace: 200, EnabledOnly: true}); got != "2 [deploy mine]" {
-			t.Errorf("what the agent sees: %s; want the readable link and its own skill", got)
+		if got := names(SkillFilter{InWorkspace: 200, EnabledOnly: true}); got != "1 [mine]" {
+			t.Errorf("what the agent sees: %s; want its own skill alone", got)
 		}
 		if got := names(SkillFilter{}); got != "3 [deploy mine private]" {
 			t.Errorf("what the account lists: %s; want every row, links no team shares included", got)
 		}
 
-		rows, err := r.ListSkillsOnInWorkspaces(ctx, []int64{100, 200})
-		var listed []string
-		for _, s := range rows {
-			listed = append(listed, fmt.Sprintf("%d/%s", s.WorkspaceID, s.Name))
-		}
-		if err != nil || fmt.Sprint(listed) != "[100/deploy 200/mine]" {
-			t.Errorf("the team lists %v, %v; want the owners' own skills, no link", listed, err)
-		}
 	})
 }

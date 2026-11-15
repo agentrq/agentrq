@@ -35,8 +35,6 @@ const api = vi.hoisted(() => ({
   saveTeamWorkspaceSkillFile: vi.fn(),
   deleteTeamWorkspaceSkillFile: vi.fn(),
   // The teammates' listing under the team's page; drawn, not tested, here.
-  fetchTeamSkills: vi.fn(() => Promise.resolve({ skills: [] })),
-  getTeamSkill: vi.fn(),
   addTeamSkill: vi.fn(),
   getTeam: vi.fn(() => Promise.resolve({ id: 'tm1', name: 'Core', version: 1 })),
   listTeams: vi.fn(() => Promise.resolve({ teams: [] })),
@@ -287,22 +285,15 @@ describe("the team's Skills page", () => {
     api.getTeamWorkspaceSkillFile.mockImplementation((_t, _tw, _s, path) => Promise.resolve({ file: { path, content: `content of ${path}`, version: path === 'SKILL.md' ? 3 : 1 } }));
   });
 
-  it("puts the team workspace's skills first, and teammates' own skills below", async () => {
+  it("shows the team workspace's own skills alone: teammates' own are no longer listed", async () => {
     await mount(SkillsView, { path: '/teams/tm1/skills?workspace=backend' });
-    const page = $('[data-test=team-workspace-skills]');
-    const own = $('[data-test=teammates-own-skills]');
-    expect(page).not.toBe(null);
-    expect(text(own.querySelector('h2'))).toBe("Teammates' own skills");
-    expect(page.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(api.fetchTeamSkills).toHaveBeenCalledWith('tm1', 'backend');
+    expect($('[data-test=team-workspace-skills]')).not.toBe(null);
+    expect($('[data-test=teammates-own-skills]')).toBe(null);
   });
 
-  it("opens a teammate's own skill on its own, as before", async () => {
-    api.getTeamSkill.mockResolvedValue({ skill: { name: 'deploy', content: 'x' } });
-    api.searchSkills.mockResolvedValue({ skills: [] });
+  it('shows the same page for a link to a teammate\'s skill from before', async () => {
     await mount(SkillsView, { path: '/teams/tm1/skills/deploy?workspace=backend' });
-    expect($('[data-test=team-workspace-skills]')).toBe(null);
-    expect(api.getTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', 'backend');
+    expect($('[data-test=team-workspace-skills]')).not.toBe(null);
   });
 
   it('lists the skills of the team workspace the route names, one per team workspace to pick', async () => {

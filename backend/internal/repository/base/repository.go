@@ -163,7 +163,6 @@ type Repository interface {
 	ExcludeTeammateMemory(ctx context.Context, e model.MemoryExclusion) error
 	IncludeTeammateMemory(ctx context.Context, userID, workspaceID, teammateID int64) error
 	MemoryUpdates(ctx context.Context, workspaceIDs []int64) (map[int64]time.Time, error)
-	ListSkillsOnInWorkspaces(ctx context.Context, workspaceIDs []int64) ([]WorkspaceSkillRow, error)
 	ListTeamReaders(ctx context.Context, workspaceID int64) ([]TeamReader, error)
 
 	// Skill — an account's playbooks, each on in some of its workspaces.
@@ -171,13 +170,13 @@ type Repository interface {
 	// that drop files return the storage ids the caller must purge once the
 	// transaction has committed.
 	GetSkill(ctx context.Context, userID int64, name string) (model.Skill, error)
-	// A link is a skill row that reads and writes a teammate's skill while a
-	// team still shares it with the link's account.
+	// A link is a row left from when a skill could read a teammate's;
+	// ConvertSkillLinks makes each a skill of its own at startup.
 	GetSkillByID(ctx context.Context, id int64) (model.Skill, error)
 	CanReadLinkedSkill(ctx context.Context, userID, skillID int64) (bool, error)
-	HasSkillLinks(ctx context.Context, skillID int64) (bool, error)
-	LinkSkill(ctx context.Context, link model.Skill, on []model.WorkspaceSkill) (model.Skill, error)
-	SwapSkillForLink(ctx context.Context, link model.Skill, on []model.WorkspaceSkill) ([]string, error)
+	ListSkillLinks(ctx context.Context) ([]model.Skill, error)
+	ConvertSkillLink(ctx context.Context, link model.Skill, linkedTo int64, files []model.SkillFile) (bool, error)
+	DeleteSkillLink(ctx context.Context, link, linkedTo int64) (bool, error)
 	SearchSkills(ctx context.Context, userID int64, q string, filter SkillFilter, limit, offset int) ([]model.Skill, int64, error)
 	SetSkillDisabled(ctx context.Context, skillID int64, disabled bool) error
 	ReplaceSkill(ctx context.Context, s model.Skill, files []model.SkillFile, on []model.WorkspaceSkill) (model.Skill, []string, error)

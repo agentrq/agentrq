@@ -141,8 +141,6 @@ const TEAM_READS = (api) => ({
     api.fetchTeamTasks(teamId, { status, workspace, member, limit, offset }),
   task: ({ teamId, taskId }) => api.getTeamTask(teamId, taskId),
   analytics: ({ teamId, range = '7d', workspace = '' }) => api.fetchTeamStats(teamId, range, 0, 0, workspace),
-  skills: ({ teamId, workspace = '' }) => api.fetchTeamSkills(teamId, workspace),
-  skill: ({ teamId, name, workspace = '' }) => api.getTeamSkill(teamId, name, workspace),
   panoShares: ({ docId }) => api.listPanoShares(docId),
   panoDocs: ({ teamId }) => api.listTeamPanoDocs(teamId),
   panoDoc: ({ teamId, docId }) => api.getTeamPanoDoc(teamId, docId),
@@ -163,7 +161,6 @@ const TEAM_WRITES = (api) => ({
     api.shareWorkspace(workspaceId, teamId, version, { tasks, skills, memory, autoOptInSkills }),
   unshare: ({ workspaceId, teamId, version }) => api.unshareWorkspace(workspaceId, teamId, version),
   teammateMemory: ({ workspaceId, userId, included }) => api.setTeammateMemory(workspaceId, userId, included !== false),
-  addSkill: ({ teamId, name, workspaceIds = [], workspace = '', replace = false }) => api.addTeamSkill(teamId, name, workspaceIds, workspace, replace === true),
   sharePano: ({ docId, teamId, version }) => api.sharePanoDoc(docId, teamId, version),
   unsharePano: ({ docId, teamId, version }) => api.unsharePanoDoc(docId, teamId, version),
 })
@@ -172,7 +169,6 @@ const TEAM_WRITES = (api) => ({
 function teamWritePage(input = {}) {
   if (['share', 'unshare', 'teammateMemory'].includes(input.action)) return sharingPage(input)
   if (input.action === 'accept' || input.action === 'decline') return '/invitations'
-  if (input.action === 'addSkill') return `/teams/${seg(input.teamId)}/skills${input.workspace ? `?workspace=${seg(input.workspace)}` : ''}`
   if (input.action === 'sharePano' || input.action === 'unsharePano') return panoDocPage({ id: input.docId })
   if (input.action === 'invite' || input.action === 'revokeInvitation') return teamPage(input, 'invitations')
   return teamPage(input)
@@ -1548,20 +1544,20 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'teammateMemories (workspaceId: the teammates whose memory that workspace\'s agent reads, each with included), ' +
         'teammateMemory (workspaceId, teammateWorkspaceId from teammateMemories: their memories; with name, one). ' +
         'A team\'s shared work, read-only: workspaces (each with the sharedName it shows under), ' +
-        'tasks (status, workspace, member), task (taskId), analytics (range; workspace: one team workspace), skills and skill (name) (workspace: one team workspace\'s), ' +
+        'tasks (status, workspace, member), task (taskId), analytics (range; workspace: one team workspace), ' +
         'panoDocs (docs members shared), panoDoc (docId). panoShares (docId: the teams a doc of yours is shared with).',
       properties: {
         action: { type: 'string', enum: Object.keys(TEAM_READS({})), description: 'What to read.' },
         ...TEAM_FIELDS,
         taskId: TASK_ID,
         status: str('Comma-separated task statuses to keep, e.g. "ongoing,blocked".'),
-        workspace: str('A team workspace\'s sharedName, as the workspaces action reports it: only its tasks, analytics or skills.'),
+        workspace: str('A team workspace\'s sharedName, as the workspaces action reports it: only its tasks or analytics.'),
         range: str('For analytics: a range such as "7d" or "30d". Defaults to "7d".'),
         member: str('A member\'s user ID: only their tasks.'),
         limit: int('Page size. Defaults to 10, and 20 for activities.'),
         offset: int('How many to skip. Defaults to 0.'),
         before: str('For activities: the id of the last one already read, to read older ones.'),
-        name: str('A skill name; a memory name, for teammateMemory.'),
+        name: str('For teammateMemory: a memory name.'),
         teammateWorkspaceId: str('For teammateMemory: a teammate\'s workspaceId, as teammateMemories reports it.'),
       },
       required: ['action'],
@@ -1583,17 +1579,14 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'invite (email; at most a few per team per day, 429 past it), revokeInvitation (invitationId), ' +
         'share/unshare (workspaceId: one of yours; share takes tasks, skills, memory, false to hold that back, and sets them on a shared one), accept (token or invitationId), decline (invitationId), ' +
         'teammateMemory (workspaceId: one of yours, userId, included: whether its agent\'s memory index lists that teammate\'s memory), ' +
-        'addSkill (name, workspace: the team workspace it is on in, workspaceIds: link a teammate\'s skill into your account; replace: swap your own for it), sharePano/unsharePano (docId: a Pano doc of yours). ' +
-        'Every change but accept, decline, addSkill and teammateMemory takes the team\'s version, from get, members or invitations; ' +
+        'sharePano/unsharePano (docId: a Pano doc of yours). ' +
+        'Every change but accept, decline and teammateMemory takes the team\'s version, from get, members or invitations; ' +
         'one made after someone else\'s is refused with 409, conflict: true and the current version: read again, then retry.',
       properties: {
         action: { type: 'string', enum: Object.keys(TEAM_WRITES({})), description: 'What to change.' },
         ...TEAM_FIELDS,
         version: int('The team\'s version, as get, members or invitations last reported it.'),
-        name: str('The team\'s new name, for rename; the skill\'s, for addSkill.'),
-        workspaceIds: { type: 'array', items: { type: 'string' }, description: 'Your workspaces to turn an added skill on in. Optional.' },
-        workspace: str('For addSkill: the sharedName of the team workspace the skill is on in. Optional.'),
-        replace: bool('For addSkill: true turns your own skill of that name into the link, deleting its files. Defaults to false.'),
+        name: str('The team\'s new name, for rename.'),
         email: str('The email to invite.'),
         included: bool('For teammateMemory: true to include the teammate\'s memory, false to leave it out. Defaults to true.'),
         tasks: bool('For share: false holds the workspace\'s tasks back from the team. Defaults to true.'),

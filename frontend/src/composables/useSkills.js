@@ -212,12 +212,10 @@ export function skillFullness(bytes) {
 }
 
 /**
- * Where a skill came from: "manual", a teammate's skill it links to, or its
- * repository and the commit it was imported at (the ref when GitHub did not
- * say which commit).
+ * Where a skill came from: "manual", or its repository and the commit it was
+ * imported at (the ref when GitHub did not say which commit).
  */
 export function skillSource(skill) {
-  if (skill?.sourceType === 'team') return 'shared by a teammate';
   if (skill?.sourceType !== 'github' || !skill.sourceRepo) return 'manual';
   const at = skill.sourceCommit ? skill.sourceCommit.slice(0, 7) : skill.sourceRef;
   return at ? `GitHub ${skill.sourceRepo}@${at}` : `GitHub ${skill.sourceRepo}`;

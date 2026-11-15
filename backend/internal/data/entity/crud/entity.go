@@ -1154,18 +1154,14 @@ type (
 		Path        string
 	}
 
-	// GetSkillFileResponse is a file with its skill. Shared says that others
-	// write the skill too, a teammate through a link or the account through
-	// its own, so a write must name the file's version.
+	// GetSkillFileResponse is a file with its skill.
 	GetSkillFileResponse struct {
-		Skill  Skill
-		File   SkillFile
-		Shared bool
+		Skill Skill
+		File  SkillFile
 	}
 
 	// SaveSkillFileRequest writes a file. Version is the one the writer read,
-	// 0 for no file yet; without it a file is replaced whatever its version,
-	// unless the skill is shared, where it may only be created.
+	// 0 for no file yet; without it a file is replaced whatever its version.
 	SaveSkillFileRequest struct {
 		WorkspaceID int64
 		UserID      string
@@ -1904,7 +1900,8 @@ const (
 	// A team's memory saved by a member; workspace 0. Teams no longer have
 	// a memory of their own: kept so the rows recorded still read.
 	ActionTeamMemorySave Action = 120
-	// A teammate's skill copied into the account; workspace 0.
+	// A teammate's skill linked into the account; workspace 0. Nothing
+	// sends it since links were retired; kept so past counts still read.
 	ActionTeamSkillAdd Action = 121
 	// A teammate's memory included in, or left out of, the memory index of
 	// one of the account's shared workspaces, which it carries.

@@ -136,9 +136,8 @@ func (s *skillStore) writable(ctx context.Context, name string) (*entity.Skill, 
 
 // LoadSkillFile reads one file, and for a SKILL.md the paths of its skill's
 // files as well, which is what loadSkill lists after it, and the file's
-// version when others write the skill too. A skill the agent does not see is
-// not found, as searchSkills does not list it; so is a link no team shares
-// any more. A file of a skill of the account's the agent sees is one lookup;
+// version for a team skill, which others write too. A skill the agent does
+// not see is not found, as searchSkills does not list it. A file of a skill of the account's the agent sees is one lookup;
 // anything else asks which skill the name is.
 func (s *skillStore) LoadSkillFile(ctx context.Context, name, path string) (mcp.SkillFile, bool, error) {
 	ctx = entity.WithOrigin(ctx, entity.OriginMCP)
@@ -148,9 +147,6 @@ func (s *skillStore) LoadSkillFile(ctx context.Context, name, path string) (mcp.
 	}
 	if err == nil && visible(file.Skill) {
 		out := mcp.SkillFile{Content: file.File.Content}
-		if file.Shared {
-			out.Version = file.File.Version
-		}
 		if path != skill.FileName {
 			return out, true, nil
 		}
@@ -311,13 +307,19 @@ func deleted(err error) (bool, error) {
 }
 
 // moveLegacySkills runs before anything serves a skill: skills from before
-// they belonged to the account move to it here, and are found already moved
-// at every later start. A failure is logged rather than stopping the server,
-// which serves every other skill; the next start tries again.
+// they belonged to the account move to it here, and links to teammates'
+// skills, from before team workspaces owned skills, become skills of their
+// own; every later start finds both done. A failure is logged rather than
+// stopping the server, which serves every other skill; the next start tries
+// again.
 func moveLegacySkills(ctx context.Context, skills interface {
 	MoveLegacySkills(context.Context) error
+	ConvertSkillLinks(context.Context) error
 }) {
 	if err := skills.MoveLegacySkills(ctx); err != nil {
 		zlog.Error().Err(err).Msg("skills: could not move workspace skills to their accounts; the next start tries again")
+	}
+	if err := skills.ConvertSkillLinks(ctx); err != nil {
+		zlog.Error().Err(err).Msg("skills: could not convert links to teammates' skills; the next start tries again")
 	}
 }

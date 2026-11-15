@@ -35,14 +35,10 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
-	"github.com/agentrq/agentrq/backend/internal/service/skill"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 )
-
-// skillFile is the file a teammate's skill is read by.
-const skillFile = "SKILL.md"
 
 // Controller is team mode for the signed-in account, userID.
 type Controller interface {
@@ -64,17 +60,6 @@ type Controller interface {
 	ListPanoDocs(ctx context.Context, userID, teamID int64) ([]entity.TeamPanoDoc, error)
 	GetPanoDoc(ctx context.Context, userID, teamID, docID int64) (entity.TeamPanoDoc, error)
 	GetPanoFile(ctx context.Context, userID, teamID, docID, fileID int64) (*entity.GetAttachmentResponse, error)
-
-	// The skills on in one team workspace, named by workspace as
-	// WorkspaceKey matches it; every team workspace's when it is empty.
-	ListSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeammateSkill, error)
-	GetSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeammateSkill, error)
-	// AddSkill links a teammate's skill into the caller's account, on in the
-	// given workspaces of theirs: their agents read and improve that one
-	// skill, not a copy, while the team shares it.
-	// With replace, the caller's own skill of that name becomes the link,
-	// its files dropped.
-	AddSkill(ctx context.Context, userID, teamID int64, workspace, name string, workspaceIDs []int64, replace bool) (entity.Skill, error)
 
 	// ListTeammateMemories is the teammates in the team workspace of one of
 	// the caller's own workspaces, and whether its agent's memory index
@@ -109,8 +94,6 @@ type Owner interface {
 	CreateTask(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error)
 	SystemListTasksInWorkspaces(ctx context.Context, req entity.ListTasksRequest, workspaceIDs []int64) (*entity.ListTasksResponse, error)
 	SystemGetDetailedStatsOfWorkspaces(ctx context.Context, req entity.GetStatsOfWorkspacesRequest) (*entity.GetDetailedWorkspaceStatsResponse, error)
-	SystemGetSkillFile(ctx context.Context, req entity.SystemGetSkillFileRequest) (*entity.GetSkillFileResponse, error)
-	LinkSkill(ctx context.Context, req entity.LinkSkillRequest) (*entity.LinkSkillResponse, error)
 	GetPanoDoc(ctx context.Context, req entity.GetPanoDocRequest) (*entity.GetPanoDocResponse, error)
 	GetPanoFile(ctx context.Context, req entity.GetPanoFileRequest) (*entity.GetAttachmentResponse, error)
 	ListMemories(ctx context.Context, req entity.ListMemoriesRequest) (*entity.ListMemoriesResponse, error)
@@ -121,7 +104,6 @@ type Owner interface {
 type Repository interface {
 	SystemGetTask(ctx context.Context, id int64) (model.Task, error)
 	TeamWorkspaceInfo(ctx context.Context, workspaceID int64) (base.TeamWorkspaceRow, error)
-	ListSkillsOnInWorkspaces(ctx context.Context, workspaceIDs []int64) ([]base.WorkspaceSkillRow, error)
 	GetWorkspace(ctx context.Context, id int64, userID int64) (model.Workspace, error)
 	ListTeamPeerWorkspaces(ctx context.Context, workspaceID int64) ([]base.TeamWorkspacePeer, error)
 	ListMemoryExclusions(ctx context.Context, userID, workspaceID int64) ([]int64, error)
@@ -381,126 +363,4 @@ func (c *controller) cloneAttachments(ctx context.Context, t model.Task, w entit
 		out = append(out, entity.Attachment{Filename: a.Filename, MimeType: storage.SafeContentType(a.MimeType), Data: base64.StdEncoding.EncodeToString(f.Data)})
 	}
 	return out
-}
-
-// ownWorkspaces is the visible workspaces of the team workspace named
-// workspace ("" = any) that keep their own skills and share them with the
-// team: a fork reads its parent's, which the team sees whenever it sees the
-// fork.
-func ownWorkspaces(visible []entity.TeamWorkspace, workspace string) (map[int64]entity.TeamWorkspace, []int64) {
-	byID := make(map[int64]entity.TeamWorkspace, len(visible))
-	ids := []int64{}
-	in := inTeamWorkspace(visible, workspace)
-	for _, w := range visible {
-		if w.ForkOfID == 0 && w.Skills && in(w) {
-			byID[w.ID] = w
-			ids = append(ids, w.ID)
-		}
-	}
-	return byID, ids
-}
-
-// teamSkills is the skills on in the team workspace named workspace ("" =
-// every one), by name, each with its owners, and the row of the owner who
-// changed it last first.
-func (c *controller) teamSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeammateSkill, map[string][]base.WorkspaceSkillRow, error) {
-	visible, err := c.teams.ListTeamWorkspaces(ctx, userID, teamID)
-	if err != nil {
-		return nil, nil, err
-	}
-	byID, ids := ownWorkspaces(visible, workspace)
-	rows, err := c.repo.ListSkillsOnInWorkspaces(ctx, ids)
-	if err != nil {
-		return nil, nil, err
-	}
-	byName := map[string][]base.WorkspaceSkillRow{}
-	at := map[string]int{}
-	out := []entity.TeammateSkill{}
-	for _, r := range rows {
-		i, ok := at[r.Name]
-		if !ok {
-			// Rows come by name, the latest change first.
-			i = len(out)
-			at[r.Name] = i
-			out = append(out, entity.TeammateSkill{Name: r.Name, Description: r.Description, UpdatedAt: r.UpdatedAt})
-		}
-		byName[r.Name] = append(byName[r.Name], r)
-		s := &out[i]
-		if !hasOwner(s.Owners, r.UserID) {
-			w := byID[r.WorkspaceID]
-			s.Owners = append(s.Owners, entity.TeamOwner{UserID: w.OwnerID, Name: w.OwnerName, Picture: w.OwnerPicture})
-		}
-	}
-	return out, byName, nil
-}
-
-func hasOwner(owners []entity.TeamOwner, userID int64) bool {
-	for _, o := range owners {
-		if o.UserID == userID {
-			return true
-		}
-	}
-	return false
-}
-
-func (c *controller) ListSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeammateSkill, error) {
-	out, _, err := c.teamSkills(ctx, userID, teamID, workspace)
-	return out, err
-}
-
-// teamSkill is the team's skill by name, and its owners' rows, the one
-// changed last first: that is the copy the team reads. base.ErrNotFound when
-// no shared workspace of the team workspace has it on.
-func (c *controller) teamSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeammateSkill, []base.WorkspaceSkillRow, error) {
-	canonical, err := skill.CanonicalName(name)
-	if err != nil {
-		return entity.TeammateSkill{}, nil, base.ErrNotFound
-	}
-	skills, byName, err := c.teamSkills(ctx, userID, teamID, workspace)
-	if err != nil {
-		return entity.TeammateSkill{}, nil, err
-	}
-	for _, s := range skills {
-		if s.Name == canonical {
-			return s, byName[canonical], nil
-		}
-	}
-	return entity.TeammateSkill{}, nil, base.ErrNotFound
-}
-
-func (c *controller) GetSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeammateSkill, error) {
-	s, rows, err := c.teamSkill(ctx, userID, teamID, workspace, name)
-	if err != nil {
-		return entity.TeammateSkill{}, err
-	}
-	f, err := c.owner.SystemGetSkillFile(ctx, entity.SystemGetSkillFileRequest{UserID: rows[0].UserID, Name: s.Name, Path: skillFile})
-	if err != nil {
-		return entity.TeammateSkill{}, err
-	}
-	s.Content = f.File.Content
-	return s, nil
-}
-
-// AddSkill links the copy changed last that is not the caller's own; with
-// replace, the caller's own copy becomes that link.
-func (c *controller) AddSkill(ctx context.Context, userID, teamID int64, workspace, name string, workspaceIDs []int64, replace bool) (entity.Skill, error) {
-	_, rows, err := c.teamSkill(ctx, userID, teamID, workspace, name)
-	if err != nil {
-		return entity.Skill{}, err
-	}
-	src := rows[0]
-	for _, r := range rows {
-		if r.UserID != userID {
-			src = r
-			break
-		}
-	}
-	rs, err := c.owner.LinkSkill(ctx, entity.LinkSkillRequest{
-		SkillID: src.SkillID, UserID: monoflake.ID(userID).String(), WorkspaceIDs: workspaceIDs, Replace: replace,
-	})
-	if err != nil {
-		return entity.Skill{}, err
-	}
-	c.emit(ctx, entity.ActionTeamSkillAdd, userID, 0, rs.Skill.ID)
-	return rs.Skill, nil
 }

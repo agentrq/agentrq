@@ -3691,96 +3691,6 @@ paths:
         '400': { $ref: '#/components/responses/InvalidPayload' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  /teams/{teamId}/skills:
-    parameters:
-      - $ref: '#/components/parameters/TeamId'
-      - name: workspace
-        in: query
-        required: false
-        schema: { type: string }
-        description: Only this team workspace's skills, by its shared name, matched ignoring case and surrounding spaces; every team workspace's when left out.
-    get:
-      tags: [Team mode]
-      summary: List the skills on in a team's workspaces
-      description: One per name, in one team workspace with `workspace`, with the members who have it on, by name. A skill its owner turned off is left out.
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  skills:
-                    type: array
-                    items: { $ref: '#/components/schemas/TeamSkill' }
-        '400': { $ref: '#/components/responses/InvalidPayload' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /teams/{teamId}/skills/{name}:
-    parameters:
-      - $ref: '#/components/parameters/TeamId'
-      - $ref: '#/components/parameters/SkillName'
-      - name: workspace
-        in: query
-        required: false
-        schema: { type: string }
-        description: Only this team workspace's skills, by its shared name, matched ignoring case and surrounding spaces; every team workspace's when left out.
-    get:
-      tags: [Team mode]
-      summary: Read one of a team's skills
-      description: With its SKILL.md, from the member who changed it last.
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  skill: { $ref: '#/components/schemas/TeamSkill' }
-        '400': { $ref: '#/components/responses/InvalidPayload' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /teams/{teamId}/skills/{name}/add:
-    parameters:
-      - $ref: '#/components/parameters/TeamId'
-      - $ref: '#/components/parameters/SkillName'
-      - name: workspace
-        in: query
-        required: false
-        schema: { type: string }
-        description: Only this team workspace's skills, by its shared name, matched ignoring case and surrounding spaces; every team workspace's when left out.
-    post:
-      tags: [Team mode]
-      summary: Add one of a team's skills to your account
-      description: Links the skill into your account, on in `workspaceIds`, each of which must be yours (404 otherwise), from the copy changed last that is not your own. Nothing is copied. Your agents read and write the teammate's skill through the link while a team shares it with you, and its `sourceType` is `team`. 409 when you already have a skill of that name, unless `replace` is true, when your own skill of that name then becomes the link, its files deleted and its workspace switches kept, and whoever linked to it now links to the teammate's. 409 too when no teammate has the skill but you.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                workspaceIds:
-                  type: array
-                  items: { type: string }
-                replace:
-                  type: boolean
-                  description: Turn your own skill of that name into the link instead of refusing the name.
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  skill: { $ref: '#/components/schemas/Skill' }
-        '400': { $ref: '#/components/responses/InvalidPayload' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/TeamRefused' }
-
   /workspaces/{id}/team-skills:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -4283,16 +4193,6 @@ components:
             code: { type: integer }
         conflict: { type: boolean }
         version: { type: integer, format: int64, description: The team's version now. }
-    TeamSkill:
-      type: object
-      properties:
-        name: { type: string }
-        description: { type: string }
-        updatedAt: { type: string, format: date-time }
-        owners:
-          type: array
-          items: { $ref: '#/components/schemas/TeamOwner' }
-        content: { type: string, description: Its SKILL.md; only when one skill is read. }
     ErrorResponse:
       type: object
       description: The structured envelope returned by handlers that map a domain error.

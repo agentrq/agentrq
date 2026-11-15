@@ -168,7 +168,7 @@ test('a stranger gets nothing; any member can invite, rename, remove, leave and 
   for (const p of [bea, cy, dee]) await p.context.close()
 })
 
-test('a fork follows its parent, an archived workspace leaves the team, and a teammate\'s skill is added to mine', async ({ page, browser }) => {
+test('a fork follows its parent, an archived workspace leaves the team, and a teammate\'s own skill stays theirs', async ({ page, browser }) => {
   const owner = page
   const bea = await person(browser, 'Bea')
   const team = await teamWith(owner, [bea])
@@ -193,38 +193,25 @@ test('a fork follows its parent, an archived workspace leaves the team, and a te
   await expect(bea.page.getByTestId('team-workspace').filter({ hasText: parent.name })).toHaveCount(1)
   await expect(bea.page.getByTestId('team-workspace').filter({ hasText: fork.name })).toHaveCount(0)
 
-  // 2. A skill on in the shared workspace: Bea opens that workspace's skills
-  //    (there is no list across the team) and adds it to her own, choosing a
-  //    workspace to turn it on in; none of hers has its name, so none is ticked.
+  // 2. A teammate's own skill, on in the shared workspace, stays theirs:
+  //    the team workspace's Skills page lists only the skills it owns, and
+  //    nothing links a teammate's skill into Bea's account any more.
   const skill = `qa-skill-${Date.now().toString(36)}`
   const call = await agentSession(owner, parent.id)
-  const saved = await call('skills', { action: 'save', payload: { uri: `skill://${skill}/SKILL.md`, team: false, content: '---\ndescription: A skill the QA suite shares.\n---\n# QA\nShared with the team.\n' } })
+  const saved = await call('skills', { action: 'save', payload: { uri: `skill://${skill}/SKILL.md`, team: false, content: '---\ndescription: A skill the QA suite keeps personal.\n---\n# QA\nNot the team\'s.\n' } })
   expect(saved).not.toMatch(/error|refused/i)
-  const beaWs = await createWorkspace(bea.page, unique('bea-ws'))
   await bea.page.goto(`/teams/${team.id}/tasks/active?workspace=${encodeURIComponent(parent.name)}`)
   await expect(bea.page.getByTestId('team-skills-link')).toBeVisible()
   await bea.page.screenshot({ path: test.info().outputPath('team-workspace-tasks.png'), animations: 'disabled' })
   await bea.page.getByTestId('team-skills-link').click()
   await expect(bea.page).toHaveURL(/\/skills\?/)
-  const card = bea.page.getByTestId('team-skill-row').filter({ hasText: skill })
-  await expect(card).toContainText('A skill the QA suite shares.')
+  await expect(bea.page.getByTestId('team-workspace-skills')).toBeVisible()
+  await expect(bea.page.getByTestId('teammates-own-skills')).toHaveCount(0)
+  await expect(bea.page.getByText(skill)).toHaveCount(0)
   await bea.page.screenshot({ path: test.info().outputPath('team-workspace-skills.png'), animations: 'disabled' })
-  await card.click()
-  await expect(bea.page.getByTestId('team-skill-body')).toContainText('Shared with the team.')
-  const box = bea.page.getByTestId('team-skill-workspace').locator(`input[value="${beaWs.id}"]`)
-  await expect(box).not.toBeChecked()
-  await box.check()
-  const added = nextResponse(bea.page, 'POST', `/teams/${team.id}/skills/${skill}/add`, { workspace: parent.name })
-  await bea.page.getByTestId('team-skill-add').click()
-  expect((await added).status()).toBeLessThan(300)
-  await expect(bea.page.getByText(`Added ${skill} to your skills`)).toBeVisible()
-  await expect(bea.page.getByTestId('team-skill-mine')).toBeVisible()
-  const mine = await ok(await bea.page.request.get(`${API}/workspaces/${beaWs.id}/skills`), 'Bea\'s skills')
-  expect(mine.skills.map((s) => s.name)).toContain(skill)
-  // Once hers, the list says so, and the server refuses it twice.
-  await bea.page.goto(`/teams/${team.id}/skills?workspace=${encodeURIComponent(parent.name)}`)
-  await expect(bea.page.getByTestId('team-skill-row').filter({ hasText: skill }).locator('..').getByTestId('team-skill-mine')).toBeVisible()
-  expect((await bea.page.request.post(`${API}/teams/${team.id}/skills/${skill}/add`, { data: { workspaceIds: [] } })).status(), 'adding it twice').toBe(409)
+  expect((await bea.page.request.get(`${API}/teams/${team.id}/skills`)).status(), 'the retired list').toBe(404)
+  // The server's catch-all answers a POST it has no route for with 405.
+  expect((await bea.page.request.post(`${API}/teams/${team.id}/skills/${skill}/add`, { data: { workspaceIds: [] } })).status(), 'the retired add').toBe(405)
 
   // 3. A fork is merged, not archived: its tasks stay in the team, in the
   //    parent (merged once they are done). The parent archived, it leaves the team with its tasks and
@@ -241,7 +228,6 @@ test('a fork follows its parent, an archived workspace leaves the team, and a te
   await expect(bea.page.getByText(forkTitle)).toHaveCount(0)
   expect(await teamTitles(bea.page, team.id)).toEqual([])
   expect((await bea.page.request.get(`${API}/teams/${team.id}/tasks/${forkTask.id}`)).status()).toBe(404)
-  expect((await bea.page.request.get(`${API}/teams/${team.id}/skills/${skill}`)).status()).toBe(404)
   await archive(parent, 'unarchive')
   expect(await teamTitles(bea.page, team.id)).toEqual(expect.arrayContaining([parentTitle, forkTitle]))
 
