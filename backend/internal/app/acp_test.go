@@ -61,7 +61,7 @@ func (f *fakeACPCounter) RecordACPV1(_ context.Context, req entity.RecordACPV1Re
 
 func TestACPTokenAuth(t *testing.T) {
 	ctx := context.Background()
-	tokens := auth.NewTokenService(auth.TokenConfig{JWTSecret: "acp-test-secret"})
+	tokens := auth.NewTokenService(auth.TokenConfig{APISecret: "acp-test-secret", MCPSecret: "acp-test-secret"})
 	user := monoflake.ID(5).String()
 	ws7 := monoflake.ID(7).String()
 	mint := func(t *testing.T, fn func() (string, error)) string {
@@ -98,7 +98,7 @@ func TestACPTokenAuth(t *testing.T) {
 		},
 		"a token with no user is unauthorized": func() (string, error) { return tokens.CreateMCPToken("", ws7, "access") },
 		"a token from another secret is unauthorized": func() (string, error) {
-			return auth.NewTokenService(auth.TokenConfig{JWTSecret: "another-secret"}).CreateMCPToken(user, ws7, "access")
+			return auth.NewTokenService(auth.TokenConfig{APISecret: "another-secret", MCPSecret: "another-secret"}).CreateMCPToken(user, ws7, "access")
 		},
 	}
 	for name, fn := range unauthorized {
@@ -168,7 +168,7 @@ func TestCountACPV1(t *testing.T) {
 }
 
 func TestMountACP(t *testing.T) {
-	tokens := auth.NewTokenService(auth.TokenConfig{JWTSecret: "acp-test-secret"})
+	tokens := auth.NewTokenService(auth.TokenConfig{APISecret: "acp-test-secret", MCPSecret: "acp-test-secret"})
 	token, err := tokens.CreateMCPToken(monoflake.ID(5).String(), monoflake.ID(7).String(), "access")
 	if err != nil {
 		t.Fatalf("minting the token failed: %v", err)

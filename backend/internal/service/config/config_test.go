@@ -41,12 +41,16 @@ func TestBundledJWTSecretRequiresConfiguration(t *testing.T) {
 			t.Fatal(err)
 		}
 		var cfg struct {
-			JWTSecret string `yaml:"jwtSecret"`
+			APIJWTSecret string `yaml:"apiJwtSecret"`
+			MCPJWTSecret string `yaml:"mcpJwtSecret"`
 		}
 		if err := svc.Populate("auth", &cfg); err != nil {
 			t.Fatal(err)
 		}
-		return cfg.JWTSecret
+		if cfg.APIJWTSecret != cfg.MCPJWTSecret {
+			t.Fatalf("API secret %q and MCP secret %q differ", cfg.APIJWTSecret, cfg.MCPJWTSecret)
+		}
+		return cfg.APIJWTSecret
 	}
 
 	if got := loadSecret(); got != "" {

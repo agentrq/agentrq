@@ -30,11 +30,16 @@ func TestNewRequiresJWTSecretBeforeInitialization(t *testing.T) {
 	if _, err := New(Config{}); err == nil {
 		t.Fatal("expected an error when the JWT secret is missing")
 	}
+	var onlyAPI Config
+	onlyAPI.Auth.APIJWTSecret = "api"
+	if _, err := New(onlyAPI); err == nil || err.Error() != "auth: MCP JWT secret must be configured" {
+		t.Fatalf("only the API secret: %v", err)
+	}
 }
 
 func newTestTokenService(t *testing.T) auth.TokenService {
 	t.Helper()
-	return auth.NewTokenService(auth.TokenConfig{JWTSecret: testJWTSecret})
+	return auth.NewTokenService(auth.TokenConfig{APISecret: testJWTSecret, MCPSecret: testJWTSecret})
 }
 
 func newTestToken(t *testing.T, svc auth.TokenService, userID string) string {
@@ -178,7 +183,7 @@ func TestEventsHandlerRejectsUnauthenticated(t *testing.T) {
 		{name: "no cookie", cookie: ""},
 		{name: "malformed token", cookie: "not-a-jwt"},
 		{name: "token signed with another secret", cookie: newTestToken(t,
-			auth.NewTokenService(auth.TokenConfig{JWTSecret: "a-different-secret"}), "user-1")},
+			auth.NewTokenService(auth.TokenConfig{APISecret: "a-different-secret", MCPSecret: "a-different-secret"}), "user-1")},
 	}
 
 	for _, tt := range tests {

@@ -36,7 +36,7 @@ func (pkceTokens) ValidateSessionToken(tokenStr string) (*auth.Claims, error) {
 
 func pkceHandler() *handler {
 	h, _ := consentHandler()
-	h.tokenSvc = pkceTokens{auth.NewTokenService(auth.TokenConfig{JWTSecret: "pkce-test-secret"})}
+	h.tokenSvc = pkceTokens{auth.NewTokenService(auth.TokenConfig{APISecret: "pkce-test-secret", MCPSecret: "pkce-test-secret"})}
 	return h
 }
 

@@ -85,8 +85,12 @@ const (
 	SupervisorRefreshTokenTTL = 7 * 24 * time.Hour
 )
 
+// TokenConfig holds the two signing keys: APISecret for a person's session,
+// tickets and sign-in state, MCPSecret for everything an agent or MCP client
+// holds. Neither kind of token verifies with the other's key.
 type TokenConfig struct {
-	JWTSecret string `yaml:"jwt_secret"`
+	APISecret string
+	MCPSecret string
 }
 
 type Claims struct {
@@ -157,17 +161,19 @@ type TokenService interface {
 }
 
 type tokenService struct {
-	secret []byte
+	apiSecret []byte
+	mcpSecret []byte
 }
 
 func NewTokenService(cfg TokenConfig) TokenService {
-	if cfg.JWTSecret == "" {
+	if cfg.APISecret == "" || cfg.MCPSecret == "" {
 		// Critical: fallback to an empty secret is not allowed.
-		// In production, the app should fail to start if JWTSecret is missing.
-		panic("situational security: JWT secret is required but not provided in configuration")
+		// In production, the app should fail to start if a secret is missing.
+		panic("situational security: JWT secrets are required but not provided in configuration")
 	}
 	return &tokenService{
-		secret: []byte(cfg.JWTSecret),
+		apiSecret: []byte(cfg.APISecret),
+		mcpSecret: []byte(cfg.MCPSecret),
 	}
 }
 
@@ -184,7 +190,7 @@ func (s *tokenService) CreateToken(userID, email, name, picture string) (string,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.secret)
+	return token.SignedString(s.apiSecret)
 }
 
 // CreateRefreshToken mints the long-lived half of a session.
@@ -203,7 +209,7 @@ func (s *tokenService) CreateRefreshToken(userID string) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.secret)
+	return token.SignedString(s.apiSecret)
 }
 
 // ValidateRefreshToken accepts only a token minted by CreateRefreshToken.
@@ -212,7 +218,7 @@ func (s *tokenService) CreateRefreshToken(userID string) (string, error) {
 // accepted here, and a stolen 24-hour access token could be walked forward
 // indefinitely into fresh sessions.
 func (s *tokenService) ValidateRefreshToken(tokenStr string) (*Claims, error) {
-	claims, err := s.ValidateToken(tokenStr)
+	claims, err := s.validate(s.apiSecret, tokenStr)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +259,7 @@ func (s *tokenService) createMCPToken(userID, workspaceID, tokenType string, ttl
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.secret)
+	return token.SignedString(s.mcpSecret)
 }
 
 func HasAudience(claims *Claims, audience string) bool {
@@ -294,7 +300,7 @@ func (s *tokenService) CreateClientRegistrationToken(redirectURIs []string, clie
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.secret)
+	return token.SignedString(s.mcpSecret)
 }
 
 // ValidateClientRegistrationToken parses a client_id minted by
@@ -307,7 +313,7 @@ func (s *tokenService) ValidateClientRegistrationToken(tokenStr string) (*Client
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
-		return s.secret, nil
+		return s.mcpSecret, nil
 	}, jwt.WithAudience(DynamicClientAudience))
 	if err != nil {
 		return nil, err
@@ -333,7 +339,7 @@ func (s *tokenService) CreateOAuthConsentToken(userID string, consent OAuthConse
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.secret)
+	return token.SignedString(s.mcpSecret)
 }
 
 // ValidateOAuthConsentToken accepts only a token minted by
@@ -343,7 +349,7 @@ func (s *tokenService) ValidateOAuthConsentToken(tokenStr, userID string, consen
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
-		return s.secret, nil
+		return s.mcpSecret, nil
 	}, jwt.WithAudience(OAuthConsentAudience), jwt.WithSubject(userID))
 	if err != nil {
 		return err
@@ -370,7 +376,7 @@ func (s *tokenService) CreateOAuthCodeToken(userID, workspaceID, codeChallenge s
 	claims.Audience = append(claims.Audience, "authorization_code")
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.secret)
+	return token.SignedString(s.mcpSecret)
 }
 
 // CreateTerminalTicket mints the credential a browser presents when it opens
@@ -391,7 +397,7 @@ func (s *tokenService) CreateTerminalTicket(userID, sessionID string) (string, e
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.secret)
+	return token.SignedString(s.apiSecret)
 }
 
 // ValidateTerminalTicket accepts only a ticket minted by CreateTerminalTicket
@@ -405,7 +411,7 @@ func (s *tokenService) CreateTerminalTicket(userID, sessionID string) (string, e
 // open any session its holder can reach, for a full minute after it was minted
 // for one of them.
 func (s *tokenService) ValidateTerminalTicket(tokenStr, sessionID string) (*Claims, error) {
-	claims, err := s.ValidateToken(tokenStr)
+	claims, err := s.validate(s.apiSecret, tokenStr)
 	if err != nil {
 		return nil, err
 	}
@@ -428,13 +434,13 @@ func (s *tokenService) CreateBrowserTicket(userID string) (string, error) {
 			Audience:  jwt.ClaimStrings{BrowserTicketAudience},
 		},
 	}
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret)
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.apiSecret)
 }
 
 // ValidateBrowserTicket accepts only a ticket minted by CreateBrowserTicket;
 // without the audience check the 24-hour access token would work in a URL.
 func (s *tokenService) ValidateBrowserTicket(tokenStr string) (*Claims, error) {
-	claims, err := s.ValidateToken(tokenStr)
+	claims, err := s.validate(s.apiSecret, tokenStr)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +462,7 @@ func (s *tokenService) CreateOAuthStateToken(redirectURL, provider string) (stri
 		RedirectURL: redirectURL,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.secret)
+	return token.SignedString(s.apiSecret)
 }
 
 func (s *tokenService) ValidateOAuthStateToken(tokenStr, provider string) (string, error) {
@@ -464,7 +470,7 @@ func (s *tokenService) ValidateOAuthStateToken(tokenStr, provider string) (strin
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
-		return s.secret, nil
+		return s.apiSecret, nil
 	}, jwt.WithAudience(provider))
 	if err != nil {
 		return "", err
@@ -478,11 +484,10 @@ func (s *tokenService) ValidateOAuthStateToken(tokenStr, provider string) (strin
 }
 
 // ValidateSessionToken accepts only a signed-in person's access token, the
-// `at` cookie that CreateToken mints. Every other token is signed with the same
-// secret, so without the audience check an agent's workspace MCP token, a
-// refresh token or a ticket would pass for the whole account.
+// `at` cookie that CreateToken mints. Refresh tokens and tickets share its
+// secret, so without the audience check either would pass for the whole account.
 func (s *tokenService) ValidateSessionToken(tokenStr string) (*Claims, error) {
-	claims, err := s.ValidateToken(tokenStr)
+	claims, err := s.validate(s.apiSecret, tokenStr)
 	if err != nil {
 		return nil, err
 	}
@@ -492,13 +497,19 @@ func (s *tokenService) ValidateSessionToken(tokenStr string) (*Claims, error) {
 	return claims, nil
 }
 
+// ValidateToken checks a token signed with the MCP secret: a workspace or
+// supervisor token, or an OAuth code. Callers check its audience.
 func (s *tokenService) ValidateToken(tokenStr string) (*Claims, error) {
+	return s.validate(s.mcpSecret, tokenStr)
+}
+
+func (s *tokenService) validate(secret []byte, tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		// Validate the signing method to prevent algorithm confusion attacks
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
-		return s.secret, nil
+		return secret, nil
 	})
 
 	if err != nil {

@@ -96,7 +96,7 @@ func TestSanitizeRedirectURL(t *testing.T) {
 
 func TestGoogleCallback_StateJWT(t *testing.T) {
 	// Use a real token service so JWT state round-trips correctly.
-	realTokenSvc := auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"})
+	realTokenSvc := auth.NewTokenService(auth.TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
 
 	app := fiber.New()
 	authSvc := &mockAuthService{}

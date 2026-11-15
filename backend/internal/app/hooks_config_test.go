@@ -61,7 +61,7 @@ func TestHooksSettingsComeFromTheEnv(t *testing.T) {
 
 func TestNewRefusesBadHooksSettings(t *testing.T) {
 	var cfg Config
-	cfg.Auth.JWTSecret = "secret"
+	cfg.Auth.APIJWTSecret, cfg.Auth.MCPJWTSecret = "secret", "secret"
 	cfg.Hooks.DeliveryRetention = "1h"
 	_, err := New(cfg)
 	if err == nil || !strings.Contains(err.Error(), "hooks.deliveryRetention") {

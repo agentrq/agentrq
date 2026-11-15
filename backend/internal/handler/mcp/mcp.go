@@ -440,9 +440,9 @@ func (h *handler) identifyUser(ctx context.Context, workspaceID int64, tokenStr 
 		return ""
 	}
 
-	// Only an access token minted for this workspace. Every token is signed
-	// with the same secret, so the audience is what tells a workspace's agent
-	// apart from another workspace's, a person's session or a refresh token.
+	// Only an access token minted for this workspace. Every MCP token is
+	// signed with the same secret, so the audience is what tells a workspace's
+	// agent apart from another workspace's, the supervisor or a refresh token.
 	claims, err := h.tokenSvc.ValidateToken(tokenStr)
 	if err != nil {
 		return ""

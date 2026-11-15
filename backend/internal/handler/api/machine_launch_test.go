@@ -449,7 +449,7 @@ func launchTestHandler(t *testing.T, machineID int64, crudCtrl *fakeLaunchCrud, 
 		crud:            crudCtrl,
 		mcpManager:      &fakeMCPManager{},
 		machineRegistry: registry,
-		tokenSvc:        auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"}),
+		tokenSvc:        auth.NewTokenService(auth.TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"}),
 	})
 }
 
@@ -618,7 +618,7 @@ func launchInto(t *testing.T, workspaceName string) wire.StartSession {
 		crud:            crudCtrl,
 		mcpManager:      &fakeMCPManager{},
 		machineRegistry: registry,
-		tokenSvc:        auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"}),
+		tokenSvc:        auth.NewTokenService(auth.TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"}),
 		mcpBaseURL:      "https://agentrq.example",
 	})
 
@@ -707,7 +707,7 @@ func launchWith(t *testing.T, crudCtrl *fakeLaunchCrud, caps []string, version, 
 		crud:            crudCtrl,
 		mcpManager:      &fakeMCPManager{},
 		machineRegistry: registry,
-		tokenSvc:        auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"}),
+		tokenSvc:        auth.NewTokenService(auth.TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"}),
 		mcpBaseURL:      "https://agentrq.example",
 	})
 	req := httptest.NewRequest(http.MethodPost,

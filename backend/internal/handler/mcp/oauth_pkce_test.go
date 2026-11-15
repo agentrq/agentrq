@@ -36,7 +36,7 @@ func (pkceTokens) ValidateSessionToken(tokenStr string) (*auth.Claims, error) {
 }
 
 func pkceRouter() *http.ServeMux {
-	return setupBindingRouter(pkceTokens{auth.NewTokenService(auth.TokenConfig{JWTSecret: "pkce-test-secret"})}, &fakeCIMD{})
+	return setupBindingRouter(pkceTokens{auth.NewTokenService(auth.TokenConfig{APISecret: "pkce-test-secret", MCPSecret: "pkce-test-secret"})}, &fakeCIMD{})
 }
 
 // workspaceCode walks an authorize request through the consent page and

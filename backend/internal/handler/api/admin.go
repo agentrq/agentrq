@@ -101,7 +101,7 @@ func (h *handler) adminCookiePath() string {
 }
 
 // adminKey signs admin tokens. Derived from the root access token rather than
-// the users' JWT secret, so a user token can never verify as an admin one, and
+// the JWT secrets, so a user token can never verify as an admin one, and
 // rotating the root token ends every admin session. Stateless, so any
 // instance can check a token another issued.
 func (h *handler) adminKey() []byte {

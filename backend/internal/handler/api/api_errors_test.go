@@ -451,7 +451,7 @@ func TestOAuthCallback(t *testing.T) {
 // New mounts the push routes behind the session check only when push is
 // configured, and a request's session claims reach the controller's context.
 func TestNew_PushRoutesAndSessionClaims(t *testing.T) {
-	tokens := auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"})
+	tokens := auth.NewTokenService(auth.TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
 	session, err := tokens.CreateToken("user-1", "a@b.com", "Ada", "")
 	if err != nil {
 		t.Fatal(err)

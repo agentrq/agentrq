@@ -91,8 +91,8 @@ func checkConfig(c config.Service) error {
 	if err != nil {
 		return err
 	}
-	if cfg.Auth.JWTSecret == "" {
-		return errors.New("auth: JWT secret must be configured")
+	if err := checkJWTSecrets(cfg); err != nil {
+		return err
 	}
 	if err := checkLimits(cfg); err != nil {
 		return err
@@ -125,3 +125,14 @@ func checkConfig(c config.Service) error {
 
 // noStorage stands in for a local store, which checkConfig must not create.
 func noStorage() (storage.Service, error) { return nil, nil }
+
+// checkJWTSecrets refuses a config missing either signing key.
+func checkJWTSecrets(cfg Config) error {
+	if cfg.Auth.APIJWTSecret == "" {
+		return errors.New("auth: API JWT secret must be configured")
+	}
+	if cfg.Auth.MCPJWTSecret == "" {
+		return errors.New("auth: MCP JWT secret must be configured")
+	}
+	return nil
+}

@@ -127,8 +127,8 @@ func TestLoadStoresTheConfigThenPrefersIt(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cfg.SMTP.Host != "smtp-from-env" || cfg.Auth.JWTSecret != "jwt-from-env" || cfg.ConfigSvc == nil || cfg.AppConfig == nil {
-				t.Fatalf("first start: smtp %q, jwt %q", cfg.SMTP.Host, cfg.Auth.JWTSecret)
+			if cfg.SMTP.Host != "smtp-from-env" || cfg.Auth.APIJWTSecret != "jwt-from-env" || cfg.Auth.MCPJWTSecret != "jwt-from-env" || cfg.ConfigSvc == nil || cfg.AppConfig == nil {
+				t.Fatalf("first start: smtp %q, jwt %q", cfg.SMTP.Host, cfg.Auth.APIJWTSecret)
 			}
 			var rows []model.AppConfiguration
 			if err := cfg.DB.Conn(context.Background()).Order("config_key").Find(&rows).Error; err != nil {
@@ -181,8 +181,8 @@ func TestLoadStoresTheConfigThenPrefersIt(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer cfg.DB.Close(context.Background())
-			if cfg.SMTP.Host != "smtp-from-admin" || cfg.SMTP.Port != 2525 || cfg.Auth.JWTSecret != "jwt-from-env" {
-				t.Fatalf("second start: smtp %q:%d, jwt %q", cfg.SMTP.Host, cfg.SMTP.Port, cfg.Auth.JWTSecret)
+			if cfg.SMTP.Host != "smtp-from-admin" || cfg.SMTP.Port != 2525 || cfg.Auth.APIJWTSecret != "jwt-from-env" || cfg.Auth.MCPJWTSecret != "jwt-from-env" {
+				t.Fatalf("second start: smtp %q:%d, jwt %q", cfg.SMTP.Host, cfg.SMTP.Port, cfg.Auth.APIJWTSecret)
 			}
 			if cfg.Auth.RootAccessToken != "root-2" || cfg.Auth.WorkspaceTokenKey != testTokenKey {
 				t.Fatalf("the env-only settings: root %q, key %q", cfg.Auth.RootAccessToken, cfg.Auth.WorkspaceTokenKey)
@@ -265,7 +265,8 @@ func TestCheckConfig(t *testing.T) {
 	}
 	for _, tc := range []struct{ key, block, want string }{
 		{"smtp", `{"port":"many"}`, "smtp: "},
-		{"auth", `{"jwtSecret":""}`, "auth: JWT secret must be configured"},
+		{"auth", `{"apiJwtSecret":""}`, "auth: API JWT secret must be configured"},
+		{"auth", `{"mcpJwtSecret":""}`, "auth: MCP JWT secret must be configured"},
 		{"memory", `{"maxFileSize":-1}`, "memory.maxFileSize: "},
 		{"hooks", `{"maxPayloadSize":1}`, "hooks.maxPayloadSize"},
 		{"app", `{"drainDelay":"-1s"}`, "app.drainDelay: -1s is negative"},

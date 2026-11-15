@@ -14,7 +14,8 @@ import (
 
 func TestTokenService(t *testing.T) {
 	cfg := TokenConfig{
-		JWTSecret: "test-secret",
+		APISecret: "test-secret",
+		MCPSecret: "test-secret",
 	}
 	s := NewTokenService(cfg)
 
@@ -192,19 +193,100 @@ func TestTokenService(t *testing.T) {
 		}
 	})
 
-	t.Run("PanicsWhenSecretMissing", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Errorf("The code did not panic")
-			}
-		}()
+	for name, cfg := range map[string]TokenConfig{
+		"PanicsWhenSecretMissing":    {},
+		"PanicsWhenAPISecretMissing": {MCPSecret: "mcp"},
+		"PanicsWhenMCPSecretMissing": {APISecret: "api"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("The code did not panic")
+				}
+			}()
 
-		NewTokenService(TokenConfig{})
-	})
+			NewTokenService(cfg)
+		})
+	}
+}
+
+// TestSeparateSecrets proves each token is signed with its own key: a token
+// verifies where the key it was signed with is the expected one, and nowhere
+// else.
+func TestSeparateSecrets(t *testing.T) {
+	s := NewTokenService(TokenConfig{APISecret: "api-secret", MCPSecret: "mcp-secret"})
+	apiOnly := NewTokenService(TokenConfig{APISecret: "api-secret", MCPSecret: "other"})
+	mcpOnly := NewTokenService(TokenConfig{APISecret: "other", MCPSecret: "mcp-secret"})
+	must := func(tok string, err error) string {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	consent := OAuthConsent{Resource: "ws", ClientID: "c", RedirectURI: "https://x", State: "s"}
+
+	session := must(s.CreateToken("u", "", "", ""))
+	refresh := must(s.CreateRefreshToken("u"))
+	terminal := must(s.CreateTerminalTicket("u", "7"))
+	browser := must(s.CreateBrowserTicket("u"))
+	state := must(s.CreateOAuthStateToken("/back", "google"))
+	mcp := must(s.CreateMCPToken("u", "ws", "access"))
+	supervisor := must(s.CreateSupervisorToken("u", "coremcp", "access"))
+	code := must(s.CreateOAuthCodeToken("u", "ws", "challenge"))
+	client := must(s.CreateClientRegistrationToken([]string{"https://x"}, "c"))
+	consentTok := must(s.CreateOAuthConsentToken("u", consent))
+
+	apiChecks := map[string]func(TokenService) error{
+		"session": func(v TokenService) error { _, err := v.ValidateSessionToken(session); return err },
+		"refresh": func(v TokenService) error { _, err := v.ValidateRefreshToken(refresh); return err },
+		"terminal": func(v TokenService) error {
+			_, err := v.ValidateTerminalTicket(terminal, "7")
+			return err
+		},
+		"browser": func(v TokenService) error { _, err := v.ValidateBrowserTicket(browser); return err },
+		"state": func(v TokenService) error {
+			_, err := v.ValidateOAuthStateToken(state, "google")
+			return err
+		},
+	}
+	mcpChecks := map[string]func(TokenService) error{
+		"mcp":        func(v TokenService) error { _, err := v.ValidateToken(mcp); return err },
+		"supervisor": func(v TokenService) error { _, err := v.ValidateToken(supervisor); return err },
+		"code":       func(v TokenService) error { _, err := v.ValidateToken(code); return err },
+		"client": func(v TokenService) error {
+			_, err := v.ValidateClientRegistrationToken(client)
+			return err
+		},
+		"consent": func(v TokenService) error { return v.ValidateOAuthConsentToken(consentTok, "u", consent) },
+	}
+	for name, check := range apiChecks {
+		if err := check(apiOnly); err != nil {
+			t.Errorf("%s with the API secret: %v", name, err)
+		}
+		if check(mcpOnly) == nil {
+			t.Errorf("%s verified without the API secret", name)
+		}
+	}
+	for name, check := range mcpChecks {
+		if err := check(mcpOnly); err != nil {
+			t.Errorf("%s with the MCP secret: %v", name, err)
+		}
+		if check(apiOnly) == nil {
+			t.Errorf("%s verified without the MCP secret", name)
+		}
+	}
+	// An MCP check never takes a session token, nor a session check an MCP one.
+	if _, err := s.ValidateToken(session); err == nil {
+		t.Error("a session token passed the MCP check")
+	}
+	if _, err := s.ValidateSessionToken(mcp); err == nil {
+		t.Error("an MCP token passed the session check")
+	}
 }
 
 func TestRefreshTokens(t *testing.T) {
-	s := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+	s := NewTokenService(TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
 
 	t.Run("round trips the user it was minted for", func(t *testing.T) {
 		token, err := s.CreateRefreshToken("user123")
@@ -269,7 +351,7 @@ func TestRefreshTokens(t *testing.T) {
 	})
 
 	t.Run("rejects a token this server did not sign", func(t *testing.T) {
-		other := NewTokenService(TokenConfig{JWTSecret: "a-different-secret"})
+		other := NewTokenService(TokenConfig{APISecret: "a-different-secret", MCPSecret: "a-different-secret"})
 		foreign, _ := other.CreateRefreshToken("user123")
 
 		if _, err := s.ValidateRefreshToken(foreign); err == nil {
@@ -307,7 +389,7 @@ func TestRefreshTokens(t *testing.T) {
 // Every token shares one signing secret, so the session check is the only
 // thing between an agent's workspace token and the whole account.
 func TestSessionToken(t *testing.T) {
-	s := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+	s := NewTokenService(TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
 
 	t.Run("accepts a signed-in person's access token", func(t *testing.T) {
 		token, _ := s.CreateToken("user123", "a@b.com", "A", "")
@@ -367,8 +449,8 @@ func TestSessionToken(t *testing.T) {
 // A terminal ticket is a bearer credential that travels in a URL query
 // string, so what it is *not* valid for is the whole design.
 func TestTerminalTicket(t *testing.T) {
-	svc := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
-	other := NewTokenService(TokenConfig{JWTSecret: "another-secret"})
+	svc := NewTokenService(TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
+	other := NewTokenService(TokenConfig{APISecret: "another-secret", MCPSecret: "another-secret"})
 
 	ticket, err := svc.CreateTerminalTicket("user-1", "500")
 	if err != nil {
@@ -445,8 +527,8 @@ func TestTerminalTicket(t *testing.T) {
 }
 
 func TestBrowserTicket(t *testing.T) {
-	svc := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
-	other := NewTokenService(TokenConfig{JWTSecret: "another-secret"})
+	svc := NewTokenService(TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
+	other := NewTokenService(TokenConfig{APISecret: "another-secret", MCPSecret: "another-secret"})
 
 	ticket, err := svc.CreateBrowserTicket("user-1")
 	if err != nil {
@@ -488,7 +570,7 @@ func TestBrowserTicket(t *testing.T) {
 }
 
 func TestClientRegistrationTokenCarriesName(t *testing.T) {
-	svc := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+	svc := NewTokenService(TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
 
 	clientID, err := svc.CreateClientRegistrationToken([]string{"http://localhost/callback"}, "Claude Code")
 	if err != nil {
@@ -504,8 +586,8 @@ func TestClientRegistrationTokenCarriesName(t *testing.T) {
 }
 
 func TestOAuthConsentToken(t *testing.T) {
-	svc := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
-	other := NewTokenService(TokenConfig{JWTSecret: "another-secret"})
+	svc := NewTokenService(TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
+	other := NewTokenService(TokenConfig{APISecret: "another-secret", MCPSecret: "another-secret"})
 	consent := OAuthConsent{Resource: "ws1", ClientID: "client-1", RedirectURI: "http://localhost:3118/callback", State: "s1"}
 
 	token, err := svc.CreateOAuthConsentToken("user-1", consent)
@@ -606,7 +688,7 @@ func TestOAuthConsentToken(t *testing.T) {
 
 // A supervisor token is short lived; a workspace token keeps its year.
 func TestMCPTokenLifetimes(t *testing.T) {
-	s := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+	s := NewTokenService(TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
 	for name, tc := range map[string]struct {
 		mint     func() (string, error)
 		audience []string

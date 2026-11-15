@@ -99,7 +99,7 @@ func TestShutdownCutsTheDrainDelayAtTheDeadline(t *testing.T) {
 
 func TestNewRefusesANegativeDrainDelay(t *testing.T) {
 	var cfg Config
-	cfg.Auth.JWTSecret = "secret"
+	cfg.Auth.APIJWTSecret, cfg.Auth.MCPJWTSecret = "secret", "secret"
 	cfg.App.DrainDelay = -time.Second
 	_, err := New(cfg)
 	if err == nil || !strings.Contains(err.Error(), "app.drainDelay") {
@@ -109,7 +109,7 @@ func TestNewRefusesANegativeDrainDelay(t *testing.T) {
 
 func TestNewRefusesATrustedProxyThatIsNotAnAddress(t *testing.T) {
 	var cfg Config
-	cfg.Auth.JWTSecret = "secret"
+	cfg.Auth.APIJWTSecret, cfg.Auth.MCPJWTSecret = "secret", "secret"
 	cfg.Network.TrustedProxies = "proxy.local"
 	_, err := New(cfg)
 	if err == nil || !strings.Contains(err.Error(), "network.trustedProxies") {

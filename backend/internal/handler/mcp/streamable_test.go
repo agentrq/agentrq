@@ -30,7 +30,7 @@ var streamUser = monoflake.ID(777).String()
 
 // streamTokens signs for real, so a workspace token is judged by its audience
 // exactly as it is in production.
-var streamTokens = auth.NewTokenService(auth.TokenConfig{JWTSecret: "streamable-test-secret"})
+var streamTokens = auth.NewTokenService(auth.TokenConfig{APISecret: "streamable-test-secret", MCPSecret: "streamable-test-secret"})
 
 func mintWorkspaceToken(t *testing.T, workspaceID, tokenType string) string {
 	t.Helper()

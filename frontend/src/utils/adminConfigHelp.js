@@ -23,7 +23,8 @@ export const CONFIG_HELP = {
   'app.drainDelay': 'On shutdown, how long an instance keeps serving with its readiness check failing, so a load balancer stops sending it traffic first. Such as 10s; 0s stops at once.',
 
   auth: 'How people sign in to the web app.',
-  'auth.jwtSecret': 'The key session tokens are signed with. Required. Changing it signs everyone out.',
+  'auth.apiJwtSecret': 'The key a person\'s session tokens, terminal and browser tickets and sign-in state are signed with. Required. Changing it signs everyone out.',
+  'auth.mcpJwtSecret': 'The key agents\' and MCP clients\' tokens, OAuth codes and client ids are signed with. Required. Changing it invalidates every token agents and MCP clients hold, so each needs a new one.',
   'auth.rootLoginEnabled': 'Replaces the Google sign-in on the login page with a form for the root access token, for a server with no sign-in provider. The admin pages sign in with the token either way.',
   'auth.allowedRedirectDomains': 'Other hosts a sign-in may send people back to, comma separated, such as docs.example.com. Any other host is refused.',
   'auth.google': 'Sign in with a Google account.',
