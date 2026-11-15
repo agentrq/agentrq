@@ -148,15 +148,14 @@ export const clickOutside = {
  * `fetchUserFn` is a parameter so the guard can be tested without a network.
  */
 export function createAuthGuard(fetchUserFn = fetchUser) {
-  return async function authGuard(to, from, next) {
-    if (to.meta.public) return next()
+  return async function authGuard(to) {
+    if (to.meta.public) return
 
     try {
       const user = await fetchUserFn()
-      if (!user) return next('/login')
-      next()
+      if (!user) return '/login'
     } catch {
-      next('/login')
+      return '/login'
     }
   }
 }
