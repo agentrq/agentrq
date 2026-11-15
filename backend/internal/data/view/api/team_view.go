@@ -79,10 +79,12 @@ type GetTeamSkillResponse struct {
 	Skill TeamSkill `json:"skill"`
 }
 
-// AddTeamSkillRequest adds a teammate's skill to your account, on in your
-// workspaces given.
+// AddTeamSkillRequest links a teammate's skill into your account, on in your
+// workspaces given. `replace` turns your own skill of that name into the
+// link, its files dropped, rather than refusing the name.
 type AddTeamSkillRequest struct {
 	WorkspaceIDs []string `json:"workspaceIds"`
+	Replace      bool     `json:"replace,omitempty"`
 }
 
 // AddTeamSkillResponse is the skill now in your account.

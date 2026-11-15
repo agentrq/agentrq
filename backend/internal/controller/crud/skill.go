@@ -48,6 +48,8 @@ type SkillController interface {
 const (
 	skillSourceManual = "manual"
 	skillSourceGitHub = "github"
+	// skillSourceTeam is a link to a teammate's skill.
+	skillSourceTeam = "team"
 )
 
 // SkillErrorKind says what sort of refusal a SkillError is, which is what the
@@ -99,6 +101,52 @@ func (c *controller) skillWithWorkspaces(ctx context.Context, s model.Skill, sco
 		return entity.Skill{}, err
 	}
 	return fromModelSkill(s, on[s.ID], scope), nil
+}
+
+// skillContent is the skill whose files s reads and writes: s itself, or for
+// a link the teammate's skill it names, while a team still shares that with
+// s's account. A link that reaches nothing any more is base.ErrNotFound.
+func (c *controller) skillContent(ctx context.Context, s model.Skill) (model.Skill, error) {
+	if s.LinkedSkillID == 0 {
+		return s, nil
+	}
+	ok, err := c.repository.CanReadLinkedSkill(ctx, s.UserID, s.LinkedSkillID)
+	if err != nil {
+		return model.Skill{}, err
+	}
+	if !ok {
+		return model.Skill{}, fmt.Errorf("skill %q is no longer shared with you: %w", s.Name, base.ErrNotFound)
+	}
+	return c.repository.GetSkillByID(ctx, s.LinkedSkillID)
+}
+
+// skillShared reports whether others write content too: through the link s
+// is, or through links to the account's own s.
+func (c *controller) skillShared(ctx context.Context, s, content model.Skill) (bool, error) {
+	if s.LinkedSkillID != 0 {
+		return true, nil
+	}
+	return c.repository.HasSkillLinks(ctx, content.ID)
+}
+
+// asLink is s showing what content, the skill it reads, holds now: itself
+// for a skill of its own.
+func asLink(s, content model.Skill) model.Skill {
+	if s.LinkedSkillID == 0 {
+		return content
+	}
+	s.Description, s.FileCount, s.TotalBytes, s.UpdatedAt = content.Description, content.FileCount, content.TotalBytes, content.UpdatedAt
+	return s
+}
+
+// skillFileURL is where anyone can read f, but never for a link's file: the
+// link stops reading it once the team stops sharing it, and a public link
+// would not.
+func (c *controller) skillFileURL(s model.Skill, f model.SkillFile) string {
+	if s.LinkedSkillID != 0 {
+		return ""
+	}
+	return storage.PublicURL(c.skillStorage, f.StorageID)
 }
 
 func skillName(name string) (string, error) {
@@ -190,7 +238,11 @@ func (c *controller) GetSkill(ctx context.Context, req entity.GetSkillRequest) (
 	if err != nil {
 		return nil, err
 	}
-	files, err := c.repository.ListSkillFiles(ctx, s.ID)
+	content, err := c.skillContent(ctx, s)
+	if err != nil {
+		return nil, err
+	}
+	files, err := c.repository.ListSkillFiles(ctx, content.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +252,7 @@ func (c *controller) GetSkill(ctx context.Context, req entity.GetSkillRequest) (
 	}
 	e.Files = make([]entity.SkillFile, len(files))
 	for i, f := range files {
-		e.Files[i] = entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, URL: storage.PublicURL(c.skillStorage, f.StorageID)}
+		e.Files[i] = entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, URL: c.skillFileURL(s, f), Version: f.Version}
 	}
 	return &entity.GetSkillResponse{Skill: e}, nil
 }
@@ -273,18 +325,24 @@ func (c *controller) GetSkillFile(ctx context.Context, req entity.GetSkillFileRe
 	if err != nil {
 		return nil, err
 	}
+	shared, err := c.skillShared(ctx, s, model.Skill{ID: f.SkillID})
+	if err != nil {
+		return nil, err
+	}
 	e, err := c.skillWithWorkspaces(ctx, s, scope)
 	if err != nil {
 		return nil, err
 	}
 	c.emitSkillEvent(ctx, entity.ActionSkillView, uid, req.WorkspaceID, s.ID)
 	return &entity.GetSkillFileResponse{
-		Skill: e,
-		File:  entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, Content: string(content), URL: storage.PublicURL(c.skillStorage, f.StorageID)},
+		Skill:  e,
+		File:   entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, Content: string(content), URL: c.skillFileURL(s, f), Version: f.Version},
+		Shared: shared,
 	}, nil
 }
 
-// loadSkillFile reads one file of the account's skill, with its content.
+// loadSkillFile reads one file of the account's skill, with its content: the
+// skill's own, or for a link the file of the skill it links to.
 func (c *controller) loadSkillFile(ctx context.Context, uid int64, name, path string) (model.Skill, model.SkillFile, []byte, error) {
 	name, err := skillName(name)
 	if err != nil {
@@ -298,7 +356,11 @@ func (c *controller) loadSkillFile(ctx context.Context, uid int64, name, path st
 	if err != nil {
 		return model.Skill{}, model.SkillFile{}, nil, err
 	}
-	f, err := c.repository.GetSkillFile(ctx, s.ID, path)
+	src, err := c.skillContent(ctx, s)
+	if err != nil {
+		return model.Skill{}, model.SkillFile{}, nil, err
+	}
+	f, err := c.repository.GetSkillFile(ctx, src.ID, path)
 	if err != nil {
 		return model.Skill{}, model.SkillFile{}, nil, err
 	}
@@ -335,13 +397,25 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 	}
 	// What it is on in is read before anything is written, so a failure
 	// reading it never reports a write that did happen as one that did not.
+	// target is the skill whose files are written: s, or what s links to.
 	var workspaces []int64
+	target, expect, shared := s, req.Version, false
 	if exists {
 		on, err := c.repository.ListSkillWorkspaces(ctx, []int64{s.ID})
 		if err != nil {
 			return nil, err
 		}
 		workspaces = on[s.ID]
+		if target, err = c.skillContent(ctx, s); err != nil {
+			return nil, err
+		}
+		if shared, err = c.skillShared(ctx, s, target); err != nil {
+			return nil, err
+		}
+		if shared && expect == nil {
+			// Without the version it read, a writer may only add a file.
+			expect = new(int64)
+		}
 	}
 	now := time.Now()
 	var on []model.WorkspaceSkill
@@ -354,13 +428,14 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 			return nil, skillErr(SkillInvalid, "%s names the skill %q, but it is being saved as %q; make the two match", skill.FileName, fm.Name, name)
 		}
 		if !exists {
-			s = model.Skill{ID: c.idgen.NextID(), CreatedAt: now, UserID: uid, Name: name, SourceType: skillSourceManual}
+			target = model.Skill{ID: c.idgen.NextID(), CreatedAt: now, UserID: uid, Name: name, SourceType: skillSourceManual}
+			s = target
 			if scope != 0 {
 				on = []model.WorkspaceSkill{{ID: c.idgen.NextID(), CreatedAt: now, UserID: uid, WorkspaceID: scope}}
 				workspaces = []int64{scope}
 			}
 		}
-		s.Description = fm.Description
+		target.Description = fm.Description
 	} else {
 		if err := skill.CheckContent(path, content); err != nil {
 			return nil, skillErr(SkillInvalid, "%v", err)
@@ -368,28 +443,31 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 		if !exists {
 			return nil, skillErr(SkillInvalid, "skill %q does not exist yet; save its %s first", name, skill.FileName)
 		}
-		if _, err := c.repository.GetSkillFile(ctx, s.ID, path); errors.Is(err, base.ErrNotFound) {
-			if s.FileCount >= skill.MaxFiles {
-				return nil, skillErr(SkillInvalid, "skill %q already has %d files, the limit; delete one first", name, s.FileCount)
+		if _, err := c.repository.GetSkillFile(ctx, target.ID, path); errors.Is(err, base.ErrNotFound) {
+			if target.FileCount >= skill.MaxFiles {
+				return nil, skillErr(SkillInvalid, "skill %q already has %d files, the limit; delete one first", name, target.FileCount)
 			}
 		} else if err != nil {
 			return nil, err
 		}
 	}
-	if s.SourceType == skillSourceGitHub {
-		s.LocallyModified = true
+	if target.SourceType == skillSourceGitHub {
+		target.LocallyModified = true
 	}
-	s.UpdatedAt = now
+	target.UpdatedAt = now
 
-	f, err := c.storeSkillFile(s, path, content, now)
+	f, err := c.storeSkillFile(target, path, content, now)
 	if err != nil {
 		return nil, err
 	}
-	saved, replaced, err := c.repository.UpsertSkillFile(ctx, s, f, on)
+	saved, stored, replaced, err := c.repository.UpsertSkillFile(ctx, target, f, on, expect)
 	if err != nil {
 		_ = c.skillStorage.Delete(f.StorageID)
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return nil, skillErr(SkillConflict, "skill %q was created by someone else a moment ago; try again", name)
+		}
+		if errors.Is(err, base.ErrVersionConflict) {
+			return nil, c.skillVersionConflict(ctx, target.ID, name, path, req.Version, shared)
 		}
 		return nil, err
 	}
@@ -397,9 +475,30 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 		_ = c.skillStorage.Delete(replaced)
 	}
 	return &entity.SaveSkillFileResponse{
-		Skill: fromModelSkill(saved, workspaces, scope),
-		File:  entity.SkillFile{Path: path, SizeBytes: len(content), UpdatedAt: now, URL: storage.PublicURL(c.skillStorage, f.StorageID)},
+		Skill: fromModelSkill(asLink(s, saved), workspaces, scope),
+		File:  entity.SkillFile{Path: path, SizeBytes: len(content), UpdatedAt: now, URL: c.skillFileURL(s, stored), Version: stored.Version},
 	}, nil
+}
+
+// skillVersionConflict is the refusal of a write made on a version of a file
+// that is no longer its version: read is the one the writer named, if any,
+// and shared says the skill needs one. It names the version there is now, to
+// read and merge before writing again.
+func (c *controller) skillVersionConflict(ctx context.Context, skillID int64, name, path string, read *int64, shared bool) error {
+	uri := skill.URI(name, path)
+	cur, err := c.repository.GetSkillFile(ctx, skillID, path)
+	switch {
+	case errors.Is(err, base.ErrNotFound):
+		return skillErr(SkillConflict, "%s was deleted after you read it; save it with no version to create it again", uri)
+	case err != nil:
+		return err
+	case read != nil:
+		return skillErr(SkillConflict, "%s was saved by someone else after version %d; it is now version %d: read it again, merge your change, and save with that version", uri, *read, cur.Version)
+	case shared:
+		return skillErr(SkillConflict, "skill %q is shared with your team, so replacing %s needs the version you read; it is now version %d: read it, merge your change, and save with that version", name, uri, cur.Version)
+	default:
+		return skillErr(SkillConflict, "%s was saved by someone else at the same time; it is now version %d: read it again and save once more", uri, cur.Version)
+	}
 }
 
 // storeSkillFile writes content to storage and returns the row describing it.
@@ -411,6 +510,7 @@ func (c *controller) storeSkillFile(s model.Skill, path string, content []byte, 
 		CreatedAt: now,
 		UpdatedAt: now,
 		Path:      path,
+		Version:   1,
 	}
 	if err := c.storeSkillBlob(s, &f, content); err != nil {
 		return model.SkillFile{}, err
@@ -500,16 +600,20 @@ func (c *controller) DeleteSkillFile(ctx context.Context, req entity.DeleteSkill
 	if err != nil {
 		return nil, err
 	}
-	if s.SourceType == skillSourceGitHub {
-		s.LocallyModified = true
+	target, err := c.skillContent(ctx, s)
+	if err != nil {
+		return nil, err
 	}
-	s.UpdatedAt = time.Now()
-	saved, storageID, err := c.repository.DeleteSkillFile(ctx, s, path)
+	if target.SourceType == skillSourceGitHub {
+		target.LocallyModified = true
+	}
+	target.UpdatedAt = time.Now()
+	saved, storageID, err := c.repository.DeleteSkillFile(ctx, target, path)
 	if err != nil {
 		return nil, err
 	}
 	c.purge([]string{storageID})
-	return &entity.DeleteSkillFileResponse{Skill: fromModelSkill(saved, on[s.ID], scope)}, nil
+	return &entity.DeleteSkillFileResponse{Skill: fromModelSkill(asLink(s, saved), on[s.ID], scope)}, nil
 }
 
 // ImportSkills copies every skill in a GitHub repository (or one directory of

@@ -68,7 +68,8 @@ func (r *repository) ListTeamPeerWorkspaces(ctx context.Context, workspaceID int
 }
 
 // ListSkillsOnInWorkspaces lists the skills on in the given workspaces that
-// their owner has not turned off, by name.
+// their owner has not turned off, by name. A link is left out: the skill it
+// links to is the one the team sees.
 func (r *repository) ListSkillsOnInWorkspaces(ctx context.Context, workspaceIDs []int64) ([]WorkspaceSkillRow, error) {
 	rows := []WorkspaceSkillRow{}
 	if len(workspaceIDs) == 0 {
@@ -80,6 +81,7 @@ func (r *repository) ListSkillsOnInWorkspaces(ctx context.Context, workspaceIDs 
 		Joins("JOIN skills ON skills.id = workspace_skills.skill_id AND skills.user_id = workspaces.user_id").
 		Where("workspace_skills.workspace_id IN ?", workspaceIDs).
 		Where("skills.disabled IS NULL OR skills.disabled = ?", false).
+		Where("skills.linked_skill_id = ?", 0).
 		Order("skills.name ASC, skills.updated_at DESC, workspace_skills.workspace_id ASC").
 		Scan(&rows).Error
 	return rows, err

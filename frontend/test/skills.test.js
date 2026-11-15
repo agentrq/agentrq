@@ -172,6 +172,7 @@ describe('ordering, size and source', () => {
 
   it('says where a skill came from', () => {
     expect(skillSource({ sourceType: 'manual' })).toBe('manual');
+    expect(skillSource({ sourceType: 'team' })).toBe('shared by a teammate');
     expect(skillSource(undefined)).toBe('manual');
     expect(skillSource({ sourceType: 'github' })).toBe('manual');
     expect(skillSource({ sourceType: 'github', sourceRepo: 'obra/superpowers', sourceCommit: '0123456789abcdef', sourceRef: 'main' })).toBe('GitHub obra/superpowers@0123456');

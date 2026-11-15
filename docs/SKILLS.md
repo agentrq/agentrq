@@ -77,6 +77,12 @@ A skill has two kinds of switch:
 
 It is one skill wherever it is on, not a copy, so an edit made from any workspace reaches all of them. **Delete** on a skill's page deletes it from the account, and every workspace loses it.
 
+## Skills from your team
+
+**Add** on a team workspace's skill links it into your account; nothing is copied. Your agents load and improve that one skill, the teammate's, and every teammate who added it sees each change. It shows as *shared by a teammate*, with your own workspace switches. When the team stops sharing it with you, your agents no longer find it; when its owner deletes it, the link goes too. If you already have your own skill of that name, **Use the team's instead** on its team page turns yours into the link: its files are deleted, its workspace switches stay, and anyone who linked to yours now links to your teammate's.
+
+Because several people write a shared skill, `skills.load` shows each file's version and `skills.save` must send it to replace the file. A save made on an older version is refused with the version there is now, to read and merge first. Adding a new file needs no version.
+
 Skills from before they belonged to the account were moved to it when the server first started with this version. Each one is on in the workspace that had it and in every workspace it was shared into. When two workspaces had a skill with the same name, the two were merged if their files were the same; otherwise the later one was renamed `<name>-<workspace>`, with its `SKILL.md` changed to match.
 
 ## Reading a skill
@@ -99,7 +105,7 @@ On the workspace server, which every agent in the workspace connects to:
 |---|---|
 | `skills.search(q?, limit?, offset?)` | The skills on in this workspace (and on for the account), each with its description and `skill://` URI. `q` (at least 3 characters) keeps only skills whose name or description contains it, ignoring case; `limit` (at most 100) and `offset` page through the matches, and the answer says how many there are in all. Contents are not included |
 | `skills.load(uri)` | One file, as stored. A `SKILL.md` comes with the URIs of the skill's other files |
-| `skills.save(uri, content)` | Writes one file of a skill on in this workspace. Writing `SKILL.md` creates or updates the skill; a new one belongs to the account and is on in this workspace |
+| `skills.save(uri, content, version?)` | Writes one file of a skill on in this workspace. Writing `SKILL.md` creates or updates the skill; a new one belongs to the account and is on in this workspace. `version` is the one `skills.load` showed: a file of a skill shared with your team can only be replaced with it, and a save on a version someone has replaced since is refused with the version there is now |
 | `skills.delete(uri)` | `skill://<name>` turns the skill off in this workspace, and deletes it from the account when no other workspace has it on; `skill://<name>/<path>` deletes one of its files. A `SKILL.md` cannot be deleted on its own |
 
 Agents are told to call `skills.search` at the start of a task and to load the `SKILL.md` of any skill that matches it.

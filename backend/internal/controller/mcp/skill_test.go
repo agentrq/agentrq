@@ -29,6 +29,7 @@ type fakeSkills struct {
 	total    int
 	searched []string
 	deleted  []string
+	version  int64 // the version every load reports, 0 for a skill nobody else writes
 }
 
 func (f *fakeSkills) SearchSkills(_ context.Context, q string, limit, offset int) ([]SkillSummary, int, error) {
@@ -39,17 +40,17 @@ func (f *fakeSkills) SearchSkills(_ context.Context, q string, limit, offset int
 	return f.skills, len(f.skills), f.err
 }
 
-func (f *fakeSkills) LoadSkillFile(_ context.Context, name, path string) (string, []string, bool, error) {
+func (f *fakeSkills) LoadSkillFile(_ context.Context, name, path string) (string, []string, int64, bool, error) {
 	if f.err != nil {
-		return "", nil, false, f.err
+		return "", nil, 0, false, f.err
 	}
 	files, ok := f.files[name]
 	if !ok {
-		return "", nil, false, nil
+		return "", nil, 0, false, nil
 	}
 	content, ok := files[path]
 	if !ok {
-		return "", nil, false, nil
+		return "", nil, 0, false, nil
 	}
 	var paths []string
 	for _, p := range []string{"SKILL.md", "references/guide.md", "scripts/run.sh"} {
@@ -57,12 +58,12 @@ func (f *fakeSkills) LoadSkillFile(_ context.Context, name, path string) (string
 			paths = append(paths, p)
 		}
 	}
-	return content, paths, true, nil
+	return content, paths, f.version, true, nil
 }
 
-func (f *fakeSkills) SaveSkillFile(_ context.Context, name, path, content string) error {
-	f.saved = append(f.saved, name+"/"+path+"="+content)
-	return f.err
+func (f *fakeSkills) SaveSkillFile(_ context.Context, name, path, content string, version int64) (int64, error) {
+	f.saved = append(f.saved, fmt.Sprintf("%s/%s@%d=%s", name, path, version, content))
+	return version + 1, f.err
 }
 
 func (f *fakeSkills) DeleteSkill(_ context.Context, name string) (bool, error) {
@@ -175,6 +176,23 @@ func TestLoadSkill(t *testing.T) {
 	}
 }
 
+// A file of a skill others write too ends with its version, to send back
+// with skills save; the list of files still follows a SKILL.md.
+func TestLoadSkill_SharedShowsVersion(t *testing.T) {
+	store := tddSkills()
+	store.version = 3
+	ps, _ := skillServer(t, store)
+	ctx := context.Background()
+	note := "\n\n---\nThis skill is shared with your team: this file is version 3. Send \"version\": 3 with skills save to change it."
+	if text, isErr := call(ps.handleLoadSkill(ctx, nil, LoadSkillParams{URI: "skill://tdd/references/guide.md"})); isErr || text != "guide"+note {
+		t.Errorf("sub file: %v %q", isErr, text)
+	}
+	text, isErr := call(ps.handleLoadSkill(ctx, nil, LoadSkillParams{URI: "skill://tdd"}))
+	if isErr || !strings.HasPrefix(text, "---\ndescription: d\n---\nSee references/guide.md."+note+"\n\n---\nFiles in this skill:\n") {
+		t.Errorf("SKILL.md: %v %q", isErr, text)
+	}
+}
+
 func TestLoadSkill_MissIsNotAnError(t *testing.T) {
 	ps, _ := skillServer(t, tddSkills())
 	for _, uri := range []string{"skill://nope", "skill://tdd/missing.md"} {
@@ -191,14 +209,14 @@ func TestSaveSkill(t *testing.T) {
 	ctx := context.Background()
 
 	text, isErr := call(ps.handleSaveSkill(ctx, nil, SaveSkillParams{URI: "skill://Fresh", Content: "---\ndescription: d\n---\n"}))
-	if isErr || text != "Saved skill://fresh/SKILL.md (23 bytes)." {
+	if isErr || text != "Saved skill://fresh/SKILL.md (23 bytes), version 1." {
 		t.Errorf("SKILL.md: %v %q", isErr, text)
 	}
-	text, isErr = call(ps.handleSaveSkill(ctx, nil, SaveSkillParams{URI: "skill://tdd/notes.md", Content: "n"}))
-	if isErr || text != "Saved skill://tdd/notes.md (1 bytes)." {
+	text, isErr = call(ps.handleSaveSkill(ctx, nil, SaveSkillParams{URI: "skill://tdd/notes.md", Content: "n", Version: 4}))
+	if isErr || text != "Saved skill://tdd/notes.md (1 bytes), version 5." {
 		t.Errorf("sub file: %v %q", isErr, text)
 	}
-	if strings.Join(store.saved, ";") != "fresh/SKILL.md=---\ndescription: d\n---\n;tdd/notes.md=n" {
+	if strings.Join(store.saved, ";") != "fresh/SKILL.md@0=---\ndescription: d\n---\n;tdd/notes.md@4=n" {
 		t.Errorf("saved: %q", store.saved)
 	}
 	if strings.Join(*tools, ",") != "saveSkill,saveSkill" {

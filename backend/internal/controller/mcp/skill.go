@@ -37,9 +37,12 @@ type SkillStore interface {
 	// all, and a limit of 0 returns every match. total counts all matches.
 	SearchSkills(ctx context.Context, q string, limit, offset int) (skills []SkillSummary, total int, err error)
 	// LoadSkillFile returns a file's content and the paths of every file in
-	// its skill.
-	LoadSkillFile(ctx context.Context, name, path string) (content string, files []string, found bool, err error)
-	SaveSkillFile(ctx context.Context, name, path, content string) error
+	// its skill, and its version when others write the skill too (a link to
+	// a teammate's skill, or one a teammate links to), 0 otherwise.
+	LoadSkillFile(ctx context.Context, name, path string) (content string, files []string, version int64, found bool, err error)
+	// SaveSkillFile writes a file on the version the writer read, 0 for
+	// none, and returns its new version.
+	SaveSkillFile(ctx context.Context, name, path, content string, version int64) (int64, error)
 	DeleteSkill(ctx context.Context, name string) (deleted bool, err error)
 	DeleteSkillFile(ctx context.Context, name, path string) (deleted bool, err error)
 }
@@ -67,6 +70,7 @@ type LoadSkillParams struct {
 type SaveSkillParams struct {
 	URI     string `json:"uri" jsonschema:"The file to write, as skill://<name>/<path>. skill://<name> alone writes its SKILL.md."`
 	Content string `json:"content" jsonschema:"The full new content of the file. This replaces it entirely — there is no append."`
+	Version int64  `json:"version,omitempty" jsonschema:"The version skills load showed for this file. Needed to replace a file of a skill shared with your team, so nobody's change is lost; leave it out to add a new file."`
 }
 
 // DeleteSkillParams is the input to the deleteSkill tool.
@@ -141,7 +145,7 @@ func (ps *WorkspaceServer) handleLoadSkill(ctx context.Context, req *mcp.CallToo
 		return toolError(skillsUnavailable), nil, nil
 	}
 
-	content, files, found, err := ps.skills.LoadSkillFile(ctx, name, p)
+	content, files, version, found, err := ps.skills.LoadSkillFile(ctx, name, p)
 	if err != nil {
 		return skillFailure(err, "load "+skill.URI(name, p)), nil, nil
 	}
@@ -149,6 +153,9 @@ func (ps *WorkspaceServer) handleLoadSkill(ctx context.Context, req *mcp.CallToo
 		// Not an error: a stale link or a guessed name, which searchSkills
 		// answers.
 		return textResult("No skill or file at %s. Call skills search to see the skills this workspace has.", skill.URI(name, p)), nil, nil
+	}
+	if version != 0 {
+		content += fmt.Sprintf("\n\n---\nThis skill is shared with your team: this file is version %d. Send \"version\": %d with skills save to change it.", version, version)
 	}
 	if p != skill.FileName {
 		return textResult("%s", content), nil, nil
@@ -181,10 +188,11 @@ func (ps *WorkspaceServer) handleSaveSkill(ctx context.Context, req *mcp.CallToo
 		return toolError(skillsUnavailable), nil, nil
 	}
 
-	if err := ps.skills.SaveSkillFile(ctx, name, p, params.Content); err != nil {
+	version, err := ps.skills.SaveSkillFile(ctx, name, p, params.Content, params.Version)
+	if err != nil {
 		return skillFailure(err, "save "+skill.URI(name, p)), nil, nil
 	}
-	return textResult("Saved %s (%d bytes).", skill.URI(name, p), len(params.Content)), nil, nil
+	return textResult("Saved %s (%d bytes), version %d.", skill.URI(name, p), len(params.Content), version), nil, nil
 }
 
 func (ps *WorkspaceServer) handleDeleteSkill(ctx context.Context, req *mcp.CallToolRequest, params DeleteSkillParams) (*mcp.CallToolResult, any, error) {

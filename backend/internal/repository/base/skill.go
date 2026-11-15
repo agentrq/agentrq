@@ -28,6 +28,102 @@ type SkillFilter struct {
 	EnabledOnly bool
 }
 
+// GetSkillByID is a skill by id, whoever owns it. The caller has already
+// decided it may read it.
+func (r *repository) GetSkillByID(ctx context.Context, id int64) (model.Skill, error) {
+	var s model.Skill
+	err := r.conn(ctx).Where("id = ? AND workspace_id = ?", id, accountSkill).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Skill{}, ErrNotFound
+	}
+	return s, err
+}
+
+// readableSkills selects the skills userID reads through a team: their
+// owner's own, not turned off, on in an unarchived workspace of that owner
+// that is shared with a team userID is in and does not hold its skills back.
+// Skills are on only in a parent workspace, which is the one shared.
+func readableSkills(db *gorm.DB, userID int64) *gorm.DB {
+	return db.Model(&model.WorkspaceSkill{}).Select("workspace_skills.skill_id").
+		Joins("JOIN skills AS src ON src.id = workspace_skills.skill_id AND src.linked_skill_id = 0 AND (src.disabled IS NULL OR src.disabled = ?)", false).
+		Joins("JOIN workspaces AS owned ON owned.id = workspace_skills.workspace_id AND owned.user_id = src.user_id AND owned.archived_at IS NULL").
+		Joins("JOIN workspace_shares AS share ON share.workspace_id = owned.id AND share.hide_skills = ?", false).
+		Joins("JOIN team_members AS member ON member.team_id = share.team_id AND member.user_id = ?", userID)
+}
+
+// CanReadLinkedSkill reports whether userID still reads skillID through a
+// team, which is what a link to it needs at every read and write.
+func (r *repository) CanReadLinkedSkill(ctx context.Context, userID, skillID int64) (bool, error) {
+	var n int64
+	err := readableSkills(r.conn(ctx), userID).Where("workspace_skills.skill_id = ?", skillID).Count(&n).Error
+	return n > 0, err
+}
+
+// HasSkillLinks reports whether any account links to the skill, which makes
+// it one that others write too.
+func (r *repository) HasSkillLinks(ctx context.Context, skillID int64) (bool, error) {
+	var n int64
+	err := r.conn(ctx).Model(&model.Skill{}).Where("linked_skill_id = ?", skillID).Count(&n).Error
+	return n > 0, err
+}
+
+// LinkSkill stores link, a row naming a teammate's skill, and turns it on in
+// the workspaces on names. A name the account already has is
+// gorm.ErrDuplicatedKey.
+func (r *repository) LinkSkill(ctx context.Context, link model.Skill, on []model.WorkspaceSkill) (model.Skill, error) {
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&link).Error; err != nil {
+			return err
+		}
+		return turnOn(tx, link.ID, on)
+	})
+	if err != nil {
+		return model.Skill{}, err
+	}
+	return link, nil
+}
+
+// SwapSkillForLink turns the account's skill link.ID into link, a link to
+// link.LinkedSkillID: its files go, and every link to it now links there,
+// so nobody who read it loses the skill. It is turned on in the workspaces
+// on names too. The skill linked to must still be a skill of its own, or the
+// swap is ErrVersionConflict: two owners swapping for each other's at once
+// would otherwise leave two links and no skill. It returns the storage ids
+// of the files dropped, for the caller to purge after the commit.
+func (r *repository) SwapSkillForLink(ctx context.Context, link model.Skill, on []model.WorkspaceSkill) ([]string, error) {
+	var dropped []string
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		// Holds the skill linked to until the commit.
+		res := tx.Model(&model.Skill{}).Where("id = ? AND linked_skill_id = ?", link.LinkedSkillID, 0).UpdateColumn("linked_skill_id", 0)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrVersionConflict
+		}
+		if err := tx.Model(&model.SkillFile{}).Where("skill_id = ?", link.ID).Pluck("storage_id", &dropped).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("skill_id = ?", link.ID).Delete(&model.SkillFile{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Save(&link).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Skill{}).Where("linked_skill_id = ?", link.ID).Updates(map[string]any{
+			"linked_skill_id": link.LinkedSkillID, "description": link.Description,
+			"file_count": link.FileCount, "total_bytes": link.TotalBytes, "updated_at": link.UpdatedAt,
+		}).Error; err != nil {
+			return err
+		}
+		return turnOn(tx, link.ID, on)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return dropped, nil
+}
+
 func (r *repository) GetSkill(ctx context.Context, userID int64, name string) (model.Skill, error) {
 	var s model.Skill
 	err := r.conn(ctx).
@@ -56,8 +152,10 @@ func (r *repository) SearchSkills(ctx context.Context, userID int64, q string, f
 		query = query.Where(`(LOWER(name) LIKE ? ESCAPE '\' OR LOWER(description) LIKE ? ESCAPE '\')`, pattern, pattern)
 	}
 	if filter.EnabledOnly {
-		// A skill from before the switch has NULL here, and is on.
-		query = query.Where("(disabled = ? OR disabled IS NULL)", false)
+		// A skill from before the switch has NULL here, and is on. A link
+		// counts only while a team still shares its skill with the account.
+		query = query.Where("(disabled = ? OR disabled IS NULL)", false).
+			Where("(linked_skill_id = 0 OR linked_skill_id IN (?))", readableSkills(r.conn(ctx), userID))
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -113,8 +211,11 @@ func (r *repository) ReplaceSkill(ctx context.Context, s model.Skill, files []mo
 
 // UpsertSkillFile writes one file of a skill, creating the skill when s.ID is
 // not stored yet, turns it on in the workspaces on names, and returns the
-// storage id of the content it replaced ("" for a new file).
-func (r *repository) UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile, on []model.WorkspaceSkill) (model.Skill, string, error) {
+// skill, the file as stored and the storage id of the content it replaced
+// ("" for a new file). Each write moves the file to its next version. With
+// expect, the write is made only on that version, 0 being no file yet:
+// another is ErrVersionConflict, as is a write that loses a race.
+func (r *repository) UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile, on []model.WorkspaceSkill, expect *int64) (model.Skill, model.SkillFile, string, error) {
 	var replaced string
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&s).Error; err != nil {
@@ -123,15 +224,35 @@ func (r *repository) UpsertSkillFile(ctx context.Context, s model.Skill, f model
 		var old model.SkillFile
 		err := tx.Where("skill_id = ? AND path = ?", s.ID, f.Path).First(&old).Error
 		switch {
-		case err == nil:
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			if expect != nil && *expect != 0 {
+				return ErrVersionConflict
+			}
+			f.SkillID, f.Version = s.ID, 1
+			if err := tx.Create(&f).Error; err != nil {
+				return err
+			}
+		case err != nil:
+			return err
+		default:
+			if expect != nil && *expect != old.Version {
+				return ErrVersionConflict
+			}
 			replaced = old.StorageID
-			f.ID, f.CreatedAt = old.ID, old.CreatedAt
-		case !errors.Is(err, gorm.ErrRecordNotFound):
-			return err
-		}
-		f.SkillID = s.ID
-		if err := tx.Save(&f).Error; err != nil {
-			return err
+			f.ID, f.CreatedAt, f.SkillID, f.Version = old.ID, old.CreatedAt, s.ID, old.Version+1
+			res := tx.Model(&model.SkillFile{}).Where("id = ? AND version = ?", old.ID, old.Version).Updates(map[string]any{
+				"updated_at": f.UpdatedAt,
+				"size_bytes": f.SizeBytes,
+				"sha256":     f.SHA256,
+				"storage_id": f.StorageID,
+				"version":    f.Version,
+			})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return ErrVersionConflict
+			}
 		}
 		if err := turnOn(tx, s.ID, on); err != nil {
 			return err
@@ -139,9 +260,9 @@ func (r *repository) UpsertSkillFile(ctx context.Context, s model.Skill, f model
 		return recount(tx, &s)
 	})
 	if err != nil {
-		return model.Skill{}, "", err
+		return model.Skill{}, model.SkillFile{}, "", err
 	}
-	return s, replaced, nil
+	return s, f, replaced, nil
 }
 
 // turnOn turns a skill on in each workspace of on; one where it is on
@@ -204,7 +325,12 @@ func (r *repository) DeleteSkill(ctx context.Context, skillID int64) ([]string, 
 		if res.RowsAffected == 0 {
 			return ErrNotFound
 		}
-		return nil
+		// Links to it have nothing left to read, so they go with it.
+		links := tx.Model(&model.Skill{}).Select("id").Where("linked_skill_id = ?", skillID)
+		if err := tx.Where("skill_id IN (?)", links).Delete(&model.WorkspaceSkill{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("linked_skill_id = ?", skillID).Delete(&model.Skill{}).Error
 	})
 	if err != nil {
 		return nil, err
@@ -354,7 +480,8 @@ func (r *repository) MergeLegacySkill(ctx context.Context, from model.Skill, int
 	return storageIDs, nil
 }
 
-// recount keeps a skill's file count and size in step with its files.
+// recount keeps a skill's file count and size in step with its files, and
+// the links to it in step with it.
 func recount(tx *gorm.DB, s *model.Skill) error {
 	var agg struct {
 		N     int
@@ -367,6 +494,11 @@ func recount(tx *gorm.DB, s *model.Skill) error {
 		return err
 	}
 	s.FileCount, s.TotalBytes = agg.N, agg.Bytes
-	return tx.Model(&model.Skill{}).Where("id = ?", s.ID).
-		Updates(map[string]any{"file_count": agg.N, "total_bytes": agg.Bytes}).Error
+	if err := tx.Model(&model.Skill{}).Where("id = ?", s.ID).
+		Updates(map[string]any{"file_count": agg.N, "total_bytes": agg.Bytes}).Error; err != nil {
+		return err
+	}
+	// A link shows what it links to, so a search finds it by the same words.
+	return tx.Model(&model.Skill{}).Where("linked_skill_id = ?", s.ID).
+		Updates(map[string]any{"description": s.Description, "file_count": agg.N, "total_bytes": agg.Bytes, "updated_at": s.UpdatedAt}).Error
 }

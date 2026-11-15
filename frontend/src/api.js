@@ -1673,8 +1673,11 @@ export function getTeamSkill(teamId, name, workspace = '') {
 }
 
 // Copies a teammate's skill into your account, on in the workspaces given.
-export function addTeamSkill(teamId, name, workspaceIds = [], workspace = '') {
-  return teamCall(`/teams/${enc(teamId)}/skills/${enc(name)}/add${teamSkillsQuery(workspace)}`, 'Failed to add the skill', { method: 'POST', body: { workspaceIds } });
+// Links the skill into your account; replace turns your own skill of that
+// name into the link, its files dropped.
+export function addTeamSkill(teamId, name, workspaceIds = [], workspace = '', replace = false) {
+  const body = replace ? { workspaceIds, replace: true } : { workspaceIds };
+  return teamCall(`/teams/${enc(teamId)}/skills/${enc(name)}/add${teamSkillsQuery(workspace)}`, 'Failed to add the skill', { method: 'POST', body });
 }
 
 // The Pano docs members shared with the team, newest update first, each with

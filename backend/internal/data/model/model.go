@@ -269,6 +269,10 @@ type (
 		// Disabled hides the skill from agents while keeping it. Stored as the
 		// negative so every skill, old or new, is on without a default.
 		Disabled bool
+		// LinkedSkillID makes this row a link to a teammate's skill: it has no
+		// files of its own, and every read and write goes to that skill while
+		// a team still shares it. 0 is a skill of the account's own.
+		LinkedSkillID int64 `gorm:"not null;default:0;index:idx_skills_linked_skill_id"`
 	}
 
 	// SkillFile is one file of a skill. Its content is in storage.
@@ -281,6 +285,9 @@ type (
 		SizeBytes int
 		SHA256    string `gorm:"type:varchar(64)"`
 		StorageID string `gorm:"type:varchar(64)"`
+		// Version counts the file's writes, from 1. A write to a skill that
+		// teammates write too must name the version it read.
+		Version int64 `gorm:"not null;default:1"`
 	}
 
 	// PanoDoc is a markdown document on an account's Pano, the board every

@@ -472,8 +472,17 @@ test('skill save needs a URI and content, and takes the content from anywhere', 
     stdin: stdinOf('---\ndescription: d\n---\n'),
     client,
   })
-  assert.deepEqual(client.calls[0].args, { action: 'save', uri: 'skill://tdd/SKILL.md', content: '---\ndescription: d\n---\n' })
+  assert.deepEqual(client.calls[0].args, { action: 'save', uri: 'skill://tdd/SKILL.md', content: '---\ndescription: d\n---\n', version: undefined })
   assert.equal(client.legacy[0][0], 'saveSkill')
+})
+
+test('skill save sends the version it read, and checks it', async () => {
+  const client = stubClient()
+  await invoke('skill save', { positionals: ['skill://tdd'], values: { content: 'x', version: '2' }, client })
+  assert.deepEqual(client.calls[0].args, { action: 'save', uri: 'skill://tdd', content: 'x', version: 2 })
+  for (const version of ['0', 'two']) {
+    await assert.rejects(() => invoke('skill save', { positionals: ['skill://tdd'], values: { content: 'x', version }, client }), /--version must be a whole number/)
+  }
 })
 
 test('event publish sends the payload, task and faq', async () => {

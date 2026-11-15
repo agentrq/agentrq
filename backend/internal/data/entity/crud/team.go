@@ -211,17 +211,18 @@ type SystemGetSkillFileRequest struct {
 	Path   string
 }
 
-// CopySkillRequest copies FromUserID's skill Name into UserID's account, on
-// in WorkspaceIDs.
-type CopySkillRequest struct {
-	FromUserID   int64
-	Name         string
+// LinkSkillRequest links a teammate's skill, SkillID, into UserID's account,
+// on in WorkspaceIDs. Replace turns UserID's skill of that name into the
+// link, dropping its files, where it would otherwise be a conflict.
+type LinkSkillRequest struct {
+	SkillID      int64
 	UserID       string
 	WorkspaceIDs []int64
+	Replace      bool
 }
 
-// CopySkillResponse is the copy.
-type CopySkillResponse struct {
+// LinkSkillResponse is the link, as the account's skill.
+type LinkSkillResponse struct {
 	Skill Skill
 }
 
