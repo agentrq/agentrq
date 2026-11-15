@@ -160,7 +160,7 @@ const TEAM_WRITES = (api) => ({
   share: ({ workspaceId, teamId, version, tasks, skills, memory }) => api.shareWorkspace(workspaceId, teamId, version, { tasks, skills, memory }),
   unshare: ({ workspaceId, teamId, version }) => api.unshareWorkspace(workspaceId, teamId, version),
   teammateMemory: ({ workspaceId, userId, included }) => api.setTeammateMemory(workspaceId, userId, included !== false),
-  addSkill: ({ teamId, name, workspaceIds = [], workspace = '' }) => api.addTeamSkill(teamId, name, workspaceIds, workspace),
+  addSkill: ({ teamId, name, workspaceIds = [], workspace = '', replace = false }) => api.addTeamSkill(teamId, name, workspaceIds, workspace, replace === true),
   sharePano: ({ docId, teamId, version }) => api.sharePanoDoc(docId, teamId, version),
   unsharePano: ({ docId, teamId, version }) => api.unsharePanoDoc(docId, teamId, version),
 })
@@ -1543,7 +1543,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'invite (email; at most a few per team per day, 429 past it), revokeInvitation (invitationId), ' +
         'share/unshare (workspaceId: one of yours; share takes tasks, skills, memory, false to hold that back, and sets them on a shared one), accept (token or invitationId), decline (invitationId), ' +
         'teammateMemory (workspaceId: one of yours, userId, included: whether its agent\'s memory index lists that teammate\'s memory), ' +
-        'addSkill (name, workspace: the team workspace it is on in, workspaceIds: copy a teammate\'s skill into your account), sharePano/unsharePano (docId: a Pano doc of yours). ' +
+        'addSkill (name, workspace: the team workspace it is on in, workspaceIds: link a teammate\'s skill into your account; replace: swap your own for it), sharePano/unsharePano (docId: a Pano doc of yours). ' +
         'Every change but accept, decline, addSkill and teammateMemory takes the team\'s version, from get, members or invitations; ' +
         'one made after someone else\'s is refused with 409, conflict: true and the current version: read again, then retry.',
       properties: {
@@ -1553,6 +1553,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         name: str('The team\'s new name, for rename; the skill\'s, for addSkill.'),
         workspaceIds: { type: 'array', items: { type: 'string' }, description: 'Your workspaces to turn an added skill on in. Optional.' },
         workspace: str('For addSkill: the sharedName of the team workspace the skill is on in. Optional.'),
+        replace: bool('For addSkill: true turns your own skill of that name into the link, deleting its files. Defaults to false.'),
         email: str('The email to invite.'),
         included: bool('For teammateMemory: true to include the teammate\'s memory, false to leave it out. Defaults to true.'),
         tasks: bool('For share: false holds the workspace\'s tasks back from the team. Defaults to true.'),

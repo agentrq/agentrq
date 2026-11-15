@@ -176,6 +176,7 @@ type Repository interface {
 	CanReadLinkedSkill(ctx context.Context, userID, skillID int64) (bool, error)
 	HasSkillLinks(ctx context.Context, skillID int64) (bool, error)
 	LinkSkill(ctx context.Context, link model.Skill, on []model.WorkspaceSkill) (model.Skill, error)
+	SwapSkillForLink(ctx context.Context, link model.Skill, on []model.WorkspaceSkill) ([]string, error)
 	SearchSkills(ctx context.Context, userID int64, q string, filter SkillFilter, limit, offset int) ([]model.Skill, int64, error)
 	SetSkillDisabled(ctx context.Context, skillID int64, disabled bool) error
 	ReplaceSkill(ctx context.Context, s model.Skill, files []model.SkillFile, on []model.WorkspaceSkill) (model.Skill, []string, error)

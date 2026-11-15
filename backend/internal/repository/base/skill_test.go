@@ -117,6 +117,11 @@ func TestSkillRepository_EveryStatementFailure(t *testing.T) {
 			_, err := r.LinkSkill(ctx, model.Skill{ID: 16, UserID: skUser + 1, Name: "tdd", LinkedSkillID: s.ID}, on())
 			return err
 		}},
+		{"swap for a link", func(r Repository, s, legacy model.Skill) error {
+			s.LinkedSkillID = legacy.ID
+			_, err := r.SwapSkillForLink(ctx, s, on())
+			return err
+		}},
 		{"delete file", func(r Repository, s, _ model.Skill) error {
 			_, _, err := r.DeleteSkillFile(ctx, s, "notes.md")
 			return err

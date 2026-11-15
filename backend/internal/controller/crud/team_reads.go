@@ -78,7 +78,12 @@ func (c *controller) LinkSkill(ctx context.Context, req entity.LinkSkillRequest)
 	if err != nil {
 		return nil, err
 	}
-	switch _, err := c.repository.GetSkill(ctx, uid, src.Name); {
+	if src.UserID == uid {
+		return nil, skillErr(SkillConflict, "skill %s is your own; no teammate has one to use instead", src.Name)
+	}
+	switch existing, err := c.repository.GetSkill(ctx, uid, src.Name); {
+	case err == nil && req.Replace:
+		return c.swapSkillForLink(ctx, existing, src, workspaces)
 	case err == nil:
 		return nil, skillErr(SkillConflict, "you already have a skill named %s", src.Name)
 	case !errors.Is(err, base.ErrNotFound):
@@ -103,4 +108,33 @@ func (c *controller) LinkSkill(ctx context.Context, req entity.LinkSkillRequest)
 		return nil, err
 	}
 	return &entity.LinkSkillResponse{Skill: fromModelSkill(saved, workspaces, 0)}, nil
+}
+
+// swapSkillForLink turns the caller's skill mine into a link to src: its
+// files go, its workspace switches stay, and those who linked to it now
+// link to src.
+func (c *controller) swapSkillForLink(ctx context.Context, mine, src model.Skill, workspaces []int64) (*entity.LinkSkillResponse, error) {
+	on, err := c.repository.ListSkillWorkspaces(ctx, []int64{mine.ID})
+	if err != nil {
+		return nil, err
+	}
+	link := model.Skill{
+		ID: mine.ID, CreatedAt: mine.CreatedAt, UpdatedAt: src.UpdatedAt, UserID: mine.UserID,
+		Name: mine.Name, Description: src.Description, SourceType: skillSourceTeam,
+		FileCount: src.FileCount, TotalBytes: src.TotalBytes, Disabled: mine.Disabled, LinkedSkillID: src.ID,
+	}
+	now := time.Now()
+	rows := make([]model.WorkspaceSkill, len(workspaces))
+	for i, w := range workspaces {
+		rows[i] = model.WorkspaceSkill{ID: c.idgen.NextID(), CreatedAt: now, UserID: mine.UserID, WorkspaceID: w}
+	}
+	dropped, err := c.repository.SwapSkillForLink(ctx, link, rows)
+	if errors.Is(err, base.ErrVersionConflict) {
+		return nil, skillErr(SkillConflict, "the teammate's %s changed a moment ago; try again", mine.Name)
+	}
+	if err != nil {
+		return nil, err
+	}
+	c.purge(dropped)
+	return &entity.LinkSkillResponse{Skill: fromModelSkill(link, withWorkspaces(on[mine.ID], workspaces), 0)}, nil
 }

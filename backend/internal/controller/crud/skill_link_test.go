@@ -6,6 +6,7 @@ package crud
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -302,6 +303,98 @@ func TestSkillLink_DatabaseFailures(t *testing.T) {
 		var se *SkillError
 		if err == nil || errors.As(err, &se) {
 			t.Errorf("save = %v, want the injected failure", err)
+		}
+	})
+}
+
+// swapEnv is linkEnv with skUser's own deploy in place of the link, with
+// files, on in skWS, shared with the team, and a third member, skThird,
+// linking to it.
+func newSwapEnv(t *testing.T) (*linkEnv, int64, int64) {
+	t.Helper()
+	e := newLinkEnv(t)
+	if err := e.c.DeleteSkill(e.ctx, entity.DeleteSkillRequest{UserID: skUserStr, Name: "deploy"}); err != nil {
+		t.Fatal(err)
+	}
+	mine, err := e.saveAs(skUserStr, skWS, "SKILL.md", md("deploy", "Mine."), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.saveAs(skUserStr, skWS, "extra.md", "extra", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []any{
+		&model.TeamMember{ID: 4, TeamID: 9, UserID: skThird},
+		&model.WorkspaceShare{ID: 5, TeamID: 9, WorkspaceID: skWS, UserID: skUser},
+	} {
+		if err := e.db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	third, err := e.c.LinkSkill(e.ctx, entity.LinkSkillRequest{SkillID: mine.Skill.ID, UserID: monoflake.ID(skThird).String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e, mine.Skill.ID, third.Skill.ID
+}
+
+const skThird = int64(482467435371298819)
+
+// Replace turns the caller's own skill into a link to the teammate's: its
+// files go, its switches stay, and whoever linked to it now links there.
+func TestLinkSkill_Replace(t *testing.T) {
+	e, mine, third := newSwapEnv(t)
+	req := entity.LinkSkillRequest{SkillID: e.src, UserID: skUserStr}
+	if _, err := e.c.LinkSkill(e.ctx, req); err == nil || !strings.Contains(err.Error(), "already have") {
+		t.Fatalf("a link over a name the caller has, without replace = %v", err)
+	}
+	req.Replace, req.WorkspaceIDs = true, []int64{skWS2}
+	rs, err := e.c.LinkSkill(e.ctx, req)
+	if err != nil || rs.Skill.ID != mine || rs.Skill.SourceType != skillSourceTeam || rs.Skill.Description != "Ship it." || fmt.Sprint(rs.Skill.WorkspaceIDs) != fmt.Sprint([]int64{skWS, skWS2}) {
+		t.Fatalf("the swap = %+v, %v", rs, err)
+	}
+	var files int64
+	e.db.Model(&model.SkillFile{}).Where("skill_id = ?", mine).Count(&files)
+	var row, thirds model.Skill
+	e.db.First(&row, mine)
+	e.db.First(&thirds, third)
+	if files != 0 || row.LinkedSkillID != e.src || thirds.LinkedSkillID != e.src || thirds.Description != "Ship it." {
+		t.Errorf("after the swap: %d files left, the row %+v, the third's link %+v", files, row, thirds)
+	}
+	if f := e.fileAs(t, skUserStr, skWS, "SKILL.md"); !strings.Contains(f.File.Content, "Ship it.") {
+		t.Errorf("the swapped skill reads %q, want the teammate's", f.File.Content)
+	}
+	if _, err := e.c.LinkSkill(e.ctx, entity.LinkSkillRequest{SkillID: e.src, UserID: skOtherStr, Replace: true}); err == nil || !strings.Contains(err.Error(), "your own") {
+		t.Errorf("linking one's own skill = %v, want a refusal", err)
+	}
+}
+
+// A swap for a skill that has itself just become a link is refused, so two
+// owners swapping for each other's at once cannot leave two links and no
+// skill; a failed read or write is passed on.
+func TestLinkSkill_ReplaceRefusals(t *testing.T) {
+	t.Run("the target became a link", func(t *testing.T) {
+		e, _, _ := newSwapEnv(t)
+		e.db.Model(&model.Skill{}).Where("id = ?", e.src).UpdateColumn("linked_skill_id", 1)
+		var se *SkillError
+		_, err := e.c.LinkSkill(e.ctx, entity.LinkSkillRequest{SkillID: e.src, UserID: skUserStr, Replace: true})
+		if !errors.As(err, &se) || se.Kind != SkillConflict || !strings.Contains(se.Message, "a moment ago") {
+			t.Errorf("swap = %v, want a conflict", err)
+		}
+	})
+	t.Run("the switches unreadable", func(t *testing.T) {
+		e, _, _ := newSwapEnv(t)
+		failSQL(e.db, "FROM `workspace_skills` WHERE skill_id IN", 1)
+		if _, err := e.c.LinkSkill(e.ctx, entity.LinkSkillRequest{SkillID: e.src, UserID: skUserStr, Replace: true}); err == nil {
+			t.Error("want the injected failure")
+		}
+	})
+	t.Run("the swap failing", func(t *testing.T) {
+		e, _, _ := newSwapEnv(t)
+		failSQL(e.db, "SELECT `storage_id` FROM `skill_files`", 1)
+		var se *SkillError
+		if _, err := e.c.LinkSkill(e.ctx, entity.LinkSkillRequest{SkillID: e.src, UserID: skUserStr, Replace: true}); err == nil || errors.As(err, &se) {
+			t.Errorf("swap = %v, want the injected failure", err)
 		}
 	})
 }

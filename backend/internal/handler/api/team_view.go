@@ -185,7 +185,7 @@ func (h *handler) addTeamSkill() fiber.Handler {
 		}
 		ctx, cancel := newContext(c)
 		defer cancel()
-		s, err := h.teamView.AddSkill(ctx, sessionUser(c), ids[0], c.Query("workspace"), c.Params("name"), workspaceIDs)
+		s, err := h.teamView.AddSkill(ctx, sessionUser(c), ids[0], c.Query("workspace"), c.Params("name"), workspaceIDs, rq.Replace)
 		return mapper.FromAddTeamSkillResponseEntityToHTTPResponse(s), err
 	})
 }

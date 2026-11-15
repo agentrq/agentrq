@@ -581,6 +581,20 @@ func (m *teamMode) skills(t *testing.T) {
 	expectStatus(t, "Bob adding a skill on in Alice's workspace", status, http.StatusNotFound, body)
 	status, body = add(bobID, "deploy", `{"workspaceIds":["`+ws201+`"]}`)
 	expectStatus(t, "Bob adding a skill he already has", status, http.StatusConflict, body)
+	// With replace, Bob's own deploy becomes a link to Alice's, though his
+	// copy is the one changed last; the team then sees hers alone.
+	status, body = add(bobID, "deploy", `{"workspaceIds":[],"replace":true}`)
+	skill, _ = body["skill"].(map[string]any)
+	if status != http.StatusOK || skill["sourceType"] != "team" || fmt.Sprint(skill["workspaceIds"]) != "["+ws200+"]" {
+		t.Errorf("Bob swapping his deploy for Alice's answered %d %v", status, body)
+	}
+	status, body = m.get(t, bobID, "/teams/"+teamTen+"/skills/deploy")
+	skill, _ = body["skill"].(map[string]any)
+	if owners, _ := skill["owners"].([]any); status != http.StatusOK || len(owners) != 1 || !strings.Contains(fmt.Sprint(skill["content"]), "steps of "+aliceID) {
+		t.Errorf("deploy after the swap answered %d %v, want Alice's alone", status, body)
+	}
+	status, body = add(aliceID, "deploy", `{"workspaceIds":[],"replace":true}`)
+	expectStatus(t, "Alice swapping her deploy, the only one left, for herself", status, http.StatusConflict, body)
 	status, body = add(bobID, "alice-only", `{"workspaceIds":["!"]}`)
 	expectStatus(t, "a workspace id that is not one", status, http.StatusBadRequest, body)
 	status, body = add(bobID, "alice-only", `{`)

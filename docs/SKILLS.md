@@ -79,7 +79,7 @@ It is one skill wherever it is on, not a copy, so an edit made from any workspac
 
 ## Skills from your team
 
-**Add** on a team workspace's skill links it into your account; nothing is copied. Your agents load and improve that one skill, the teammate's, and every teammate who added it sees each change. It shows as *shared by a teammate*, with your own workspace switches. When the team stops sharing it with you, your agents no longer find it; when its owner deletes it, the link goes too.
+**Add** on a team workspace's skill links it into your account; nothing is copied. Your agents load and improve that one skill, the teammate's, and every teammate who added it sees each change. It shows as *shared by a teammate*, with your own workspace switches. When the team stops sharing it with you, your agents no longer find it; when its owner deletes it, the link goes too. If you already have your own skill of that name, **Use the team's instead** on its team page turns yours into the link: its files are deleted, its workspace switches stay, and anyone who linked to yours now links to your teammate's.
 
 Because several people write a shared skill, `skills.load` shows each file's version and `skills.save` must send it to replace the file. A save made on an older version is refused with the version there is now, to read and merge first. Adding a new file needs no version.
 

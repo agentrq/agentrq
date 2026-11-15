@@ -10,7 +10,8 @@
      click adds it to your own skills as a link, not a copy, on in your
      workspace of that name if you have one: your agents read and improve the
      teammate's skill itself. A skill's page shows its SKILL.md, read-only,
-     and lets you choose workspaces to turn it on in as you add it. -->
+     and lets you choose workspaces to turn it on in as you add it, or swap
+     your own copy of it for a link to the teammate's. -->
 <template>
   <div data-test="team-skills" class="space-y-6">
     <p v-if="!workspace" data-test="team-skills-pick" class="text-[11px] text-gray-500 dark:text-zinc-400 ml-1">
@@ -29,9 +30,19 @@
         <p v-if="skill.description" class="text-[12px] text-gray-500 dark:text-zinc-400">{{ skill.description }}</p>
 
         <div class="sm:p-4 sm:bg-gray-50 sm:dark:bg-zinc-800/50 sm:rounded-sm sm:border border-gray-100 dark:border-zinc-800 space-y-3">
-          <p v-if="isMine(name)" data-test="team-skill-mine" class="text-[11px] text-gray-600 dark:text-zinc-300">
-            In your skills. <router-link :to="ownPage(name)" class="font-semibold underline text-gray-900 dark:text-white">Open yours</router-link>
-          </p>
+          <template v-if="isMine(name)">
+            <p data-test="team-skill-mine" class="text-[11px] text-gray-600 dark:text-zinc-300">
+              In your skills. <router-link :to="ownPage(name)" class="font-semibold underline text-gray-900 dark:text-white">Open yours</router-link>
+            </p>
+            <!-- Your own copy, not a link: swap it for the teammate's. -->
+            <template v-if="ownCopy(name)">
+              <p v-if="addError" data-test="team-skill-add-error" role="alert" class="text-[11px] font-bold text-red-600 dark:text-red-400">{{ addError }}</p>
+              <button type="button" data-test="team-skill-replace" :disabled="adding.has(name)" @click="replacing = name"
+                      class="px-4 py-2 rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-900 dark:text-white text-[11px] font-black uppercase tracking-widest hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-40">
+                {{ adding.has(name) ? 'Switching…' : "Use the team's instead" }}
+              </button>
+            </template>
+          </template>
           <template v-else>
             <SkillWorkspaceChoices v-model="workspaceIds" :workspaces="choices" legend="Turn on in (optional)"
                                    data-test="team-skill-workspaces" item-test="team-skill-workspace" />
@@ -42,6 +53,10 @@
             </button>
           </template>
         </div>
+
+        <DeleteModal :show="replacing === name" title="Use the team's skill" confirm-label="Use theirs"
+                     :message="`Your own ${name} and its files are deleted, and your agents use your teammate's instead. Its workspace switches stay as they are.`"
+                     @close="replacing = ''" @confirm="swap(name)" />
 
         <div data-test="team-skill-body" class="md-body text-[13px] text-gray-800 dark:text-zinc-200" v-html="renderMarkdown(skillBody(skill.content))"></div>
       </template>
@@ -81,6 +96,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { addTeamSkill, fetchTeamSkills, getTeamSkill, searchSkills } from '../api';
+import DeleteModal from './DeleteModal.vue';
 import OwnerAvatar from './OwnerAvatar.vue';
 import SkillCard from './SkillCard.vue';
 import SkillWorkspaceChoices from './SkillWorkspaceChoices.vue';
@@ -103,8 +119,12 @@ const inWorkspace = (path) => link({ path, query: { workspace: workspace.value }
 const skills = ref(null);
 const skill = ref(null);
 const error = ref('');
-// The names of your own skills, so one you have is not offered again.
-const mine = ref(new Set());
+// Your own skills, by name, with where each came from: one you have is not
+// offered again, and one of your own (not a link) can be swapped for the
+// team's.
+const mine = ref(new Map());
+// The skill whose swap is being confirmed.
+const replacing = ref('');
 // Skills being added, by name, while their answer is out.
 const adding = ref(new Set());
 const addError = ref('');
@@ -117,6 +137,7 @@ const ownId = computed(() => ownTeamWorkspace(workspaceStore.workspaces, workspa
 const ownIds = computed(() => (ownId.value ? [ownId.value] : []));
 watch(ownIds, (ids) => { workspaceIds.value = [...ids]; }, { immediate: true });
 const isMine = (n) => mine.value.has(n);
+const ownCopy = (n) => mine.value.has(n) && mine.value.get(n) !== 'team';
 const ownPage = (n) => `/skills/${encodeURIComponent(n)}`;
 const sharedBy = (s) => {
   const n = (s.owners || []).length;
@@ -126,9 +147,9 @@ const sharedBy = (s) => {
 async function loadMine() {
   // Without your list every skill is offered; the add then says if you have it.
   try {
-    mine.value = new Set(((await searchSkills())?.skills || []).map((s) => s.name));
+    mine.value = new Map(((await searchSkills())?.skills || []).map((s) => [s.name, s.sourceType]));
   } catch {
-    mine.value = new Set();
+    mine.value = new Map();
   }
 }
 
@@ -153,13 +174,14 @@ async function load() {
   return undefined;
 }
 
-async function add(skillName, ids) {
+async function add(skillName, ids, replace = false) {
   adding.value = new Set(adding.value).add(skillName);
   addError.value = '';
   try {
-    await addTeamSkill(teamId.value, skillName, [...ids], workspace.value);
-    mine.value = new Set(mine.value).add(skillName);
-    notifySuccess(`Added ${skillName} to your skills: your agents improve the teammate's skill, not a copy`, null, { path: ownPage(skillName), label: 'Open' });
+    await addTeamSkill(teamId.value, skillName, [...ids], workspace.value, replace);
+    mine.value = new Map(mine.value).set(skillName, 'team');
+    const done = replace ? `Your ${skillName} is now your teammate's` : `Added ${skillName} to your skills`;
+    notifySuccess(`${done}: your agents improve the teammate's skill, not a copy`, null, { path: ownPage(skillName), label: 'Open' });
   } catch (err) {
     if (props.name) addError.value = err.message;
     else notifyError(err.message);
@@ -168,6 +190,11 @@ async function add(skillName, ids) {
     next.delete(skillName);
     adding.value = next;
   }
+}
+
+function swap(skillName) {
+  replacing.value = '';
+  return add(skillName, [], true);
 }
 
 onMounted(() => {

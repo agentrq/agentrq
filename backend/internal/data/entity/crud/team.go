@@ -212,11 +212,13 @@ type SystemGetSkillFileRequest struct {
 }
 
 // LinkSkillRequest links a teammate's skill, SkillID, into UserID's account,
-// on in WorkspaceIDs.
+// on in WorkspaceIDs. Replace turns UserID's skill of that name into the
+// link, dropping its files, where it would otherwise be a conflict.
 type LinkSkillRequest struct {
 	SkillID      int64
 	UserID       string
 	WorkspaceIDs []int64
+	Replace      bool
 }
 
 // LinkSkillResponse is the link, as the account's skill.

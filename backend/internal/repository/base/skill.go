@@ -83,6 +83,47 @@ func (r *repository) LinkSkill(ctx context.Context, link model.Skill, on []model
 	return link, nil
 }
 
+// SwapSkillForLink turns the account's skill link.ID into link, a link to
+// link.LinkedSkillID: its files go, and every link to it now links there,
+// so nobody who read it loses the skill. It is turned on in the workspaces
+// on names too. The skill linked to must still be a skill of its own, or the
+// swap is ErrVersionConflict: two owners swapping for each other's at once
+// would otherwise leave two links and no skill. It returns the storage ids
+// of the files dropped, for the caller to purge after the commit.
+func (r *repository) SwapSkillForLink(ctx context.Context, link model.Skill, on []model.WorkspaceSkill) ([]string, error) {
+	var dropped []string
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		// Holds the skill linked to until the commit.
+		res := tx.Model(&model.Skill{}).Where("id = ? AND linked_skill_id = ?", link.LinkedSkillID, 0).UpdateColumn("linked_skill_id", 0)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrVersionConflict
+		}
+		if err := tx.Model(&model.SkillFile{}).Where("skill_id = ?", link.ID).Pluck("storage_id", &dropped).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("skill_id = ?", link.ID).Delete(&model.SkillFile{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Save(&link).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Skill{}).Where("linked_skill_id = ?", link.ID).Updates(map[string]any{
+			"linked_skill_id": link.LinkedSkillID, "description": link.Description,
+			"file_count": link.FileCount, "total_bytes": link.TotalBytes, "updated_at": link.UpdatedAt,
+		}).Error; err != nil {
+			return err
+		}
+		return turnOn(tx, link.ID, on)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return dropped, nil
+}
+
 func (r *repository) GetSkill(ctx context.Context, userID int64, name string) (model.Skill, error) {
 	var s model.Skill
 	err := r.conn(ctx).
