@@ -157,7 +157,7 @@ func (h *handler) listTeamSkills() fiber.Handler {
 	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
-		ss, err := h.teamView.ListSkills(ctx, sessionUser(c), ids[0])
+		ss, err := h.teamView.ListSkills(ctx, sessionUser(c), ids[0], c.Query("workspace"))
 		return mapper.FromTeamSkillEntitiesToHTTPResponse(ss), err
 	})
 }
@@ -166,7 +166,7 @@ func (h *handler) getTeamSkill() fiber.Handler {
 	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
-		s, err := h.teamView.GetSkill(ctx, sessionUser(c), ids[0], c.Params("name"))
+		s, err := h.teamView.GetSkill(ctx, sessionUser(c), ids[0], c.Query("workspace"), c.Params("name"))
 		return mapper.FromTeamSkillEntityToHTTPResponse(s), err
 	})
 }
@@ -185,7 +185,7 @@ func (h *handler) addTeamSkill() fiber.Handler {
 		}
 		ctx, cancel := newContext(c)
 		defer cancel()
-		s, err := h.teamView.AddSkill(ctx, sessionUser(c), ids[0], c.Params("name"), workspaceIDs)
+		s, err := h.teamView.AddSkill(ctx, sessionUser(c), ids[0], c.Query("workspace"), c.Params("name"), workspaceIDs)
 		return mapper.FromAddTeamSkillResponseEntityToHTTPResponse(s), err
 	})
 }

@@ -3639,10 +3639,15 @@ paths:
   /teams/{teamId}/skills:
     parameters:
       - $ref: '#/components/parameters/TeamId'
+      - name: workspace
+        in: query
+        required: false
+        schema: { type: string }
+        description: Only this team workspace's skills, by its shared name, matched ignoring case and surrounding spaces; every team workspace's when left out.
     get:
       tags: [Team mode]
       summary: List the skills on in a team's workspaces
-      description: One per name, with the members who have it on, by name. A skill its owner turned off is left out.
+      description: One per name, in one team workspace with `workspace`, with the members who have it on, by name. A skill its owner turned off is left out.
       responses:
         '200':
           description: OK
@@ -3661,6 +3666,11 @@ paths:
     parameters:
       - $ref: '#/components/parameters/TeamId'
       - $ref: '#/components/parameters/SkillName'
+      - name: workspace
+        in: query
+        required: false
+        schema: { type: string }
+        description: Only this team workspace's skills, by its shared name, matched ignoring case and surrounding spaces; every team workspace's when left out.
     get:
       tags: [Team mode]
       summary: Read one of a team's skills
@@ -3681,6 +3691,11 @@ paths:
     parameters:
       - $ref: '#/components/parameters/TeamId'
       - $ref: '#/components/parameters/SkillName'
+      - name: workspace
+        in: query
+        required: false
+        schema: { type: string }
+        description: Only this team workspace's skills, by its shared name, matched ignoring case and surrounding spaces; every team workspace's when left out.
     post:
       tags: [Team mode]
       summary: Add one of a team's skills to your account

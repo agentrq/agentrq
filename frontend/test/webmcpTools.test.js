@@ -597,10 +597,12 @@ describe('each tool calls the interface the way the UI does', () => {
       ['tm1', { status: 'ongoing', workspace: 'backend', member: 'u1', limit: 5, offset: 5 }],
     ],
     ['readTeams', { action: 'task', teamId: 'tm1', taskId: 't1' }, 'getTeamTask', ['tm1', 't1']],
-    ['readTeams', { action: 'skills', teamId: 'tm1' }, 'fetchTeamSkills', ['tm1']],
-    ['readTeams', { action: 'skill', teamId: 'tm1', name: 'tdd' }, 'getTeamSkill', ['tm1', 'tdd']],
-    ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd' }, 'addTeamSkill', ['tm1', 'tdd', []]],
-    ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd', workspaceIds: ['ws1'] }, 'addTeamSkill', ['tm1', 'tdd', ['ws1']]],
+    ['readTeams', { action: 'skills', teamId: 'tm1' }, 'fetchTeamSkills', ['tm1', '']],
+    ['readTeams', { action: 'skill', teamId: 'tm1', name: 'tdd' }, 'getTeamSkill', ['tm1', 'tdd', '']],
+    ['readTeams', { action: 'skills', teamId: 'tm1', workspace: 'api' }, 'fetchTeamSkills', ['tm1', 'api']],
+    ['readTeams', { action: 'skill', teamId: 'tm1', name: 'tdd', workspace: 'api' }, 'getTeamSkill', ['tm1', 'tdd', 'api']],
+    ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd' }, 'addTeamSkill', ['tm1', 'tdd', [], '']],
+    ['manageTeam', { action: 'addSkill', teamId: 'tm1', name: 'tdd', workspaceIds: ['ws1'], workspace: 'api' }, 'addTeamSkill', ['tm1', 'tdd', ['ws1'], 'api']],
     ['readTeams', { action: 'panoShares', docId: 'd1' }, 'listPanoShares', ['d1']],
     ['readTeams', { action: 'panoDocs', teamId: 'tm1' }, 'listTeamPanoDocs', ['tm1']],
     ['readTeams', { action: 'panoDoc', teamId: 'tm1', docId: 'd1' }, 'getTeamPanoDoc', ['tm1', 'd1']],
@@ -641,6 +643,7 @@ describe('the grouped team tools', () => {
     expect(page({ action: 'revokeInvitation', teamId: 'tm1' })).toBe('/team/settings?team=tm1&tab=invitations');
     expect(page({ action: 'removeMember', teamId: 'tm1' })).toBe('/team/settings?team=tm1&tab=members');
     expect(page({ action: 'addSkill', teamId: 'tm1' })).toBe('/skills?team=tm1');
+    expect(page({ action: 'addSkill', teamId: 'tm1', workspace: 'my api' })).toBe('/skills?team=tm1&workspace=my%20api');
     expect(page({ action: 'sharePano', docId: 'd/1', teamId: 'tm1' })).toBe('/pano/d%2F1');
     expect(page({ action: 'unsharePano', docId: 'd1', teamId: 'tm1' })).toBe('/pano/d1');
     expect(page(undefined)).toBe('/team/settings?team=&tab=members');

@@ -193,22 +193,28 @@ test('a fork follows its parent, an archived workspace leaves the team, and a te
   await expect(bea.page.getByTestId('team-workspace').filter({ hasText: parent.name })).toHaveCount(1)
   await expect(bea.page.getByTestId('team-workspace').filter({ hasText: fork.name })).toHaveCount(0)
 
-  // 2. A skill on in the shared workspace: Bea adds it to her own in one
-  //    click, choosing a workspace to turn it on in; none is chosen for her.
+  // 2. A skill on in the shared workspace: Bea opens that workspace's skills
+  //    (there is no list across the team) and adds it to her own, choosing a
+  //    workspace to turn it on in; none of hers has its name, so none is ticked.
   const skill = `qa-skill-${Date.now().toString(36)}`
   const call = await agentSession(owner, parent.id)
   const saved = await call('skills', { action: 'save', payload: { uri: `skill://${skill}/SKILL.md`, content: '---\ndescription: A skill the QA suite shares.\n---\n# QA\nShared with the team.\n' } })
   expect(saved).not.toMatch(/error|refused/i)
   const beaWs = await createWorkspace(bea.page, unique('bea-ws'))
-  await bea.page.goto(`/skills?team=${team.id}`)
+  await bea.page.goto(`/tasks/active?team=${team.id}&workspace=${encodeURIComponent(parent.name)}`)
+  await expect(bea.page.getByTestId('team-skills-link')).toBeVisible()
+  await bea.page.screenshot({ path: test.info().outputPath('team-workspace-tasks.png'), animations: 'disabled' })
+  await bea.page.getByTestId('team-skills-link').click()
+  await expect(bea.page).toHaveURL(/\/skills\?/)
   const card = bea.page.getByTestId('team-skill-row').filter({ hasText: skill })
   await expect(card).toContainText('A skill the QA suite shares.')
+  await bea.page.screenshot({ path: test.info().outputPath('team-workspace-skills.png'), animations: 'disabled' })
   await card.click()
   await expect(bea.page.getByTestId('team-skill-body')).toContainText('Shared with the team.')
   const box = bea.page.getByTestId('team-skill-workspace').locator(`input[value="${beaWs.id}"]`)
   await expect(box).not.toBeChecked()
   await box.check()
-  const added = nextResponse(bea.page, 'POST', `/teams/${team.id}/skills/${skill}/add`)
+  const added = nextResponse(bea.page, 'POST', `/teams/${team.id}/skills/${skill}/add`, { workspace: parent.name })
   await bea.page.getByTestId('team-skill-add').click()
   expect((await added).status()).toBeLessThan(300)
   await expect(bea.page.getByText(`Added ${skill} to your skills`)).toBeVisible()
@@ -216,7 +222,7 @@ test('a fork follows its parent, an archived workspace leaves the team, and a te
   const mine = await ok(await bea.page.request.get(`${API}/workspaces/${beaWs.id}/skills`), 'Bea\'s skills')
   expect(mine.skills.map((s) => s.name)).toContain(skill)
   // Once hers, the list says so, and the server refuses it twice.
-  await bea.page.goto(`/skills?team=${team.id}`)
+  await bea.page.goto(`/skills?team=${team.id}&workspace=${encodeURIComponent(parent.name)}`)
   await expect(bea.page.getByTestId('team-skill-row').filter({ hasText: skill }).locator('..').getByTestId('team-skill-mine')).toBeVisible()
   expect((await bea.page.request.post(`${API}/teams/${team.id}/skills/${skill}/add`, { data: { workspaceIds: [] } })).status(), 'adding it twice').toBe(409)
 

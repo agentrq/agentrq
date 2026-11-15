@@ -441,13 +441,12 @@ describe('the team sidebar', () => {
     await mount(TeamSidebar, { path: '/tasks/active?team=tm1', props: { showTooltip, hideTooltip } });
     expect(api.fetchTeamWorkspaces).toHaveBeenCalledWith('tm1');
 
-    expect(text($('[data-test=team-sidebar]'))).toMatch(/^Team Tasks Kanban Pano Skills Workspaces /);
+    expect(text($('[data-test=team-sidebar]'))).toMatch(/^Team Tasks Kanban Pano Workspaces /);
     const links = $$('[data-test=team-sidebar] > a').map((a) => [text(a), a.getAttribute('href')]);
     expect(links).toEqual([
       ['Tasks', '/tasks/active?team=tm1'],
       ['Kanban', '/kanban?team=tm1'],
       ['Pano', '/team/pano?team=tm1'],
-      ['Skills', '/skills?team=tm1'],
       ['Backend C D +1', '/tasks/active?workspace=Backend&team=tm1'],
       ['docs B F', '/tasks/active?workspace=docs&team=tm1'],
     ]);
@@ -465,7 +464,6 @@ describe('the team sidebar', () => {
     for (const [path, label] of [
       ['/tasks/active?team=tm1&workspace=docs', 'docs B F'],
       ['/kanban?team=tm1', 'Kanban'],
-      ['/skills/x?team=tm1', 'Skills'],
       ['/team/pano/d1?team=tm1', 'Pano'],
     ]) {
       await router.push(path);
@@ -1154,11 +1152,11 @@ describe('a team\'s skills', () => {
   it('draws the skills its shared workspaces use as /skills draws yours, with who has each', async () => {
     api.fetchTeamSkills.mockResolvedValue({ skills: [deploy, lint, { name: 'misc' }] });
     api.searchSkills.mockResolvedValue({ skills: [{ name: 'lint' }] });
-    await mount(TeamSkills, { path: '/skills?team=tm1' });
-    expect(api.fetchTeamSkills).toHaveBeenCalledWith('tm1');
+    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    expect(api.fetchTeamSkills).toHaveBeenCalledWith('tm1', 'backend');
     expect($('[data-test=team-skill-grid]').className).toContain('grid-cols-1');
     const cards = $$('[data-test=team-skill-row]');
-    expect(cards.map((c) => c.getAttribute('href'))).toEqual(['/skills/deploy?team=tm1', '/skills/lint?team=tm1', '/skills/misc?team=tm1']);
+    expect(cards.map((c) => c.getAttribute('href'))).toEqual(['/skills/deploy?workspace=backend&team=tm1', '/skills/lint?workspace=backend&team=tm1', '/skills/misc?workspace=backend&team=tm1']);
     expect(cards.map((c) => text(c.querySelector('[data-test=skill-card-name]')))).toEqual(['deploy', 'lint', 'misc']);
     expect(cards[0].querySelectorAll('[data-test=owner-avatar]').length).toBe(2);
     expect(text(cards[0])).toContain('Ship it');
@@ -1168,11 +1166,11 @@ describe('a team\'s skills', () => {
     app.unmount();
 
     api.fetchTeamSkills.mockResolvedValue({ skills: [{ name: 'anon', owners: [{ userId: 'u9' }] }] });
-    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
     expect(text($('[data-test=team-skill-row]'))).toContain('· a teammate');
     app.unmount();
     api.fetchTeamSkills.mockResolvedValue({ skills: [deploy, lint, { name: 'misc' }] });
-    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
     // One you have says so; the others add in a click.
     expect($$('[data-test=team-skill-mine]').length).toBe(1);
     expect($$('[data-test=team-skill-add]').map((b) => b.getAttribute('aria-label'))).toEqual(['Add deploy to my skills', 'Add misc to my skills']);
@@ -1182,27 +1180,27 @@ describe('a team\'s skills', () => {
     api.fetchTeamSkills.mockResolvedValue({ skills: [deploy] });
     let answer;
     api.addTeamSkill.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
-    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
     $('[data-test=team-skill-add]').click();
     await flush();
     expect(text($('[data-test=team-skill-add]'))).toBe('Adding…');
     expect($('[data-test=team-skill-add]').disabled).toBe(true);
     answer({});
     await flush();
-    expect(api.addTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', []);
+    expect(api.addTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', [], 'backend');
     const toast = useToasts().toasts.value.at(-1);
     expect(toast.message).toBe('Added deploy to your skills');
     expect(toast.link).toEqual({ path: '/skills/deploy', label: 'Open' });
     expect($('[data-test=team-skill-add]')).toBe(null);
     expect(text($('[data-test=team-skill-mine]'))).toBe('Added');
-    expect(here().fullPath).toBe('/skills?team=tm1');
+    expect(here().fullPath).toBe('/skills?team=tm1&workspace=backend');
   });
 
   it('says why a one-click add failed, and offers it again', async () => {
     api.fetchTeamSkills.mockResolvedValue({ skills: [deploy] });
     api.searchSkills.mockRejectedValue(failure(500));
     api.addTeamSkill.mockRejectedValue(failure(409, 'You already have deploy'));
-    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
     await click($('[data-test=team-skill-add]'));
     expect(toasts()).toEqual(['You already have deploy']);
     expect($('[data-test=team-skill-add]').disabled).toBe(false);
@@ -1210,13 +1208,13 @@ describe('a team\'s skills', () => {
 
   it('says when there are none, or none could be read', async () => {
     api.fetchTeamSkills.mockResolvedValueOnce({}).mockRejectedValueOnce(failure(500, 'Skills down')).mockRejectedValueOnce(failure(404));
-    await mount(TeamSkills, { path: '/skills?team=tm1' });
-    expect(text($('[data-test=team-skills-empty]'))).toBe('No skills yet. A skill shows here once it is on in a shared workspace.');
+    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    expect(text($('[data-test=team-skills-empty]'))).toBe('No skills yet. A skill shows here once it is on in one of this workspace\'s shares.');
     app.unmount();
-    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
     expect(text($('[data-test=team-skill-error]'))).toBe('Skills down');
     app.unmount();
-    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
     expect(here().path).toBe('/');
   });
 
@@ -1224,13 +1222,13 @@ describe('a team\'s skills', () => {
     api.getTeamSkill.mockResolvedValue({ skill: { ...deploy, content: '---\nname: deploy\n---\n# Deploy steps' } });
     api.fetchWorkspaces.mockResolvedValue({ workspaces: [{ id: 'm1', name: 'scratch' }, { id: 'm2', name: 'fork', forkOfId: 'm1' }] });
     api.addTeamSkill.mockResolvedValue({});
-    await mount(TeamSkills, { path: '/skills/deploy?team=tm1', props: { name: 'deploy' } });
-    expect(api.getTeamSkill).toHaveBeenCalledWith('tm1', 'deploy');
+    await mount(TeamSkills, { path: '/skills/deploy?team=tm1&workspace=backend', props: { name: 'deploy' } });
+    expect(api.getTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', 'backend');
     expect(api.fetchWorkspaces).toHaveBeenCalled();
     expect($('[data-test=team-skill-body]').innerHTML).toContain('Deploy steps');
     expect($('[data-test=team-skill-body]').innerHTML).not.toContain('name: deploy');
     expect(text($('[data-test=team-skills]'))).toContain('Ship it');
-    expect($$('a').find((a) => text(a) === '← All skills').getAttribute('href')).toBe('/skills?team=tm1');
+    expect($$('a').find((a) => text(a) === '← Skills').getAttribute('href')).toBe('/skills?workspace=backend&team=tm1');
 
     expect(text($('[data-test=team-skill-workspaces] legend'))).toBe('Turn on in (optional)');
     const boxes = $$('[data-test=team-skill-workspace] input');
@@ -1240,7 +1238,7 @@ describe('a team\'s skills', () => {
     boxes[0].dispatchEvent(new Event('change'));
     await flush();
     await click($('[data-test=team-skill-add]'));
-    expect(api.addTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', ['m1']);
+    expect(api.addTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', ['m1'], 'backend');
     expect(text($('[data-test=team-skill-mine]'))).toBe('In your skills. Open yours');
     expect($('[data-test=team-skill-mine] a').getAttribute('href')).toBe('/skills/deploy');
   });
@@ -1253,11 +1251,11 @@ describe('a team\'s skills', () => {
         useWorkspaceStore().workspaces = [{ id: 'm1', name: 'scratch' }];
         return () => h(TeamSkills, { name: 'deploy' });
       },
-    }), { path: '/skills/deploy?team=tm1' });
+    }), { path: '/skills/deploy?team=tm1&workspace=backend' });
     expect(text($('[data-test=team-skills] h2'))).toBe('deploy');
     expect(api.fetchWorkspaces).not.toHaveBeenCalled();
     await click($('[data-test=team-skill-add]'));
-    expect(api.addTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', []);
+    expect(api.addTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', [], 'backend');
     expect(text($('[data-test=team-skill-add-error]'))).toBe('You already have deploy');
     expect(toasts()).toEqual([]);
   });
@@ -1266,23 +1264,57 @@ describe('a team\'s skills', () => {
     api.searchSkills.mockResolvedValue({ skills: [{ name: 'deploy' }] });
     api.getTeamSkill.mockResolvedValueOnce({ name: 'deploy', content: '' }).mockRejectedValueOnce(failure(404, 'No such skill'));
     api.fetchWorkspaces.mockRejectedValue(failure(500));
-    await mount(TeamSkills, { path: '/skills/deploy?team=tm1', props: { name: 'deploy' } });
+    await mount(TeamSkills, { path: '/skills/deploy?team=tm1&workspace=backend', props: { name: 'deploy' } });
     expect($('[data-test=team-skill-add]')).toBe(null);
     expect($('[data-test=team-skill-mine]')).not.toBe(null);
     app.unmount();
     api.searchSkills.mockResolvedValue({});
-    await mount(TeamSkills, { path: '/skills/deploy?team=tm1', props: { name: 'deploy' } });
+    await mount(TeamSkills, { path: '/skills/deploy?team=tm1&workspace=backend', props: { name: 'deploy' } });
     expect(text($('[data-test=team-skill-error]'))).toBe('No such skill');
     expect(here().path).toBe('/skills/deploy');
+  });
+
+  it('has no list across the team: without a team workspace it asks for one and reads nothing', async () => {
+    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    expect(text($('[data-test=team-skills-pick]'))).toBe('Skills belong to a workspace: pick one in the sidebar, then open its skills.');
+    app.unmount();
+    await mount(TeamSkills, { path: '/skills/deploy?team=tm1', props: { name: 'deploy' } });
+    expect($('[data-test=team-skills-pick]')).not.toBe(null);
+    expect(api.fetchTeamSkills).not.toHaveBeenCalled();
+    expect(api.getTeamSkill).not.toHaveBeenCalled();
+  });
+
+  it('adds a skill on in your own workspace of the team workspace\'s name, ticked on its page too', async () => {
+    const mine = [{ id: 'm1', name: 'scratch' }, { id: 'm2', name: ' Backend' }, { id: 'm3', name: 'backend', forkOfId: 'm2' }];
+    api.fetchWorkspaces.mockResolvedValue({ workspaces: mine });
+    api.fetchTeamSkills.mockResolvedValue({ skills: [deploy] });
+    api.addTeamSkill.mockResolvedValue({});
+    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    await click($('[data-test=team-skill-add]'));
+    expect(api.addTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', ['m2'], 'backend');
+    app.unmount();
+
+    api.getTeamSkill.mockResolvedValue({ skill: { ...deploy, content: 'Body' } });
+    await mount(TeamSkills, { path: '/skills/deploy?team=tm1&workspace=backend', props: { name: 'deploy' } });
+    const ticked = $$('[data-test=team-skill-workspace] input').filter((b) => b.checked).map((b) => b.value);
+    expect(ticked).toEqual(['m2']);
+  });
+
+  it('reads another team workspace\'s skills when the workspace changes', async () => {
+    api.fetchTeamSkills.mockResolvedValue({ skills: [deploy] });
+    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    await router.push('/skills?team=tm1&workspace=docs');
+    await flush();
+    expect(api.fetchTeamSkills).toHaveBeenLastCalledWith('tm1', 'docs');
   });
 
   it('says it is loading until the answer arrives', async () => {
     api.fetchTeamSkills.mockReturnValue(new Promise(() => {}));
     api.getTeamSkill.mockReturnValue(new Promise(() => {}));
-    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
     expect(text($('[data-test=team-skills]'))).toBe('Loading skills…');
     app.unmount();
-    await mount(TeamSkills, { path: '/skills/x?team=tm1', props: { name: 'x' } });
-    expect(text($('[data-test=team-skills]'))).toBe('← All skills Loading…');
+    await mount(TeamSkills, { path: '/skills/x?team=tm1&workspace=backend', props: { name: 'x' } });
+    expect(text($('[data-test=team-skills]'))).toBe('← Skills Loading…');
   });
 });
