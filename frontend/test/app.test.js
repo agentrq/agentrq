@@ -139,48 +139,39 @@ describe('routes', () => {
 describe('createAuthGuard', () => {
   it('lets a public route through without asking who is signed in', async () => {
     const fetchUser = vi.fn()
-    const next = vi.fn()
 
-    await createAuthGuard(fetchUser)({ meta: { public: true } }, {}, next)
+    const destination = await createAuthGuard(fetchUser)({ meta: { public: true } })
 
     expect(fetchUser).not.toHaveBeenCalled()
-    expect(next).toHaveBeenCalledWith()
+    expect(destination).toBeUndefined()
   })
 
   it('allows a signed-in user through', async () => {
-    const next = vi.fn()
+    const destination = await createAuthGuard(async () => ({ id: 'user-1' }))({ meta: {} })
 
-    await createAuthGuard(async () => ({ id: 'user-1' }))({ meta: {} }, {}, next)
-
-    expect(next).toHaveBeenCalledWith()
+    expect(destination).toBeUndefined()
   })
 
   it('redirects to login when there is no user', async () => {
-    const next = vi.fn()
+    const destination = await createAuthGuard(async () => null)({ meta: {} })
 
-    await createAuthGuard(async () => null)({ meta: {} }, {}, next)
-
-    expect(next).toHaveBeenCalledWith('/login')
+    expect(destination).toBe('/login')
   })
 
   it('redirects to login when the lookup fails', async () => {
     // A network error means we cannot confirm the session, and an unconfirmed
     // session must not be treated as a valid one.
-    const next = vi.fn()
-
-    await createAuthGuard(async () => {
+    const destination = await createAuthGuard(async () => {
       throw new Error('offline')
-    })({ meta: {} }, {}, next)
+    })({ meta: {} })
 
-    expect(next).toHaveBeenCalledWith('/login')
+    expect(destination).toBe('/login')
   })
 
   it('treats a route with no meta as protected', async () => {
-    const next = vi.fn()
+    const destination = await createAuthGuard(async () => null)({ meta: {} })
 
-    await createAuthGuard(async () => null)({ meta: {} }, {}, next)
-
-    expect(next).toHaveBeenCalledWith('/login')
+    expect(destination).toBe('/login')
   })
 })
 
