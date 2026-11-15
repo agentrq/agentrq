@@ -297,7 +297,7 @@ func TestAcceptingNeedsAnInviterStillInTheTeam(t *testing.T) {
 // A deleted workspace takes its team shares with it, and nobody else's.
 func TestDeleteWorkspace_DeletesItsTeamShares(t *testing.T) {
 	db := deleteTaskDB(t)
-	if err := db.AutoMigrate(&model.Workspace{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.WorkspaceShare{}, &model.PanoDocShare{}, &model.MemoryExclusion{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.AgentNote{}, &model.WorkspaceShare{}, &model.PanoDocShare{}, &model.MemoryExclusion{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	for _, id := range []int64{100, 101} {
