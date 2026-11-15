@@ -19,7 +19,7 @@ import (
 // that keeps one workspace's agent out of another's.
 func TestIdentifyUser_OnlyThisWorkspacesAccessToken(t *testing.T) {
 	const secret = "test-secret"
-	tokens := auth.NewTokenService(auth.TokenConfig{JWTSecret: secret})
+	tokens := auth.NewTokenService(auth.TokenConfig{APISecret: secret, MCPSecret: secret})
 	h := &handler{tokenSvc: tokens}
 	const ws, other int64 = 500, 501
 	wsID := monoflake.ID(ws).String()

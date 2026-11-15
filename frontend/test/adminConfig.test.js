@@ -28,7 +28,7 @@ const MASK = '••••••••'
 
 const blocks = () => [
   { key: 'smtp', value: { enabled: true, host: 'mail', port: 587, password: MASK, from: null } },
-  { key: 'auth', value: { jwtSecret: MASK, allowedRedirectDomains: ['a.com', 'b.com'], google: { clientId: 'g', clientSecret: '' } } },
+  { key: 'auth', value: { apiJwtSecret: MASK, mcpJwtSecret: MASK, allowedRedirectDomains: ['a.com', 'b.com'], google: { clientId: 'g', clientSecret: '' } } },
   { key: 'webPush', value: { subscriber: 'mailto:x' } },
   { key: 'teams', value: {} },
   { key: 'future', value: { on: true, name: 'x' } },
@@ -150,7 +150,7 @@ describe('AdminConfigView', () => {
 
     tabs[0].click()
     await nextTick()
-    expect(q(el, 'config-auth.jwtSecret').type).toBe('password')
+    expect(q(el, 'config-auth.apiJwtSecret').type).toBe('password')
     expect(q(el, 'config-auth.allowedRedirectDomains').value).toBe('a.com, b.com')
     expect(qa(el, 'config-group')).toHaveLength(1)
     expect(q(el, 'config-auth.google.clientId').value).toBe('g')
@@ -171,10 +171,10 @@ describe('AdminConfigView', () => {
     expect(q(el, 'config-group').querySelector('[data-test="config-help"]').textContent).toBe('Sign in with a Google account.')
 
     // A field's line describes it, and its name is its label.
-    const input = q(el, 'config-auth.jwtSecret')
+    const input = q(el, 'config-auth.apiJwtSecret')
     const line = document.getElementById(input.getAttribute('aria-describedby'))
-    expect(line.textContent).toBe('The key session tokens are signed with. Required. Changing it signs everyone out.')
-    expect(el.querySelector(`label[for="${input.id}"]`).textContent).toContain('Jwt secret')
+    expect(line.textContent).toBe("The key a person's session tokens, terminal and browser tickets and sign-in state are signed with. Required. Changing it signs everyone out.")
+    expect(el.querySelector(`label[for="${input.id}"]`).textContent).toContain('Api jwt secret')
 
     await openTab(el, 'smtp')
     const sw = q(el, 'config-smtp.enabled')
@@ -263,7 +263,41 @@ describe('AdminConfigView', () => {
     // An unset secret is an empty field, with nothing to keep.
     await openTab(el, 'auth')
     expect(q(el, 'config-auth.google.clientSecret').placeholder).toBe('')
-    expect(q(el, 'config-auth.jwtSecret').value).toBe('')
+    expect(q(el, 'config-auth.apiJwtSecret').value).toBe('')
+  })
+
+  it('generates a random JWT secret, shown, and saves it', async () => {
+    const seen = serve({
+      [`GET ${CONFIGS}`]: [[{ configurations: blocks() }, 200]],
+      [`PUT ${CONFIGS}/auth`]: [[{ key: 'auth', value: blocks()[1].value }, 200]],
+    })
+    const el = await mount()
+    // Only a key the server signs with; a provider's secret is not made up.
+    expect(q(el, 'config-generate-auth.google.clientSecret')).toBeNull()
+    await openTab(el, 'smtp')
+    expect(q(el, 'config-generate-smtp.password')).toBeNull()
+    expect(q(el, 'config-generate-smtp.host')).toBeNull()
+    await openTab(el, 'auth')
+
+    const button = q(el, 'config-generate-auth.mcpJwtSecret')
+    expect(button.getAttribute('aria-label')).toBe('Generate mcp jwt secret')
+    button.click()
+    await nextTick()
+    const input = q(el, 'config-auth.mcpJwtSecret')
+    expect(input.type).toBe('text')
+    expect(input.value).toMatch(/^[A-Za-z0-9_-]{64}$/)
+    const first = input.value
+    button.click()
+    await nextTick()
+    expect(input.value).not.toBe(first)
+    expect(qa(el, 'config-dirty')).toHaveLength(1)
+    const generated = input.value
+
+    q(el, 'config-save').click()
+    await settle()
+    const sent = JSON.parse(seen[1].init.body).value
+    expect(sent.mcpJwtSecret).toBe(generated)
+    expect(sent.apiJwtSecret).toBe(MASK)
   })
 
   it("shows a refused save's reason and keeps the edit", async () => {

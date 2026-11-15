@@ -86,7 +86,7 @@ func (m *mockTokenSvc) ValidateClientRegistrationToken(tokenStr string) (*auth.C
 
 // consentTokens signs consent tokens for real, so the tests exercise the
 // binding between the page and the request it was shown for.
-var consentTokens = auth.NewTokenService(auth.TokenConfig{JWTSecret: "consent-test-secret"})
+var consentTokens = auth.NewTokenService(auth.TokenConfig{APISecret: "consent-test-secret", MCPSecret: "consent-test-secret"})
 
 func (m *mockTokenSvc) CreateOAuthConsentToken(userID string, consent auth.OAuthConsent) (string, error) {
 	return consentTokens.CreateOAuthConsentToken(userID, consent)

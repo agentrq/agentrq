@@ -10,7 +10,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"net"
@@ -114,7 +113,10 @@ type (
 				ClientID     string `yaml:"clientId"`
 				ClientSecret string `yaml:"clientSecret"`
 			} `yaml:"github"`
-			JWTSecret         string `yaml:"jwtSecret"`
+			// APIJWTSecret signs a person's session; MCPJWTSecret what agents
+			// and MCP clients hold.
+			APIJWTSecret      string `yaml:"apiJwtSecret"`
+			MCPJWTSecret      string `yaml:"mcpJwtSecret"`
 			RootAccessToken   string `yaml:"rootAccessToken"`
 			RootLoginEnabled  bool   `yaml:"rootLoginEnabled"`
 			WorkspaceTokenKey string `yaml:"workspaceTokenKey"`
@@ -213,8 +215,8 @@ type (
 )
 
 func New(cfg Config) (*App, error) {
-	if cfg.Auth.JWTSecret == "" {
-		return nil, errors.New("auth: JWT secret must be configured")
+	if err := checkJWTSecrets(cfg); err != nil {
+		return nil, err
 	}
 	if err := applyLimits(cfg); err != nil {
 		return nil, err
@@ -373,7 +375,8 @@ func New(cfg Config) (*App, error) {
 	}
 
 	tokenSvc := auth.NewTokenService(auth.TokenConfig{
-		JWTSecret: cfg.Auth.JWTSecret,
+		APISecret: cfg.Auth.APIJWTSecret,
+		MCPSecret: cfg.Auth.MCPJWTSecret,
 	})
 
 	rateLimiter := svclimit.New()

@@ -78,7 +78,7 @@ func TestNewStopsWhenTheDatabaseCannotBeOpened(t *testing.T) {
 	svc.EXPECT().Version().Return("v0.0.0").AnyTimes()
 	svc.EXPECT().Env().Return("test").AnyTimes()
 	var cfg Config
-	cfg.Auth.JWTSecret = "database-test-secret"
+	cfg.Auth.APIJWTSecret, cfg.Auth.MCPJWTSecret = "database-test-secret", "database-test-secret"
 	cfg.ConfigSvc = svc
 	if _, err := New(cfg); err == nil || !strings.Contains(err.Error(), "postgres: connection refused") {
 		t.Errorf("New: %v, want the database error", err)

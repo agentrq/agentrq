@@ -154,7 +154,7 @@ func TestApplyLimitsRefusesValuesItCannotHonour(t *testing.T) {
 func TestNewRefusesABadLimitBeforeInitialization(t *testing.T) {
 	resetLimits(t)
 	var cfg Config
-	cfg.Auth.JWTSecret = testJWTSecret
+	cfg.Auth.APIJWTSecret, cfg.Auth.MCPJWTSecret = testJWTSecret, testJWTSecret
 	cfg.Memory.MaxFileSize = model.MaxMemoryContentBytes + 1
 	if _, err := New(cfg); err == nil || !strings.Contains(err.Error(), "memory.maxFileSize") {
 		t.Errorf("err = %v, want memory.maxFileSize refused", err)

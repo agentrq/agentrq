@@ -16,7 +16,7 @@ import (
 
 // supervisorTokens signs for real, so a token is judged by its audience
 // exactly as it is in production.
-var supervisorTokens = auth.NewTokenService(auth.TokenConfig{JWTSecret: "supervisor-streamable-secret"})
+var supervisorTokens = auth.NewTokenService(auth.TokenConfig{APISecret: "supervisor-streamable-secret", MCPSecret: "supervisor-streamable-secret"})
 
 func mintSupervisorToken(t *testing.T, userID, resource, tokenType string) string {
 	t.Helper()

@@ -34,7 +34,7 @@ func (c consentTokens) CreateOAuthConsentToken(userID string, consent auth.OAuth
 }
 
 func newTokens() consentTokens {
-	return consentTokens{TokenService: auth.NewTokenService(auth.TokenConfig{JWTSecret: "consent-test-secret"})}
+	return consentTokens{TokenService: auth.NewTokenService(auth.TokenConfig{APISecret: "consent-test-secret", MCPSecret: "consent-test-secret"})}
 }
 
 // outcome is what the authorize handler was told to do.

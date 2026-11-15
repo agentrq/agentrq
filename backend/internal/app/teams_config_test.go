@@ -105,7 +105,7 @@ func TestNewRefusesANegativeInviteCap(t *testing.T) {
 	} {
 		t.Run(key, func(t *testing.T) {
 			var cfg Config
-			cfg.Auth.JWTSecret = "secret"
+			cfg.Auth.APIJWTSecret, cfg.Auth.MCPJWTSecret = "secret", "secret"
 			set(&cfg)
 			_, err := New(cfg)
 			if err == nil || !strings.Contains(err.Error(), key+":") {

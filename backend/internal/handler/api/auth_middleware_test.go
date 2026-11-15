@@ -18,7 +18,7 @@ import (
 // refuse every token that is not a signed-in person's session. An agent's
 // workspace MCP token used to pass here, and opened the owner's whole account.
 func TestAuthMiddleware_AcceptsOnlyASession(t *testing.T) {
-	tokens := auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"})
+	tokens := auth.NewTokenService(auth.TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
 	h := &handler{tokenSvc: tokens}
 	app := fiber.New()
 	app.Use(h.authMiddleware())

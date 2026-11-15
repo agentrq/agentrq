@@ -19,12 +19,20 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// tokens accepts "tok-<user>" and nothing else; the middleware calls only
-// ValidateToken.
+// tokens accepts "ses-<user>" as a session (the at cookie) and "tok-<user>"
+// as an MCP token, and nothing else.
 type tokens struct{ auth.TokenService }
 
+func (tokens) ValidateSessionToken(s string) (*auth.Claims, error) {
+	return withPrefix(s, "ses-")
+}
+
 func (tokens) ValidateToken(s string) (*auth.Claims, error) {
-	if len(s) > 4 && s[:4] == "tok-" {
+	return withPrefix(s, "tok-")
+}
+
+func withPrefix(s, prefix string) (*auth.Claims, error) {
+	if len(s) > 4 && s[:4] == prefix {
 		return &auth.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: s[4:]}}, nil
 	}
 	return nil, errors.New("invalid")
@@ -155,7 +163,7 @@ func serveURL(h http.Handler, remote, target string, headers map[string]string) 
 func TestCountsAUserFromCookieOrQuery(t *testing.T) {
 	h := newHandler(100, 2)
 
-	w := serve(h, "203.0.113.1:4000", map[string]string{"Cookie": "at=tok-bob"})
+	w := serve(h, "203.0.113.1:4000", map[string]string{"Cookie": "at=ses-bob"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("first request as bob (cookie): got %d", w.Code)
 	}
@@ -171,7 +179,7 @@ func TestCountsAUserFromCookieOrQuery(t *testing.T) {
 		t.Fatalf("X-RateLimit-Remaining-User = %q, want 0 after two requests as bob", got)
 	}
 
-	if w := serve(h, "203.0.113.3:4000", map[string]string{"Cookie": "at=tok-bob"}); w.Code != http.StatusTooManyRequests {
+	if w := serve(h, "203.0.113.3:4000", map[string]string{"Cookie": "at=ses-bob"}); w.Code != http.StatusTooManyRequests {
 		t.Fatalf("third request as bob: got %d, want 429", w.Code)
 	}
 

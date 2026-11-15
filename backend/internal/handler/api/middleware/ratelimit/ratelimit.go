@@ -64,7 +64,7 @@ func New(enabled bool, maxPerIP int, maxPerUser int, window time.Duration, token
 
 			// 1. Try resolving authenticated User ID from JWT cookie
 			if cookie, err := r.Cookie("at"); err == nil && cookie.Value != "" {
-				if claims, err := tokenSvc.ValidateToken(cookie.Value); err == nil && claims.Subject != "" {
+				if claims, err := tokenSvc.ValidateSessionToken(cookie.Value); err == nil && claims.Subject != "" {
 					userKey = "user:" + claims.Subject
 				}
 			}

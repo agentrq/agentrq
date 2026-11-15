@@ -45,7 +45,7 @@ func unsignedToken(t *testing.T, claims jwt.Claims) string {
 }
 
 func TestValidators_RefuseUnsignedTokens(t *testing.T) {
-	svc := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+	svc := NewTokenService(TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
 
 	t.Run("session", func(t *testing.T) {
 		tok := unsignedToken(t, Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "u1"}})
@@ -76,7 +76,7 @@ func TestValidators_RefuseUnsignedTokens(t *testing.T) {
 }
 
 func TestValidateClientRegistrationToken_RefusesOtherTokens(t *testing.T) {
-	svc := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+	svc := NewTokenService(TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
 
 	// A session token is signed with the same secret but is not a client_id.
 	session, err := svc.CreateToken("u1", "u@example.com", "U", "")

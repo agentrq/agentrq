@@ -54,7 +54,7 @@ func ticketApp(c crud.Controller, tokens auth.TokenService) *fiber.App {
 
 func ticketTokens(t *testing.T) auth.TokenService {
 	t.Helper()
-	return auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"})
+	return auth.NewTokenService(auth.TokenConfig{APISecret: "test-secret", MCPSecret: "test-secret"})
 }
 
 func postTicket(t *testing.T, app *fiber.App, sessionID string) *http.Response {
