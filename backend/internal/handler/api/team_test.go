@@ -32,6 +32,14 @@ type teamConn struct{ db *gorm.DB }
 func (c teamConn) Conn(context.Context) *gorm.DB { return c.db }
 func (c teamConn) Close(context.Context)         {}
 
+// keepNothing keeps no team skills: these routes' tests share none.
+type keepNothing struct{}
+
+func (keepNothing) KeepTeamSkills(context.Context, base.TeamSkillsLeaving) (base.TeamSkillCopies, []string, error) {
+	return base.TeamSkillCopies{}, nil, nil
+}
+func (keepNothing) PurgeSkillBlobs([]string) {}
+
 type teamIDSequence struct{ n int64 }
 
 func (s *teamIDSequence) NextID() int64 { s.n++; return 5000 + s.n }
@@ -51,14 +59,14 @@ func teamServer(t *testing.T, maxInvites int) (*fiber.App, *gorm.DB) {
 			_ = sqlDB.Close()
 		}
 	})
-	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamWorkspace{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamWorkspace{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}, &model.Skill{}, &model.SkillFile{}, &model.TeamSkillChoice{}, &model.WorkspaceSkill{}); err != nil {
 		t.Fatal(err)
 	}
 	db.Create(&model.User{ID: 1, Name: "Alice", Email: "alice@example.com"})
 	db.Create(&model.User{ID: 2, Name: "Bob", Email: "bob@example.com"})
 	db.Create(&model.User{ID: 3, Name: "Dave", Email: "dave@example.com"})
 	db.Create(&model.Workspace{ID: 100, UserID: 1, Name: "backend"})
-	ctrl := teamctrl.New(teamctrl.Params{Repository: base.New(teamConn{db}), IDGen: &teamIDSequence{}, BaseURL: "https://rq", MaxInvitesPerDay: maxInvites})
+	ctrl := teamctrl.New(teamctrl.Params{Repository: base.New(teamConn{db}), IDGen: &teamIDSequence{}, Skills: keepNothing{}, BaseURL: "https://rq", MaxInvitesPerDay: maxInvites})
 	return teamApp(ctrl), db
 }
 
@@ -382,7 +390,7 @@ func TestATeamFailureAnswersAGenericError(t *testing.T) {
 // words that say which cap it is.
 func TestThePerUserInvitationCapAnswers429(t *testing.T) {
 	_, db := teamServer(t, 10)
-	app := teamApp(teamctrl.New(teamctrl.Params{Repository: base.New(teamConn{db}), IDGen: &teamIDSequence{}, BaseURL: "https://rq", MaxInvitesPerDay: 10, MaxInvitesPerUserPerDay: 1}))
+	app := teamApp(teamctrl.New(teamctrl.Params{Repository: base.New(teamConn{db}), IDGen: &teamIDSequence{}, Skills: keepNothing{}, BaseURL: "https://rq", MaxInvitesPerDay: 10, MaxInvitesPerUserPerDay: 1}))
 	teams := make([]string, 2)
 	for i, name := range []string{"core", "ops"} {
 		status, body := call(t, app, aliceID, http.MethodPost, "/teams", `{"name":"`+name+`"}`)

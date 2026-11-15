@@ -396,14 +396,14 @@ func TestDeleteTeamTakesEverythingOfTheTeamAndKeepsTheLog(t *testing.T) {
 		// Another team's rows stay.
 		db.Create(&model.Team{ID: 2, Name: "other", Version: 1})
 		db.Create(&model.TeamMember{ID: 9, TeamID: 2, UserID: 11})
-		if err := r.DeleteTeam(ctx, 1, 12, v, act()); !errors.Is(err, ErrNotFound) {
+		if err := dropBlobs(r.DeleteTeam(ctx, 1, 12, v, act(), TeamSkillCopies{})); !errors.Is(err, ErrNotFound) {
 			t.Errorf("deleting a team the caller is not in returned %v, want ErrNotFound", err)
 		}
-		if err := r.DeleteTeam(ctx, 1, 11, 1, act()); !isConflict(err, v) {
+		if err := dropBlobs(r.DeleteTeam(ctx, 1, 11, 1, act(), TeamSkillCopies{})); !isConflict(err, v) {
 			t.Errorf("deleting from a replaced version returned %v, want a conflict at %d", err, v)
 		}
 		// Any member deletes it.
-		if err := r.DeleteTeam(ctx, 1, 11, v, act()); err != nil {
+		if err := dropBlobs(r.DeleteTeam(ctx, 1, 11, v, act(), TeamSkillCopies{})); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := r.GetTeam(ctx, 1); !errors.Is(err, ErrNotFound) {
@@ -443,13 +443,13 @@ func TestMembersRemovedAndLeaving(t *testing.T) {
 		if teamVersion(db, 1) != 1 {
 			t.Error("a refused invitation moved the version")
 		}
-		if _, _, err := r.RemoveTeamMember(ctx, 1, 99, 10, 1, act(), 0); !errors.Is(err, ErrNotFound) {
+		if _, _, _, err := r.RemoveTeamMember(ctx, 1, 99, 10, 1, act(), 0, TeamSkillCopies{}); !errors.Is(err, ErrNotFound) {
 			t.Errorf("a stranger removing a member returned %v, want ErrNotFound", err)
 		}
-		if _, _, err := r.RemoveTeamMember(ctx, 1, 10, 99, 1, act(), 0); !errors.Is(err, ErrNotFound) {
+		if _, _, _, err := r.RemoveTeamMember(ctx, 1, 10, 99, 1, act(), 0, TeamSkillCopies{}); !errors.Is(err, ErrNotFound) {
 			t.Errorf("removing someone not in the team returned %v, want ErrNotFound", err)
 		}
-		if _, _, err := r.RemoveTeamMember(ctx, 1, 12, 10, 3, act(), 0); !isConflict(err, 1) {
+		if _, _, _, err := r.RemoveTeamMember(ctx, 1, 12, 10, 3, act(), 0, TeamSkillCopies{}); !isConflict(err, 1) {
 			t.Errorf("removing from a version not yet made returned %v, want a conflict at 1", err)
 		}
 		// Removing a member takes their shares with this team, and only those.
@@ -457,7 +457,7 @@ func TestMembersRemovedAndLeaving(t *testing.T) {
 		db.Create(&model.WorkspaceShare{ID: 2, TeamID: 2, WorkspaceID: 5, UserID: 10})
 		db.Create(&model.WorkspaceShare{ID: 3, TeamID: 1, WorkspaceID: 6, UserID: 11})
 		// Any member removes any other.
-		next, deleted, err := r.RemoveTeamMember(ctx, 1, 12, 10, 1, act(), 0)
+		next, deleted, _, err := r.RemoveTeamMember(ctx, 1, 12, 10, 1, act(), 0, TeamSkillCopies{})
 		if err != nil || next != 2 || deleted {
 			t.Fatalf("removing 10 returned %d, %v, %v; want version 2, the team kept", next, deleted, err)
 		}
@@ -469,7 +469,7 @@ func TestMembersRemovedAndLeaving(t *testing.T) {
 		if got := lastActivity(db, 1); got != "member.removed 12 user:10 {}" {
 			t.Errorf("the removal recorded %q", got)
 		}
-		next, deleted, err = r.RemoveTeamMember(ctx, 1, 11, 11, 2, act(), 0)
+		next, deleted, _, err = r.RemoveTeamMember(ctx, 1, 11, 11, 2, act(), 0, TeamSkillCopies{})
 		if err != nil || next != 3 || deleted {
 			t.Fatalf("11 leaving returned %d, %v, %v; want version 3, the team kept", next, deleted, err)
 		}
@@ -492,7 +492,7 @@ func TestTheLastMemberLeavingDeletesTheTeam(t *testing.T) {
 			t.Fatal(err)
 		}
 		a := act()
-		next, deleted, err := r.RemoveTeamMember(ctx, 1, 10, 10, v, a, a.ID+500)
+		next, deleted, _, err := r.RemoveTeamMember(ctx, 1, 10, 10, v, a, a.ID+500, TeamSkillCopies{})
 		if err != nil || !deleted || next != v+1 {
 			t.Fatalf("the last member leaving returned %d, %v, %v; want the team deleted", next, deleted, err)
 		}
@@ -539,13 +539,13 @@ func TestLeavingDropsTheMemoryExclusionsOfFormerTeammates(t *testing.T) {
 		for _, e := range [][2]int64{{10, 11}, {11, 10}, {12, 11}, {10, 12}, {12, 10}, {13, 14}} {
 			db.Create(&model.MemoryExclusion{WorkspaceID: 100 + e[0], UserID: e[0], ExcludedUserID: e[1]})
 		}
-		if _, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0); err != nil {
+		if _, _, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0, TeamSkillCopies{}); err != nil {
 			t.Fatal(err)
 		}
 		if got := exclusions(db); got != "[10>12 12>10 13>14]" {
 			t.Errorf("after removing 11 the exclusions are %v, want every one naming 11 gone", got)
 		}
-		if _, _, err := r.RemoveTeamMember(ctx, 1, 12, 12, 2, act(), 0); err != nil {
+		if _, _, _, err := r.RemoveTeamMember(ctx, 1, 12, 12, 2, act(), 0, TeamSkillCopies{}); err != nil {
 			t.Fatal(err)
 		}
 		if got := exclusions(db); got != "[10>12 12>10 13>14]" {
@@ -570,7 +570,7 @@ func TestDeletingATeamDropsTheMemoryExclusionsOfFormerTeammates(t *testing.T) {
 		for _, e := range [][2]int64{{10, 11}, {11, 12}, {10, 12}, {13, 14}} {
 			db.Create(&model.MemoryExclusion{WorkspaceID: 100 + e[0], UserID: e[0], ExcludedUserID: e[1]})
 		}
-		if err := r.DeleteTeam(context.Background(), 1, 10, 1, act()); err != nil {
+		if err := dropBlobs(r.DeleteTeam(context.Background(), 1, 10, 1, act(), TeamSkillCopies{})); err != nil {
 			t.Fatal(err)
 		}
 		if got := exclusions(db); got != "[10>12 13>14]" {
@@ -1207,13 +1207,13 @@ func TestASharesTeamWorkspace(t *testing.T) {
 		if n := countTeamRows(db, &model.TeamWorkspace{}, "id = ?", renamed.ID); n != 0 {
 			t.Error("sharing again created a team workspace")
 		}
-		if _, err := r.DeleteWorkspaceShare(ctx, 100, 1, 10, v, act()); err != nil {
+		if _, err := r.DeleteWorkspaceShare(ctx, 100, 1, 10, v, act(), TeamSkillCopies{}); err != nil {
 			t.Fatal(err)
 		}
 		if n := countTeamRows(db, &model.TeamWorkspace{}, "team_id = 1"); n != 2 {
 			t.Errorf("after an unshare team 1 has %d team workspaces, want both still", n)
 		}
-		if err := r.DeleteTeam(ctx, 1, 10, teamVersion(db, 1), act()); err != nil {
+		if err := dropBlobs(r.DeleteTeam(ctx, 1, 10, teamVersion(db, 1), act(), TeamSkillCopies{})); err != nil {
 			t.Fatal(err)
 		}
 		if n := countTeamRows(db, &model.TeamWorkspace{}, "team_id = 1"); n != 0 {
@@ -1270,22 +1270,22 @@ func TestWorkspaceShares(t *testing.T) {
 			t.Errorf("another account sees %d shares of workspace 100, want none", len(list))
 		}
 		db.Create(&model.TeamMember{ID: 3, TeamID: 1, UserID: 11})
-		if _, err := r.DeleteWorkspaceShare(ctx, 100, 1, 11, v, act()); !errors.Is(err, ErrNotFound) {
+		if _, err := r.DeleteWorkspaceShare(ctx, 100, 1, 11, v, act(), TeamSkillCopies{}); !errors.Is(err, ErrNotFound) {
 			t.Errorf("unsharing someone else's workspace returned %v, want ErrNotFound", err)
 		}
-		if _, err := r.DeleteWorkspaceShare(ctx, 100, 1, 12, v, act()); !errors.Is(err, ErrNotFound) {
+		if _, err := r.DeleteWorkspaceShare(ctx, 100, 1, 12, v, act(), TeamSkillCopies{}); !errors.Is(err, ErrNotFound) {
 			t.Errorf("a stranger unsharing returned %v, want ErrNotFound", err)
 		}
-		if _, err := r.DeleteWorkspaceShare(ctx, 100, 1, 10, 1, act()); !isConflict(err, v) {
+		if _, err := r.DeleteWorkspaceShare(ctx, 100, 1, 10, 1, act(), TeamSkillCopies{}); !isConflict(err, v) {
 			t.Errorf("unsharing from a replaced version returned %v, want a conflict at %d", err, v)
 		}
-		if v, err = r.DeleteWorkspaceShare(ctx, 100, 1, 10, v, act()); err != nil || v != 4 {
+		if v, err = r.DeleteWorkspaceShare(ctx, 100, 1, 10, v, act(), TeamSkillCopies{}); err != nil || v != 4 {
 			t.Fatalf("unsharing returned %d, %v; want version 4", v, err)
 		}
 		if got := lastActivity(db, 1); got != "workspace.unshared 10 ws:100 {}" {
 			t.Errorf("unsharing recorded %q", got)
 		}
-		if _, err := r.DeleteWorkspaceShare(ctx, 100, 1, 10, v, act()); !errors.Is(err, ErrNotFound) {
+		if _, err := r.DeleteWorkspaceShare(ctx, 100, 1, 10, v, act(), TeamSkillCopies{}); !errors.Is(err, ErrNotFound) {
 			t.Errorf("unsharing twice returned %v, want ErrNotFound", err)
 		}
 		if teamVersion(db, 1) != v {
@@ -1458,51 +1458,51 @@ func TestTeamStatementFailures(t *testing.T) {
 		{"reading the name before a rename", "query", "teams", 0, nil, func(r Repository) error { _, err := r.RenameTeam(ctx, 1, 10, 1, "y", act()); return err }},
 		{"renaming a team", "update", "teams", 0, nil, func(r Repository) error { _, err := r.RenameTeam(ctx, 1, 10, 1, "y", act()); return err }},
 		{"recording a rename", "create", "team_management_activities", 0, nil, func(r Repository) error { _, err := r.RenameTeam(ctx, 1, 10, 1, "y", act()); return err }},
-		{"reading the team to delete", "query", "teams", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
-		{"reading a deleted team's members", "query", "team_members", 1, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
-		{"deleting a team's members", "delete", "team_members", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
-		{"dropping a deleted team's exclusions", "delete", "memory_exclusions", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
-		{"deleting a team's invitations", "delete", "team_invitations", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
-		{"deleting a team's shares", "delete", "workspace_shares", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
-		{"deleting a team", "delete", "teams", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
-		{"recording a deletion", "create", "team_management_activities", 0, nil, func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) }},
+		{"reading the team to delete", "query", "teams", 0, nil, func(r Repository) error { return dropBlobs(r.DeleteTeam(ctx, 1, 10, 1, act(), TeamSkillCopies{})) }},
+		{"reading a deleted team's members", "query", "team_members", 1, nil, func(r Repository) error { return dropBlobs(r.DeleteTeam(ctx, 1, 10, 1, act(), TeamSkillCopies{})) }},
+		{"deleting a team's members", "delete", "team_members", 0, nil, func(r Repository) error { return dropBlobs(r.DeleteTeam(ctx, 1, 10, 1, act(), TeamSkillCopies{})) }},
+		{"dropping a deleted team's exclusions", "delete", "memory_exclusions", 0, nil, func(r Repository) error { return dropBlobs(r.DeleteTeam(ctx, 1, 10, 1, act(), TeamSkillCopies{})) }},
+		{"deleting a team's invitations", "delete", "team_invitations", 0, nil, func(r Repository) error { return dropBlobs(r.DeleteTeam(ctx, 1, 10, 1, act(), TeamSkillCopies{})) }},
+		{"deleting a team's shares", "delete", "workspace_shares", 0, nil, func(r Repository) error { return dropBlobs(r.DeleteTeam(ctx, 1, 10, 1, act(), TeamSkillCopies{})) }},
+		{"deleting a team", "delete", "teams", 0, nil, func(r Repository) error { return dropBlobs(r.DeleteTeam(ctx, 1, 10, 1, act(), TeamSkillCopies{})) }},
+		{"recording a deletion", "create", "team_management_activities", 0, nil, func(r Repository) error { return dropBlobs(r.DeleteTeam(ctx, 1, 10, 1, act(), TeamSkillCopies{})) }},
 		{"listing members", "row", "team_members", 0, nil, func(r Repository) error { _, err := r.ListTeamMembers(ctx, 1); return err }},
 		{"checking whether the invitee is already a member", "query", "team_members", 1, nil, func(r Repository) error {
 			_, err := r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), 1, since, 10, 0, act())
 			return err
 		}},
 		{"reading the member to remove", "query", "team_members", 1, nil, func(r Repository) error {
-			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0)
+			_, _, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0, TeamSkillCopies{})
 			return err
 		}},
 		{"removing a member", "delete", "team_members", 0, nil, func(r Repository) error {
-			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0)
+			_, _, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0, TeamSkillCopies{})
 			return err
 		}},
 		{"removing a member's shares", "delete", "workspace_shares", 0, nil, func(r Repository) error {
-			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0)
+			_, _, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0, TeamSkillCopies{})
 			return err
 		}},
 		{"removing a member's doc shares", "delete", "pano_doc_shares", 0, nil, func(r Repository) error {
-			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0)
+			_, _, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0, TeamSkillCopies{})
 			return err
 		}},
 		{"dropping a removed member's exclusions", "delete", "memory_exclusions", 0, nil, func(r Repository) error {
-			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0)
+			_, _, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0, TeamSkillCopies{})
 			return err
 		}},
 		{"recording a removal", "create", "team_management_activities", 0, nil, func(r Repository) error {
-			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0)
+			_, _, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0, TeamSkillCopies{})
 			return err
 		}},
 		{"counting the members left", "query", "team_members", 2, nil, func(r Repository) error {
-			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0)
+			_, _, _, err := r.RemoveTeamMember(ctx, 1, 10, 11, 1, act(), 0, TeamSkillCopies{})
 			return err
 		}},
 		{"deleting the team the last member left", "delete", "teams", 0, func(r Repository) {
-			_, _, _ = r.RemoveTeamMember(ctx, 1, 11, 11, 1, act(), 0)
+			_, _, _, _ = r.RemoveTeamMember(ctx, 1, 11, 11, 1, act(), 0, TeamSkillCopies{})
 		}, func(r Repository) error {
-			_, _, err := r.RemoveTeamMember(ctx, 1, 10, 10, 2, act(), 0)
+			_, _, _, err := r.RemoveTeamMember(ctx, 1, 10, 10, 2, act(), 0, TeamSkillCopies{})
 			return err
 		}},
 		{"counting invitations", "query", "team_invitations", 0, nil, func(r Repository) error {
@@ -1587,8 +1587,14 @@ func TestTeamStatementFailures(t *testing.T) {
 			_, _, err := r.SetWorkspaceShare(ctx, holdTasks, sharedIn(), testIDs, 2, act())
 			return err
 		}},
-		{"deleting a share", "delete", "workspace_shares", 0, nil, func(r Repository) error { _, err := r.DeleteWorkspaceShare(ctx, 5, 1, 11, 1, act()); return err }},
-		{"recording an unshare", "create", "team_management_activities", 0, nil, func(r Repository) error { _, err := r.DeleteWorkspaceShare(ctx, 5, 1, 11, 1, act()); return err }},
+		{"deleting a share", "delete", "workspace_shares", 0, nil, func(r Repository) error {
+			_, err := r.DeleteWorkspaceShare(ctx, 5, 1, 11, 1, act(), TeamSkillCopies{})
+			return err
+		}},
+		{"recording an unshare", "create", "team_management_activities", 0, nil, func(r Repository) error {
+			_, err := r.DeleteWorkspaceShare(ctx, 5, 1, 11, 1, act(), TeamSkillCopies{})
+			return err
+		}},
 		{"reading the doc to share", "query", "pano_docs", 0, nil, func(r Repository) error { _, _, err := r.SetPanoDocShare(ctx, panoShare, 1, act()); return err }},
 		{"storing a doc share", "create", "pano_doc_shares", 0, nil, func(r Repository) error { _, _, err := r.SetPanoDocShare(ctx, panoShare, 1, act()); return err }},
 		{"recording a doc share", "create", "team_management_activities", 0, nil, func(r Repository) error { _, _, err := r.SetPanoDocShare(ctx, panoShare, 1, act()); return err }},
@@ -1641,3 +1647,6 @@ func TestTeamListsAreOrdered(t *testing.T) {
 		}
 	})
 }
+
+// dropBlobs is a team change's error, without the blobs it would purge.
+func dropBlobs(_ []string, err error) error { return err }

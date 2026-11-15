@@ -131,10 +131,10 @@ type Repository interface {
 	ListTeamsForUser(ctx context.Context, userID int64) ([]TeamWithCount, error)
 	CountTeamMembers(ctx context.Context, teamID int64) (int64, error)
 	RenameTeam(ctx context.Context, teamID, callerID, version int64, name string, act model.TeamManagementActivity) (int64, error)
-	DeleteTeam(ctx context.Context, teamID, callerID, version int64, act model.TeamManagementActivity) error
+	DeleteTeam(ctx context.Context, teamID, callerID, version int64, act model.TeamManagementActivity, keep TeamSkillCopies) ([]string, error)
 	GetTeamMember(ctx context.Context, teamID, userID int64) (model.TeamMember, error)
 	ListTeamMembers(ctx context.Context, teamID int64) ([]TeamMemberWithUser, error)
-	RemoveTeamMember(ctx context.Context, teamID, callerID, userID, version int64, act model.TeamManagementActivity, deletedID int64) (int64, bool, error)
+	RemoveTeamMember(ctx context.Context, teamID, callerID, userID, version int64, act model.TeamManagementActivity, deletedID int64, keep TeamSkillCopies) (int64, bool, []string, error)
 	CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, version int64, since time.Time, teamLimit, userLimit int64, act model.TeamManagementActivity) (int64, error)
 	ListTeamInvitations(ctx context.Context, teamID int64, now time.Time) ([]model.TeamInvitation, error)
 	ListInvitationsForEmail(ctx context.Context, email string, now time.Time) ([]model.TeamInvitation, error)
@@ -145,7 +145,8 @@ type Repository interface {
 	AcceptTeamInvitation(ctx context.Context, id int64, member model.TeamMember, now time.Time, act model.TeamManagementActivity) error
 	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, tw model.TeamWorkspace, ids func() int64, version int64, act model.TeamManagementActivity) (WorkspaceShareWithTeam, int64, error)
 	ListWorkspaceShares(ctx context.Context, workspaceID, userID int64) ([]WorkspaceShareWithTeam, error)
-	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error)
+	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity, keep TeamSkillCopies) (int64, error)
+	ListTeamSkillsToKeep(ctx context.Context, sel TeamSkillsLeaving) ([]TeamSkillToKeep, error)
 	SetPanoDocShare(ctx context.Context, s model.PanoDocShare, version int64, act model.TeamManagementActivity) (PanoDocShareWithTeam, int64, error)
 	ListPanoDocShares(ctx context.Context, docID, userID int64) ([]PanoDocShareWithTeam, error)
 	DeletePanoDocShare(ctx context.Context, docID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error)

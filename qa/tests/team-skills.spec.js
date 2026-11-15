@@ -125,6 +125,22 @@ test('a team workspace\'s skills, from an agent\'s save to a member\'s delete', 
   await expect(bea.getByTestId('tws-row').filter({ hasText: gift })).toBeVisible()
   expect(await beaAgent('skills', { action: 'search', payload: { q: skill } })).toContain('No skill\'s name or description contains')
 
+  // 8. Bea leaves: what her workspace was opted into becomes hers, on in it,
+  //    and her agent goes on reading it.
+  await bea.goto(`/teams/${team.id}/settings?tab=danger`)
+  await bea.getByTestId('leave').click()
+  const left = nextResponse(bea, 'POST', `/teams/${team.id}/leave`)
+  await bea.getByRole('button', { name: 'Leave', exact: true }).click()
+  expect((await left).status()).toBe(204)
+  const kept = await ok(await bea.request.get(`${API}/workspaces/${hers.id}/skills`), 'Bea\'s skills')
+  const keptNames = kept.skills.filter((s) => s.workspaceIds.includes(hers.id)).map((s) => s.name)
+  expect(keptNames).toEqual(expect.arrayContaining([gift, later]))
+  expect(await beaAgent('skills', { action: 'load', payload: { uri: `skill://${gift}` } })).toContain('# Checklist')
+  await bea.goto(`/workspaces/${hers.id}/settings`)
+  await bea.getByRole('button', { name: 'Skills', exact: true }).click()
+  await expect(bea.getByTestId('skill-card').filter({ hasText: later })).toBeVisible()
+  await bea.screenshot({ path: test.info().outputPath('kept-on-leaving.png'), animations: 'disabled' })
+
   traffic.expectClean()
   beaTraffic.expectClean()
   await beaContext.close()

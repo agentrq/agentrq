@@ -56,11 +56,11 @@ func (f failing) RenameTeam(ctx context.Context, teamID, callerID, version int64
 	return f.Repository.RenameTeam(ctx, teamID, callerID, version, name, act)
 }
 
-func (f failing) DeleteTeam(ctx context.Context, teamID, callerID, version int64, act model.TeamManagementActivity) error {
+func (f failing) DeleteTeam(ctx context.Context, teamID, callerID, version int64, act model.TeamManagementActivity, keep base.TeamSkillCopies) ([]string, error) {
 	if f.method == "DeleteTeam" {
-		return errDB
+		return nil, errDB
 	}
-	return f.Repository.DeleteTeam(ctx, teamID, callerID, version, act)
+	return f.Repository.DeleteTeam(ctx, teamID, callerID, version, act, keep)
 }
 
 func (f failing) ListTeamMembers(ctx context.Context, teamID int64) ([]base.TeamMemberWithUser, error) {
@@ -70,11 +70,11 @@ func (f failing) ListTeamMembers(ctx context.Context, teamID int64) ([]base.Team
 	return f.Repository.ListTeamMembers(ctx, teamID)
 }
 
-func (f failing) RemoveTeamMember(ctx context.Context, teamID, callerID, userID, version int64, act model.TeamManagementActivity, deletedID int64) (int64, bool, error) {
+func (f failing) RemoveTeamMember(ctx context.Context, teamID, callerID, userID, version int64, act model.TeamManagementActivity, deletedID int64, keep base.TeamSkillCopies) (int64, bool, []string, error) {
 	if f.method == "RemoveTeamMember" {
-		return 0, false, errDB
+		return 0, false, nil, errDB
 	}
-	return f.Repository.RemoveTeamMember(ctx, teamID, callerID, userID, version, act, deletedID)
+	return f.Repository.RemoveTeamMember(ctx, teamID, callerID, userID, version, act, deletedID, keep)
 }
 
 func (f failing) CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, version int64, since time.Time, teamLimit, userLimit int64, act model.TeamManagementActivity) (int64, error) {
@@ -140,11 +140,11 @@ func (f failing) SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, 
 	return f.Repository.SetWorkspaceShare(ctx, s, tw, ids, version, act)
 }
 
-func (f failing) DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error) {
+func (f failing) DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity, keep base.TeamSkillCopies) (int64, error) {
 	if f.method == "DeleteWorkspaceShare" {
 		return 0, errDB
 	}
-	return f.Repository.DeleteWorkspaceShare(ctx, workspaceID, teamID, userID, version, act)
+	return f.Repository.DeleteWorkspaceShare(ctx, workspaceID, teamID, userID, version, act, keep)
 }
 
 func (f failing) GetPanoDoc(ctx context.Context, userID, id int64, now time.Time) (model.PanoDoc, error) {

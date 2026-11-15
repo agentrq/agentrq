@@ -97,8 +97,13 @@ func (c *controller) UnshareWorkspace(ctx context.Context, ch entity.TeamChange,
 	if err != nil {
 		return 0, err
 	}
-	next, err := c.repo.DeleteWorkspaceShare(ctx, workspaceID, ch.TeamID, ch.UserID, ch.Version, c.workspaceActivity(ws))
-	return next, fromRepo(err)
+	var next int64
+	err = c.keeping(ctx, base.TeamSkillsLeaving{TeamID: ch.TeamID, WorkspaceID: workspaceID}, func(keep base.TeamSkillCopies) ([]string, error) {
+		var err error
+		next, err = c.repo.DeleteWorkspaceShare(ctx, workspaceID, ch.TeamID, ch.UserID, ch.Version, c.workspaceActivity(ws), keep)
+		return nil, err
+	})
+	return next, err
 }
 
 func (c *controller) CanReadTasksInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error) {

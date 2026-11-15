@@ -140,7 +140,28 @@ type fixture struct {
 	events *events
 	team   int64
 	ids    *sequence
+	keeper *keeper
 }
+
+// keeper plans what plans says, in turn, and nothing once they run out;
+// it records what it was asked and what it purged.
+type keeper struct {
+	plans  []func() (base.TeamSkillCopies, []string, error)
+	asked  []base.TeamSkillsLeaving
+	purged [][]string
+}
+
+func (k *keeper) KeepTeamSkills(_ context.Context, sel base.TeamSkillsLeaving) (base.TeamSkillCopies, []string, error) {
+	k.asked = append(k.asked, sel)
+	if len(k.plans) == 0 {
+		return base.TeamSkillCopies{}, nil, nil
+	}
+	plan := k.plans[0]
+	k.plans = k.plans[1:]
+	return plan()
+}
+
+func (k *keeper) PurgeSkillBlobs(ids []string) { k.purged = append(k.purged, ids) }
 
 type option func(*Params)
 
@@ -160,7 +181,7 @@ func each(t *testing.T, fn func(f *fixture), opts ...option) {
 
 func newFixture(t *testing.T, db *gorm.DB, opts ...option) *fixture {
 	t.Helper()
-	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamWorkspace{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamWorkspace{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}, &model.Skill{}, &model.SkillFile{}, &model.TeamSkillChoice{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, u := range []model.User{
@@ -174,9 +195,9 @@ func newFixture(t *testing.T, db *gorm.DB, opts ...option) *fixture {
 			t.Fatal(err)
 		}
 	}
-	f := &fixture{t: t, ctx: context.Background(), db: db, repo: base.New(testConn{db}), now: t0, events: &events{}, ids: &sequence{}}
+	f := &fixture{t: t, ctx: context.Background(), db: db, repo: base.New(testConn{db}), now: t0, events: &events{}, ids: &sequence{}, keeper: &keeper{}}
 	p := Params{
-		Repository: f.repo, IDGen: f.ids, PubSub: f.events, BaseURL: "https://agentrq.example/",
+		Repository: f.repo, IDGen: f.ids, PubSub: f.events, Skills: f.keeper, BaseURL: "https://agentrq.example/",
 		MaxInvitesPerDay: 10, Now: func() time.Time { return f.now },
 	}
 	for _, o := range opts {
