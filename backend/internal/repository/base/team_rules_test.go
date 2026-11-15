@@ -109,8 +109,11 @@ func TestTeamChecksSeeWhatChangedWhileTheyWaitedForTheLock(t *testing.T) {
 		{
 			name:   "a member removed meanwhile sharing a workspace",
 			change: removeMember(11),
-			op:     func(r Repository) error { _, _, err := r.SetWorkspaceShare(ctx, share(11), 1, act()); return err },
-			want:   ErrNotFound,
+			op: func(r Repository) error {
+				_, _, err := r.SetWorkspaceShare(ctx, share(11), sharedIn(), 1, act())
+				return err
+			},
+			want: ErrNotFound,
 			check: func(t *testing.T, db *gorm.DB) {
 				if n := countTeamRows(db, &model.WorkspaceShare{}, "user_id = ?", 11); n != 0 {
 					t.Errorf("the removed member has %d shares, want none", n)

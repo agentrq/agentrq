@@ -101,7 +101,7 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{},
 		&model.Telemetry{}, &model.Memory{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.PanoDoc{}, &model.PanoDocTask{}, &model.PanoFile{}, &model.PanoComment{},
 		&model.Agent{}, &model.AgentModel{}, &model.TaskStateTransition{},
-		&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}); err != nil {
+		&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamWorkspace{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
@@ -126,15 +126,19 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 		&model.Team{ID: 10, Name: "core", Version: 1, CreatedAt: now, UpdatedAt: now},
 		&model.TeamMember{ID: 11, TeamID: 10, UserID: 1},
 		&model.TeamMember{ID: 12, TeamID: 10, UserID: 2},
-		&model.WorkspaceShare{ID: 21, TeamID: 10, WorkspaceID: 100, UserID: 1},
-		&model.WorkspaceShare{ID: 22, TeamID: 10, WorkspaceID: 103, UserID: 1},
-		&model.WorkspaceShare{ID: 23, TeamID: 10, WorkspaceID: 200, UserID: 2},
-		&model.WorkspaceShare{ID: 24, TeamID: 10, WorkspaceID: 202, UserID: 2},
+		&model.TeamWorkspace{ID: 41, TeamID: 10, Name: "backend", NameKey: "backend"},
+		&model.TeamWorkspace{ID: 42, TeamID: 10, Name: "old", NameKey: "old"},
+		&model.TeamWorkspace{ID: 43, TeamID: 10, Name: "api", NameKey: "api"},
+		&model.WorkspaceShare{ID: 21, TeamID: 10, WorkspaceID: 100, UserID: 1, TeamWorkspaceID: 41},
+		&model.WorkspaceShare{ID: 22, TeamID: 10, WorkspaceID: 103, UserID: 1, TeamWorkspaceID: 42},
+		&model.WorkspaceShare{ID: 23, TeamID: 10, WorkspaceID: 200, UserID: 2, TeamWorkspaceID: 41},
+		&model.WorkspaceShare{ID: 24, TeamID: 10, WorkspaceID: 202, UserID: 2, TeamWorkspaceID: 43},
 		// Dave's own team, and what it shares, is no business of team 10.
 		&model.Workspace{ID: 300, UserID: 3, Name: "backend"},
 		&model.Team{ID: 30, Name: "other", Version: 1, CreatedAt: now, UpdatedAt: now},
 		&model.TeamMember{ID: 31, TeamID: 30, UserID: 3},
-		&model.WorkspaceShare{ID: 33, TeamID: 30, WorkspaceID: 300, UserID: 3},
+		&model.TeamWorkspace{ID: 44, TeamID: 30, Name: "backend", NameKey: "backend"},
+		&model.WorkspaceShare{ID: 33, TeamID: 30, WorkspaceID: 300, UserID: 3, TeamWorkspaceID: 44},
 		&model.Task{ID: 3000, UserID: 3, WorkspaceID: 300, Title: "dave's", Status: "notstarted", CreatedAt: now, UpdatedAt: now},
 		&model.Task{ID: 1010, UserID: 1, WorkspaceID: 101, Title: "in the fork", Status: "ongoing", CreatedAt: now, UpdatedAt: now.Add(-3 * time.Minute)},
 		&model.Task{ID: 1020, UserID: 1, WorkspaceID: 102, Title: "secret", Status: "notstarted", CreatedAt: now, UpdatedAt: now},
@@ -271,15 +275,15 @@ func TestTeamMode(t *testing.T) {
 func (m *teamMode) workspaces(t *testing.T) {
 	status, body := m.get(t, bobID, "/teams/"+teamTen+"/workspaces")
 	expectStatus(t, "Bob listing the team's workspaces", status, http.StatusOK, body)
-	if got := list(body, "workspaces", "id"); !sameList(got, ws202, ws100, ws101, ws200) {
-		t.Errorf("Bob sees %v, want 202, then 100, its fork and 200 by shared name: never the unshared 102 or the archived 103", got)
+	if got := list(body, "workspaces", "id"); !sameList(got, ws202, ws200, ws100, ws101) {
+		t.Errorf("Bob sees %v, want 202, then 200, 100 and its fork by team workspace and name: never the unshared 102 or the archived 103", got)
 	}
-	if got := list(body, "workspaces", "sharedName"); !sameList(got, "api", "backend", "backend", "Backend ") {
-		t.Errorf("the shared names are %v: a fork's is its parent's", got)
+	if got := list(body, "workspaces", "sharedName"); !sameList(got, "api", "backend", "backend", "backend") {
+		t.Errorf("the shared names are %v: the team workspace's, a fork's its parent's", got)
 	}
 	ws, _ := body["workspaces"].([]any)
 	if len(ws) == 4 {
-		fork, _ := ws[2].(map[string]any)
+		fork, _ := ws[3].(map[string]any)
 		owner, _ := fork["owner"].(map[string]any)
 		if fork["forkOfId"] != ws100 || fork["name"] != "backend fork" || fork["group"] != nil || owner["name"] != "Alice" || owner["userId"] != aliceID {
 			t.Errorf("the fork reads %v", fork)
@@ -762,7 +766,7 @@ func (m *teamMode) flow(t *testing.T) {
 	}
 	status, body = m.get(t, aliceID, "/teams/"+team+"/activities")
 	if got := list(body, "activities", "action"); status != http.StatusOK || body["version"] != float64(4) ||
-		!sameList(got, "workspace.shared", "invitation.accepted", "member.invited", "team.created") {
+		!sameList(got, "workspace.shared", "teamWorkspace.created", "invitation.accepted", "member.invited", "team.created") {
 		t.Errorf("the activity answered %d %v at %v", status, got, body["version"])
 	}
 	status, body = call(t, m.app, aliceID, http.MethodPatch, "/teams/"+team, `{"name":"liftoff","version":2}`)

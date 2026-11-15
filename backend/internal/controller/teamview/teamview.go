@@ -209,6 +209,24 @@ func WorkspaceKey(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }
 
+// inTeamWorkspace reports whether a visible workspace is in the team
+// workspace named name, as WorkspaceKey matches it; every one is when name
+// is empty. The name picks the team workspace, and its id decides: a
+// workspace renamed since it was shared stays in it.
+func inTeamWorkspace(visible []entity.TeamWorkspace, name string) func(entity.TeamWorkspace) bool {
+	if name == "" {
+		return func(entity.TeamWorkspace) bool { return true }
+	}
+	id := int64(-1)
+	for _, w := range visible {
+		if WorkspaceKey(w.SharedName) == WorkspaceKey(name) {
+			id = w.TeamWorkspaceID
+			break
+		}
+	}
+	return func(w entity.TeamWorkspace) bool { return w.TeamWorkspaceID == id }
+}
+
 // ownerID is the owner's id as the owner's own reads take it.
 func ownerID(w entity.TeamWorkspace) string {
 	return monoflake.ID(w.OwnerID).String()
@@ -221,8 +239,9 @@ func (c *controller) ListTasks(ctx context.Context, req entity.ListTeamTasksRequ
 	}
 	byID := make(map[int64]entity.TeamWorkspace, len(visible))
 	ids := make([]int64, 0, len(visible))
+	in := inTeamWorkspace(visible, req.Workspace)
 	for _, w := range visible {
-		if !w.Tasks || req.Workspace != "" && WorkspaceKey(w.SharedName) != WorkspaceKey(req.Workspace) {
+		if !w.Tasks || !in(w) {
 			continue
 		}
 		if req.Member != 0 && w.OwnerID != req.Member {
@@ -253,8 +272,9 @@ func (c *controller) GetStats(ctx context.Context, req entity.GetTeamStatsReques
 		return nil, err
 	}
 	ids := []int64{}
+	in := inTeamWorkspace(visible, req.Workspace)
 	for _, w := range visible {
-		if w.Tasks && (req.Workspace == "" || WorkspaceKey(w.SharedName) == WorkspaceKey(req.Workspace)) {
+		if w.Tasks && in(w) {
 			ids = append(ids, w.ID)
 		}
 	}
@@ -370,8 +390,9 @@ func (c *controller) cloneAttachments(ctx context.Context, t model.Task, w entit
 func ownWorkspaces(visible []entity.TeamWorkspace, workspace string) (map[int64]entity.TeamWorkspace, []int64) {
 	byID := make(map[int64]entity.TeamWorkspace, len(visible))
 	ids := []int64{}
+	in := inTeamWorkspace(visible, workspace)
 	for _, w := range visible {
-		if w.ForkOfID == 0 && w.Skills && (workspace == "" || WorkspaceKey(w.SharedName) == WorkspaceKey(workspace)) {
+		if w.ForkOfID == 0 && w.Skills && in(w) {
 			byID[w.ID] = w
 			ids = append(ids, w.ID)
 		}

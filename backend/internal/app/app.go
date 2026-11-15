@@ -1504,6 +1504,7 @@ func migratedModels() []any {
 		&model.TeamMember{},
 		&model.TeamInvitation{},
 		&model.WorkspaceShare{},
+		&model.TeamWorkspace{},
 		&model.PanoDocShare{},
 		&model.TeamManagementActivity{},
 		&model.MemoryExclusion{},

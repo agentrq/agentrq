@@ -160,7 +160,7 @@ func each(t *testing.T, fn func(f *fixture), opts ...option) {
 
 func newFixture(t *testing.T, db *gorm.DB, opts ...option) *fixture {
 	t.Helper()
-	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamWorkspace{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, u := range []model.User{

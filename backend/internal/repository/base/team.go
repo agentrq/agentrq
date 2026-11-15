@@ -67,18 +67,19 @@ type WorkspaceShareWithTeam struct {
 }
 
 // TeamWorkspaceRow is a workspace a team may read, with its owner and the
-// name of the shared workspace it shows under: its own, or its parent's for
-// a fork.
+// team workspace it shows in, by id and name: its own share's, or its
+// parent's for a fork.
 type TeamWorkspaceRow struct {
-	ID           int64
-	Name         string
-	ForkOfID     int64
-	UserID       int64
-	SharedName   string
-	OwnerName    string
-	OwnerPicture string
-	HideTasks    bool
-	HideSkills   bool
+	ID              int64
+	Name            string
+	ForkOfID        int64
+	UserID          int64
+	TeamWorkspaceID int64
+	SharedName      string
+	OwnerName       string
+	OwnerPicture    string
+	HideTasks       bool
+	HideSkills      bool
 }
 
 // TeamActivityRow is a team's activity with its actor's and its target's
@@ -94,12 +95,13 @@ type TeamActivityRow struct {
 // TeamWorkspacePeer is a workspace shared with a team, and its owner's name
 // and picture.
 type TeamWorkspacePeer struct {
-	TeamID       int64
-	WorkspaceID  int64
-	UserID       int64
-	Name         string
-	OwnerName    string
-	OwnerPicture string
+	TeamID          int64
+	TeamWorkspaceID int64
+	WorkspaceID     int64
+	UserID          int64
+	Name            string
+	OwnerName       string
+	OwnerPicture    string
 }
 
 // pendingInvitation is an invitation neither accepted nor revoked; it may
@@ -266,8 +268,8 @@ func dropStaleExclusions(tx *gorm.DB, userIDs []int64) error {
 		Delete(&model.MemoryExclusion{}).Error
 }
 
-// deleteTeamRows deletes a team with its members, invitations and shares of
-// workspaces and Pano docs,
+// deleteTeamRows deletes a team with its members, invitations, team
+// workspaces and shares of workspaces and Pano docs,
 // and the memory exclusions between members who share no other team, and
 // records it. Its activities stay.
 func deleteTeamRows(tx *gorm.DB, teamID int64, act model.TeamManagementActivity) error {
@@ -279,7 +281,7 @@ func deleteTeamRows(tx *gorm.DB, teamID int64, act model.TeamManagementActivity)
 	if err := tx.Model(&model.TeamMember{}).Where("team_id = ?", teamID).Pluck("user_id", &members).Error; err != nil {
 		return err
 	}
-	for _, m := range []any{&model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.PanoDocShare{}} {
+	for _, m := range []any{&model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.PanoDocShare{}, &model.TeamWorkspace{}} {
 		if err := tx.Where("team_id = ?", teamID).Delete(m).Error; err != nil {
 			return err
 		}
@@ -577,17 +579,41 @@ func sharesWithTeams(tx *gorm.DB) *gorm.DB {
 	return tx.Model(&model.WorkspaceShare{}).
 		Select("workspace_shares.id, workspace_shares.created_at, workspace_shares.updated_at, workspace_shares.team_id, " +
 			"workspace_shares.workspace_id, workspace_shares.user_id, workspace_shares.hide_tasks, workspace_shares.hide_skills, " +
-			"workspace_shares.hide_memory, teams.name AS team_name").
+			"workspace_shares.hide_memory, workspace_shares.team_workspace_id, teams.name AS team_name").
 		Joins("JOIN teams ON teams.id = workspace_shares.team_id")
+}
+
+// teamWorkspaceFor is the id of the team's team workspace of tw's name, which
+// it creates from tw, recording that, when the team has none. Run it under
+// the team's lock: the unique (team, name key) index would refuse a second
+// one, but the lock keeps two shares from racing to it.
+func teamWorkspaceFor(tx *gorm.DB, tw model.TeamWorkspace, act model.TeamManagementActivity) (int64, error) {
+	got, err := first[model.TeamWorkspace](tx.Where("team_id = ? AND name_key = ?", tw.TeamID, tw.NameKey))
+	if err == nil {
+		return got.ID, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return 0, err
+	}
+	if err := tx.Create(&tw).Error; err != nil {
+		return 0, err
+	}
+	// The team workspace's id is fresh from the same generator as every
+	// activity's, so it names this activity without colliding.
+	act.ID, act.Action, act.TargetWorkspaceID = tw.ID, model.TeamActivityTeamWorkspaceCreated, nil
+	act.Details = TeamActivityDetails(map[string]string{"name": tw.Name})
+	return tw.ID, record(tx, act)
 }
 
 // SetWorkspaceShare shares a workspace with a team from version, and returns
 // the share and the new version. The sharer's membership is read under the
 // team's lock, so a removal committed meanwhile is seen and no share
 // outlives it: ErrNotFound when the team is gone or the sharer is not in it.
-// Sharing a workspace already shared sets what it holds back from the team,
-// recorded only when that changed.
-func (r *repository) SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, version int64, act model.TeamManagementActivity) (WorkspaceShareWithTeam, int64, error) {
+// A new share goes into the team workspace of tw's name, created from tw
+// when the team has none. Sharing a workspace already shared sets what it
+// holds back from the team, recorded only when that changed; it stays in
+// its team workspace.
+func (r *repository) SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, tw model.TeamWorkspace, version int64, act model.TeamManagementActivity) (WorkspaceShareWithTeam, int64, error) {
 	var out WorkspaceShareWithTeam
 	var next int64
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
@@ -595,11 +621,22 @@ func (r *repository) SetWorkspaceShare(ctx context.Context, s model.WorkspaceSha
 		if next, err = changeTeam(tx, s.TeamID, s.UserID, version, s.CreatedAt); err != nil {
 			return err
 		}
+		act.TeamID, act.ActorUserID = s.TeamID, s.UserID
+		var n int64
+		if err := tx.Model(&model.WorkspaceShare{}).Where("team_id = ? AND workspace_id = ?", s.TeamID, s.WorkspaceID).Count(&n).Error; err != nil {
+			return err
+		}
+		if n == 0 {
+			tw.TeamID = s.TeamID
+			if s.TeamWorkspaceID, err = teamWorkspaceFor(tx, tw, act); err != nil {
+				return err
+			}
+		}
 		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&s)
 		if res.Error != nil {
 			return res.Error
 		}
-		act.TeamID, act.ActorUserID, act.Action, act.TargetWorkspaceID = s.TeamID, s.UserID, model.TeamActivityWorkspaceShared, &s.WorkspaceID
+		act.Action, act.TargetWorkspaceID = model.TeamActivityWorkspaceShared, &s.WorkspaceID
 		if res.RowsAffected == 0 {
 			act.Action = model.TeamActivityShareChanged
 			res = tx.Model(&model.WorkspaceShare{}).
@@ -717,18 +754,20 @@ func (r *repository) canReadInTeam(ctx context.Context, userID, teamID, workspac
 }
 
 // ListTeamWorkspaces returns the workspaces a team's members may read, by
-// the name they are shared under, then name: those shared with it and their
+// their team workspace's name, then name: those shared with it and their
 // forks, none archived.
 func (r *repository) ListTeamWorkspaces(ctx context.Context, teamID int64) ([]TeamWorkspaceRow, error) {
 	rows := []TeamWorkspaceRow{}
 	err := r.conn(ctx).Model(&model.Workspace{}).
-		Select("workspaces.id, workspaces.name, workspaces.fork_of_id, workspaces.user_id, shared.name AS shared_name, "+
+		Select("workspaces.id, workspaces.name, workspaces.fork_of_id, workspaces.user_id, "+
+			"workspace_shares.team_workspace_id, team_workspaces.name AS shared_name, "+
 			"users.name AS owner_name, users.picture AS owner_picture, workspace_shares.hide_tasks, workspace_shares.hide_skills").
 		Joins(sharedWorkspace).
 		Where("workspace_shares.team_id = ?", teamID).
+		Joins("JOIN team_workspaces ON team_workspaces.id = workspace_shares.team_workspace_id").
 		Joins("LEFT JOIN users ON users.id = workspaces.user_id").
 		Where("workspaces.archived_at IS NULL").
-		Order("LOWER(shared.name) ASC, workspaces.name ASC, workspaces.id ASC").
+		Order("team_workspaces.name_key ASC, workspaces.name ASC, workspaces.id ASC").
 		Scan(&rows).Error
 	return rows, err
 }

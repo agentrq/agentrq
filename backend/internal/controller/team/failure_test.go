@@ -133,11 +133,11 @@ func (f failing) ListWorkspaceShares(ctx context.Context, workspaceID, userID in
 	return f.Repository.ListWorkspaceShares(ctx, workspaceID, userID)
 }
 
-func (f failing) SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, version int64, act model.TeamManagementActivity) (base.WorkspaceShareWithTeam, int64, error) {
+func (f failing) SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, tw model.TeamWorkspace, version int64, act model.TeamManagementActivity) (base.WorkspaceShareWithTeam, int64, error) {
 	if f.method == "SetWorkspaceShare" {
 		return base.WorkspaceShareWithTeam{}, 0, errDB
 	}
-	return f.Repository.SetWorkspaceShare(ctx, s, version, act)
+	return f.Repository.SetWorkspaceShare(ctx, s, tw, version, act)
 }
 
 func (f failing) DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error) {

@@ -140,8 +140,8 @@ func TestWorkspaceMemoryReportsStorageFailures(t *testing.T) {
 }
 
 // In a workspace shared with teams, memory.md is the index of its team
-// workspace: every shared workspace of its name, in every team it is shared
-// with, once, by owner, the agent's own marked. A member's memory reads by
+// workspaces: every workspace in the team workspace of each of its shares,
+// once, by owner, the agent's own marked. A member's memory reads by
 // its workspace's id, only while a team lets the owner read it, and never
 // writes; the agent's own memory still reads and writes, plainly or by its
 // own id. A workspace in no team keeps its own memory.md.
@@ -177,9 +177,10 @@ func TestATeamWorkspacesMemoryIsAnIndexOfItsMembers(t *testing.T) {
 	for i, m := range [][2]int64{{team1, memUser}, {team1, alice}, {team1, carol}, {team2, memUser}, {team2, erin}} {
 		rows = append(rows, &model.TeamMember{ID: int64(100 + i), TeamID: m[0], UserID: m[1]})
 	}
-	for i, s := range [][3]int64{{team1, memParent, memUser}, {team1, aliceAPI, alice}, {team1, carolWeb, carol},
-		{team1, carolOld, carol}, {team2, memParent, memUser}, {team2, erinAPI, erin}} {
-		rows = append(rows, &model.WorkspaceShare{ID: int64(200 + i), TeamID: s[0], WorkspaceID: s[1], UserID: s[2]})
+	// Team workspaces: 1 is team one's api, 2 its web, 3 team two's api.
+	for i, s := range [][4]int64{{team1, memParent, memUser, 1}, {team1, aliceAPI, alice, 1}, {team1, carolWeb, carol, 2},
+		{team1, carolOld, carol, 1}, {team2, memParent, memUser, 3}, {team2, erinAPI, erin, 3}} {
+		rows = append(rows, &model.WorkspaceShare{ID: int64(200 + i), TeamID: s[0], WorkspaceID: s[1], UserID: s[2], TeamWorkspaceID: s[3]})
 	}
 	for i, m := range [][3]any{{memUser, memParent, "mine"}, {alice, aliceAPI, "alice's"}, {carol, carolWeb, "web's"}, {dave, daveAPI, "dave's"}} {
 		rows = append(rows, &model.Memory{ID: int64(300 + i), UserID: m[0].(int64), WorkspaceID: m[1].(int64), Name: "memory.md", Content: m[2].(string)})
@@ -299,7 +300,7 @@ func TestATeamWorkspacesMemoryReportsStorageFailures(t *testing.T) {
 		t.Errorf("a member's, listing: %v", err)
 	}
 	repo.EXPECT().ListTeamPeerWorkspaces(gomock.Any(), memParent).Return([]base.TeamWorkspacePeer{
-		{TeamID: 7, WorkspaceID: memParent, Name: "api"}, {TeamID: 7, WorkspaceID: 31, Name: "api"},
+		{TeamID: 7, TeamWorkspaceID: 8, WorkspaceID: memParent, Name: "api"}, {TeamID: 7, TeamWorkspaceID: 8, WorkspaceID: 31, Name: "api"},
 	}, nil)
 	repo.EXPECT().ListMemoryExclusions(gomock.Any(), memUser, memParent).Return(nil, nil)
 	repo.EXPECT().CanReadWorkspaceInTeam(gomock.Any(), memUser, int64(7), int64(31)).Return(false, errRepo)
@@ -307,7 +308,7 @@ func TestATeamWorkspacesMemoryReportsStorageFailures(t *testing.T) {
 		t.Errorf("a member's, the check: %v", err)
 	}
 	repo.EXPECT().ListTeamPeerWorkspaces(gomock.Any(), memParent).Return([]base.TeamWorkspacePeer{
-		{TeamID: 7, WorkspaceID: memParent, Name: "api"}, {TeamID: 7, WorkspaceID: 31, Name: "api"},
+		{TeamID: 7, TeamWorkspaceID: 8, WorkspaceID: memParent, Name: "api"}, {TeamID: 7, TeamWorkspaceID: 8, WorkspaceID: 31, Name: "api"},
 	}, nil)
 	repo.EXPECT().ListMemoryExclusions(gomock.Any(), memUser, memParent).Return(nil, errRepo)
 	if _, _, _, err := m.load(ctx, "memory.md"); err != errRepo {

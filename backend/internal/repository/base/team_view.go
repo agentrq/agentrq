@@ -47,14 +47,14 @@ func (r *repository) TeamWorkspaceInfo(ctx context.Context, workspaceID int64) (
 }
 
 // ListTeamPeerWorkspaces is every workspace shared, unarchived, with a team
-// the workspace is shared with, itself included, with its owner's name: the
-// candidates for its team workspace, which the caller narrows by name. A
-// share that holds its memory back from the team is left out, but for the
-// workspace itself.
+// the workspace is shared with, itself included, with its owner's name and
+// its team workspace: the candidates for the workspace's own team
+// workspaces, which the caller narrows by id. A share that holds its memory
+// back from the team is left out, but for the workspace itself.
 func (r *repository) ListTeamPeerWorkspaces(ctx context.Context, workspaceID int64) ([]TeamWorkspacePeer, error) {
 	rows := []TeamWorkspacePeer{}
 	err := r.conn(ctx).Table("workspace_shares AS mine").
-		Select("peer_shares.team_id, peers.id AS workspace_id, peers.user_id, peers.name, "+
+		Select("peer_shares.team_id, peer_shares.team_workspace_id, peers.id AS workspace_id, peers.user_id, peers.name, "+
 			"COALESCE(users.name, '') AS owner_name, COALESCE(users.picture, '') AS owner_picture").
 		Joins("JOIN workspaces AS me ON me.id = mine.workspace_id AND me.archived_at IS NULL").
 		Joins("JOIN workspace_shares AS peer_shares ON peer_shares.team_id = mine.team_id").

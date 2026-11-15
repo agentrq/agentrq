@@ -19,24 +19,24 @@ type Peers interface {
 	ListMemoryExclusions(ctx context.Context, userID, workspaceID int64) ([]int64, error)
 }
 
-// TeamPeers is the members' workspaces in a workspace's team workspace: each
-// workspace of its name shared with a team it is shared with, once, with
+// TeamPeers is the members' workspaces in a workspace's team workspaces:
+// each workspace in the team workspace of one of its shares, once, with
 // that team, itself included. None when it is shared with no team.
 func TeamPeers(ctx context.Context, repo Peers, workspaceID int64) ([]base.TeamWorkspacePeer, error) {
 	rows, err := repo.ListTeamPeerWorkspaces(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	key := ""
+	mine := map[int64]bool{}
 	for _, r := range rows {
 		if r.WorkspaceID == workspaceID {
-			key = WorkspaceKey(r.Name)
+			mine[r.TeamWorkspaceID] = true
 		}
 	}
 	seen := map[int64]bool{}
 	out := []base.TeamWorkspacePeer{}
 	for _, r := range rows {
-		if WorkspaceKey(r.Name) == key && !seen[r.WorkspaceID] {
+		if mine[r.TeamWorkspaceID] && !seen[r.WorkspaceID] {
 			seen[r.WorkspaceID] = true
 			out = append(out, r)
 		}

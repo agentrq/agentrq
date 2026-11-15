@@ -11,7 +11,7 @@
 - **Only the SHA-256 of an invitation token is stored.** The link carries the token in its `#fragment`, so it never reaches a server log. It is shown once, in the answer to the invite, whether or not a mail was sent.
 - **Read access goes through `CanReadWorkspaceInTeam`, never through an owner check.** It sees a fork through its parent's share and hides archived workspaces. The existing owner checks must stay as they are.
 - **Only a parent workspace is shared; a fork follows its parent's share** and shows under its parent's name.
-- **A team workspace is every shared workspace of one name** (`lower(trim(name))`, matched in Go by `teamview.WorkspaceKey`, not in SQL: SQLite's `LOWER` folds ASCII only). There is no label to show a share under.
+- **A team workspace is a `team_workspaces` row, and a share belongs to it by `team_workspace_id`, never by name.** A new share joins the one whose `name_key` (`teamview.WorkspaceKey`, computed in Go: SQLite's `LOWER` folds ASCII only) matches its name, or creates it under the team lock, so a rename later moves nothing. The row outlives its last share, so what it owns survives; it goes with the team.
 
 ## Team mode (`controller/teamview`, `handler/api/team_view.go`)
 

@@ -48,8 +48,8 @@ type TeamInvitation struct {
 
 // WorkspaceShare lets a team's members read a workspace, and its forks.
 // UserID is the workspace's owner, who alone shares and unshares it. In the
-// team it shows by its own name, as one team workspace with every other
-// shared workspace of the same name. The Hide flags hold its tasks, skills
+// team it shows in a team workspace, the one of its name when it was
+// shared. The Hide flags hold its tasks, skills
 // or memory back from the team; stored as what is held back, so a share made
 // before they existed reads as sharing all three.
 type WorkspaceShare struct {
@@ -62,6 +62,23 @@ type WorkspaceShare struct {
 	HideTasks   bool  `gorm:"not null;default:false"`
 	HideSkills  bool  `gorm:"not null;default:false"`
 	HideMemory  bool  `gorm:"not null;default:false"`
+	// TeamWorkspaceID is the team workspace it shows in, picked by its name
+	// when it was shared; a rename later does not move it.
+	TeamWorkspaceID int64 `gorm:"not null;default:0;index:idx_workspace_shares_team_workspace_id"`
+}
+
+// TeamWorkspace is the shares of one team under one name, which owns what
+// they hold in common so it outlives any member. NameKey is
+// teamview.WorkspaceKey(Name), computed in Go: SQLite's LOWER folds ASCII
+// only. It stays after its last share goes, and goes with the team.
+type TeamWorkspace struct {
+	ID        int64 `gorm:"primaryKey;autoIncrement:false"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	TeamID    int64  `gorm:"not null;index:idx_team_workspaces_team_id;uniqueIndex:uk_team_workspaces_team_id_name_key,priority:1"`
+	Name      string `gorm:"type:varchar(128);not null"`
+	NameKey   string `gorm:"type:varchar(128);not null;uniqueIndex:uk_team_workspaces_team_id_name_key,priority:2"`
+	Version   int64  `gorm:"not null;default:1"`
 }
 
 // PanoDocShare lets a team's members read one of UserID's Pano docs, and
@@ -88,20 +105,21 @@ type MemoryExclusion struct {
 
 // What a team management activity records.
 const (
-	TeamActivityTeamCreated        = "team.created"
-	TeamActivityTeamRenamed        = "team.renamed"
-	TeamActivityMemberInvited      = "member.invited"
-	TeamActivityInvitationRevoked  = "invitation.revoked"
-	TeamActivityInvitationAccepted = "invitation.accepted"
-	TeamActivityInvitationDeclined = "invitation.declined"
-	TeamActivityMemberRemoved      = "member.removed"
-	TeamActivityMemberLeft         = "member.left"
-	TeamActivityWorkspaceShared    = "workspace.shared"
-	TeamActivityWorkspaceUnshared  = "workspace.unshared"
-	TeamActivityShareChanged       = "workspace.shareChanged"
-	TeamActivityPanoShared         = "pano.shared"
-	TeamActivityPanoUnshared       = "pano.unshared"
-	TeamActivityTeamDeleted        = "team.deleted"
+	TeamActivityTeamCreated          = "team.created"
+	TeamActivityTeamRenamed          = "team.renamed"
+	TeamActivityMemberInvited        = "member.invited"
+	TeamActivityInvitationRevoked    = "invitation.revoked"
+	TeamActivityInvitationAccepted   = "invitation.accepted"
+	TeamActivityInvitationDeclined   = "invitation.declined"
+	TeamActivityMemberRemoved        = "member.removed"
+	TeamActivityMemberLeft           = "member.left"
+	TeamActivityWorkspaceShared      = "workspace.shared"
+	TeamActivityWorkspaceUnshared    = "workspace.unshared"
+	TeamActivityShareChanged         = "workspace.shareChanged"
+	TeamActivityTeamWorkspaceCreated = "teamWorkspace.created"
+	TeamActivityPanoShared           = "pano.shared"
+	TeamActivityPanoUnshared         = "pano.unshared"
+	TeamActivityTeamDeleted          = "team.deleted"
 )
 
 // TeamManagementActivity is one change to a team, written in the same
