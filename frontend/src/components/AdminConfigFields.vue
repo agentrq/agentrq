@@ -203,7 +203,7 @@ const orderedKeys = computed(() => {
  * separated, like any other.
  */
 // The server's app.baseUrl, as stored, which a callback URL starts with.
-const baseUrl = inject('configBaseUrl', computed(() => ''))
+const baseUrl = inject('configBaseUrl', { value: '' })
 
 const LISTS = {
   'auth.oauth2Providers': {
