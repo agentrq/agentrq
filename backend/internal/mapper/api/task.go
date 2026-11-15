@@ -653,6 +653,7 @@ func FromEntityTaskToView(t entity.Task) view.Task {
 	if t.CreatedByWorkspaceID != 0 {
 		res.CreatedByWorkspaceID = monoflake.ID(t.CreatedByWorkspaceID).String()
 	}
+	res.AgentNote = t.AgentNote
 	return res
 }
 

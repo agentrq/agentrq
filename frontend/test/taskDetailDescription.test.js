@@ -51,10 +51,17 @@ const tasks = {
   talked: task('talked', 'The talked task\'s brief.', [message('m1', 'An earlier message.')]),
   talked2: task('talked2', 'The second talked task\'s brief.', [message('m2', 'Another earlier message.')]),
   bare: task('bare', ''),
+  sent: { ...task('sent', 'The sent task\'s brief.'), agentNote: 'The note it was sent.' },
+  queued: { ...task('queued', 'The queued task\'s brief.'), status: 'notstarted' },
+  human: { ...task('human', 'The human task\'s brief.'), status: 'notstarted', assignee: 'human' },
+  stored: { ...task('stored', 'The old brief.\n\nThe note it was sent.'), agentNote: 'The note it was sent.' },
+  storedQueued: { ...task('storedQueued', 'The old brief.\n\nKeep me posted.'), status: 'notstarted' },
+  old: task('old', 'Handed over before notes were recorded.'),
 }
+let workspaceNote = ''
 
 vi.mock('../src/api', () => ({
-  getWorkspace: () => Promise.resolve({ workspace: { id: 'ws1', name: 'Ops', agentConnected: true } }),
+  getWorkspace: () => Promise.resolve({ workspace: { id: 'ws1', name: 'Ops', agentConnected: true, selfLearningLoopNote: workspaceNote } }),
   getTask: (_ws, id) => Promise.resolve({ task: tasks[id] }),
   fetchUser: () => Promise.resolve({ id: 'u1', name: 'Dev' }),
   fetchTasks: () => Promise.resolve({ tasks: [] }),
@@ -116,6 +123,7 @@ beforeEach(() => {
   document.body.innerHTML = ''
   localStorage.clear()
   events.value = []
+  workspaceNote = ''
 })
 
 describe('the task description', () => {
@@ -173,6 +181,63 @@ describe('the task description', () => {
     await settle()
     expect(page.el.textContent).toContain('Another.')
     expect(page.description()).not.toBeNull()
+  })
+})
+
+describe("the workspace's self-learning note", () => {
+  const note = () => document.querySelector('[data-test="task-agent-note"]')
+
+  it('shows the note an agent task was sent, rendered and raw, whatever the workspace has now', async () => {
+    workspaceNote = 'Edited since.'
+    const page = await open('sent')
+    expect(note().textContent).toContain('Self-learning loop')
+    expect(note().textContent).not.toContain('not sent yet')
+    expect(note().textContent).toContain('The note it was sent.')
+    expect(note().textContent).not.toContain('Edited since.')
+
+    page.el.querySelector('[title="Copy raw text"]').previousElementSibling.click()
+    await settle()
+    expect(note().textContent).toContain('The note it was sent.')
+  })
+
+  it("shows the workspace's note as not sent yet before the first hand-off", async () => {
+    workspaceNote = 'Keep me posted.'
+    await open('queued')
+    expect(note().textContent).toContain('not sent yet')
+    expect(note().textContent).toContain('Keep me posted.')
+  })
+
+  it('shows the note it was sent once the agent takes it', async () => {
+    workspaceNote = 'Keep me posted.'
+    await open('queued')
+    expect(note().textContent).toContain('not sent yet')
+
+    const taken = { ...tasks.queued, status: 'ongoing' }
+    tasks.queued = { ...taken, agentNote: 'Keep me posted.' }
+    // The stream carries no note; the read the status change makes does.
+    events.value.push({ type: 'status.updated', payload: taken })
+    await settle()
+    expect(note().textContent).not.toContain('not sent yet')
+    expect(note().textContent).toContain('Keep me posted.')
+    tasks.queued = { ...taken, status: 'notstarted' }
+  })
+
+  it('is left out of a human task, a task handed over before notes were recorded, and a body that already has it', async () => {
+    workspaceNote = 'Keep me posted.'
+    const page = await open('human')
+    expect(note()).toBeNull()
+
+    for (const id of ['old', 'stored', 'storedQueued']) {
+      await switchTo(id)
+      expect(page.title()).toBe(id)
+      expect(page.description()).not.toBeNull()
+      expect(note()).toBeNull()
+    }
+
+    workspaceNote = ''
+    while (mounted.length) mounted.pop().unmount()
+    await open('queued')
+    expect(note()).toBeNull()
   })
 })
 

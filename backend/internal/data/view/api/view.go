@@ -313,6 +313,9 @@ type (
 		// Agent is the agent that last changed the task's status, as it
 		// named itself: the one working on it, or the one that did.
 		Agent string `json:"agent,omitempty"`
+		// AgentNote is the workspace's note the agent was last handed the
+		// task with, on the single-task read; absent when none was recorded.
+		AgentNote *string `json:"agentNote,omitempty"`
 	}
 
 	// TaskStatusChange is the "task.status" stream event: an agent moving a

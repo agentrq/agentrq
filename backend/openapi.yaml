@@ -3615,6 +3615,13 @@ components:
             The agent that last changed the task's status, as it named
             itself: the one working on it, or the one that did. Only in a
             task list and on the live stream; absent when no agent has.
+        agentNote:
+          type: string
+          readOnly: true
+          description: |
+            The workspace's self-learning note the agent was last handed
+            the task with. Only on the single-task read; absent when no
+            hand-off has been recorded.
 
     TaskEnvelope:
       type: object

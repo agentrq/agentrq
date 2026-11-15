@@ -6,6 +6,7 @@ package api
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -105,6 +106,21 @@ func TestTaskViews_NameTheDelegatingWorkspace(t *testing.T) {
 	b, _ := json.Marshal(FromEntityTaskToView(entity.Task{ID: 1}))
 	if strings.Contains(string(b), "createdByWorkspaceId") {
 		t.Errorf("a task nobody delegated carries the field: %s", b)
+	}
+}
+
+// The REST view carries the note the agent was handed the task with, an empty
+// one included, and leaves the field out when none was recorded.
+func TestFromEntityTaskToView_AgentNote(t *testing.T) {
+	for _, note := range []string{"Keep me posted.", ""} {
+		b, _ := json.Marshal(FromEntityTaskToView(entity.Task{ID: 1, AgentNote: &note}))
+		if want := `"agentNote":` + strconv.Quote(note); !strings.Contains(string(b), want) {
+			t.Errorf("view %s, want %s", b, want)
+		}
+	}
+	b, _ := json.Marshal(FromEntityTaskToView(entity.Task{ID: 1}))
+	if strings.Contains(string(b), "agentNote") {
+		t.Errorf("a task with no recorded note carries the field: %s", b)
 	}
 }
 

@@ -221,6 +221,10 @@ type Repository interface {
 	ListLastTaskAgents(ctx context.Context, taskIDs []int64) (map[int64]int64, error)
 	CreateAgents(ctx context.Context, agents []model.Agent) error
 	CreateAgentModels(ctx context.Context, models []model.AgentModel) error
+	// RecordAgentNote files the note a task was handed to its agent with and
+	// points the task at it; GetAgentNote reads one back.
+	RecordAgentNote(ctx context.Context, userID, taskID int64, text string) error
+	GetAgentNote(ctx context.Context, id int64) (model.AgentNote, error)
 	ListAgents(ctx context.Context, ids []int64) ([]model.Agent, error)
 	ListAgentModels(ctx context.Context, ids []int64) ([]model.AgentModel, error)
 
@@ -586,8 +590,12 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 		return err
 	}
 
-	// 2. Delete all tasks in this workspace
+	// 2. Delete all tasks in this workspace, and the notes only they were
+	//    handed with.
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.Task{}).Error; err != nil {
+		return err
+	}
+	if err := deleteUnusedAgentNotes(tx, userID); err != nil {
 		return err
 	}
 

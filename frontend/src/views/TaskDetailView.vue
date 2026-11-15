@@ -163,6 +163,11 @@
                 <div data-test="task-description-body" class="max-h-[30vh] overflow-y-auto">
                   <MarkdownBody v-if="!isTaskBodyRaw" :text="stripNote(task.body)" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
                   <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ stripNote(task.body) }}</div>
+                  <div v-if="agentNote" data-test="task-agent-note" class="mt-3 pt-2 border-t border-gray-100 dark:border-zinc-800/60">
+                    <div class="text-[9px] font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-wider mb-1">Self-learning loop{{ agentNote.sent ? '' : ' · not sent yet' }}</div>
+                    <MarkdownBody v-if="!isTaskBodyRaw" :text="agentNote.text" :workspace-id="workspaceId" class="text-[13px] text-gray-500 dark:text-zinc-400" />
+                    <div v-else class="text-[13px] text-gray-500 dark:text-zinc-400 leading-relaxed whitespace-pre-wrap break-words">{{ agentNote.text }}</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1066,6 +1071,18 @@ const workspaceStore = useWorkspaceStore();
 const localWorkspace = ref(null);
 const workspace = computed(() => workspaceStore.getWorkspace(workspaceId.value) || localWorkspace.value);
 const task = ref(null);
+// The workspace's notes, which the agent gets after the body and which are never
+// stored with the task (#1211): the ones it was last handed, as recorded, or,
+// before its first hand-off, the ones it is about to be. A task handed over
+// before notes were recorded shows none, and a body stored with them shows them once.
+const agentNote = computed(() => {
+  const t = task.value;
+  if (!t || t.assignee !== 'agent') return null;
+  const sent = t.agentNote != null;
+  const text = sent ? t.agentNote : (t.status === 'notstarted' ? workspace.value?.selfLearningLoopNote || '' : '');
+  if (!text || (t.body || '').includes(text)) return null;
+  return { text, sent };
+});
 const { plan: taskPlan, load: loadTaskPlan, apply: applyTaskPlan } = useTaskPlan();
 // The task's status history, oldest first, from the single-task GET only.
 const stateTransitions = ref([]);
@@ -1986,8 +2003,9 @@ function formatDateTime(dateStr) {
 }
 
 // A status change, from whichever side made it, is a new transition: fetch
-// the history again rather than guess the row the server wrote, and the Pano
-// docs, which the agent may have linked meanwhile.
+// the history again rather than guess the row the server wrote, the Pano
+// docs, which the agent may have linked meanwhile, and the note it was handed,
+// which only the single-task read carries.
 watch(() => task.value?.status, async (status, previous) => {
   if (!previous || status === previous) return;
   const forTask = taskId.value;
@@ -1996,6 +2014,7 @@ watch(() => task.value?.status, async (status, previous) => {
     if (taskId.value === forTask) {
       stateTransitions.value = res.stateTransitions || [];
       panoDocs.value = res.panoDocs || [];
+      if (res.task && task.value) task.value = { ...task.value, agentNote: res.task.agentNote };
     }
   } catch {
     // The timeline keeps what it had; the next change tries again.

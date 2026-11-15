@@ -121,6 +121,7 @@ type WorkspaceServer struct {
 	registerTaskAgent     RegisterTaskAgentFunc
 	getTask               GetTaskFunc
 	workspaceNotes        WorkspaceNotesFunc
+	recordAgentNote       AgentNoteRecorder
 	listTasks             ListTasksFunc
 	getNextTask           GetNextTaskFunc
 	reply                 ReplyFunc
@@ -1239,7 +1240,7 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 		// agent to quote it back when publishing an event, and this path
 		// is how workflow-step tasks are delivered.
 		msg := "Next assigned task:\n" + taskIDLine(nextTask) + ps.followUpBlock(context.Background(), nextTask) +
-			"\nDetails: " + ps.AgentTaskBody(context.Background(), nextTask.Body)
+			"\nDetails: " + ps.AgentTaskBody(context.Background(), nextTask.ID, nextTask.AgentNoteID, nextTask.Body)
 		if atts := formatModelAttachments(nextTask.Attachments); atts != "" {
 			msg += "\n" + atts
 		}

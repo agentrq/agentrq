@@ -291,8 +291,16 @@ func (c *controller) GetTask(ctx context.Context, req entity.GetTaskRequest) (*e
 	for i, d := range docs {
 		panoDocs[i] = entity.PanoDoc{ID: d.ID, Title: d.Title}
 	}
+	task := c.fromModelTaskToEntity(m)
+	// A note that cannot be read leaves the task without one, as a task
+	// handed over before notes were recorded is: the page still opens.
+	if m.AgentNoteID != 0 {
+		if note, err := c.repository.GetAgentNote(ctx, m.AgentNoteID); err == nil {
+			task.AgentNote = &note.Text
+		}
+	}
 	return &entity.GetTaskResponse{
-		Task:             c.fromModelTaskToEntity(m),
+		Task:             task,
 		StateTransitions: transitions,
 		Timing:           taskTiming(rows, time.Now()),
 		PanoDocs:         panoDocs,
@@ -1043,6 +1051,7 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 		WorkflowDepth:         m.WorkflowDepth,
 		CompletionTriggerType: m.CompletionTriggerType,
 		CreatedByWorkspaceID:  m.CreatedByWorkspaceID,
+		AgentNoteID:           m.AgentNoteID,
 	}
 }
 

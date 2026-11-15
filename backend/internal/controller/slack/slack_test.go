@@ -91,6 +91,18 @@ type mockMCP struct {
 		behavior    string
 	}
 	pushed string
+	// notes are what AgentTaskBody appends, as the workspace's server does;
+	// handedOver is the task it was last asked for, with its note id.
+	notes      string
+	handedOver [2]int64
+}
+
+func (m *mockMCP) AgentTaskBody(ctx context.Context, workspaceID int64, userID string, taskID, agentNoteID int64, body string) string {
+	m.handedOver = [2]int64{taskID, agentNoteID}
+	if m.notes == "" {
+		return body
+	}
+	return body + "\n\n" + m.notes
 }
 
 func (m *mockMCP) SendPermissionVerdict(ctx context.Context, workspaceID int64, userID string, taskID int64, requestID, behavior string) error {
@@ -261,7 +273,7 @@ func TestHandleSlashCommand_Success_QuotedBoth(t *testing.T) {
 
 	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
-	mcp := &mockMCP{}
+	mcp := &mockMCP{notes: "Keep me posted."}
 
 	var capturedReq entity.CreateTaskRequest
 	crud := &mockCRUD{
@@ -311,6 +323,10 @@ func TestHandleSlashCommand_Success_QuotedBoth(t *testing.T) {
 	// which are not stored with it; the title stays out.
 	if want := "[Task " + monoflake.ID(7).String() + "]\nDescription goes in second quotes here\n\nKeep me posted."; mcp.pushed != want {
 		t.Errorf("pushed %q, want %q", mcp.pushed, want)
+	}
+	// Through the workspace's server, which records the notes it hands over.
+	if mcp.handedOver != [2]int64{7, 0} {
+		t.Errorf("handed over %v, want task 7 with no note recorded yet", mcp.handedOver)
 	}
 }
 

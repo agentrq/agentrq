@@ -368,6 +368,38 @@ func TestGetTask_Success(t *testing.T) {
 	}
 }
 
+// The note the agent was last handed the task with comes with it; one that
+// cannot be read leaves the task without one rather than failing the read.
+func TestGetTask_AgentNote(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		readErr error
+		want    *string
+	}{
+		{"read", nil, strPtr("Keep me posted.")},
+		{"unreadable", errors.New("database unavailable"), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTestController(t)
+			e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10, WorkspaceID: 1, AgentNoteID: 77}, nil)
+			e.repo.EXPECT().ListTaskStateTransitions(gomock.Any(), int64(10)).Return(nil, nil)
+			e.repo.EXPECT().ListPanoDocsOfTask(gomock.Any(), testUserID, int64(10), gomock.Any()).Return(nil, nil)
+			e.repo.EXPECT().GetAgentNote(gomock.Any(), int64(77)).Return(model.AgentNote{ID: 77, Text: "Keep me posted."}, tc.readErr)
+
+			resp, err := e.controller.GetTask(context.Background(), entity.GetTaskRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr})
+			if err != nil {
+				t.Fatalf("GetTask: %v", err)
+			}
+			if resp.Task.AgentNoteID != 77 {
+				t.Errorf("AgentNoteID = %d, want 77", resp.Task.AgentNoteID)
+			}
+			if (resp.Task.AgentNote == nil) != (tc.want == nil) || (tc.want != nil && *resp.Task.AgentNote != *tc.want) {
+				t.Errorf("AgentNote = %v, want %v", resp.Task.AgentNote, tc.want)
+			}
+		})
+	}
+}
+
 func TestGetTask_PanoDocsError(t *testing.T) {
 	e := newTestController(t)
 

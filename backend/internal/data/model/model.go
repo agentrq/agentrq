@@ -100,6 +100,9 @@ type (
 		// without this the UI cannot tell "they picked workflow new_feature"
 		// from "they picked event code_changed" and would label it wrong.
 		CompletionTriggerType int16 `gorm:"default:0"`
+		// AgentNoteID is the AgentNote the agent was last handed this task
+		// with, zero when no hand-off has been recorded.
+		AgentNoteID int64
 	}
 
 	// ToolCall records a single tool-call permission decision for a task: either
@@ -496,6 +499,15 @@ type (
 	AgentModel struct {
 		ID        int64  `gorm:"primaryKey;autoIncrement:false"`
 		Name      string `gorm:"type:varchar(32)"`
+		CreatedAt time.Time
+	}
+
+	// AgentNote is a workspace's notes as an agent was handed them with a
+	// task, once per account per text: ID is AgentNoteID(UserID, Text).
+	AgentNote struct {
+		ID        int64  `gorm:"primaryKey;autoIncrement:false"`
+		UserID    int64  `gorm:"index:idx_agent_notes_user_id"`
+		Text      string `gorm:"type:text"`
 		CreatedAt time.Time
 	}
 
