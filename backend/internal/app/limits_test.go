@@ -21,6 +21,7 @@ func resetLimits(t *testing.T) {
 		skill.MaxSkillFileBytes = skill.DefaultMaxSkillFileBytes
 		skill.MaxFiles = skill.DefaultMaxFiles
 		crud.PanoMaxTTLDays = crud.DefaultPanoMaxTTLDays
+		crud.TeamSkillsPerWorkspace = crud.DefaultTeamSkillsPerWorkspace
 	})
 }
 

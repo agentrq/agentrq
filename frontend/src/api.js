@@ -1565,14 +1565,15 @@ export function declineInvitation(invitationId) {
   return teamCall(`/invitations/${enc(invitationId)}/decline`, 'Failed to decline the invitation', { method: 'POST' });
 }
 
-// The teams a workspace is shared with: { shares: [{ teamId, teamName, workspaceId, tasks, skills, memory, createdAt, updatedAt }] }.
+// The teams a workspace is shared with: { shares: [{ teamId, teamName, workspaceId, tasks, skills, memory, autoOptInSkills, createdAt, updatedAt }] }.
 export function listWorkspaceShares(workspaceId) {
   return teamCall(`/workspaces/${enc(workspaceId)}/shares`, 'Failed to load sharing');
 }
 
 // The share, with the team's new `version`. `parts` ({ tasks, skills, memory })
 // says what the team reads, each shared unless false; on a workspace already
-// shared it sets them.
+// shared it sets them. `autoOptInSkills`, on unless false, opts the workspace
+// in to each team skill it has made no choice about, later ones included.
 export function shareWorkspace(workspaceId, teamId, version, parts = {}) {
   return teamCall(`/workspaces/${enc(workspaceId)}/shares/${enc(teamId)}`, 'Failed to share the workspace', { method: 'PUT', body: { ...parts, version } });
 }
@@ -1689,6 +1690,82 @@ export function getTeamSkill(teamId, name, workspace = '') {
 export function addTeamSkill(teamId, name, workspaceIds = [], workspace = '', replace = false) {
   const body = replace ? { workspaceIds, replace: true } : { workspaceIds };
   return teamCall(`/teams/${enc(teamId)}/skills/${enc(name)}/add${teamSkillsQuery(workspace)}`, 'Failed to add the skill', { method: 'POST', body });
+}
+
+// ── Team workspace skills ───────────────────────────────────────────────────
+// A team workspace owns skills of its own, which belong to no person. A
+// workspace shared into it is opted in to each (its share's autoOptInSkills)
+// or out; one of your own skills of the same name, on there, wins (`clash`).
+// Each skill is { ...a skill, teamId, teamWorkspaceId, teamWorkspaceName, on,
+// clash }; its files have no `url`.
+
+// The team skills a workspace of yours reaches, and the team workspaces it is
+// shared into: { skills, teamWorkspaces: [{ id, name, teamId, teamName }] }.
+export function listWorkspaceTeamSkills(workspaceId, q = '') {
+  const query = q ? `?${new URLSearchParams({ q })}` : '';
+  return teamCall(`/workspaces/${enc(workspaceId)}/team-skills${query}`, 'Failed to load the team skills');
+}
+
+// Opts the workspace into a team skill, or out of it: { skill }.
+export function setWorkspaceTeamSkill(workspaceId, skillId, on) {
+  return teamCall(`/workspaces/${enc(workspaceId)}/team-skills/${enc(skillId)}`, on ? 'Failed to turn the team skill on' : 'Failed to turn the team skill off',
+    { method: 'PUT', body: { on: !!on } });
+}
+
+// Moves one of your skills into a team workspace this workspace is shared
+// into: { skill }. 409 when it has a skill of that name; 422 when it is full,
+// or the skill is a link to a teammate's.
+export function giveSkillToTeam(workspaceId, name, teamWorkspaceId) {
+  return teamCall(`/workspaces/${enc(workspaceId)}/skills/${enc(name)}/give`, 'Failed to give the skill to the team',
+    { method: 'POST', body: { teamWorkspaceId } });
+}
+
+const teamWorkspaceSkillsPath = (teamId, teamWorkspaceId) => `/teams/${enc(teamId)}/team-workspaces/${enc(teamWorkspaceId)}/skills`;
+const teamWorkspaceSkillPath = (teamId, teamWorkspaceId, skillId) => `${teamWorkspaceSkillsPath(teamId, teamWorkspaceId)}/${enc(skillId)}`;
+
+// A team workspace's skills, for any member: { skills }.
+export function listTeamWorkspaceSkills(teamId, teamWorkspaceId) {
+  return teamCall(teamWorkspaceSkillsPath(teamId, teamWorkspaceId), 'Failed to load the team skills');
+}
+
+// Creates a team skill from a SKILL.md, named by its frontmatter: { skill, file }.
+export function createTeamWorkspaceSkill(teamId, teamWorkspaceId, content) {
+  return teamCall(teamWorkspaceSkillsPath(teamId, teamWorkspaceId), 'Failed to create the skill', { method: 'POST', body: { content } });
+}
+
+// Imports skills from GitHub into a team workspace, as importSkills does into
+// the account: { imported, skipped, candidates?, sourceRepo, sourceRef, sourceCommit }.
+export function importTeamWorkspaceSkills(teamId, teamWorkspaceId, url, overwrite = false, skills = []) {
+  const body = { url, overwrite };
+  if (skills?.length) body.skills = skills;
+  return teamCall(`${teamWorkspaceSkillsPath(teamId, teamWorkspaceId)}/import`, 'Failed to import skills', { method: 'POST', body });
+}
+
+// { skill }, with its files listed (path, sizeBytes, updatedAt, version).
+export function getTeamWorkspaceSkill(teamId, teamWorkspaceId, skillId) {
+  return teamCall(teamWorkspaceSkillPath(teamId, teamWorkspaceId, skillId), 'Failed to load the skill');
+}
+
+// Deletes the skill for every workspace in the team.
+export function deleteTeamWorkspaceSkill(teamId, teamWorkspaceId, skillId) {
+  return teamCall(teamWorkspaceSkillPath(teamId, teamWorkspaceId, skillId), 'Failed to delete the skill', { method: 'DELETE' });
+}
+
+// { skill, file: { path, sizeBytes, updatedAt, content, version } }.
+export function getTeamWorkspaceSkillFile(teamId, teamWorkspaceId, skillId, path) {
+  return teamCall(`${teamWorkspaceSkillPath(teamId, teamWorkspaceId, skillId)}/files/${encodePath(path)}`, 'Failed to load the file');
+}
+
+// Writes a file: `version` is the one read, to replace it; leave it out to add
+// a new file. A version someone has saved over answers 409: { skill, file }.
+export function saveTeamWorkspaceSkillFile(teamId, teamWorkspaceId, skillId, path, content, version) {
+  const body = version === undefined || version === null ? { content } : { content, version };
+  return teamCall(`${teamWorkspaceSkillPath(teamId, teamWorkspaceId, skillId)}/files/${encodePath(path)}`, 'Failed to save the file', { method: 'PUT', body });
+}
+
+// { skill }. SKILL.md cannot be deleted (422).
+export function deleteTeamWorkspaceSkillFile(teamId, teamWorkspaceId, skillId, path) {
+  return teamCall(`${teamWorkspaceSkillPath(teamId, teamWorkspaceId, skillId)}/files/${encodePath(path)}`, 'Failed to delete the file', { method: 'DELETE' });
 }
 
 // The Pano docs members shared with the team, newest update first, each with

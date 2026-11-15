@@ -65,6 +65,12 @@ func migrateSchema(conn *gorm.DB) error {
 	// and covers every query the task_id index served.
 	_ = conn.Exec("DROP INDEX IF EXISTS idx_tool_calls_task_id").Error
 
+	// A team workspace's skill is unique by name in its team workspace, so
+	// the unique index on skills gained team_workspace_id; AutoMigrate
+	// creates the new one but never drops the old, which would refuse two
+	// team workspaces a skill of the same name.
+	_ = conn.Exec("DROP INDEX IF EXISTS uk_skills_user_id_workspace_id_name").Error
+
 	if err := conn.AutoMigrate(migratedModels()...); err != nil {
 		return err
 	}

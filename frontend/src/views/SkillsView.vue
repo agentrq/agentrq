@@ -15,6 +15,7 @@ import { useRoute, useRouter } from 'vue-router'
 import SkillPage from '../components/SkillPage.vue'
 import SkillsPanel from '../components/SkillsPanel.vue'
 import TeamSkills from '../components/TeamSkills.vue'
+import TeamWorkspaceSkills from '../components/TeamWorkspaceSkills.vue'
 import TeamWorkspaceActions from '../components/TeamWorkspaceActions.vue'
 import { useTeamMode } from '../composables/useTeamMode'
 
@@ -38,8 +39,8 @@ const teamWorkspace = computed(() => (isTeamMode.value && typeof route.query.wor
           <template v-else>Skills</template>
         </h1>
         <p v-if="isTeamMode" class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
-          <template v-if="teamWorkspace">The skills its agents use. Add the ones you want to yours.</template>
-          <template v-else>Each team workspace has its own skills.</template>
+          <template v-if="teamWorkspace">The skills it owns, which every teammate can change, and teammates' own.</template>
+          <template v-else>Each team workspace owns its own skills.</template>
         </p>
         <p v-else class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
           Playbooks agents load when a task matches one. Turn one on in each workspace whose agents should see it.
@@ -49,7 +50,15 @@ const teamWorkspace = computed(() => (isTeamMode.value && typeof route.query.wor
     </div>
 
     <div class="px-4 pb-10">
-      <TeamSkills v-if="isTeamMode" :name="skillName" />
+      <!-- A teammate's own skill, opened from the list below. -->
+      <TeamSkills v-if="isTeamMode && skillName" :name="skillName" />
+      <div v-else-if="isTeamMode" class="space-y-10">
+        <TeamWorkspaceSkills />
+        <section data-test="teammates-own-skills" class="space-y-3">
+          <h2 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Teammates' own skills</h2>
+          <TeamSkills />
+        </section>
+      </div>
       <SkillPage v-else-if="skillName" :name="skillName" />
       <SkillsPanel v-else />
     </div>

@@ -251,12 +251,15 @@ type (
 	// a skill from before skills belonged to the account, which the startup
 	// backfill moves.
 	Skill struct {
-		ID              int64 `gorm:"primaryKey;autoIncrement:false"`
-		CreatedAt       time.Time
-		UpdatedAt       time.Time
-		UserID          int64  `gorm:"index:idx_skills_user_id;uniqueIndex:uk_skills_user_id_workspace_id_name,priority:1"`
-		WorkspaceID     int64  `gorm:"index:idx_skills_workspace_id;uniqueIndex:uk_skills_user_id_workspace_id_name,priority:2"`
-		Name            string `gorm:"type:varchar(64);uniqueIndex:uk_skills_user_id_workspace_id_name,priority:3"`
+		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt   time.Time
+		UpdatedAt   time.Time
+		UserID      int64 `gorm:"index:idx_skills_user_id;uniqueIndex:uk_skills_user_id_workspace_id_team_workspace_id_name,priority:1"`
+		WorkspaceID int64 `gorm:"index:idx_skills_workspace_id;uniqueIndex:uk_skills_user_id_workspace_id_team_workspace_id_name,priority:2"`
+		// TeamWorkspaceID makes it a team workspace's skill, with UserID and
+		// WorkspaceID 0: it belongs to no person, so it outlives any member.
+		TeamWorkspaceID int64  `gorm:"not null;default:0;index:idx_skills_team_workspace_id;uniqueIndex:uk_skills_user_id_workspace_id_team_workspace_id_name,priority:3"`
+		Name            string `gorm:"type:varchar(64);uniqueIndex:uk_skills_user_id_workspace_id_team_workspace_id_name,priority:4"`
 		Description     string `gorm:"type:varchar(1024)"`
 		SourceType      string `gorm:"type:varchar(16)"`
 		SourceRepo      string `gorm:"type:varchar(255)"`
@@ -862,6 +865,13 @@ const (
 	ActionIDPanoShare
 	// One of a teammate's memories read by a person; emitted by the backend.
 	ActionIDTeammateMemoryView
+	// A team workspace's skill created, deleted, given to it, or opted into
+	// or out of by a workspace; emitted by the backend.
+	ActionIDTeamSkillCreate
+	ActionIDTeamSkillDelete
+	ActionIDTeamSkillGive
+	ActionIDTeamSkillOptIn
+	ActionIDTeamSkillOptOut
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

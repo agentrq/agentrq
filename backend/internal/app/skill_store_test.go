@@ -34,6 +34,62 @@ type fakeSkillCrud struct {
 	// shared is a skill others write too, whose file is at version 4.
 	shared bool
 	saved  []entity.SaveSkillFileRequest
+
+	// team is the team skill of every name, nil for none; teamWorkspaces
+	// the team workspaces the workspace is shared into.
+	team               *entity.TeamSkill
+	teamWorkspaces     []entity.TeamWorkspaceRef
+	teamSkills         []entity.TeamSkill
+	teamErr, teamOpErr error
+	teamListErr        error
+	teamSaved          []entity.SaveWorkspaceTeamSkillFileRequest
+	teamCalls          []string
+	gone               bool
+}
+
+func (f *fakeSkillCrud) ListWorkspaceTeamSkills(_ context.Context, req entity.WorkspaceTeamSkillsRequest) (*entity.WorkspaceTeamSkillsResponse, error) {
+	f.teamCalls = append(f.teamCalls, fmt.Sprintf("list %s %v", req.Query, req.OnlyOn))
+	return &entity.WorkspaceTeamSkillsResponse{Skills: f.teamSkills, TeamWorkspaces: f.teamWorkspaces}, f.teamListErr
+}
+
+func (f *fakeSkillCrud) GetWorkspaceTeamSkill(_ context.Context, req entity.WorkspaceTeamSkillRequest) (*entity.TeamSkill, error) {
+	f.teamCalls = append(f.teamCalls, "get "+req.Name)
+	if f.teamErr != nil {
+		return nil, f.teamErr
+	}
+	if f.team == nil {
+		return nil, base.ErrNotFound
+	}
+	return f.team, nil
+}
+
+func (f *fakeSkillCrud) GetWorkspaceTeamSkillFile(_ context.Context, req entity.WorkspaceTeamSkillRequest) (*entity.TeamSkillFileResponse, error) {
+	f.teamCalls = append(f.teamCalls, "file "+req.Name+"/"+req.Path)
+	if f.teamOpErr != nil {
+		return nil, f.teamOpErr
+	}
+	return &entity.TeamSkillFileResponse{Skill: *f.team, File: entity.SkillFile{Content: "team " + req.Path, Version: 5}}, nil
+}
+
+func (f *fakeSkillCrud) SaveWorkspaceTeamSkillFile(_ context.Context, req entity.SaveWorkspaceTeamSkillFileRequest) (*entity.TeamSkillFileResponse, error) {
+	f.teamSaved = append(f.teamSaved, req)
+	if f.teamOpErr != nil {
+		return nil, f.teamOpErr
+	}
+	return &entity.TeamSkillFileResponse{File: entity.SkillFile{Version: 6}}, nil
+}
+
+func (f *fakeSkillCrud) DeleteWorkspaceTeamSkill(_ context.Context, req entity.WorkspaceTeamSkillRequest) (*entity.OptOutTeamSkillResponse, error) {
+	f.teamCalls = append(f.teamCalls, "optOut "+req.Name)
+	if f.teamOpErr != nil {
+		return nil, f.teamOpErr
+	}
+	return &entity.OptOutTeamSkillResponse{Deleted: f.gone}, nil
+}
+
+func (f *fakeSkillCrud) DeleteWorkspaceTeamSkillFile(_ context.Context, req entity.WorkspaceTeamSkillRequest) (*entity.TeamSkill, error) {
+	f.teamCalls = append(f.teamCalls, "deleteFile "+req.Name+"/"+req.Path)
+	return f.team, f.teamOpErr
 }
 
 func (f *fakeSkillCrud) scope(workspaceID int64, userID string) {
@@ -112,9 +168,9 @@ func TestSkillStore_List(t *testing.T) {
 
 func TestSkillStore_Load(t *testing.T) {
 	f := &fakeSkillCrud{}
-	content, files, version, found, err := newSkillStore(f).LoadSkillFile(context.Background(), "tdd", "SKILL.md")
-	if err != nil || !found || content != "content of SKILL.md" || !reflect.DeepEqual(files, []string{"SKILL.md", "a.md"}) || version != 0 {
-		t.Errorf("got %q %v %d %v %v, want no version for a skill nobody else writes", content, files, version, found, err)
+	file, found, err := newSkillStore(f).LoadSkillFile(context.Background(), "tdd", "SKILL.md")
+	if err != nil || !found || file.Content != "content of SKILL.md" || !reflect.DeepEqual(file.Files, []string{"SKILL.md", "a.md"}) || file.Version != 0 {
+		t.Errorf("got %+v %v %v, want no version for a skill nobody else writes", file, found, err)
 	}
 	if !reflect.DeepEqual(f.scopes, []string{"owner@7", "owner@7"}) {
 		t.Errorf("scopes: %v", f.scopes)
@@ -124,9 +180,9 @@ func TestSkillStore_Load(t *testing.T) {
 // Only a SKILL.md comes with the list of files, so a sub file is one lookup.
 func TestSkillStore_LoadSubFileIsOneLookup(t *testing.T) {
 	f := &fakeSkillCrud{}
-	content, files, _, found, err := newSkillStore(f).LoadSkillFile(context.Background(), "tdd", "a.md")
-	if err != nil || !found || content != "content of a.md" || files != nil {
-		t.Errorf("got %q %v %v %v", content, files, found, err)
+	file, found, err := newSkillStore(f).LoadSkillFile(context.Background(), "tdd", "a.md")
+	if err != nil || !found || file.Content != "content of a.md" || file.Files != nil {
+		t.Errorf("got %+v %v %v", file, found, err)
 	}
 	if len(f.scopes) != 1 {
 		t.Errorf("calls: %v", f.scopes)
@@ -136,9 +192,9 @@ func TestSkillStore_LoadSubFileIsOneLookup(t *testing.T) {
 // A file of a skill others write too comes with its version, to save on.
 func TestSkillStore_LoadSharedHasVersion(t *testing.T) {
 	for _, p := range []string{"SKILL.md", "a.md"} {
-		_, _, version, found, err := newSkillStore(&fakeSkillCrud{shared: true}).LoadSkillFile(context.Background(), "tdd", p)
-		if err != nil || !found || version != 4 {
-			t.Errorf("loading %s of a shared skill gave version %d (found %v, %v), want 4", p, version, found, err)
+		file, found, err := newSkillStore(&fakeSkillCrud{shared: true}).LoadSkillFile(context.Background(), "tdd", p)
+		if err != nil || !found || file.Version != 4 {
+			t.Errorf("loading %s of a shared skill gave version %d (found %v, %v), want 4", p, file.Version, found, err)
 		}
 	}
 }
@@ -149,11 +205,11 @@ func TestSkillStore_SaveVersion(t *testing.T) {
 	ctx := context.Background()
 	f := &fakeSkillCrud{}
 	s := newSkillStore(f)
-	if v, err := s.SaveSkillFile(ctx, "tdd", "a.md", "x", 0); err != nil || v != 9 {
-		t.Errorf("a save with no version returned %d, %v; want 9", v, err)
+	if v, err := s.SaveSkillFile(ctx, "tdd", "a.md", "x", 0, mcp.SkillTarget{}); err != nil || v != (mcp.SkillSaved{Version: 9}) {
+		t.Errorf("a save with no version returned %+v, %v; want 9", v, err)
 	}
-	if v, err := s.SaveSkillFile(ctx, "tdd", "a.md", "x", 3); err != nil || v != 9 {
-		t.Errorf("a save on version 3 returned %d, %v; want 9", v, err)
+	if v, err := s.SaveSkillFile(ctx, "tdd", "a.md", "x", 3, mcp.SkillTarget{}); err != nil || v != (mcp.SkillSaved{Version: 9}) {
+		t.Errorf("a save on version 3 returned %+v, %v; want 9", v, err)
 	}
 	if len(f.saved) != 2 || f.saved[0].Version != nil || f.saved[1].Version == nil || *f.saved[1].Version != 3 {
 		t.Errorf("the controller was asked to save %+v, want no version, then version 3", f.saved)
@@ -170,28 +226,43 @@ func TestSkillStore_Errors(t *testing.T) {
 		return errors.As(err, &r) && r.Message == "not a valid skill name"
 	}
 
-	// A miss is not an error, from either lookup a load makes.
-	for _, f := range []*fakeSkillCrud{{getErr: base.ErrNotFound}, {fileErr: base.ErrNotFound}} {
-		if _, _, _, found, err := newSkillStore(f).LoadSkillFile(ctx, "tdd", "SKILL.md"); found || err != nil {
+	// A miss is not an error, from any lookup a load makes.
+	for _, f := range []*fakeSkillCrud{{getErr: base.ErrNotFound}, {fileErr: base.ErrNotFound}, {fileErr: base.ErrNotFound, getErr: base.ErrNotFound}} {
+		if _, found, err := newSkillStore(f).LoadSkillFile(ctx, "tdd", "SKILL.md"); found || err != nil {
 			t.Errorf("miss: found %v err %v", found, err)
 		}
 	}
-	for _, f := range []*fakeSkillCrud{{getErr: refusal}, {fileErr: refusal}} {
-		if _, _, _, _, err := newSkillStore(f).LoadSkillFile(ctx, "tdd", "SKILL.md"); !isRefusal(err) {
+	for _, f := range []*fakeSkillCrud{{getErr: refusal}, {fileErr: refusal}, {fileErr: base.ErrNotFound, getErr: refusal}, {fileErr: base.ErrNotFound, getErr: base.ErrNotFound, teamErr: refusal}} {
+		if _, _, err := newSkillStore(f).LoadSkillFile(ctx, "tdd", "SKILL.md"); !isRefusal(err) {
 			t.Errorf("load refusal: %v", err)
 		}
 	}
 	if _, _, err := newSkillStore(&fakeSkillCrud{listErr: refusal}).SearchSkills(ctx, "", 0, 0); !isRefusal(err) {
 		t.Errorf("list refusal: %v", err)
 	}
-	if _, err := newSkillStore(&fakeSkillCrud{err: refusal}).SaveSkillFile(ctx, "tdd", "SKILL.md", "x", 0); !isRefusal(err) {
+	if _, _, err := newSkillStore(&fakeSkillCrud{teamListErr: refusal}).SearchSkills(ctx, "", 0, 0); !isRefusal(err) {
+		t.Errorf("team list refusal: %v", err)
+	}
+	if _, err := newSkillStore(&fakeSkillCrud{err: refusal}).SaveSkillFile(ctx, "tdd", "SKILL.md", "x", 0, mcp.SkillTarget{}); !isRefusal(err) {
 		t.Errorf("save refusal: %v", err)
 	}
-	if _, err := newSkillStore(&fakeSkillCrud{err: other}).SaveSkillFile(ctx, "tdd", "SKILL.md", "x", 0); err != other {
+	if _, err := newSkillStore(&fakeSkillCrud{err: other}).SaveSkillFile(ctx, "tdd", "SKILL.md", "x", 0, mcp.SkillTarget{}); err != other {
 		t.Errorf("other errors pass unchanged: %v", err)
 	}
-	if _, err := newSkillStore(&fakeSkillCrud{}).SaveSkillFile(ctx, "tdd", "SKILL.md", "x", 0); err != nil {
+	if _, err := newSkillStore(&fakeSkillCrud{}).SaveSkillFile(ctx, "tdd", "SKILL.md", "x", 0, mcp.SkillTarget{}); err != nil {
 		t.Errorf("save: %v", err)
+	}
+	for _, op := range []func(s *skillStore) error{
+		func(s *skillStore) error {
+			_, err := s.SaveSkillFile(ctx, "tdd", "SKILL.md", "x", 0, mcp.SkillTarget{})
+			return err
+		},
+		func(s *skillStore) error { _, err := s.DeleteSkill(ctx, "tdd"); return err },
+		func(s *skillStore) error { _, err := s.DeleteSkillFile(ctx, "tdd", "a.md"); return err },
+	} {
+		if err := op(newSkillStore(&fakeSkillCrud{getErr: refusal})); !isRefusal(err) {
+			t.Errorf("a write after a refused lookup: %v", err)
+		}
 	}
 
 	for _, tc := range []struct {
@@ -205,7 +276,7 @@ func TestSkillStore_Errors(t *testing.T) {
 	} {
 		s := newSkillStore(&fakeSkillCrud{err: tc.err})
 		for name, run := range map[string]func() (bool, error){
-			"skill": func() (bool, error) { return s.DeleteSkill(ctx, "tdd") },
+			"skill": func() (bool, error) { d, err := s.DeleteSkill(ctx, "tdd"); return d.Deleted, err },
 			"file":  func() (bool, error) { return s.DeleteSkillFile(ctx, "tdd", "a.md") },
 		} {
 			deleted, err := run()
@@ -224,7 +295,7 @@ func TestSkillStore_ReadsAreMCPOrigin(t *testing.T) {
 	if _, _, err := s.SearchSkills(context.Background(), "", 0, 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, _, err := s.LoadSkillFile(context.Background(), "tdd", "a.md"); err != nil {
+	if _, _, err := s.LoadSkillFile(context.Background(), "tdd", "a.md"); err != nil {
 		t.Fatal(err)
 	}
 	if want := []entity.Origin{entity.OriginMCP, entity.OriginMCP}; !reflect.DeepEqual(f.origins, want) {
@@ -270,7 +341,7 @@ func TestSkillStore_Hidden(t *testing.T) {
 	} {
 		t.Run(tc.name+" is not found by a load", func(t *testing.T) {
 			for _, p := range []string{"SKILL.md", "a.md"} {
-				if _, _, _, found, err := newSkillStore(tc.fake()).LoadSkillFile(ctx, "tdd", p); found || err != nil {
+				if _, found, err := newSkillStore(tc.fake()).LoadSkillFile(ctx, "tdd", p); found || err != nil {
 					t.Errorf("loading %s returned found %v and error %v, want not found and no error", p, found, err)
 				}
 			}
@@ -285,15 +356,15 @@ func TestSkillStore_Hidden(t *testing.T) {
 			}
 			f := tc.fake()
 			s := newSkillStore(f)
-			_, err := s.SaveSkillFile(ctx, "tdd", "SKILL.md", "x", 0)
+			_, err := s.SaveSkillFile(ctx, "tdd", "SKILL.md", "x", 0, mcp.SkillTarget{})
 			if got := refusedWith(err); got != tc.message {
 				t.Errorf("saving was refused with %q, want %q", got, tc.message)
 			}
-			deleted, err := s.DeleteSkill(ctx, "tdd")
-			if got := refusedWith(err); deleted || got != tc.message {
-				t.Errorf("deleting the skill returned deleted %v and %q, want not deleted and %q", deleted, got, tc.message)
+			d, err := s.DeleteSkill(ctx, "tdd")
+			if got := refusedWith(err); d.Deleted || got != tc.message {
+				t.Errorf("deleting the skill returned deleted %v and %q, want not deleted and %q", d.Deleted, got, tc.message)
 			}
-			deleted, err = s.DeleteSkillFile(ctx, "tdd", "a.md")
+			deleted, err := s.DeleteSkillFile(ctx, "tdd", "a.md")
 			if got := refusedWith(err); deleted || got != tc.message {
 				t.Errorf("deleting a file returned deleted %v and %q, want not deleted and %q", deleted, got, tc.message)
 			}
@@ -306,7 +377,7 @@ func TestSkillStore_Hidden(t *testing.T) {
 
 	// A skill that is not there yet is the write's own business: saving its
 	// SKILL.md creates it.
-	if _, err := newSkillStore(&fakeSkillCrud{getErr: base.ErrNotFound}).SaveSkillFile(ctx, "new", "SKILL.md", "x", 0); err != nil {
+	if _, err := newSkillStore(&fakeSkillCrud{getErr: base.ErrNotFound}).SaveSkillFile(ctx, "new", "SKILL.md", "x", 0, mcp.SkillTarget{}); err != nil {
 		t.Errorf("saving a new skill failed with %v, want it created", err)
 	}
 }
@@ -316,9 +387,9 @@ func TestSkillStore_Hidden(t *testing.T) {
 // only when no other workspace has it on.
 func TestSkillStore_DeleteGoesThroughTheWorkspace(t *testing.T) {
 	f := &fakeSkillCrud{}
-	deleted, err := newSkillStore(f).DeleteSkill(context.Background(), "tdd")
-	if !deleted || err != nil {
-		t.Fatalf("deleting returned deleted %v and error %v, want deleted and no error", deleted, err)
+	d, err := newSkillStore(f).DeleteSkill(context.Background(), "tdd")
+	if d != (mcp.SkillDeleted{Deleted: true}) || err != nil {
+		t.Fatalf("deleting returned %+v and error %v, want deleted and no error", d, err)
 	}
 	want := []entity.DeleteSkillRequest{{WorkspaceID: 7, UserID: "owner", Name: "tdd"}}
 	if !reflect.DeepEqual(f.deleted, want) {

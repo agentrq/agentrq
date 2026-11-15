@@ -60,10 +60,10 @@ func TestTeamEntitiesRender(t *testing.T) {
 			`{"invitations":[` + invJSON + `],"version":5}`},
 		"a preview": {string(FromTeamInvitationPreviewEntityToHTTPResponse(entity.TeamInvitationPreview{TeamID: 1, TeamName: "core", InvitedByName: "Bob", Email: "d***@x.io", EmailMatches: true, ExpiresAt: at})),
 			`{"teamId":"00000000001","teamName":"core","invitedByName":"Bob","email":"d***@x.io","emailMatches":true,"expiresAt":"2026-11-13T12:00:00Z"}`},
-		"a share": {string(FromWorkspaceShareEntityToHTTPResponse(entity.WorkspaceShare{TeamID: 1, TeamName: "core", WorkspaceID: 4, SharedParts: entity.SharedParts{Tasks: true, Memory: true}, CreatedAt: at, UpdatedAt: at})),
-			`{"teamId":"00000000001","teamName":"core","workspaceId":"00000000004","tasks":true,"skills":false,"memory":true,"createdAt":"2026-11-13T12:00:00Z","updatedAt":"2026-11-13T12:00:00Z"}`},
+		"a share": {string(FromWorkspaceShareEntityToHTTPResponse(entity.WorkspaceShare{TeamID: 1, TeamName: "core", WorkspaceID: 4, SharedParts: entity.SharedParts{Tasks: true, Memory: true, AutoOptInSkills: true}, CreatedAt: at, UpdatedAt: at})),
+			`{"teamId":"00000000001","teamName":"core","workspaceId":"00000000004","tasks":true,"skills":false,"memory":true,"autoOptInSkills":true,"createdAt":"2026-11-13T12:00:00Z","updatedAt":"2026-11-13T12:00:00Z"}`},
 		"a share just made": {string(FromWorkspaceShareEntityToHTTPResponse(entity.WorkspaceShare{TeamID: 1, WorkspaceID: 4, CreatedAt: at, UpdatedAt: at, Version: 6})),
-			`{"teamId":"00000000001","teamName":"","workspaceId":"00000000004","tasks":false,"skills":false,"memory":false,"createdAt":"2026-11-13T12:00:00Z","updatedAt":"2026-11-13T12:00:00Z","version":6}`},
+			`{"teamId":"00000000001","teamName":"","workspaceId":"00000000004","tasks":false,"skills":false,"memory":false,"autoOptInSkills":false,"createdAt":"2026-11-13T12:00:00Z","updatedAt":"2026-11-13T12:00:00Z","version":6}`},
 		"a version": {string(FromTeamVersionToHTTPResponse(7)), `{"version":7}`},
 		"a conflict": {string(FromTeamVersionErrorToHTTPResponse(&entity.TeamVersionError{Version: 8})),
 			`{"error":{"message":"someone changed this team: reload it and try again","code":409},"conflict":true,"version":8}`},
@@ -86,7 +86,7 @@ func TestTeamEntitiesRender(t *testing.T) {
 		}
 	}
 	no := false
-	if got := FromShareWorkspaceRequestViewToSharedPartsEntity(view.ShareWorkspaceRequest{Version: 1, Skills: &no}); got != (entity.SharedParts{Tasks: true, Memory: true}) {
+	if got := FromShareWorkspaceRequestViewToSharedPartsEntity(view.ShareWorkspaceRequest{Version: 1, Skills: &no}); got != (entity.SharedParts{Tasks: true, Memory: true, AutoOptInSkills: true}) {
 		t.Errorf("a share request holding skills back reads %+v", got)
 	}
 	var v struct{ Name string }

@@ -321,6 +321,7 @@ A team's members read the workspaces they share with it. Invitations go by email
 | `AGENTRQ_TEAMS_MAX_INVITES_PER_DAY` | `10` | Most invitations one team may create in any 24 hours, revoked and declined ones included. `0` turns invitations off. |
 | `AGENTRQ_TEAMS_MAX_INVITES_PER_USER_PER_DAY` | `20` | Most invitations one account may create in any 24 hours across all its teams, revoked and declined ones included, so creating more teams sends no more. `0` is no per-account cap. Both caps apply: the first one reached answers 429, saying which. |
 | `AGENTRQ_TEAMS_EMAIL_INVITES` | `true` | Email each invitation when SMTP is set up. `false` sends none: the inviter shares the link by hand. Other emails are unaffected. |
+| `AGENTRQ_TEAMS_MAX_SKILLS_PER_WORKSPACE` | `100` | Most skills one team workspace may hold. An agent saving a new team skill over it is told to improve an existing skill or ask the human; a member importing is refused the same way. `0` is the default. |
 
 The server refuses to start on a negative value.
 

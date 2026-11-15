@@ -62,6 +62,9 @@ type SharedParts struct {
 	Tasks  bool
 	Skills bool
 	Memory bool
+	// AutoOptInSkills opts the workspace into every skill of its team
+	// workspace it has made no choice about, later ones included.
+	AutoOptInSkills bool
 }
 
 // WorkspaceShare is a workspace shared with a team. Version is the team's
@@ -296,9 +299,9 @@ type TeammateMemory struct {
 	Included    bool
 }
 
-// TeamSkill is a skill on in a team's workspaces, and who has it on. One read
+// TeammateSkill is a skill on in a team's workspaces, and who has it on. One read
 // on its own carries its SKILL.md, from the owner who changed it last.
-type TeamSkill struct {
+type TeammateSkill struct {
 	Name        string
 	Description string
 	UpdatedAt   time.Time

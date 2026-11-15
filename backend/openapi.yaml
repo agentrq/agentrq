@@ -3781,6 +3781,281 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/TeamRefused' }
 
+  /workspaces/{id}/team-skills:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: q
+        in: query
+        required: false
+        schema: { type: string }
+        description: Only skills whose name or description contains this, ignoring case.
+    get:
+      tags: [Workspaces]
+      summary: The team skills this workspace reaches
+      description: >
+        The skills of every team workspace this workspace is shared into, by
+        name, each with whether the workspace is opted into it (`on`) and
+        whether one of the account's own skills of its name, on in this
+        workspace, wins over it (`clash`). `teamWorkspaces` is the team
+        workspaces it is shared into. A fork answers for its parent.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skills:
+                    type: array
+                    items: { $ref: '#/components/schemas/TeamWorkspaceSkill' }
+                  teamWorkspaces:
+                    type: array
+                    items: { $ref: '#/components/schemas/TeamWorkspaceRef' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{id}/team-skills/{skillId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TeamSkillId'
+    put:
+      tags: [Workspaces]
+      summary: Opt this workspace into, or out of, a team skill
+      description: >
+        Opted in, the workspace's agent sees the skill and can change it.
+        Opting out sticks: a change to the skill never opts the workspace
+        back in. Unlike an agent's delete, opting out never deletes the skill.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [on]
+              properties:
+                on: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamWorkspaceSkillResponse' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{id}/skills/{name}/give:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/SkillName'
+    post:
+      tags: [Workspaces]
+      summary: Give one of the account's skills to a team workspace
+      description: >
+        Moves the skill, keeping its id, into a team workspace this workspace
+        is shared into: it stops being the account's, and every workspace
+        opted into the team's skills gets it. Its files lose their public
+        links. 409 when the team workspace has a skill of that name; 422 when
+        it is full, or the skill is a link to a teammate's.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [teamWorkspaceId]
+              properties:
+                teamWorkspaceId: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamWorkspaceSkillResponse' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidPayload' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /teams/{teamId}/team-workspaces/{teamWorkspaceId}/skills:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/TeamWorkspaceId'
+    get:
+      tags: [Team mode]
+      summary: A team workspace's skills
+      description: By name. The team's skills belong to no member, so they outlive any one of them.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skills:
+                    type: array
+                    items: { $ref: '#/components/schemas/TeamWorkspaceSkill' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Team mode]
+      summary: Create a team skill from its SKILL.md
+      description: Named by its frontmatter. 409 when the team workspace has a skill of that name; 422 when it is full or the SKILL.md is not valid.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamWorkspaceSkillFileResponse' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidPayload' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /teams/{teamId}/team-workspaces/{teamWorkspaceId}/skills/import:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/TeamWorkspaceId'
+    post:
+      tags: [Team mode]
+      summary: Import skills from a public GitHub repository into a team workspace
+      description: As `/skills/import` does into the account. A name the team workspace has already is skipped unless `overwrite`; one over its cap is skipped with the reason.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string }
+                overwrite: { type: boolean, default: false }
+                skills:
+                  type: array
+                  maxItems: 256
+                  items: { type: string }
+      responses:
+        '200':
+          description: What was imported, and what was left out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported:
+                    type: array
+                    items: { $ref: '#/components/schemas/TeamWorkspaceSkill' }
+                  skipped:
+                    type: array
+                    items: { type: object, properties: { name: { type: string }, path: { type: string }, reason: { type: string } } }
+                  candidates:
+                    type: array
+                    items: { type: object, properties: { name: { type: string }, path: { type: string }, sizeBytes: { type: integer }, reason: { type: string } } }
+                  sourceRepo: { type: string }
+                  sourceRef: { type: string }
+                  sourceCommit: { type: string }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+        '502': { $ref: '#/components/responses/InvalidPayload' }
+
+  /teams/{teamId}/team-workspaces/{teamWorkspaceId}/skills/{skillId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/TeamWorkspaceId'
+      - $ref: '#/components/parameters/TeamSkillId'
+    get:
+      tags: [Team mode]
+      summary: One team skill, with its list of files
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamWorkspaceSkillResponse' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Team mode]
+      summary: Delete a team skill for everyone
+      description: Every workspace loses it, opted in or not.
+      responses:
+        '204': { description: Deleted }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /teams/{teamId}/team-workspaces/{teamWorkspaceId}/skills/{skillId}/files/{path}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/TeamWorkspaceId'
+      - $ref: '#/components/parameters/TeamSkillId'
+      - name: path
+        in: path
+        required: true
+        schema: { type: string, maxLength: 255 }
+        description: The file's path from the skill's root. It is the rest of the URL, so it may contain `/`.
+    get:
+      tags: [Team mode]
+      summary: One file of a team skill, with its content and version
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamWorkspaceSkillFileResponse' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Team mode]
+      summary: Write a file of a team skill
+      description: >
+        `version`, the one read, is required to replace a file, so nobody's
+        change is lost: a stale one answers 409 with the current version.
+        Leave it out to add a file.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+                version: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamWorkspaceSkillFileResponse' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidPayload' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+    delete:
+      tags: [Team mode]
+      summary: Delete a file of a team skill
+      description: A skill cannot lose its SKILL.md; delete the skill instead.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamWorkspaceSkillResponse' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
 components:
   securitySchemes:
     sessionCookie:
@@ -3857,6 +4132,18 @@ components:
       required: true
       schema: { type: string, maxLength: 64, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
       description: The skill's name, unique among the skills a workspace can use.
+    TeamWorkspaceId:
+      name: teamWorkspaceId
+      in: path
+      required: true
+      schema: { type: string }
+      description: Team workspace ID (base62), a workspace's `teamWorkspaceId` in the team's list.
+    TeamSkillId:
+      name: skillId
+      in: path
+      required: true
+      schema: { type: string }
+      description: Team skill ID (base62).
     TeamId:
       name: teamId
       in: path
@@ -3947,6 +4234,7 @@ components:
         sharedName: { type: string, description: The name of the shared workspace it shows under, its own or its parent's for a fork. The shared workspaces of one name, ignoring case and surrounding spaces, are one team workspace. }
         owner: { $ref: '#/components/schemas/TeamOwner' }
         forkOfId: { type: string, description: The parent, for a fork. }
+        teamWorkspaceId: { type: string, description: 'The team workspace it is shared into, whose skills are at `/teams/{teamId}/team-workspaces/{teamWorkspaceId}/skills`.' }
     TeamTask:
       description: A task in team mode. The `url` of each of its files, and of its messages' files, is the team's attachment route.
       allOf:
@@ -4401,6 +4689,43 @@ components:
           description: |
             Public link to the file, readable with no session: the bucket when
             skills are kept in S3, `<base URL>/storage/skills/...` otherwise.
+            A team skill's files have none.
+        version:
+          type: integer
+          format: int64
+          description: Given for a file others write too, such as a team skill's; a save that replaces it sends it back.
+
+    TeamWorkspaceSkill:
+      description: >
+        A team workspace's skill. Read from a workspace, `on` is whether the
+        workspace is opted into it, and `clash` whether the account's own skill
+        of its name, on in that workspace, wins over it. Read from the team's
+        page, `on` is true and `clash` false. Its files have no public `url`.
+      allOf:
+        - $ref: '#/components/schemas/Skill'
+        - type: object
+          properties:
+            teamId: { type: string }
+            teamWorkspaceId: { type: string }
+            teamWorkspaceName: { type: string }
+            on: { type: boolean }
+            clash: { type: boolean }
+    TeamWorkspaceRef:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        teamId: { type: string }
+        teamName: { type: string }
+    TeamWorkspaceSkillResponse:
+      type: object
+      properties:
+        skill: { $ref: '#/components/schemas/TeamWorkspaceSkill' }
+    TeamWorkspaceSkillFileResponse:
+      type: object
+      properties:
+        skill: { $ref: '#/components/schemas/TeamWorkspaceSkill' }
+        file: { $ref: '#/components/schemas/SkillFile' }
 
     SkillImportReport:
       type: object
@@ -4966,6 +5291,7 @@ components:
         tasks: { type: boolean, default: true, description: Whether the team reads the workspace's tasks. }
         skills: { type: boolean, default: true, description: Whether the team reads the workspace's skills. }
         memory: { type: boolean, default: true, description: Whether the team's agents read the workspace's memory. }
+        autoOptInSkills: { type: boolean, default: true, description: Opt the workspace into every skill of the team workspace it is shared into, later ones included, but those it was opted out of. Off, only the skills it is opted into now stay on. }
     TeamMember:
       type: object
       properties:
@@ -5039,6 +5365,7 @@ components:
         tasks: { type: boolean }
         skills: { type: boolean }
         memory: { type: boolean }
+        autoOptInSkills: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         version: { type: integer, format: int64, description: The team's version, on the share just made. }

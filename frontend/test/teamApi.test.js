@@ -67,6 +67,22 @@ describe('the team API', () => {
     ['getTeamSkill', ['tm1', 'a b', 'Back end'], 'GET', '/teams/tm1/skills/a%20b?workspace=Back+end'],
     ['addTeamSkill', ['tm1', 'tdd', ['ws1'], 'Back end'], 'POST', '/teams/tm1/skills/tdd/add?workspace=Back+end', { workspaceIds: ['ws1'] }],
     ['addTeamSkill', ['tm1', 'tdd', [], '', true], 'POST', '/teams/tm1/skills/tdd/add', { workspaceIds: [], replace: true }],
+    ['shareWorkspace', ['ws1', 'tm1', 4, { autoOptInSkills: false }], 'PUT', '/workspaces/ws1/shares/tm1', { autoOptInSkills: false, version: 4 }],
+    ['listWorkspaceTeamSkills', ['ws1'], 'GET', '/workspaces/ws1/team-skills'],
+    ['listWorkspaceTeamSkills', ['ws1', 'dep loy'], 'GET', '/workspaces/ws1/team-skills?q=dep+loy'],
+    ['setWorkspaceTeamSkill', ['ws1', 's1', true], 'PUT', '/workspaces/ws1/team-skills/s1', { on: true }],
+    ['setWorkspaceTeamSkill', ['ws1', 's1', false], 'PUT', '/workspaces/ws1/team-skills/s1', { on: false }],
+    ['giveSkillToTeam', ['ws1', 'a b', 'tw1'], 'POST', '/workspaces/ws1/skills/a%20b/give', { teamWorkspaceId: 'tw1' }],
+    ['listTeamWorkspaceSkills', ['tm1', 'tw1'], 'GET', '/teams/tm1/team-workspaces/tw1/skills'],
+    ['createTeamWorkspaceSkill', ['tm1', 'tw1', '---\nname: x\n---'], 'POST', '/teams/tm1/team-workspaces/tw1/skills', { content: '---\nname: x\n---' }],
+    ['importTeamWorkspaceSkills', ['tm1', 'tw1', 'https://github.com/a/b'], 'POST', '/teams/tm1/team-workspaces/tw1/skills/import', { url: 'https://github.com/a/b', overwrite: false }],
+    ['importTeamWorkspaceSkills', ['tm1', 'tw1', 'u', true, ['skills/x']], 'POST', '/teams/tm1/team-workspaces/tw1/skills/import', { url: 'u', overwrite: true, skills: ['skills/x'] }],
+    ['getTeamWorkspaceSkill', ['tm1', 'tw1', 's1'], 'GET', '/teams/tm1/team-workspaces/tw1/skills/s1'],
+    ['deleteTeamWorkspaceSkill', ['tm1', 'tw1', 's1'], 'DELETE', '/teams/tm1/team-workspaces/tw1/skills/s1'],
+    ['getTeamWorkspaceSkillFile', ['tm1', 'tw1', 's1', 'scripts/a b.sh'], 'GET', '/teams/tm1/team-workspaces/tw1/skills/s1/files/scripts/a%20b.sh'],
+    ['saveTeamWorkspaceSkillFile', ['tm1', 'tw1', 's1', 'SKILL.md', 'x', 3], 'PUT', '/teams/tm1/team-workspaces/tw1/skills/s1/files/SKILL.md', { content: 'x', version: 3 }],
+    ['saveTeamWorkspaceSkillFile', ['tm1', 'tw1', 's1', 'new.md', 'x'], 'PUT', '/teams/tm1/team-workspaces/tw1/skills/s1/files/new.md', { content: 'x' }],
+    ['deleteTeamWorkspaceSkillFile', ['tm1', 'tw1', 's1', 'new.md'], 'DELETE', '/teams/tm1/team-workspaces/tw1/skills/s1/files/new.md'],
   ];
 
   it.each(CASES)('%s(%j) is %s %s', async (name, args, method, path, body) => {
@@ -105,6 +121,18 @@ describe('the team API', () => {
     expect(err.status).toBe(409);
     expect(err.conflict).toBe(true);
     expect(err.version).toBe(7);
+  });
+
+  it('throws a stale save\'s message, with its status, so the editor can offer a reload', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: { message: 'SKILL.md was saved since you read it', code: 409 } }),
+    });
+    const err = await api.saveTeamWorkspaceSkillFile('tm1', 'tw1', 's1', 'SKILL.md', 'x', 2).catch((e) => e);
+    expect(err.message).toBe('SKILL.md was saved since you read it');
+    expect(err.status).toBe(409);
+    expect(err.conflict).toBeUndefined();
   });
 
   it('reads an error given as a bare string', async () => {

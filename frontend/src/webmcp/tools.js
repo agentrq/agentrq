@@ -159,7 +159,8 @@ const TEAM_WRITES = (api) => ({
   revokeInvitation: ({ teamId, invitationId, version }) => api.revokeTeamInvitation(teamId, invitationId, version),
   accept: ({ token, invitationId }) => (token ? api.acceptInvitation(token) : api.acceptInvitationById(invitationId)),
   decline: ({ invitationId }) => api.declineInvitation(invitationId),
-  share: ({ workspaceId, teamId, version, tasks, skills, memory }) => api.shareWorkspace(workspaceId, teamId, version, { tasks, skills, memory }),
+  share: ({ workspaceId, teamId, version, tasks, skills, memory, autoOptInSkills }) =>
+    api.shareWorkspace(workspaceId, teamId, version, { tasks, skills, memory, autoOptInSkills }),
   unshare: ({ workspaceId, teamId, version }) => api.unshareWorkspace(workspaceId, teamId, version),
   teammateMemory: ({ workspaceId, userId, included }) => api.setTeammateMemory(workspaceId, userId, included !== false),
   addSkill: ({ teamId, name, workspaceIds = [], workspace = '', replace = false }) => api.addTeamSkill(teamId, name, workspaceIds, workspace, replace === true),
@@ -175,6 +176,41 @@ function teamWritePage(input = {}) {
   if (input.action === 'sharePano' || input.action === 'unsharePano') return panoDocPage({ id: input.docId })
   if (input.action === 'invite' || input.action === 'revokeInvitation') return teamPage(input, 'invitations')
   return teamPage(input)
+}
+
+// Team workspace skills: a team workspace's own skills, which belong to no
+// person. Grouped like the team tools, read and write apart.
+const TEAM_SKILL_READS = (api) => ({
+  workspace: ({ workspaceId, q = '' }) => api.listWorkspaceTeamSkills(workspaceId, q),
+  list: ({ teamId, teamWorkspaceId }) => api.listTeamWorkspaceSkills(teamId, teamWorkspaceId),
+  get: ({ teamId, teamWorkspaceId, skillId }) => api.getTeamWorkspaceSkill(teamId, teamWorkspaceId, skillId),
+  file: ({ teamId, teamWorkspaceId, skillId, path }) => api.getTeamWorkspaceSkillFile(teamId, teamWorkspaceId, skillId, path),
+})
+
+const TEAM_SKILL_WRITES = (api) => ({
+  optIn: ({ workspaceId, skillId, on }) => api.setWorkspaceTeamSkill(workspaceId, skillId, on !== false),
+  give: ({ workspaceId, name, teamWorkspaceId }) => api.giveSkillToTeam(workspaceId, name, teamWorkspaceId),
+  create: ({ teamId, teamWorkspaceId, content }) => api.createTeamWorkspaceSkill(teamId, teamWorkspaceId, content),
+  import: ({ teamId, teamWorkspaceId, url, overwrite = false, skills = [] }) =>
+    api.importTeamWorkspaceSkills(teamId, teamWorkspaceId, url, overwrite === true, skills),
+  delete: ({ teamId, teamWorkspaceId, skillId }) => api.deleteTeamWorkspaceSkill(teamId, teamWorkspaceId, skillId),
+  saveFile: ({ teamId, teamWorkspaceId, skillId, path, content, version }) =>
+    api.saveTeamWorkspaceSkillFile(teamId, teamWorkspaceId, skillId, path, content, version),
+  deleteFile: ({ teamId, teamWorkspaceId, skillId, path }) => api.deleteTeamWorkspaceSkillFile(teamId, teamWorkspaceId, skillId, path),
+})
+
+/** Where a manageTeamSkills action shows: the workspace's Skills tab, or the team's Skills page. */
+function teamSkillWritePage(input = {}) {
+  if (input.action === 'optIn' || input.action === 'give') return settingsPage('skills')(input)
+  return input.teamId ? `/teams/${seg(input.teamId)}/skills` : '/skills'
+}
+
+const TEAM_SKILL_FIELDS = {
+  teamId: TEAM_ID,
+  workspaceId: str('One of your workspaces, shared into a team workspace.'),
+  teamWorkspaceId: str('A team workspace\'s ID: teamWorkspaces from the workspace action, or teamWorkspaceId on readTeams workspaces.'),
+  skillId: str('A team skill\'s ID, as list or workspace reports it.'),
+  path: str('A file\'s path in the skill, e.g. "SKILL.md" or "scripts/run.sh".'),
 }
 
 /**
@@ -1563,11 +1599,53 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         tasks: bool('For share: false holds the workspace\'s tasks back from the team. Defaults to true.'),
         skills: bool('For share: false holds its skills back. Defaults to true.'),
         memory: bool('For share: false holds its memory back from teammates\' agents. Defaults to true.'),
+        autoOptInSkills: bool('For share: false stops opting the workspace in to new team skills. Defaults to true.'),
       },
       required: ['action'],
       destructive: true,
       screen: before(teamWritePage),
       run: dispatch(TEAM_WRITES(api), 'manageTeam'),
+    }),
+    tool({
+      name: 'readTeamSkills',
+      description:
+        'Read the skills a team workspace owns, which belong to no person. action: workspace (workspaceId: one of yours; the team ' +
+        'skills it reaches, each with on, whether it is opted in, and clash, whether your own skill of that name wins there; ' +
+        'and teamWorkspaces, those it is shared into; q filters), list (teamId, teamWorkspaceId), get (skillId: with its files), ' +
+        'file (skillId, path: its content and version).',
+      properties: {
+        action: { type: 'string', enum: Object.keys(TEAM_SKILL_READS({})), description: 'What to read.' },
+        ...TEAM_SKILL_FIELDS,
+        q: str('For workspace: matches a skill\'s name or description.'),
+      },
+      required: ['action'],
+      readOnly: true,
+      run: dispatch(TEAM_SKILL_READS(api), 'readTeamSkills'),
+    }),
+    tool({
+      name: 'manageTeamSkills',
+      description:
+        'Change a team workspace\'s skills. Of one of your workspaces (workspaceId): optIn (skillId, on: false opts it out, and it ' +
+        'stays out), give (name: one of your own skills, moved into teamWorkspaceId; 409 when it has that name). On the team ' +
+        '(teamId, teamWorkspaceId), any member: create (content: a SKILL.md with name and description frontmatter), import ' +
+        '(url, overwrite, skills: from a repository too large to import whole, the candidates to take), delete (skillId: for every ' +
+        'workspace in the team), saveFile (skillId, path, content, version: the one read, to replace a file; leave it out to add ' +
+        'one; 409 when someone saved since), deleteFile (skillId, path; not SKILL.md).',
+      properties: {
+        action: { type: 'string', enum: Object.keys(TEAM_SKILL_WRITES({})), description: 'What to change.' },
+        ...TEAM_SKILL_FIELDS,
+        on: bool('For optIn: true opts the workspace in, false out. Defaults to true.'),
+        name: str('For give: the name of one of your own skills.'),
+        content: str('For create: the SKILL.md. For saveFile: the file\'s full content.'),
+        version: int('For saveFile: the file\'s version as file read it. Leave it out to add a new file.'),
+        url: str('For import: https://github.com/owner/repo, optionally /tree/<ref>/<path>.'),
+        overwrite: bool('For import: replace the team skills of the same name. Defaults to false.'),
+        skills: { type: 'array', items: { type: 'string' }, description: 'For import: the candidates\' paths to import.' },
+      },
+      required: ['action'],
+      destructive: true,
+      screen: before(teamSkillWritePage),
+      run: dispatch(TEAM_SKILL_WRITES(api), 'manageTeamSkills'),
     }),
     tool({
       name: 'cloneTeamTask',

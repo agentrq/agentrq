@@ -27,7 +27,7 @@ var errTeamDB = errors.New("database unavailable")
 
 var teamT0 = time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 
-var teamTables = []any{&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamWorkspace{}, &model.PanoDoc{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}}
+var teamTables = []any{&model.User{}, &model.Workspace{}, &model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamWorkspace{}, &model.PanoDoc{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.TeamSkillChoice{}}
 
 func openTeamDB(t *testing.T, d gorm.Dialector) *gorm.DB {
 	t.Helper()
@@ -81,6 +81,10 @@ func act() model.TeamManagementActivity {
 func sharedIn() model.TeamWorkspace {
 	return model.TeamWorkspace{ID: 1_000_000 + actIDs.Add(1), Name: "Shared", NameKey: "shared", CreatedAt: teamT0, UpdatedAt: teamT0}
 }
+
+// testIDs is a fresh id from the activities' sequence, as the controller's
+// generator gives one.
+func testIDs() int64 { return 1_000_000 + actIDs.Add(1) }
 
 // forEachTeamDB runs fn on each database, against a repository seeded with
 // one team, 1 "core" at version 1, whose only member is user 10.
@@ -1173,7 +1177,7 @@ func TestASharesTeamWorkspace(t *testing.T) {
 			return ids[0]
 		}
 		api := named("API", "api")
-		s, v, err := r.SetWorkspaceShare(ctx, share(1, 1, 100, 10), api, 1, act())
+		s, v, err := r.SetWorkspaceShare(ctx, share(1, 1, 100, 10), api, testIDs, 1, act())
 		if err != nil || s.TeamWorkspaceID != api.ID || in(1) != api.ID {
 			t.Fatalf("the first share of api went into %d (%v), want a new %d", s.TeamWorkspaceID, err, api.ID)
 		}
@@ -1181,23 +1185,23 @@ func TestASharesTeamWorkspace(t *testing.T) {
 			t.Errorf("the first share recorded %v, want the team workspace created, then the share", got)
 		}
 		logged := len(activities(db, 1))
-		if _, v, err = r.SetWorkspaceShare(ctx, share(2, 1, 200, 11), named(" api ", "api"), v, act()); err != nil || in(2) != api.ID {
+		if _, v, err = r.SetWorkspaceShare(ctx, share(2, 1, 200, 11), named(" api ", "api"), testIDs, v, act()); err != nil || in(2) != api.ID {
 			t.Fatalf("a second share of api went into %d (%v), want %d", in(2), err, api.ID)
 		}
 		if len(activities(db, 1)) != logged+1 || lastActivity(db, 1) != "workspace.shared 11 ws:200 {}" {
 			t.Errorf("joining a team workspace recorded %v", activities(db, 1)[logged:])
 		}
 		web := named("web", "web")
-		if _, v, err = r.SetWorkspaceShare(ctx, share(3, 1, 300, 10), web, v, act()); err != nil || in(3) != web.ID {
+		if _, v, err = r.SetWorkspaceShare(ctx, share(3, 1, 300, 10), web, testIDs, v, act()); err != nil || in(3) != web.ID {
 			t.Errorf("a share of web went into %d (%v), want a new %d", in(3), err, web.ID)
 		}
 		other := named("api", "api")
-		if _, _, err = r.SetWorkspaceShare(ctx, share(4, 2, 100, 10), other, 1, act()); err != nil || in(4) != other.ID {
+		if _, _, err = r.SetWorkspaceShare(ctx, share(4, 2, 100, 10), other, testIDs, 1, act()); err != nil || in(4) != other.ID {
 			t.Errorf("a share of api in another team went into %d (%v), want a new %d", in(4), err, other.ID)
 		}
 		// Shared again under a new name, it stays where it was.
 		renamed := named("renamed", "renamed")
-		if _, v, err = r.SetWorkspaceShare(ctx, share(5, 1, 100, 10), renamed, v, act()); err != nil || in(1) != api.ID {
+		if _, v, err = r.SetWorkspaceShare(ctx, share(5, 1, 100, 10), renamed, testIDs, v, act()); err != nil || in(1) != api.ID {
 			t.Errorf("sharing again moved the share to %d (%v)", in(1), err)
 		}
 		if n := countTeamRows(db, &model.TeamWorkspace{}, "id = ?", renamed.ID); n != 0 {
@@ -1229,33 +1233,33 @@ func TestWorkspaceShares(t *testing.T) {
 		share := func(id, team, workspace, user int64, at time.Time) model.WorkspaceShare {
 			return model.WorkspaceShare{ID: id, TeamID: team, WorkspaceID: workspace, UserID: user, CreatedAt: at, UpdatedAt: at}
 		}
-		s, v, err := r.SetWorkspaceShare(ctx, share(1, 1, 100, 10, teamT0), sharedIn(), 1, act())
+		s, v, err := r.SetWorkspaceShare(ctx, share(1, 1, 100, 10, teamT0), sharedIn(), testIDs, 1, act())
 		if err != nil || s.ID != 1 || s.TeamName != "core" || v != 2 {
 			t.Fatalf("first share is %+v at version %d (%v), want share 1 in core at version 2", s, v, err)
 		}
 		if got := lastActivity(db, 1); got != "workspace.shared 10 ws:100 {}" {
 			t.Errorf("sharing recorded %q", got)
 		}
-		if _, _, err := r.SetWorkspaceShare(ctx, share(4, 1, 101, 11, teamT0), sharedIn(), v, act()); !errors.Is(err, ErrNotFound) {
+		if _, _, err := r.SetWorkspaceShare(ctx, share(4, 1, 101, 11, teamT0), sharedIn(), testIDs, v, act()); !errors.Is(err, ErrNotFound) {
 			t.Errorf("sharing with a team the sharer is not in returned %v, want ErrNotFound", err)
 		}
-		if _, _, err := r.SetWorkspaceShare(ctx, share(5, 99, 100, 10, teamT0), sharedIn(), 1, act()); !errors.Is(err, ErrNotFound) {
+		if _, _, err := r.SetWorkspaceShare(ctx, share(5, 99, 100, 10, teamT0), sharedIn(), testIDs, 1, act()); !errors.Is(err, ErrNotFound) {
 			t.Errorf("sharing with an unknown team returned %v, want ErrNotFound", err)
 		}
-		if _, _, err := r.SetWorkspaceShare(ctx, share(5, 1, 102, 10, teamT0), sharedIn(), 1, act()); !isConflict(err, v) {
+		if _, _, err := r.SetWorkspaceShare(ctx, share(5, 1, 102, 10, teamT0), sharedIn(), testIDs, 1, act()); !isConflict(err, v) {
 			t.Errorf("sharing from a replaced version returned %v, want a conflict at %d", err, v)
 		}
 		// Sharing again changes nothing and records nothing.
 		later := teamT0.Add(time.Hour)
 		logged := len(activities(db, 1))
-		s, v, err = r.SetWorkspaceShare(ctx, share(2, 1, 100, 10, later), sharedIn(), v, act())
+		s, v, err = r.SetWorkspaceShare(ctx, share(2, 1, 100, 10, later), sharedIn(), testIDs, v, act())
 		if err != nil || s.ID != 1 || !s.CreatedAt.Equal(teamT0) || v != 3 {
 			t.Fatalf("sharing again is %+v at %d (%v), want share 1 as it was", s, v, err)
 		}
 		if len(activities(db, 1)) != logged {
 			t.Error("sharing a shared workspace again was recorded")
 		}
-		if _, _, err := r.SetWorkspaceShare(ctx, share(3, 2, 100, 10, teamT0), sharedIn(), 1, act()); err != nil {
+		if _, _, err := r.SetWorkspaceShare(ctx, share(3, 2, 100, 10, teamT0), sharedIn(), testIDs, 1, act()); err != nil {
 			t.Fatal(err)
 		}
 		list, err := r.ListWorkspaceShares(ctx, 100, 10)
@@ -1298,20 +1302,20 @@ func TestWorkspaceShareParts(t *testing.T) {
 		parts := func(s WorkspaceShareWithTeam) string {
 			return fmt.Sprintf("tasks hidden %v, skills hidden %v, memory hidden %v", s.HideTasks, s.HideSkills, s.HideMemory)
 		}
-		s, v, err := r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 1, TeamID: 1, WorkspaceID: 100, UserID: 10, HideTasks: true, HideMemory: true, CreatedAt: teamT0, UpdatedAt: teamT0}, sharedIn(), 1, act())
+		s, v, err := r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 1, TeamID: 1, WorkspaceID: 100, UserID: 10, HideTasks: true, HideMemory: true, CreatedAt: teamT0, UpdatedAt: teamT0}, sharedIn(), testIDs, 1, act())
 		if err != nil || parts(s) != "tasks hidden true, skills hidden false, memory hidden true" {
 			t.Fatalf("a share holding tasks and memory back is %s (%v)", parts(s), err)
 		}
 		logged := len(activities(db, 1))
 		later := teamT0.Add(time.Hour)
-		s, v, err = r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 2, TeamID: 1, WorkspaceID: 100, UserID: 10, HideSkills: true, CreatedAt: later, UpdatedAt: later}, sharedIn(), v, act())
+		s, v, err = r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 2, TeamID: 1, WorkspaceID: 100, UserID: 10, HideSkills: true, CreatedAt: later, UpdatedAt: later}, sharedIn(), testIDs, v, act())
 		if err != nil || s.ID != 1 || parts(s) != "tasks hidden false, skills hidden true, memory hidden false" || !s.UpdatedAt.Equal(later) || !s.CreatedAt.Equal(teamT0) {
 			t.Fatalf("setting the parts gave share %d, %s, updated %v (%v)", s.ID, parts(s), s.UpdatedAt, err)
 		}
 		if got := lastActivity(db, 1); got != "workspace.shareChanged 10 ws:100 {}" || len(activities(db, 1)) != logged+1 {
 			t.Errorf("changing the parts recorded %q", got)
 		}
-		if _, v, err = r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 3, TeamID: 1, WorkspaceID: 100, UserID: 10, HideSkills: true, CreatedAt: later, UpdatedAt: later}, sharedIn(), v, act()); err != nil || v != 4 {
+		if _, v, err = r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 3, TeamID: 1, WorkspaceID: 100, UserID: 10, HideSkills: true, CreatedAt: later, UpdatedAt: later}, sharedIn(), testIDs, v, act()); err != nil || v != 4 {
 			t.Fatalf("setting the same parts again: version %d, %v", v, err)
 		}
 		if len(activities(db, 1)) != logged+1 {
@@ -1423,7 +1427,7 @@ func TestTeamStatementFailures(t *testing.T) {
 	share := model.WorkspaceShare{ID: 1, TeamID: 1, WorkspaceID: 100, UserID: 10}
 	holdTasks := model.WorkspaceShare{ID: 2, TeamID: 1, WorkspaceID: 100, UserID: 10, HideTasks: true}
 	// After shareOnce the team is at version 2.
-	shareOnce := func(r Repository) { _, _, _ = r.SetWorkspaceShare(ctx, share, sharedIn(), 1, act()) }
+	shareOnce := func(r Repository) { _, _, _ = r.SetWorkspaceShare(ctx, share, sharedIn(), testIDs, 1, act()) }
 	panoShare := model.PanoDocShare{ID: 1, TeamID: 1, DocID: 7, UserID: 10, CreatedAt: teamT0}
 	invite := func(r Repository) {
 		_, _ = r.CreateTeamInvitation(ctx, invitation(1, "a@x.io", teamT0), 1, since, 10, 0, act())
@@ -1544,43 +1548,43 @@ func TestTeamStatementFailures(t *testing.T) {
 			return r.AcceptTeamInvitation(ctx, 1, member, teamT0, act())
 		}},
 		{"moving the version to share", "raw", "", 0, nil, func(r Repository) error {
-			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), 1, act())
+			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), testIDs, 1, act())
 			return err
 		}},
 		{"counting the workspace's shares", "query", "workspace_shares", 0, nil, func(r Repository) error {
-			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), 1, act())
+			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), testIDs, 1, act())
 			return err
 		}},
 		{"finding the team workspace", "query", "team_workspaces", 0, nil, func(r Repository) error {
-			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), 1, act())
+			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), testIDs, 1, act())
 			return err
 		}},
 		{"storing a team workspace", "create", "team_workspaces", 0, nil, func(r Repository) error {
-			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), 1, act())
+			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), testIDs, 1, act())
 			return err
 		}},
 		{"recording a team workspace", "create", "team_management_activities", 0, nil, func(r Repository) error {
-			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), 1, act())
+			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), testIDs, 1, act())
 			return err
 		}},
 		{"storing a share", "create", "workspace_shares", 0, nil, func(r Repository) error {
-			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), 1, act())
+			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), testIDs, 1, act())
 			return err
 		}},
 		{"recording a share", "create", "team_management_activities", 1, nil, func(r Repository) error {
-			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), 1, act())
+			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), testIDs, 1, act())
 			return err
 		}},
 		{"reading the share back", "query", "workspace_shares", 1, nil, func(r Repository) error {
-			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), 1, act())
+			_, _, err := r.SetWorkspaceShare(ctx, share, sharedIn(), testIDs, 1, act())
 			return err
 		}},
 		{"changing what a share holds back", "update", "workspace_shares", 0, shareOnce, func(r Repository) error {
-			_, _, err := r.SetWorkspaceShare(ctx, holdTasks, sharedIn(), 2, act())
+			_, _, err := r.SetWorkspaceShare(ctx, holdTasks, sharedIn(), testIDs, 2, act())
 			return err
 		}},
 		{"recording a share change", "create", "team_management_activities", 0, shareOnce, func(r Repository) error {
-			_, _, err := r.SetWorkspaceShare(ctx, holdTasks, sharedIn(), 2, act())
+			_, _, err := r.SetWorkspaceShare(ctx, holdTasks, sharedIn(), testIDs, 2, act())
 			return err
 		}},
 		{"deleting a share", "delete", "workspace_shares", 0, nil, func(r Repository) error { _, err := r.DeleteWorkspaceShare(ctx, 5, 1, 11, 1, act()); return err }},

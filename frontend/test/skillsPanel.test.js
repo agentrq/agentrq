@@ -44,8 +44,15 @@ const api = vi.hoisted(() => ({
   setSkillEnabled: vi.fn((name, enabled) => Promise.resolve({ skill: { name, enabled } })),
   // Read through a workspace, an answer that is off leaves workspaceEnabled out.
   setWorkspaceSkillEnabled: vi.fn((_ws, name, enabled) => Promise.resolve({ skill: enabled ? { name, workspaceEnabled: true } : { name } })),
+  // Shared into no team workspace: no team skills group, no "Give to team".
+  listWorkspaceTeamSkills: vi.fn(() => Promise.resolve({ skills: [], teamWorkspaces: [] })),
+  setWorkspaceTeamSkill: vi.fn(),
+  giveSkillToTeam: vi.fn(),
 }));
 vi.mock('../src/api', () => api);
+vi.mock('../src/useEventBus', () => ({
+  useEventBus: () => ({ connect: () => {}, disconnect: () => {}, onEvent: () => () => {} }),
+}));
 
 const { default: SkillsPanel } = await import('../src/components/SkillsPanel.vue');
 const { toasts } = (await import('../src/composables/useToasts')).useToasts();

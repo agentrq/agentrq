@@ -175,12 +175,22 @@ function sharedParts(d) {
   return on.length ? on.join(', ') : 'nothing but the workspace';
 }
 
+// Whether a share opts its workspace in to new team skills, when the details say.
+function autoOptIn(d) {
+  if (d.autoOptInSkills === 'on') return '; new team skills are turned on';
+  if (d.autoOptInSkills === 'off') return '; new team skills stay off';
+  return '';
+}
+
 export function describeActivity(a = {}) {
   const who = personName(a.actor);
   const d = a.details || {};
   const target = a.targetUser ? personName(a.targetUser) : a.targetEmail || '';
   const workspace = d.workspaceName || 'a workspace';
   const doc = d.docTitle ? `the Pano doc ${d.docTitle}` : 'a Pano doc';
+  // A team skill, and the team workspace that owns it, by the names they had then.
+  const teamSkill = d.skill ? `the team skill ${d.skill}` : 'a team skill';
+  const inTeamWorkspace = (prep) => (d.teamWorkspace ? `${prep} ${d.teamWorkspace}` : '');
   switch (a.action) {
     case 'team.created': return `${who} created the team`;
     case 'team.renamed': return d.from && d.to ? `${who} renamed the team from ${d.from} to ${d.to}` : `${who} renamed the team`;
@@ -190,8 +200,13 @@ export function describeActivity(a = {}) {
     case 'invitation.declined': return `${who} declined the invitation`;
     case 'member.removed': return `${who} removed ${target || 'a member'}`;
     case 'member.left': return `${who} left`;
-    case 'workspace.shared': return `${who} shared ${workspace}`;
-    case 'workspace.shareChanged': return `${who} changed what is shared of ${workspace}: ${sharedParts(d)}`;
+    case 'workspace.shared': return `${who} shared ${workspace}${d.autoOptInSkills === 'off' ? autoOptIn(d) : ''}`;
+    case 'workspace.shareChanged': return `${who} changed what is shared of ${workspace}: ${sharedParts(d)}${autoOptIn(d)}`;
+    case 'teamSkill.created': return `${who} created ${teamSkill}${inTeamWorkspace(' in')}`;
+    case 'teamSkill.deleted': return `${who} deleted ${teamSkill}${inTeamWorkspace(' from')}`;
+    case 'teamSkill.given': return `${who} gave ${d.skill ? `the skill ${d.skill}` : 'a skill'} to ${d.teamWorkspace || 'a team workspace'}`;
+    case 'teamSkill.optedIn': return `${who} opted a workspace into ${teamSkill}`;
+    case 'teamSkill.optedOut': return `${who} opted a workspace out of ${teamSkill}`;
     case 'workspace.unshared': return `${who} stopped sharing ${workspace}`;
     case 'teamWorkspace.created': return d.name ? `${who} started the team workspace ${d.name}` : `${who} started a team workspace`;
     case 'pano.shared': return `${who} shared ${doc}`;

@@ -307,7 +307,7 @@ func TestTeamRoutes(t *testing.T) {
 		renamed, _ := acts[9].(map[string]any)
 		invited, _ := acts[8].(map[string]any)
 		if actor["name"] != "Dave" || target["name"] != "Bob" || target["userId"] != bobID ||
-			shared["targetWorkspaceId"] != wsID || fmt.Sprint(shared["details"]) != "map[memory:off skills:on tasks:on workspaceName:backend]" ||
+			shared["targetWorkspaceId"] != wsID || fmt.Sprint(shared["details"]) != "map[autoOptInSkills:on memory:off skills:on tasks:on workspaceName:backend]" ||
 			fmt.Sprint(created["details"]) != "map[name:backend]" ||
 			fmt.Sprint(renamed["details"]) != "map[from:core to:platform]" || invited["targetEmail"] != "bob@example.com" {
 			t.Errorf("the activities read %v", acts)

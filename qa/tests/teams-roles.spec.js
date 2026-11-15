@@ -198,7 +198,7 @@ test('a fork follows its parent, an archived workspace leaves the team, and a te
   //    workspace to turn it on in; none of hers has its name, so none is ticked.
   const skill = `qa-skill-${Date.now().toString(36)}`
   const call = await agentSession(owner, parent.id)
-  const saved = await call('skills', { action: 'save', payload: { uri: `skill://${skill}/SKILL.md`, content: '---\ndescription: A skill the QA suite shares.\n---\n# QA\nShared with the team.\n' } })
+  const saved = await call('skills', { action: 'save', payload: { uri: `skill://${skill}/SKILL.md`, team: false, content: '---\ndescription: A skill the QA suite shares.\n---\n# QA\nShared with the team.\n' } })
   expect(saved).not.toMatch(/error|refused/i)
   const beaWs = await createWorkspace(bea.page, unique('bea-ws'))
   await bea.page.goto(`/teams/${team.id}/tasks/active?workspace=${encodeURIComponent(parent.name)}`)

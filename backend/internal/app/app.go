@@ -169,6 +169,7 @@ type (
 			// How many invitations one account may create in any 24 hours,
 			// across all its teams; 0 is no such cap.
 			MaxInvitesPerUserPerDay int `yaml:"maxInvitesPerUserPerDay"`
+			MaxSkillsPerWorkspace   int `yaml:"maxSkillsPerWorkspace"`
 			// Whether invitations are emailed when SMTP is set up; off, the
 			// inviter shares the link by hand.
 			EmailInvites bool `yaml:"emailInvites"`
@@ -1505,6 +1506,7 @@ func migratedModels() []any {
 		&model.TeamInvitation{},
 		&model.WorkspaceShare{},
 		&model.TeamWorkspace{},
+		&model.TeamSkillChoice{},
 		&model.PanoDocShare{},
 		&model.TeamManagementActivity{},
 		&model.MemoryExclusion{},
@@ -1537,10 +1539,13 @@ func applyLimits(cfg Config) error {
 		return fmt.Errorf("teams.maxInvitesPerDay: %d is negative", cfg.Teams.MaxInvitesPerDay)
 	case cfg.Teams.MaxInvitesPerUserPerDay < 0:
 		return fmt.Errorf("teams.maxInvitesPerUserPerDay: %d is negative", cfg.Teams.MaxInvitesPerUserPerDay)
+	case cfg.Teams.MaxSkillsPerWorkspace < 0:
+		return fmt.Errorf("teams.maxSkillsPerWorkspace: %d is negative", cfg.Teams.MaxSkillsPerWorkspace)
 	}
 	mcp.MaxMemoryBytes = cmp.Or(cfg.Memory.MaxFileSize, mcp.DefaultMaxMemoryBytes)
 	skill.MaxSkillFileBytes = cmp.Or(cfg.Skills.MaxFileSize, skill.DefaultMaxSkillFileBytes)
 	skill.MaxFiles = cmp.Or(cfg.Skills.MaxFiles, skill.DefaultMaxFiles)
 	crud.PanoMaxTTLDays = cmp.Or(cfg.Pano.MaxTTLDays, crud.DefaultPanoMaxTTLDays)
+	crud.TeamSkillsPerWorkspace = cmp.Or(cfg.Teams.MaxSkillsPerWorkspace, crud.DefaultTeamSkillsPerWorkspace)
 	return nil
 }

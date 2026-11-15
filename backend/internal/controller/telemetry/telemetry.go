@@ -123,6 +123,11 @@ func (c *controller) Start(ctx context.Context) error {
 }
 
 func (c *controller) recordCRUD(event entity.CRUDEvent) {
+	// A team skill changed by an agent is sent for its team's pages, and is
+	// counted already as the skills tool call that made it.
+	if event.ResourceType == entity.ResourceTeamSkill && event.Origin == entity.OriginMCP {
+		return
+	}
 	var action uint8
 	switch event.Action {
 	case entity.ActionWorkspaceCreate:
@@ -321,6 +326,16 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDTeammateMemoryExclude
 	case entity.ActionTeammateMemoryView:
 		action = model.ActionIDTeammateMemoryView
+	case entity.ActionTeamSkillCreate:
+		action = model.ActionIDTeamSkillCreate
+	case entity.ActionTeamSkillDelete:
+		action = model.ActionIDTeamSkillDelete
+	case entity.ActionTeamSkillGive:
+		action = model.ActionIDTeamSkillGive
+	case entity.ActionTeamSkillOptIn:
+		action = model.ActionIDTeamSkillOptIn
+	case entity.ActionTeamSkillOptOut:
+		action = model.ActionIDTeamSkillOptOut
 	default:
 		return
 	}

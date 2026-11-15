@@ -55,7 +55,7 @@ Node 20.6 or newer.
 | `memory delete [name]` | Delete a workspace memory |
 | `skill search [q]` | Find the skills this workspace can use, by name or description; `--limit`/`--offset` page |
 | `skill load <uri>` | Read a skill file (`skill://<name>` reads its `SKILL.md`) |
-| `skill save <uri> --content … [--version N]` | Replace a file of one of this workspace's skills; a skill shared with your team needs the version `skill load` printed |
+| `skill save <uri> --content … [--version N] [--team \| --no-team] [--team-workspace NAME]` | Replace a file of one of this workspace's skills; a skill shared with your team needs the version `skill load` printed. In a workspace shared into a team workspace, a new skill goes to the team's: `--no-team` keeps it yours, `--team-workspace` picks one of several |
 | `skill delete <uri>` | Take a skill out of this workspace (`skill://<name>`), deleting it when no other workspace uses it, or delete one of its files |
 | `pano save [id --version N] --title … --markdown …` | Create a Pano doc, or replace one, and print its id and version; replacing needs the `--version` you read and is refused if the doc changed since; `--file` sends a file the markdown links, `--ttl-days` and `--color` set its life and post-it |
 | `pano edit <id> --version N …` | Change part of a doc without resending it: `--replace TEXT --with TEXT` (the text must occur once), `--append TEXT`, or `--ops` as a JSON array; the ops apply all or none. Prints the id and new version |

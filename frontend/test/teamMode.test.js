@@ -418,7 +418,21 @@ describe('the activity log', () => {
       .toBe('Alice changed what is shared of docs: tasks, memory');
     expect(line('workspace.shareChanged', { details: { tasks: 'off', skills: 'off', memory: 'off' } }))
       .toBe('Alice changed what is shared of a workspace: nothing but the workspace');
+    expect(line('workspace.shareChanged', { details: { workspaceName: 'docs', tasks: 'on', skills: 'on', memory: 'on', autoOptInSkills: 'off' } }))
+      .toBe('Alice changed what is shared of docs: tasks, skills, memory; new team skills stay off');
+    expect(line('workspace.shareChanged', { details: { workspaceName: 'docs', tasks: 'on', autoOptInSkills: 'on' } }))
+      .toBe('Alice changed what is shared of docs: tasks; new team skills are turned on');
+    expect(line('workspace.shared', { details: { workspaceName: 'docs', autoOptInSkills: 'on' } })).toBe('Alice shared docs');
+    expect(line('workspace.shared', { details: { workspaceName: 'docs', autoOptInSkills: 'off' } })).toBe('Alice shared docs; new team skills stay off');
     expect(line('workspace.unshared')).toBe('Alice stopped sharing a workspace');
+    const skill = { skill: 'deploy', teamWorkspace: 'backend' };
+    expect(line('teamSkill.created', { details: skill })).toBe('Alice created the team skill deploy in backend');
+    expect(line('teamSkill.created')).toBe('Alice created a team skill');
+    expect(line('teamSkill.deleted', { details: skill })).toBe('Alice deleted the team skill deploy from backend');
+    expect(line('teamSkill.given', { details: skill })).toBe('Alice gave the skill deploy to backend');
+    expect(line('teamSkill.given')).toBe('Alice gave a skill to a team workspace');
+    expect(line('teamSkill.optedIn', { details: skill })).toBe('Alice opted a workspace into the team skill deploy');
+    expect(line('teamSkill.optedOut', { details: skill })).toBe('Alice opted a workspace out of the team skill deploy');
     expect(line('teamWorkspace.created', { details: { name: 'api' } })).toBe('Alice started the team workspace api');
     expect(line('teamWorkspace.created')).toBe('Alice started a team workspace');
     expect(line('pano.shared', { details: { docTitle: 'Plan' } })).toBe('Alice shared the Pano doc Plan');

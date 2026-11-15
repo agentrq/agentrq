@@ -988,8 +988,8 @@ func TestSharingParts(t *testing.T) {
 		}
 		as := must(f.c.ListActivities(f.ctx, entity.ListTeamActivitiesRequest{UserID: bob, TeamID: f.team, Limit: 2}))
 		ch, sh := as.Activities[0], as.Activities[1]
-		if ch.Action != model.TeamActivityShareChanged || fmt.Sprint(ch.Details) != "map[memory:on skills:off tasks:on workspaceName:backend]" ||
-			sh.Action != model.TeamActivityWorkspaceShared || fmt.Sprint(sh.Details) != "map[memory:off skills:on tasks:off workspaceName:backend]" {
+		if ch.Action != model.TeamActivityShareChanged || fmt.Sprint(ch.Details) != "map[autoOptInSkills:off memory:on skills:off tasks:on workspaceName:backend]" ||
+			sh.Action != model.TeamActivityWorkspaceShared || fmt.Sprint(sh.Details) != "map[autoOptInSkills:off memory:off skills:on tasks:off workspaceName:backend]" {
 			t.Errorf("the share and its change are recorded as %+v and %+v", sh, ch)
 		}
 	})

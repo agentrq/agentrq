@@ -11,7 +11,8 @@
      its own name, as one team workspace with any teammate's of the same name.
      Turning one off asks first. A fork follows its parent, so it has no switch
      of its own. In Workspace settings a share also says what the team reads of
-     the workspace: its tasks, skills and memory, each a switch of its own. -->
+     the workspace: its tasks, skills and memory, each a switch of its own, and
+     whether the team workspace's skills are turned on in it as they come. -->
 <template>
   <div data-test="workspace-sharing">
     <p v-if="rows.length === 0 && !loading" data-test="sharing-empty" class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">
@@ -37,6 +38,20 @@
               </button>
               {{ p.label }}
             </span>
+          </div>
+          <div v-if="row.parts" data-test="share-auto-opt-in" class="mt-2">
+            <span class="flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 dark:text-zinc-300">
+              <button type="button" role="switch" data-test="share-part-autoOptInSkills" :aria-checked="row.parts.autoOptInSkills"
+                      :aria-label="`Turn new team skills on in ${row.workspaceName}`" :disabled="pending.has(row.key)"
+                      @click="togglePart(row, AUTO_OPT_IN)"
+                      class="shrink-0 w-7 h-4 rounded-full border transition-colors relative disabled:opacity-50"
+                      :class="row.parts.autoOptInSkills ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
+                <span class="absolute top-[2px] w-2.5 h-2.5 rounded-full transition-all"
+                      :class="row.parts.autoOptInSkills ? 'left-[14px] bg-white dark:bg-zinc-900' : 'left-[2px] bg-white dark:bg-zinc-400'"></span>
+              </button>
+              {{ AUTO_OPT_IN.label }}
+            </span>
+            <p class="mt-1 text-[10px] text-gray-500 dark:text-zinc-400">New team skills are turned on in this workspace. Skills you turn off stay off.</p>
           </div>
         </div>
         <button v-if="!row.fork" type="button" role="switch" data-test="share-switch" :aria-checked="row.on"
@@ -93,8 +108,24 @@ const PARTS = [
   { key: 'memory', label: 'Memory' },
 ];
 
+// Not what the team reads but what the workspace takes from it: each skill of
+// the team workspace it has made no choice about is turned on in it.
+const AUTO_OPT_IN = { key: 'autoOptInSkills', label: 'Auto opt-in to team skills' };
+
 // What a share's answer says the team reads; a part it does not name is shared.
-const partsOf = (s) => ({ tasks: s?.tasks !== false, skills: s?.skills !== false, memory: s?.memory !== false });
+const partsOf = (s) => ({
+  tasks: s?.tasks !== false,
+  skills: s?.skills !== false,
+  memory: s?.memory !== false,
+  autoOptInSkills: s?.autoOptInSkills !== false,
+});
+
+function partMessage(row, key, on) {
+  if (key === AUTO_OPT_IN.key) {
+    return on ? `New team skills are turned on in ${row.workspaceName}` : `New team skills stay off in ${row.workspaceName}`;
+  }
+  return on ? `${row.teamName} now reads the ${key} of ${row.workspaceName}` : `${row.teamName} no longer reads the ${key} of ${row.workspaceName}`;
+}
 const loading = ref(true);
 const pending = ref(new Set());
 const unsharing = ref(null);
@@ -194,9 +225,7 @@ function togglePart(row, part) {
   const next = { ...row.parts, [part.key]: !row.parts[part.key] };
   return change(row, (v) => shareWorkspace(row.workspaceId, row.teamId, v, next), () => {
     parts.value = new Map(parts.value).set(row.key, next);
-    notifySuccess(next[part.key]
-      ? `${row.teamName} now reads the ${part.key} of ${row.workspaceName}`
-      : `${row.teamName} no longer reads the ${part.key} of ${row.workspaceName}`);
+    notifySuccess(partMessage(row, part.key, next[part.key]));
   });
 }
 

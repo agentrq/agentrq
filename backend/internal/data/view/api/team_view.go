@@ -23,6 +23,9 @@ type TeamWorkspace struct {
 	SharedName string    `json:"sharedName"`
 	Owner      TeamOwner `json:"owner"`
 	ForkOfID   string    `json:"forkOfId,omitempty"`
+	// TeamWorkspaceID is the team workspace it is shared into, whose
+	// skills are at /teams/:teamId/team-workspaces/:teamWorkspaceId/skills.
+	TeamWorkspaceID string `json:"teamWorkspaceId,omitempty"`
 }
 
 // ListTeamWorkspacesResponse is a team's workspaces, by shared name.

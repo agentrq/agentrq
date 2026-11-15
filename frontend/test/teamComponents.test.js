@@ -31,6 +31,12 @@ vi.mock('../src/api', async (importOriginal) => ({
   getTeamSkill: vi.fn(),
   addTeamSkill: vi.fn(),
   searchSkills: vi.fn(),
+  listTeamWorkspaceSkills: vi.fn(),
+}));
+
+// No stream in a test: the team skills page only listens to it.
+vi.mock('../src/useEventBus', () => ({
+  useEventBus: () => ({ connect: () => {}, disconnect: () => {}, onEvent: () => () => {} }),
 }));
 
 // The panels' own drawing is tested with them; here, only what they emit.
@@ -908,20 +914,45 @@ describe('sharing a workspace', () => {
     expect(row('Docs').querySelector('[data-test=share-parts]')).toBe(null);
   });
 
-  it('holds a part back, or shares it again, against the version, sending all three', async () => {
+  it('holds a part back, or shares it again, against the version, sending every part', async () => {
     api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 4 });
     await inWorkspace({ shares: [{ teamId: 'tm1', tasks: true, skills: true, memory: true }] });
     await click(part('Core', 'memory'));
-    expect(api.shareWorkspace).toHaveBeenCalledWith('w1', 'tm1', 3, { tasks: true, skills: true, memory: false });
+    expect(api.shareWorkspace).toHaveBeenCalledWith('w1', 'tm1', 3, { tasks: true, skills: true, memory: false, autoOptInSkills: true });
     expect(useTeamStore().getTeam('tm1').version).toBe(4);
     expect(checked('Core')).toEqual(['true', 'true', 'false']);
     expect(toasts()).toContain('Core no longer reads the memory of api');
 
     api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 5 });
     await click(part('Core', 'memory'));
-    expect(api.shareWorkspace).toHaveBeenLastCalledWith('w1', 'tm1', 4, { tasks: true, skills: true, memory: true });
+    expect(api.shareWorkspace).toHaveBeenLastCalledWith('w1', 'tm1', 4, { tasks: true, skills: true, memory: true, autoOptInSkills: true });
     expect(checked('Core')).toEqual(['true', 'true', 'true']);
     expect(toasts()).toContain('Core now reads the memory of api');
+  });
+
+  it('shows whether new team skills are turned on, on unless the share says off', async () => {
+    await inWorkspace({ shares: [{ teamId: 'tm1', autoOptInSkills: false }] });
+    expect(part('Core', 'autoOptInSkills').getAttribute('aria-checked')).toBe('false');
+    expect(text(row('Core').querySelector('[data-test=share-auto-opt-in]')))
+      .toBe('Auto opt-in to team skills New team skills are turned on in this workspace. Skills you turn off stay off.');
+    app.unmount();
+
+    await inWorkspace({ shares: [{ teamId: 'tm1' }] });
+    expect(part('Core', 'autoOptInSkills').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('turns auto opt-in off, or on again, with the other parts as they are', async () => {
+    api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 4 });
+    await inWorkspace({ shares: [{ teamId: 'tm1', tasks: true, skills: false, memory: true }] });
+    await click(part('Core', 'autoOptInSkills'));
+    expect(api.shareWorkspace).toHaveBeenCalledWith('w1', 'tm1', 3, { tasks: true, skills: false, memory: true, autoOptInSkills: false });
+    expect(part('Core', 'autoOptInSkills').getAttribute('aria-checked')).toBe('false');
+    expect(toasts()).toContain('New team skills stay off in api');
+
+    api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 5 });
+    await click(part('Core', 'autoOptInSkills'));
+    expect(api.shareWorkspace).toHaveBeenLastCalledWith('w1', 'tm1', 4, { tasks: true, skills: false, memory: true, autoOptInSkills: true });
+    expect(toasts()).toContain('New team skills are turned on in api');
   });
 
   it('keeps a part as it was when holding it back fails', async () => {

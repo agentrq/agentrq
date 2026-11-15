@@ -22,8 +22,9 @@ func TestResourceTypeString(t *testing.T) {
 		ResourcePano:             "pano",
 		ResourceHookRegistration: "hook_registration",
 		ResourceTeam:             "team",
+		ResourceTeamSkill:        "team_skill",
 		0:                        "unknown",
-		ResourceTeam + 1:         "unknown",
+		ResourceTeamSkill + 1:    "unknown",
 	} {
 		if got := r.String(); got != want {
 			t.Errorf("ResourceType(%d) = %q, want %q", r, got, want)
