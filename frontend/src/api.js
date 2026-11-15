@@ -1609,6 +1609,17 @@ export function setTeammateMemory(workspaceId, userId, included) {
   return teamCall(`/workspaces/${enc(workspaceId)}/teammate-memories/${enc(userId)}`, "Failed to change the teammate's memory", { method: 'PUT', body: { included } });
 }
 
+// A teammate's memories, read-only, by the workspace of theirs that
+// listTeammateMemories names: { memories: [{ name, size, updatedAt }] }.
+export function listTeammateMemoryNames(workspaceId, teammateWorkspaceId) {
+  return teamCall(`/workspaces/${enc(workspaceId)}/teammate-memories/${enc(teammateWorkspaceId)}/memories`, "Failed to load the teammate's memory");
+}
+
+// One of a teammate's memories: { memory }.
+export function getTeammateMemory(workspaceId, teammateWorkspaceId, name) {
+  return teamCall(`/workspaces/${enc(workspaceId)}/teammate-memories/${enc(teammateWorkspaceId)}/memories/${enc(name)}`, "Failed to load the teammate's memory");
+}
+
 // ── Team mode ───────────────────────────────────────────────────────────────
 // A team's shared work, read-only: the workspaces its members shared, their
 // tasks and skills. Unknown or no-longer-shared answers 404.

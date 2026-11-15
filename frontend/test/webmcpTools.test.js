@@ -586,6 +586,8 @@ describe('each tool calls the interface the way the UI does', () => {
     ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', version: 3, tasks: false, skills: true, memory: false }, 'shareWorkspace', ['ws1', 'tm1', 3, { tasks: false, skills: true, memory: false }]],
     ['manageTeam', { action: 'unshare', workspaceId: 'ws1', teamId: 'tm1', version: 3 }, 'unshareWorkspace', ['ws1', 'tm1', 3]],
     ['readTeams', { action: 'teammateMemories', workspaceId: 'ws1' }, 'listTeammateMemories', ['ws1']],
+    ['readTeams', { action: 'teammateMemory', workspaceId: 'ws1', teammateWorkspaceId: 'ws2' }, 'listTeammateMemoryNames', ['ws1', 'ws2']],
+    ['readTeams', { action: 'teammateMemory', workspaceId: 'ws1', teammateWorkspaceId: 'ws2', name: 'memory.md' }, 'getTeammateMemory', ['ws1', 'ws2', 'memory.md']],
     ['manageTeam', { action: 'teammateMemory', workspaceId: 'ws1', userId: 'u1', included: false }, 'setTeammateMemory', ['ws1', 'u1', false]],
     ['manageTeam', { action: 'teammateMemory', workspaceId: 'ws1', userId: 'u1' }, 'setTeammateMemory', ['ws1', 'u1', true]],
     ['readTeams', { action: 'workspaces', teamId: 'tm1' }, 'fetchTeamWorkspaces', ['tm1']],

@@ -1348,7 +1348,7 @@ describe('a team\'s skills', () => {
     api.searchSkills.mockResolvedValue({ skills: [{ name: 'deploy', sourceType: 'manual' }] });
     api.getTeamSkill.mockResolvedValue({ skill: { ...deploy, content: 'Body' } });
     api.addTeamSkill.mockRejectedValueOnce(failure(409, 'Changed a moment ago')).mockResolvedValueOnce({});
-    await mount(TeamSkills, { path: '/skills/deploy?team=tm1&workspace=backend', props: { name: 'deploy' } });
+    await mount(TeamSkills, { path: '/teams/tm1/skills/deploy?workspace=backend', props: { name: 'deploy' } });
     expect($('[data-test=team-skill-add]')).toBe(null);
     const dialog = () => [...document.querySelectorAll('[role=dialog]')].at(-1);
     await click($('[data-test=team-skill-replace]'));
@@ -1367,7 +1367,7 @@ describe('a team\'s skills', () => {
     app.unmount();
 
     api.searchSkills.mockResolvedValue({ skills: [{ name: 'deploy', sourceType: 'team' }] });
-    await mount(TeamSkills, { path: '/skills/deploy?team=tm1&workspace=backend', props: { name: 'deploy' } });
+    await mount(TeamSkills, { path: '/teams/tm1/skills/deploy?workspace=backend', props: { name: 'deploy' } });
     expect($('[data-test=team-skill-mine]')).not.toBe(null);
     expect($('[data-test=team-skill-replace]')).toBe(null);
   });

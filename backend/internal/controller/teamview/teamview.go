@@ -84,6 +84,13 @@ type Controller interface {
 	// index. base.ErrNotFound for a workspace not the caller's, or someone
 	// not a teammate there.
 	SetTeammateMemory(ctx context.Context, userID, workspaceID, teammateID int64, included bool) (entity.TeammateMemory, error)
+	// ListTeammateMemoryNames is the memories of one teammate's workspace in
+	// that team workspace, without their content; GetTeammateMemory is one
+	// of them. Read-only, as its owner reads them, whether or not the index
+	// includes them. base.ErrNotFound for a workspace not the caller's, or
+	// one not a teammate's there.
+	ListTeammateMemoryNames(ctx context.Context, userID, workspaceID, teammateWorkspaceID int64) (*entity.ListMemoriesResponse, error)
+	GetTeammateMemory(ctx context.Context, userID, workspaceID, teammateWorkspaceID int64, name string) (*entity.GetMemoryResponse, error)
 }
 
 // Teams is the team check, and the team a clone note names.
@@ -106,6 +113,8 @@ type Owner interface {
 	LinkSkill(ctx context.Context, req entity.LinkSkillRequest) (*entity.LinkSkillResponse, error)
 	GetPanoDoc(ctx context.Context, req entity.GetPanoDocRequest) (*entity.GetPanoDocResponse, error)
 	GetPanoFile(ctx context.Context, req entity.GetPanoFileRequest) (*entity.GetAttachmentResponse, error)
+	ListMemories(ctx context.Context, req entity.ListMemoriesRequest) (*entity.ListMemoriesResponse, error)
+	GetMemory(ctx context.Context, req entity.GetMemoryRequest) (*entity.GetMemoryResponse, error)
 }
 
 // Repository is what team mode reads and writes itself.
@@ -116,6 +125,7 @@ type Repository interface {
 	GetWorkspace(ctx context.Context, id int64, userID int64) (model.Workspace, error)
 	ListTeamPeerWorkspaces(ctx context.Context, workspaceID int64) ([]base.TeamWorkspacePeer, error)
 	ListMemoryExclusions(ctx context.Context, userID, workspaceID int64) ([]int64, error)
+	CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
 	ExcludeTeammateMemory(ctx context.Context, e model.MemoryExclusion) error
 	IncludeTeammateMemory(ctx context.Context, userID, workspaceID, teammateID int64) error
 	MemoryUpdates(ctx context.Context, workspaceIDs []int64) (map[int64]time.Time, error)

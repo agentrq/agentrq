@@ -19,6 +19,36 @@
       </p>
     </div>
 
+    <!-- In a team workspace, whose memory to read: yours, or a teammate's,
+         read-only, the way their agent wrote it. -->
+    <div v-if="teammates.length" data-test="memory-sources" role="tablist" aria-label="Whose memory" class="ml-1 flex flex-wrap gap-1.5">
+      <button v-for="s in sources" :key="s.workspaceId" type="button" role="tab" data-test="memory-source"
+              :aria-selected="source === s.workspaceId" @click="pick(s.workspaceId)"
+              :class="[s.workspaceId ? 'pl-1' : 'pl-2.5', source === s.workspaceId
+                ? 'bg-gray-900 dark:bg-white text-white dark:text-zinc-900 border-gray-900 dark:border-white'
+                : 'bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 border-gray-200 dark:border-zinc-700 hover:border-gray-300 dark:hover:border-zinc-600']"
+              class="flex items-center gap-1.5 max-w-full pr-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors">
+        <OwnerAvatar v-if="s.workspaceId" :owner="s" size="sm" />
+        <span class="truncate">{{ s.label }}</span>
+      </button>
+    </div>
+
+    <!-- The same choice as the Sharing tab's: whether your agent's index
+         lists this teammate's memory. Reading it here is not affected. -->
+    <div v-if="selected" data-test="memory-source-include" class="ml-1 flex items-center gap-3">
+      <button type="button" role="switch" data-test="memory-source-switch" :aria-checked="selected.included"
+              :aria-label="`Your agent reads ${selected.label}'s memory`" :disabled="pending"
+              @click="toggleIncluded"
+              class="shrink-0 w-11 h-6 rounded-full border transition-colors relative disabled:opacity-50"
+              :class="selected.included ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
+        <span class="absolute top-[3px] w-4 h-4 rounded-full transition-all"
+              :class="selected.included ? 'left-[23px] bg-white dark:bg-zinc-900' : 'left-[3px] bg-white dark:bg-zinc-400'"></span>
+      </button>
+      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">
+        {{ selected.included ? `Your agent reads ${selected.label}'s memory.` : `Your agent leaves ${selected.label}'s memory out.` }}
+      </p>
+    </div>
+
     <p v-if="state === MemoriesState.Loading" class="text-[11px] text-gray-400 dark:text-zinc-500 ml-1">Loading memories…</p>
 
     <!-- Boxed only from sm up: on a phone the settings card is the box. -->
@@ -85,24 +115,82 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
-import { fetchWorkspaceMemories, getWorkspaceMemory } from '../api';
+import { fetchWorkspaceMemories, getTeammateMemory, getWorkspaceMemory, listTeammateMemories, listTeammateMemoryNames, setTeammateMemory } from '../api';
 import { INDEX_MEMORY, MemoriesState, memoryTitle, useMemoryReader } from '../composables/useMemories';
+import { useToasts } from '../composables/useToasts';
+import { onWebMCPChange } from '../composables/useWebMCPChanges';
 import { renderMarkdown } from '../utils/markdown';
+import OwnerAvatar from './OwnerAvatar.vue';
 
 const props = defineProps({
   workspaceId: { type: String, required: true },
 });
 
+// The teammate's workspace being read, or '' for this workspace's own.
+const source = ref('');
+const teammates = ref([]);
+const sources = computed(() => [
+  { workspaceId: '', label: 'Yours' },
+  ...teammates.value.map((t) => ({ ...t, label: t.name || 'A member' })),
+]);
+
 const { state, current, history, listed, load, open, follow, back } = useMemoryReader(() => props.workspaceId, {
-  fetchList: fetchWorkspaceMemories,
-  fetchOne: getWorkspaceMemory,
+  fetchList: (id) => (source.value ? listTeammateMemoryNames(id, source.value) : fetchWorkspaceMemories(id)),
+  fetchOne: (id, name) => (source.value ? getTeammateMemory(id, source.value, name) : getWorkspaceMemory(id, name)),
 });
 const showRaw = ref(false);
 
+const selected = computed(() => sources.value.find((s) => s.workspaceId && s.workspaceId === source.value));
+const pending = ref(false);
+const { notifyError } = useToasts();
+
+/** Includes the selected teammate in your agent's index, or leaves them out:
+ *  every row of theirs at once, and back if the server refuses. */
+async function toggleIncluded() {
+  const { userId } = selected.value;
+  const want = !selected.value.included;
+  const set = (v) => { for (const t of teammates.value) if (t.userId === userId) t.included = v; };
+  set(want);
+  pending.value = true;
+  try {
+    await setTeammateMemory(props.workspaceId, userId, want);
+  } catch (err) {
+    set(!want);
+    notifyError(err.message);
+  } finally {
+    pending.value = false;
+  }
+}
+
+function pick(workspaceId) {
+  if (workspaceId === source.value) return;
+  source.value = workspaceId;
+  load();
+}
+
+// Quiet: without a team, or when the list fails, the page is just yours,
+// and so is a teammate's page once they are no longer listed.
+async function loadTeammates() {
+  try {
+    teammates.value = (await listTeammateMemories(props.workspaceId))?.teammates || [];
+  } catch {
+    teammates.value = [];
+  }
+  if (source.value && !selected.value) pick('');
+}
+
+function reset() {
+  source.value = '';
+  teammates.value = [];
+  load();
+  loadTeammates();
+}
+
 // Fetched when the tab is opened rather than with the rest of settings: most
 // visits are not about memories, and memories change while nobody looks.
-onMounted(load);
-watch(() => props.workspaceId, load);
+onMounted(reset);
+watch(() => props.workspaceId, reset);
+onWebMCPChange(loadTeammates);
 </script>
