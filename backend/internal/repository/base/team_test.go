@@ -1295,35 +1295,41 @@ func TestWorkspaceShares(t *testing.T) {
 }
 
 // A share stores what it holds back from the team; sharing again sets it,
-// recorded only when it changed, and the list reads it back.
+// recorded only when it changed, and the list reads it back. hide_skills,
+// read by the link conversion alone, is left as it was.
 func TestWorkspaceShareParts(t *testing.T) {
 	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
 		ctx := context.Background()
 		parts := func(s WorkspaceShareWithTeam) string {
-			return fmt.Sprintf("tasks hidden %v, skills hidden %v, memory hidden %v", s.HideTasks, s.HideSkills, s.HideMemory)
+			return fmt.Sprintf("tasks hidden %v, memory hidden %v", s.HideTasks, s.HideMemory)
 		}
 		s, v, err := r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 1, TeamID: 1, WorkspaceID: 100, UserID: 10, HideTasks: true, HideMemory: true, CreatedAt: teamT0, UpdatedAt: teamT0}, sharedIn(), testIDs, 1, act())
-		if err != nil || parts(s) != "tasks hidden true, skills hidden false, memory hidden true" {
+		if err != nil || parts(s) != "tasks hidden true, memory hidden true" {
 			t.Fatalf("a share holding tasks and memory back is %s (%v)", parts(s), err)
 		}
+		db.Model(&model.WorkspaceShare{}).Where("id = 1").UpdateColumn("hide_skills", true)
 		logged := len(activities(db, 1))
 		later := teamT0.Add(time.Hour)
-		s, v, err = r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 2, TeamID: 1, WorkspaceID: 100, UserID: 10, HideSkills: true, CreatedAt: later, UpdatedAt: later}, sharedIn(), testIDs, v, act())
-		if err != nil || s.ID != 1 || parts(s) != "tasks hidden false, skills hidden true, memory hidden false" || !s.UpdatedAt.Equal(later) || !s.CreatedAt.Equal(teamT0) {
+		s, v, err = r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 2, TeamID: 1, WorkspaceID: 100, UserID: 10, HideMemory: true, CreatedAt: later, UpdatedAt: later}, sharedIn(), testIDs, v, act())
+		if err != nil || s.ID != 1 || parts(s) != "tasks hidden false, memory hidden true" || !s.UpdatedAt.Equal(later) || !s.CreatedAt.Equal(teamT0) {
 			t.Fatalf("setting the parts gave share %d, %s, updated %v (%v)", s.ID, parts(s), s.UpdatedAt, err)
 		}
 		if got := lastActivity(db, 1); got != "workspace.shareChanged 10 ws:100 {}" || len(activities(db, 1)) != logged+1 {
 			t.Errorf("changing the parts recorded %q", got)
 		}
-		if _, v, err = r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 3, TeamID: 1, WorkspaceID: 100, UserID: 10, HideSkills: true, CreatedAt: later, UpdatedAt: later}, sharedIn(), testIDs, v, act()); err != nil || v != 4 {
+		if _, v, err = r.SetWorkspaceShare(ctx, model.WorkspaceShare{ID: 3, TeamID: 1, WorkspaceID: 100, UserID: 10, HideMemory: true, CreatedAt: later, UpdatedAt: later}, sharedIn(), testIDs, v, act()); err != nil || v != 4 {
 			t.Fatalf("setting the same parts again: version %d, %v", v, err)
 		}
 		if len(activities(db, 1)) != logged+1 {
 			t.Error("setting the parts a share already has was recorded")
 		}
 		list, err := r.ListWorkspaceShares(ctx, 100, 10)
-		if err != nil || len(list) != 1 || parts(list[0]) != "tasks hidden false, skills hidden true, memory hidden false" {
+		if err != nil || len(list) != 1 || parts(list[0]) != "tasks hidden false, memory hidden true" {
 			t.Errorf("the list reads %+v (%v)", list, err)
+		}
+		var kept model.WorkspaceShare
+		if db.First(&kept, 1); !kept.HideSkills {
+			t.Error("changing a share cleared hide_skills, which the link conversion still reads")
 		}
 	})
 }
@@ -1341,7 +1347,7 @@ func TestSharePartsInTeamReads(t *testing.T) {
 		if got, _ := r.CanReadTasksInTeam(ctx, 12, 1, 100); got {
 			t.Error("someone outside the team reads tasks")
 		}
-		db.Model(&model.WorkspaceShare{}).Where("id = 1").Updates(map[string]any{"hide_tasks": true, "hide_skills": true})
+		db.Model(&model.WorkspaceShare{}).Where("id = 1").UpdateColumn("hide_tasks", true)
 		for _, ws := range []int64{100, 101} {
 			if got, err := r.CanReadTasksInTeam(ctx, 11, 1, ws); err != nil || got {
 				t.Errorf("workspace %d, its tasks held back: read %v, %v", ws, got, err)
@@ -1353,9 +1359,9 @@ func TestSharePartsInTeamReads(t *testing.T) {
 		rows, err := r.ListTeamWorkspaces(ctx, 1)
 		got := []string{}
 		for _, w := range rows {
-			got = append(got, fmt.Sprintf("%d:%v:%v", w.ID, w.HideTasks, w.HideSkills))
+			got = append(got, fmt.Sprintf("%d:%v", w.ID, w.HideTasks))
 		}
-		if err != nil || strings.Join(got, " ") != "100:true:true 101:true:true 200:false:false" {
+		if err != nil || strings.Join(got, " ") != "100:true 101:true 200:false" {
 			t.Errorf("team workspaces are %v (%v)", got, err)
 		}
 	})

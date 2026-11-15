@@ -137,7 +137,7 @@ func FromTeamInvitationPreviewEntityToHTTPResponse(e entity.TeamInvitationPrevie
 func fromWorkspaceShareEntity(e entity.WorkspaceShare) view.WorkspaceShare {
 	return view.WorkspaceShare{
 		TeamID: id62(e.TeamID), TeamName: e.TeamName, WorkspaceID: id62(e.WorkspaceID),
-		Tasks: e.Tasks, Skills: e.Skills, Memory: e.Memory, AutoOptInSkills: e.AutoOptInSkills,
+		Tasks: e.Tasks, Memory: e.Memory, AutoOptInSkills: e.AutoOptInSkills,
 		CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt, Version: e.Version,
 	}
 }
@@ -146,7 +146,7 @@ func fromWorkspaceShareEntity(e entity.WorkspaceShare) view.WorkspaceShare {
 // lets the team read; a part not sent is shared.
 func FromShareWorkspaceRequestViewToSharedPartsEntity(rq view.ShareWorkspaceRequest) entity.SharedParts {
 	on := func(b *bool) bool { return b == nil || *b }
-	return entity.SharedParts{Tasks: on(rq.Tasks), Skills: on(rq.Skills), Memory: on(rq.Memory), AutoOptInSkills: on(rq.AutoOptInSkills)}
+	return entity.SharedParts{Tasks: on(rq.Tasks), Memory: on(rq.Memory), AutoOptInSkills: on(rq.AutoOptInSkills)}
 }
 
 // FromWorkspaceShareEntityToHTTPResponse renders a share.

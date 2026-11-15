@@ -27,7 +27,7 @@ func stale() (base.TeamSkillCopies, []string, error) {
 func TestEndingSharesKeepsTeamSkills(t *testing.T) {
 	each(t, func(f *fixture) {
 		f.db.Create(&model.Workspace{ID: 100, UserID: alice, Name: "w"})
-		must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, entity.SharedParts{Tasks: true, Skills: true, Memory: true, AutoOptInSkills: true}))
+		must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, entity.SharedParts{Tasks: true, Memory: true, AutoOptInSkills: true}))
 
 		f.keeper.plans = append(f.keeper.plans, stale)
 		_, err := f.c.UnshareWorkspace(f.ctx, f.ch(alice), 100)

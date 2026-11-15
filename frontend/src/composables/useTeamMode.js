@@ -171,7 +171,7 @@ const personName = (p) => p?.name || p?.email || 'Someone';
  */
 // The parts an activity's details say a share lets the team read.
 function sharedParts(d) {
-  const on = ['tasks', 'skills', 'memory'].filter((p) => d[p] === 'on');
+  const on = ['tasks', 'memory'].filter((p) => d[p] === 'on');
   return on.length ? on.join(', ') : 'nothing but the workspace';
 }
 

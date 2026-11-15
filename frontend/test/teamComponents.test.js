@@ -900,29 +900,30 @@ describe('sharing a workspace', () => {
   });
 
   const part = (label, key) => row(label).querySelector(`[data-test=share-part-${key}]`);
-  const checked = (label) => ['tasks', 'skills', 'memory'].map((k) => part(label, k).getAttribute('aria-checked'));
+  const checked = (label) => ['tasks', 'memory'].map((k) => part(label, k).getAttribute('aria-checked'));
 
   it('shows what each share lets the team read, a part the answer does not name shared', async () => {
-    await inWorkspace({ shares: [{ teamId: 'tm1', tasks: true, skills: false }] });
-    expect(checked('Core')).toEqual(['true', 'false', 'true']);
-    expect(text(row('Core').querySelector('[data-test=share-parts]'))).toBe('Tasks Skills Memory');
-    expect(part('Core', 'skills').getAttribute('aria-label')).toBe('Share the skills of api with Core');
+    await inWorkspace({ shares: [{ teamId: 'tm1', tasks: false, skills: false }] });
+    expect(checked('Core')).toEqual(['false', 'true']);
+    expect(text(row('Core').querySelector('[data-test=share-parts]'))).toBe('Tasks Memory');
+    expect(part('Core', 'skills')).toBe(null);
+    expect(part('Core', 'tasks').getAttribute('aria-label')).toBe('Share the tasks of api with Core');
     expect(row('Docs').querySelector('[data-test=share-parts]')).toBe(null);
   });
 
   it('holds a part back, or shares it again, against the version, sending every part', async () => {
     api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 4 });
-    await inWorkspace({ shares: [{ teamId: 'tm1', tasks: true, skills: true, memory: true }] });
+    await inWorkspace({ shares: [{ teamId: 'tm1', tasks: true, memory: true }] });
     await click(part('Core', 'memory'));
-    expect(api.shareWorkspace).toHaveBeenCalledWith('w1', 'tm1', 3, { tasks: true, skills: true, memory: false, autoOptInSkills: true });
+    expect(api.shareWorkspace).toHaveBeenCalledWith('w1', 'tm1', 3, { tasks: true, memory: false, autoOptInSkills: true });
     expect(useTeamStore().getTeam('tm1').version).toBe(4);
-    expect(checked('Core')).toEqual(['true', 'true', 'false']);
+    expect(checked('Core')).toEqual(['true', 'false']);
     expect(toasts()).toContain('Core no longer reads the memory of api');
 
     api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 5 });
     await click(part('Core', 'memory'));
-    expect(api.shareWorkspace).toHaveBeenLastCalledWith('w1', 'tm1', 4, { tasks: true, skills: true, memory: true, autoOptInSkills: true });
-    expect(checked('Core')).toEqual(['true', 'true', 'true']);
+    expect(api.shareWorkspace).toHaveBeenLastCalledWith('w1', 'tm1', 4, { tasks: true, memory: true, autoOptInSkills: true });
+    expect(checked('Core')).toEqual(['true', 'true']);
     expect(toasts()).toContain('Core now reads the memory of api');
   });
 
@@ -939,15 +940,15 @@ describe('sharing a workspace', () => {
 
   it('turns auto opt-in off, or on again, with the other parts as they are', async () => {
     api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 4 });
-    await inWorkspace({ shares: [{ teamId: 'tm1', tasks: true, skills: false, memory: true }] });
+    await inWorkspace({ shares: [{ teamId: 'tm1', tasks: true, memory: true }] });
     await click(part('Core', 'autoOptInSkills'));
-    expect(api.shareWorkspace).toHaveBeenCalledWith('w1', 'tm1', 3, { tasks: true, skills: false, memory: true, autoOptInSkills: false });
+    expect(api.shareWorkspace).toHaveBeenCalledWith('w1', 'tm1', 3, { tasks: true, memory: true, autoOptInSkills: false });
     expect(part('Core', 'autoOptInSkills').getAttribute('aria-checked')).toBe('false');
     expect(toasts()).toContain('New team skills stay off in api');
 
     api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 5 });
     await click(part('Core', 'autoOptInSkills'));
-    expect(api.shareWorkspace).toHaveBeenLastCalledWith('w1', 'tm1', 4, { tasks: true, skills: false, memory: true, autoOptInSkills: true });
+    expect(api.shareWorkspace).toHaveBeenLastCalledWith('w1', 'tm1', 4, { tasks: true, memory: true, autoOptInSkills: true });
     expect(toasts()).toContain('New team skills are turned on in api');
   });
 
@@ -956,16 +957,16 @@ describe('sharing a workspace', () => {
     await inWorkspace({ shares: [{ teamId: 'tm1' }] });
     await click(part('Core', 'tasks'));
     expect(toasts()).toEqual(['Share failed']);
-    expect(checked('Core')).toEqual(['true', 'true', 'true']);
+    expect(checked('Core')).toEqual(['true', 'true']);
     expect(part('Core', 'tasks').disabled).toBe(false);
   });
 
   it('shows the parts a new share answers with, and none for a fork or in Manage team', async () => {
-    api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 4, tasks: true, skills: true, memory: true });
+    api.shareWorkspace.mockResolvedValue({ teamId: 'tm1', version: 4, tasks: true, memory: true });
     await inWorkspace({ shares: [] });
     expect(row('Core').querySelector('[data-test=share-parts]')).toBe(null);
     await click(toggle('Core'));
-    expect(checked('Core')).toEqual(['true', 'true', 'true']);
+    expect(checked('Core')).toEqual(['true', 'true']);
     app.unmount();
 
     await inWorkspace({ shares: [{ teamId: 'tm1' }] }, { id: 'w2' });

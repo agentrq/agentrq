@@ -60,7 +60,6 @@ type TeamInvitationPreview struct {
 // SharedParts is what a share lets the team read of the workspace.
 type SharedParts struct {
 	Tasks  bool
-	Skills bool
 	Memory bool
 	// AutoOptInSkills opts the workspace into every skill of its team
 	// workspace it has made no choice about, later ones included.
@@ -109,9 +108,8 @@ type TeamWorkspace struct {
 	OwnerID         int64
 	OwnerName       string
 	OwnerPicture    string
-	// Tasks and Skills are whether its share lets the team read them.
-	Tasks  bool
-	Skills bool
+	// Tasks is whether its share lets the team read them.
+	Tasks bool
 }
 
 // TeamMembers is a team's members at Version.

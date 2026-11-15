@@ -3248,7 +3248,7 @@ paths:
     put:
       tags: [Teams]
       summary: Share a workspace with a team
-      description: The workspace's owner, in the team, from the team's version. It shows there by its own name, as one team workspace with every shared workspace of that name. Forks follow their parent and archived workspaces cannot be shared (422). On a workspace already shared, it sets which of its tasks, skills and memory the team reads.
+      description: The workspace's owner, in the team, from the team's version. It shows there by its own name, as one team workspace with every shared workspace of that name. Forks follow their parent and archived workspaces cannot be shared (422). On a workspace already shared, it sets which of its tasks and memory the team reads.
       requestBody:
         required: true
         content:
@@ -5189,7 +5189,6 @@ components:
       properties:
         version: { type: integer, format: int64, minimum: 1 }
         tasks: { type: boolean, default: true, description: Whether the team reads the workspace's tasks. }
-        skills: { type: boolean, default: true, description: Whether the team reads the workspace's skills. }
         memory: { type: boolean, default: true, description: Whether the team's agents read the workspace's memory. }
         autoOptInSkills: { type: boolean, default: true, description: Opt the workspace into every skill of the team workspace it is shared into, later ones included, but those it was opted out of. Off, only the skills it is opted into now stay on. }
     TeamMember:
@@ -5263,7 +5262,6 @@ components:
         teamName: { type: string }
         workspaceId: { type: string }
         tasks: { type: boolean }
-        skills: { type: boolean }
         memory: { type: boolean }
         autoOptInSkills: { type: boolean }
         createdAt: { type: string, format: date-time }

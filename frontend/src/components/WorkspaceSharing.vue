@@ -11,7 +11,7 @@
      its own name, as one team workspace with any teammate's of the same name.
      Turning one off asks first. A fork follows its parent, so it has no switch
      of its own. In Workspace settings a share also says what the team reads of
-     the workspace: its tasks, skills and memory, each a switch of its own, and
+     the workspace: its tasks and memory, each a switch of its own, and
      whether the team workspace's skills are turned on in it as they come. -->
 <template>
   <div data-test="workspace-sharing">
@@ -104,7 +104,6 @@ const parts = ref(new Map());
 // The parts of a workspace a share can hold back from the team.
 const PARTS = [
   { key: 'tasks', label: 'Tasks' },
-  { key: 'skills', label: 'Skills' },
   { key: 'memory', label: 'Memory' },
 ];
 
@@ -115,7 +114,6 @@ const AUTO_OPT_IN = { key: 'autoOptInSkills', label: 'Auto opt-in to team skills
 // What a share's answer says the team reads; a part it does not name is shared.
 const partsOf = (s) => ({
   tasks: s?.tasks !== false,
-  skills: s?.skills !== false,
   memory: s?.memory !== false,
   autoOptInSkills: s?.autoOptInSkills !== false,
 });

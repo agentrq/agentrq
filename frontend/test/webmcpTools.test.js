@@ -586,7 +586,7 @@ describe('each tool calls the interface the way the UI does', () => {
     ['manageTeam', { action: 'accept', invitationId: 'i1' }, 'acceptInvitationById', ['i1']],
     ['manageTeam', { action: 'decline', invitationId: 'i1' }, 'declineInvitation', ['i1']],
     ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', version: 3 }, 'shareWorkspace', ['ws1', 'tm1', 3, {}]],
-    ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', version: 3, tasks: false, skills: true, memory: false }, 'shareWorkspace', ['ws1', 'tm1', 3, { tasks: false, skills: true, memory: false }]],
+    ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', version: 3, tasks: false, memory: false }, 'shareWorkspace', ['ws1', 'tm1', 3, { tasks: false, memory: false }]],
     ['manageTeam', { action: 'unshare', workspaceId: 'ws1', teamId: 'tm1', version: 3 }, 'unshareWorkspace', ['ws1', 'tm1', 3]],
     ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', version: 3, autoOptInSkills: false }, 'shareWorkspace', ['ws1', 'tm1', 3, { autoOptInSkills: false }]],
     ['readTeamSkills', { action: 'workspace', workspaceId: 'ws1' }, 'listWorkspaceTeamSkills', ['ws1', '']],
