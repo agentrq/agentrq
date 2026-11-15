@@ -211,7 +211,7 @@ func TestTeamChecksSeeWhatChangedWhileTheyWaitedForTheLock(t *testing.T) {
 				}
 				return tx.Create(&s).Error
 			},
-			op: func(r Repository) error { return r.DeleteTeam(ctx, 1, 10, 1, act()) },
+			op: func(r Repository) error { return dropBlobs(r.DeleteTeam(ctx, 1, 10, 1, act(), TeamSkillCopies{})) },
 			check: func(t *testing.T, db *gorm.DB) {
 				for _, m := range []any{&model.TeamMember{}, &model.WorkspaceShare{}} {
 					if n := countTeamRows(db, m, "team_id = 1"); n != 0 {
@@ -226,7 +226,7 @@ func TestTeamChecksSeeWhatChangedWhileTheyWaitedForTheLock(t *testing.T) {
 			name:   "the last but one leaving while the other left meanwhile",
 			change: removeMember(11),
 			op: func(r Repository) error {
-				_, deleted, err := r.RemoveTeamMember(ctx, 1, 10, 10, 1, act(), 0)
+				_, deleted, _, err := r.RemoveTeamMember(ctx, 1, 10, 10, 1, act(), 0, TeamSkillCopies{})
 				if err == nil && !deleted {
 					return errors.New("the team was kept with no member")
 				}

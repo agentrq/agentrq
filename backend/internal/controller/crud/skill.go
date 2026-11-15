@@ -44,6 +44,7 @@ type SkillController interface {
 	ImportSkills(ctx context.Context, req entity.ImportSkillsRequest) (*entity.ImportSkillsResponse, error)
 	MoveLegacySkills(ctx context.Context) error
 	TeamSkillController
+	TeamSkillKeeper
 }
 
 const (

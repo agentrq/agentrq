@@ -415,6 +415,7 @@ func New(cfg Config) (*App, error) {
 		Repository:              repo,
 		IDGen:                   ids,
 		PubSub:                  pubsubSvc,
+		Skills:                  crudCtrl,
 		Mailer:                  teamMailer(cfg.Teams.EmailInvites, cfg.SMTP, smtpSvc),
 		BaseURL:                 cfg.App.BaseURL,
 		MaxInvitesPerDay:        cfg.Teams.MaxInvitesPerDay,

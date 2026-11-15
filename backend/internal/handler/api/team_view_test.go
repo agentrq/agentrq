@@ -176,7 +176,7 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 	panoFiles, err := storage.NewNestedPublic(filepath.Join(dir, "pano"), "u")
 	must(err)
 	crudCtrl := crud.New(crud.Params{IDGen: ids, Repository: repo, Storage: atts, SkillStorage: skillFiles, PanoStorage: panoFiles})
-	teams := teamctrl.New(teamctrl.Params{Repository: repo, IDGen: ids, BaseURL: "https://rq", MaxInvitesPerDay: 5})
+	teams := teamctrl.New(teamctrl.Params{Repository: repo, IDGen: ids, Skills: crudCtrl, BaseURL: "https://rq", MaxInvitesPerDay: 5})
 	tv := teamview.New(teamview.Params{Teams: teams, Owner: crudCtrl, Repository: repo})
 
 	// Alice's task with a file, a message and a plan.

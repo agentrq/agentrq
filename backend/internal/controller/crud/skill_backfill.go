@@ -161,11 +161,24 @@ func (c *controller) sameSkillFiles(ctx context.Context, a model.Skill, files []
 // freeSkillName is a name the account does not have yet for a legacy skill
 // whose own name it does: <name>-<workspace>, or with a number after it.
 func (c *controller) freeSkillName(ctx context.Context, s model.Skill, taken map[string]model.Skill) string {
-	var slug string
+	var place string
 	if ws, err := c.repository.SystemGetWorkspace(ctx, s.WorkspaceID); err == nil {
-		slug = nameSlug(ws.Name)
-		slug = strings.TrimRight(slug[:min(len(slug), maxSlugLength)], "-")
+		place = ws.Name
 	}
+	name, _ := freeName(s.Name, place, func(candidate string) (bool, error) {
+		_, clash := taken[candidate]
+		return !clash, nil
+	})
+	return name
+}
+
+// freeName is the first of <name>-<place>, <name>-<place>-2, … (or
+// <name>-2, … with no place) that free says is free, with the place folded
+// into a slug, and the name cut rather than the suffix, which is what makes
+// it new.
+func freeName(name, place string, free func(string) (bool, error)) (string, error) {
+	slug := nameSlug(place)
+	slug = strings.TrimRight(slug[:min(len(slug), maxSlugLength)], "-")
 	for n := 1; ; n++ {
 		suffix := ""
 		switch {
@@ -176,11 +189,11 @@ func (c *controller) freeSkillName(ctx context.Context, s model.Skill, taken map
 		default:
 			suffix = fmt.Sprintf("-%s-%d", slug, n)
 		}
-		// Cut the name rather than the suffix, which is what makes it new.
-		cut := s.Name[:min(len(s.Name), skill.MaxNameLength-len(suffix))]
+		cut := name[:min(len(name), skill.MaxNameLength-len(suffix))]
 		candidate := strings.TrimRight(cut, "-") + suffix
-		if _, clash := taken[candidate]; !clash {
-			return candidate
+		ok, err := free(candidate)
+		if err != nil || ok {
+			return candidate, err
 		}
 	}
 }

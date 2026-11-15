@@ -105,10 +105,10 @@ type Repository interface {
 	ListTeamsForUser(ctx context.Context, userID int64) ([]base.TeamWithCount, error)
 	CountTeamMembers(ctx context.Context, teamID int64) (int64, error)
 	RenameTeam(ctx context.Context, teamID, callerID, version int64, name string, act model.TeamManagementActivity) (int64, error)
-	DeleteTeam(ctx context.Context, teamID, callerID, version int64, act model.TeamManagementActivity) error
+	DeleteTeam(ctx context.Context, teamID, callerID, version int64, act model.TeamManagementActivity, keep base.TeamSkillCopies) ([]string, error)
 	GetTeamMember(ctx context.Context, teamID, userID int64) (model.TeamMember, error)
 	ListTeamMembers(ctx context.Context, teamID int64) ([]base.TeamMemberWithUser, error)
-	RemoveTeamMember(ctx context.Context, teamID, callerID, userID, version int64, act model.TeamManagementActivity, deletedID int64) (int64, bool, error)
+	RemoveTeamMember(ctx context.Context, teamID, callerID, userID, version int64, act model.TeamManagementActivity, deletedID int64, keep base.TeamSkillCopies) (int64, bool, []string, error)
 	CreateTeamInvitation(ctx context.Context, inv model.TeamInvitation, version int64, since time.Time, teamLimit, userLimit int64, act model.TeamManagementActivity) (int64, error)
 	ListTeamInvitations(ctx context.Context, teamID int64, now time.Time) ([]model.TeamInvitation, error)
 	ListInvitationsForEmail(ctx context.Context, email string, now time.Time) ([]model.TeamInvitation, error)
@@ -119,7 +119,7 @@ type Repository interface {
 	AcceptTeamInvitation(ctx context.Context, id int64, member model.TeamMember, now time.Time, act model.TeamManagementActivity) error
 	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, tw model.TeamWorkspace, ids func() int64, version int64, act model.TeamManagementActivity) (base.WorkspaceShareWithTeam, int64, error)
 	ListWorkspaceShares(ctx context.Context, workspaceID, userID int64) ([]base.WorkspaceShareWithTeam, error)
-	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error)
+	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity, keep base.TeamSkillCopies) (int64, error)
 	GetPanoDoc(ctx context.Context, userID, id int64, now time.Time) (model.PanoDoc, error)
 	SetPanoDocShare(ctx context.Context, s model.PanoDocShare, version int64, act model.TeamManagementActivity) (base.PanoDocShareWithTeam, int64, error)
 	ListPanoDocShares(ctx context.Context, docID, userID int64) ([]base.PanoDocShareWithTeam, error)
@@ -127,6 +127,13 @@ type Repository interface {
 	ListTeamActivities(ctx context.Context, teamID int64, limit int, before int64) ([]base.TeamActivityRow, error)
 	CanReadTasksInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
 	ListTeamWorkspaces(ctx context.Context, teamID int64) ([]base.TeamWorkspaceRow, error)
+}
+
+// SkillKeeper copies the team skills people are about to lose to their
+// accounts (crud.TeamSkillKeeper).
+type SkillKeeper interface {
+	KeepTeamSkills(ctx context.Context, sel base.TeamSkillsLeaving) (base.TeamSkillCopies, []string, error)
+	PurgeSkillBlobs(storageIDs []string)
 }
 
 // Publisher carries telemetry.
@@ -139,6 +146,8 @@ type Params struct {
 	Repository Repository
 	IDGen      idgen.Service
 	PubSub     Publisher
+	// Skills keeps the team skills of whoever loses them.
+	Skills SkillKeeper
 	// Mailer sends invitations; nil when no SMTP is configured, and the
 	// inviter is then given the link to send.
 	Mailer smtp.Service
@@ -158,6 +167,7 @@ type controller struct {
 	repo      Repository
 	ids       idgen.Service
 	pubsub    Publisher
+	skills    SkillKeeper
 	mailer    smtp.Service
 	baseURL   string
 	maxInvite int
@@ -168,7 +178,7 @@ type controller struct {
 // New returns a teams controller.
 func New(p Params) Controller {
 	c := &controller{
-		repo: p.Repository, ids: p.IDGen, pubsub: p.PubSub, mailer: p.Mailer,
+		repo: p.Repository, ids: p.IDGen, pubsub: p.PubSub, skills: p.Skills, mailer: p.Mailer,
 		baseURL: strings.TrimRight(p.BaseURL, "/"), maxInvite: p.MaxInvitesPerDay,
 		maxByUser: p.MaxInvitesPerUserPerDay, now: p.Now,
 	}
@@ -302,7 +312,39 @@ func (c *controller) RenameTeam(ctx context.Context, ch entity.TeamChange, name 
 }
 
 func (c *controller) DeleteTeam(ctx context.Context, ch entity.TeamChange) error {
-	return fromRepo(c.repo.DeleteTeam(ctx, ch.TeamID, ch.UserID, ch.Version, c.activity()))
+	return c.keeping(ctx, base.TeamSkillsLeaving{TeamID: ch.TeamID}, func(keep base.TeamSkillCopies) ([]string, error) {
+		return c.repo.DeleteTeam(ctx, ch.TeamID, ch.UserID, ch.Version, c.activity(), keep)
+	})
+}
+
+// keepTries is how many times a change that ends shares plans the team
+// skills their owners keep, when the skills change under it.
+const keepTries = 3
+
+// keeping makes a change that ends the shares sel names, with the copies of
+// the team skills their owners keep, and purges the blobs it returns once it
+// has committed. The copies are planned and written first, and dropped if
+// the change fails; planned again if the skills changed meanwhile.
+func (c *controller) keeping(ctx context.Context, sel base.TeamSkillsLeaving, change func(base.TeamSkillCopies) ([]string, error)) error {
+	for try := 1; ; try++ {
+		keep, written, err := c.skills.KeepTeamSkills(ctx, sel)
+		if err != nil {
+			return err
+		}
+		purge, err := change(keep)
+		if err != nil {
+			c.skills.PurgeSkillBlobs(written)
+			if errors.Is(err, base.ErrTeamSkillsChanged) {
+				if try < keepTries {
+					continue
+				}
+				return teamErr(entity.TeamConflict, "the team's skills kept changing while their copies were made: try again")
+			}
+			return fromRepo(err)
+		}
+		c.skills.PurgeSkillBlobs(purge)
+		return nil
+	}
 }
 
 func (c *controller) ListMembers(ctx context.Context, userID, teamID int64) (entity.TeamMembers, error) {
@@ -327,8 +369,13 @@ func (c *controller) ListMembers(ctx context.Context, userID, teamID int64) (ent
 // RemoveMember leaves the membership checks to the repository, which reads
 // them under the team's lock.
 func (c *controller) RemoveMember(ctx context.Context, ch entity.TeamChange, memberID int64) (int64, error) {
-	next, _, err := c.repo.RemoveTeamMember(ctx, ch.TeamID, ch.UserID, memberID, ch.Version, c.activity(), c.ids.NextID())
-	return next, fromRepo(err)
+	var next int64
+	err := c.keeping(ctx, base.TeamSkillsLeaving{TeamID: ch.TeamID, UserID: memberID}, func(keep base.TeamSkillCopies) ([]string, error) {
+		n, _, purge, err := c.repo.RemoveTeamMember(ctx, ch.TeamID, ch.UserID, memberID, ch.Version, c.activity(), c.ids.NextID(), keep)
+		next = n
+		return purge, err
+	})
+	return next, err
 }
 
 func (c *controller) LeaveTeam(ctx context.Context, ch entity.TeamChange) error {

@@ -272,41 +272,57 @@ func dropStaleExclusions(tx *gorm.DB, userIDs []int64) error {
 // workspaces and shares of workspaces and Pano docs,
 // and the memory exclusions between members who share no other team, and
 // records it. Its activities stay.
-func deleteTeamRows(tx *gorm.DB, teamID int64, act model.TeamManagementActivity) error {
+func deleteTeamRows(tx *gorm.DB, teamID int64, act model.TeamManagementActivity) ([]string, error) {
 	t, err := first[model.Team](tx.Where("id = ?", teamID))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var members []int64
 	if err := tx.Model(&model.TeamMember{}).Where("team_id = ?", teamID).Pluck("user_id", &members).Error; err != nil {
-		return err
+		return nil, err
+	}
+	blobs, err := deleteTeamSkills(tx, teamID)
+	if err != nil {
+		return nil, err
 	}
 	for _, m := range []any{&model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.PanoDocShare{}, &model.TeamWorkspace{}} {
 		if err := tx.Where("team_id = ?", teamID).Delete(m).Error; err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if err := dropStaleExclusions(tx, members); err != nil {
-		return err
+		return nil, err
 	}
 	if err := tx.Where("id = ?", teamID).Delete(&model.Team{}).Error; err != nil {
-		return err
+		return nil, err
 	}
 	act.TeamID, act.Action = teamID, model.TeamActivityTeamDeleted
 	act.Details = TeamActivityDetails(map[string]string{"name": t.Name})
-	return record(tx, act)
+	return blobs, record(tx, act)
 }
 
 // DeleteTeam deletes a team from version, as a member, with its members,
-// invitations and shares.
-func (r *repository) DeleteTeam(ctx context.Context, teamID, callerID, version int64, act model.TeamManagementActivity) error {
-	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+// invitations, shares and skills, once every member has keep's copies of
+// the team skills their workspaces are opted into. It returns the team
+// skills' blobs, to purge once it has committed.
+func (r *repository) DeleteTeam(ctx context.Context, teamID, callerID, version int64, act model.TeamManagementActivity, keep TeamSkillCopies) ([]string, error) {
+	var blobs []string
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := changeTeam(tx, teamID, callerID, version, act.CreatedAt); err != nil {
 			return err
 		}
+		if err := keepTeamSkills(tx, TeamSkillsLeaving{TeamID: teamID}, keep, act.CreatedAt); err != nil {
+			return err
+		}
 		act.ActorUserID = callerID
-		return deleteTeamRows(tx, teamID, act)
+		var err error
+		blobs, err = deleteTeamRows(tx, teamID, act)
+		return err
 	})
+	if err != nil {
+		return nil, err
+	}
+	return blobs, nil
 }
 
 func (r *repository) GetTeamMember(ctx context.Context, teamID, userID int64) (model.TeamMember, error) {
@@ -349,7 +365,7 @@ func member(tx *gorm.DB, teamID, userID int64) (model.TeamMember, error) {
 // they no longer share a team with. The last member to go deletes the team (deleted), recorded as
 // activity deletedID. ErrNotFound when the caller or the member is not in
 // the team.
-func (r *repository) RemoveTeamMember(ctx context.Context, teamID, callerID, userID, version int64, act model.TeamManagementActivity, deletedID int64) (next int64, deleted bool, err error) {
+func (r *repository) RemoveTeamMember(ctx context.Context, teamID, callerID, userID, version int64, act model.TeamManagementActivity, deletedID int64, keep TeamSkillCopies) (next int64, deleted bool, blobs []string, err error) {
 	err = r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		if next, err = changeTeam(tx, teamID, callerID, version, act.CreatedAt); err != nil {
@@ -359,7 +375,17 @@ func (r *repository) RemoveTeamMember(ctx context.Context, teamID, callerID, use
 		if err != nil {
 			return err
 		}
+		if err := keepTeamSkills(tx, TeamSkillsLeaving{TeamID: teamID, UserID: userID}, keep, act.CreatedAt); err != nil {
+			return err
+		}
 		if err := tx.Where("id = ?", m.ID).Delete(&model.TeamMember{}).Error; err != nil {
+			return err
+		}
+		var shared []int64
+		if err := tx.Model(&model.WorkspaceShare{}).Where("team_id = ? AND user_id = ?", teamID, userID).Pluck("workspace_id", &shared).Error; err != nil {
+			return err
+		}
+		if err := dropTeamSkillChoices(tx, teamID, shared); err != nil {
 			return err
 		}
 		if err := tx.Where("team_id = ? AND user_id = ?", teamID, userID).Delete(&model.WorkspaceShare{}).Error; err != nil {
@@ -387,9 +413,13 @@ func (r *repository) RemoveTeamMember(ctx context.Context, teamID, callerID, use
 		}
 		deleted = true
 		act.ID, act.TargetUserID = deletedID, nil
-		return deleteTeamRows(tx, teamID, act)
+		blobs, err = deleteTeamRows(tx, teamID, act)
+		return err
 	})
-	return next, deleted, err
+	if err != nil {
+		return 0, false, nil, err
+	}
+	return next, deleted, blobs, nil
 }
 
 // CreateTeamInvitation stores an invitation from version, as the inviter, a
@@ -678,11 +708,14 @@ func (r *repository) ListWorkspaceShares(ctx context.Context, workspaceID, userI
 // DeleteWorkspaceShare unshares the owner's workspace from a team, from
 // version, and returns the new version; ErrNotFound when the owner is not
 // in the team or it was not shared there.
-func (r *repository) DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error) {
+func (r *repository) DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity, keep TeamSkillCopies) (int64, error) {
 	var next int64
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		if next, err = changeTeam(tx, teamID, userID, version, act.CreatedAt); err != nil {
+			return err
+		}
+		if err := keepTeamSkills(tx, TeamSkillsLeaving{TeamID: teamID, WorkspaceID: workspaceID}, keep, act.CreatedAt); err != nil {
 			return err
 		}
 		res := tx.Where("workspace_id = ? AND team_id = ? AND user_id = ?", workspaceID, teamID, userID).Delete(&model.WorkspaceShare{})
@@ -691,6 +724,9 @@ func (r *repository) DeleteWorkspaceShare(ctx context.Context, workspaceID, team
 		}
 		if res.RowsAffected == 0 {
 			return ErrNotFound
+		}
+		if err := dropTeamSkillChoices(tx, teamID, []int64{workspaceID}); err != nil {
+			return err
 		}
 		act.TeamID, act.ActorUserID, act.Action, act.TargetWorkspaceID = teamID, userID, model.TeamActivityWorkspaceUnshared, &workspaceID
 		return record(tx, act)
