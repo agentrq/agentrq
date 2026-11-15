@@ -478,6 +478,37 @@ func TestWorkspaceNotesReadTheWorkspaceFresh(t *testing.T) {
 	}
 }
 
+// A hand-off is recorded when it sends a note other than the one the task
+// names; nothing is written for the same note again, or for a task never
+// handed one that is handed none. A failed write is only logged.
+func TestRecordAgentNote(t *testing.T) {
+	ctx := context.Background()
+	const user = int64(9)
+	for _, tc := range []struct {
+		name     string
+		recorded int64
+		note     string
+		writes   bool
+		err      error
+	}{
+		{"first hand-off", 0, "Keep me posted.", true, nil},
+		{"note edited", model.AgentNoteID(user, "Old."), "Keep me posted.", true, nil},
+		{"note emptied", model.AgentNoteID(user, "Old."), "", true, nil},
+		{"same note again", model.AgentNoteID(user, "Keep me posted."), "Keep me posted.", false, nil},
+		{"never any note", 0, "", false, nil},
+		{"write fails", 0, "Keep me posted.", true, errors.New("database unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			repo := mock_repository.NewMockRepository(ctrl)
+			if tc.writes {
+				repo.EXPECT().RecordAgentNote(ctx, user, int64(42), tc.note).Return(tc.err)
+			}
+			recordAgentNote(repo, user)(ctx, 42, tc.recorded, tc.note)
+		})
+	}
+}
+
 // A failed read hands the agent the notes read when the server started rather
 // than none.
 func TestWorkspaceNotesFallBackWhenTheWorkspaceCannotBeRead(t *testing.T) {

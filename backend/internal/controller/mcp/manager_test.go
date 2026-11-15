@@ -5,6 +5,7 @@
 package mcp
 
 import (
+	"context"
 	"testing"
 )
 
@@ -120,5 +121,32 @@ func TestManager_ConnectionsByUser(t *testing.T) {
 		if got[user] != n {
 			t.Errorf("%s: expected %d connections, got %d", user, n, got[user])
 		}
+	}
+}
+
+// The manager hands a task over through its workspace's server, which appends
+// and records the notes; with no server to make, the body goes alone.
+func TestManager_AgentTaskBody(t *testing.T) {
+	var recorded [3]int64
+	m := NewManager(func(workspaceID int64, userID string) *WorkspaceServer {
+		if workspaceID != 1 {
+			return nil
+		}
+		srv := &WorkspaceServer{workspaceID: workspaceID, userID: userID}
+		srv.SetWorkspaceNotes(func(context.Context) string { return "Keep me posted." }, func(_ context.Context, taskID, id int64, _ string) {
+			recorded = [3]int64{workspaceID, taskID, id}
+		})
+		return srv
+	})
+	ctx := context.Background()
+
+	if got := m.AgentTaskBody(ctx, 1, "user1", 7, 3, "Do it."); got != "Do it.\n\nKeep me posted." {
+		t.Errorf("AgentTaskBody = %q, want the body then the notes", got)
+	}
+	if recorded != [3]int64{1, 7, 3} {
+		t.Errorf("recorded %v, want workspace 1, task 7, note 3", recorded)
+	}
+	if got := m.AgentTaskBody(ctx, 2, "user1", 7, 3, "Do it."); got != "Do it." {
+		t.Errorf("with no server, AgentTaskBody = %q, want the body alone", got)
 	}
 }

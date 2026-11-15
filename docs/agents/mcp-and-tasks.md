@@ -250,8 +250,11 @@ delivery path must too, or a reopened task is redone from its body alone.
 ## The workspace's notes go with the task, never in it
 
 A workspace's `selfLearningLoopNote` is appended to a task's body only when the
-agent is handed it (`AgentTaskBody`: every push, and `task get` while the task
-is `notstarted`) and is never stored. Stored, it was repeated in every read of
-every task, by supervisors and agents alike. A new delivery path must append
-them too (Slack, out of the server's reach, calls `AppendSelfLearningNote`), or
-its agent never sees them.
+agent is handed it (`AgentTaskBody`: every push, the reassign push included,
+and `task get` while the task is `notstarted`) and is never stored in it.
+Stored, it was repeated in every read of every task, by supervisors and agents
+alike. `AgentTaskBody` also records which note was sent (`agent_notes`, one row
+per account per text; `Task.AgentNoteID`), and only the single-task read returns
+it, as `agentNote`, for the task page. A new delivery path must go through
+`AgentTaskBody` (Slack does, via the manager), or its agent never sees the note
+and the page never learns it was sent.

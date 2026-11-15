@@ -680,13 +680,13 @@ func (m *mockCrudUpdateTaskAssignee) UpdateTaskAssignee(ctx context.Context, req
 // it has to clear first for the same reason.
 func TestUpdateTaskAssignee_ClearsBeforeNotifyingWhenReassignedToAgent(t *testing.T) {
 	app := fiber.New()
-	reassigned := entity.Task{ID: 44, WorkspaceID: 1, Title: "Pick this back up", ClearContext: true}
+	reassigned := entity.Task{ID: 44, WorkspaceID: 1, Title: "Pick this back up", ClearContext: true, AgentNoteID: 3}
 	crudCtrl := &mockCrudUpdateTaskAssignee{
 		updateTaskAssigneeFunc: func(ctx context.Context, req entity.UpdateTaskAssigneeRequest) (*entity.UpdateTaskAssigneeResponse, error) {
 			return &entity.UpdateTaskAssigneeResponse{Task: reassigned}, nil
 		},
 	}
-	srv := &fakeWorkspaceServer{}
+	srv := &fakeWorkspaceServer{notes: "Keep me posted."}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
 	app.Patch("/api/v1/workspaces/:id/tasks/:taskID/assignee", func(c *fiber.Ctx) error {
@@ -715,6 +715,14 @@ func TestUpdateTaskAssignee_ClearsBeforeNotifyingWhenReassignedToAgent(t *testin
 	}
 	if srv.clearedTaskID != reassigned.ID || !srv.clearContextWanted {
 		t.Errorf("cleared task %d wanted=%v, want task %d wanted=true", srv.clearedTaskID, srv.clearContextWanted, reassigned.ID)
+	}
+	// The workspace's notes go with the push: a task reassigned while ongoing
+	// is read back without them.
+	if want := reassignedTaskContent(reassigned) + "\n\nKeep me posted."; srv.notifiedContent != want {
+		t.Errorf("pushed %q, want %q", srv.notifiedContent, want)
+	}
+	if len(srv.handedOver) != 1 || srv.handedOver[0] != [2]int64{44, 3} {
+		t.Errorf("handed over %v, want task 44 with note 3", srv.handedOver)
 	}
 }
 

@@ -368,6 +368,11 @@ type (
 		WorkflowDepth         int
 		CompletionTriggerType int16
 		CreatedByWorkspaceID  int64
+		// AgentNoteID is the note the agent was last handed the task with,
+		// zero when none was recorded; AgentNote is its text, filled only by
+		// GetTask.
+		AgentNoteID int64
+		AgentNote   *string
 		// Agent names the agent behind the task's latest status change made
 		// by one; filled only when the listing asks for it.
 		Agent string

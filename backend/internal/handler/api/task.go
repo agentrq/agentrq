@@ -181,7 +181,7 @@ func reassignedTaskContent(t entity.Task) string {
 func (h *handler) pushTaskToAgent(ctx context.Context, userID string, t entity.Task) {
 	srv := h.mcpManager.Get(t.WorkspaceID, userID)
 	pushed := t
-	pushed.Body = srv.AgentTaskBody(ctx, t.Body)
+	pushed.Body = srv.AgentTaskBody(ctx, t.ID, t.AgentNoteID, t.Body)
 	content := taskPushContent(pushed)
 	if atts := formatAttachments(t.Attachments); atts != "" {
 		content += "\n" + atts
@@ -628,7 +628,9 @@ func (h *handler) updateTaskAssignee() fiber.Handler {
 		// Notify agent if reassigned to agent
 		if rq.Assignee == "agent" {
 			srv := h.mcpManager.Get(rq.WorkspaceID, rq.UserID)
-			content := reassignedTaskContent(rs.Task)
+			// With the workspace's notes: a task reassigned while ongoing is
+			// read back without them, so this push is the agent's only copy.
+			content := srv.AgentTaskBody(ctx, rs.Task.ID, rs.Task.AgentNoteID, reassignedTaskContent(rs.Task))
 			// Same reasoning as the immediate push in createTask: clear before
 			// pushing, and leave the push itself unrecorded so StartPoller goes
 			// on offering the task until the agent takes it.

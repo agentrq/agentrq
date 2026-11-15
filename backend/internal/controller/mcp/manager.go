@@ -174,6 +174,16 @@ func (m *Manager) AgentClient(workspaceID int64) *agentlink.ClientInfo {
 	return srv.AgentClient()
 }
 
+// AgentTaskBody is a task's body as the workspace's agent is handed it: see
+// WorkspaceServer.AgentTaskBody.
+func (m *Manager) AgentTaskBody(ctx context.Context, workspaceID int64, userID string, taskID, agentNoteID int64, body string) string {
+	srv := m.Get(workspaceID, userID)
+	if srv == nil {
+		return body
+	}
+	return srv.AgentTaskBody(ctx, taskID, agentNoteID, body)
+}
+
 // SendChannelNotification forwards a channel notification to the appropriate WorkspaceServer.
 func (m *Manager) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string, attachments ...entity.Attachment) {
 	m.mu.RLock()

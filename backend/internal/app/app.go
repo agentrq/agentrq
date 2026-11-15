@@ -605,7 +605,7 @@ func New(cfg Config) (*App, error) {
 			tokenSvc,
 			pubsubSvc,
 		)
-		srv.SetWorkspaceNotes(workspaceNotes(repo, workspaceID, workspace))
+		srv.SetWorkspaceNotes(workspaceNotes(repo, workspaceID, workspace), recordAgentNote(repo, workspace.UserID))
 		srv.StartPoller(repo)
 		srv.StartPing()
 		return srv
@@ -1030,6 +1030,20 @@ func workspaceNotes(repo base.Repository, workspaceID int64, started model.Works
 	}
 }
 
+// recordAgentNote records the note a task of userID was handed with, unless
+// the task already names it or has never been handed any. A failure is
+// logged: the task goes to the agent all the same.
+func recordAgentNote(repo base.Repository, userID int64) mcp.AgentNoteRecorder {
+	return func(ctx context.Context, taskID, recorded int64, note string) {
+		if (recorded == 0 && note == "") || model.AgentNoteID(userID, note) == recorded {
+			return
+		}
+		if err := repo.RecordAgentNote(ctx, userID, taskID, note); err != nil {
+			zlog.Warn().Err(err).Int64("taskID", taskID).Msg("could not record the note a task was handed with")
+		}
+	}
+}
+
 // taskEventPayload loads the task an SSE event is about, with its messages.
 //
 // Tool calls are left out: they arrive one at a time as toolCall.updated, and
@@ -1418,6 +1432,7 @@ func migratedModels() []any {
 		&model.MCPClient{},
 		&model.Agent{},
 		&model.AgentModel{},
+		&model.AgentNote{},
 		&model.User{},
 		&model.SlackWorkspaceLink{},
 		&model.SlackTaskThread{},

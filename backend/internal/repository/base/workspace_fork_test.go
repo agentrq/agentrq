@@ -37,7 +37,7 @@ func forkDB(t *testing.T) (*gorm.DB, Repository) {
 	}
 	if err := db.AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{},
 		&model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{},
-		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.PanoDoc{}, &model.PanoDocTask{}, &model.TaskPlan{},
+		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.AgentNote{}, &model.PanoDoc{}, &model.PanoDocTask{}, &model.TaskPlan{},
 		&model.Telemetry{}, &model.HourlyTelemetry{}, &model.DailyTelemetry{}, &model.MonthlyTelemetry{},
 		&model.HourlyTaskLatency{}, &model.DailyTaskLatency{}, &model.MonthlyTaskLatency{}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -525,7 +525,7 @@ func TestCountUnfinishedTasks(t *testing.T) {
 
 // The last two deletes of a workspace fail on their own, and roll it back.
 func TestDeleteWorkspaceRows_LastDeletesCanFail(t *testing.T) {
-	for _, table := range []string{"tasks", "workspaces"} {
+	for _, table := range []string{"tasks", "agent_notes", "workspaces"} {
 		db, repo := forkDB(t)
 		_ = db.Callback().Delete().Before("gorm:delete").Register("fail", func(tx *gorm.DB) {
 			if tx.Statement.Table == table {

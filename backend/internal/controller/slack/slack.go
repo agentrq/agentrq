@@ -17,7 +17,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
@@ -34,6 +33,7 @@ import (
 type MCPManager interface {
 	SendPermissionVerdict(ctx context.Context, workspaceID int64, userID string, taskID int64, requestID, behavior string) error
 	SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string, attachments ...entity.Attachment)
+	AgentTaskBody(ctx context.Context, workspaceID int64, userID string, taskID, agentNoteID int64, body string) string
 }
 
 // CRUDRespondToTask is a minimal interface for responding to tasks.
@@ -651,7 +651,7 @@ func (c *controller) HandleSlashCommand(ctx context.Context, channelID string, t
 		}
 
 		if shouldNotifyMCP {
-			content := fmt.Sprintf("[Task %s]\n%s", monoflake.ID(resp.Task.ID).String(), crud.AppendSelfLearningNote(resp.Task.Body, ws.SelfLearningLoopNote))
+			content := fmt.Sprintf("[Task %s]\n%s", monoflake.ID(resp.Task.ID).String(), c.mcp.AgentTaskBody(ctx, link.WorkspaceID, ownerID, resp.Task.ID, resp.Task.AgentNoteID, resp.Task.Body))
 			if atts := formatSlackAttachments(resp.Task.Attachments); atts != "" {
 				content += "\n" + atts
 			}

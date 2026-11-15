@@ -48,7 +48,8 @@ function unionToolCalls(held, arriving) {
  * Scalar fields always come from the event — status, title and the rest are
  * exactly what it is reporting. Messages come from the event too, unless it
  * carries none and the current task does; tool calls are the union of both,
- * and toolCallCount the larger count.
+ * and toolCallCount the larger count. agentNote, which only the single-task
+ * read carries, is kept when the event has none.
  *
  * @param {object|null} current  the task the view is holding, if any
  * @param {object|null} incoming the task payload the event carried
@@ -66,6 +67,7 @@ export function mergeTaskUpdate(current, incoming) {
       merged[relation] = current[relation];
     }
   }
+  if (merged.agentNote === undefined && current.agentNote !== undefined) merged.agentNote = current.agentNote;
   const toolCalls = unionToolCalls(current.toolCalls, incoming.toolCalls);
   if (toolCalls !== undefined) merged.toolCalls = toolCalls;
   const count = Math.max(current.toolCallCount || 0, incoming.toolCallCount || 0, toolCalls?.length || 0);

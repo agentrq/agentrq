@@ -56,6 +56,12 @@ describe('mergeTaskUpdate', () => {
     expect(merged.toolCalls).toEqual([])
   })
 
+  it('keeps the note the agent was sent, which only the single-task read carries', () => {
+    expect(mergeTaskUpdate(task({ agentNote: 'Sent.' }), task({ status: 'completed' })).agentNote).toBe('Sent.')
+    expect(mergeTaskUpdate(task({ agentNote: 'Sent.' }), task({ agentNote: 'Newer.' })).agentNote).toBe('Newer.')
+    expect('agentNote' in mergeTaskUpdate(task(), task({ status: 'completed' }))).toBe(false)
+  })
+
   it('does not mutate the task on screen', () => {
     const current = task()
 
