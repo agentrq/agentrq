@@ -68,6 +68,8 @@ import WorkspaceSharing from '../src/components/WorkspaceSharing.vue';
 import CloneTaskModal from '../src/components/CloneTaskModal.vue';
 import TeamSkills from '../src/components/TeamSkills.vue';
 import TeamAnalyticsView from '../src/views/TeamAnalyticsView.vue';
+import SkillsView from '../src/views/SkillsView.vue';
+import TeamWorkspaceActions from '../src/components/TeamWorkspaceActions.vue';
 
 const alice = { userId: 'u1', name: 'Alice', picture: 'https://x/a.png' };
 const bob = { userId: 'u2', name: 'Bob' };
@@ -1112,15 +1114,71 @@ describe('a team\'s analytics', () => {
     await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
     expect(api.fetchTeamStats).toHaveBeenCalledWith('tm1', '7d', 0, 0, '');
     expect(text($('[data-test=team-analytics-scope]'))).toBe('All workspaces');
-    await click($('[data-test=team-analytics-tasks]'));
+    await click($('[data-test=team-actions-status-active]'));
     expect(here().fullPath).toBe('/tasks/active?team=tm1');
 
     await router.push('/team/analytics?team=tm1&workspace=Backend');
     await flush();
     expect(api.fetchTeamStats).toHaveBeenLastCalledWith('tm1', '7d', 0, 0, 'Backend');
+    expect(text($('h1'))).toBe('Backend / Analytics');
     expect(text($('[data-test=team-analytics-scope]'))).toBe('Backend');
-    await click($('[data-test=team-analytics-tasks]'));
+    await click($('[data-test=team-actions-status-active]'));
     expect(here().fullPath).toBe('/tasks/active?workspace=Backend&team=tm1');
+
+    await router.push('/team/analytics?team=tm1&workspace=Backend');
+    await flush();
+    await click($('[data-test=team-analytics-scope]'));
+    expect(here().fullPath).toBe('/tasks/active?workspace=Backend&team=tm1');
+  });
+
+  it('has the buttons a workspace page has: statuses, analytics and skills, the current one pressed', async () => {
+    api.fetchTeamStats.mockResolvedValue({ summary: {} });
+    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1&workspace=Backend' });
+    const pressed = (sel) => $(sel).classList.contains('border-black');
+    expect(pressed('[data-test=team-analytics]')).toBe(true);
+    expect(pressed('[data-test=team-skills-link]')).toBe(false);
+    expect($$('[data-test=team-actions-statuses] button').map((b) => b.getAttribute('aria-label'))).toEqual(['Active', 'Not Started', 'Ongoing', 'Completed', 'Scheduled']);
+    await click($('[data-test=team-skills-link]'));
+    expect(here().fullPath).toBe('/skills?workspace=Backend&team=tm1');
+    app.unmount();
+    api.fetchTeamSkills.mockResolvedValue({ skills: [] });
+    await mount(SkillsView, { path: '/skills?team=tm1&workspace=Backend' });
+    expect(pressed('[data-test=team-skills-link]')).toBe(true);
+    expect(pressed('[data-test=team-analytics]')).toBe(false);
+    await click($('[data-test=team-analytics]'));
+    expect(here().fullPath).toBe('/team/analytics?workspace=Backend&team=tm1');
+  });
+
+  it('offers no skills for the whole team, and its statuses open the whole team\'s lists', async () => {
+    await mount(TeamWorkspaceActions, { path: '/team/analytics?team=tm1' });
+    expect($('[data-test=team-skills-link]')).toBe(null);
+    await click($('[data-test=team-actions-status-completed]'));
+    expect(here().fullPath).toBe('/tasks/completed?team=tm1');
+  });
+
+  it('on a phone: the search opens the palette, and the statuses fold behind a toggle that closes on a pick', async () => {
+    await mount(TeamWorkspaceActions, { path: '/team/analytics?team=tm1&workspace=Backend', props: { current: 'analytics' } });
+    const opened = vi.fn();
+    window.addEventListener('open-command-palette', opened);
+    await click($('[data-test=team-actions-search]'));
+    expect(opened).toHaveBeenCalledTimes(1);
+    window.removeEventListener('open-command-palette', opened);
+    const strip = () => $('[data-test=team-actions-statuses]');
+    expect(strip().classList.contains('hidden')).toBe(true);
+    await click($('[data-test=team-actions-filters]'));
+    expect(strip().classList.contains('absolute')).toBe(true);
+    const status = $('[data-test=team-actions-status-ongoing]');
+    status.dispatchEvent(new MouseEvent('mouseenter'));
+    status.dispatchEvent(new MouseEvent('mouseleave'));
+    await click(status);
+    expect(here().fullPath).toBe('/tasks/ongoing?workspace=Backend&team=tm1');
+    expect(strip().classList.contains('hidden')).toBe(true);
+  });
+
+  it('titles the whole team\'s numbers Analytics alone', async () => {
+    api.fetchTeamStats.mockResolvedValue({ summary: {} });
+    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
+    expect(text($('h1'))).toBe('Analytics');
   });
 
   it('loads a custom range once both ends are set', async () => {
@@ -1272,6 +1330,18 @@ describe('a team\'s skills', () => {
     await mount(TeamSkills, { path: '/skills/deploy?team=tm1&workspace=backend', props: { name: 'deploy' } });
     expect(text($('[data-test=team-skill-error]'))).toBe('No such skill');
     expect(here().path).toBe('/skills/deploy');
+  });
+
+  it('names the team workspace in the page title, which goes back to its tasks', async () => {
+    api.fetchTeamSkills.mockResolvedValue({ skills: [] });
+    await mount(SkillsView, { path: '/skills?team=tm1&workspace=backend' });
+    expect(text($('h1'))).toBe('backend / Skills');
+    await click($('[data-test=team-skills-workspace]'));
+    expect(here().fullPath).toBe('/tasks/active?workspace=backend&team=tm1');
+    app.unmount();
+    await mount(SkillsView, { path: '/skills?team=tm1' });
+    expect(text($('h1'))).toBe('Skills');
+    expect($('[data-test=team-skills-workspace]')).toBe(null);
   });
 
   it('has no list across the team: without a team workspace it asks for one and reads nothing', async () => {
