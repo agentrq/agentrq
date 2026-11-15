@@ -256,7 +256,7 @@ func startAgentWith(t *testing.T, rec *recorder, o agentOpts) *agent {
 	if o.deps != nil {
 		o.deps(&deps)
 	}
-	h := &Handler{Hub: NewHub(), Auth: fakeAuth{}, Enabled: func() bool { return true }, NewEngine: NewEngineFactory(deps)}
+	h := &Handler{Hub: NewHub(), Auth: fakeAuth{}, NewEngine: NewEngineFactory(deps)}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	hdr := bridgeHeader("")

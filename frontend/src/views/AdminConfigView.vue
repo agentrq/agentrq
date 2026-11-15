@@ -100,7 +100,7 @@ const busy = ref(false)
 
 /** The names a block is known by, where its key does not read as one. */
 const TITLES = {
-  acp: 'ACP', ddos: 'DDoS', mcp: 'MCP', pubsub: 'Pub/Sub', ratelimit: 'Rate limit',
+  ddos: 'DDoS', mcp: 'MCP', pubsub: 'Pub/Sub', ratelimit: 'Rate limit',
   s3: 'S3', smtp: 'SMTP', ssl: 'SSL', webPush: 'Web push',
 }
 
@@ -120,7 +120,7 @@ const CATEGORIES = [
   ['Messaging', ['smtp', 'slack', 'webPush']],
   ['Storage', ['storage', 's3', 'artifacts']],
   ['Features', ['skills', 'memory', 'pano', 'hooks', 'teams']],
-  ['Protocols', ['mcp', 'acp', 'pubsub']],
+  ['Protocols', ['mcp', 'pubsub']],
 ]
 
 const groups = computed(() => {

@@ -179,12 +179,6 @@ type (
 			// OpenAI's domain verification token for a plugin submission.
 			OpenAIAppsChallenge string `yaml:"openaiAppsChallenge"`
 		} `yaml:"mcp"`
-		// Native ACP: the endpoints acp-gateway uses in native mode.
-		ACP struct {
-			V1 struct {
-				Enabled bool `yaml:"enabled"`
-			} `yaml:"v1"`
-		} `yaml:"acp"`
 		ConfigSvc config.Service `yaml:"-"` // injected, not from YAML
 		// DB is the database Load opened and migrated; nil, New opens it.
 		DB dbconn.DBConn `yaml:"-"`
@@ -924,7 +918,6 @@ func New(cfg Config) (*App, error) {
 	// Native ACP v1, for acp-gateway in native mode.
 	acpV1Hub := acpv1.NewHub()
 	mountACP(mux, acpDeps{
-		enabled:    cfg.ACP.V1.Enabled,
 		hub:        acpV1Hub,
 		auth:       acpTokenAuth{tokens: tokenSvc, workspaces: crudCtrl},
 		counter:    crudCtrl,
@@ -998,7 +991,7 @@ func newLauncher(cfg Config, secure bool, c agentlaunch.Crud, agents agentlaunch
 		Tokens:   tokens,
 		URLs:     agentlaunch.URLs{Base: cfg.App.BaseURL, Domain: cfg.App.Domain, Secure: secure},
 		// Only v1 exists on this server yet; v2 stays off.
-		ACPEnabled: func(v string) bool { return v == "1" && cfg.ACP.V1.Enabled },
+		ACPEnabled: func(v string) bool { return v == "1" },
 	}
 }
 

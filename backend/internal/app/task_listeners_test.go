@@ -159,7 +159,7 @@ func openAppListen(t *testing.T, srv *httptest.Server, user int64, uri string) f
 // endpoint hears of a task change published on the CRUD topic. Another
 // account's token cannot follow that workspace at all.
 func TestTheAppTellsAListenOfATaskChange(t *testing.T) {
-	a := newTestApp(t, "false")
+	a := newTestApp(t)
 	const owner, stranger, workspace, task = int64(31), int64(32), int64(41), int64(51)
 	db, err := gorm.Open(sqlite.Open(os.Getenv("AGENTRQ_SQLITE_DSN")), &gorm.Config{})
 	if err != nil {

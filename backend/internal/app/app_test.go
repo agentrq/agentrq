@@ -353,7 +353,7 @@ func TestStaticHandlerServesPrecompressedCopies(t *testing.T) {
 // The whole app serves the web build it is given, the index.html behind every
 // app route included, without reading the working directory.
 func TestTheAppServesItsWebBuild(t *testing.T) {
-	a := newTestApp(t, "true")
+	a := newTestApp(t)
 	for _, tc := range []struct {
 		path string
 		code int
