@@ -23,10 +23,12 @@ import { useToasts } from '../src/composables/useToasts'
 import AdminConfigView from '../src/views/AdminConfigView.vue'
 
 const CONFIGS = '/admin/v1/configurations'
+// What the server sends for a secret that is set.
+const MASK = '••••••••'
 
 const blocks = () => [
-  { key: 'smtp', value: { enabled: true, host: 'mail', port: 587, password: 'pw', from: null } },
-  { key: 'auth', value: { jwtSecret: 'j', allowedRedirectDomains: ['a.com', 'b.com'], google: { clientId: 'g' } } },
+  { key: 'smtp', value: { enabled: true, host: 'mail', port: 587, password: MASK, from: null } },
+  { key: 'auth', value: { jwtSecret: MASK, allowedRedirectDomains: ['a.com', 'b.com'], google: { clientId: 'g', clientSecret: '' } } },
   { key: 'webPush', value: { subscriber: 'mailto:x' } },
   { key: 'teams', value: {} },
   { key: 'future', value: { on: true } },
@@ -162,7 +164,7 @@ describe('AdminConfigView', () => {
   })
 
   it('saves an edited block as its own types, then shows it as stored', async () => {
-    const saved = { enabled: false, host: 'smtp.example.com', port: 2525, password: 'pw', from: '' }
+    const saved = { enabled: false, host: 'smtp.example.com', port: 2525, password: MASK, from: '' }
     const seen = serve({
       [`GET ${CONFIGS}`]: [[{ configurations: blocks() }, 200]],
       [`PUT ${CONFIGS}/smtp`]: [[{ key: 'smtp', value: saved }, 200]],
@@ -202,6 +204,40 @@ describe('AdminConfigView', () => {
     await nextTick()
     await type(q(el, 'config-auth.allowedRedirectDomains'), 'x.com, , y.com')
     expect(q(el, 'config-auth.allowedRedirectDomains').value).toBe('x.com, y.com')
+  })
+
+  it('never shows a stored secret, and keeps it unless a new one is typed', async () => {
+    const seen = serve({
+      [`GET ${CONFIGS}`]: [[{ configurations: blocks() }, 200]],
+      [`PUT ${CONFIGS}/smtp`]: [[{ key: 'smtp', value: blocks()[0].value }, 200]],
+    })
+    const el = await mount()
+    await openTab(el, 'smtp')
+    const input = q(el, 'config-smtp.password')
+    expect(input.value).toBe('')
+    expect(input.placeholder).toBe('Set. Type a new value to replace it')
+    q(el, 'config-reveal-smtp.password').click()
+    await nextTick()
+    expect(input.value).toBe('')
+
+    // Typed and emptied again, it is still the stored secret: nothing to save.
+    await type(input, 'x')
+    expect(qa(el, 'config-dirty')).toHaveLength(1)
+    await type(input, '')
+    expect(qa(el, 'config-dirty')).toHaveLength(0)
+
+    await type(input, 'n3w$%#!')
+    expect(input.value).toBe('n3w$%#!')
+    q(el, 'config-save').click()
+    await settle()
+    expect(JSON.parse(seen[1].init.body).value.password).toBe('n3w$%#!')
+    await nextTick()
+    expect(input.value).toBe('')
+
+    // An unset secret is an empty field, with nothing to keep.
+    await openTab(el, 'auth')
+    expect(q(el, 'config-auth.google.clientSecret').placeholder).toBe('')
+    expect(q(el, 'config-auth.jwtSecret').value).toBe('')
   })
 
   it("shows a refused save's reason and keeps the edit", async () => {

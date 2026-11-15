@@ -318,7 +318,7 @@ func TestListAndUpdate(t *testing.T) {
 	for _, b := range list {
 		keys = append(keys, b.Key+"="+string(b.Value))
 	}
-	if got := strings.Join(keys, " "); got != `auth={"jwtSecret":"jwt"} memory={"maxFileSize":1048576} smtp={"host":"mail","port":587}` {
+	if got := strings.Join(keys, " "); got != `auth={"jwtSecret":"••••••••"} memory={"maxFileSize":1048576} smtp={"host":"mail","port":587}` {
 		t.Fatalf("List = %s", got)
 	}
 
@@ -326,7 +326,7 @@ func TestListAndUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := `{"jwtSecret":"new","n":12345678901234567890}`; string(got.Value) != want {
+	if want := `{"jwtSecret":"••••••••","n":12345678901234567890}`; string(got.Value) != want {
 		t.Fatalf("Update = %s, want %s", got.Value, want)
 	}
 	if rows := plainRows(t, db); rows["auth"] != `{"jwtSecret":"new","n":12345678901234567890}` {
@@ -354,6 +354,79 @@ func TestListAndUpdate(t *testing.T) {
 		if _, err := c.Update(ctx, entity.UpdateAppConfigurationRequest{Key: key, Value: json.RawMessage(`{}`)}); !errors.Is(err, base.ErrNotFound) {
 			t.Errorf("Update %s: %v", key, err)
 		}
+	}
+}
+
+// A secret never leaves the server, and a save cannot overwrite one by
+// mistake: the mask, or leaving it out, keeps it; only a new value replaces
+// it, and an empty one clears it. Nested blocks alike.
+func TestSecretsAreMaskedAndKept(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	yaml := `
+smtp:
+  host: mail
+  password: pw$%#!
+  unsetToken: ""
+s3:
+  bucket: b
+  creds:
+    secretAccessKey: sk
+    accessKey: ak
+`
+	c := newTestController(t, db, testBase(t, yaml), nil)
+	if _, err := c.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := c.List(ctx)
+	shown := map[string]string{}
+	for _, b := range list {
+		shown[b.Key] = string(b.Value)
+	}
+	if shown["smtp"] != `{"host":"mail","password":"••••••••","unsetToken":""}` || shown["s3"] != `{"bucket":"b","creds":{"accessKey":"ak","secretAccessKey":"••••••••"}}` {
+		t.Fatalf("List = %v", shown)
+	}
+
+	update := func(key, value string) string {
+		t.Helper()
+		got, err := c.Update(ctx, entity.UpdateAppConfigurationRequest{Key: key, Value: json.RawMessage(value)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(got.Value), "pw$") || strings.Contains(string(got.Value), "new-pw") {
+			t.Fatalf("Update sent a secret back: %s", got.Value)
+		}
+		return plainRows(t, db)[key]
+	}
+	// Saved as shown: the mask keeps the secret.
+	if got := update("smtp", `{"host":"mail2","password":"••••••••","unsetToken":""}`); got != `{"host":"mail2","password":"pw$%#!","unsetToken":""}` {
+		t.Fatalf("mask: %s", got)
+	}
+	// Left out: kept too.
+	if got := update("smtp", `{"host":"mail3"}`); got != `{"host":"mail3","password":"pw$%#!","unsetToken":""}` {
+		t.Fatalf("left out: %s", got)
+	}
+	// A mask with nothing behind it is unset, never stored as the mask.
+	if got := update("smtp", `{"host":"mail3","otherToken":"••••••••"}`); got != `{"host":"mail3","otherToken":"","password":"pw$%#!","unsetToken":""}` {
+		t.Fatalf("mask over nothing: %s", got)
+	}
+	// A new value replaces it; an empty one clears it.
+	if got := update("smtp", `{"password":"new-pw"}`); got != `{"otherToken":"","password":"new-pw","unsetToken":""}` {
+		t.Fatalf("new value: %s", got)
+	}
+	if got := update("smtp", `{"password":""}`); got != `{"otherToken":"","password":"","unsetToken":""}` {
+		t.Fatalf("cleared: %s", got)
+	}
+	// Nested: kept when its group is sent masked, or left out.
+	if got := update("s3", `{"bucket":"b2","creds":{"accessKey":"ak2","secretAccessKey":"••••••••"}}`); got != `{"bucket":"b2","creds":{"accessKey":"ak2","secretAccessKey":"sk"}}` {
+		t.Fatalf("nested mask: %s", got)
+	}
+	if got := update("s3", `{"bucket":"b3"}`); got != `{"bucket":"b3","creds":{"secretAccessKey":"sk"}}` {
+		t.Fatalf("nested left out: %s", got)
+	}
+	// A group sent as something else is the operator's to replace.
+	if got := update("s3", `{"creds":"none"}`); got != `{"creds":"none"}` {
+		t.Fatalf("group replaced: %s", got)
 	}
 }
 

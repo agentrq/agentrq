@@ -10,7 +10,7 @@
       <fieldset v-if="isGroup(fields[key])" data-test="config-group"
         class="border border-gray-200 dark:border-zinc-800 rounded-sm p-4 flex flex-col gap-4">
         <legend class="px-1 text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400">{{ label(key) }}</legend>
-        <AdminConfigFields :fields="fields[key]" :path="`${path}.${key}`" />
+        <AdminConfigFields :fields="fields[key]" :original="original[key]" :path="`${path}.${key}`" />
       </fieldset>
 
       <div v-else-if="typeof fields[key] === 'boolean'" class="flex items-center justify-between gap-4">
@@ -33,8 +33,9 @@
           <span class="text-[10px] font-mono text-gray-400 dark:text-zinc-500">{{ path }}.{{ key }}</span>
         </span>
         <span class="relative">
-          <input :data-test="`config-${path}.${key}`" :type="inputType(key, fields[key])" :value="shown(fields[key])"
-            @input="fields[key] = parse($event.target.value, fields[key])" autocomplete="off" spellcheck="false"
+          <input :data-test="`config-${path}.${key}`" :type="inputType(key, fields[key])" :value="fields[key] === SECRET_MASK ? '' : shown(fields[key])"
+            :placeholder="fields[key] === SECRET_MASK ? 'Set. Type a new value to replace it' : ''"
+            @input="fields[key] = parse($event.target.value, fields[key], original[key])" autocomplete="new-password" spellcheck="false"
             class="w-full px-3 py-2 text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-md text-gray-900 dark:text-zinc-100 focus:outline-none focus:border-gray-400 dark:focus:border-zinc-500"
             :class="isSecret(key, fields[key]) && 'pr-9'" />
           <button v-if="isSecret(key, fields[key])" type="button" :data-test="`config-reveal-${path}.${key}`"
@@ -68,10 +69,17 @@ defineOptions({ name: 'AdminConfigFields' })
 
 const props = defineProps({
   fields: { type: Object, required: true },
+  // The block as stored, the same shape as fields: it tells a secret that is
+  // set from one being typed.
+  original: { type: Object, required: true },
   path: { type: String, required: true },
 })
 
 const SECRET = /secret|password|token|privatekey|apikey/i
+// What the server sends for a secret that is set, never the secret itself;
+// sent back, it keeps the secret.
+const SECRET_MASK = '••••••••'
+
 
 // The secret fields shown in the clear, by path, so a tab's are its own.
 const revealed = reactive(new Set())
@@ -106,7 +114,9 @@ function shown(value) {
 }
 
 /** Reads a field back as the type it had. */
-function parse(text, was) {
+function parse(text, was, stored) {
+  // Emptied, a secret that is set stays as it is.
+  if (text === '' && stored === SECRET_MASK) return SECRET_MASK
   if (typeof was === 'number') return text === '' ? 0 : Number(text)
   if (Array.isArray(was)) return text.split(',').map((s) => s.trim()).filter(Boolean)
   if (was === null && text === '') return null

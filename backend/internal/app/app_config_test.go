@@ -149,6 +149,21 @@ func TestLoadStoresTheConfigThenPrefersIt(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
+			// The page never gets the JWT secret, and saving auth as shown keeps it.
+			blocks, err := cfg.AppConfig.List(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, b := range blocks {
+				if strings.Contains(string(b.Value), "jwt-from-env") {
+					t.Fatalf("%s sent a secret: %s", b.Key, b.Value)
+				}
+				if b.Key == "auth" {
+					if _, err := cfg.AppConfig.Update(context.Background(), entity.UpdateAppConfigurationRequest{Key: "auth", Value: b.Value}); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
 			_, err = cfg.AppConfig.Update(context.Background(), entity.UpdateAppConfigurationRequest{
 				Key: "memory", Value: json.RawMessage(`{"maxFileSize":-1}`),
 			})

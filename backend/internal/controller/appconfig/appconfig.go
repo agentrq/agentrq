@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 
 	zlog "github.com/rs/zerolog/log"
@@ -37,6 +38,14 @@ var (
 	// with, and the root token the admin pages are signed in with.
 	envOnlyFields = map[string][]string{"auth": {"rootAccessToken", "workspaceTokenKey"}}
 )
+
+// SecretMask stands in for a secret that is set: a secret is never sent out,
+// and a save that sends the mask back, or leaves the field out, keeps it.
+const SecretMask = "••••••••"
+
+// secretField names a setting that holds a secret: a password, a token, a
+// private or API key, a client or signing secret.
+var secretField = regexp.MustCompile(`(?i)secret|password|token|privatekey|apikey`)
 
 type (
 	// Controller reads and writes the stored config.
@@ -114,7 +123,7 @@ func (c *controller) List(ctx context.Context) ([]entity.AppConfiguration, error
 	out := make([]entity.AppConfiguration, 0, len(stored))
 	for _, key := range c.keys() {
 		if val, ok := stored[key]; ok {
-			out = append(out, entity.AppConfiguration{Key: key, Value: val})
+			out = append(out, entity.AppConfiguration{Key: key, Value: masked(val)})
 		}
 	}
 	return out, nil
@@ -128,12 +137,16 @@ func (c *controller) Update(ctx context.Context, rq entity.UpdateAppConfiguratio
 	if err != nil {
 		return nil, &entity.AppConfigurationError{Message: rq.Key + ": the value must be a JSON object"}
 	}
-	val, _ := json.Marshal(strip(rq.Key, block))
-
 	stored, err := c.stored(ctx)
 	if err != nil {
 		return nil, err
 	}
+	old := map[string]any{}
+	if prev, ok := stored[rq.Key]; ok {
+		old, _ = decodeObject(prev)
+	}
+	keepSecrets(strip(rq.Key, block), old)
+	val, _ := json.Marshal(block)
 	stored[rq.Key] = val
 	next, err := config.Overlay(c.base, stored)
 	if err == nil {
@@ -147,7 +160,57 @@ func (c *controller) Update(ctx context.Context, rq entity.UpdateAppConfiguratio
 	if err := c.db.Conn(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(&row).Error; err != nil {
 		return nil, err
 	}
-	return &entity.AppConfiguration{Key: rq.Key, Value: val}, nil
+	return &entity.AppConfiguration{Key: rq.Key, Value: masked(val)}, nil
+}
+
+// keepSecrets gives each secret in old that block sends back as the mask, or
+// leaves out, its stored value; nested blocks alike. A mask with nothing
+// stored behind it is unset. An empty string clears a secret.
+func keepSecrets(block, old map[string]any) {
+	for k, ov := range old {
+		if oldGroup, ok := ov.(map[string]any); ok {
+			group, ok := block[k].(map[string]any)
+			if _, present := block[k]; !present {
+				group, ok = map[string]any{}, true
+			}
+			if ok {
+				keepSecrets(group, oldGroup)
+				if len(group) > 0 {
+					block[k] = group
+				}
+			}
+			continue
+		}
+		if v, present := block[k]; secretField.MatchString(k) && (!present || v == SecretMask) {
+			block[k] = ov
+		}
+	}
+	for k, v := range block {
+		if v == SecretMask {
+			block[k] = ""
+		}
+	}
+}
+
+// masked is a block with each secret that is set replaced by the mask.
+func masked(val []byte) json.RawMessage {
+	block, _ := decodeObject(val)
+	mask(block)
+	out, _ := json.Marshal(block)
+	return out
+}
+
+func mask(block map[string]any) {
+	for k, v := range block {
+		switch v := v.(type) {
+		case map[string]any:
+			mask(v)
+		case string:
+			if v != "" && secretField.MatchString(k) {
+				block[k] = SecretMask
+			}
+		}
+	}
 }
 
 // stored reads every row, decrypted, without the fields kept in env vars.

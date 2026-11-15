@@ -70,7 +70,7 @@
                 </button>
               </div>
             </div>
-            <AdminConfigFields :fields="drafts[current.key]" :path="current.key" />
+            <AdminConfigFields :fields="drafts[current.key]" :original="current.value" :path="current.key" />
           </section>
         </div>
       </div>
@@ -115,8 +115,8 @@ function title(key) {
  * a later release adds, is listed under Other, so it is never left out.
  */
 const CATEGORIES = [
-  ['General', ['app', 'network', 'ssl']],
-  ['Security', ['auth', 'ddos', 'ratelimit']],
+  ['General', ['app']],
+  ['Security', ['auth', 'network', 'ssl', 'ddos', 'ratelimit']],
   ['Messaging', ['smtp', 'slack', 'webPush']],
   ['Storage', ['storage', 's3', 'artifacts']],
   ['Features', ['skills', 'memory', 'pano', 'hooks', 'teams']],
