@@ -86,7 +86,7 @@
  * The operator's config: one vertical tab per block of the server's config,
  * each a form built from the block as the database holds it.
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, provide, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AdminLayout from '../components/AdminLayout.vue'
 import AdminConfigFields from '../components/AdminConfigFields.vue'
@@ -136,6 +136,10 @@ const groups = computed(() => {
 })
 
 const current = computed(() => blocks.value?.find((b) => b.key === active.value))
+
+// The server's base URL as stored, for the callback URLs sign-in providers
+// need; the page's own origin until the config has loaded.
+provide('configBaseUrl', computed(() => blocks.value?.find((b) => b.key === 'app')?.value?.baseUrl || ''))
 const stored = (key) => blocks.value.find((b) => b.key === key).value
 const dirty = (key) => JSON.stringify(drafts[key]) !== JSON.stringify(stored(key))
 const copy = (v) => JSON.parse(JSON.stringify(v))

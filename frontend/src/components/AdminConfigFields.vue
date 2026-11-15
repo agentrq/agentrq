@@ -7,7 +7,7 @@
 <template>
   <!-- A container, so a row stacks wherever it is narrow: on a phone, or in a group's card. -->
   <div class="@container divide-y divide-gray-100 dark:divide-zinc-800">
-    <template v-for="key in Object.keys(fields)" :key="key">
+    <template v-for="key in orderedKeys" :key="key">
       <fieldset v-if="isGroup(fields[key])" data-test="config-group" class="py-6 first:pt-0 last:pb-0">
         <legend class="float-left w-full">
           <span class="text-sm/6 font-semibold text-gray-900 dark:text-white">{{ label(key) }}</span>
@@ -16,6 +16,43 @@
         <p v-if="help(key)" data-test="config-help" class="clear-both text-xs/5 text-gray-500 dark:text-zinc-400">{{ help(key) }}</p>
         <div class="clear-both mt-4 rounded-lg border border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-white/[0.02] px-4 py-5 sm:px-6">
           <AdminConfigFields :fields="fields[key]" :original="original[key]" :path="`${path}.${key}`" />
+        </div>
+      </fieldset>
+
+      <fieldset v-else-if="isList(key, fields[key])" data-test="config-list" class="py-6 first:pt-0 last:pb-0">
+        <legend class="float-left w-full">
+          <span class="text-sm/6 font-semibold text-gray-900 dark:text-white">{{ label(key) }}</span>
+          <span class="ml-2 text-[10px] font-mono text-gray-400 dark:text-zinc-500">{{ path }}.{{ key }}</span>
+        </legend>
+        <p v-if="help(key)" data-test="config-help" class="clear-both text-xs/5 text-gray-500 dark:text-zinc-400">{{ help(key) }}</p>
+        <div class="clear-both mt-4 flex flex-col gap-4">
+          <div v-for="(item, i) in fields[key]" :key="i" data-test="config-list-item"
+            class="rounded-lg border border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-white/[0.02] px-4 py-5 sm:px-6">
+            <div class="mb-5 flex items-center justify-between gap-4">
+              <span class="min-w-0 truncate text-sm/6 font-semibold text-gray-900 dark:text-white">{{ item.name || `New ${list(key).noun}` }}</span>
+              <button type="button" data-test="config-list-remove" @click="fields[key].splice(i, 1)"
+                class="shrink-0 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-1.5 text-[11px] font-black uppercase tracking-widest text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10">
+                Remove
+              </button>
+            </div>
+            <div v-if="list(key).callback" data-test="config-callback-url"
+              class="mb-5 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2.5">
+              <p class="text-xs/5 font-semibold text-gray-900 dark:text-white">Callback URL</p>
+              <p class="text-xs/5 text-gray-500 dark:text-zinc-400">Register this as the redirect (callback) URL of the OAuth app at the provider.</p>
+              <div class="mt-1.5 flex items-center gap-2">
+                <code class="min-w-0 flex-1 break-all font-mono text-xs/5 text-gray-900 dark:text-zinc-100">{{ list(key).callback(item) }}</code>
+                <button type="button" data-test="config-callback-copy" :disabled="!item.id" @click="copy(list(key).callback(item))"
+                  class="shrink-0 rounded-lg border border-gray-200 dark:border-white/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/10 disabled:opacity-50">
+                  Copy
+                </button>
+              </div>
+            </div>
+            <AdminConfigFields :fields="item" :original="storedItem(key, item)" :path="`${path}.${key}.${i}`" />
+          </div>
+          <button type="button" data-test="config-list-add" @click="fields[key].push(list(key).item())"
+            class="self-start rounded-lg border border-dashed border-gray-300 dark:border-white/15 px-3 py-2 text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5">
+            Add {{ list(key).noun }}
+          </button>
         </div>
       </fieldset>
 
@@ -61,7 +98,18 @@
             class="shrink-0 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/10">
             Generate
           </button>
+          <template v-if="isIcon(key, fields[key])">
+            <img v-if="fields[key]" :src="fields[key]" alt="" data-test="config-icon-preview" width="20" height="20"
+              class="size-9 shrink-0 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 object-contain p-2" />
+            <label :data-test="`config-upload-${path}.${key}`"
+              class="shrink-0 cursor-pointer rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 flex items-center text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/10 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-gray-900 dark:has-[:focus-visible]:outline-white">
+              {{ uploading.has(key) ? 'Uploading…' : 'Upload' }}
+              <input type="file" class="sr-only" accept="image/png,image/jpeg,image/gif,image/webp" :disabled="uploading.has(key)"
+                :aria-label="`Upload ${label(key).toLowerCase()}`" @change="upload(key, $event)" />
+            </label>
+          </template>
         </div>
+        <p v-if="uploadErrors[key]" role="alert" data-test="config-upload-error" class="text-xs/5 text-red-600 dark:text-red-400 @xl:col-start-2">{{ uploadErrors[key] }}</p>
       </div>
     </template>
   </div>
@@ -75,8 +123,10 @@
  * under its name. A setting added to the server appears here as
  * it is, with no change to the page. Edits are made in place on `fields`.
  */
-import { reactive } from 'vue'
+import { computed, inject, reactive } from 'vue'
 import { CONFIG_HELP } from '../utils/adminConfigHelp'
+import { uploadAdminLoginIcon } from '../api'
+import { useToasts } from '../composables/useToasts'
 
 defineOptions({ name: 'AdminConfigFields' })
 
@@ -118,11 +168,95 @@ function generate(key) {
   revealed.add(`${props.path}.${key}`)
 }
 
-/** A text setting whose name says it is a secret: hidden until revealed. */
-const isSecret = (key, value) => typeof value !== 'number' && SECRET.test(key)
+/** A text setting whose name says it is a secret, never a link: hidden until revealed. */
+const isSecret = (key, value) => typeof value !== 'number' && SECRET.test(key) && !key.endsWith('Url')
+
+/**
+ * A setting's path with no list positions, as CONFIG_HELP and LISTS name it:
+ * auth.oauth2Providers.0.clientId is auth.oauth2Providers.clientId.
+ */
+const settingPath = (key) => `${props.path}.${key}`.replace(/\.\d+(?=\.|$)/g, '')
 
 /** The setting's one line of help, if it has one. */
-const help = (key) => CONFIG_HELP[`${props.path}.${key}`]
+const help = (key) => CONFIG_HELP[settingPath(key)]
+
+/**
+ * Settings shown right after another, rather than where the server's JSON,
+ * sorted by name, puts them: the setting, and the one it follows.
+ */
+const AFTER = { 'auth.mcpJwtSecret': 'apiJwtSecret' }
+
+const orderedKeys = computed(() => {
+  const keys = Object.keys(props.fields)
+  for (const key of [...keys]) {
+    const anchor = AFTER[settingPath(key)]
+    if (!anchor || !keys.includes(anchor)) continue
+    keys.splice(keys.indexOf(key), 1)
+    keys.splice(keys.indexOf(anchor) + 1, 0, key)
+  }
+  return keys
+})
+
+/**
+ * The lists of blocks the page edits, such as sign-in providers: what one is
+ * called, and a new one's settings. A list not named here is edited comma
+ * separated, like any other.
+ */
+// The server's app.baseUrl, as stored, which a callback URL starts with.
+const baseUrl = inject('configBaseUrl', computed(() => ''))
+
+const LISTS = {
+  'auth.oauth2Providers': {
+    noun: 'provider',
+    callback: (item) => `${(baseUrl.value || window.location.origin).replace(/\/+$/, '')}/api/v1/auth/oauth2/${item.id || '<id>'}/callback`,
+    item: () => ({
+      id: '', name: '', clientId: '', clientSecret: '', authUrl: '', tokenUrl: '', userInfoUrl: '',
+      scopes: ['openid', 'email', 'profile'], iconUrl: '',
+    }),
+  },
+}
+
+const list = (key) => LISTS[settingPath(key)]
+const isList = (key, value) => Array.isArray(value) && !!list(key)
+
+/** The stored block with item's id, which tells its set secrets apart. */
+function storedItem(key, item) {
+  const stored = props.original?.[key]
+  return (Array.isArray(stored) && stored.find((o) => o && item.id && o.id === item.id)) || {}
+}
+
+const { addToast } = useToasts()
+
+async function copy(text) {
+  try {
+    await navigator.clipboard.writeText(text)
+    addToast('Copied the callback URL.', 'success')
+  } catch {
+    addToast('Could not copy. Select the URL and copy it.', 'error')
+  }
+}
+
+// An icon a sign-in button shows: the server resizes an upload and keeps it.
+const isIcon = (key, value) => key === 'iconUrl' && typeof value === 'string'
+const uploading = reactive(new Set())
+const uploadErrors = reactive({})
+
+async function upload(key, event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  uploading.add(key)
+  uploadErrors[key] = ''
+  try {
+    const url = await uploadAdminLoginIcon(file)
+    if (url === null) uploadErrors[key] = 'The admin session has ended. Sign in again to upload.'
+    else props.fields[key] = url
+  } catch (err) {
+    uploadErrors[key] = err.message
+  } finally {
+    uploading.delete(key)
+  }
+}
 const inputId = (key) => `config-input-${props.path}.${key}`
 const helpId = (key) => `config-help-${props.path}.${key}`
 

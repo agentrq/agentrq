@@ -113,3 +113,61 @@ func TestAdminConfigRoutesNeedTheStoredConfig(t *testing.T) {
 		t.Fatalf("list without a stored config = %d, want 404", status)
 	}
 }
+
+// fakeLoginIcons records the image that reaches it and answers with err.
+type fakeLoginIcons struct {
+	err  error
+	data []byte
+}
+
+func (f *fakeLoginIcons) Upload(_ context.Context, rq entity.UploadLoginIconRequest) (*entity.UploadLoginIconResponse, error) {
+	f.data = rq.Data
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &entity.UploadLoginIconResponse{URL: "https://cdn.example/login-icons/0123456789abcdef"}, nil
+}
+
+func loginIconApp(icons *fakeLoginIcons) (*fiber.App, map[string]string) {
+	app := fiber.New()
+	h := &handler{rootToken: "s3cret", appConfig: &fakeAppConfig{}}
+	if icons != nil {
+		h.loginIcons = icons
+	}
+	h.registerAdminRoutes(app)
+	return app, map[string]string{"Authorization": "Bearer " + h.adminToken(time.Now().Add(time.Minute)), "Content-Type": "image/png"}
+}
+
+func TestAdminUploadsALoginIcon(t *testing.T) {
+	icons := &fakeLoginIcons{}
+	app, auth := loginIconApp(icons)
+	if status, _ := hookRequest(t, app, http.MethodPost, "/admin/v1/login-icons", []byte("png"), nil); status != http.StatusUnauthorized {
+		t.Errorf("without the admin session = %d, want 401", status)
+	}
+	status, body := hookRequest(t, app, http.MethodPost, "/admin/v1/login-icons", []byte("png"), auth)
+	if want := `{"url":"https://cdn.example/login-icons/0123456789abcdef"}`; status != http.StatusCreated || body != want {
+		t.Fatalf("upload = %d %s, want 201 %s", status, body, want)
+	}
+	if string(icons.data) != "png" {
+		t.Errorf("the controller got %q, want the body", icons.data)
+	}
+	if status, _ := hookRequest(t, app, http.MethodPost, "/admin/v1/login-icons", nil, auth); status != http.StatusBadRequest {
+		t.Errorf("an empty upload = %d, want 400", status)
+	}
+
+	refused := &fakeLoginIcons{err: &entity.AppConfigurationError{Message: "the icon must be a PNG"}}
+	app, auth = loginIconApp(refused)
+	if status, body := hookRequest(t, app, http.MethodPost, "/admin/v1/login-icons", []byte("x"), auth); status != http.StatusUnprocessableEntity || !json.Valid([]byte(body)) {
+		t.Errorf("a refused icon = %d %s, want 422", status, body)
+	}
+
+	app, auth = loginIconApp(&fakeLoginIcons{err: errors.New("bucket unavailable")})
+	if status, _ := hookRequest(t, app, http.MethodPost, "/admin/v1/login-icons", []byte("x"), auth); status != http.StatusInternalServerError {
+		t.Errorf("a failing store = %d, want 500", status)
+	}
+
+	app, auth = loginIconApp(nil)
+	if status, _ := hookRequest(t, app, http.MethodPost, "/admin/v1/login-icons", []byte("x"), auth); status != http.StatusNotFound {
+		t.Errorf("with no icon store = %d, want 404", status)
+	}
+}

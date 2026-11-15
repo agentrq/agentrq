@@ -49,6 +49,7 @@ export function providerLoginUrl(route, redirect) {
 const LOGIN_ERRORS = {
   githubEmailUnverified: 'Verify an email address on GitHub, then sign in again.',
   googleEmailUnverified: 'Verify your email address with Google, then sign in again.',
+  oauth2EmailUnverified: 'Verify your email address with the sign-in provider, then sign in again.',
 }
 
 /**

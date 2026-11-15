@@ -277,12 +277,14 @@ Every file is kept at a key that names its workspace and task, or its account an
     "Effect": "Allow",
     "Principal": "*",
     "Action": "s3:GetObject",
-    "Resource": ["arn:aws:s3:::<bucket>/artifacts/*", "arn:aws:s3:::<bucket>/skills/*", "arn:aws:s3:::<bucket>/pano/*", "arn:aws:s3:::<bucket>/avatars/*"]
+    "Resource": ["arn:aws:s3:::<bucket>/artifacts/*", "arn:aws:s3:::<bucket>/skills/*", "arn:aws:s3:::<bucket>/pano/*", "arn:aws:s3:::<bucket>/avatars/*", "arn:aws:s3:::<bucket>/login-icons/*"]
   }]
 }
 ```
 
 **Profile pictures.** When `AGENTRQ_S3_ENDPOINT` and `AGENTRQ_S3_BUCKET` are set, each Google or GitHub sign-in copies the account's picture to `avatars/u-<account id>/<hash>.png` as a 32×32 PNG, and the app shows it from there, since a provider's link can stop working. If the copy fails, the sign-in goes ahead with the provider's link. The desktop app's content policy allows only the providers' own picture hosts, so it shows the initial-letter placeholder for a copied picture.
+
+**Sign-in providers.** Besides Google and GitHub, any OAuth2 provider whose userinfo endpoint answers with the OpenID Connect claims (`email`, `email_verified`, `name`, `picture`) can be added on `/admin/config`, under Auth. Its callback URL is `<baseUrl>/api/v1/auth/oauth2/<id>/callback`, and a sign-in whose email the provider has not verified is refused. An icon uploaded for its button is cropped square and resized to a 40×40 PNG, kept under `login-icons/` in the bucket when `AGENTRQ_S3_ENDPOINT` and `AGENTRQ_S3_BUCKET` are set, and in the storage directory otherwise. A new provider shows on the sign-in page once the server restarts.
 
 An attachment's upload type is kept only when a browser cannot run it; anything else is stored as `application/octet-stream`.
 

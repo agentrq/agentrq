@@ -12,6 +12,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/appconfig"
 	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/clientip"
 	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/cleanup"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/s3"
@@ -95,6 +96,9 @@ func checkConfig(c config.Service) error {
 		return err
 	}
 	if err := checkLimits(cfg); err != nil {
+		return err
+	}
+	if err := auth.CheckOAuth2Providers(cfg.Auth.OAuth2Providers); err != nil {
 		return err
 	}
 	if _, err := cfg.Hooks.Settings(); err != nil {

@@ -26,3 +26,14 @@ type AppConfigurationError struct {
 }
 
 func (e *AppConfigurationError) Error() string { return e.Message }
+
+// UploadLoginIconRequest is the image a sign-in provider's button shows, as
+// uploaded: a PNG, JPEG, GIF or WebP.
+type UploadLoginIconRequest struct {
+	Data []byte
+}
+
+// UploadLoginIconResponse is where the icon, resized, can be read.
+type UploadLoginIconResponse struct {
+	URL string
+}

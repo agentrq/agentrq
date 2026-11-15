@@ -29,6 +29,7 @@ import (
 	eventctrl "github.com/agentrq/agentrq/backend/internal/controller/event"
 	"github.com/agentrq/agentrq/backend/internal/controller/forkmerge"
 	"github.com/agentrq/agentrq/backend/internal/controller/hook"
+	"github.com/agentrq/agentrq/backend/internal/controller/loginicon"
 	"github.com/agentrq/agentrq/backend/internal/controller/machine"
 	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/controller/notification"
@@ -122,6 +123,8 @@ type (
 			WorkspaceTokenKey string `yaml:"workspaceTokenKey"`
 			// Hosts besides baseUrl's a sign-in may return to via redirect_url.
 			AllowedRedirectDomains handlerapi.RedirectDomains `yaml:"allowedRedirectDomains"`
+			// OAuth2Providers are sign-in providers besides Google and GitHub.
+			OAuth2Providers []auth.OAuth2Provider `yaml:"oauth2Providers"`
 		} `yaml:"auth"`
 		// Idgen's node id doubles as this process's instance id, because the
 		// two need exactly the same property: monoflake ids collide unless
@@ -324,6 +327,11 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("avatars: %w", err)
 	}
 
+	loginIconStorageSvc, err := newLoginIconStorage(cfg.ConfigSvc, filepath.Join(cfg.Storage.StorageDir, handlerapi.PublicFilesLoginIcon), filesURL+"/"+handlerapi.PublicFilesLoginIcon)
+	if err != nil {
+		return nil, fmt.Errorf("login icon storage: %w", err)
+	}
+
 	cleanupSvc, err := cleanup.New(cfg.Storage)
 	if err != nil {
 		return nil, fmt.Errorf("cleanup: %w", err)
@@ -382,17 +390,18 @@ func New(cfg Config) (*App, error) {
 	rateLimiter := svclimit.New()
 
 	crudCtrl := crud.New(crud.Params{
-		IDGen:        ids,
-		Repository:   repo,
-		Storage:      storageSvc,
-		SkillStorage: skillStorageSvc,
-		PanoStorage:  panoStorageSvc,
-		Image:        imgSvc,
-		Avatars:      avatarSvc,
-		PubSub:       pubsubSvc,
-		Limiter:      rateLimiter,
-		SkillImport:  skillimport.New(),
-		TaskAgents:   taskAgentCtrl,
+		IDGen:            ids,
+		Repository:       repo,
+		Storage:          storageSvc,
+		SkillStorage:     skillStorageSvc,
+		PanoStorage:      panoStorageSvc,
+		LoginIconStorage: loginIconStorageSvc,
+		Image:            imgSvc,
+		Avatars:          avatarSvc,
+		PubSub:           pubsubSvc,
+		Limiter:          rateLimiter,
+		SkillImport:      skillimport.New(),
+		TaskAgents:       taskAgentCtrl,
 	})
 	hookCtrl := hook.New(hook.Params{
 		Repository: repo,
@@ -450,6 +459,7 @@ func New(cfg Config) (*App, error) {
 	// ── Auth ──────────────────────────────────────────────────────────
 	authSvc := auth.NewGoogle(cfg.Auth.Google.ClientID, cfg.Auth.Google.ClientSecret, fmt.Sprintf("%s/api/v1/auth/google/callback", cfg.App.BaseURL))
 	githubAuthSvc := auth.NewGitHub(cfg.Auth.GitHub.ClientID, cfg.Auth.GitHub.ClientSecret, fmt.Sprintf("%s/api/v1/auth/github/callback", cfg.App.BaseURL))
+	oauth2Logins := newOAuth2Logins(cfg.App.BaseURL, cfg.Auth.OAuth2Providers)
 
 	// The daemon sockets this process holds. Created up here because three
 	// things need it: the API handler (revoking a machine has to close its
@@ -819,6 +829,8 @@ func New(cfg Config) (*App, error) {
 		Teams:            teamCtrl,
 		TeamView:         teamViewCtrl,
 		AppConfig:        cfg.AppConfig,
+		LoginIcons:       loginicon.New(loginicon.Params{Storage: loginIconStorageSvc, Image: imgSvc}),
+		OAuth2Logins:     oauth2Logins,
 	}); err != nil {
 		return nil, fmt.Errorf("api handler: %w", err)
 	}

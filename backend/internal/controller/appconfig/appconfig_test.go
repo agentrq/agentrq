@@ -495,6 +495,59 @@ s3:
 	}
 }
 
+// A list of blocks, such as sign-in providers, keeps each one's secrets by
+// its id: one renamed or new has none to keep, and one removed is gone.
+func TestSecretsInAListAreKeptByID(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	yaml := `
+auth:
+  oauth2Providers:
+    - id: gitlab
+      clientSecret: gl-sec
+      tokenUrl: https://gl/token
+    - id: okta
+      clientSecret: ""
+    - plain
+`
+	c := newTestController(t, db, testBase(t, yaml), nil)
+	if _, err := c.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := c.List(ctx)
+	if got := string(list[0].Value); got != `{"oauth2Providers":[{"clientSecret":"••••••••","id":"gitlab","tokenUrl":"https://gl/token"},{"clientSecret":"","id":"okta"},"plain"]}` {
+		t.Fatalf("List = %s", got)
+	}
+
+	update := func(value string) string {
+		t.Helper()
+		got, err := c.Update(ctx, entity.UpdateAppConfigurationRequest{Key: "auth", Value: json.RawMessage(value)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(got.Value), "gl-sec") {
+			t.Fatalf("Update sent a secret back: %s", got.Value)
+		}
+		return plainRows(t, db)["auth"]
+	}
+	// Sent back masked, reordered, with a new one: each keeps its own.
+	if got := update(`{"oauth2Providers":[{"id":"new","clientSecret":"n"},{"id":"gitlab","clientSecret":"••••••••"},{"id":"okta","clientSecret":"••••••••"},"plain"]}`); got != `{"oauth2Providers":[{"clientSecret":"n","id":"new"},{"clientSecret":"gl-sec","id":"gitlab"},{"clientSecret":"","id":"okta"},"plain"]}` {
+		t.Fatalf("masked: %s", got)
+	}
+	// Left out of its block: kept.
+	if got := update(`{"oauth2Providers":[{"id":"gitlab"}]}`); got != `{"oauth2Providers":[{"clientSecret":"gl-sec","id":"gitlab"}]}` {
+		t.Fatalf("left out: %s", got)
+	}
+	// Renamed, or with no id: nothing to keep, so the mask is unset.
+	if got := update(`{"oauth2Providers":[{"id":"gl","clientSecret":"••••••••"},{"clientSecret":"••••••••"}]}`); got != `{"oauth2Providers":[{"clientSecret":"","id":"gl"},{"clientSecret":""}]}` {
+		t.Fatalf("renamed: %s", got)
+	}
+	// A list where none was stored.
+	if got := update(`{"other":[{"id":"x","apiKey":"••••••••"}]}`); got != `{"other":[{"apiKey":"","id":"x"}]}` {
+		t.Fatalf("new list: %s", got)
+	}
+}
+
 func isRefused(err error, msg string) bool {
 	var refused *entity.AppConfigurationError
 	return errors.As(err, &refused) && refused.Message == msg
