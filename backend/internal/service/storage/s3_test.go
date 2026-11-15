@@ -214,6 +214,7 @@ func (s3Config) Env() string          { return "test" }
 func (s3Config) App() string          { return "AgentRQ" }
 func (s3Config) AppShortName() string { return "agentrq" }
 func (s3Config) Version() string      { return "v0" }
+func (s3Config) Keys() []string       { return nil }
 
 // TestS3Storage_RealClient runs the adapter through the real AWS SDK against
 // a local endpoint, so the key layout and the missing public ACL are what a

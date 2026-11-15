@@ -25,6 +25,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/acpv1"
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
+	"github.com/agentrq/agentrq/backend/internal/controller/appconfig"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	eventctrl "github.com/agentrq/agentrq/backend/internal/controller/event"
 	"github.com/agentrq/agentrq/backend/internal/controller/forkmerge"
@@ -185,6 +186,11 @@ type (
 			} `yaml:"v1"`
 		} `yaml:"acp"`
 		ConfigSvc config.Service `yaml:"-"` // injected, not from YAML
+		// DB is the database Load opened and migrated; nil, New opens it.
+		DB dbconn.DBConn `yaml:"-"`
+		// AppConfig is the stored config Load read, for the admin pages; nil,
+		// they have no config page.
+		AppConfig appconfig.Controller `yaml:"-"`
 		// The built web app, served at the root; main passes the copy built
 		// into the binary.
 		Web fs.FS `yaml:"-"`
@@ -274,17 +280,11 @@ func New(cfg Config) (*App, error) {
 	svclog.Setup(cfg.ConfigSvc)
 
 	// ── Database (config-driven) ──────────────────────────────────────────
-	db, err := openDatabase(cfg.ConfigSvc)
-	if err != nil {
-		return nil, err
-	}
-
+	db := cfg.DB
 	if db == nil {
-		return nil, errors.New("neither postgres nor sqlite must be enabled in config")
-	}
-
-	if err := withMigrationLock(db.Conn(context.Background()), migrateSchema); err != nil {
-		return nil, fmt.Errorf("migrate db: %w", err)
+		if db, err = openMigratedDatabase(cfg.ConfigSvc); err != nil {
+			return nil, err
+		}
 	}
 
 	// ── Core Services ──────────────────────────────────────────────────────────
@@ -821,6 +821,7 @@ func New(cfg Config) (*App, error) {
 		Hooks:            hookCtrl,
 		Teams:            teamCtrl,
 		TeamView:         teamViewCtrl,
+		AppConfig:        cfg.AppConfig,
 	}); err != nil {
 		return nil, fmt.Errorf("api handler: %w", err)
 	}
@@ -1461,6 +1462,7 @@ func migratedModels() []any {
 		&model.Task{},
 		&model.Message{},
 		&model.Telemetry{},
+		&model.AppConfiguration{},
 		&model.MCPClient{},
 		&model.Agent{},
 		&model.AgentModel{},
@@ -1527,6 +1529,19 @@ func teamMailer(emailInvites bool, cfg smtp.Config, svc smtp.Service) smtp.Servi
 // applyLimits sets the memory and skill limits from the config, refusing a
 // value the server could not honour rather than quietly using another.
 func applyLimits(cfg Config) error {
+	if err := checkLimits(cfg); err != nil {
+		return err
+	}
+	mcp.MaxMemoryBytes = cmp.Or(cfg.Memory.MaxFileSize, mcp.DefaultMaxMemoryBytes)
+	skill.MaxSkillFileBytes = cmp.Or(cfg.Skills.MaxFileSize, skill.DefaultMaxSkillFileBytes)
+	skill.MaxFiles = cmp.Or(cfg.Skills.MaxFiles, skill.DefaultMaxFiles)
+	crud.PanoMaxTTLDays = cmp.Or(cfg.Pano.MaxTTLDays, crud.DefaultPanoMaxTTLDays)
+	crud.TeamSkillsPerWorkspace = cmp.Or(cfg.Teams.MaxSkillsPerWorkspace, crud.DefaultTeamSkillsPerWorkspace)
+	return nil
+}
+
+// checkLimits refuses a limit out of its range.
+func checkLimits(cfg Config) error {
 	switch {
 	case cfg.Memory.MaxFileSize < 0 || cfg.Memory.MaxFileSize > model.MaxMemoryContentBytes:
 		return fmt.Errorf("memory.maxFileSize: %d bytes is not between 0 and %d", cfg.Memory.MaxFileSize, model.MaxMemoryContentBytes)
@@ -1543,10 +1558,5 @@ func applyLimits(cfg Config) error {
 	case cfg.Teams.MaxSkillsPerWorkspace < 0:
 		return fmt.Errorf("teams.maxSkillsPerWorkspace: %d is negative", cfg.Teams.MaxSkillsPerWorkspace)
 	}
-	mcp.MaxMemoryBytes = cmp.Or(cfg.Memory.MaxFileSize, mcp.DefaultMaxMemoryBytes)
-	skill.MaxSkillFileBytes = cmp.Or(cfg.Skills.MaxFileSize, skill.DefaultMaxSkillFileBytes)
-	skill.MaxFiles = cmp.Or(cfg.Skills.MaxFiles, skill.DefaultMaxFiles)
-	crud.PanoMaxTTLDays = cmp.Or(cfg.Pano.MaxTTLDays, crud.DefaultPanoMaxTTLDays)
-	crud.TeamSkillsPerWorkspace = cmp.Or(cfg.Teams.MaxSkillsPerWorkspace, crud.DefaultTeamSkillsPerWorkspace)
 	return nil
 }

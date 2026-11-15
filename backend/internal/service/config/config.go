@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -31,6 +32,8 @@ type (
 	// Service is a config service
 	Service interface {
 		Populate(key string, cfg any) error
+		// Keys lists the config's top-level blocks, sorted.
+		Keys() []string
 		Env() string
 		App() string
 		AppShortName() string
@@ -87,6 +90,69 @@ func (s *service) Populate(key string, cfg any) error {
 		return nil
 	}
 	return nil
+}
+
+// Keys lists the config's top-level blocks, sorted.
+func (s *service) Keys() []string {
+	keys := make([]string, 0, len(s.content))
+	for k := range s.content {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// overlay is a Service whose named blocks are replaced, each merged over the
+// block it replaces.
+type overlay struct {
+	Service
+	content map[string][]byte
+}
+
+// Overlay returns base with each block in blocks laid over its own: a field
+// the block sets wins, and a field it leaves out keeps base's value, so a
+// setting added after the block was written still has its default. A block
+// is yaml, or JSON, which yaml reads too.
+func Overlay(base Service, blocks map[string][]byte) (Service, error) {
+	o := &overlay{Service: base, content: make(map[string][]byte, len(blocks))}
+	if prev, ok := base.(*overlay); ok {
+		o.Service = prev.Service
+		for k, v := range prev.content {
+			o.content[k] = v
+		}
+	}
+	for key, raw := range blocks {
+		over := map[string]any{}
+		if err := yaml.Unmarshal(raw, &over); err != nil {
+			return nil, fmt.Errorf("%s: %w", key, err)
+		}
+		own := map[string]any{}
+		if err := o.Populate(key, &own); err != nil {
+			return nil, fmt.Errorf("%s: %w", key, err)
+		}
+		o.content[key], _ = yaml.Marshal(mergeMaps(own, over))
+	}
+	return o, nil
+}
+
+// Populate reads a replaced block from the overlay, and any other from base.
+func (o *overlay) Populate(key string, cfg any) error {
+	if val, ok := o.content[key]; ok {
+		return yaml.Unmarshal(val, cfg)
+	}
+	return o.Service.Populate(key, cfg)
+}
+
+// Keys lists base's blocks and the overlay's, sorted.
+func (o *overlay) Keys() []string {
+	keys := o.Service.Keys()
+	for k := range o.content {
+		if !slices.Contains(keys, k) {
+			keys = append(keys, k)
+		}
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // Env return current config environment

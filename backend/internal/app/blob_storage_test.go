@@ -39,6 +39,7 @@ func (c *yamlConfig) Env() string          { return "test" }
 func (c *yamlConfig) App() string          { return "AgentRQ" }
 func (c *yamlConfig) AppShortName() string { return "agentrq" }
 func (c *yamlConfig) Version() string      { return "v0" }
+func (c *yamlConfig) Keys() []string       { return nil }
 
 type fakeS3 struct{ s3.Service }
 

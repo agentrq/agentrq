@@ -93,6 +93,9 @@ Each line says what the note will stop you getting wrong.
   events through WebAssembly hooks. Why a hook URL's id is no credential, why
   the token is never cached, why a request is answered before its hook runs,
   and why the server never learns a provider's signature format.
+- **[The server's config](docs/agents/app-config.md)** — after the first
+  start the database wins over yaml and env vars; what stays in env vars, and
+  why a new startup check also goes in `checkConfig`.
 - **[Telemetry](docs/agents/telemetry.md)** — a new action is four places or it
   reads as zero, and the machine actions carry no workspace on purpose.
 - **[Events](docs/agents/events.md)** — experimental. Named signals that let one

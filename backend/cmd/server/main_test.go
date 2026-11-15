@@ -39,11 +39,11 @@ func (r *recorder) Populate(key string, _ any) error {
 	return nil
 }
 
-// A block missing from loadConfig is silently its zero value: its env vars
+// A block missing from LoadConfig is silently its zero value: its env vars
 // do nothing, with no error anywhere.
 func TestLoadConfigReadsEveryBlock(t *testing.T) {
 	r := &recorder{keys: map[string]bool{}}
-	if _, err := loadConfig(r); err != nil {
+	if _, err := app.LoadConfig(r); err != nil {
 		t.Fatal(err)
 	}
 	typ := reflect.TypeOf(app.Config{})
@@ -71,7 +71,7 @@ func TestLoadConfigTakesTheEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := loadConfig(svc)
+	cfg, err := app.LoadConfig(svc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ type failing struct{ config.Service }
 func (failing) Populate(string, any) error { return errors.New("bad yaml") }
 
 func TestLoadConfigNamesTheBadBlock(t *testing.T) {
-	if _, err := loadConfig(failing{}); err == nil || !strings.HasSuffix(err.Error(), ": bad yaml") {
+	if _, err := app.LoadConfig(failing{}); err == nil || !strings.HasSuffix(err.Error(), ": bad yaml") {
 		t.Errorf("err = %v", err)
 	}
 }

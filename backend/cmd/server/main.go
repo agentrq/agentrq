@@ -8,7 +8,6 @@ import (
 	"context"
 	"embed"
 	"errors"
-	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
@@ -34,34 +33,17 @@ func webApp() fs.FS {
 	return web
 }
 
-// loadConfig reads every block of the server's config. A block left out here
-// is silently its zero value: its env vars do nothing.
-func loadConfig(cfgSvc config.Service) (app.Config, error) {
-	var cfg app.Config
-	for key, dst := range map[string]any{
-		"app": &cfg.App, "auth": &cfg.Auth, "smtp": &cfg.SMTP, "ssl": &cfg.SSL, "slack": &cfg.Slack,
-		"webPush": &cfg.WebPush, "network": &cfg.Network, "storage": &cfg.Storage, "memory": &cfg.Memory,
-		"skills": &cfg.Skills, "pano": &cfg.Pano, "hooks": &cfg.Hooks, "teams": &cfg.Teams, "mcp": &cfg.MCP, "acp": &cfg.ACP,
-		"idgen": &cfg.Idgen, "ddos": &cfg.Ddos, "ratelimit": &cfg.Ratelimit,
-	} {
-		if err := cfgSvc.Populate(key, dst); err != nil {
-			return app.Config{}, fmt.Errorf("%s: %w", key, err)
-		}
-	}
-	return cfg, nil
-}
-
 func main() {
 	cfgSvc, err := config.NewFS(bundled)
 	if err != nil {
 		zlog.Fatal().Err(err).Msg("config")
 	}
 
-	cfg, err := loadConfig(cfgSvc)
+	// The database the yaml names holds the rest of the config.
+	cfg, err := app.Load(cfgSvc)
 	if err != nil {
 		zlog.Fatal().Err(err).Msg("config")
 	}
-	cfg.ConfigSvc = cfgSvc
 	cfg.Web = webApp()
 
 	a, err := app.New(cfg)
