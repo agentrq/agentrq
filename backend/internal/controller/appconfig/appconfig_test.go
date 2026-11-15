@@ -185,6 +185,58 @@ func TestLoadPrefersTheStoredBlocks(t *testing.T) {
 	}
 }
 
+// A stored block gains the settings yaml added since, with yaml's value, and
+// loses the ones yaml dropped; a stored value is kept, in a group too. An
+// up-to-date block is not written again.
+func TestLoadBringsStoredBlocksUpToDate(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	withGroup := strings.Replace(baseYAML, "  port: 587", "  port: 587\n  tls:\n    on: false", 1)
+	if _, err := newTestController(t, db, testBase(t, withGroup), nil).Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	c := newTestController(t, db, testBase(t, withGroup), nil)
+	if _, err := c.Update(ctx, entity.UpdateAppConfigurationRequest{Key: "smtp", Value: json.RawMessage(`{"host":"admin","port":2525,"tls":{"on":true}}`)}); err != nil {
+		t.Fatal(err)
+	}
+
+	changed := strings.NewReplacer(
+		"  jwtSecret: jwt", "  apiJwtSecret: api\n  mcpJwtSecret: mcp",
+		"    on: false", "    on: false\n    ca: pem",
+	).Replace(withGroup)
+	writes := 0
+	db.Callback().Create().Before("gorm:create").Register("count", func(*gorm.DB) { writes++ })
+	svc, err := newTestController(t, db, testBase(t, changed), nil).Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := plainRows(t, db)
+	for k, want := range map[string]string{
+		"auth":   `{"apiJwtSecret":"api","mcpJwtSecret":"mcp"}`,
+		"smtp":   `{"host":"admin","port":2525,"tls":{"ca":"pem","on":true}}`,
+		"memory": `{"maxFileSize":1048576}`,
+	} {
+		if rows[k] != want {
+			t.Errorf("%s = %s, want %s", k, rows[k], want)
+		}
+	}
+	if writes != 2 {
+		t.Errorf("%d writes, want 2: memory is up to date", writes)
+	}
+	var auth struct {
+		APIJWTSecret string `yaml:"apiJwtSecret"`
+	}
+	if err := svc.Populate("auth", &auth); err != nil || auth.APIJWTSecret != "api" {
+		t.Fatalf("auth = %+v, %v", auth, err)
+	}
+
+	// The next start finds nothing to change.
+	writes = 0
+	if _, err := newTestController(t, db, testBase(t, changed), nil).Load(ctx); err != nil || writes != 0 {
+		t.Fatalf("second load: %d writes, %v", writes, err)
+	}
+}
+
 // A row carrying an env-only field, written by hand, never overrides the env.
 func TestLoadIgnoresStoredEnvOnlyFields(t *testing.T) {
 	db := testDB(t)
@@ -252,6 +304,19 @@ func TestLoadErrors(t *testing.T) {
 		db.Callback().Create().Before("gorm:create").Register("refuse", func(tx *gorm.DB) { tx.AddError(errors.New("disk full")) })
 		_, err := newTestController(t, db, testBase(t, baseYAML), nil).Load(ctx)
 		if err == nil || err.Error() != "seed config auth: disk full" {
+			t.Fatalf("Load: %v", err)
+		}
+	})
+
+	t.Run("an update the database refuses", func(t *testing.T) {
+		db := testDB(t)
+		if _, err := newTestController(t, db, testBase(t, baseYAML), nil).Load(ctx); err != nil {
+			t.Fatal(err)
+		}
+		db.Callback().Create().Before("gorm:create").Register("refuse", func(tx *gorm.DB) { tx.AddError(errors.New("disk full")) })
+		changed := strings.Replace(baseYAML, "  port: 587", "  port: 587\n  from: me", 1)
+		_, err := newTestController(t, db, testBase(t, changed), nil).Load(ctx)
+		if err == nil || err.Error() != "update config smtp: disk full" {
 			t.Fatalf("Load: %v", err)
 		}
 	})
