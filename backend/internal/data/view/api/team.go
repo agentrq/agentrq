@@ -42,6 +42,10 @@ type ShareWorkspaceRequest struct {
 	Tasks   *bool `json:"tasks,omitempty"`
 	Skills  *bool `json:"skills,omitempty"`
 	Memory  *bool `json:"memory,omitempty"`
+	// AutoOptInSkills opts the workspace into every skill of its team
+	// workspace it has made no choice about, later ones included; on unless
+	// sent false.
+	AutoOptInSkills *bool `json:"autoOptInSkills,omitempty"`
 }
 
 // TeamVersionResponse is the team's version after a change.
@@ -134,15 +138,18 @@ type TeamInvitationPreview struct {
 // reads its tasks, skills and memory. version, the team's after the share,
 // is set when the share was just made.
 type WorkspaceShare struct {
-	TeamID      string    `json:"teamId"`
-	TeamName    string    `json:"teamName"`
-	WorkspaceID string    `json:"workspaceId"`
-	Tasks       bool      `json:"tasks"`
-	Skills      bool      `json:"skills"`
-	Memory      bool      `json:"memory"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-	Version     int64     `json:"version,omitempty"`
+	TeamID      string `json:"teamId"`
+	TeamName    string `json:"teamName"`
+	WorkspaceID string `json:"workspaceId"`
+	Tasks       bool   `json:"tasks"`
+	Skills      bool   `json:"skills"`
+	Memory      bool   `json:"memory"`
+	// AutoOptInSkills is whether the workspace is opted into each skill of
+	// its team workspace it has made no choice about.
+	AutoOptInSkills bool      `json:"autoOptInSkills"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
+	Version         int64     `json:"version,omitempty"`
 }
 
 // PanoDocShare is a Pano doc shared with a team.

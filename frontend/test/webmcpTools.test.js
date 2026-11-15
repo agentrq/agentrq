@@ -190,6 +190,9 @@ describe('the catalogue as a whole', () => {
         // Teams' changes, grouped in one tool: it deletes a team, removes
         // members, and unshares workspaces from teammates.
         'manageTeam',
+        // A team workspace's skills, grouped in one tool: it deletes a skill
+        // or a file for every workspace in the team, and opts a workspace out.
+        'manageTeamSkills',
       ].sort()
     );
   });
@@ -585,6 +588,21 @@ describe('each tool calls the interface the way the UI does', () => {
     ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', version: 3 }, 'shareWorkspace', ['ws1', 'tm1', 3, {}]],
     ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', version: 3, tasks: false, skills: true, memory: false }, 'shareWorkspace', ['ws1', 'tm1', 3, { tasks: false, skills: true, memory: false }]],
     ['manageTeam', { action: 'unshare', workspaceId: 'ws1', teamId: 'tm1', version: 3 }, 'unshareWorkspace', ['ws1', 'tm1', 3]],
+    ['manageTeam', { action: 'share', workspaceId: 'ws1', teamId: 'tm1', version: 3, autoOptInSkills: false }, 'shareWorkspace', ['ws1', 'tm1', 3, { autoOptInSkills: false }]],
+    ['readTeamSkills', { action: 'workspace', workspaceId: 'ws1' }, 'listWorkspaceTeamSkills', ['ws1', '']],
+    ['readTeamSkills', { action: 'workspace', workspaceId: 'ws1', q: 'dep' }, 'listWorkspaceTeamSkills', ['ws1', 'dep']],
+    ['readTeamSkills', { action: 'list', teamId: 'tm1', teamWorkspaceId: 'tw1' }, 'listTeamWorkspaceSkills', ['tm1', 'tw1']],
+    ['readTeamSkills', { action: 'get', teamId: 'tm1', teamWorkspaceId: 'tw1', skillId: 's1' }, 'getTeamWorkspaceSkill', ['tm1', 'tw1', 's1']],
+    ['readTeamSkills', { action: 'file', teamId: 'tm1', teamWorkspaceId: 'tw1', skillId: 's1', path: 'SKILL.md' }, 'getTeamWorkspaceSkillFile', ['tm1', 'tw1', 's1', 'SKILL.md']],
+    ['manageTeamSkills', { action: 'optIn', workspaceId: 'ws1', skillId: 's1' }, 'setWorkspaceTeamSkill', ['ws1', 's1', true]],
+    ['manageTeamSkills', { action: 'optIn', workspaceId: 'ws1', skillId: 's1', on: false }, 'setWorkspaceTeamSkill', ['ws1', 's1', false]],
+    ['manageTeamSkills', { action: 'give', workspaceId: 'ws1', name: 'deploy', teamWorkspaceId: 'tw1' }, 'giveSkillToTeam', ['ws1', 'deploy', 'tw1']],
+    ['manageTeamSkills', { action: 'create', teamId: 'tm1', teamWorkspaceId: 'tw1', content: '---' }, 'createTeamWorkspaceSkill', ['tm1', 'tw1', '---']],
+    ['manageTeamSkills', { action: 'import', teamId: 'tm1', teamWorkspaceId: 'tw1', url: 'https://github.com/a/b' }, 'importTeamWorkspaceSkills', ['tm1', 'tw1', 'https://github.com/a/b', false, []]],
+    ['manageTeamSkills', { action: 'import', teamId: 'tm1', teamWorkspaceId: 'tw1', url: 'u', overwrite: true, skills: ['x'] }, 'importTeamWorkspaceSkills', ['tm1', 'tw1', 'u', true, ['x']]],
+    ['manageTeamSkills', { action: 'delete', teamId: 'tm1', teamWorkspaceId: 'tw1', skillId: 's1' }, 'deleteTeamWorkspaceSkill', ['tm1', 'tw1', 's1']],
+    ['manageTeamSkills', { action: 'saveFile', teamId: 'tm1', teamWorkspaceId: 'tw1', skillId: 's1', path: 'a.md', content: 'x', version: 2 }, 'saveTeamWorkspaceSkillFile', ['tm1', 'tw1', 's1', 'a.md', 'x', 2]],
+    ['manageTeamSkills', { action: 'deleteFile', teamId: 'tm1', teamWorkspaceId: 'tw1', skillId: 's1', path: 'a.md' }, 'deleteTeamWorkspaceSkillFile', ['tm1', 'tw1', 's1', 'a.md']],
     ['readTeams', { action: 'teammateMemories', workspaceId: 'ws1' }, 'listTeammateMemories', ['ws1']],
     ['readTeams', { action: 'teammateMemory', workspaceId: 'ws1', teammateWorkspaceId: 'ws2' }, 'listTeammateMemoryNames', ['ws1', 'ws2']],
     ['readTeams', { action: 'teammateMemory', workspaceId: 'ws1', teammateWorkspaceId: 'ws2', name: 'memory.md' }, 'getTeammateMemory', ['ws1', 'ws2', 'memory.md']],
@@ -627,10 +645,10 @@ describe('each tool calls the interface the way the UI does', () => {
 });
 
 describe('the grouped team tools', () => {
-  it.each(['readTeams', 'manageTeam'])('%s refuses an action it does not list, naming the ones it does', (name) => {
+  it.each(['readTeams', 'manageTeam', 'readTeamSkills', 'manageTeamSkills'])('%s refuses an action it does not list, naming the ones it does', (name) => {
     const found = build().find((t) => t.name === name);
 
-    expect(() => found.execute({ action: 'explode' }, {})).toThrow(/takes an action of .*list|takes an action of .*rename/);
+    expect(() => found.execute({ action: 'explode' }, {})).toThrow(/takes an action of .*(list|rename|optIn)/);
     expect(() => found.execute(undefined, {})).toThrow('not undefined');
   });
 
@@ -650,6 +668,16 @@ describe('the grouped team tools', () => {
     expect(page({ action: 'sharePano', docId: 'd/1', teamId: 'tm1' })).toBe('/pano/d%2F1');
     expect(page({ action: 'unsharePano', docId: 'd1', teamId: 'tm1' })).toBe('/pano/d1');
     expect(page(undefined)).toBe('/teams//settings?tab=members');
+  });
+
+  it('shows a team skill change on the workspace\'s Skills tab, or the team\'s Skills page', () => {
+    const page = (input) => build().find((t) => t.name === 'manageTeamSkills').screen.before(input);
+
+    expect(page({ action: 'optIn', workspaceId: 'ws1', skillId: 's1' })).toBe('/workspaces/ws1/settings?tab=skills');
+    expect(page({ action: 'give', workspaceId: 'w/1', name: 'deploy' })).toBe('/workspaces/w%2F1/settings?tab=skills');
+    expect(page({ action: 'create', teamId: 'tm1', teamWorkspaceId: 'tw1' })).toBe('/teams/tm1/skills');
+    expect(page({ action: 'deleteFile', teamId: 't/1' })).toBe('/teams/t%2F1/skills');
+    expect(page({ action: 'delete' })).toBe('/skills');
   });
 
   it('opens a new team\'s invitations, or the create form when the answer names none', () => {

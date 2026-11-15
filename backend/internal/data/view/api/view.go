@@ -763,6 +763,8 @@ type (
 		UpdatedAt time.Time `json:"updatedAt"`
 		Content   string    `json:"content,omitempty"`
 		URL       string    `json:"url,omitempty"`
+		// Version is given for a file others write too, to save on.
+		Version int64 `json:"version,omitempty"`
 	}
 
 	// SearchSkillsResponse is one page of matching skills; total counts every

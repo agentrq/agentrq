@@ -22,7 +22,7 @@ import (
 // the web app reacts to. It is the one way a change made by the supervisor's
 // MCP, which has no stream of its own, reaches the screen.
 func forwardCRUDEvent(ctx context.Context, repo base.Repository, agents lastTaskAgents, bus *eventbus.Bus, ev entity.CRUDEvent) {
-	if publishWorkspaceListChange(bus, ev) || publishPanoChange(bus, ev) {
+	if publishWorkspaceListChange(bus, ev) || publishPanoChange(bus, ev) || publishTeamSkillChange(ctx, repo, bus, ev) {
 		return
 	}
 	ws, err := repo.SystemGetWorkspace(ctx, ev.WorkspaceID)
@@ -184,6 +184,46 @@ func publishToTeams(ctx context.Context, repo teamReaders, bus *eventbus.Bus, wo
 		}
 		bus.Publish(0, userID, eventbus.Event{Type: teamEventPrefix + evt.Type, Payload: payload, TeamID: monoflake.ID(rd.TeamID).String()})
 	}
+}
+
+// teamSkillEvents name the event a team skill change is sent as, after the
+// team prefix: "team.skill.created" and so on.
+var teamSkillEvents = map[entity.Action]string{
+	entity.ActionTeamSkillCreate: "skill.created",
+	entity.ActionTeamSkillDelete: "skill.deleted",
+	entity.ActionTeamSkillGive:   "skill.given",
+	entity.ActionTeamSkillOptIn:  "skill.optedIn",
+	entity.ActionTeamSkillOptOut: "skill.optedOut",
+}
+
+// teamMembers is the part of the repository that lists a team.
+type teamMembers interface {
+	ListTeamMembers(ctx context.Context, teamID int64) ([]base.TeamMemberWithUser, error)
+}
+
+// publishTeamSkillChange tells every member of the team with their account
+// stream open that one of the team's skills changed, so an open team page
+// or Skills tab reads them again.
+func publishTeamSkillChange(ctx context.Context, repo teamMembers, bus *eventbus.Bus, ev entity.CRUDEvent) bool {
+	if ev.ResourceType != entity.ResourceTeamSkill {
+		return false
+	}
+	if !bus.AnyUserSubscribed() {
+		return true
+	}
+	members, err := repo.ListTeamMembers(ctx, ev.TeamID)
+	if err != nil {
+		zlog.Warn().Err(err).Int64("team", ev.TeamID).Msg("[teams] failed to list a team's members for a skill change")
+		return true
+	}
+	evt := eventbus.Event{Type: teamEventPrefix + teamSkillEvents[ev.Action], TeamID: monoflake.ID(ev.TeamID).String(),
+		Payload: map[string]string{"id": monoflake.ID(ev.ResourceID).String()}}
+	for _, m := range members {
+		if userID := monoflake.ID(m.UserID).String(); bus.UserSubscribed(userID) {
+			bus.Publish(0, userID, evt)
+		}
+	}
+	return true
 }
 
 // panoChangedEvent tells an open Pano board to read the Pano again.

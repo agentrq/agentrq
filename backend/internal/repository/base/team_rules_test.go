@@ -110,7 +110,7 @@ func TestTeamChecksSeeWhatChangedWhileTheyWaitedForTheLock(t *testing.T) {
 			name:   "a member removed meanwhile sharing a workspace",
 			change: removeMember(11),
 			op: func(r Repository) error {
-				_, _, err := r.SetWorkspaceShare(ctx, share(11), sharedIn(), 1, act())
+				_, _, err := r.SetWorkspaceShare(ctx, share(11), sharedIn(), testIDs, 1, act())
 				return err
 			},
 			want: ErrNotFound,
@@ -300,7 +300,7 @@ func TestAcceptingNeedsAnInviterStillInTheTeam(t *testing.T) {
 // A deleted workspace takes its team shares with it, and nobody else's.
 func TestDeleteWorkspace_DeletesItsTeamShares(t *testing.T) {
 	db := deleteTaskDB(t)
-	if err := db.AutoMigrate(&model.Workspace{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.AgentNote{}, &model.WorkspaceShare{}, &model.PanoDocShare{}, &model.MemoryExclusion{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.AgentNote{}, &model.WorkspaceShare{}, &model.PanoDocShare{}, &model.MemoryExclusion{}, &model.TeamSkillChoice{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	for _, id := range []int64{100, 101} {

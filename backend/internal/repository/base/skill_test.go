@@ -30,7 +30,7 @@ func skillDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open db: %v", err)
 	}
 	// The workspaces, shares and members are what a link's reads join.
-	if err := db.AutoMigrate(&model.Skill{}, &model.SkillFile{}, &model.SkillShare{}, &model.WorkspaceSkill{},
+	if err := db.AutoMigrate(&model.Skill{}, &model.SkillFile{}, &model.TeamSkillChoice{}, &model.SkillShare{}, &model.WorkspaceSkill{},
 		&model.Workspace{}, &model.WorkspaceShare{}, &model.TeamMember{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

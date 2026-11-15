@@ -70,7 +70,7 @@ func newSkillEnv(t *testing.T) *skillEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.SkillShare{}, &model.WorkspaceSkill{}, &model.WorkspaceShare{}, &model.TeamMember{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.TeamSkillChoice{}, &model.SkillShare{}, &model.WorkspaceSkill{}, &model.WorkspaceShare{}, &model.TeamMember{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, ws := range []model.Workspace{

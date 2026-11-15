@@ -143,7 +143,7 @@ type Repository interface {
 	RevokeTeamInvitation(ctx context.Context, teamID, callerID, version, id int64, act model.TeamManagementActivity) (int64, error)
 	DeclineTeamInvitation(ctx context.Context, teamID, id int64, act model.TeamManagementActivity) error
 	AcceptTeamInvitation(ctx context.Context, id int64, member model.TeamMember, now time.Time, act model.TeamManagementActivity) error
-	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, tw model.TeamWorkspace, version int64, act model.TeamManagementActivity) (WorkspaceShareWithTeam, int64, error)
+	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, tw model.TeamWorkspace, ids func() int64, version int64, act model.TeamManagementActivity) (WorkspaceShareWithTeam, int64, error)
 	ListWorkspaceShares(ctx context.Context, workspaceID, userID int64) ([]WorkspaceShareWithTeam, error)
 	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error)
 	SetPanoDocShare(ctx context.Context, s model.PanoDocShare, version int64, act model.TeamManagementActivity) (PanoDocShareWithTeam, int64, error)
@@ -181,6 +181,20 @@ type Repository interface {
 	SetSkillDisabled(ctx context.Context, skillID int64, disabled bool) error
 	ReplaceSkill(ctx context.Context, s model.Skill, files []model.SkillFile, on []model.WorkspaceSkill) (model.Skill, []string, error)
 	UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile, on []model.WorkspaceSkill, expect *int64) (model.Skill, model.SkillFile, string, error)
+	// Team workspace skills: see team_skill.go.
+	ListWorkspaceTeamSkills(ctx context.Context, workspaceID int64, q string, onlyOn bool) ([]TeamSkillRow, error)
+	GetWorkspaceTeamSkill(ctx context.Context, workspaceID int64, name string) (TeamSkillRow, error)
+	ListWorkspaceTeamWorkspaces(ctx context.Context, workspaceID int64) ([]WorkspaceTeamWorkspace, error)
+	ListTeamWorkspaceSkills(ctx context.Context, userID, teamID, teamWorkspaceID int64) ([]TeamSkillRow, error)
+	GetTeamSkill(ctx context.Context, userID, teamID, skillID int64) (TeamSkillRow, error)
+	CreateTeamSkill(ctx context.Context, a TeamSkillAccess, s model.Skill, files []model.SkillFile, maxSkills int) (model.Skill, int64, error)
+	ReplaceTeamSkill(ctx context.Context, a TeamSkillAccess, s model.Skill, files []model.SkillFile) (model.Skill, []string, error)
+	UpsertTeamSkillFile(ctx context.Context, a TeamSkillAccess, s model.Skill, f model.SkillFile, expect *int64) (model.Skill, model.SkillFile, string, error)
+	DeleteTeamSkillFile(ctx context.Context, a TeamSkillAccess, s model.Skill, path string) (model.Skill, string, error)
+	DeleteTeamSkill(ctx context.Context, a TeamSkillAccess, skillID int64) (int64, []string, error)
+	SetTeamSkillChoice(ctx context.Context, a TeamSkillAccess, c model.TeamSkillChoice) (int64, error)
+	OptOutTeamSkill(ctx context.Context, a TeamSkillAccess, c model.TeamSkillChoice) (int64, bool, []string, error)
+	GiveSkillToTeam(ctx context.Context, a TeamSkillAccess, userID, skillID, teamWorkspaceID int64, files []model.SkillFile, maxSkills int) (int64, []string, error)
 	DeleteSkillFile(ctx context.Context, s model.Skill, path string) (model.Skill, string, error)
 	DeleteSkill(ctx context.Context, skillID int64) ([]string, error)
 	GetSkillFile(ctx context.Context, skillID int64, path string) (model.SkillFile, error)
@@ -643,6 +657,9 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.MemoryExclusion{}).Error; err != nil {
 		return err
 	}
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.TeamSkillChoice{}).Error; err != nil {
+		return err
+	}
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.ForkFolder{}).Error; err != nil {
 		return err
 	}
@@ -678,7 +695,7 @@ var workspaceIDTables = []any{
 	&model.Memory{}, &model.Skill{}, &model.WorkspaceSkill{}, &model.EventTrigger{}, &model.WorkflowStep{},
 	&model.PanoFile{}, &model.PanoComment{}, &model.PanoDocTask{}, &model.Session{}, &model.ForkFolder{},
 	&model.SiteShare{}, &model.SlackWorkspaceLink{}, &model.SlackTaskThread{}, &model.PushSubscription{}, &model.WorkspaceShare{},
-	&model.MemoryExclusion{},
+	&model.MemoryExclusion{}, &model.TeamSkillChoice{},
 	&model.Telemetry{}, &model.HourlyTelemetry{}, &model.DailyTelemetry{}, &model.MonthlyTelemetry{},
 }
 

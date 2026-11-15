@@ -17,7 +17,7 @@ import (
 func shareEntity(s base.WorkspaceShareWithTeam) entity.WorkspaceShare {
 	return entity.WorkspaceShare{
 		TeamID: s.TeamID, TeamName: s.TeamName, WorkspaceID: s.WorkspaceID,
-		SharedParts: entity.SharedParts{Tasks: !s.HideTasks, Skills: !s.HideSkills, Memory: !s.HideMemory},
+		SharedParts: entity.SharedParts{Tasks: !s.HideTasks, Skills: !s.HideSkills, Memory: !s.HideMemory, AutoOptInSkills: !s.ManualTeamSkills},
 		CreatedAt:   s.CreatedAt, UpdatedAt: s.UpdatedAt,
 	}
 }
@@ -77,11 +77,12 @@ func (c *controller) ShareWorkspace(ctx context.Context, ch entity.TeamChange, w
 	act := c.activity()
 	act.Details = base.TeamActivityDetails(map[string]string{
 		"workspaceName": ws.Name, "tasks": onOff(parts.Tasks), "skills": onOff(parts.Skills), "memory": onOff(parts.Memory),
+		"autoOptInSkills": onOff(parts.AutoOptInSkills),
 	})
 	s, next, err := c.repo.SetWorkspaceShare(ctx, model.WorkspaceShare{
 		ID: c.ids.NextID(), TeamID: ch.TeamID, WorkspaceID: workspaceID, UserID: ch.UserID, CreatedAt: now, UpdatedAt: now,
-		HideTasks: !parts.Tasks, HideSkills: !parts.Skills, HideMemory: !parts.Memory,
-	}, tw, ch.Version, act)
+		HideTasks: !parts.Tasks, HideSkills: !parts.Skills, HideMemory: !parts.Memory, ManualTeamSkills: !parts.AutoOptInSkills,
+	}, tw, c.ids.NextID, ch.Version, act)
 	if err != nil {
 		return entity.WorkspaceShare{}, fromRepo(err)
 	}

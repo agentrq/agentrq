@@ -161,7 +161,7 @@ func (h *handler) listTeamSkills() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		ss, err := h.teamView.ListSkills(ctx, sessionUser(c), ids[0], c.Query("workspace"))
-		return mapper.FromTeamSkillEntitiesToHTTPResponse(ss), err
+		return mapper.FromTeammateSkillEntitiesToHTTPResponse(ss), err
 	})
 }
 
@@ -170,7 +170,7 @@ func (h *handler) getTeamSkill() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		s, err := h.teamView.GetSkill(ctx, sessionUser(c), ids[0], c.Query("workspace"), c.Params("name"))
-		return mapper.FromTeamSkillEntityToHTTPResponse(s), err
+		return mapper.FromTeammateSkillEntityToHTTPResponse(s), err
 	})
 }
 

@@ -99,7 +99,7 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 	t.Helper()
 	ctx := context.Background()
 	if err := db.AutoMigrate(&model.User{}, &model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{},
-		&model.Telemetry{}, &model.Memory{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.PanoDoc{}, &model.PanoDocTask{}, &model.PanoFile{}, &model.PanoComment{},
+		&model.Telemetry{}, &model.Memory{}, &model.Skill{}, &model.SkillFile{}, &model.TeamSkillChoice{}, &model.WorkspaceSkill{}, &model.PanoDoc{}, &model.PanoDocTask{}, &model.PanoFile{}, &model.PanoComment{},
 		&model.Agent{}, &model.AgentModel{}, &model.TaskStateTransition{},
 		&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.WorkspaceShare{}, &model.TeamWorkspace{}, &model.PanoDocShare{}, &model.TeamManagementActivity{}, &model.MemoryExclusion{}); err != nil {
 		t.Fatal(err)

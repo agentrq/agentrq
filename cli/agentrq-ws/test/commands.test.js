@@ -485,6 +485,15 @@ test('skill save sends the version it read, and checks it', async () => {
   }
 })
 
+test('skill save says where a new skill goes', async () => {
+  const client = stubClient()
+  await invoke('skill save', { positionals: ['skill://tdd'], values: { content: 'x', personal: true }, client })
+  assert.deepEqual(client.calls[0].args, { action: 'save', uri: 'skill://tdd', content: 'x', version: undefined, team: false })
+  await invoke('skill save', { positionals: ['skill://tdd'], values: { content: 'x', 'team-workspace': 'backend' }, client })
+  assert.deepEqual(client.calls[1].args, { action: 'save', uri: 'skill://tdd', content: 'x', version: undefined, teamWorkspace: 'backend' })
+  await assert.rejects(() => invoke('skill save', { positionals: ['skill://tdd'], values: { content: 'x', personal: true, 'team-workspace': 'backend' }, client }), /cannot be used together/)
+})
+
 test('event publish sends the payload, task and faq', async () => {
   const client = stubClient()
   await invoke('event publish', {

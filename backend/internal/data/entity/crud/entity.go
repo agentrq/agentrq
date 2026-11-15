@@ -980,6 +980,8 @@ type (
 		ResourceID   int64        `json:"resourceId"`
 		Actor        Actor        `json:"actor"`  // 1: Human, 2: Agent, 3: Extension
 		Origin       Origin       `json:"origin"` // 1: API, 2: MCP, 3: Scheduler, 4: Slack
+		// TeamID is the team a team skill event goes to, its members.
+		TeamID int64 `json:"teamId,omitempty"`
 	}
 
 	// Push subscription entities
@@ -1557,6 +1559,7 @@ const (
 	ResourcePano
 	ResourceHookRegistration
 	ResourceTeam
+	ResourceTeamSkill
 )
 
 func (r ResourceType) String() string {
@@ -1581,6 +1584,8 @@ func (r ResourceType) String() string {
 		return "hook_registration"
 	case ResourceTeam:
 		return "team"
+	case ResourceTeamSkill:
+		return "team_skill"
 	}
 	return "unknown"
 }
@@ -1911,6 +1916,14 @@ const (
 	// One of a teammate's memories read by a person, from the team
 	// workspace of one of the account's workspaces, which it carries.
 	ActionTeammateMemoryView Action = 125
+	// A team workspace's skill created, deleted for every workspace, given
+	// to it by a member, or opted into or out of by a workspace, which it
+	// carries (0 from the team's page).
+	ActionTeamSkillCreate Action = 126
+	ActionTeamSkillDelete Action = 127
+	ActionTeamSkillGive   Action = 128
+	ActionTeamSkillOptIn  Action = 129
+	ActionTeamSkillOptOut Action = 130
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2159,6 +2172,16 @@ func (a Action) String() string {
 		return "pano_share"
 	case ActionTeammateMemoryView:
 		return "teammate_memory_view"
+	case ActionTeamSkillCreate:
+		return "team_skill_create"
+	case ActionTeamSkillDelete:
+		return "team_skill_delete"
+	case ActionTeamSkillGive:
+		return "team_skill_give"
+	case ActionTeamSkillOptIn:
+		return "team_skill_opt_in"
+	case ActionTeamSkillOptOut:
+		return "team_skill_opt_out"
 	}
 	return "unknown"
 }

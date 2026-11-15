@@ -67,8 +67,8 @@ type Controller interface {
 
 	// The skills on in one team workspace, named by workspace as
 	// WorkspaceKey matches it; every team workspace's when it is empty.
-	ListSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeamSkill, error)
-	GetSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeamSkill, error)
+	ListSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeammateSkill, error)
+	GetSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeammateSkill, error)
 	// AddSkill links a teammate's skill into the caller's account, on in the
 	// given workspaces of theirs: their agents read and improve that one
 	// skill, not a copy, while the team shares it.
@@ -403,7 +403,7 @@ func ownWorkspaces(visible []entity.TeamWorkspace, workspace string) (map[int64]
 // teamSkills is the skills on in the team workspace named workspace ("" =
 // every one), by name, each with its owners, and the row of the owner who
 // changed it last first.
-func (c *controller) teamSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeamSkill, map[string][]base.WorkspaceSkillRow, error) {
+func (c *controller) teamSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeammateSkill, map[string][]base.WorkspaceSkillRow, error) {
 	visible, err := c.teams.ListTeamWorkspaces(ctx, userID, teamID)
 	if err != nil {
 		return nil, nil, err
@@ -415,14 +415,14 @@ func (c *controller) teamSkills(ctx context.Context, userID, teamID int64, works
 	}
 	byName := map[string][]base.WorkspaceSkillRow{}
 	at := map[string]int{}
-	out := []entity.TeamSkill{}
+	out := []entity.TeammateSkill{}
 	for _, r := range rows {
 		i, ok := at[r.Name]
 		if !ok {
 			// Rows come by name, the latest change first.
 			i = len(out)
 			at[r.Name] = i
-			out = append(out, entity.TeamSkill{Name: r.Name, Description: r.Description, UpdatedAt: r.UpdatedAt})
+			out = append(out, entity.TeammateSkill{Name: r.Name, Description: r.Description, UpdatedAt: r.UpdatedAt})
 		}
 		byName[r.Name] = append(byName[r.Name], r)
 		s := &out[i]
@@ -443,7 +443,7 @@ func hasOwner(owners []entity.TeamOwner, userID int64) bool {
 	return false
 }
 
-func (c *controller) ListSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeamSkill, error) {
+func (c *controller) ListSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeammateSkill, error) {
 	out, _, err := c.teamSkills(ctx, userID, teamID, workspace)
 	return out, err
 }
@@ -451,31 +451,31 @@ func (c *controller) ListSkills(ctx context.Context, userID, teamID int64, works
 // teamSkill is the team's skill by name, and its owners' rows, the one
 // changed last first: that is the copy the team reads. base.ErrNotFound when
 // no shared workspace of the team workspace has it on.
-func (c *controller) teamSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeamSkill, []base.WorkspaceSkillRow, error) {
+func (c *controller) teamSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeammateSkill, []base.WorkspaceSkillRow, error) {
 	canonical, err := skill.CanonicalName(name)
 	if err != nil {
-		return entity.TeamSkill{}, nil, base.ErrNotFound
+		return entity.TeammateSkill{}, nil, base.ErrNotFound
 	}
 	skills, byName, err := c.teamSkills(ctx, userID, teamID, workspace)
 	if err != nil {
-		return entity.TeamSkill{}, nil, err
+		return entity.TeammateSkill{}, nil, err
 	}
 	for _, s := range skills {
 		if s.Name == canonical {
 			return s, byName[canonical], nil
 		}
 	}
-	return entity.TeamSkill{}, nil, base.ErrNotFound
+	return entity.TeammateSkill{}, nil, base.ErrNotFound
 }
 
-func (c *controller) GetSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeamSkill, error) {
+func (c *controller) GetSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeammateSkill, error) {
 	s, rows, err := c.teamSkill(ctx, userID, teamID, workspace, name)
 	if err != nil {
-		return entity.TeamSkill{}, err
+		return entity.TeammateSkill{}, err
 	}
 	f, err := c.owner.SystemGetSkillFile(ctx, entity.SystemGetSkillFileRequest{UserID: rows[0].UserID, Name: s.Name, Path: skillFile})
 	if err != nil {
-		return entity.TeamSkill{}, err
+		return entity.TeammateSkill{}, err
 	}
 	s.Content = f.File.Content
 	return s, nil

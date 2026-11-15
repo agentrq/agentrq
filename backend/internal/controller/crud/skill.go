@@ -43,6 +43,7 @@ type SkillController interface {
 	DeleteSkillFile(ctx context.Context, req entity.DeleteSkillFileRequest) (*entity.DeleteSkillFileResponse, error)
 	ImportSkills(ctx context.Context, req entity.ImportSkillsRequest) (*entity.ImportSkillsResponse, error)
 	MoveLegacySkills(ctx context.Context) error
+	TeamSkillController
 }
 
 const (
@@ -139,11 +140,12 @@ func asLink(s, content model.Skill) model.Skill {
 	return s
 }
 
-// skillFileURL is where anyone can read f, but never for a link's file: the
-// link stops reading it once the team stops sharing it, and a public link
+// skillFileURL is where anyone can read f, but never for a link's file or a
+// team skill's: the link stops reading it once the team stops sharing it,
+// and a member who leaves stops reading the team's, where a public link
 // would not.
 func (c *controller) skillFileURL(s model.Skill, f model.SkillFile) string {
-	if s.LinkedSkillID != 0 {
+	if s.LinkedSkillID != 0 || s.TeamWorkspaceID != 0 {
 		return ""
 	}
 	return storage.PublicURL(c.skillStorage, f.StorageID)
@@ -532,10 +534,16 @@ func (c *controller) storeSkillBlob(s model.Skill, f *model.SkillFile, content [
 
 const skillContentType = "text/plain; charset=utf-8"
 
-// skillStorageID keys a skill file's blob as u-<owner>/skill-<skill>/<blob>.
+// skillStorageID keys a skill file's blob as u-<owner>/skill-<skill>/<blob>,
+// or a team skill's as t-<team workspace>/skill-<skill>/<blob>.
 // The blob id is fresh on every write, because a replace stores the new blob
 // before the old one is purged.
 func skillStorageID(s model.Skill, blobID int64) string {
+	if s.TeamWorkspaceID != 0 {
+		// A team skill's: t-<team workspace>/…, which the public route
+		// never serves.
+		return "t-" + monoflake.ID(s.TeamWorkspaceID).String() + "/skill-" + monoflake.ID(s.ID).String() + "/" + monoflake.ID(blobID).String()
+	}
 	return "u-" + monoflake.ID(s.UserID).String() + "/skill-" + monoflake.ID(s.ID).String() + "/" + monoflake.ID(blobID).String()
 }
 

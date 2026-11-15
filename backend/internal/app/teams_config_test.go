@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/smtp"
 )
@@ -37,13 +38,15 @@ func loadTeams(t *testing.T, name, env string) teamsConfig {
 type teamsConfig = struct {
 	MaxInvitesPerDay        int  `yaml:"maxInvitesPerDay"`
 	MaxInvitesPerUserPerDay int  `yaml:"maxInvitesPerUserPerDay"`
+	MaxSkillsPerWorkspace   int  `yaml:"maxSkillsPerWorkspace"`
 	EmailInvites            bool `yaml:"emailInvites"`
 }
 
 const (
-	teamCapEnv = "AGENTRQ_TEAMS_MAX_INVITES_PER_DAY"
-	userCapEnv = "AGENTRQ_TEAMS_MAX_INVITES_PER_USER_PER_DAY"
-	emailEnv   = "AGENTRQ_TEAMS_EMAIL_INVITES"
+	teamCapEnv  = "AGENTRQ_TEAMS_MAX_INVITES_PER_DAY"
+	userCapEnv  = "AGENTRQ_TEAMS_MAX_INVITES_PER_USER_PER_DAY"
+	emailEnv    = "AGENTRQ_TEAMS_EMAIL_INVITES"
+	skillCapEnv = "AGENTRQ_TEAMS_MAX_SKILLS_PER_WORKSPACE"
 )
 
 func TestTeamsEmailInvitesDefaultsToOn(t *testing.T) {
@@ -98,6 +101,7 @@ func TestNewRefusesANegativeInviteCap(t *testing.T) {
 	for key, set := range map[string]func(*Config){
 		"teams.maxInvitesPerDay":        func(c *Config) { c.Teams.MaxInvitesPerDay = -1 },
 		"teams.maxInvitesPerUserPerDay": func(c *Config) { c.Teams.MaxInvitesPerUserPerDay = -1 },
+		"teams.maxSkillsPerWorkspace":   func(c *Config) { c.Teams.MaxSkillsPerWorkspace = -1 },
 	} {
 		t.Run(key, func(t *testing.T) {
 			var cfg Config
@@ -128,5 +132,27 @@ func TestTeamMailerNeedsEmailInvitesAndSMTPWithAHost(t *testing.T) {
 		if got := teamMailer(c.emailInvites, c.cfg, smtp.New(c.cfg)) != nil; got != c.mail {
 			t.Errorf("%s: mailer set is %v, want %v", name, got, c.mail)
 		}
+	}
+}
+
+func TestTeamsSkillCapDefaultsToAHundred(t *testing.T) {
+	resetLimits(t)
+	var cfg Config
+	cfg.Teams = loadTeams(t, skillCapEnv, "")
+	if err := applyLimits(cfg); err != nil || cfg.Teams.MaxSkillsPerWorkspace != 100 || crud.TeamSkillsPerWorkspace != 100 {
+		t.Errorf("teams.maxSkillsPerWorkspace = %d with no env (%v), and the cap %d; want 100", cfg.Teams.MaxSkillsPerWorkspace, err, crud.TeamSkillsPerWorkspace)
+	}
+}
+
+func TestTeamsSkillCapComesFromTheEnv(t *testing.T) {
+	for env, want := range map[string]int{"7": 7, "0": crud.DefaultTeamSkillsPerWorkspace} {
+		t.Run(env, func(t *testing.T) {
+			resetLimits(t)
+			var cfg Config
+			cfg.Teams = loadTeams(t, skillCapEnv, env)
+			if err := applyLimits(cfg); err != nil || crud.TeamSkillsPerWorkspace != want {
+				t.Errorf("the team skill cap is %d with %q (%v), want %d", crud.TeamSkillsPerWorkspace, env, err, want)
+			}
+		})
 	}
 }

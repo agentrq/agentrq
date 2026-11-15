@@ -23,6 +23,9 @@ func FromTeamWorkspaceEntityToOwnerView(w entity.TeamWorkspace) view.TeamOwner {
 // FromTeamWorkspaceEntityToView is a workspace as a team sees it.
 func FromTeamWorkspaceEntityToView(w entity.TeamWorkspace) view.TeamWorkspace {
 	v := view.TeamWorkspace{ID: id62(w.ID), Name: w.Name, SharedName: w.SharedName, Owner: FromTeamWorkspaceEntityToOwnerView(w)}
+	if w.TeamWorkspaceID != 0 {
+		v.TeamWorkspaceID = id62(w.TeamWorkspaceID)
+	}
 	if w.ForkOfID != 0 {
 		v.ForkOfID = id62(w.ForkOfID)
 	}
@@ -101,7 +104,7 @@ func FromTeamTaskDetailEntityToHTTPResponse(d entity.TeamTaskDetail, teamID int6
 	return b
 }
 
-func fromTeamSkillEntity(s entity.TeamSkill) view.TeamSkill {
+func fromTeamSkillEntity(s entity.TeammateSkill) view.TeamSkill {
 	owners := make([]view.TeamOwner, len(s.Owners))
 	for i, o := range s.Owners {
 		owners[i] = fromTeamOwner(o.UserID, o.Name, o.Picture)
@@ -109,8 +112,8 @@ func fromTeamSkillEntity(s entity.TeamSkill) view.TeamSkill {
 	return view.TeamSkill{Name: s.Name, Description: s.Description, UpdatedAt: s.UpdatedAt, Owners: owners, Content: s.Content}
 }
 
-// FromTeamSkillEntitiesToHTTPResponse renders a team's skills.
-func FromTeamSkillEntitiesToHTTPResponse(ss []entity.TeamSkill) []byte {
+// FromTeammateSkillEntitiesToHTTPResponse renders a team's skills.
+func FromTeammateSkillEntitiesToHTTPResponse(ss []entity.TeammateSkill) []byte {
 	out := make([]view.TeamSkill, len(ss))
 	for i, s := range ss {
 		out[i] = fromTeamSkillEntity(s)
@@ -119,8 +122,8 @@ func FromTeamSkillEntitiesToHTTPResponse(ss []entity.TeamSkill) []byte {
 	return b
 }
 
-// FromTeamSkillEntityToHTTPResponse renders one of a team's skills.
-func FromTeamSkillEntityToHTTPResponse(s entity.TeamSkill) []byte {
+// FromTeammateSkillEntityToHTTPResponse renders one of a team's skills.
+func FromTeammateSkillEntityToHTTPResponse(s entity.TeammateSkill) []byte {
 	b, _ := json.Marshal(view.GetTeamSkillResponse{Skill: fromTeamSkillEntity(s)})
 	return b
 }

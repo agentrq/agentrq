@@ -579,7 +579,7 @@ func sharesWithTeams(tx *gorm.DB) *gorm.DB {
 	return tx.Model(&model.WorkspaceShare{}).
 		Select("workspace_shares.id, workspace_shares.created_at, workspace_shares.updated_at, workspace_shares.team_id, " +
 			"workspace_shares.workspace_id, workspace_shares.user_id, workspace_shares.hide_tasks, workspace_shares.hide_skills, " +
-			"workspace_shares.hide_memory, workspace_shares.team_workspace_id, teams.name AS team_name").
+			"workspace_shares.hide_memory, workspace_shares.team_workspace_id, workspace_shares.manual_team_skills, teams.name AS team_name").
 		Joins("JOIN teams ON teams.id = workspace_shares.team_id")
 }
 
@@ -611,9 +611,11 @@ func teamWorkspaceFor(tx *gorm.DB, tw model.TeamWorkspace, act model.TeamManagem
 // outlives it: ErrNotFound when the team is gone or the sharer is not in it.
 // A new share goes into the team workspace of tw's name, created from tw
 // when the team has none. Sharing a workspace already shared sets what it
-// holds back from the team, recorded only when that changed; it stays in
-// its team workspace.
-func (r *repository) SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, tw model.TeamWorkspace, version int64, act model.TeamManagementActivity) (WorkspaceShareWithTeam, int64, error) {
+// holds back from the team and its auto opt-in to team skills, recorded only
+// when that changed; it stays in its team workspace. Turning auto opt-in off
+// opts the workspace into the team skills it uses now, with ids from ids, so
+// its agent loses none; only later ones start off.
+func (r *repository) SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, tw model.TeamWorkspace, ids func() int64, version int64, act model.TeamManagementActivity) (WorkspaceShareWithTeam, int64, error) {
 	var out WorkspaceShareWithTeam
 	var next int64
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
@@ -622,13 +624,18 @@ func (r *repository) SetWorkspaceShare(ctx context.Context, s model.WorkspaceSha
 			return err
 		}
 		act.TeamID, act.ActorUserID = s.TeamID, s.UserID
-		var n int64
-		if err := tx.Model(&model.WorkspaceShare{}).Where("team_id = ? AND workspace_id = ?", s.TeamID, s.WorkspaceID).Count(&n).Error; err != nil {
-			return err
-		}
-		if n == 0 {
+		old, err := first[model.WorkspaceShare](tx.Where("team_id = ? AND workspace_id = ?", s.TeamID, s.WorkspaceID))
+		switch {
+		case errors.Is(err, ErrNotFound):
 			tw.TeamID = s.TeamID
 			if s.TeamWorkspaceID, err = teamWorkspaceFor(tx, tw, act); err != nil {
+				return err
+			}
+		case err != nil:
+			return err
+		case s.ManualTeamSkills && !old.ManualTeamSkills:
+			// Auto opt-in turned off: what its agent uses now stays on.
+			if err := optInTeamSkillsOnNow(tx, old, ids, s.UpdatedAt); err != nil {
 				return err
 			}
 		}
@@ -641,8 +648,8 @@ func (r *repository) SetWorkspaceShare(ctx context.Context, s model.WorkspaceSha
 			act.Action = model.TeamActivityShareChanged
 			res = tx.Model(&model.WorkspaceShare{}).
 				Where("team_id = ? AND workspace_id = ? AND user_id = ?", s.TeamID, s.WorkspaceID, s.UserID).
-				Where("hide_tasks <> ? OR hide_skills <> ? OR hide_memory <> ?", s.HideTasks, s.HideSkills, s.HideMemory).
-				Updates(map[string]any{"hide_tasks": s.HideTasks, "hide_skills": s.HideSkills, "hide_memory": s.HideMemory, "updated_at": s.UpdatedAt})
+				Where("hide_tasks <> ? OR hide_skills <> ? OR hide_memory <> ? OR manual_team_skills <> ?", s.HideTasks, s.HideSkills, s.HideMemory, s.ManualTeamSkills).
+				Updates(map[string]any{"hide_tasks": s.HideTasks, "hide_skills": s.HideSkills, "hide_memory": s.HideMemory, "manual_team_skills": s.ManualTeamSkills, "updated_at": s.UpdatedAt})
 			if res.Error != nil {
 				return res.Error
 			}

@@ -65,6 +65,23 @@ type WorkspaceShare struct {
 	// TeamWorkspaceID is the team workspace it shows in, picked by its name
 	// when it was shared; a rename later does not move it.
 	TeamWorkspaceID int64 `gorm:"not null;default:0;index:idx_workspace_shares_team_workspace_id"`
+	// ManualTeamSkills turns auto opt-in off: a team skill with no choice
+	// for the workspace is off rather than on. Stored negated, as the Hide
+	// flags are, so a share starts opted in.
+	ManualTeamSkills bool `gorm:"not null;default:false"`
+}
+
+// TeamSkillChoice is whether a workspace (a fork's parent, for a fork) uses
+// one team skill, set by its owner or by its agent's delete. No row follows
+// the share's auto opt-in, so nothing is written per member when a skill is
+// added; a row outlives any change to the skill.
+type TeamSkillChoice struct {
+	ID          int64 `gorm:"primaryKey;autoIncrement:false"`
+	CreatedAt   time.Time
+	SkillID     int64 `gorm:"not null;uniqueIndex:uk_team_skill_choices_skill_id_workspace_id,priority:1"`
+	WorkspaceID int64 `gorm:"not null;index:idx_team_skill_choices_workspace_id;uniqueIndex:uk_team_skill_choices_skill_id_workspace_id,priority:2"`
+	UserID      int64 `gorm:"not null;index:idx_team_skill_choices_user_id"`
+	Off         bool  `gorm:"not null;default:false"`
 }
 
 // TeamWorkspace is the shares of one team under one name, which owns what
@@ -117,6 +134,11 @@ const (
 	TeamActivityWorkspaceUnshared    = "workspace.unshared"
 	TeamActivityShareChanged         = "workspace.shareChanged"
 	TeamActivityTeamWorkspaceCreated = "teamWorkspace.created"
+	TeamActivitySkillCreated         = "teamSkill.created"
+	TeamActivitySkillDeleted         = "teamSkill.deleted"
+	TeamActivitySkillGiven           = "teamSkill.given"
+	TeamActivitySkillOptedIn         = "teamSkill.optedIn"
+	TeamActivitySkillOptedOut        = "teamSkill.optedOut"
 	TeamActivityPanoShared           = "pano.shared"
 	TeamActivityPanoUnshared         = "pano.unshared"
 	TeamActivityTeamDeleted          = "team.deleted"
