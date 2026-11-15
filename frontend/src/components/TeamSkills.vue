@@ -7,10 +7,10 @@
 <!-- The skills on in one team workspace's shared workspaces
      (/skills?team=&workspace=), drawn as /skills draws yours, with who has
      each. There is no list across the team: each workspace has its own. One
-     click adds a copy to your own skills, on in your workspace of that name if
-     you have one; a skill's page shows its SKILL.md, read-only, and lets you
-     choose workspaces to turn it on in as you add it. Nothing here edits a
-     teammate's skill. -->
+     click adds it to your own skills as a link, not a copy, on in your
+     workspace of that name if you have one: your agents read and improve the
+     teammate's skill itself. A skill's page shows its SKILL.md, read-only,
+     and lets you choose workspaces to turn it on in as you add it. -->
 <template>
   <div data-test="team-skills" class="space-y-6">
     <p v-if="!workspace" data-test="team-skills-pick" class="text-[11px] text-gray-500 dark:text-zinc-400 ml-1">
@@ -159,7 +159,7 @@ async function add(skillName, ids) {
   try {
     await addTeamSkill(teamId.value, skillName, [...ids], workspace.value);
     mine.value = new Set(mine.value).add(skillName);
-    notifySuccess(`Added ${skillName} to your skills`, null, { path: ownPage(skillName), label: 'Open' });
+    notifySuccess(`Added ${skillName} to your skills: your agents improve the teammate's skill, not a copy`, null, { path: ownPage(skillName), label: 'Open' });
   } catch (err) {
     if (props.name) addError.value = err.message;
     else notifyError(err.message);

@@ -3699,7 +3699,7 @@ paths:
     post:
       tags: [Team mode]
       summary: Add one of a team's skills to your account
-      description: Copies every file of the skill (the copy read by its GET) into your account, on in `workspaceIds`, each of which must be yours (404 otherwise). 409 when you already have a skill of that name.
+      description: Links the skill (the one read by its GET) into your account, on in `workspaceIds`, each of which must be yours (404 otherwise). Nothing is copied. Your agents read and write the teammate's skill through the link while a team shares it with you, and its `sourceType` is `team`. 409 when you already have a skill of that name.
       requestBody:
         required: true
         content:

@@ -1247,7 +1247,7 @@ describe('a team\'s skills', () => {
     await flush();
     expect(api.addTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', [], 'backend');
     const toast = useToasts().toasts.value.at(-1);
-    expect(toast.message).toBe('Added deploy to your skills');
+    expect(toast.message).toBe("Added deploy to your skills: your agents improve the teammate's skill, not a copy");
     expect(toast.link).toEqual({ path: '/skills/deploy', label: 'Open' });
     expect($('[data-test=team-skill-add]')).toBe(null);
     expect(text($('[data-test=team-skill-mine]'))).toBe('Added');

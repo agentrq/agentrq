@@ -7,12 +7,14 @@ package api
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -593,9 +595,76 @@ func (m *teamMode) skills(t *testing.T) {
 	if status != http.StatusOK || skill["name"] != "alice-only" || fmt.Sprint(skill["workspaceIds"]) != "["+ws201+"]" {
 		t.Errorf("Bob adding alice-only to 201 answered %d %v", status, body)
 	}
-	var copied model.Skill
-	if err := m.db.Where("user_id = ? AND name = ?", 2, "alice-only").First(&copied).Error; err != nil || copied.Description != "alice-only by "+aliceID {
-		t.Errorf("Bob's copy is %+v (%v)", copied, err)
+	var alices, link model.Skill
+	if err := m.db.Where("user_id = ? AND name = ?", 1, "alice-only").First(&alices).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := m.db.Where("user_id = ? AND name = ?", 2, "alice-only").First(&link).Error; err != nil ||
+		link.LinkedSkillID != alices.ID || link.SourceType != "team" || link.Description != "alice-only by "+aliceID {
+		t.Errorf("Bob's link is %+v (%v), want one to Alice's %d", link, err, alices.ID)
+	}
+	var own int64
+	if err := m.db.Model(&model.SkillFile{}).Where("skill_id = ?", link.ID).Count(&own).Error; err != nil || own != 0 {
+		t.Errorf("the link holds %d files of its own (%v), want none: it copies nothing", own, err)
+	}
+	m.linkedSkill(t)
+}
+
+// linkedSkill: Bob's agent reads and improves Alice's alice-only through his
+// link, and each write must name the version it read.
+func (m *teamMode) linkedSkill(t *testing.T) {
+	ctx := context.Background()
+	read := func(user string, ws int64, path string) (*entity.GetSkillFileResponse, error) {
+		return m.crud.GetSkillFile(ctx, entity.GetSkillFileRequest{UserID: user, WorkspaceID: ws, Name: "alice-only", Path: path})
+	}
+	save := func(user string, ws int64, path, content string, version *int64) (*entity.SaveSkillFileResponse, error) {
+		return m.crud.SaveSkillFile(ctx, entity.SaveSkillFileRequest{UserID: user, WorkspaceID: ws, Name: "alice-only", Path: path, Content: content, Version: version})
+	}
+	v := func(n int64) *int64 { return &n }
+	conflict := func(what string, err error, want string) {
+		t.Helper()
+		var se *crud.SkillError
+		if !errors.As(err, &se) || se.Kind != crud.SkillConflict || !strings.Contains(se.Message, want) {
+			t.Errorf("%s: %v, want a conflict saying %q", what, err, want)
+		}
+	}
+
+	f, err := read(bobID, 201, "SKILL.md")
+	if err != nil || !strings.Contains(f.File.Content, "steps of "+aliceID) || !f.Shared || f.File.Version != 1 || f.File.URL != "" {
+		t.Fatalf("Bob reading through his link: %+v, %v; want Alice's v1, shared, with no public link", f, err)
+	}
+	_, err = save(bobID, 201, "SKILL.md", "---\nname: alice-only\ndescription: improved\n---\nbob's steps", nil)
+	conflict("Bob replacing it with no version", err, "now version 1")
+	saved, err := save(bobID, 201, "SKILL.md", "---\nname: alice-only\ndescription: improved\n---\nbob's steps", v(1))
+	if err != nil || saved.File.Version != 2 || saved.Skill.Description != "improved" {
+		t.Fatalf("Bob saving on v1: %+v, %v", saved, err)
+	}
+	_, err = save(aliceID, 100, "SKILL.md", "---\nname: alice-only\ndescription: mine\n---\nalice's", v(1))
+	conflict("Alice saving on the version Bob replaced", err, "now version 2")
+	f, err = read(aliceID, 100, "SKILL.md")
+	if err != nil || f.File.Content != "---\nname: alice-only\ndescription: improved\n---\nbob's steps" || !f.Shared || f.File.URL == "" {
+		t.Errorf("Alice reading her own skill after Bob's save: %+v, %v", f, err)
+	}
+
+	// A new file needs no version, and lands in Alice's skill; the link
+	// shows what it now holds, so a search finds it by the new words.
+	if _, err := save(bobID, 201, "notes.md", "notes", nil); err != nil {
+		t.Fatalf("Bob adding a file: %v", err)
+	}
+	var files int64
+	m.db.Model(&model.SkillFile{}).Where("skill_id = (?)", m.db.Model(&model.Skill{}).Select("id").Where("user_id = ? AND name = ?", 1, "alice-only")).Count(&files)
+	if files != 2 {
+		t.Errorf("Alice's skill has %d files, want SKILL.md and Bob's notes.md", files)
+	}
+	found, err := m.crud.SearchSkills(ctx, entity.SearchSkillsRequest{UserID: bobID, WorkspaceID: 201, Query: "improved", EnabledOnly: true})
+	if err != nil || found.Total != 1 || found.Skills[0].FileCount != 2 {
+		t.Errorf("Bob's agent searching for the new description: %+v, %v", found, err)
+	}
+	if _, err := m.crud.DeleteSkillFile(ctx, entity.DeleteSkillFileRequest{UserID: bobID, WorkspaceID: 201, Name: "alice-only", Path: "notes.md"}); err != nil {
+		t.Errorf("Bob deleting the file: %v", err)
+	}
+	if rs, err := m.crud.GetSkill(ctx, entity.GetSkillRequest{UserID: bobID, WorkspaceID: 201, Name: "alice-only"}); err != nil || len(rs.Skill.Files) != 1 || rs.Skill.Files[0].URL != "" {
+		t.Errorf("Bob's link after the delete: %+v, %v", rs, err)
 	}
 }
 
@@ -624,6 +693,32 @@ func (m *teamMode) unshareAndRemove(t *testing.T) {
 		"/workspaces", "/skills", "/activities"} {
 		status, body := m.get(t, bobID, "/teams/"+teamTen+p)
 		expectStatus(t, "Bob, just removed, reading "+p, status, http.StatusNotFound, body)
+	}
+
+	// His link stays, but reaches nothing: his agent no longer finds it,
+	// reads it or writes it.
+	ctx := context.Background()
+	found, err := m.crud.SearchSkills(ctx, entity.SearchSkillsRequest{UserID: bobID, WorkspaceID: 201, EnabledOnly: true})
+	if err != nil || slices.ContainsFunc(found.Skills, func(s entity.Skill) bool { return s.Name == "alice-only" }) {
+		t.Errorf("Bob's agent, just removed, still finds the link: %+v, %v", found, err)
+	}
+	if _, err := m.crud.GetSkillFile(ctx, entity.GetSkillFileRequest{UserID: bobID, WorkspaceID: 201, Name: "alice-only", Path: "SKILL.md"}); !errors.Is(err, base.ErrNotFound) {
+		t.Errorf("Bob, just removed, reading through his link: %v, want not found", err)
+	}
+	two := int64(2)
+	if _, err := m.crud.SaveSkillFile(ctx, entity.SaveSkillFileRequest{UserID: bobID, WorkspaceID: 201, Name: "alice-only", Path: "SKILL.md",
+		Content: "---\nname: alice-only\ndescription: x\n---\n", Version: &two}); !errors.Is(err, base.ErrNotFound) {
+		t.Errorf("Bob, just removed, writing through his link: %v, want not found", err)
+	}
+
+	// Alice deleting her skill takes the link with it.
+	if err := m.crud.DeleteSkill(ctx, entity.DeleteSkillRequest{UserID: aliceID, Name: "alice-only"}); err != nil {
+		t.Fatal(err)
+	}
+	var links int64
+	m.db.Model(&model.Skill{}).Where("user_id = ? AND name = ?", 2, "alice-only").Count(&links)
+	if links != 0 {
+		t.Errorf("Bob still has %d links to the deleted skill", links)
 	}
 }
 

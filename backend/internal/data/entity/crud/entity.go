@@ -1084,8 +1084,12 @@ type (
 		SizeBytes int
 		UpdatedAt time.Time
 		Content   string
-		// URL is where anyone can read the file, when skills are public.
+		// URL is where anyone can read the file, when skills are public. A
+		// linked skill's files have none: a link stops reading them when the
+		// team stops sharing them, and a public link would not.
 		URL string
+		// Version counts the file's writes, from 1.
+		Version int64
 	}
 
 	SkillImportSkip struct {
@@ -1143,17 +1147,25 @@ type (
 		Path        string
 	}
 
+	// GetSkillFileResponse is a file with its skill. Shared says that others
+	// write the skill too, a teammate through a link or the account through
+	// its own, so a write must name the file's version.
 	GetSkillFileResponse struct {
-		Skill Skill
-		File  SkillFile
+		Skill  Skill
+		File   SkillFile
+		Shared bool
 	}
 
+	// SaveSkillFileRequest writes a file. Version is the one the writer read,
+	// 0 for no file yet; without it a file is replaced whatever its version,
+	// unless the skill is shared, where it may only be created.
 	SaveSkillFileRequest struct {
 		WorkspaceID int64
 		UserID      string
 		Name        string
 		Path        string
 		Content     string
+		Version     *int64
 	}
 
 	SaveSkillFileResponse struct {

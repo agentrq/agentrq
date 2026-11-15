@@ -5,7 +5,7 @@
 // Package teamview is team mode: what a team's members read of the
 // workspaces shared with it, and the two writes it allows: cloning a
 // teammate's task into a workspace of your own, and adding a teammate's
-// skill to your account.
+// skill to your account, as a link to it.
 //
 // Who may read what is decided in exactly two places, both in
 // controller/team:
@@ -69,8 +69,9 @@ type Controller interface {
 	// WorkspaceKey matches it; every team workspace's when it is empty.
 	ListSkills(ctx context.Context, userID, teamID int64, workspace string) ([]entity.TeamSkill, error)
 	GetSkill(ctx context.Context, userID, teamID int64, workspace, name string) (entity.TeamSkill, error)
-	// AddSkill copies a teammate's skill into the caller's account, on in
-	// the given workspaces of theirs.
+	// AddSkill links a teammate's skill into the caller's account, on in the
+	// given workspaces of theirs: their agents read and improve that one
+	// skill, not a copy, while the team shares it.
 	AddSkill(ctx context.Context, userID, teamID int64, workspace, name string, workspaceIDs []int64) (entity.Skill, error)
 
 	// ListTeammateMemories is the teammates in the team workspace of one of
@@ -100,7 +101,7 @@ type Owner interface {
 	SystemListTasksInWorkspaces(ctx context.Context, req entity.ListTasksRequest, workspaceIDs []int64) (*entity.ListTasksResponse, error)
 	SystemGetDetailedStatsOfWorkspaces(ctx context.Context, req entity.GetStatsOfWorkspacesRequest) (*entity.GetDetailedWorkspaceStatsResponse, error)
 	SystemGetSkillFile(ctx context.Context, req entity.SystemGetSkillFileRequest) (*entity.GetSkillFileResponse, error)
-	CopySkill(ctx context.Context, req entity.CopySkillRequest) (*entity.CopySkillResponse, error)
+	LinkSkill(ctx context.Context, req entity.LinkSkillRequest) (*entity.LinkSkillResponse, error)
 	GetPanoDoc(ctx context.Context, req entity.GetPanoDocRequest) (*entity.GetPanoDocResponse, error)
 	GetPanoFile(ctx context.Context, req entity.GetPanoFileRequest) (*entity.GetAttachmentResponse, error)
 }
@@ -448,12 +449,12 @@ func (c *controller) GetSkill(ctx context.Context, userID, teamID int64, workspa
 }
 
 func (c *controller) AddSkill(ctx context.Context, userID, teamID int64, workspace, name string, workspaceIDs []int64) (entity.Skill, error) {
-	s, src, err := c.teamSkill(ctx, userID, teamID, workspace, name)
+	_, src, err := c.teamSkill(ctx, userID, teamID, workspace, name)
 	if err != nil {
 		return entity.Skill{}, err
 	}
-	rs, err := c.owner.CopySkill(ctx, entity.CopySkillRequest{
-		FromUserID: src.UserID, Name: s.Name, UserID: monoflake.ID(userID).String(), WorkspaceIDs: workspaceIDs,
+	rs, err := c.owner.LinkSkill(ctx, entity.LinkSkillRequest{
+		SkillID: src.SkillID, UserID: monoflake.ID(userID).String(), WorkspaceIDs: workspaceIDs,
 	})
 	if err != nil {
 		return entity.Skill{}, err

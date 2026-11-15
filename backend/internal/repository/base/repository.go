@@ -170,10 +170,16 @@ type Repository interface {
 	// that drop files return the storage ids the caller must purge once the
 	// transaction has committed.
 	GetSkill(ctx context.Context, userID int64, name string) (model.Skill, error)
+	// A link is a skill row that reads and writes a teammate's skill while a
+	// team still shares it with the link's account.
+	GetSkillByID(ctx context.Context, id int64) (model.Skill, error)
+	CanReadLinkedSkill(ctx context.Context, userID, skillID int64) (bool, error)
+	HasSkillLinks(ctx context.Context, skillID int64) (bool, error)
+	LinkSkill(ctx context.Context, link model.Skill, on []model.WorkspaceSkill) (model.Skill, error)
 	SearchSkills(ctx context.Context, userID int64, q string, filter SkillFilter, limit, offset int) ([]model.Skill, int64, error)
 	SetSkillDisabled(ctx context.Context, skillID int64, disabled bool) error
 	ReplaceSkill(ctx context.Context, s model.Skill, files []model.SkillFile, on []model.WorkspaceSkill) (model.Skill, []string, error)
-	UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile, on []model.WorkspaceSkill) (model.Skill, string, error)
+	UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile, on []model.WorkspaceSkill, expect *int64) (model.Skill, model.SkillFile, string, error)
 	DeleteSkillFile(ctx context.Context, s model.Skill, path string) (model.Skill, string, error)
 	DeleteSkill(ctx context.Context, skillID int64) ([]string, error)
 	GetSkillFile(ctx context.Context, skillID int64, path string) (model.SkillFile, error)

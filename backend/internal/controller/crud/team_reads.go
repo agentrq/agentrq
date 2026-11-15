@@ -13,6 +13,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/mustafaturan/monoflake"
+	"gorm.io/gorm"
 )
 
 // TeamReadController is what a team's reads need beyond the owner-checked
@@ -28,11 +29,12 @@ type TeamReadController interface {
 	// SystemGetSkillFile reads one file of an account's skill, counting
 	// nothing: it is not the owner looking.
 	SystemGetSkillFile(ctx context.Context, req entity.SystemGetSkillFileRequest) (*entity.GetSkillFileResponse, error)
-	// CopySkill copies another account's skill, every file, into the
-	// caller's account, on in the given workspaces of theirs. A workspace
-	// they do not own is not found; a name they already have is a
+	// LinkSkill links another account's skill into the caller's account, on
+	// in the given workspaces of theirs: no file is copied, and the link
+	// reads and writes that skill while a team shares it with them. A
+	// workspace they do not own is not found; a name they already have is a
 	// SkillConflict.
-	CopySkill(ctx context.Context, req entity.CopySkillRequest) (*entity.CopySkillResponse, error)
+	LinkSkill(ctx context.Context, req entity.LinkSkillRequest) (*entity.LinkSkillResponse, error)
 }
 
 func (c *controller) SystemListTasksInWorkspaces(ctx context.Context, req entity.ListTasksRequest, workspaceIDs []int64) (*entity.ListTasksResponse, error) {
@@ -63,64 +65,42 @@ func (c *controller) SystemGetSkillFile(ctx context.Context, req entity.SystemGe
 	}, nil
 }
 
-func (c *controller) CopySkill(ctx context.Context, req entity.CopySkillRequest) (*entity.CopySkillResponse, error) {
+func (c *controller) LinkSkill(ctx context.Context, req entity.LinkSkillRequest) (*entity.LinkSkillResponse, error) {
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	if uid == 0 || req.FromUserID == 0 {
+	if uid == 0 || req.SkillID == 0 {
 		return nil, skillErr(SkillInvalid, "invalid request")
-	}
-	name, err := skillName(req.Name)
-	if err != nil {
-		return nil, err
 	}
 	workspaces, err := c.skillWorkspaces(ctx, req.UserID, req.WorkspaceIDs)
 	if err != nil {
 		return nil, err
 	}
-	switch _, err := c.repository.GetSkill(ctx, uid, name); {
+	src, err := c.repository.GetSkillByID(ctx, req.SkillID)
+	if err != nil {
+		return nil, err
+	}
+	switch _, err := c.repository.GetSkill(ctx, uid, src.Name); {
 	case err == nil:
-		return nil, skillErr(SkillConflict, "you already have a skill named %s", name)
+		return nil, skillErr(SkillConflict, "you already have a skill named %s", src.Name)
 	case !errors.Is(err, base.ErrNotFound):
-		return nil, err
-	}
-	src, err := c.repository.GetSkill(ctx, req.FromUserID, name)
-	if err != nil {
-		return nil, err
-	}
-	srcFiles, err := c.repository.ListSkillFiles(ctx, src.ID)
-	if err != nil {
 		return nil, err
 	}
 
 	now := time.Now()
-	s := model.Skill{
-		ID: c.idgen.NextID(), CreatedAt: now, UpdatedAt: now, UserID: uid,
-		Name: src.Name, Description: src.Description,
-		SourceType: src.SourceType, SourceRepo: src.SourceRepo, SourceRef: src.SourceRef,
-		SourceCommit: src.SourceCommit, SourcePath: src.SourcePath, LocallyModified: src.LocallyModified,
-	}
-	files := make([]model.SkillFile, 0, len(srcFiles))
-	var written []string
-	for _, sf := range srcFiles {
-		content, err := c.skillStorage.LoadRaw(sf.StorageID)
-		if err == nil {
-			var f model.SkillFile
-			if f, err = c.storeSkillFile(s, sf.Path, content, now); err == nil {
-				written = append(written, f.StorageID)
-				files = append(files, f)
-				continue
-			}
-		}
-		c.purge(written)
-		return nil, err
+	link := model.Skill{
+		ID: c.idgen.NextID(), CreatedAt: now, UpdatedAt: src.UpdatedAt, UserID: uid,
+		Name: src.Name, Description: src.Description, SourceType: skillSourceTeam,
+		FileCount: src.FileCount, TotalBytes: src.TotalBytes, LinkedSkillID: src.ID,
 	}
 	on := make([]model.WorkspaceSkill, len(workspaces))
 	for i, w := range workspaces {
 		on[i] = model.WorkspaceSkill{ID: c.idgen.NextID(), CreatedAt: now, UserID: uid, WorkspaceID: w}
 	}
-	saved, _, err := c.repository.ReplaceSkill(ctx, s, files, on)
+	saved, err := c.repository.LinkSkill(ctx, link, on)
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return nil, skillErr(SkillConflict, "you already have a skill named %s", src.Name)
+	}
 	if err != nil {
-		c.purge(written)
 		return nil, err
 	}
-	return &entity.CopySkillResponse{Skill: fromModelSkill(saved, workspaces, 0)}, nil
+	return &entity.LinkSkillResponse{Skill: fromModelSkill(saved, workspaces, 0)}, nil
 }

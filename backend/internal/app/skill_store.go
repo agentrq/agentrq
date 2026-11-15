@@ -57,35 +57,41 @@ func visible(sk entity.Skill) bool {
 }
 
 // LoadSkillFile reads one file, and for a SKILL.md the paths of its skill's
-// files as well, which is what loadSkill lists after it. A skill the agent
-// does not see is not found, as searchSkills does not list it.
-func (s *skillStore) LoadSkillFile(ctx context.Context, name, path string) (string, []string, bool, error) {
+// files as well, which is what loadSkill lists after it, and the file's
+// version when others write the skill too. A skill the agent does not see is
+// not found, as searchSkills does not list it; so is a link no team shares
+// any more.
+func (s *skillStore) LoadSkillFile(ctx context.Context, name, path string) (string, []string, int64, bool, error) {
 	ctx = entity.WithOrigin(ctx, entity.OriginMCP)
 	file, err := s.crud.GetSkillFile(ctx, entity.GetSkillFileRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Name: name, Path: path})
 	if errors.Is(err, base.ErrNotFound) {
-		return "", nil, false, nil
+		return "", nil, 0, false, nil
 	}
 	if err != nil {
-		return "", nil, false, refusal(err)
+		return "", nil, 0, false, refusal(err)
 	}
 	if !visible(file.Skill) {
-		return "", nil, false, nil
+		return "", nil, 0, false, nil
+	}
+	var version int64
+	if file.Shared {
+		version = file.File.Version
 	}
 	if path != skill.FileName {
-		return file.File.Content, nil, true, nil
+		return file.File.Content, nil, version, true, nil
 	}
 	rs, err := s.crud.GetSkill(ctx, entity.GetSkillRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Name: name})
 	if errors.Is(err, base.ErrNotFound) {
-		return "", nil, false, nil
+		return "", nil, 0, false, nil
 	}
 	if err != nil {
-		return "", nil, false, refusal(err)
+		return "", nil, 0, false, refusal(err)
 	}
 	files := make([]string, len(rs.Skill.Files))
 	for i, f := range rs.Skill.Files {
 		files[i] = f.Path
 	}
-	return file.File.Content, files, true, nil
+	return file.File.Content, files, version, true, nil
 }
 
 // hidden refuses a change to a skill of the account the agent does not see:
@@ -103,12 +109,20 @@ func (s *skillStore) hidden(ctx context.Context, name string) error {
 	return &mcp.SkillRefusal{Message: fmt.Sprintf("skill %q belongs to the account but is not on in this workspace, so this agent cannot use or change it; ask the human to turn it on in this workspace's Skills tab, or choose another name", rs.Skill.Name)}
 }
 
-func (s *skillStore) SaveSkillFile(ctx context.Context, name, path, content string) error {
+// SaveSkillFile writes on version, the one the agent read; 0 names none.
+func (s *skillStore) SaveSkillFile(ctx context.Context, name, path, content string, version int64) (int64, error) {
 	if err := s.hidden(ctx, name); err != nil {
-		return err
+		return 0, err
 	}
-	_, err := s.crud.SaveSkillFile(ctx, entity.SaveSkillFileRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Name: name, Path: path, Content: content})
-	return refusal(err)
+	req := entity.SaveSkillFileRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Name: name, Path: path, Content: content}
+	if version != 0 {
+		req.Version = &version
+	}
+	rs, err := s.crud.SaveSkillFile(ctx, req)
+	if err != nil {
+		return 0, refusal(err)
+	}
+	return rs.File.Version, nil
 }
 
 // DeleteSkill takes the skill out of this workspace; the controller deletes
