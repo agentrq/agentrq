@@ -55,8 +55,6 @@ describe('routes', () => {
       '/pano/new',
       '/pano/:id',
       '/pano/:docId/chat/:workspaceId/:taskId',
-      '/skills',
-      '/skills/:name',
       '/team/new',
       '/teams/:teamId',
       '/teams/:teamId/analytics',

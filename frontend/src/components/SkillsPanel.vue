@@ -20,7 +20,6 @@
         and read them with
         <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">loadSkill</code>.
         Skills belong to your account: turn one on here for this workspace's agents to see it.
-        <RouterLink to="/skills" data-test="skills-page-link" class="underline hover:text-gray-800 dark:hover:text-zinc-100">All skills</RouterLink>
       </p>
     </div>
 

@@ -78,7 +78,10 @@ const machinePage = ({ machineId }) => `/machines/${seg(machineId)}`
 const eventPage = ({ eventId }) => `/events/${seg(eventId)}`
 const hookPage = ({ registrationId }) => `/events/hooks/${seg(registrationId)}`
 const workflowPage = ({ workflowId }) => `/workflows/${seg(workflowId)}`
-const skillPage = ({ name }) => `/skills/${seg(name)}`
+// An account-wide skill change has no page of its own: the Skills tab of a
+// workspace it names, or the workspaces.
+const accountSkillsPage = ({ workspaceIds } = {}) =>
+  workspaceIds?.length ? settingsPage('skills')({ workspaceId: workspaceIds[0] }) : '/'
 const panoDocPage = ({ id }) => `/pano/${seg(id)}`
 const PANO_ID = str('The Pano doc\'s ID (base62), as listPanoDocs reports it.')
 const PANO_FILES = (description) => ({
@@ -198,7 +201,7 @@ const TEAM_SKILL_WRITES = (api) => ({
 /** Where a manageTeamSkills action shows: the workspace's Skills tab, or the team's Skills page. */
 function teamSkillWritePage(input = {}) {
   if (input.action === 'optIn' || input.action === 'give') return settingsPage('skills')(input)
-  return input.teamId ? `/teams/${seg(input.teamId)}/skills` : '/skills'
+  return input.teamId ? `/teams/${seg(input.teamId)}/skills` : '/'
 }
 
 const TEAM_SKILL_FIELDS = {
@@ -253,7 +256,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         '- "/workspaces/<id>" ("?filter=" as above); under it "/{board,analytics,settings}", ' +
         '"/settings/skills/<name>", "/tasks/{new,<taskId>}", plus "/instances" or "/edit". Its ' +
         '"?tab=" general|setup|automations|notifications|memories|skills|sharing|slack|input|storage|danger.\n' +
-        '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/skills[/<name>]", "/{pano,events/hooks}/new", ' +
+        '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/{pano,events/hooks}/new", ' +
         '"/pano/[<id>/]chat/<workspaceId>/<taskId>".\n' +
         '- "/machines[/<id>]", "/sessions/<id>" (terminal).\n' +
         '- "/extensions[/<name>/<pageId>]" (desktop).\n' +
@@ -546,7 +549,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       required: ['url'],
       // With overwrite, it replaces skills the account already had.
       destructive: true,
-      screen: before(() => '/skills'),
+      screen: before(accountSkillsPage),
       run: ({ url, overwrite, skills, workspaceIds }) => api.importSkills(url, overwrite, skills, workspaceIds),
     }),
     tool({
@@ -555,7 +558,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { name: str('The skill\'s name.') },
       required: ['name'],
       destructive: true,
-      screen: before(() => '/skills'),
+      screen: before(accountSkillsPage),
       run: ({ name }) => api.deleteSkill(name),
     }),
     tool({
@@ -567,7 +570,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       required: ['name', 'enabled'],
       // Off takes away a skill agents may be relying on.
       destructive: true,
-      screen: before(skillPage),
+      screen: before(accountSkillsPage),
       run: ({ name, enabled }) => api.setSkillEnabled(name, enabled),
     }),
     tool({

@@ -6,23 +6,19 @@
 
 <script setup>
 /**
- * The account's skills, and one skill's page in place of the list when the
- * route names one. Thin on purpose: the list and the page are the same
- * components a workspace's Skills tab draws, given no workspace.
+ * A team's Skills page, of one team workspace (?workspace=). Only a team has
+ * one: your own skills are reached from each workspace, on its Skills tab.
  */
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import SkillPage from '../components/SkillPage.vue'
-import SkillsPanel from '../components/SkillsPanel.vue'
 import TeamWorkspaceSkills from '../components/TeamWorkspaceSkills.vue'
 import TeamWorkspaceActions from '../components/TeamWorkspaceActions.vue'
 import { useTeamMode } from '../composables/useTeamMode'
 
 const route = useRoute()
 const router = useRouter()
-const skillName = computed(() => route.params.name || '')
-const { isTeamMode, link } = useTeamMode()
-const teamWorkspace = computed(() => (isTeamMode.value && typeof route.query.workspace === 'string' ? route.query.workspace : ''))
+const { link } = useTeamMode()
+const teamWorkspace = computed(() => (typeof route.query.workspace === 'string' ? route.query.workspace : ''))
 </script>
 
 <template>
@@ -37,21 +33,16 @@ const teamWorkspace = computed(() => (isTeamMode.value && typeof route.query.wor
           </template>
           <template v-else>Skills</template>
         </h1>
-        <p v-if="isTeamMode" class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
+        <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
           <template v-if="teamWorkspace">The skills it owns, which every teammate can change.</template>
           <template v-else>Each team workspace owns its own skills.</template>
         </p>
-        <p v-else class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
-          Playbooks agents load when a task matches one. Turn one on in each workspace whose agents should see it.
-        </p>
       </div>
-      <TeamWorkspaceActions v-if="isTeamMode" current="skills" />
+      <TeamWorkspaceActions current="skills" />
     </div>
 
     <div class="px-4 pb-10">
-      <TeamWorkspaceSkills v-if="isTeamMode" />
-      <SkillPage v-else-if="skillName" :name="skillName" />
-      <SkillsPanel v-else />
+      <TeamWorkspaceSkills />
     </div>
   </div>
 </template>

@@ -274,8 +274,6 @@ describe('the navigate tool\'s map of the interface', () => {
     '/workflows/wf1',
     '/machines',
     '/machines/m1',
-    '/skills',
-    '/skills/tdd',
     '/pano',
     '/pano/new',
     '/pano/p1',

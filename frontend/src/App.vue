@@ -178,19 +178,6 @@
             <span v-if="!isCollapsed || isMobileMenuOpen">Kanban</span>
           </router-link>
 
-          <router-link to="/skills"
-              @mouseenter="showTooltip($event, 'Skills')" @mouseleave="hideTooltip"
-              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
-              :class="[
-                (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
-                $route.path.startsWith('/skills') ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
-              ]">
-            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 11.5v9M12 11.5c-2-1.3-4.5-2-7.5-2V19c3 0 5.5.7 7.5 2M12 11.5c2-1.3 4.5-2 7.5-2V19c-3 0-5.5.7-7.5 2M15.5 1.5c.3 1.6 1.4 2.7 3 3-1.6.3-2.7 1.4-3 3-.3-1.6-1.4-2.7-3-3 1.6-.3 2.7-1.4 3-3zM8 3.5c.2.9.6 1.3 1.5 1.5-.9.2-1.3.6-1.5 1.5-.2-.9-.6-1.3-1.5-1.5.9-.2 1.3-.6 1.5-1.5z" />
-            </svg>
-            <span v-if="!isCollapsed || isMobileMenuOpen">Skills</span>
-          </router-link>
-
           <template v-if="workspaces.length > 0 && (!isCollapsed || isMobileMenuOpen)">
             <div class="p-2 border-gray-200/50 dark:border-zinc-600/50">
               <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Workspaces</span>

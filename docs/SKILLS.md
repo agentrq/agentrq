@@ -2,7 +2,7 @@
 
 A skill is a playbook an agent loads when a task matches it. It is a directory with a `SKILL.md` and, optionally, other files that the `SKILL.md` points to, such as references, prompts and scripts. It is the same format Claude Code and Antigravity use, so skills written for them work here.
 
-Skills belong to your account, and each workspace has its own switch for each of them. A workspace's agents see a skill only when it is on in that workspace and on for the account. Open **Skills** in the sidebar to see all of them, or a workspace's **Settings → Skills** for that workspace's switches.
+Skills belong to your account, and each workspace has its own switch for each of them. A workspace's agents see a skill only when it is on in that workspace and on for the account. Open a workspace's **Skills** button, beside **Analytics** above its tasks, or its **Settings → Skills**, to see all of them with that workspace's switches.
 
 ## A minimal skill
 
