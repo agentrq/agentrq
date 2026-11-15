@@ -95,14 +95,28 @@ func (c *controller) Load(ctx context.Context) (config.Service, error) {
 		return nil, err
 	}
 	for _, key := range c.keys() {
-		if _, ok := stored[key]; ok {
-			continue
-		}
 		block := map[string]any{}
 		if err := c.base.Populate(key, &block); err != nil {
 			return nil, fmt.Errorf("%s: %w", key, err)
 		}
-		row := c.row(key, strip(key, block))
+		block = strip(key, block)
+		if val, ok := stored[key]; ok {
+			// A stored block takes the settings added to yaml since it was
+			// stored and drops the ones removed, so the admin page shows
+			// exactly the settings the server reads.
+			old, _ := decodeObject(val)
+			merged := reconcile(old, block)
+			if next, _ := json.Marshal(merged); bytes.Equal(next, val) {
+				continue
+			}
+			row := c.row(key, merged)
+			if err := c.db.Conn(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(&row).Error; err != nil {
+				return nil, fmt.Errorf("update config %s: %w", key, err)
+			}
+			zlog.Info().Str("block", key).Msg("config: brought the stored block up to date with yaml")
+			continue
+		}
+		row := c.row(key, block)
 		// Instances starting together seed alike; the first row stays.
 		if err := c.db.Conn(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
 			return nil, fmt.Errorf("seed config %s: %w", key, err)
@@ -255,6 +269,27 @@ func decodeObject(raw []byte) (map[string]any, error) {
 		return nil, errors.New("not a JSON object")
 	}
 	return block, nil
+}
+
+// reconcile is the stored block with yaml's settings: one only yaml has is
+// added with yaml's value, one yaml no longer has is dropped, and a group is
+// reconciled alike. Every other stored value is kept.
+func reconcile(stored, yaml map[string]any) map[string]any {
+	out := make(map[string]any, len(yaml))
+	for k, yv := range yaml {
+		sv, ok := stored[k]
+		if !ok {
+			out[k] = yv
+			continue
+		}
+		sg, sIsGroup := sv.(map[string]any)
+		yg, yIsGroup := yv.(map[string]any)
+		if sIsGroup && yIsGroup {
+			sv = reconcile(sg, yg)
+		}
+		out[k] = sv
+	}
+	return out
 }
 
 // strip drops the block's fields kept in env vars.
