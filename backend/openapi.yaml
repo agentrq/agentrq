@@ -3387,6 +3387,61 @@ paths:
         '400': { $ref: '#/components/responses/InvalidPayload' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{id}/teammate-memories/{teammateWorkspaceId}/memories:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: teammateWorkspaceId
+        in: path
+        required: true
+        schema: { type: string }
+        description: A teammate's workspace, as the teammate list names it.
+    get:
+      tags: [Teams]
+      summary: List a teammate's memories, read-only
+      description: Without their content. Your own workspace's owner only, and a teammate's workspace in its team workspace whose share includes memory, whether or not your agent's index includes it (404 otherwise).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  memories:
+                    type: array
+                    items: { $ref: '#/components/schemas/Memory' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{id}/teammate-memories/{teammateWorkspaceId}/memories/{name}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: teammateWorkspaceId
+        in: path
+        required: true
+        schema: { type: string }
+        description: A teammate's workspace, as the teammate list names it.
+      - name: name
+        in: path
+        required: true
+        schema: { type: string, maxLength: 32 }
+        description: The memory's name, as the teammate's agent saved it.
+    get:
+      tags: [Teams]
+      summary: One of a teammate's memories, in full, read-only
+      description: The same checks as the list (404 otherwise).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  memory: { $ref: '#/components/schemas/Memory' }
+        '400': { $ref: '#/components/responses/InvalidPayload' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /teams/{teamId}/workspaces:
     parameters:
       - $ref: '#/components/parameters/TeamId'

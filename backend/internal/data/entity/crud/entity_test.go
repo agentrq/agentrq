@@ -114,6 +114,7 @@ func TestActionString(t *testing.T) {
 		{ActionTeamSkillAdd, "team_skill_add"},
 		{ActionTeammateMemoryInclude, "teammate_memory_include"},
 		{ActionTeammateMemoryExclude, "teammate_memory_exclude"},
+		{ActionTeammateMemoryView, "teammate_memory_view"},
 		{ActionPanoShare, "pano_share"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.

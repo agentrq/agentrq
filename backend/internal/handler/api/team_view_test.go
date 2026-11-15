@@ -260,6 +260,7 @@ func TestTeamMode(t *testing.T) {
 			t.Run("clone", m.clone)
 			t.Run("skills", m.skills)
 			t.Run("teammate memories", m.teammateMemories)
+			t.Run("teammate memory read", m.teammateMemoryRead)
 			t.Run("pano", m.pano)
 			t.Run("unshare and remove", m.unshareAndRemove)
 			t.Run("a team's life", m.flow)
@@ -826,6 +827,57 @@ func (m *teamMode) teammateMemories(t *testing.T) {
 		t.Errorf("a bad user id: %d, want 400", status)
 	}
 	if status, body = put(aliceID, ws100, bobID, `{"included":true}`); status != http.StatusOK || body["teammate"].(map[string]any)["included"] != true {
+		t.Errorf("alice takes bob back: %d %v", status, body)
+	}
+}
+
+// A member reads a teammate's memories, read-only, from their own shared
+// workspace, whether or not its agent's index includes that teammate.
+func (m *teamMode) teammateMemoryRead(t *testing.T) {
+	path := func(ws, of string) string { return "/workspaces/" + ws + "/teammate-memories/" + of + "/memories" }
+	if status, body := call(t, m.app, aliceID, http.MethodPut, "/workspaces/"+ws100+"/teammate-memories/"+bobID, `{"included":false}`); status != http.StatusOK {
+		t.Fatalf("alice leaves bob out: %d %v", status, body)
+	}
+	status, body := m.get(t, aliceID, path(ws100, ws200))
+	if status != http.StatusOK || !sameList(list(body, "memories", "name"), "memory.md") {
+		t.Fatalf("bob's memories, as alice reads them: %d %v", status, body)
+	}
+	status, body = m.get(t, aliceID, path(ws100, ws200)+"/memory.md")
+	if status != http.StatusOK || body["memory"].(map[string]any)["content"] != "bob's notes" {
+		t.Fatalf("bob's memory.md, as alice reads it: %d %v", status, body)
+	}
+	if status, body = m.get(t, bobID, path(ws200, ws100)+"/memory.md"); status != http.StatusOK || body["memory"].(map[string]any)["content"] != "alice's notes" {
+		t.Errorf("alice's memory.md, as bob reads it: %d %v", status, body)
+	}
+	for _, tc := range []struct{ user, ws, of string }{
+		{aliceID, ws100, ws100},                      // her own
+		{aliceID, ws100, ws102},                      // not shared
+		{bobID, ws100, ws200},                        // someone else's workspace
+		{bobID, ws202, ws100},                        // another team workspace
+		{aliceID, ws100, monoflake.ID(999).String()}, // no workspace
+	} {
+		if status, _ = m.get(t, tc.user, path(tc.ws, tc.of)); status != http.StatusNotFound {
+			t.Errorf("%s lists %s from %s: %d, want 404", tc.user, tc.of, tc.ws, status)
+		}
+		if status, _ = m.get(t, tc.user, path(tc.ws, tc.of)+"/memory.md"); status != http.StatusNotFound {
+			t.Errorf("%s reads %s from %s: %d, want 404", tc.user, tc.of, tc.ws, status)
+		}
+	}
+	if status, _ = m.get(t, aliceID, path(ws100, ws200)+"/missing.md"); status != http.StatusNotFound {
+		t.Errorf("a memory bob never wrote: %d, want 404", status)
+	}
+	// httptest.NewRequest refuses a malformed escape, so the raw path is set by hand.
+	raw := "/api/v1" + path(ws100, ws200) + "/%zz"
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RequestURI, req.URL.Path, req.URL.RawPath = raw, raw, raw
+	req.Header.Set("X-Test-User", aliceID)
+	if res, err := m.app.Test(req, -1); err != nil || res.StatusCode != http.StatusBadRequest {
+		t.Errorf("a name that is not one: %v %v, want 400", res, err)
+	}
+	if status, _ = m.get(t, aliceID, path(ws100, "!")); status != http.StatusBadRequest {
+		t.Errorf("a bad workspace id: %d, want 400", status)
+	}
+	if status, body = call(t, m.app, aliceID, http.MethodPut, "/workspaces/"+ws100+"/teammate-memories/"+bobID, `{"included":true}`); status != http.StatusOK {
 		t.Errorf("alice takes bob back: %d %v", status, body)
 	}
 }

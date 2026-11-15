@@ -47,6 +47,8 @@ describe('the team API', () => {
     ['unsharePanoDoc', ['d1', 'tm1', 4], 'DELETE', '/pano/d1/shares/tm1?version=4'],
     ['listTeammateMemories', ['ws1'], 'GET', '/workspaces/ws1/teammate-memories'],
     ['setTeammateMemory', ['ws1', 'u1', false], 'PUT', '/workspaces/ws1/teammate-memories/u1', { included: false }],
+    ['listTeammateMemoryNames', ['ws1', 'ws2'], 'GET', '/workspaces/ws1/teammate-memories/ws2/memories'],
+    ['getTeammateMemory', ['ws1', 'ws2', 'release notes.md'], 'GET', '/workspaces/ws1/teammate-memories/ws2/memories/release%20notes.md'],
     ['fetchTeamWorkspaces', ['tm1'], 'GET', '/teams/tm1/workspaces'],
     ['fetchTeamTasks', ['tm1'], 'GET', '/teams/tm1/tasks?limit=10&offset=0'],
     ['fetchTeamTasks', ['tm1', { status: 'ongoing', workspace: 'Back end', member: 'u1', limit: 5, offset: 5 }], 'GET',

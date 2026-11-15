@@ -5,6 +5,7 @@
 package api
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -34,6 +35,8 @@ func (h *handler) registerTeamViewRoutes() {
 	r.Post("/skills/:name/add", h.addTeamSkill())
 	h.router.Get("/workspaces/:id/teammate-memories", h.listTeammateMemories())
 	h.router.Put("/workspaces/:id/teammate-memories/:userId", h.setTeammateMemory())
+	h.router.Get("/workspaces/:id/teammate-memories/:teammateWorkspaceId/memories", h.listTeammateMemoryNames())
+	h.router.Get("/workspaces/:id/teammate-memories/:teammateWorkspaceId/memories/:name", h.getTeammateMemory())
 }
 
 var (
@@ -190,7 +193,10 @@ func (h *handler) addTeamSkill() fiber.Handler {
 	})
 }
 
-var teamPathTeammate = []string{"id", "userId"}
+var (
+	teamPathTeammate          = []string{"id", "userId"}
+	teamPathTeammateWorkspace = []string{"id", "teammateWorkspaceId"}
+)
 
 func (h *handler) listTeammateMemories() fiber.Handler {
 	return teamRoute(teamPathWorkspace, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
@@ -211,6 +217,34 @@ func (h *handler) setTeammateMemory() fiber.Handler {
 		defer cancel()
 		m, err := h.teamView.SetTeammateMemory(ctx, sessionUser(c), ids[0], ids[1], *rq.Included)
 		return mapper.FromTeammateMemoryEntityToHTTPResponse(m), err
+	})
+}
+
+func (h *handler) listTeammateMemoryNames() fiber.Handler {
+	return teamRoute(teamPathTeammateWorkspace, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.teamView.ListTeammateMemoryNames(ctx, sessionUser(c), ids[0], ids[1])
+		if err != nil {
+			return nil, err
+		}
+		return mapper.FromListMemoriesResponseEntityToHTTPResponse(rs), nil
+	})
+}
+
+func (h *handler) getTeammateMemory() fiber.Handler {
+	return teamRoute(teamPathTeammateWorkspace, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+		name, err := url.PathUnescape(c.Params("name"))
+		if err != nil {
+			return nil, errBadRequest
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.teamView.GetTeammateMemory(ctx, sessionUser(c), ids[0], ids[1], name)
+		if err != nil {
+			return nil, err
+		}
+		return mapper.FromGetMemoryResponseEntityToHTTPResponse(rs), nil
 	})
 }
 

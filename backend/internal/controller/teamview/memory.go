@@ -10,6 +10,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/mustafaturan/monoflake"
 )
 
 // Peers is what TeamPeers and MemoryPeers read.
@@ -152,4 +153,55 @@ func (c *controller) SetTeammateMemory(ctx context.Context, userID, workspaceID,
 	c.emit(ctx, action, userID, workspaceID, teammateID)
 	found.Included = included
 	return *found, nil
+}
+
+// teammateWorkspace is a teammate's workspace in the team workspace of the
+// user's own workspace, which the user reads in its team; base.ErrNotFound
+// otherwise.
+func (c *controller) teammateWorkspace(ctx context.Context, userID, workspaceID, teammateWorkspaceID int64) (base.TeamWorkspacePeer, error) {
+	if _, err := c.repo.GetWorkspace(ctx, workspaceID, userID); err != nil {
+		return base.TeamWorkspacePeer{}, err
+	}
+	peers, err := TeamPeers(ctx, c.repo, workspaceID)
+	if err != nil {
+		return base.TeamWorkspacePeer{}, err
+	}
+	for _, p := range peers {
+		if p.WorkspaceID != teammateWorkspaceID || p.UserID == userID {
+			continue
+		}
+		ok, err := c.repo.CanReadWorkspaceInTeam(ctx, userID, p.TeamID, p.WorkspaceID)
+		if err != nil {
+			return base.TeamWorkspacePeer{}, err
+		}
+		if ok {
+			return p, nil
+		}
+	}
+	return base.TeamWorkspacePeer{}, base.ErrNotFound
+}
+
+func (c *controller) ListTeammateMemoryNames(ctx context.Context, userID, workspaceID, teammateWorkspaceID int64) (*entity.ListMemoriesResponse, error) {
+	p, err := c.teammateWorkspace(ctx, userID, workspaceID, teammateWorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return c.owner.ListMemories(ctx, entity.ListMemoriesRequest{
+		WorkspaceID: p.WorkspaceID, UserID: monoflake.ID(p.UserID).String(),
+	})
+}
+
+func (c *controller) GetTeammateMemory(ctx context.Context, userID, workspaceID, teammateWorkspaceID int64, name string) (*entity.GetMemoryResponse, error) {
+	p, err := c.teammateWorkspace(ctx, userID, workspaceID, teammateWorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	rs, err := c.owner.GetMemory(ctx, entity.GetMemoryRequest{
+		WorkspaceID: p.WorkspaceID, UserID: monoflake.ID(p.UserID).String(), Name: name,
+	})
+	if err != nil {
+		return nil, err
+	}
+	c.emit(ctx, entity.ActionTeammateMemoryView, userID, workspaceID, rs.Memory.ID)
+	return rs, nil
 }

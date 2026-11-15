@@ -860,6 +860,8 @@ const (
 	ActionIDTeammateMemoryExclude
 	// A Pano doc shared with a team; emitted by the backend.
 	ActionIDPanoShare
+	// One of a teammate's memories read by a person; emitted by the backend.
+	ActionIDTeammateMemoryView
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

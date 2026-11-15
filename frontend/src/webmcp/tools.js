@@ -134,6 +134,8 @@ const TEAM_READS = (api) => ({
   preview: ({ token }) => api.previewInvitation(token),
   shares: ({ workspaceId }) => api.listWorkspaceShares(workspaceId),
   teammateMemories: ({ workspaceId }) => api.listTeammateMemories(workspaceId),
+  teammateMemory: ({ workspaceId, teammateWorkspaceId, name }) =>
+    (name ? api.getTeammateMemory(workspaceId, teammateWorkspaceId, name) : api.listTeammateMemoryNames(workspaceId, teammateWorkspaceId)),
   workspaces: ({ teamId }) => api.fetchTeamWorkspaces(teamId),
   tasks: ({ teamId, status = '', workspace = '', member = '', limit = 10, offset = 0 }) =>
     api.fetchTeamTasks(teamId, { status, workspace, member, limit, offset }),
@@ -1507,7 +1509,8 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'Read teams. action: list (your teams), get (with its version), members, invitations (a team\'s pending ones), ' +
         'activities (the team\'s log, newest first; limit, before: the last id of the page before), ' +
         'myInvitations (addressed to you), preview (a link\'s invitation, by token), shares (the teams a workspace is shared with), ' +
-        'teammateMemories (workspaceId: the teammates whose memory that workspace\'s agent reads, each with included). ' +
+        'teammateMemories (workspaceId: the teammates whose memory that workspace\'s agent reads, each with included), ' +
+        'teammateMemory (workspaceId, teammateWorkspaceId from teammateMemories: their memories; with name, one). ' +
         'A team\'s shared work, read-only: workspaces (each with the sharedName it shows under), ' +
         'tasks (status, workspace, member), task (taskId), analytics (range; workspace: one team workspace), skills and skill (name) (workspace: one team workspace\'s), ' +
         'panoDocs (docs members shared), panoDoc (docId). panoShares (docId: the teams a doc of yours is shared with).',
@@ -1522,7 +1525,8 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         limit: int('Page size. Defaults to 10, and 20 for activities.'),
         offset: int('How many to skip. Defaults to 0.'),
         before: str('For activities: the id of the last one already read, to read older ones.'),
-        name: str('A skill name.'),
+        name: str('A skill name; a memory name, for teammateMemory.'),
+        teammateWorkspaceId: str('For teammateMemory: a teammate\'s workspaceId, as teammateMemories reports it.'),
       },
       required: ['action'],
       readOnly: true,

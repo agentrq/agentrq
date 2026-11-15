@@ -319,6 +319,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDTeammateMemoryInclude
 	case entity.ActionTeammateMemoryExclude:
 		action = model.ActionIDTeammateMemoryExclude
+	case entity.ActionTeammateMemoryView:
+		action = model.ActionIDTeammateMemoryView
 	default:
 		return
 	}
