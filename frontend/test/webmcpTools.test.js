@@ -639,20 +639,20 @@ describe('the grouped team tools', () => {
     expect(page({ action: 'teammateMemory', workspaceId: 'ws1', userId: 'u1' })).toBe('/workspaces/ws1/settings?tab=sharing');
     expect(page({ action: 'accept', token: 'tok' })).toBe('/invitations');
     expect(page({ action: 'decline', invitationId: 'i1' })).toBe('/invitations');
-    expect(page({ action: 'invite', teamId: 't/1' })).toBe('/team/settings?team=t%2F1&tab=invitations');
-    expect(page({ action: 'revokeInvitation', teamId: 'tm1' })).toBe('/team/settings?team=tm1&tab=invitations');
-    expect(page({ action: 'removeMember', teamId: 'tm1' })).toBe('/team/settings?team=tm1&tab=members');
-    expect(page({ action: 'addSkill', teamId: 'tm1' })).toBe('/skills?team=tm1');
-    expect(page({ action: 'addSkill', teamId: 'tm1', workspace: 'my api' })).toBe('/skills?team=tm1&workspace=my%20api');
+    expect(page({ action: 'invite', teamId: 't/1' })).toBe('/teams/t%2F1/settings?tab=invitations');
+    expect(page({ action: 'revokeInvitation', teamId: 'tm1' })).toBe('/teams/tm1/settings?tab=invitations');
+    expect(page({ action: 'removeMember', teamId: 'tm1' })).toBe('/teams/tm1/settings?tab=members');
+    expect(page({ action: 'addSkill', teamId: 'tm1' })).toBe('/teams/tm1/skills');
+    expect(page({ action: 'addSkill', teamId: 'tm1', workspace: 'my api' })).toBe('/teams/tm1/skills?workspace=my%20api');
     expect(page({ action: 'sharePano', docId: 'd/1', teamId: 'tm1' })).toBe('/pano/d%2F1');
     expect(page({ action: 'unsharePano', docId: 'd1', teamId: 'tm1' })).toBe('/pano/d1');
-    expect(page(undefined)).toBe('/team/settings?team=&tab=members');
+    expect(page(undefined)).toBe('/teams//settings?tab=members');
   });
 
   it('opens a new team\'s invitations, or the create form when the answer names none', () => {
     const after = build().find((t) => t.name === 'createTeam').screen.after;
 
-    expect(after({ name: 'Core' }, { id: 'tm8', name: 'Core' })).toBe('/team/settings?team=tm8&tab=invitations');
+    expect(after({ name: 'Core' }, { id: 'tm8', name: 'Core' })).toBe('/teams/tm8/settings?tab=invitations');
     expect(after({ name: 'Core' }, {})).toBe('/team/new');
   });
 

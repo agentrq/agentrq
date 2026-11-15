@@ -129,7 +129,7 @@
           </button>
         </div>
 
-        <!-- Me | Team. Team mode is the route's ?team=; see useTeamMode. -->
+        <!-- Me | Team. Team mode is the route's /teams/<id>; see useTeamMode. -->
         <TeamSwitcher class="px-2 mt-3" :collapsed="isCollapsed && !isMobileMenuOpen" />
 
         <div class="space-y-0.5 overflow-y-auto custom-scrollbar flex-1 min-h-0 px-2" :class="{ 'mt-6': isCollapsed && !isMobileMenuOpen }">
@@ -565,7 +565,7 @@ import TeamSwitcher from './components/TeamSwitcher.vue'
 import TeamSidebar from './components/TeamSidebar.vue'
 import TeamModeBar from './components/TeamModeBar.vue'
 import { useTeamStore } from './stores/teamStore'
-import { useTeamMode } from './composables/useTeamMode'
+import { useTeamMode, mePath } from './composables/useTeamMode'
 import { coalesce, indexOverview } from './composables/useWorkspaceOverview'
 import DesktopTitleBar from './components/DesktopTitleBar.vue'
 import SidePanel from './components/SidePanel.vue'
@@ -1263,7 +1263,7 @@ watch(() => route.fullPath, (fullPath) => {
   isUserMenuOpen.value = false
   hideTooltip()
   
-  const path = route.path;
+  const path = mePath(route.path);
   if (path === '/') document.title = 'Workspaces | AgentRQ';
   else if (path === '/login') document.title = 'Login | AgentRQ';
   else if (path === '/admin/login') document.title = 'Admin | AgentRQ';

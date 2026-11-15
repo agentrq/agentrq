@@ -430,7 +430,7 @@ func TestCloneNoteAndSkillReads(t *testing.T) {
 	if _, err := c.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201}); err != nil {
 		t.Fatal(err)
 	}
-	if body := f.created.Task.Body; !strings.HasPrefix(body, "Cloned from [core / Alice / api fork](/workspaces/") || strings.Contains(body, "---") {
+	if body := f.created.Task.Body; !strings.HasPrefix(body, "Cloned from [core / Alice / api fork](/teams/0000000000A/workspaces/") || strings.Contains(body, "---") {
 		t.Errorf("a clone of a task with no body reads %q", body)
 	}
 	f.task.Body = "Ship it."

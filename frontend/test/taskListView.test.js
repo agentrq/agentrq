@@ -170,7 +170,7 @@ describe('the sidebar task list', () => {
     await settle()
     button(el, 'Delete').click()
     await settle()
-    expect(push).toHaveBeenCalledWith('/tasks/notstarted')
+    expect(push).toHaveBeenCalledWith({ path: '/tasks/notstarted', query: {} })
   })
 
   it('says so when a delete fails, and keeps the row', async () => {
@@ -384,7 +384,7 @@ describe('Move Up and Move Down', () => {
   }
 })
 
-describe('the team\'s task list (?team=)', () => {
+describe('the team\'s task list (/teams/<id>/tasks)', () => {
   const bob = { userId: 'u2', name: 'Bob' }
   const shared = [
     { id: 'tw1', name: 'api', sharedName: 'Backend', owner: bob },
@@ -395,8 +395,8 @@ describe('the team\'s task list (?team=)', () => {
 
   beforeEach(() => {
     route.params = { filter: 'pending' }
-    route.path = '/tasks/pending'
-    route.query = { team: 'tm1', workspace: 'Backend' }
+    route.path = '/teams/tm1/tasks/pending'
+    route.query = { workspace: 'Backend' }
     fetchTeamWorkspaces.mockImplementation(async () => ({ workspaces: shared }))
     fetchTeamTasks.mockImplementation(async () => ({ tasks: [theirs('t1'), theirs('t2', { owner: undefined })] }))
   })
@@ -428,28 +428,28 @@ describe('the team\'s task list (?team=)', () => {
     expect(options(el, 'team-filter-member').map((o) => o.dataset.value)).toEqual(['', 'u2', 'u3'])
     expect(options(el, 'team-filter-member')[1].textContent).toContain('Bob')
     options(el, 'team-filter-member')[1].click()
-    expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending', query: { team: 'tm1', workspace: 'Backend', member: 'u2' } })
+    expect(push).toHaveBeenLastCalledWith({ path: '/teams/tm1/tasks/pending', query: { workspace: 'Backend', member: 'u2' } })
 
     el.querySelector('[data-test=team-filter-workspace]').click()
     await settle()
     expect(options(el, 'team-filter-workspace').map((o) => o.dataset.value)).toEqual(['', 'Backend', 'site'])
     options(el, 'team-filter-workspace')[0].click()
-    expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending', query: { team: 'tm1' } })
+    expect(push).toHaveBeenLastCalledWith({ path: '/teams/tm1/tasks/pending', query: {} })
 
     rowOf(el, 'task t1').click()
-    expect(push).toHaveBeenLastCalledWith({ path: '/tasks/pending/tw1/t1', query: { team: 'tm1', workspace: 'Backend' } })
+    expect(push).toHaveBeenLastCalledWith({ path: '/teams/tm1/tasks/pending/tw1/t1', query: { workspace: 'Backend' } })
   })
 
   it('opens the analytics of the team workspace on screen, or of the whole team', async () => {
     let el = await mount(TaskListView)
     el.querySelector('[data-test=team-analytics]').click()
-    expect(push).toHaveBeenLastCalledWith({ path: '/team/analytics', query: { team: 'tm1', workspace: 'Backend' } })
-    route.query = { team: 'tm1' }
+    expect(push).toHaveBeenLastCalledWith({ path: '/teams/tm1/analytics', query: { workspace: 'Backend' } })
+    route.query = {}
     el = await mount(TaskListView)
     el.querySelector('[data-test=team-analytics]').click()
-    expect(push).toHaveBeenLastCalledWith({ path: '/team/analytics', query: { team: 'tm1' } })
+    expect(push).toHaveBeenLastCalledWith({ path: '/teams/tm1/analytics', query: {} })
     // Your own workspaces each have theirs, on the workspace's page.
-    route.query = {}
+    route.path = '/tasks/pending'
     el = await mount(TaskListView)
     expect(el.querySelector('[data-test=team-analytics]')).toBe(null)
   })
@@ -458,11 +458,11 @@ describe('the team\'s task list (?team=)', () => {
     let el = await mount(TaskListView)
     expect(el.querySelector('[data-test=team-skills-link]').getAttribute('title')).toBe('Skills')
     el.querySelector('[data-test=team-skills-link]').click()
-    expect(push).toHaveBeenLastCalledWith({ path: '/skills', query: { team: 'tm1', workspace: 'Backend' } })
-    route.query = { team: 'tm1' }
+    expect(push).toHaveBeenLastCalledWith({ path: '/teams/tm1/skills', query: { workspace: 'Backend' } })
+    route.query = {}
     el = await mount(TaskListView)
     expect(el.querySelector('[data-test=team-skills-link]')).toBe(null)
-    route.query = {}
+    route.path = '/tasks/pending'
     el = await mount(TaskListView)
     expect(el.querySelector('[data-test=team-skills-link]')).toBe(null)
   })

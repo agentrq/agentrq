@@ -49,7 +49,7 @@ async function mount(component, { path = '/', teams = [], props = {} } = {}) {
   router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/team/pano/:docId', component },
+      { path: '/teams/:teamId/pano/:docId', component },
       { path: '/:rest(.*)*', component },
     ],
   });
@@ -180,10 +180,10 @@ describe('the team Pano', () => {
 
   it('lists the docs members shared, each with its owner, opening one in the team', async () => {
     api.listTeamPanoDocs.mockResolvedValue({ docs: DOCS });
-    await mount(TeamPanoView, { path: '/team/pano?team=tm1' });
+    await mount(TeamPanoView, { path: '/teams/tm1/pano' });
     expect(api.listTeamPanoDocs).toHaveBeenCalledWith('tm1');
     const cards = $$('[data-test=team-pano-card]');
-    expect(cards.map((c) => c.getAttribute('href'))).toEqual(['/team/pano/d1?team=tm1', '/team/pano/d2?team=tm1']);
+    expect(cards.map((c) => c.getAttribute('href'))).toEqual(['/teams/tm1/pano/d1', '/teams/tm1/pano/d2']);
     expect(cards[0].querySelector('[data-test=team-pano-excerpt]').innerHTML).toContain('<strong>ship</strong>');
     expect(text(cards[0])).toContain('Alice · just now');
     expect(cards[0].querySelector('[data-test=owner-avatar] img').getAttribute('src')).toBe('https://x/a.png');
@@ -198,14 +198,14 @@ describe('the team Pano', () => {
 
   it('says when nothing is shared, and reads an empty answer as none', async () => {
     api.listTeamPanoDocs.mockResolvedValue({});
-    await mount(TeamPanoView, { path: '/team/pano?team=tm1' });
+    await mount(TeamPanoView, { path: '/teams/tm1/pano' });
     expect(text($('[data-test=team-pano-empty]'))).toContain('Nothing shared yet.');
   });
 
   it('reads the other team when the switch picks one, and none in Me', async () => {
     api.listTeamPanoDocs.mockResolvedValue({ docs: [] });
-    await mount(TeamPanoView, { path: '/team/pano?team=tm1' });
-    await router.push('/team/pano?team=tm2');
+    await mount(TeamPanoView, { path: '/teams/tm1/pano' });
+    await router.push('/teams/tm2/pano');
     await flush();
     expect(api.listTeamPanoDocs).toHaveBeenLastCalledWith('tm2');
     await router.push('/team/pano');
@@ -215,7 +215,7 @@ describe('the team Pano', () => {
 
   it('reads again quietly on a browser agent change', async () => {
     api.listTeamPanoDocs.mockResolvedValue({ docs: [] });
-    await mount(TeamPanoView, { path: '/team/pano?team=tm1' });
+    await mount(TeamPanoView, { path: '/teams/tm1/pano' });
     api.listTeamPanoDocs.mockResolvedValue({ docs: DOCS });
     notifyWebMCPChange();
     await flush();
@@ -224,11 +224,11 @@ describe('the team Pano', () => {
 
   it('goes back to Me without the team, and says other failures', async () => {
     api.listTeamPanoDocs.mockRejectedValueOnce(failure(500, 'Pano down'));
-    await mount(TeamPanoView, { path: '/team/pano?team=tm1' });
+    await mount(TeamPanoView, { path: '/teams/tm1/pano' });
     expect(toasts()).toContain('Pano down');
     app.unmount();
     api.listTeamPanoDocs.mockRejectedValueOnce(failure(404));
-    await mount(TeamPanoView, { path: '/team/pano?team=tm1' });
+    await mount(TeamPanoView, { path: '/teams/tm1/pano' });
     expect(here().path).toBe('/');
   });
 });
@@ -251,7 +251,7 @@ describe('a doc shared with the team', () => {
 
   it('shows the note, whose it is, and its files by their team links, read-only', async () => {
     api.getTeamPanoDoc.mockResolvedValue({ doc: DOC });
-    await mount(TeamPanoDocView, { path: '/team/pano/d1?team=tm1' });
+    await mount(TeamPanoDocView, { path: '/teams/tm1/pano/d1' });
     expect(api.getTeamPanoDoc).toHaveBeenCalledWith('tm1', 'd1');
     expect(text($('[data-test=team-pano-title]'))).toBe('Plan');
     expect(text($('[data-test=team-pano-meta]'))).toMatch(/^AAlice · updated \w{3} \d+, \d\d:\d\d$/);
@@ -263,7 +263,7 @@ describe('a doc shared with the team', () => {
     expect(text($('[data-test=team-pano-files]'))).toBe('Linked fileschart.png2.0 KB');
     expect($('[data-test=team-pano-attachments] a').getAttribute('href')).toBe('/api/v1/teams/tm1/pano/d1/files/a1');
     expect(document.body.textContent).toContain('Expires in 2 days');
-    expect($('[data-test=team-pano-back]').getAttribute('href')).toBe('/team/pano?team=tm1');
+    expect($('[data-test=team-pano-back]').getAttribute('href')).toBe('/teams/tm1/pano');
     // No editing, comments or tasks: those stay the owner's.
     for (const test of ['pano-edit', 'pano-delete', 'pano-comment-input', 'pano-attach', 'pano-to-task', 'pano-chat']) {
       expect($(`[data-test=${test}]`), test).toBe(null);
@@ -272,7 +272,7 @@ describe('a doc shared with the team', () => {
 
   it('shows a doc with no files, by a teammate with no name yet', async () => {
     api.getTeamPanoDoc.mockResolvedValue({ doc: { id: 'd1', title: 'Bare', markdown: 'text', color: 'pink', updatedAt: DOC.updatedAt, expiresAt: DOC.expiresAt } });
-    await mount(TeamPanoDocView, { path: '/team/pano/d1?team=tm1' });
+    await mount(TeamPanoDocView, { path: '/teams/tm1/pano/d1' });
     expect(text($('[data-test=team-pano-meta]'))).toContain('A teammate');
     expect($('[data-test=team-pano-files]')).toBe(null);
     expect($('[data-test=team-pano-attachments]')).toBe(null);
@@ -280,7 +280,7 @@ describe('a doc shared with the team', () => {
 
   it('reads it again on a browser agent change', async () => {
     api.getTeamPanoDoc.mockResolvedValue({ doc: DOC });
-    await mount(TeamPanoDocView, { path: '/team/pano/d1?team=tm1' });
+    await mount(TeamPanoDocView, { path: '/teams/tm1/pano/d1' });
     api.getTeamPanoDoc.mockResolvedValue({ doc: { ...DOC, title: 'Plan v2' } });
     notifyWebMCPChange();
     await flush();
@@ -289,14 +289,14 @@ describe('a doc shared with the team', () => {
 
   it('goes back to the team Pano once it is no longer shared', async () => {
     api.getTeamPanoDoc.mockRejectedValue(failure(404));
-    await mount(TeamPanoDocView, { path: '/team/pano/d1?team=tm1' });
+    await mount(TeamPanoDocView, { path: '/teams/tm1/pano/d1' });
     expect(toasts()).toContain('That doc is no longer shared with the team');
-    expect(here().fullPath).toBe('/team/pano?team=tm1');
+    expect(here().fullPath).toBe('/teams/tm1/pano');
   });
 
   it('says any other failure where the note would be', async () => {
     api.getTeamPanoDoc.mockRejectedValue(failure(500, 'Pano down'));
-    await mount(TeamPanoDocView, { path: '/team/pano/d1?team=tm1' });
+    await mount(TeamPanoDocView, { path: '/teams/tm1/pano/d1' });
     expect(text($('[data-test=team-pano-error]'))).toBe('Pano down');
   });
 });

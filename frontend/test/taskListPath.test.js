@@ -12,6 +12,13 @@ describe('taskListPath', () => {
     expect(taskListPath(route)).toEqual({ path: '/tasks/ongoing', query: { q: 'x' } });
   });
 
+  it("stays in the team on a teammate's task", () => {
+    const route = { path: '/teams/tm1/tasks/ongoing/ws1/t1', params: { teamId: 'tm1', filter: 'ongoing', workspaceId: 'ws1', taskId: 't1' }, query: { member: 'u1' } };
+    expect(taskListPath(route)).toEqual({ path: '/teams/tm1/tasks/ongoing', query: { member: 'u1' } });
+    const board = { path: '/teams/tm1/workspaces/ws1/tasks/t1', params: { teamId: 'tm1', id: 'ws1', taskId: 't1' }, query: {} };
+    expect(taskListPath(board)).toEqual({ path: '/teams/tm1/workspaces/ws1', query: {} });
+  });
+
   it("goes to the workspace's task list", () => {
     const route = { path: '/workspaces/ws1/tasks/t1', params: { id: 'ws1', taskId: 't1' }, query: {} };
     expect(taskListPath(route)).toEqual({ path: '/workspaces/ws1' });

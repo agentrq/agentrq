@@ -20,6 +20,9 @@ import { useTeamStore, rememberedTeam, rememberTeam, LAST_TEAM_KEY } from '../sr
 import {
   teamIdOf,
   withTeam,
+  mePath,
+  teamPath,
+  legacyTeamLink,
   teamHome,
   teamLanding,
   sharedNameOf,
@@ -201,22 +204,46 @@ describe('the team store', () => {
 });
 
 describe('the team in the URL', () => {
-  it('is the ?team= query, and nothing else', () => {
-    expect(teamIdOf({ query: { team: 'tm1' } })).toBe('tm1');
-    expect(teamIdOf({ query: {} })).toBe('');
-    expect(teamIdOf({ query: { team: ['a', 'b'] } })).toBe('');
+  it('is the /teams/<id> the path starts with, and nothing else', () => {
+    expect(teamIdOf({ path: '/teams/tm1/tasks/active', query: {} })).toBe('tm1');
+    expect(teamIdOf({ path: '/teams/tm1' })).toBe('tm1');
+    expect(teamIdOf({ path: '/teams/a%20b/kanban' })).toBe('a b');
+    expect(teamIdOf({ path: '/tasks/active', query: { team: 'tm1' } })).toBe('');
+    expect(teamIdOf({ path: '/teamsx/tm1' })).toBe('');
     expect(teamIdOf(undefined)).toBe('');
   });
 
-  it('is put on a link, or taken off it for Me', () => {
-    expect(withTeam('/tasks/active', 'tm1')).toEqual({ path: '/tasks/active', query: { team: 'tm1' } });
-    expect(withTeam('/tasks/active?group=docs', 'tm1')).toEqual({ path: '/tasks/active', query: { group: 'docs', team: 'tm1' } });
-    expect(withTeam({ path: '/kanban', query: { team: 'tm1' } }, '')).toEqual({ path: '/kanban', query: {} });
-    expect(withTeam({ path: '/kanban' }, 7)).toEqual({ path: '/kanban', query: { team: '7' } });
+  it('is the page with no team, for Me', () => {
+    expect(mePath('/teams/tm1/tasks/active')).toBe('/tasks/active');
+    expect(mePath('/teams/tm1')).toBe('/');
+    expect(mePath('/kanban')).toBe('/kanban');
+    expect(mePath()).toBe('/');
+  });
+
+  it('puts the page under the team, or takes it out for Me', () => {
+    expect(withTeam('/tasks/active', 'tm1')).toEqual({ path: '/teams/tm1/tasks/active', query: {} });
+    expect(withTeam('/tasks/active?group=docs', 'tm1')).toEqual({ path: '/teams/tm1/tasks/active', query: { group: 'docs' } });
+    expect(withTeam({ path: '/teams/tm1/kanban', query: { member: 'u1' } }, '')).toEqual({ path: '/kanban', query: { member: 'u1' } });
+    expect(withTeam({ path: '/teams/tm1/kanban' }, 'tm2')).toEqual({ path: '/teams/tm2/kanban', query: {} });
+    expect(withTeam({ path: '/kanban' }, 7)).toEqual({ path: '/teams/7/kanban', query: {} });
+    expect(withTeam('/', 'tm1')).toEqual({ path: '/teams/tm1', query: {} });
+    expect(teamPath('a/b', '/pano')).toBe('/teams/a%2Fb/pano');
   });
 
   it('starts team mode on the team\'s active tasks', () => {
-    expect(teamHome('tm1')).toEqual({ path: '/tasks/active', query: { team: 'tm1' } });
+    expect(teamHome('tm1')).toEqual({ path: '/teams/tm1/tasks/active' });
+  });
+
+  it('sends an old ?team= link to its page under the team', () => {
+    expect(legacyTeamLink({ path: '/tasks/active/w1/t1', query: { team: 'tm1', workspace: 'api' }, hash: '#c' }))
+      .toEqual({ path: '/teams/tm1/tasks/active/w1/t1', query: { workspace: 'api' }, hash: '#c', replace: true });
+    expect(legacyTeamLink({ path: '/team/settings', query: { team: 'tm1', tab: 'invitations' } }).path).toBe('/teams/tm1/settings');
+    expect(legacyTeamLink({ path: '/team/pano/d1', query: { team: 'tm1' } }).path).toBe('/teams/tm1/pano/d1');
+    expect(legacyTeamLink({ path: '/team/analytics', query: { team: 'tm1' } }).path).toBe('/teams/tm1/analytics');
+    expect(legacyTeamLink({ path: '/', query: { team: 'tm1' } }).path).toBe('/teams/tm1/tasks/active');
+    expect(legacyTeamLink({ path: '/kanban', query: {} })).toBeUndefined();
+    expect(legacyTeamLink({ path: '/kanban', query: { team: '' } })).toBeUndefined();
+    expect(legacyTeamLink({ path: '/kanban', query: { team: ['a', 'b'] } })).toBeUndefined();
   });
 });
 
@@ -224,8 +251,9 @@ describe('landing on the home page', () => {
   const first = { matched: [] };
   const later = { matched: [{}] };
 
-  it('shows a team\'s tasks when the home page is asked for in team mode', () => {
-    expect(teamLanding({ path: '/', query: { team: 'tm1' } }, later, '')).toEqual(teamHome('tm1'));
+  it('follows an old ?team= link, wherever it points', () => {
+    expect(teamLanding({ path: '/', query: { team: 'tm1' } }, later, '')).toMatchObject(teamHome('tm1'));
+    expect(teamLanding({ path: '/kanban', query: { team: 'tm1' } }, first, 'tm2')).toMatchObject({ path: '/teams/tm1/kanban' });
   });
 
   it('follows the last choice on the first page this browser opens', () => {
@@ -353,9 +381,9 @@ describe('a change made over someone else\'s', () => {
 });
 
 describe('the team settings page in the URL', () => {
-  it('is /team/settings?team=<id>&tab=<tab>, on members by default', () => {
-    expect(teamSettings('tm1', 'invitations')).toEqual({ path: '/team/settings', query: { team: 'tm1', tab: 'invitations' } });
-    expect(teamSettings(7)).toEqual({ path: '/team/settings', query: { team: '7', tab: 'members' } });
+  it('is /teams/<id>/settings?tab=<tab>, on members by default', () => {
+    expect(teamSettings('tm1', 'invitations')).toEqual({ path: '/teams/tm1/settings', query: { tab: 'invitations' } });
+    expect(teamSettings(7)).toEqual({ path: '/teams/7/settings', query: { tab: 'members' } });
   });
 
   it('opens on one of its tabs, and on members for anything else', () => {
@@ -474,13 +502,13 @@ describe('useTeamMode', () => {
   }
 
   it('reads the team from the route, and keeps links in its mode', async () => {
-    const { mode, store, app } = await mountAt('/tasks/active?team=tm1');
+    const { mode, store, app } = await mountAt('/teams/tm1/tasks/active');
     store.teams = [{ id: 'tm1', name: 'Core' }];
 
     expect(mode.teamId.value).toBe('tm1');
     expect(mode.isTeamMode.value).toBe(true);
     expect(mode.team.value.name).toBe('Core');
-    expect(mode.link('/kanban')).toEqual({ path: '/kanban', query: { team: 'tm1' } });
+    expect(mode.link('/kanban')).toEqual({ path: '/teams/tm1/kanban', query: {} });
     app.unmount();
   });
 
@@ -494,7 +522,7 @@ describe('useTeamMode', () => {
   });
 
   it('returns to Me, saying why, when you are no longer in the team', async () => {
-    const { mode, store, router, app } = await mountAt('/tasks/active?team=tm1');
+    const { mode, store, router, app } = await mountAt('/teams/tm1/tasks/active');
     store.teams = [{ id: 'tm1', name: 'Core' }];
     rememberTeam('tm1');
     const { toasts } = useToasts();
@@ -510,7 +538,7 @@ describe('useTeamMode', () => {
   });
 
   it('says so without a name when the team was never loaded', async () => {
-    const { mode, app } = await mountAt('/tasks/active?team=gone');
+    const { mode, app } = await mountAt('/teams/gone/tasks/active');
     const { toasts } = useToasts();
 
     await mode.leaveTeam();
@@ -520,7 +548,7 @@ describe('useTeamMode', () => {
   });
 
   it('leaves once when a page\'s reads fail together', async () => {
-    const { mode, router, app } = await mountAt('/tasks/active?team=tm1');
+    const { mode, router, app } = await mountAt('/teams/tm1/tasks/active');
     const { toasts } = useToasts();
     const before = toasts.value.length;
 
@@ -548,7 +576,7 @@ describe('changeFailed', () => {
   const conflict = Object.assign(new Error('someone changed this team'), { status: 409, conflict: true, version: 9 });
 
   it('reads the team again on a conflict, and says so', async () => {
-    const { mode, store, app } = await mountAt('/tasks/active?team=tm1');
+    const { mode, store, app } = await mountAt('/teams/tm1/tasks/active');
     store.teams = [{ id: 'tm1', name: 'Core', version: 8 }];
     api.getTeam.mockResolvedValue({ id: 'tm1', name: 'Infra', version: 9 });
     const { toasts } = useToasts();
@@ -562,7 +590,7 @@ describe('changeFailed', () => {
   });
 
   it('still says so when the team cannot be read again', async () => {
-    const { mode, app } = await mountAt('/tasks/active?team=tm1');
+    const { mode, app } = await mountAt('/teams/tm1/tasks/active');
     api.getTeam.mockRejectedValue(new Error('down'));
     const { toasts } = useToasts();
 
@@ -572,7 +600,7 @@ describe('changeFailed', () => {
   });
 
   it('goes back to Me when the team on screen is gone', async () => {
-    const { mode, router, app } = await mountAt('/tasks/active?team=tm1');
+    const { mode, router, app } = await mountAt('/teams/tm1/tasks/active');
 
     expect(await mode.changeFailed({ status: 404 })).toBe('lost');
     expect(router.currentRoute.value.fullPath).toBe('/');
@@ -580,14 +608,14 @@ describe('changeFailed', () => {
   });
 
   it('shows anything else in the server\'s words, as for another team\'s 404', async () => {
-    const { mode, router, app } = await mountAt('/tasks/active?team=tm1');
+    const { mode, router, app } = await mountAt('/teams/tm1/tasks/active');
     const { toasts } = useToasts();
 
     expect(await mode.changeFailed(Object.assign(new Error('gone'), { status: 404 }), 'tm2')).toBe('error');
     expect(toasts.value.at(-1)).toMatchObject({ message: 'gone', type: 'error' });
     expect(await mode.changeFailed(undefined)).toBe('error');
     expect(toasts.value.at(-1).message).toBe('Something went wrong');
-    expect(router.currentRoute.value.fullPath).toBe('/tasks/active?team=tm1');
+    expect(router.currentRoute.value.fullPath).toBe('/teams/tm1/tasks/active');
     app.unmount();
   });
 });
@@ -623,17 +651,29 @@ describe('the team store\'s version', () => {
 describe('the team routes', () => {
   it('are in the one route table, with no page for memory', () => {
     const paths = routes.map((r) => r.path);
-    for (const p of ['/team/new', '/team/settings', '/team/analytics', '/team/pano', '/team/pano/:docId', '/invitations', '/invite']) {
+    for (const p of ['/team/new', '/teams/:teamId/settings', '/teams/:teamId/analytics', '/teams/:teamId/pano', '/teams/:teamId/pano/:docId', '/invitations', '/invite']) {
       expect(paths).toContain(p);
     }
-    expect(paths).not.toContain('/team/memory');
+    expect(paths.filter((p) => p.endsWith('/memory'))).toEqual([]);
+    expect(paths.filter((p) => p.startsWith('/team/'))).toEqual(['/team/new']);
   });
 
-  it.each(['/team/analytics', '/team/settings', '/team/pano', '/team/pano/:docId'])('shows %s only for a team: with none it is the home page', (path) => {
-    const { beforeEnter } = routes.find((r) => r.path === path);
-    expect(typeof routes.find((r) => r.path === path).component).toBe('function');
-    expect(beforeEnter({ query: { team: 'tm1' } })).toBe(true);
-    expect(beforeEnter({ query: {} })).toBe('/');
+  it('opens a team on its active tasks', () => {
+    const { redirect } = routes.find((r) => r.path === '/teams/:teamId');
+    expect(redirect({ path: '/teams/tm1' })).toBe('/teams/tm1/tasks/active');
+  });
+
+  it('shows the pages a team shares with Me under /teams/<id>, as the same page', () => {
+    for (const p of ['/tasks/:filter', '/kanban', '/skills', '/skills/:name']) {
+      const mine = routes.find((r) => r.path === p);
+      const team = routes.find((r) => r.path === `/teams/:teamId${p}`);
+      expect(team).toEqual({ ...mine, path: `/teams/:teamId${p}` });
+    }
+    const workspace = routes.find((r) => r.path === '/workspaces/:id');
+    const teamWorkspace = routes.find((r) => r.path === '/teams/:teamId/workspaces/:id');
+    expect(teamWorkspace.component).toBe(workspace.component);
+    expect(teamWorkspace.children).toEqual([workspace.children.find((c) => c.path === 'tasks/:taskId')]);
+    expect(routes.find((r) => r.path === '/teams/:teamId/pano').component).not.toBe(routes.find((r) => r.path === '/pano').component);
   });
 });
 

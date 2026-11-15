@@ -153,7 +153,7 @@ afterEach(() => {
 
 describe('the rest of the team helpers', () => {
   it('lands a new member on the team with its welcome', () => {
-    expect(joinedHome(7)).toEqual({ path: '/tasks/active', query: { team: '7', joined: '1' } });
+    expect(joinedHome(7)).toEqual({ path: '/teams/7/tasks/active', query: { joined: '1' } });
   });
 
   it('lists owners by name, unnamed ones first', () => {
@@ -231,7 +231,7 @@ describe('the Me | Team switch', () => {
     await withTeams([core, docs]);
     expect(text($('[data-test=switch-team]'))).toBe('Team: Docs');
     await click($('[data-test=switch-team]'));
-    expect(here().fullPath).toBe('/tasks/active?team=tm2');
+    expect(here().fullPath).toBe('/teams/tm2/tasks/active');
     expect(rememberedTeam()).toBe('tm2');
 
     rememberTeam('gone');
@@ -242,7 +242,7 @@ describe('the Me | Team switch', () => {
 
   it('goes back to Me from team mode, and forgets the team', async () => {
     rememberTeam('tm1');
-    await withTeams([core], [], { path: '/tasks/active?team=tm1' });
+    await withTeams([core], [], { path: '/teams/tm1/tasks/active' });
     expect(text($('[data-test=switch-team-current]'))).toBe('Team: Core');
     expect($('[data-test=switch-team]')).toBe(null);
     await click($('[data-test=switch-me]'));
@@ -268,7 +268,7 @@ describe('the Me | Team switch', () => {
   });
 
   it('lists your teams by size, never by role, and opens the team settings', async () => {
-    await withTeams([core, docs, { id: 'tm3', name: 'Zed' }], [{ id: 'i1' }], { path: '/kanban?team=tm1' });
+    await withTeams([core, docs, { id: 'tm3', name: 'Zed' }], [{ id: 'i1' }], { path: '/teams/tm1/kanban' });
     await click($('[data-test=switch-menu]'));
     const menu = $('[data-test=team-menu]');
     expect(text(menu)).toContain('Your teams');
@@ -279,13 +279,13 @@ describe('the Me | Team switch', () => {
     expect(menu.querySelectorAll('svg path[d="M5 13l4 4L19 7"]').length).toBe(1);
 
     await click($('[data-test=manage-team]'));
-    expect(here().fullPath).toBe('/team/settings?team=tm1&tab=members');
+    expect(here().fullPath).toBe('/teams/tm1/settings?tab=members');
     expect($('[data-test=team-menu]')).toBe(null);
 
     await click($('[data-test=switch-menu]'));
     const item = (label) => [...$$('[role=menuitem]')].find((b) => text(b).includes(label));
     await click(item('Docs'));
-    expect(here().fullPath).toBe('/tasks/active?team=tm2');
+    expect(here().fullPath).toBe('/teams/tm2/tasks/active');
 
     await click($('[data-test=switch-menu]'));
     await click([...$$('[role=menuitem]')].find((b) => text(b).startsWith('Invitations')));
@@ -301,7 +301,7 @@ describe('the Me | Team switch', () => {
     await withTeams([core, docs]);
     await click($('[data-test=switch-menu]'));
     await click($('[data-test=manage-team]'));
-    expect(here().fullPath).toBe('/team/settings?team=tm2&tab=members');
+    expect(here().fullPath).toBe('/teams/tm2/settings?tab=members');
     expect(rememberedTeam()).toBe('tm2');
   });
 
@@ -313,7 +313,7 @@ describe('the Me | Team switch', () => {
   });
 
   it('is one button with its menu beside it in a folded sidebar', async () => {
-    await withTeams([core], [{ id: 'i1' }], { path: '/tasks/active?team=tm1', props: { collapsed: true } });
+    await withTeams([core], [{ id: 'i1' }], { path: '/teams/tm1/tasks/active', props: { collapsed: true } });
     const button = $('[data-test=team-switcher] > button');
     expect(button.getAttribute('aria-label')).toBe('Team: Core');
     expect(text($('[data-test=team-badge]'))).toBe('1');
@@ -340,7 +340,7 @@ describe('renaming a team in place', () => {
   const core = { id: 'tm1', name: 'Core', version: 3, memberCount: 2 };
 
   async function inSwitch() {
-    await mount(TeamSwitcher, { path: '/tasks/active?team=tm1' });
+    await mount(TeamSwitcher, { path: '/teams/tm1/tasks/active' });
     useTeamStore().teams = [{ ...core }];
     await flush();
   }
@@ -440,17 +440,17 @@ describe('the team sidebar', () => {
     });
     const showTooltip = vi.fn();
     const hideTooltip = vi.fn();
-    await mount(TeamSidebar, { path: '/tasks/active?team=tm1', props: { showTooltip, hideTooltip } });
+    await mount(TeamSidebar, { path: '/teams/tm1/tasks/active', props: { showTooltip, hideTooltip } });
     expect(api.fetchTeamWorkspaces).toHaveBeenCalledWith('tm1');
 
     expect(text($('[data-test=team-sidebar]'))).toMatch(/^Team Tasks Kanban Pano Workspaces /);
     const links = $$('[data-test=team-sidebar] > a').map((a) => [text(a), a.getAttribute('href')]);
     expect(links).toEqual([
-      ['Tasks', '/tasks/active?team=tm1'],
-      ['Kanban', '/kanban?team=tm1'],
-      ['Pano', '/team/pano?team=tm1'],
-      ['Backend C D +1', '/tasks/active?workspace=Backend&team=tm1'],
-      ['docs B F', '/tasks/active?workspace=docs&team=tm1'],
+      ['Tasks', '/teams/tm1/tasks/active'],
+      ['Kanban', '/teams/tm1/kanban'],
+      ['Pano', '/teams/tm1/pano'],
+      ['Backend C D +1', '/teams/tm1/tasks/active?workspace=Backend'],
+      ['docs B F', '/teams/tm1/tasks/active?workspace=docs'],
     ]);
     expect($$('[data-test=team-workspace]')[0].querySelectorAll('[data-test=owner-avatar]').length).toBe(3);
     expect($$('[data-test=team-sidebar] > a')[0].classList.contains('bg-gray-200')).toBe(true);
@@ -464,9 +464,9 @@ describe('the team sidebar', () => {
     expect(hideTooltip).toHaveBeenCalledTimes(2);
 
     for (const [path, label] of [
-      ['/tasks/active?team=tm1&workspace=docs', 'docs B F'],
-      ['/kanban?team=tm1', 'Kanban'],
-      ['/team/pano/d1?team=tm1', 'Pano'],
+      ['/teams/tm1/tasks/active?workspace=docs', 'docs B F'],
+      ['/teams/tm1/kanban', 'Kanban'],
+      ['/teams/tm1/pano/d1', 'Pano'],
     ]) {
       await router.push(path);
       await flush();
@@ -476,21 +476,21 @@ describe('the team sidebar', () => {
   });
 
   it('says when nothing is shared, and folds to icons', async () => {
-    await mount(TeamSidebar, { path: '/tasks/active?team=tm1', props: { expanded: false } });
+    await mount(TeamSidebar, { path: '/teams/tm1/tasks/active', props: { expanded: false } });
     expect($('[data-test=team-sidebar-empty]')).toBe(null);
     expect(text($('[data-test=team-sidebar] > a'))).toBe('');
     app.unmount();
-    await mount(TeamSidebar, { path: '/tasks/active?team=tm1' });
+    await mount(TeamSidebar, { path: '/teams/tm1/tasks/active' });
     expect(text($('[data-test=team-sidebar-empty]'))).toBe('Nothing shared yet.');
   });
 
   it('goes back to Me when you are no longer in the team, and not for other failures', async () => {
     api.fetchTeamWorkspaces.mockRejectedValueOnce(failure(500));
-    await mount(TeamSidebar, { path: '/tasks/active?team=tm1' });
-    expect(here().path).toBe('/tasks/active');
+    await mount(TeamSidebar, { path: '/teams/tm1/tasks/active' });
+    expect(here().path).toBe('/teams/tm1/tasks/active');
 
     api.fetchTeamWorkspaces.mockRejectedValueOnce(failure(403));
-    await router.push('/tasks/active?team=tm2');
+    await router.push('/teams/tm2/tasks/active');
     await flush();
     expect(here().fullPath).toBe('/');
     expect(toasts()).toContain("You're no longer in that team");
@@ -500,14 +500,14 @@ describe('the team sidebar', () => {
 describe('the team-mode bar', () => {
   it('says whose work this is, renames it in place, opens the team settings, and goes back to Me', async () => {
     rememberTeam('tm1');
-    await mount(TeamModeBar, { path: '/kanban?team=tm1', props: { name: 'Core' } });
+    await mount(TeamModeBar, { path: '/teams/tm1/kanban', props: { name: 'Core' } });
     expect(text($('[data-test=team-mode-bar]'))).toBe('Viewing Core (read-only) Manage Back to Me');
     expect($('[data-test=team-rename]').disabled).toBe(true);
     useTeamStore().teams = [{ id: 'tm1', name: 'Core', version: 1 }];
     await flush();
     expect($('[data-test=team-rename]').disabled).toBe(false);
     expect($('[data-test=joined-banner]')).toBe(null);
-    expect($('[data-test=team-bar-manage]').getAttribute('href')).toBe('/team/settings?team=tm1&tab=members');
+    expect($('[data-test=team-bar-manage]').getAttribute('href')).toBe('/teams/tm1/settings?tab=members');
 
     await click([...$$('a')].find((a) => text(a) === 'Back to Me'));
     expect(here().path).toBe('/');
@@ -515,12 +515,12 @@ describe('the team-mode bar', () => {
   });
 
   it('offers to share once, right after joining, in the team settings', async () => {
-    await mount(TeamModeBar, { path: '/tasks/active?team=tm1&joined=1' });
+    await mount(TeamModeBar, { path: '/teams/tm1/tasks/active?joined=1' });
     const banner = $('[data-test=joined-banner]');
     expect(banner.textContent.replace(/\s+/g, ' ').trim()).toBe('You joined Team. Share your workspaces?Share');
-    expect(banner.querySelector('a').getAttribute('href')).toBe('/team/settings?team=tm1&tab=workspaces');
+    expect(banner.querySelector('a').getAttribute('href')).toBe('/teams/tm1/settings?tab=workspaces');
     await click(banner.querySelector('button'));
-    expect(here().fullPath).toBe('/tasks/active?team=tm1');
+    expect(here().fullPath).toBe('/teams/tm1/tasks/active');
     expect($('[data-test=joined-banner]')).toBe(null);
   });
 
@@ -529,7 +529,7 @@ describe('the team-mode bar', () => {
   it('follows the page as a sticky footer, and leads it on a phone', async () => {
     const app = readFileSync(resolve(__dirname, '../src/App.vue'), 'utf-8');
     expect(app.indexOf('<TeamModeBar')).toBeGreaterThan(app.indexOf('data-terminal-launch-area class'));
-    await mount(TeamModeBar, { path: '/kanban?team=tm1&joined=1' });
+    await mount(TeamModeBar, { path: '/teams/tm1/kanban?joined=1' });
     const bar = $('[data-test=team-mode-bar]');
     expect(bar.className.split(' ')).toEqual(expect.arrayContaining(['order-first', 'md:order-none', 'md:sticky', 'md:bottom-0', 'page-surface']));
     expect(bar.firstElementChild.className.split(' ')).toEqual(expect.arrayContaining(['md:order-last', 'md:border-t']));
@@ -764,7 +764,7 @@ describe('the team task filters', () => {
         useTeamStore().loadWorkspaces('tm1');
         return () => h(TeamTaskFilters, { align: 'left' });
       },
-    }), { path: '/kanban?team=tm1&member=u1&workspace=api' });
+    }), { path: '/teams/tm1/kanban?member=u1&workspace=api' });
     expect(text($('[data-test=team-filter-member]'))).toContain('Alice');
     expect(text($('[data-test=team-filter-workspace]'))).toContain('api');
     // Both fold on a narrow page.
@@ -773,11 +773,11 @@ describe('the team task filters', () => {
     await click($('[data-test=team-filter-member]'));
     expect($('[data-test=team-filter-member-menu]').className).toContain('left-0');
     await click($('[data-test=team-filter-member-option][data-value=""]'));
-    expect(here().fullPath).toBe('/kanban?team=tm1&workspace=api');
+    expect(here().fullPath).toBe('/teams/tm1/kanban?workspace=api');
 
     await click($('[data-test=team-filter-workspace]'));
     await click($('[data-test=team-filter-workspace-option][data-value=""]'));
-    expect(here().fullPath).toBe('/kanban?team=tm1');
+    expect(here().fullPath).toBe('/teams/tm1/kanban');
     expect(text($('[data-test=team-filter-member]'))).toBe('All members');
   });
 });
@@ -1111,53 +1111,53 @@ describe('cloning a teammate\'s task', () => {
 describe('a team\'s analytics', () => {
   it('reads the whole team\'s numbers, or one team workspace\'s, and goes back to its tasks', async () => {
     api.fetchTeamStats.mockResolvedValue({ summary: { tasksCompleted: 3 } });
-    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
+    await mount(TeamAnalyticsView, { path: '/teams/tm1/analytics' });
     expect(api.fetchTeamStats).toHaveBeenCalledWith('tm1', '7d', 0, 0, '');
     expect(text($('[data-test=team-analytics-scope]'))).toBe('All workspaces');
     await click($('[data-test=team-actions-status-active]'));
-    expect(here().fullPath).toBe('/tasks/active?team=tm1');
+    expect(here().fullPath).toBe('/teams/tm1/tasks/active');
 
-    await router.push('/team/analytics?team=tm1&workspace=Backend');
+    await router.push('/teams/tm1/analytics?workspace=Backend');
     await flush();
     expect(api.fetchTeamStats).toHaveBeenLastCalledWith('tm1', '7d', 0, 0, 'Backend');
     expect(text($('h1'))).toBe('Backend / Analytics');
     expect(text($('[data-test=team-analytics-scope]'))).toBe('Backend');
     await click($('[data-test=team-actions-status-active]'));
-    expect(here().fullPath).toBe('/tasks/active?workspace=Backend&team=tm1');
+    expect(here().fullPath).toBe('/teams/tm1/tasks/active?workspace=Backend');
 
-    await router.push('/team/analytics?team=tm1&workspace=Backend');
+    await router.push('/teams/tm1/analytics?workspace=Backend');
     await flush();
     await click($('[data-test=team-analytics-scope]'));
-    expect(here().fullPath).toBe('/tasks/active?workspace=Backend&team=tm1');
+    expect(here().fullPath).toBe('/teams/tm1/tasks/active?workspace=Backend');
   });
 
   it('has the buttons a workspace page has: statuses, analytics and skills, the current one pressed', async () => {
     api.fetchTeamStats.mockResolvedValue({ summary: {} });
-    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1&workspace=Backend' });
+    await mount(TeamAnalyticsView, { path: '/teams/tm1/analytics?workspace=Backend' });
     const pressed = (sel) => $(sel).classList.contains('border-black');
     expect(pressed('[data-test=team-analytics]')).toBe(true);
     expect(pressed('[data-test=team-skills-link]')).toBe(false);
     expect($$('[data-test=team-actions-statuses] button').map((b) => b.getAttribute('aria-label'))).toEqual(['Active', 'Not Started', 'Ongoing', 'Completed', 'Scheduled']);
     await click($('[data-test=team-skills-link]'));
-    expect(here().fullPath).toBe('/skills?workspace=Backend&team=tm1');
+    expect(here().fullPath).toBe('/teams/tm1/skills?workspace=Backend');
     app.unmount();
     api.fetchTeamSkills.mockResolvedValue({ skills: [] });
-    await mount(SkillsView, { path: '/skills?team=tm1&workspace=Backend' });
+    await mount(SkillsView, { path: '/teams/tm1/skills?workspace=Backend' });
     expect(pressed('[data-test=team-skills-link]')).toBe(true);
     expect(pressed('[data-test=team-analytics]')).toBe(false);
     await click($('[data-test=team-analytics]'));
-    expect(here().fullPath).toBe('/team/analytics?workspace=Backend&team=tm1');
+    expect(here().fullPath).toBe('/teams/tm1/analytics?workspace=Backend');
   });
 
   it('offers no skills for the whole team, and its statuses open the whole team\'s lists', async () => {
-    await mount(TeamWorkspaceActions, { path: '/team/analytics?team=tm1' });
+    await mount(TeamWorkspaceActions, { path: '/teams/tm1/analytics' });
     expect($('[data-test=team-skills-link]')).toBe(null);
     await click($('[data-test=team-actions-status-completed]'));
-    expect(here().fullPath).toBe('/tasks/completed?team=tm1');
+    expect(here().fullPath).toBe('/teams/tm1/tasks/completed');
   });
 
   it('on a phone: the search opens the palette, and the statuses fold behind a toggle that closes on a pick', async () => {
-    await mount(TeamWorkspaceActions, { path: '/team/analytics?team=tm1&workspace=Backend', props: { current: 'analytics' } });
+    await mount(TeamWorkspaceActions, { path: '/teams/tm1/analytics?workspace=Backend', props: { current: 'analytics' } });
     const opened = vi.fn();
     window.addEventListener('open-command-palette', opened);
     await click($('[data-test=team-actions-search]'));
@@ -1171,19 +1171,19 @@ describe('a team\'s analytics', () => {
     status.dispatchEvent(new MouseEvent('mouseenter'));
     status.dispatchEvent(new MouseEvent('mouseleave'));
     await click(status);
-    expect(here().fullPath).toBe('/tasks/ongoing?workspace=Backend&team=tm1');
+    expect(here().fullPath).toBe('/teams/tm1/tasks/ongoing?workspace=Backend');
     expect(strip().classList.contains('hidden')).toBe(true);
   });
 
   it('titles the whole team\'s numbers Analytics alone', async () => {
     api.fetchTeamStats.mockResolvedValue({ summary: {} });
-    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
+    await mount(TeamAnalyticsView, { path: '/teams/tm1/analytics' });
     expect(text($('h1'))).toBe('Analytics');
   });
 
   it('loads a custom range once both ends are set', async () => {
     api.fetchTeamStats.mockResolvedValue({ summary: {} });
-    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
+    await mount(TeamAnalyticsView, { path: '/teams/tm1/analytics' });
     await click($('[data-test=range-custom]'));
     const calls = api.fetchTeamStats.mock.calls.length;
     await click($('[data-test=custom-from]'));
@@ -1194,11 +1194,11 @@ describe('a team\'s analytics', () => {
 
   it('goes back to Me without the team, and says other failures', async () => {
     api.fetchTeamStats.mockRejectedValueOnce(failure(500, 'Stats down'));
-    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
+    await mount(TeamAnalyticsView, { path: '/teams/tm1/analytics' });
     expect(toasts()).toContain('Stats down');
     app.unmount();
     api.fetchTeamStats.mockRejectedValueOnce(failure(404));
-    await mount(TeamAnalyticsView, { path: '/team/analytics?team=tm1' });
+    await mount(TeamAnalyticsView, { path: '/teams/tm1/analytics' });
     expect(here().path).toBe('/');
   });
 });
@@ -1210,11 +1210,11 @@ describe('a team\'s skills', () => {
   it('draws the skills its shared workspaces use as /skills draws yours, with who has each', async () => {
     api.fetchTeamSkills.mockResolvedValue({ skills: [deploy, lint, { name: 'misc' }] });
     api.searchSkills.mockResolvedValue({ skills: [{ name: 'lint' }] });
-    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    await mount(TeamSkills, { path: '/teams/tm1/skills?workspace=backend' });
     expect(api.fetchTeamSkills).toHaveBeenCalledWith('tm1', 'backend');
     expect($('[data-test=team-skill-grid]').className).toContain('grid-cols-1');
     const cards = $$('[data-test=team-skill-row]');
-    expect(cards.map((c) => c.getAttribute('href'))).toEqual(['/skills/deploy?workspace=backend&team=tm1', '/skills/lint?workspace=backend&team=tm1', '/skills/misc?workspace=backend&team=tm1']);
+    expect(cards.map((c) => c.getAttribute('href'))).toEqual(['/teams/tm1/skills/deploy?workspace=backend', '/teams/tm1/skills/lint?workspace=backend', '/teams/tm1/skills/misc?workspace=backend']);
     expect(cards.map((c) => text(c.querySelector('[data-test=skill-card-name]')))).toEqual(['deploy', 'lint', 'misc']);
     expect(cards[0].querySelectorAll('[data-test=owner-avatar]').length).toBe(2);
     expect(text(cards[0])).toContain('Ship it');
@@ -1224,11 +1224,11 @@ describe('a team\'s skills', () => {
     app.unmount();
 
     api.fetchTeamSkills.mockResolvedValue({ skills: [{ name: 'anon', owners: [{ userId: 'u9' }] }] });
-    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    await mount(TeamSkills, { path: '/teams/tm1/skills?workspace=backend' });
     expect(text($('[data-test=team-skill-row]'))).toContain('· a teammate');
     app.unmount();
     api.fetchTeamSkills.mockResolvedValue({ skills: [deploy, lint, { name: 'misc' }] });
-    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    await mount(TeamSkills, { path: '/teams/tm1/skills?workspace=backend' });
     // One you have says so; the others add in a click.
     expect($$('[data-test=team-skill-mine]').length).toBe(1);
     expect($$('[data-test=team-skill-add]').map((b) => b.getAttribute('aria-label'))).toEqual(['Add deploy to my skills', 'Add misc to my skills']);
@@ -1238,7 +1238,7 @@ describe('a team\'s skills', () => {
     api.fetchTeamSkills.mockResolvedValue({ skills: [deploy] });
     let answer;
     api.addTeamSkill.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
-    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    await mount(TeamSkills, { path: '/teams/tm1/skills?workspace=backend' });
     $('[data-test=team-skill-add]').click();
     await flush();
     expect(text($('[data-test=team-skill-add]'))).toBe('Adding…');
@@ -1251,14 +1251,14 @@ describe('a team\'s skills', () => {
     expect(toast.link).toEqual({ path: '/skills/deploy', label: 'Open' });
     expect($('[data-test=team-skill-add]')).toBe(null);
     expect(text($('[data-test=team-skill-mine]'))).toBe('Added');
-    expect(here().fullPath).toBe('/skills?team=tm1&workspace=backend');
+    expect(here().fullPath).toBe('/teams/tm1/skills?workspace=backend');
   });
 
   it('says why a one-click add failed, and offers it again', async () => {
     api.fetchTeamSkills.mockResolvedValue({ skills: [deploy] });
     api.searchSkills.mockRejectedValue(failure(500));
     api.addTeamSkill.mockRejectedValue(failure(409, 'You already have deploy'));
-    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    await mount(TeamSkills, { path: '/teams/tm1/skills?workspace=backend' });
     await click($('[data-test=team-skill-add]'));
     expect(toasts()).toEqual(['You already have deploy']);
     expect($('[data-test=team-skill-add]').disabled).toBe(false);
@@ -1266,13 +1266,13 @@ describe('a team\'s skills', () => {
 
   it('says when there are none, or none could be read', async () => {
     api.fetchTeamSkills.mockResolvedValueOnce({}).mockRejectedValueOnce(failure(500, 'Skills down')).mockRejectedValueOnce(failure(404));
-    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    await mount(TeamSkills, { path: '/teams/tm1/skills?workspace=backend' });
     expect(text($('[data-test=team-skills-empty]'))).toBe('No skills yet. A skill shows here once it is on in one of this workspace\'s shares.');
     app.unmount();
-    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    await mount(TeamSkills, { path: '/teams/tm1/skills?workspace=backend' });
     expect(text($('[data-test=team-skill-error]'))).toBe('Skills down');
     app.unmount();
-    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    await mount(TeamSkills, { path: '/teams/tm1/skills?workspace=backend' });
     expect(here().path).toBe('/');
   });
 
@@ -1280,13 +1280,13 @@ describe('a team\'s skills', () => {
     api.getTeamSkill.mockResolvedValue({ skill: { ...deploy, content: '---\nname: deploy\n---\n# Deploy steps' } });
     api.fetchWorkspaces.mockResolvedValue({ workspaces: [{ id: 'm1', name: 'scratch' }, { id: 'm2', name: 'fork', forkOfId: 'm1' }] });
     api.addTeamSkill.mockResolvedValue({});
-    await mount(TeamSkills, { path: '/skills/deploy?team=tm1&workspace=backend', props: { name: 'deploy' } });
+    await mount(TeamSkills, { path: '/teams/tm1/skills/deploy?workspace=backend', props: { name: 'deploy' } });
     expect(api.getTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', 'backend');
     expect(api.fetchWorkspaces).toHaveBeenCalled();
     expect($('[data-test=team-skill-body]').innerHTML).toContain('Deploy steps');
     expect($('[data-test=team-skill-body]').innerHTML).not.toContain('name: deploy');
     expect(text($('[data-test=team-skills]'))).toContain('Ship it');
-    expect($$('a').find((a) => text(a) === '← Skills').getAttribute('href')).toBe('/skills?workspace=backend&team=tm1');
+    expect($$('a').find((a) => text(a) === '← Skills').getAttribute('href')).toBe('/teams/tm1/skills?workspace=backend');
 
     expect(text($('[data-test=team-skill-workspaces] legend'))).toBe('Turn on in (optional)');
     const boxes = $$('[data-test=team-skill-workspace] input');
@@ -1309,7 +1309,7 @@ describe('a team\'s skills', () => {
         useWorkspaceStore().workspaces = [{ id: 'm1', name: 'scratch' }];
         return () => h(TeamSkills, { name: 'deploy' });
       },
-    }), { path: '/skills/deploy?team=tm1&workspace=backend' });
+    }), { path: '/teams/tm1/skills/deploy?workspace=backend' });
     expect(text($('[data-test=team-skills] h2'))).toBe('deploy');
     expect(api.fetchWorkspaces).not.toHaveBeenCalled();
     await click($('[data-test=team-skill-add]'));
@@ -1322,33 +1322,33 @@ describe('a team\'s skills', () => {
     api.searchSkills.mockResolvedValue({ skills: [{ name: 'deploy' }] });
     api.getTeamSkill.mockResolvedValueOnce({ name: 'deploy', content: '' }).mockRejectedValueOnce(failure(404, 'No such skill'));
     api.fetchWorkspaces.mockRejectedValue(failure(500));
-    await mount(TeamSkills, { path: '/skills/deploy?team=tm1&workspace=backend', props: { name: 'deploy' } });
+    await mount(TeamSkills, { path: '/teams/tm1/skills/deploy?workspace=backend', props: { name: 'deploy' } });
     expect($('[data-test=team-skill-add]')).toBe(null);
     expect($('[data-test=team-skill-mine]')).not.toBe(null);
     app.unmount();
     api.searchSkills.mockResolvedValue({});
-    await mount(TeamSkills, { path: '/skills/deploy?team=tm1&workspace=backend', props: { name: 'deploy' } });
+    await mount(TeamSkills, { path: '/teams/tm1/skills/deploy?workspace=backend', props: { name: 'deploy' } });
     expect(text($('[data-test=team-skill-error]'))).toBe('No such skill');
-    expect(here().path).toBe('/skills/deploy');
+    expect(here().path).toBe('/teams/tm1/skills/deploy');
   });
 
   it('names the team workspace in the page title, which goes back to its tasks', async () => {
     api.fetchTeamSkills.mockResolvedValue({ skills: [] });
-    await mount(SkillsView, { path: '/skills?team=tm1&workspace=backend' });
+    await mount(SkillsView, { path: '/teams/tm1/skills?workspace=backend' });
     expect(text($('h1'))).toBe('backend / Skills');
     await click($('[data-test=team-skills-workspace]'));
-    expect(here().fullPath).toBe('/tasks/active?workspace=backend&team=tm1');
+    expect(here().fullPath).toBe('/teams/tm1/tasks/active?workspace=backend');
     app.unmount();
-    await mount(SkillsView, { path: '/skills?team=tm1' });
+    await mount(SkillsView, { path: '/teams/tm1/skills' });
     expect(text($('h1'))).toBe('Skills');
     expect($('[data-test=team-skills-workspace]')).toBe(null);
   });
 
   it('has no list across the team: without a team workspace it asks for one and reads nothing', async () => {
-    await mount(TeamSkills, { path: '/skills?team=tm1' });
+    await mount(TeamSkills, { path: '/teams/tm1/skills' });
     expect(text($('[data-test=team-skills-pick]'))).toBe('Skills belong to a workspace: pick one in the sidebar, then open its skills.');
     app.unmount();
-    await mount(TeamSkills, { path: '/skills/deploy?team=tm1', props: { name: 'deploy' } });
+    await mount(TeamSkills, { path: '/teams/tm1/skills/deploy', props: { name: 'deploy' } });
     expect($('[data-test=team-skills-pick]')).not.toBe(null);
     expect(api.fetchTeamSkills).not.toHaveBeenCalled();
     expect(api.getTeamSkill).not.toHaveBeenCalled();
@@ -1359,21 +1359,21 @@ describe('a team\'s skills', () => {
     api.fetchWorkspaces.mockResolvedValue({ workspaces: mine });
     api.fetchTeamSkills.mockResolvedValue({ skills: [deploy] });
     api.addTeamSkill.mockResolvedValue({});
-    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    await mount(TeamSkills, { path: '/teams/tm1/skills?workspace=backend' });
     await click($('[data-test=team-skill-add]'));
     expect(api.addTeamSkill).toHaveBeenCalledWith('tm1', 'deploy', ['m2'], 'backend');
     app.unmount();
 
     api.getTeamSkill.mockResolvedValue({ skill: { ...deploy, content: 'Body' } });
-    await mount(TeamSkills, { path: '/skills/deploy?team=tm1&workspace=backend', props: { name: 'deploy' } });
+    await mount(TeamSkills, { path: '/teams/tm1/skills/deploy?workspace=backend', props: { name: 'deploy' } });
     const ticked = $$('[data-test=team-skill-workspace] input').filter((b) => b.checked).map((b) => b.value);
     expect(ticked).toEqual(['m2']);
   });
 
   it('reads another team workspace\'s skills when the workspace changes', async () => {
     api.fetchTeamSkills.mockResolvedValue({ skills: [deploy] });
-    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
-    await router.push('/skills?team=tm1&workspace=docs');
+    await mount(TeamSkills, { path: '/teams/tm1/skills?workspace=backend' });
+    await router.push('/teams/tm1/skills?workspace=docs');
     await flush();
     expect(api.fetchTeamSkills).toHaveBeenLastCalledWith('tm1', 'docs');
   });
@@ -1381,10 +1381,10 @@ describe('a team\'s skills', () => {
   it('says it is loading until the answer arrives', async () => {
     api.fetchTeamSkills.mockReturnValue(new Promise(() => {}));
     api.getTeamSkill.mockReturnValue(new Promise(() => {}));
-    await mount(TeamSkills, { path: '/skills?team=tm1&workspace=backend' });
+    await mount(TeamSkills, { path: '/teams/tm1/skills?workspace=backend' });
     expect(text($('[data-test=team-skills]'))).toBe('Loading skills…');
     app.unmount();
-    await mount(TeamSkills, { path: '/skills/x?team=tm1&workspace=backend', props: { name: 'x' } });
+    await mount(TeamSkills, { path: '/teams/tm1/skills/x?workspace=backend', props: { name: 'x' } });
     expect(text($('[data-test=team-skills]'))).toBe('← Skills Loading…');
   });
 });

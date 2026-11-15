@@ -1105,7 +1105,7 @@ const taskId = computed(() => route.params.taskId);
 // before the shell's workspace list has landed.
 const workspaceStore = useWorkspaceStore();
 const localWorkspace = ref(null);
-// Team mode (?team=): a teammate's task, read through the team and shown
+// Team mode (/teams/<id>): a teammate's task, read through the team and shown
 // read-only; the workspace is theirs, as the team answer describes it.
 const { teamId, isTeamMode, leaveTeam } = useTeamMode();
 const teamWorkspace = ref(null);

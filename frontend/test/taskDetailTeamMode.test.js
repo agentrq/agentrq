@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * A teammate's task, opened in team mode (?team=): read through the team's
+ * A teammate's task, opened in team mode (/teams/<id>): read through the team's
  * routes, with nothing on the page that writes to it, and a way to clone it.
  */
 
@@ -13,7 +13,7 @@ import { createPinia } from 'pinia'
 
 const push = vi.fn()
 const replace = vi.fn()
-const route = { path: '/tasks/active/tw1/t1', params: { filter: 'active', workspaceId: 'tw1', taskId: 't1' }, query: { team: 'tm1' } }
+const route = { path: '/teams/tm1/tasks/active/tw1/t1', params: { teamId: 'tm1', filter: 'active', workspaceId: 'tw1', taskId: 't1' }, query: {} }
 vi.mock('vue-router', () => ({
   useRoute: () => route,
   useRouter: () => ({ push, replace, back: vi.fn() }),

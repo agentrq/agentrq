@@ -194,10 +194,10 @@ const workspaceId = computed(() => route.params.id);
 const isGlobal = computed(() => !workspaceId.value);
 const workspaceOf = (t) => t.workspaceId || workspaceId.value;
 
-// In team mode (/kanban?team=) the board is the team's: every shared
+// In team mode (/teams/<id>/kanban) the board is the team's: every shared
 // workspace's tasks, read-only, each card naming whose it is.
 const teamStore = useTeamStore();
-const { teamId, isTeamMode: teamMode, leaveTeam } = useTeamMode();
+const { teamId, isTeamMode: teamMode, leaveTeam, link } = useTeamMode();
 const isTeamMode = computed(() => isGlobal.value && teamMode.value);
 const teamWorkspace = (t) => teamStore.workspacesOf(teamId.value).find((w) => String(w.id) === String(t.workspaceId));
 
@@ -500,7 +500,7 @@ async function onDrop(e, colId) {
 
 function openTask(t) {
   if (draggingId.value) return;
-  router.push({ path: `/workspaces/${workspaceOf(t)}/tasks/${t.id}`, query: route.query });
+  router.push(link({ path: `/workspaces/${workspaceOf(t)}/tasks/${t.id}`, query: route.query }));
 }
 
 // ---- Context menu / move task ----

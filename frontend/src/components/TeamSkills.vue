@@ -5,7 +5,7 @@
 -->
 
 <!-- The skills on in one team workspace's shared workspaces
-     (/skills?team=&workspace=), drawn as /skills draws yours, with who has
+     (/teams/<id>/skills?workspace=), drawn as /skills draws yours, with who has
      each. There is no list across the team: each workspace has its own. One
      click adds a copy to your own skills, on in your workspace of that name if
      you have one; a skill's page shows its SKILL.md, read-only, and lets you

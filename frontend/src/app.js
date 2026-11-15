@@ -100,21 +100,20 @@ export const routes = [
   { path: '/skills', component: () => import('./views/SkillsView.vue') },
   { path: '/skills/:name', component: () => import('./views/SkillsView.vue'), meta: { remount: true } },
 
-  // Teams. The team on screen is `?team=<id>` on the pages above that show a
-  // team read-only (/tasks/*, /kanban, /skills); see useTeamMode. It is
-  // managed on its settings page. Creating one, and the invitations addressed
-  // to you, need none.
+  // Teams. A team's pages are under /teams/<teamId>: those it shares with Me
+  // (TEAM_PAGES below) show its work read-only; see useTeamMode. It is managed
+  // on its settings page. Creating one, and the invitations addressed to you,
+  // need none.
   { path: '/team/new', component: () => import('./views/TeamNewView.vue') },
-  // A team's analytics, or one team workspace's (?workspace=); a team page, so
-  // with no team there is nothing to show.
-  { path: '/team/analytics', component: () => import('./views/TeamAnalyticsView.vue'), beforeEnter: (to) => (to.query.team ? true : '/') },
+  { path: '/teams/:teamId', redirect: (to) => `${to.path}/tasks/active` },
+  // A team's analytics, or one team workspace's (?workspace=).
+  { path: '/teams/:teamId/analytics', component: () => import('./views/TeamAnalyticsView.vue') },
   // The Pano docs members shared with the team, and one of them, read-only.
-  // Not /pano?team=: that board and its docs are your own, to write.
-  { path: '/team/pano', component: () => import('./views/TeamPanoView.vue'), beforeEnter: (to) => (to.query.team ? true : '/') },
-  { path: '/team/pano/:docId', component: () => import('./views/TeamPanoDocView.vue'), beforeEnter: (to) => (to.query.team ? true : '/'), meta: { remount: true } },
-  // A team's settings (?tab=); a team page, so with no team there is nothing
-  // to show.
-  { path: '/team/settings', component: () => import('./views/TeamSettingsView.vue'), beforeEnter: (to) => (to.query.team ? true : '/') },
+  // Not a team's mirror of /pano: that board and its docs are your own, to write.
+  { path: '/teams/:teamId/pano', component: () => import('./views/TeamPanoView.vue') },
+  { path: '/teams/:teamId/pano/:docId', component: () => import('./views/TeamPanoDocView.vue'), meta: { remount: true } },
+  // A team's settings (?tab=).
+  { path: '/teams/:teamId/settings', component: () => import('./views/TeamSettingsView.vue') },
   { path: '/invitations', component: () => import('./views/InvitationsView.vue') },
   // An invitation link. Public, because it may be opened signed out: the page
   // itself offers the sign-in, and comes back here after it.
@@ -130,6 +129,16 @@ export const routes = [
 
   { path: '/login', component: () => import('./views/LoginView.vue'), meta: { public: true } }
 ]
+
+// The pages a team shows too, under /teams/<teamId>: the same page, of the
+// team's shared work. Of a workspace's pages only its task, which the team's
+// board opens.
+const TEAM_PAGES = ['/tasks/:filter', '/workspaces/:id', '/kanban', '/skills', '/skills/:name']
+routes.push(...routes.filter((r) => TEAM_PAGES.includes(r.path)).map((r) => ({
+  ...r,
+  path: `/teams/:teamId${r.path}`,
+  ...(r.path === '/workspaces/:id' && { children: r.children.filter((c) => c.path === 'tasks/:taskId') }),
+})))
 
 /**
  * The operator's pages, in the web build only. Public to the user guard: they

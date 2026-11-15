@@ -31,11 +31,11 @@ import { useTeamMode } from '../composables/useTeamMode';
 
 const router = useRouter();
 const { isMobile } = useViewport();
-const { isTeamMode, teamId } = useTeamMode();
+const { isTeamMode, link } = useTeamMode();
 
 // Desktop and large screens only, like the workspace board: a narrow viewport
 // that lands here (a direct link, a resize) gets the task list instead.
 watch(isMobile, (mobile) => {
-  if (mobile) router.replace(teamId.value ? `/tasks/active?team=${encodeURIComponent(teamId.value)}` : '/tasks/active');
+  if (mobile) router.replace(link('/tasks/active'));
 }, { immediate: true });
 </script>

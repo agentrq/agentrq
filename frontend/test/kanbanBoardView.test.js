@@ -422,7 +422,7 @@ describe('KanbanBoardView across every workspace', () => {
     } finally {
       window.innerWidth = width
     }
-    expect(replace).toHaveBeenCalledWith('/tasks/active')
+    expect(replace).toHaveBeenCalledWith({ path: '/tasks/active', query: {} })
   })
 })
 
@@ -537,14 +537,15 @@ describe('Spin up on a card', () => {
   })
 })
 
-describe('the team\'s board (/kanban?team=)', () => {
+describe('the team\'s board (/teams/<id>/kanban)', () => {
   const theirs = (id, status, extra = {}) => task(id, status, { workspaceId: 'theirs', owner: { userId: 'u2', name: 'Bob' }, ...extra })
 
   beforeEach(() => {
     if (app) app.unmount()
     document.body.innerHTML = ''
     route.params = {}
-    route.query = { team: 'tm1', workspace: 'Backend' }
+    route.path = '/teams/tm1/kanban'
+    route.query = { workspace: 'Backend' }
     push.mockClear()
     replace.mockClear()
     fetchTeamTasks.mockClear()
@@ -557,6 +558,7 @@ describe('the team\'s board (/kanban?team=)', () => {
   })
 
   afterEach(() => {
+    route.path = '/kanban'
     route.query = {}
   })
 
@@ -583,7 +585,7 @@ describe('the team\'s board (/kanban?team=)', () => {
     expect(document.body.querySelector('[role=menu]')).toBe(null)
 
     n1.click()
-    expect(push).toHaveBeenCalledWith({ path: '/workspaces/theirs/tasks/n1', query: route.query })
+    expect(push).toHaveBeenCalledWith({ path: '/teams/tm1/workspaces/theirs/tasks/n1', query: { workspace: 'Backend' } })
     expect(updateTaskStatus).not.toHaveBeenCalled()
   })
 
@@ -614,14 +616,14 @@ describe('the team\'s board (/kanban?team=)', () => {
     expect(el.querySelector('[data-test=team-filter-workspace]').textContent).toContain('Backend')
     fetchTeamTasks.mockClear()
 
-    route.query = { team: 'tm1', workspace: 'Web', member: 'u2' }
+    route.query = { workspace: 'Web', member: 'u2' }
     await settle()
 
     expect(fetchTeamTasks).toHaveBeenCalledWith('tm1', expect.objectContaining({ workspace: 'Web', member: 'u2' }))
   })
 
   it('keeps a member filter to that member\'s tasks', async () => {
-    route.query = { team: 'tm1', member: 'u2' }
+    route.query = { member: 'u2' }
     const { el } = await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
     const send = async (ev) => { events.value = [...events.value, ev]; await settle() }
     await send({ type: 'team.status.updated', teamId: 'tm1', payload: theirs('cy', 'ongoing', { owner: { userId: 'u3', name: 'Cy' } }) })
@@ -635,7 +637,7 @@ describe('the team\'s board (/kanban?team=)', () => {
     window.innerWidth = 390
     try {
       await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
-      expect(replace).toHaveBeenCalledWith('/tasks/active?team=tm1')
+      expect(replace).toHaveBeenCalledWith({ path: '/teams/tm1/tasks/active', query: {} })
     } finally {
       window.innerWidth = width
     }

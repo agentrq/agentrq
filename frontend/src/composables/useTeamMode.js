@@ -10,25 +10,33 @@ import { useToasts } from './useToasts';
 /**
  * Team mode: the same pages, showing a team's shared work, read-only.
  *
- * The team on screen is the route's `?team=<id>` and nothing else, so a link
- * always says what it shows and the back button leaves team mode the way it
- * entered it. Write controls are hidden (not disabled) while it is set.
+ * The team on screen is the route's `/teams/<id>` prefix and nothing else, so
+ * a link always says what it shows and the back button leaves team mode the
+ * way it entered it. Write controls are hidden (not disabled) while it is set.
  */
+
+const TEAM_PREFIX = /^\/teams\/([^/]+)(?=\/|$)/;
 
 /** The team a route shows, '' in Me mode. */
 export function teamIdOf(route) {
-  const team = route?.query?.team;
-  return typeof team === 'string' ? team : '';
+  const m = TEAM_PREFIX.exec(route?.path || '');
+  return m ? decodeURIComponent(m[1]) : '';
 }
 
+/** A path without its team: the page it is in Me mode. */
+export const mePath = (path = '') => path.replace(TEAM_PREFIX, '') || '/';
+
+/** Team `teamId`'s page `rest`, e.g. '/pano' or '/tasks/active'. */
+export const teamPath = (teamId, rest = '') => `/teams/${encodeURIComponent(String(teamId))}${rest === '/' ? '' : rest}`;
+
 /**
- * A location in the same mode as `teamId`: the team kept on it, or taken off
- * for Me ('').
+ * A location in the same mode as `teamId`: the page under the team, or taken
+ * out of it for Me ('').
  */
 export function withTeam(to, teamId) {
   const loc = typeof to === 'string' ? splitPath(to) : { ...to, query: { ...(to.query || {}) } };
-  if (teamId) loc.query.team = String(teamId);
-  else delete loc.query.team;
+  const path = mePath(loc.path);
+  loc.path = teamId ? teamPath(teamId, path) : path;
   return loc;
 }
 
@@ -38,20 +46,36 @@ function splitPath(path) {
 }
 
 /** Where team mode starts: the team's active tasks. */
-export const teamHome = (teamId) => ({ path: '/tasks/active', query: { team: String(teamId) } });
+export const teamHome = (teamId) => ({ path: teamPath(teamId, '/tasks/active') });
 
 /** Where accepting an invitation lands: the team, with its one-time welcome. */
-export const joinedHome = (teamId) => ({ path: '/tasks/active', query: { team: String(teamId), joined: '1' } });
+export const joinedHome = (teamId) => ({ path: teamPath(teamId, '/tasks/active'), query: { joined: '1' } });
+
+// The team-only pages a `?team=` link once named by a path of their own.
+const LEGACY_TEAM_PAGE = /^\/team(?=\/(analytics|pano|settings)(\/|$))/;
 
 /**
- * The redirect, if any, for a navigation to the home page: in team mode the
- * home is the team's tasks; and the first page this browser opens follows
- * the switch's last choice. A deep link is never redirected.
+ * Where a link from before team pages had their own paths goes: `?team=<id>`
+ * on a page is that page under `/teams/<id>`. Clone notes written then still
+ * link that way. undefined for any other link.
+ */
+export function legacyTeamLink(to) {
+  const team = to.query?.team;
+  if (typeof team !== 'string' || !team) return undefined;
+  const { team: _, ...query } = to.query;
+  const path = to.path === '/' ? '/tasks/active' : to.path.replace(LEGACY_TEAM_PAGE, '');
+  return { path: teamPath(team, path), query, hash: to.hash, replace: true };
+}
+
+/**
+ * The redirect, if any, for a navigation: an old `?team=` link goes to its
+ * page under the team; and the first time this browser opens the home page it
+ * follows the switch's last choice. A deep link is never redirected.
  */
 export function teamLanding(to, from, remembered) {
+  const legacy = legacyTeamLink(to);
+  if (legacy) return legacy;
   if (to.path !== '/') return undefined;
-  const team = teamIdOf(to);
-  if (team) return teamHome(team);
   if (remembered && from.matched.length === 0) return teamHome(remembered);
   return undefined;
 }
@@ -133,7 +157,7 @@ export const SETTINGS_TABS = ['members', 'invitations', 'activity', 'workspaces'
 
 /** Team `teamId`'s settings page, on `tab` (its first when none). */
 export function teamSettings(teamId, tab = 'members') {
-  return { path: '/team/settings', query: { team: String(teamId), tab } };
+  return { path: teamPath(teamId, '/settings'), query: { tab } };
 }
 
 /** The settings tab a route asks for, its first for any other. */
