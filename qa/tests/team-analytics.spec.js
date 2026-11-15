@@ -69,7 +69,7 @@ test('a team workspace\'s analytics sum each member\'s workspace in it', async (
   await owner.screenshot({ path: test.info().outputPath('workspace-header.png'), animations: 'disabled' })
 
   // From the team workspace's tasks, the Analytics button.
-  await owner.goto(`/tasks/active?team=${team.id}&workspace=${encodeURIComponent(workspace.name)}`)
+  await owner.goto(`/teams/${team.id}/tasks/active?workspace=${encodeURIComponent(workspace.name)}`)
   await openSidebar(owner)
   const stats = nextResponse(owner, 'GET', `/teams/${team.id}/analytics`, { workspace: workspace.name })
   await owner.getByTestId('team-analytics').click()
@@ -78,7 +78,7 @@ test('a team workspace\'s analytics sum each member\'s workspace in it', async (
   const { summary } = await res.json()
   expect(summary.tasksCompleted, 'the team workspace\'s completions').toBe(mine.tasksCompleted + hers.tasksCompleted)
   expect(summary.messages, 'the team workspace\'s messages').toBe(mine.messages + hers.messages)
-  await expect(owner).toHaveURL(new RegExp(`/team/analytics\\?.*workspace=`))
+  await expect(owner).toHaveURL(new RegExp(`/teams/[^/]+/analytics\\?.*workspace=`))
   await expect(owner.getByTestId('team-analytics-scope')).toHaveText(workspace.name)
   const card = (label) => owner.getByText(label, { exact: true }).locator('xpath=../..')
   await expect(card('Completed')).toContainText(String(summary.tasksCompleted))
@@ -94,7 +94,7 @@ test('a team workspace\'s analytics sum each member\'s workspace in it', async (
   // As high as the pickers beside it.
   const height = async (locator) => (await locator.boundingBox()).height
   expect(await height(owner.getByTestId('team-analytics'))).toBe(await height(owner.getByTestId('team-filter-workspace')))
-  await owner.goto(`/tasks/active?team=${team.id}`)
+  await owner.goto(`/teams/${team.id}/tasks/active`)
   const all = nextResponse(owner, 'GET', `/teams/${team.id}/analytics`)
   await owner.getByTestId('team-analytics').click()
   const whole = (await (await all).json()).summary
@@ -104,10 +104,10 @@ test('a team workspace\'s analytics sum each member\'s workspace in it', async (
   // Bea reads the same; a phone gets the same page.
   await bea.setViewportSize({ width: 390, height: 844 })
   const beas = nextResponse(bea, 'GET', `/teams/${team.id}/analytics`)
-  await bea.goto(`/team/analytics?team=${team.id}&workspace=${encodeURIComponent(workspace.name)}`)
+  await bea.goto(`/teams/${team.id}/analytics?workspace=${encodeURIComponent(workspace.name)}`)
   expect((await (await beas).json()).summary.tasksCompleted).toBe(summary.tasksCompleted)
   await bea.screenshot({ path: test.info().outputPath('team-analytics-phone.png'), animations: 'disabled' })
-  await bea.goto(`/tasks/active?team=${team.id}&workspace=${encodeURIComponent(workspace.name)}`)
+  await bea.goto(`/teams/${team.id}/tasks/active?workspace=${encodeURIComponent(workspace.name)}`)
   await expect(bea.getByTestId('team-analytics')).toBeVisible()
   expect(await height(bea.getByTestId('team-analytics'))).toBe(await height(bea.getByTestId('team-filter-workspace')))
   await bea.screenshot({ path: test.info().outputPath('team-tasks-phone.png'), animations: 'disabled' })

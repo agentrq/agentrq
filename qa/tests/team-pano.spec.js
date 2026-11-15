@@ -64,10 +64,10 @@ test('a Pano doc shared with a team is read, read-only, by its members until uns
   await dark(owner, false)
 
   // Bea finds it on the team's Pano, from the team sidebar.
-  await bea.goto(`/tasks/active?team=${team.id}`)
+  await bea.goto(`/teams/${team.id}/tasks/active`)
   await openSidebar(bea)
   await bea.getByRole('link', { name: 'Pano' }).click()
-  await expect(bea).toHaveURL(new RegExp(`/team/pano\\?team=${team.id}`))
+  await expect(bea).toHaveURL(new RegExp(`/teams/${team.id}/pano$`))
   const card = bea.getByTestId('team-pano-card').filter({ hasText: title })
   await expect(card).toBeVisible()
   await expect(bea.getByTestId('team-pano-card').filter({ hasText: mine.title })).toHaveCount(0)

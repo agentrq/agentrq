@@ -511,7 +511,7 @@ func (m *teamMode) clone(t *testing.T) {
 	if err := m.db.First(&clone, monoflake.IDFromBase62(id).Int64()).Error; err != nil {
 		t.Fatalf("the clone %v: %v", body, err)
 	}
-	note := "the body\n\n---\nCloned from [core / Alice / backend](/workspaces/" + ws100 + "/tasks/" + m.attachTask + "?team=" + teamTen + ")"
+	note := "the body\n\n---\nCloned from [core / Alice / backend](/teams/" + teamTen + "/workspaces/" + ws100 + "/tasks/" + m.attachTask + ")"
 	if clone.WorkspaceID != 201 || clone.UserID != 2 || clone.Status != "notstarted" || clone.Title != "ship it" || clone.Body != note || clone.Assignee != "agent" {
 		t.Errorf("the clone is %+v: want it not started, whatever status was sent", clone)
 	}

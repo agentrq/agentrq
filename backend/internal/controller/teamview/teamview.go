@@ -320,8 +320,8 @@ func (c *controller) CloneTask(ctx context.Context, req entity.CloneTeamTaskRequ
 // cloneBody is the task's body, with a note of where the clone came from
 // that links back to the original in team mode.
 func cloneBody(t model.Task, w entity.TeamWorkspace, team entity.Team) string {
-	link := "/workspaces/" + monoflake.ID(t.WorkspaceID).String() + "/tasks/" + monoflake.ID(t.ID).String() +
-		"?team=" + monoflake.ID(team.ID).String()
+	link := "/teams/" + monoflake.ID(team.ID).String() + "/workspaces/" + monoflake.ID(t.WorkspaceID).String() +
+		"/tasks/" + monoflake.ID(t.ID).String()
 	note := fmt.Sprintf("Cloned from [%s / %s / %s](%s)", team.Name, w.OwnerName, w.Name, link)
 	if strings.TrimSpace(t.Body) == "" {
 		return note

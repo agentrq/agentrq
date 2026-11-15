@@ -5,7 +5,7 @@
 -->
 
 <!-- The Me | Team switch at the top of the sidebar. Team mode is the route's
-     ?team=, so every choice here is a navigation; the last one is remembered
+     /teams/<id>, so every choice here is a navigation; the last one is remembered
      in this browser. The badge counts invitations waiting for you. -->
 <template>
   <div class="relative" data-test="team-switcher">

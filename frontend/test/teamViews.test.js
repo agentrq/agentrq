@@ -73,7 +73,10 @@ async function mount(path, setup = () => {}) {
       { path: '/', component: Blank },
       { path: '/login', component: Blank },
       { path: '/tasks/active', component: Blank },
-      { path: '/team/settings', component: TeamSettingsView },
+      { path: '/teams/:teamId/tasks/active', component: Blank },
+      { path: '/teams/:teamId/settings', component: TeamSettingsView },
+      // The page outside any team, as it is for a moment while it is left.
+      { path: '/settings', component: TeamSettingsView },
       { path: '/team/new', component: TeamNewView },
       { path: '/invitations', component: InvitationsView },
       { path: '/invite', component: InvitationAcceptView },
@@ -179,7 +182,7 @@ describe('creating a team', () => {
     expect(api.createTeam).toHaveBeenCalledWith('Core');
     expect(store.getTeam('tm1')).toMatchObject({ name: 'Core', version: 1, memberCount: 1 });
     expect(rememberedTeam()).toBe('tm1');
-    expect(router.currentRoute.value.fullPath).toBe('/team/settings?team=tm1&tab=invitations');
+    expect(router.currentRoute.value.fullPath).toBe('/teams/tm1/settings?tab=invitations');
     expect(document.querySelector('[data-test=team-settings]')).not.toBe(null);
   });
 
@@ -225,7 +228,7 @@ const here = () => router.currentRoute.value.fullPath;
 
 describe('the team settings page', () => {
   it('opens on members, every one of whom can be removed but you, and no roles', async () => {
-    await mount('/team/settings?team=tm1', asTeam());
+    await mount('/teams/tm1/settings', asTeam());
     const page = d$('[data-test=team-settings]');
     expect(text(page.querySelector('h1'))).toBe('Core');
     expect(text(page.querySelector('h1 + p'))).toBe('Team settings · 3 members');
@@ -242,7 +245,7 @@ describe('the team settings page', () => {
   });
 
   it('reads nothing with no team on the route', async () => {
-    await mount('/team/settings', asTeam());
+    await mount('/settings', asTeam());
     expect(api.listTeamMembers).not.toHaveBeenCalled();
     expect(d$$('[data-test=member-row]')).toHaveLength(0);
   });
@@ -252,34 +255,34 @@ describe('the team settings page', () => {
     api.listTeamMembers.mockResolvedValue({});
     api.listTeamInvitations.mockResolvedValue({});
     api.fetchTeamActivities.mockResolvedValue({});
-    await mount('/team/settings?team=tm1&tab=activity', (s) => { s.teams = [{ id: 'tm1', name: 'Core', version: 2 }]; });
+    await mount('/teams/tm1/settings?tab=activity', (s) => { s.teams = [{ id: 'tm1', name: 'Core', version: 2 }]; });
     expect(text(d$('[data-test=team-settings] h1 + p'))).toBe('Team settings · 0 members');
     expect(text(d$('[data-test=activity-empty]'))).toBe('Nothing yet.');
   });
 
   it('opens on members for a tab it does not have', async () => {
-    await mount('/team/settings?team=tm1&tab=settings', asTeam());
+    await mount('/teams/tm1/settings?tab=settings', asTeam());
     expect(d$('[data-test=settings-tab-members]').getAttribute('aria-selected')).toBe('true');
     expect(d$$('[data-test=member-row]')).toHaveLength(3);
   });
 
   it('moves between tabs in the URL', async () => {
-    await mount('/team/settings?team=tm1&tab=members', asTeam());
+    await mount('/teams/tm1/settings?tab=members', asTeam());
     await click(d$('[data-test=settings-tab-invitations]'));
-    expect(here()).toBe('/team/settings?team=tm1&tab=invitations');
+    expect(here()).toBe('/teams/tm1/settings?tab=invitations');
     expect(document.activeElement).toBe(d$('#invite-email'));
     await click(d$('[data-test=settings-tab-workspaces]'));
     expect(text(d$('[data-test=team-settings]'))).toContain('Teammates in Core see the workspaces you share here');
     expect(d$('[data-test=workspace-sharing]')).not.toBe(null);
     await click(d$('[data-test=settings-tab-danger]'));
-    expect(here()).toBe('/team/settings?team=tm1&tab=danger');
+    expect(here()).toBe('/teams/tm1/settings?tab=danger');
     expect(d$('[data-test=leave]')).not.toBe(null);
     expect(d$('[data-test=delete]')).not.toBe(null);
   });
 
   it('renames the team from its title', async () => {
     api.renameTeam.mockResolvedValue({ id: 'tm1', name: 'Platform', version: 4, memberCount: 3 });
-    await mount('/team/settings?team=tm1&tab=members', asTeam());
+    await mount('/teams/tm1/settings?tab=members', asTeam());
     await click(d$('[data-test=team-settings] [data-test=team-rename]'));
     await type(d$('[data-test=team-rename-input]'), 'Platform');
     await submit(d$('[data-test=team-rename-form]'));
@@ -291,7 +294,7 @@ describe('the team settings page', () => {
     api.fetchUser.mockResolvedValue(ME);
     api.listTeamMembers.mockResolvedValue({ members: [members()[0]] });
     api.listTeamInvitations.mockResolvedValue({});
-    await mount('/team/settings?team=tm1&tab=invitations', (s) => { s.teams = [{ id: 'tm1', name: 'Core', version: 2 }]; });
+    await mount('/teams/tm1/settings?tab=invitations', (s) => { s.teams = [{ id: 'tm1', name: 'Core', version: 2 }]; });
     expect(text(d$('[data-test=team-settings] h1 + p'))).toBe('Team settings · 1 member');
     expect(text(d$('[data-test=invitations-empty]'))).toBe('No invitation waiting for an answer.');
     expect(store.getTeam('tm1').version).toBe(2);
@@ -301,21 +304,21 @@ describe('the team settings page', () => {
     api.fetchUser.mockResolvedValue(ME);
     api.listTeamMembers.mockRejectedValue(fail(404));
     api.listTeamInvitations.mockResolvedValue({});
-    await mount('/team/settings?team=tm1&tab=members');
+    await mount('/teams/tm1/settings?tab=members');
     expect(here()).toBe('/');
     expect(toasts()).toContain("You're no longer in that team");
     app.unmount();
 
     api.listTeamMembers.mockRejectedValue(fail(500, 'Server down'));
-    await mount('/team/settings?team=tm1&tab=members');
-    expect(here()).toBe('/team/settings?team=tm1&tab=members');
+    await mount('/teams/tm1/settings?tab=members');
+    expect(here()).toBe('/teams/tm1/settings?tab=members');
     expect(toasts()).toContain('Server down');
   });
 
   describe('members', () => {
     it('removes one, after asking, against the team\'s version', async () => {
       api.removeTeamMember.mockResolvedValue({ version: 4 });
-      await mount('/team/settings?team=tm1&tab=members', asTeam());
+      await mount('/teams/tm1/settings?tab=members', asTeam());
       await click(d$$('[data-test=member-remove]')[0]);
       const modal = dialog('Remove member');
       expect(text(modal)).toContain('Remove Bob from Core? Their shared workspaces leave Core too.');
@@ -328,7 +331,7 @@ describe('the team settings page', () => {
 
     it('names one with no name by email, and says when removing fails', async () => {
       api.removeTeamMember.mockRejectedValueOnce(fail(500, 'Nope')).mockResolvedValueOnce(null);
-      await mount('/team/settings?team=tm1&tab=members', asTeam());
+      await mount('/teams/tm1/settings?tab=members', asTeam());
       await click(d$$('[data-test=member-remove]')[1]);
       expect(text(dialog('Remove member'))).toContain('Remove cy@acme.com from Core?');
       await click(button('Remove', dialog('Remove member')));
@@ -342,7 +345,7 @@ describe('the team settings page', () => {
     });
 
     it('cancels a removal', async () => {
-      await mount('/team/settings?team=tm1&tab=members', asTeam());
+      await mount('/teams/tm1/settings?tab=members', asTeam());
       await click(d$$('[data-test=member-remove]')[0]);
       await click(button('Cancel', dialog('Remove member')));
       expect(api.removeTeamMember).not.toHaveBeenCalled();
@@ -351,7 +354,7 @@ describe('the team settings page', () => {
     it('reads the team and its lists again when someone changed it first, and says so', async () => {
       api.removeTeamMember.mockRejectedValue(Object.assign(fail(409, 'someone changed this team'), { conflict: true, version: 7 }));
       api.getTeam.mockResolvedValue({ id: 'tm1', name: 'Core', version: 7, memberCount: 2 });
-      await mount('/team/settings?team=tm1&tab=members', asTeam());
+      await mount('/teams/tm1/settings?tab=members', asTeam());
       api.listTeamMembers.mockResolvedValue({ members: members().slice(0, 2), version: 7 });
       api.listTeamInvitations.mockResolvedValue({ invitations: invitations(), version: 7 });
       await click(d$$('[data-test=member-remove]')[1]);
@@ -370,7 +373,7 @@ describe('the team settings page', () => {
         emailSent: true,
         version: 4,
       });
-      await mount('/team/settings?team=tm1&tab=invitations', asTeam());
+      await mount('/teams/tm1/settings?tab=invitations', asTeam());
       expect(d$('[data-test=invite-role]')).toBe(null);
       await type(d$('#invite-email'), ' dee@acme.com ');
       await submit(d$('[data-test=invite-form]'));
@@ -384,7 +387,7 @@ describe('the team settings page', () => {
 
     it('hands over the link to share after an email went out too', async () => {
       api.createTeamInvitation.mockResolvedValue({ emailSent: true, link: 'https://agentrq.test/invite#t0', version: 4 });
-      await mount('/team/settings?team=tm1&tab=invitations', asTeam());
+      await mount('/teams/tm1/settings?tab=invitations', asTeam());
       await type(d$('#invite-email'), 'new@acme.com');
       await submit(d$('[data-test=invite-form]'));
       expect(toasts()).toEqual(['Invitation sent']);
@@ -394,7 +397,7 @@ describe('the team settings page', () => {
     });
 
     it('lists who sent each and when it expires', async () => {
-      await mount('/team/settings?team=tm1&tab=invitations', asTeam());
+      await mount('/teams/tm1/settings?tab=invitations', asTeam());
       expect(d$$('[data-test=invitation-row]').map(text)).toEqual([
         'dee@acme.com Sent by Me · expires in 3 days Resend Revoke',
         'eve@acme.com expires in 3 days Resend Revoke',
@@ -403,7 +406,7 @@ describe('the team settings page', () => {
 
     it('hands over the link when no email carried it, and Escape shuts the link first', async () => {
       api.createTeamInvitation.mockResolvedValue({ emailSent: false, link: 'https://agentrq.test/invite#t1', version: 4 });
-      await mount('/team/settings?team=tm1&tab=invitations', asTeam());
+      await mount('/teams/tm1/settings?tab=invitations', asTeam());
       await type(d$('#invite-email'), 'new@acme.com');
       await submit(d$('[data-test=invite-form]'));
       const modal = document.querySelector('[data-test=invite-link-modal]');
@@ -419,7 +422,7 @@ describe('the team settings page', () => {
 
     it('closes the link with Done', async () => {
       api.createTeamInvitation.mockResolvedValue({ emailSent: false, link: 'https://agentrq.test/invite#t2' });
-      await mount('/team/settings?team=tm1&tab=invitations', asTeam());
+      await mount('/teams/tm1/settings?tab=invitations', asTeam());
       await type(d$('#invite-email'), 'new@acme.com');
       await submit(d$('[data-test=invite-form]'));
       const modal = document.querySelector('[data-test=invite-link-modal]');
@@ -429,7 +432,7 @@ describe('the team settings page', () => {
 
     it('takes an answer with nothing in it', async () => {
       api.createTeamInvitation.mockResolvedValue(undefined);
-      await mount('/team/settings?team=tm1&tab=invitations', asTeam());
+      await mount('/teams/tm1/settings?tab=invitations', asTeam());
       await type(d$('#invite-email'), 'new@acme.com');
       await submit(d$('[data-test=invite-form]'));
       expect(toasts()).toEqual(['Invitation created']);
@@ -442,7 +445,7 @@ describe('the team settings page', () => {
       ['the inviter\'s', 'you have reached your limit of 20 invitations per day across all your teams'],
     ])('shows %s daily cap in the server\'s words, in the form, and keeps what was typed', async (_, message) => {
       api.createTeamInvitation.mockRejectedValue(fail(429, message));
-      await mount('/team/settings?team=tm1&tab=invitations', asTeam());
+      await mount('/teams/tm1/settings?tab=invitations', asTeam());
       await type(d$('#invite-email'), 'new@acme.com');
       await submit(d$('[data-test=invite-form]'));
       const err = d$('[data-test=invite-error]');
@@ -455,7 +458,7 @@ describe('the team settings page', () => {
     it('reads the team again when someone changed it first, keeping what was typed', async () => {
       api.createTeamInvitation.mockRejectedValue(Object.assign(fail(409), { conflict: true, version: 5 }));
       api.getTeam.mockResolvedValue({ id: 'tm1', name: 'Core', version: 5 });
-      await mount('/team/settings?team=tm1&tab=invitations', asTeam());
+      await mount('/teams/tm1/settings?tab=invitations', asTeam());
       await type(d$('#invite-email'), 'new@acme.com');
       await submit(d$('[data-test=invite-form]'));
       expect(toasts()).toEqual(['Someone changed this team, refreshed']);
@@ -468,7 +471,7 @@ describe('the team settings page', () => {
   describe('pending invitations', () => {
     it('revokes one against the version', async () => {
       api.revokeTeamInvitation.mockResolvedValue({ version: 4 });
-      await mount('/team/settings?team=tm1&tab=invitations', asTeam());
+      await mount('/teams/tm1/settings?tab=invitations', asTeam());
       await click(d$('[data-test=invitation-revoke]'));
       expect(api.revokeTeamInvitation).toHaveBeenCalledWith('tm1', 'i1', 3);
       expect(d$$('[data-test=invitation-row]')).toHaveLength(1);
@@ -478,7 +481,7 @@ describe('the team settings page', () => {
 
     it('says when a revoke fails', async () => {
       api.revokeTeamInvitation.mockRejectedValue(fail(500, 'No'));
-      await mount('/team/settings?team=tm1&tab=invitations', asTeam());
+      await mount('/teams/tm1/settings?tab=invitations', asTeam());
       await click(d$('[data-test=invitation-revoke]'));
       expect(d$$('[data-test=invitation-row]')).toHaveLength(2);
       expect(toasts()).toEqual(['No']);
@@ -487,7 +490,7 @@ describe('the team settings page', () => {
     it('resends one as a new invitation in its place, each at the version the last left', async () => {
       api.revokeTeamInvitation.mockResolvedValue({ version: 4 });
       api.createTeamInvitation.mockResolvedValue({ invitation: { id: 'i7', email: 'eve@acme.com', expiresAt: soon() }, emailSent: true, version: 5 });
-      await mount('/team/settings?team=tm1&tab=invitations', asTeam());
+      await mount('/teams/tm1/settings?tab=invitations', asTeam());
       await click(d$$('[data-test=invitation-resend]')[1]);
       expect(api.revokeTeamInvitation).toHaveBeenCalledWith('tm1', 'i2', 3);
       expect(api.createTeamInvitation).toHaveBeenCalledWith('tm1', 'eve@acme.com', 4);
@@ -497,7 +500,7 @@ describe('the team settings page', () => {
 
     it('sends nothing when the old one cannot be revoked', async () => {
       api.revokeTeamInvitation.mockRejectedValue(fail(403));
-      await mount('/team/settings?team=tm1&tab=invitations', asTeam());
+      await mount('/teams/tm1/settings?tab=invitations', asTeam());
       await click(d$('[data-test=invitation-resend]'));
       expect(api.createTeamInvitation).not.toHaveBeenCalled();
       expect(here()).toBe('/');
@@ -507,7 +510,7 @@ describe('the team settings page', () => {
 
   describe('the activity log', () => {
     it('reads the newest twenty, in sentences, and the next twenty before the last', async () => {
-      await mount('/team/settings?team=tm1&tab=activity', asTeam());
+      await mount('/teams/tm1/settings?tab=activity', asTeam());
       api.fetchTeamActivities.mockResolvedValueOnce({ activities: activity(20), version: 3 }).mockResolvedValueOnce({ activities: activity(2, 20), version: 3 });
       await click(d$('[data-test=settings-tab-members]'));
       await click(d$('[data-test=settings-tab-activity]'));
@@ -523,23 +526,23 @@ describe('the team settings page', () => {
     });
 
     it('says when there is none, says it is loading, and says why it could not be read', async () => {
-      await mount('/team/settings?team=tm1&tab=activity', asTeam());
+      await mount('/teams/tm1/settings?tab=activity', asTeam());
       expect(api.fetchTeamActivities).toHaveBeenCalledWith('tm1', { limit: 20, before: '' });
       expect(text(d$('[data-test=activity-empty]'))).toBe('Nothing yet.');
       app.unmount();
 
-      await mount('/team/settings?team=tm1&tab=activity', (s) => { asTeam()(s); api.fetchTeamActivities.mockReturnValue(new Promise(() => {})); });
+      await mount('/teams/tm1/settings?tab=activity', (s) => { asTeam()(s); api.fetchTeamActivities.mockReturnValue(new Promise(() => {})); });
       expect(text(d$('[data-test=team-settings] section'))).toBe('Loading…');
       app.unmount();
 
       api.fetchTeamActivities.mockRejectedValue(fail(500, 'Log down'));
-      await mount('/team/settings?team=tm1&tab=activity', (s) => { asTeam()(s); api.fetchTeamActivities.mockRejectedValue(fail(500, 'Log down')); });
+      await mount('/teams/tm1/settings?tab=activity', (s) => { asTeam()(s); api.fetchTeamActivities.mockRejectedValue(fail(500, 'Log down')); });
       expect(toasts()).toContain('Log down');
       expect(text(d$('[data-test=activity-empty]'))).toBe('Nothing yet.');
     });
 
     it('keeps what it read when an older page cannot be read', async () => {
-      await mount('/team/settings?team=tm1&tab=members', asTeam());
+      await mount('/teams/tm1/settings?tab=members', asTeam());
       api.fetchTeamActivities.mockResolvedValueOnce({ activities: activity(20) }).mockRejectedValueOnce(fail(500, 'Log down'));
       await click(d$('[data-test=settings-tab-activity]'));
       await click(d$('[data-test=activity-more]'));
@@ -552,7 +555,7 @@ describe('the team settings page', () => {
     it('leaves against the version, and goes back to Me', async () => {
       rememberTeam('tm1');
       api.leaveTeam.mockResolvedValue(null);
-      await mount('/team/settings?team=tm1&tab=danger', asTeam());
+      await mount('/teams/tm1/settings?tab=danger', asTeam());
       await click(d$('[data-test=leave]'));
       const modal = dialog('Leave team');
       expect(text(modal)).toContain('Leave Core? Your shares to it are removed.');
@@ -566,25 +569,25 @@ describe('the team settings page', () => {
     });
 
     it('says the last member leaving deletes the team', async () => {
-      await mount('/team/settings?team=tm1&tab=danger', (s) => { asTeam()(s); api.listTeamMembers.mockResolvedValue({ members: [members()[0]] }); });
+      await mount('/teams/tm1/settings?tab=danger', (s) => { asTeam()(s); api.listTeamMembers.mockResolvedValue({ members: [members()[0]] }); });
       await click(d$('[data-test=leave]'));
       expect(text(dialog('Leave team'))).toContain('You are the last member: leaving deletes Core.');
     });
 
     it('stays when leaving fails, and cancels leaving', async () => {
       api.leaveTeam.mockRejectedValue(fail(400, 'Not now'));
-      await mount('/team/settings?team=tm1&tab=danger', asTeam());
+      await mount('/teams/tm1/settings?tab=danger', asTeam());
       await click(d$('[data-test=leave]'));
       await click(button('Cancel', dialog('Leave team')));
       expect(api.leaveTeam).not.toHaveBeenCalled();
       await click(d$('[data-test=leave]'));
       await click(button('Leave', dialog('Leave team')));
-      expect(here()).toBe('/team/settings?team=tm1&tab=danger');
+      expect(here()).toBe('/teams/tm1/settings?tab=danger');
       expect(toasts()).toEqual(['Not now']);
     });
 
     it('cancels deleting', async () => {
-      await mount('/team/settings?team=tm1&tab=danger', asTeam());
+      await mount('/teams/tm1/settings?tab=danger', asTeam());
       await click(d$('[data-test=delete]'));
       await click(button('Cancel', dialog('Delete team')));
       expect(api.deleteTeam).not.toHaveBeenCalled();
@@ -592,7 +595,7 @@ describe('the team settings page', () => {
 
     it('deletes only once its name is typed, against the version', async () => {
       api.deleteTeam.mockResolvedValue(null);
-      await mount('/team/settings?team=tm1&tab=danger', asTeam());
+      await mount('/teams/tm1/settings?tab=danger', asTeam());
       await click(d$('[data-test=delete]'));
       const modal = dialog('Delete team');
       expect(text(modal)).toContain('Delete Core for everyone in it? This cannot be undone.');
@@ -719,7 +722,7 @@ describe('the invitations inbox', () => {
     expect(store.invitations.map((i) => i.id)).toEqual(['i2']);
     expect(store.getTeam('tm1')).toMatchObject({ name: 'Core', version: 2, memberCount: 3 });
     expect(rememberedTeam()).toBe('tm1');
-    expect(router.currentRoute.value.fullPath).toBe('/tasks/active?team=tm1&joined=1');
+    expect(router.currentRoute.value.fullPath).toBe('/teams/tm1/tasks/active?joined=1');
   });
 
   it('says why an accept failed, and reads the list again', async () => {
@@ -837,7 +840,7 @@ describe('the invitation link', () => {
     expect(store.getTeam('tm1')).toMatchObject({ name: 'Core', version: 2, memberCount: 2 });
     expect(rememberedTeam()).toBe('tm1');
     expect(kept()).toBe(null);
-    expect(router.currentRoute.value.fullPath).toBe('/tasks/active?team=tm1&joined=1');
+    expect(router.currentRoute.value.fullPath).toBe('/teams/tm1/tasks/active?joined=1');
   });
 
   it('accepts an invitation that names no sender', async () => {

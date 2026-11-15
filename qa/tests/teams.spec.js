@@ -37,9 +37,9 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   const created = nextResponse(owner, 'POST', '/teams')
   await owner.getByRole('button', { name: 'Create' }).click()
   expect((await created).status()).toBe(201)
-  await expect(owner).toHaveURL(/\/team\/settings\?team=.*tab=invitations/)
+  await expect(owner).toHaveURL(/\/teams\/[^/]+\/settings\?tab=invitations/)
   await expect(owner.getByTestId('team-settings')).toBeVisible()
-  const teamId = new URL(owner.url()).searchParams.get('team')
+  const teamId = new URL(owner.url()).pathname.split('/')[2]
 
   // 2. Invites Bea: no mail is sent here, so the page shows the link once.
   const invite = async (email) => {
@@ -69,11 +69,11 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   const accepted = nextResponse(bea, 'POST', '/invitations/accept')
   await bea.getByTestId('accept-button').click()
   expect((await accepted).status()).toBe(200)
-  await expect(bea).toHaveURL(new RegExp(`/tasks/active\\?team=${teamId}`))
+  await expect(bea).toHaveURL(new RegExp(`/teams/${teamId}/tasks/active`))
 
   // 4. The root user shares the run's workspace from the team's settings, and puts a
   //    task with two files in it.
-  await owner.goto(`/team/settings?team=${teamId}&tab=workspaces`)
+  await owner.goto(`/teams/${teamId}/settings?tab=workspaces`)
   const shared = nextResponse(owner, 'PUT', `/workspaces/${workspace.id}/shares/${teamId}`)
   await owner.getByRole('switch', { name: `Share ${workspace.name} with ${teamName}` }).click()
   expect((await shared).status()).toBe(200)
@@ -88,7 +88,7 @@ test('a team, from the invitation to the member removed', async ({ page, browser
 
   // 5. Bea sees it in team mode, and the workspace in the sidebar, which
   //    filters the list to it.
-  await bea.goto(`/tasks/active?team=${teamId}`)
+  await bea.goto(`/teams/${teamId}/tasks/active`)
   await expect(bea.getByText(title)).toBeVisible()
   await openSidebar(bea)
   const sidebar = bea.getByTestId('team-sidebar')
@@ -100,7 +100,7 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   await expect(bea.getByText(title)).toBeVisible()
 
   // 6. Opens it: its files come from the team's route, as the server linked them.
-  await bea.goto(`/tasks/active/${workspace.id}/${task.id}?team=${teamId}`)
+  await bea.goto(`/teams/${teamId}/tasks/active/${workspace.id}/${task.id}`)
   await expect(bea.getByTestId('task-title')).toHaveText(title)
   const teamFile = (att) => `${API}/teams/${teamId}/tasks/${task.id}/attachments/${att}`
   const [png, svg] = task.attachments
@@ -125,7 +125,7 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   await expect(bea.getByTestId('team-task-status')).toContainText(/ongoing/i)
 
   // ...and a new task shows on her team list as it is created.
-  await bea.goto(`/tasks/active?team=${teamId}`)
+  await bea.goto(`/teams/${teamId}/tasks/active`)
   await bea.waitForResponse((r) => r.url().includes('/events/stream'))
   const second = unique('Second task')
   await createTask(owner, workspace.id, second)
@@ -134,7 +134,7 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   // 8. Bea clones the task into a workspace of her own, with the picker, for
   //    a human: no status to choose.
   const mine = await ok(await bea.request.post(`${API}/workspaces`, { data: { workspace: { name: unique('bea-ws'), description: 'QA' } } }), 'creating Bea\'s workspace')
-  await bea.goto(`/tasks/active/${workspace.id}/${task.id}?team=${teamId}`)
+  await bea.goto(`/teams/${teamId}/tasks/active/${workspace.id}/${task.id}`)
   await bea.getByTestId('clone-task').click()
   await expect(bea.getByTestId('clone-status')).toHaveCount(0)
   await expect(bea.getByTestId('clone-assignee-human')).toHaveAttribute('aria-checked', 'true')
@@ -175,7 +175,7 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   const tab1 = bea
   const tab2 = await beaContext.newPage()
   for (const p of [tab1, tab2]) {
-    await p.goto(`/team/settings?team=${teamId}&tab=members`)
+    await p.goto(`/teams/${teamId}/settings?tab=members`)
     await expect(p.getByTestId('member-row')).toHaveCount(2)
   }
   const rename = async (p, name) => {
@@ -199,18 +199,18 @@ test('a team, from the invitation to the member removed', async ({ page, browser
 
   // 10. The root user stops sharing: the task leaves Bea's list, and its page says why.
   await ok(await owner.request.delete(`${API}/workspaces/${workspace.id}/shares/${teamId}?version=${await versionOf(owner, teamId)}`), 'unsharing')
-  await bea.goto(`/tasks/active?team=${teamId}`)
+  await bea.goto(`/teams/${teamId}/tasks/active`)
   await expect(bea.getByTestId('team-empty')).toBeVisible()
   await expect(bea.getByText(title)).toHaveCount(0)
-  await bea.goto(`/tasks/active/${workspace.id}/${task.id}?team=${teamId}`)
+  await bea.goto(`/teams/${teamId}/tasks/active/${workspace.id}/${task.id}`)
   await expect(bea.getByTestId('no-longer-shared')).toBeVisible()
 
   // 11. The root user removes Bea: her next look at the team takes her back to Me.
   await ok(await owner.request.delete(`${API}/teams/${teamId}/members/${who.userId}?version=${await versionOf(owner, teamId)}`), 'removing Bea')
-  await bea.goto(`/tasks/active?team=${teamId}`)
+  await bea.goto(`/teams/${teamId}/tasks/active`)
   // A fresh page no longer knows the team's name, so the toast may not say it.
   await expect(bea.getByText(/You're no longer in/)).toBeVisible()
-  await expect(bea).not.toHaveURL(/team=/)
+  await expect(bea).not.toHaveURL(/\/teams\//)
 
   traffic.expectClean({ allow: ['429 /invitations'] })
   // The refused rename, and 404s from the team once the share and the

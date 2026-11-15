@@ -10,7 +10,7 @@
 <template>
   <div class="@container flex flex-col h-full w-full overflow-y-auto custom-scrollbar">
     <div class="w-full px-4 py-2 mb-4 shrink-0">
-      <router-link :to="link('/team/pano')" data-test="team-pano-back" class="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100">← Pano</router-link>
+      <router-link :to="link('/pano')" data-test="team-pano-back" class="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100">← Pano</router-link>
     </div>
 
     <div class="px-4 pb-10 min-w-0">
@@ -95,7 +95,7 @@ async function load() {
     // says which, by listing what is left or going back to Me.
     if (lostTeam(err)) {
       notifyInfo('That doc is no longer shared with the team');
-      router.replace(link('/team/pano'));
+      router.replace(link('/pano'));
     } else {
       error.value = err.message;
     }

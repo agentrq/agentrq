@@ -20,7 +20,7 @@
       </p>
 
       <div v-else class="grid gap-x-5 gap-y-7 pt-2 grid-cols-1 @min-[33rem]:grid-cols-2 @min-[57rem]:grid-cols-3 @min-[73rem]:grid-cols-4 @min-[89rem]:grid-cols-5">
-        <router-link v-for="doc in docs" :key="doc.id" :to="link({ path: `/team/pano/${doc.id}` })" data-test="team-pano-card"
+        <router-link v-for="doc in docs" :key="doc.id" :to="link({ path: `/pano/${doc.id}` })" data-test="team-pano-card"
           :style="{ '--pano-ink': panoColor(doc.color).inkHex, '--pano-tag': panoColor(doc.color).tagHex, '--pano-tag-ink': panoColor(doc.color).tagInkHex, '--pano-tilt': `${panoTilt(doc.id)}deg` }"
           :class="[panoColor(doc.color).card, panoColor(doc.color).body]"
           class="pano-paper relative flex flex-col min-w-0 h-72 rounded-md border border-black/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_10px_20px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_16px_32px_-12px_rgba(0,0,0,0.45)] rotate-[var(--pano-tilt)] hover:rotate-0 focus:rotate-0 hover:z-10 transition-[rotate] duration-200 focus:outline-none">

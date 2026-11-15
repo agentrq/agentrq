@@ -75,15 +75,15 @@ test('a stranger gets nothing; any member can invite, rename, remove, leave and 
     const res = await dee.page.request.fetch(path, { method, data })
     expect(res.status(), `${method} ${path} for someone not in the team`).toBe(404)
   }
-  await dee.page.goto(`/tasks/active?team=${team.id}`)
+  await dee.page.goto(`/teams/${team.id}/tasks/active`)
   await expect(dee.page.getByText(/You're no longer in/)).toBeVisible()
-  await expect(dee.page).not.toHaveURL(/team=/)
-  await dee.page.goto(`/tasks/active/${workspace.id}/${task.id}?team=${team.id}`)
+  await expect(dee.page).not.toHaveURL(/\/teams\//)
+  await dee.page.goto(`/teams/${team.id}/tasks/active/${workspace.id}/${task.id}`)
   await expect(dee.page.getByTestId('no-longer-shared').or(dee.page.getByText(/You're no longer in/))).toBeVisible()
   await expect(dee.page.getByText(title)).toHaveCount(0)
 
   // 2. Any member can invite: Bea, who did not make the team, invites Cy.
-  await bea.page.goto(`/team/settings?team=${team.id}&tab=invitations`)
+  await bea.page.goto(`/teams/${team.id}/settings?tab=invitations`)
   await bea.page.locator('#invite-email').fill(cy.email)
   const invited = nextResponse(bea.page, 'POST', `/teams/${team.id}/invitations`)
   await bea.page.getByTestId('invite-form').getByRole('button', { name: 'Send' }).click()
@@ -93,7 +93,7 @@ test('a stranger gets nothing; any member can invite, rename, remove, leave and 
 
   // 3. Every member sees the same settings: no role anywhere, Remove on
   //    everyone else, and Leave and Delete for themselves.
-  await cy.page.goto(`/team/settings?team=${team.id}&tab=members`)
+  await cy.page.goto(`/teams/${team.id}/settings?tab=members`)
   const dialog = cy.page.getByTestId('team-settings')
   await expect(dialog.getByTestId('member-row')).toHaveCount(3)
   await expect(dialog.getByTestId('member-remove')).toHaveCount(2)
@@ -124,12 +124,12 @@ test('a stranger gets nothing; any member can invite, rename, remove, leave and 
   const cyTitle = unique('Cy task')
   await createTask(cy.page, cyWs.id, cyTitle)
   expect(await teamTitles(bea.page, team.id)).toContain(cyTitle)
-  await cy.page.goto(`/team/settings?team=${team.id}&tab=danger`)
+  await cy.page.goto(`/teams/${team.id}/settings?tab=danger`)
   await cy.page.getByTestId('leave').click()
   const left = nextResponse(cy.page, 'POST', `/teams/${team.id}/leave`)
   await cy.page.getByRole('button', { name: 'Leave', exact: true }).click()
   expect((await left).status()).toBe(204)
-  await expect(cy.page).not.toHaveURL(/team=/)
+  await expect(cy.page).not.toHaveURL(/\/teams\//)
   const cyTeams = await ok(await cy.page.request.get(`${API}/teams`), 'Cy\'s teams')
   expect(cyTeams.teams.map((x) => x.id)).not.toContain(team.id)
   expect((await ok(await cy.page.request.get(`${API}/workspaces/${cyWs.id}/shares`), 'Cy\'s shares')).shares).toEqual([])
@@ -139,7 +139,7 @@ test('a stranger gets nothing; any member can invite, rename, remove, leave and 
   //    Bea removes the root user, after asking, and the log says so.
   const { members: now } = await ok(await bea.page.request.get(`${t}/members`), 'listing members')
   const maker = now.find((m) => String(m.userId) !== String(bea.userId))
-  await bea.page.goto(`/team/settings?team=${team.id}&tab=members`)
+  await bea.page.goto(`/teams/${team.id}/settings?tab=members`)
   const beaDialog = bea.page.getByTestId('team-settings')
   await beaDialog.getByTestId('member-row').filter({ hasText: maker.email }).getByTestId('member-remove').click()
   const removed = nextResponse(bea.page, 'DELETE', `/teams/${team.id}/members/${maker.userId}`)
@@ -158,11 +158,11 @@ test('a stranger gets nothing; any member can invite, rename, remove, leave and 
   const deleted = nextResponse(bea.page, 'DELETE', `/teams/${team.id}`)
   await bea.page.getByRole('button', { name: 'Delete team', exact: true }).last().click()
   expect((await deleted).status()).toBe(204)
-  await expect(bea.page).not.toHaveURL(/team=/)
+  await expect(bea.page).not.toHaveURL(/\/teams\//)
   expect((await bea.page.request.get(t)).status()).toBe(404)
-  await owner.goto(`/tasks/active?team=${team.id}`)
+  await owner.goto(`/teams/${team.id}/tasks/active`)
   await expect(owner.getByText(/You're no longer in/)).toBeVisible()
-  await expect(owner).not.toHaveURL(/team=/)
+  await expect(owner).not.toHaveURL(/\/teams\//)
   await expect(owner.getByText(title)).toHaveCount(0)
 
   for (const p of [bea, cy, dee]) await p.context.close()
@@ -187,7 +187,7 @@ test('a fork follows its parent, an archived workspace leaves the team, and a te
   // The fork is in its parent's team workspace, under the parent's name.
   expect(workspaces.find((w) => w.id === fork.id)?.sharedName).toBe(parent.name)
   expect(await teamTitles(bea.page, team.id)).toEqual(expect.arrayContaining([parentTitle, forkTitle]))
-  await bea.page.goto(`/tasks/active?team=${team.id}`)
+  await bea.page.goto(`/teams/${team.id}/tasks/active`)
   await expect(bea.page.getByText(forkTitle)).toBeVisible()
   await openSidebar(bea.page)
   await expect(bea.page.getByTestId('team-workspace').filter({ hasText: parent.name })).toHaveCount(1)
@@ -201,7 +201,7 @@ test('a fork follows its parent, an archived workspace leaves the team, and a te
   const saved = await call('skills', { action: 'save', payload: { uri: `skill://${skill}/SKILL.md`, content: '---\ndescription: A skill the QA suite shares.\n---\n# QA\nShared with the team.\n' } })
   expect(saved).not.toMatch(/error|refused/i)
   const beaWs = await createWorkspace(bea.page, unique('bea-ws'))
-  await bea.page.goto(`/tasks/active?team=${team.id}&workspace=${encodeURIComponent(parent.name)}`)
+  await bea.page.goto(`/teams/${team.id}/tasks/active?workspace=${encodeURIComponent(parent.name)}`)
   await expect(bea.page.getByTestId('team-skills-link')).toBeVisible()
   await bea.page.screenshot({ path: test.info().outputPath('team-workspace-tasks.png'), animations: 'disabled' })
   await bea.page.getByTestId('team-skills-link').click()
@@ -222,7 +222,7 @@ test('a fork follows its parent, an archived workspace leaves the team, and a te
   const mine = await ok(await bea.page.request.get(`${API}/workspaces/${beaWs.id}/skills`), 'Bea\'s skills')
   expect(mine.skills.map((s) => s.name)).toContain(skill)
   // Once hers, the list says so, and the server refuses it twice.
-  await bea.page.goto(`/skills?team=${team.id}&workspace=${encodeURIComponent(parent.name)}`)
+  await bea.page.goto(`/teams/${team.id}/skills?workspace=${encodeURIComponent(parent.name)}`)
   await expect(bea.page.getByTestId('team-skill-row').filter({ hasText: skill }).locator('..').getByTestId('team-skill-mine')).toBeVisible()
   expect((await bea.page.request.post(`${API}/teams/${team.id}/skills/${skill}/add`, { data: { workspaceIds: [] } })).status(), 'adding it twice').toBe(409)
 
@@ -233,7 +233,7 @@ test('a fork follows its parent, an archived workspace leaves the team, and a te
   await setTaskStatus(owner, fork.id, forkTask.id, 'completed')
   await mergeFork(owner, fork.id)
   expect(await teamTitles(bea.page, team.id)).toEqual(expect.arrayContaining([parentTitle, forkTitle]))
-  await bea.page.goto(`/tasks/active/${parent.id}/${forkTask.id}?team=${team.id}`)
+  await bea.page.goto(`/teams/${team.id}/tasks/active/${parent.id}/${forkTask.id}`)
   await expect(bea.page.getByTestId('task-title')).toHaveText(forkTitle)
   await archive(parent, 'archive')
   await bea.page.reload()

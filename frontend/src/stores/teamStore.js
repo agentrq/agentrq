@@ -10,7 +10,7 @@ import * as api from '../api';
  * The teams the signed-in user is in, the invitations waiting for them, and
  * the shared workspaces of the team on screen.
  *
- * Which team is on screen is not kept here: it is the route's `?team=`, so a
+ * Which team is on screen is not kept here: it is the route's `/teams/<id>`, so a
  * link says what it shows (see useTeamMode). What is kept is the last choice,
  * per browser, so the switch can offer it again.
  */

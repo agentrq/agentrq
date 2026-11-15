@@ -261,6 +261,7 @@ import { shortcutHint, usesCommandKey } from '../composables/useKeyboardShortcut
 import { usePlatformStore } from '../stores/platformStore';
 import { useExtensionPages } from '../composables/useExtensionPages';
 import { useWorkspaceTerminal } from '../composables/useWorkspaceTerminal';
+import { teamIdOf, withTeam } from '../composables/useTeamMode';
 import AgentConcurrencyControl from '../components/AgentConcurrencyControl.vue';
 import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
 import TaskFeed from '../components/TaskFeed.vue';
@@ -413,10 +414,10 @@ function selectFilter(filterId) {
   }
   tooltipStore.hide();
   // Navigate to unselect task and update active filter in URL
-  router.push({ 
+  router.push(withTeam({
     path: `/workspaces/${workspaceId.value}`,
-    query: { ...route.query, filter: filterId } 
-  });
+    query: { ...route.query, filter: filterId }
+  }, teamIdOf(route)));
 }
 
 watch(() => route.query.filter, (newFilter) => {

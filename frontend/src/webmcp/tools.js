@@ -104,7 +104,7 @@ const PANO_DOC = {
 // calls. Each action is one `api.js` function; `run` picks it.
 const TEAM_ID = str('The team ID, as listTeams reports it.')
 // A team is managed on its settings page, open on one tab.
-const teamPage = ({ teamId } = {}, tab = 'members') => `/team/settings?team=${seg(teamId)}&tab=${tab}`
+const teamPage = ({ teamId } = {}, tab = 'members') => `/teams/${seg(teamId)}/settings?tab=${tab}`
 const sharingPage = ({ workspaceId }) => `/workspaces/${seg(workspaceId)}/settings?tab=sharing`
 const TEAM_FIELDS = {
   teamId: TEAM_ID,
@@ -169,7 +169,7 @@ const TEAM_WRITES = (api) => ({
 function teamWritePage(input = {}) {
   if (['share', 'unshare', 'teammateMemory'].includes(input.action)) return sharingPage(input)
   if (input.action === 'accept' || input.action === 'decline') return '/invitations'
-  if (input.action === 'addSkill') return `/skills?team=${seg(input.teamId)}${input.workspace ? `&workspace=${seg(input.workspace)}` : ''}`
+  if (input.action === 'addSkill') return `/teams/${seg(input.teamId)}/skills${input.workspace ? `?workspace=${seg(input.workspace)}` : ''}`
   if (input.action === 'sharePano' || input.action === 'unsharePano') return panoDocPage({ id: input.docId })
   if (input.action === 'invite' || input.action === 'revokeInvitation') return teamPage(input, 'invitations')
   return teamPage(input)
@@ -223,8 +223,8 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         '"/pano/[<id>/]chat/<workspaceId>/<taskId>".\n' +
         '- "/machines[/<id>]", "/sessions/<id>" (terminal).\n' +
         '- "/extensions[/<name>/<pageId>]" (desktop).\n' +
-        '- "/team/new", "/invitations"; "?team=<id>" on "/{tasks/*,kanban,skills,team/analytics,team/settings,team/pano[/<id>]}" is a team; ' +
-        'settings "&tab=members|invitations|activity|workspaces|danger".\n' +
+        '- "/team/new", "/invitations"; a team: "/teams/<id>" + "/{tasks/*,kanban,skills*,workspaces/<w>/tasks/<t>,analytics,settings,pano[/<id>]}"; ' +
+        'settings "?tab=members|invitations|activity|workspaces|danger".\n' +
         'Others refused.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
       required: ['path'],
