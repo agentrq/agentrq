@@ -88,7 +88,7 @@ test('a team workspace\'s analytics sum each member\'s workspace in it', async (
   await owner.evaluate(() => { localStorage.setItem('theme', 'light'); document.documentElement.classList.remove('dark') })
 
   // Back to the team workspace's tasks, then the whole team's numbers.
-  await owner.getByTestId('team-analytics-tasks').click()
+  await owner.getByTestId('team-actions-status-active').click()
   await expect(owner).toHaveURL(new RegExp(`/tasks/active\\?.*workspace=`))
   await owner.screenshot({ path: test.info().outputPath('team-tasks-button.png'), animations: 'disabled' })
   // As high as the pickers beside it.
