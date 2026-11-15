@@ -113,13 +113,13 @@ func TestSkillRepository_EveryStatementFailure(t *testing.T) {
 			_, _, _, err := r.UpsertSkillFile(ctx, s, model.SkillFile{ID: 15, Path: "more.md", StorageID: "skill-15"}, on(), nil)
 			return err
 		}},
-		{"link", func(r Repository, s, _ model.Skill) error {
-			_, err := r.LinkSkill(ctx, model.Skill{ID: 16, UserID: skUser + 1, Name: "tdd", LinkedSkillID: s.ID}, on())
+		// s is no link, so it is "still a link to 0" for these two.
+		{"convert a link", func(r Repository, s, _ model.Skill) error {
+			_, err := r.ConvertSkillLink(ctx, s, 0, []model.SkillFile{{ID: 16, SkillID: s.ID, Path: "more.md", StorageID: "skill-16"}})
 			return err
 		}},
-		{"swap for a link", func(r Repository, s, legacy model.Skill) error {
-			s.LinkedSkillID = legacy.ID
-			_, err := r.SwapSkillForLink(ctx, s, on())
+		{"delete a link", func(r Repository, s, _ model.Skill) error {
+			_, err := r.DeleteSkillLink(ctx, s.ID, 0)
 			return err
 		}},
 		{"delete file", func(r Repository, s, _ model.Skill) error {

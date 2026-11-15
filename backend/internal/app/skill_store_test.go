@@ -31,9 +31,7 @@ type fakeSkillCrud struct {
 	// off is a skill the human turned off for the account, and notHere one
 	// of the account's that is not on in this workspace.
 	off, notHere bool
-	// shared is a skill others write too, whose file is at version 4.
-	shared bool
-	saved  []entity.SaveSkillFileRequest
+	saved        []entity.SaveSkillFileRequest
 
 	// team is the team skill of every name, nil for none; teamWorkspaces
 	// the team workspaces the workspace is shared into.
@@ -111,7 +109,7 @@ func (f *fakeSkillCrud) GetSkill(_ context.Context, req entity.GetSkillRequest) 
 func (f *fakeSkillCrud) GetSkillFile(ctx context.Context, req entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
 	f.origins = append(f.origins, entity.GetOrigin(ctx))
 	f.scope(req.WorkspaceID, req.UserID)
-	return &entity.GetSkillFileResponse{Skill: entity.Skill{Enabled: !f.off, WorkspaceEnabled: !f.notHere}, File: entity.SkillFile{Content: "content of " + req.Path, Version: 4}, Shared: f.shared}, f.fileErr
+	return &entity.GetSkillFileResponse{Skill: entity.Skill{Enabled: !f.off, WorkspaceEnabled: !f.notHere}, File: entity.SkillFile{Content: "content of " + req.Path, Version: 4}}, f.fileErr
 }
 
 func (f *fakeSkillCrud) SaveSkillFile(_ context.Context, req entity.SaveSkillFileRequest) (*entity.SaveSkillFileResponse, error) {
@@ -189,12 +187,13 @@ func TestSkillStore_LoadSubFileIsOneLookup(t *testing.T) {
 	}
 }
 
-// A file of a skill others write too comes with its version, to save on.
-func TestSkillStore_LoadSharedHasVersion(t *testing.T) {
+// A file of the account's own skill, which nobody else writes, comes with
+// no version: only a team skill's does.
+func TestSkillStore_LoadOwnHasNoVersion(t *testing.T) {
 	for _, p := range []string{"SKILL.md", "a.md"} {
-		file, found, err := newSkillStore(&fakeSkillCrud{shared: true}).LoadSkillFile(context.Background(), "tdd", p)
-		if err != nil || !found || file.Version != 4 {
-			t.Errorf("loading %s of a shared skill gave version %d (found %v, %v), want 4", p, file.Version, found, err)
+		file, found, err := newSkillStore(&fakeSkillCrud{}).LoadSkillFile(context.Background(), "tdd", p)
+		if err != nil || !found || file.Version != 0 {
+			t.Errorf("loading %s of an own skill gave version %d (found %v, %v), want none", p, file.Version, found, err)
 		}
 	}
 }
@@ -398,8 +397,9 @@ func TestSkillStore_DeleteGoesThroughTheWorkspace(t *testing.T) {
 }
 
 type legacyMover struct {
-	err   error
-	calls int
+	err      error
+	calls    int
+	converts int
 }
 
 func (m *legacyMover) MoveLegacySkills(context.Context) error {
@@ -407,13 +407,19 @@ func (m *legacyMover) MoveLegacySkills(context.Context) error {
 	return m.err
 }
 
-// The move runs once at start, and a failure does not stop the server.
+func (m *legacyMover) ConvertSkillLinks(context.Context) error {
+	m.converts++
+	return m.err
+}
+
+// The move and the conversion of links run once at start, and a failure
+// of either does not stop the server.
 func TestMoveLegacySkills_LogsAFailureAndCarriesOn(t *testing.T) {
 	for _, err := range []error{nil, errors.New("database unavailable")} {
 		m := &legacyMover{err: err}
 		moveLegacySkills(context.Background(), m)
-		if m.calls != 1 {
-			t.Errorf("with %v the move ran %d times, want once", err, m.calls)
+		if m.calls != 1 || m.converts != 1 {
+			t.Errorf("with %v the move ran %d times and the conversion %d, want once each", err, m.calls, m.converts)
 		}
 	}
 }

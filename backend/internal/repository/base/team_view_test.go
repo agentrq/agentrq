@@ -29,10 +29,6 @@ func TestTeamViewReadsOverNoWorkspaces(t *testing.T) {
 		if err != nil || tasks == nil || len(tasks) != 0 {
 			t.Errorf("tasks: %v, %v", tasks, err)
 		}
-		skills, err := r.ListSkillsOnInWorkspaces(ctx, nil)
-		if err != nil || skills == nil || len(skills) != 0 {
-			t.Errorf("skills: %v, %v", skills, err)
-		}
 	})
 }
 
@@ -160,41 +156,6 @@ func TestListTeamReaders(t *testing.T) {
 		db.Model(&model.Workspace{}).Where("id = ?", 100).Update("archived_at", teamT0)
 		if got, _ := r.ListTeamReaders(ctx, 101); fmt.Sprint(got) != "[{2 12}]" {
 			t.Errorf("readers of a fork whose shared parent is archived: %v, want its own team's", got)
-		}
-	})
-}
-
-// A workspace's skills are those filed under its owner, and a skill its
-// owner turned off is left out.
-func TestTeamViewSkillsAreTheOwners(t *testing.T) {
-	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
-		ctx := context.Background()
-		seedTeamWorkspaces(t, db)
-		if err := db.AutoMigrate(teamViewTables...); err != nil {
-			t.Fatal(err)
-		}
-		at := teamT0
-		for _, row := range []any{
-			&model.Skill{ID: 1, UserID: 10, Name: "deploy", Description: "d", UpdatedAt: at},
-			&model.Skill{ID: 2, UserID: 10, Name: "off", Disabled: true, UpdatedAt: at},
-			&model.Skill{ID: 3, UserID: 11, Name: "planted", UpdatedAt: at},
-			&model.Skill{ID: 4, UserID: 11, Name: "deploy", UpdatedAt: at.Add(time.Hour)},
-			&model.WorkspaceSkill{ID: 1, UserID: 10, SkillID: 1, WorkspaceID: 100},
-			&model.WorkspaceSkill{ID: 2, UserID: 10, SkillID: 2, WorkspaceID: 100},
-			&model.WorkspaceSkill{ID: 3, UserID: 11, SkillID: 3, WorkspaceID: 100},
-			&model.WorkspaceSkill{ID: 4, UserID: 11, SkillID: 4, WorkspaceID: 200},
-		} {
-			if err := db.Create(row).Error; err != nil {
-				t.Fatal(err)
-			}
-		}
-		skills, err := r.ListSkillsOnInWorkspaces(ctx, []int64{100, 200})
-		var names []string
-		for _, s := range skills {
-			names = append(names, fmt.Sprintf("%d/%s/%d", s.WorkspaceID, s.Name, s.UserID))
-		}
-		if err != nil || fmt.Sprint(names) != "[200/deploy/11 100/deploy/10]" {
-			t.Errorf("skills: %v, %v; want the owners' that are on, by name, the latest first", names, err)
 		}
 	})
 }

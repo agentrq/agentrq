@@ -272,9 +272,9 @@ type (
 		// Disabled hides the skill from agents while keeping it. Stored as the
 		// negative so every skill, old or new, is on without a default.
 		Disabled bool
-		// LinkedSkillID makes this row a link to a teammate's skill: it has no
-		// files of its own, and every read and write goes to that skill while
-		// a team still shares it. 0 is a skill of the account's own.
+		// LinkedSkillID marks a link to a teammate's skill, from before team
+		// workspaces owned skills: no files of its own. ConvertSkillLinks
+		// makes each a skill of its own at startup; nothing writes one now.
 		LinkedSkillID int64 `gorm:"not null;default:0;index:idx_skills_linked_skill_id"`
 	}
 

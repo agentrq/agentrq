@@ -28,8 +28,7 @@ type SkillFilter struct {
 	EnabledOnly bool
 }
 
-// GetSkillByID is a skill by id, whoever owns it. The caller has already
-// decided it may read it.
+// GetSkillByID is a skill by id, whoever owns it, for ConvertSkillLinks.
 func (r *repository) GetSkillByID(ctx context.Context, id int64) (model.Skill, error) {
 	var s model.Skill
 	err := r.conn(ctx).Where("id = ? AND workspace_id = ?", id, accountSkill).First(&s).Error
@@ -39,10 +38,10 @@ func (r *repository) GetSkillByID(ctx context.Context, id int64) (model.Skill, e
 	return s, err
 }
 
-// readableSkills selects the skills userID reads through a team: their
-// owner's own, not turned off, on in an unarchived workspace of that owner
-// that is shared with a team userID is in and does not hold its skills back.
-// Skills are on only in a parent workspace, which is the one shared.
+// readableSkills selects the skills userID could read through a team when a
+// link to a teammate's skill still could: their owner's own, not turned off,
+// on in an unarchived workspace of that owner shared with a team userID is
+// in and not holding its skills back.
 func readableSkills(db *gorm.DB, userID int64) *gorm.DB {
 	return db.Model(&model.WorkspaceSkill{}).Select("workspace_skills.skill_id").
 		Joins("JOIN skills AS src ON src.id = workspace_skills.skill_id AND src.linked_skill_id = 0 AND (src.disabled IS NULL OR src.disabled = ?)", false).
@@ -51,77 +50,63 @@ func readableSkills(db *gorm.DB, userID int64) *gorm.DB {
 		Joins("JOIN team_members AS member ON member.team_id = share.team_id AND member.user_id = ?", userID)
 }
 
-// CanReadLinkedSkill reports whether userID still reads skillID through a
-// team, which is what a link to it needs at every read and write.
+// CanReadLinkedSkill reports whether a link of userID's to skillID still
+// reads it, for ConvertSkillLinks: one that does not reads nothing.
 func (r *repository) CanReadLinkedSkill(ctx context.Context, userID, skillID int64) (bool, error) {
 	var n int64
 	err := readableSkills(r.conn(ctx), userID).Where("workspace_skills.skill_id = ?", skillID).Count(&n).Error
 	return n > 0, err
 }
 
-// HasSkillLinks reports whether any account links to the skill, which makes
-// it one that others write too.
-func (r *repository) HasSkillLinks(ctx context.Context, skillID int64) (bool, error) {
-	var n int64
-	err := r.conn(ctx).Model(&model.Skill{}).Where("linked_skill_id = ?", skillID).Count(&n).Error
-	return n > 0, err
+// ListSkillLinks is every link to a teammate's skill left from before team
+// workspaces owned skills, for ConvertSkillLinks.
+func (r *repository) ListSkillLinks(ctx context.Context) ([]model.Skill, error) {
+	var links []model.Skill
+	err := r.conn(ctx).Where("linked_skill_id <> ?", 0).Order("id ASC").Find(&links).Error
+	return links, err
 }
 
-// LinkSkill stores link, a row naming a teammate's skill, and turns it on in
-// the workspaces on names. A name the account already has is
-// gorm.ErrDuplicatedKey.
-func (r *repository) LinkSkill(ctx context.Context, link model.Skill, on []model.WorkspaceSkill) (model.Skill, error) {
+// ConvertSkillLink makes link, still a link to linkedTo, a skill of its own
+// with files, which the caller has written; false when it is no longer that
+// link.
+func (r *repository) ConvertSkillLink(ctx context.Context, link model.Skill, linkedTo int64, files []model.SkillFile) (bool, error) {
+	converted := false
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&link).Error; err != nil {
-			return err
-		}
-		return turnOn(tx, link.ID, on)
-	})
-	if err != nil {
-		return model.Skill{}, err
-	}
-	return link, nil
-}
-
-// SwapSkillForLink turns the account's skill link.ID into link, a link to
-// link.LinkedSkillID: its files go, and every link to it now links there,
-// so nobody who read it loses the skill. It is turned on in the workspaces
-// on names too. The skill linked to must still be a skill of its own, or the
-// swap is ErrVersionConflict: two owners swapping for each other's at once
-// would otherwise leave two links and no skill. It returns the storage ids
-// of the files dropped, for the caller to purge after the commit.
-func (r *repository) SwapSkillForLink(ctx context.Context, link model.Skill, on []model.WorkspaceSkill) ([]string, error) {
-	var dropped []string
-	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		// Holds the skill linked to until the commit.
-		res := tx.Model(&model.Skill{}).Where("id = ? AND linked_skill_id = ?", link.LinkedSkillID, 0).UpdateColumn("linked_skill_id", 0)
-		if res.Error != nil {
+		res := tx.Model(&model.Skill{}).Where("id = ? AND linked_skill_id = ?", link.ID, linkedTo).Updates(map[string]any{
+			"linked_skill_id": 0, "description": link.Description, "source_type": link.SourceType,
+			"source_repo": link.SourceRepo, "source_ref": link.SourceRef, "source_commit": link.SourceCommit, "source_path": link.SourcePath,
+			"locally_modified": link.LocallyModified, "file_count": link.FileCount, "total_bytes": link.TotalBytes, "updated_at": link.UpdatedAt,
+		})
+		if res.Error != nil || res.RowsAffected == 0 {
 			return res.Error
 		}
-		if res.RowsAffected == 0 {
-			return ErrVersionConflict
+		if len(files) > 0 {
+			if err := tx.Create(&files).Error; err != nil {
+				return err
+			}
 		}
-		if err := tx.Model(&model.SkillFile{}).Where("skill_id = ?", link.ID).Pluck("storage_id", &dropped).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("skill_id = ?", link.ID).Delete(&model.SkillFile{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Save(&link).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&model.Skill{}).Where("linked_skill_id = ?", link.ID).Updates(map[string]any{
-			"linked_skill_id": link.LinkedSkillID, "description": link.Description,
-			"file_count": link.FileCount, "total_bytes": link.TotalBytes, "updated_at": link.UpdatedAt,
-		}).Error; err != nil {
-			return err
-		}
-		return turnOn(tx, link.ID, on)
+		converted = true
+		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return dropped, nil
+	return converted, err
+}
+
+// DeleteSkillLink deletes link, still a link to linkedTo, which reads
+// nothing any more; false when it is no longer that link.
+func (r *repository) DeleteSkillLink(ctx context.Context, link, linkedTo int64) (bool, error) {
+	deleted := false
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("id = ? AND linked_skill_id = ?", link, linkedTo).Delete(&model.Skill{})
+		if res.Error != nil || res.RowsAffected == 0 {
+			return res.Error
+		}
+		if err := tx.Where("skill_id = ?", link).Delete(&model.WorkspaceSkill{}).Error; err != nil {
+			return err
+		}
+		deleted = true
+		return nil
+	})
+	return deleted, err
 }
 
 func (r *repository) GetSkill(ctx context.Context, userID int64, name string) (model.Skill, error) {
@@ -152,10 +137,9 @@ func (r *repository) SearchSkills(ctx context.Context, userID int64, q string, f
 		query = query.Where(`(LOWER(name) LIKE ? ESCAPE '\' OR LOWER(description) LIKE ? ESCAPE '\')`, pattern, pattern)
 	}
 	if filter.EnabledOnly {
-		// A skill from before the switch has NULL here, and is on. A link
-		// counts only while a team still shares its skill with the account.
-		query = query.Where("(disabled = ? OR disabled IS NULL)", false).
-			Where("(linked_skill_id = 0 OR linked_skill_id IN (?))", readableSkills(r.conn(ctx), userID))
+		// A skill from before the switch has NULL here, and is on. A link not
+		// yet converted by ConvertSkillLinks has no files of its own.
+		query = query.Where("(disabled = ? OR disabled IS NULL)", false).Where("linked_skill_id = ?", 0)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -360,12 +344,7 @@ func deleteSkill(tx *gorm.DB, skillID int64) ([]string, error) {
 	if res.RowsAffected == 0 {
 		return nil, ErrNotFound
 	}
-	// Links to it have nothing left to read, so they go with it.
-	links := tx.Model(&model.Skill{}).Select("id").Where("linked_skill_id = ?", skillID)
-	if err := tx.Where("skill_id IN (?)", links).Delete(&model.WorkspaceSkill{}).Error; err != nil {
-		return nil, err
-	}
-	return storageIDs, tx.Where("linked_skill_id = ?", skillID).Delete(&model.Skill{}).Error
+	return storageIDs, nil
 }
 
 // SetSkillDisabled turns a skill off for agents in every workspace, or back

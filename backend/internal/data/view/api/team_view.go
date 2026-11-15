@@ -62,39 +62,6 @@ type CloneTeamTaskRequest struct {
 	Assignee    string `json:"assignee"`
 }
 
-// TeamSkill is a skill on in a team's workspaces, and who has it on.
-// content, its SKILL.md, is read only for one skill.
-type TeamSkill struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	UpdatedAt   time.Time   `json:"updatedAt"`
-	Owners      []TeamOwner `json:"owners"`
-	Content     string      `json:"content,omitempty"`
-}
-
-// ListTeamSkillsResponse is a team's skills, by name.
-type ListTeamSkillsResponse struct {
-	Skills []TeamSkill `json:"skills"`
-}
-
-// GetTeamSkillResponse is one of a team's skills, with its SKILL.md.
-type GetTeamSkillResponse struct {
-	Skill TeamSkill `json:"skill"`
-}
-
-// AddTeamSkillRequest links a teammate's skill into your account, on in your
-// workspaces given. `replace` turns your own skill of that name into the
-// link, its files dropped, rather than refusing the name.
-type AddTeamSkillRequest struct {
-	WorkspaceIDs []string `json:"workspaceIds"`
-	Replace      bool     `json:"replace,omitempty"`
-}
-
-// AddTeamSkillResponse is the skill now in your account.
-type AddTeamSkillResponse struct {
-	Skill Skill `json:"skill"`
-}
-
 // TeammateMemory is a teammate in the team workspace of one of your
 // workspaces, and whether its agent's memory index includes their memory.
 // updatedAt is when a memory of theirs there was last written, absent when

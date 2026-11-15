@@ -30,9 +30,6 @@ func (h *handler) registerTeamViewRoutes() {
 	r.Get("/pano", h.listTeamPanoDocs())
 	r.Get("/pano/:docId", h.getTeamPanoDoc())
 	r.Get("/pano/:docId/files/:fileId", h.getTeamPanoFile())
-	r.Get("/skills", h.listTeamSkills())
-	r.Get("/skills/:name", h.getTeamSkill())
-	r.Post("/skills/:name/add", h.addTeamSkill())
 	h.router.Get("/workspaces/:id/teammate-memories", h.listTeammateMemories())
 	h.router.Put("/workspaces/:id/teammate-memories/:userId", h.setTeammateMemory())
 	h.router.Get("/workspaces/:id/teammate-memories/:teammateWorkspaceId/memories", h.listTeammateMemoryNames())
@@ -154,43 +151,6 @@ func (h *handler) cloneTeamTask() fiber.Handler {
 		c.Set(_headerContentType, _mimeJSON)
 		return c.Status(fiber.StatusCreated).Send(mapper.FromCreateTaskResponseEntityToHTTPResponse(rs))
 	}
-}
-
-func (h *handler) listTeamSkills() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		ctx, cancel := newContext(c)
-		defer cancel()
-		ss, err := h.teamView.ListSkills(ctx, sessionUser(c), ids[0], c.Query("workspace"))
-		return mapper.FromTeammateSkillEntitiesToHTTPResponse(ss), err
-	})
-}
-
-func (h *handler) getTeamSkill() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		ctx, cancel := newContext(c)
-		defer cancel()
-		s, err := h.teamView.GetSkill(ctx, sessionUser(c), ids[0], c.Query("workspace"), c.Params("name"))
-		return mapper.FromTeammateSkillEntityToHTTPResponse(s), err
-	})
-}
-
-func (h *handler) addTeamSkill() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
-		var rq view.AddTeamSkillRequest
-		if err := body(c, &rq); err != nil {
-			return nil, err
-		}
-		workspaceIDs := make([]int64, len(rq.WorkspaceIDs))
-		for i, w := range rq.WorkspaceIDs {
-			if workspaceIDs[i] = monoflake.IDFromBase62(w).Int64(); workspaceIDs[i] == 0 {
-				return nil, errBadRequest
-			}
-		}
-		ctx, cancel := newContext(c)
-		defer cancel()
-		s, err := h.teamView.AddSkill(ctx, sessionUser(c), ids[0], c.Query("workspace"), c.Params("name"), workspaceIDs, rq.Replace)
-		return mapper.FromAddTeamSkillResponseEntityToHTTPResponse(s), err
-	})
 }
 
 var (

@@ -207,28 +207,6 @@ type GetStatsOfWorkspacesRequest struct {
 	To           int64
 }
 
-// SystemGetSkillFileRequest reads a file of UserID's skill.
-type SystemGetSkillFileRequest struct {
-	UserID int64
-	Name   string
-	Path   string
-}
-
-// LinkSkillRequest links a teammate's skill, SkillID, into UserID's account,
-// on in WorkspaceIDs. Replace turns UserID's skill of that name into the
-// link, dropping its files, where it would otherwise be a conflict.
-type LinkSkillRequest struct {
-	SkillID      int64
-	UserID       string
-	WorkspaceIDs []int64
-	Replace      bool
-}
-
-// LinkSkillResponse is the link, as the account's skill.
-type LinkSkillResponse struct {
-	Skill Skill
-}
-
 // TeamTask is a task as a team sees it: in which of the team's workspaces,
 // and whose that is.
 type TeamTask struct {
@@ -297,14 +275,4 @@ type TeammateMemory struct {
 	WorkspaceID int64
 	UpdatedAt   *time.Time
 	Included    bool
-}
-
-// TeammateSkill is a skill on in a team's workspaces, and who has it on. One read
-// on its own carries its SKILL.md, from the owner who changed it last.
-type TeammateSkill struct {
-	Name        string
-	Description string
-	UpdatedAt   time.Time
-	Owners      []TeamOwner
-	Content     string
 }

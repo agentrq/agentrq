@@ -15,7 +15,6 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
-	"github.com/mustafaturan/monoflake"
 )
 
 var errBoom = errors.New("database unavailable")
@@ -27,8 +26,6 @@ type fake struct {
 	canRead   bool
 	visible   []entity.TeamWorkspace
 	task      model.Task
-	skillRows []base.WorkspaceSkillRow
-	skillsIn  []int64       // the workspaces ListSkillsOnInWorkspaces was asked about
 	tasks     []entity.Task // what a task list returns
 	listedIn  []int64       // the workspaces the last list read
 	published []entity.CRUDEvent
@@ -36,7 +33,6 @@ type fake struct {
 	created   entity.CreateTaskRequest            // the last task created
 	statsReq  *entity.GetStatsOfWorkspacesRequest // the last statistics asked for
 	panoReq   string                              // the account the last Pano read was made as
-	linked    []entity.LinkSkillRequest
 }
 
 func (f *fake) err(name string) error {
@@ -80,25 +76,12 @@ func (f *fake) SystemGetDetailedStatsOfWorkspaces(_ context.Context, req entity.
 	f.statsReq = &req
 	return &entity.GetDetailedWorkspaceStatsResponse{Summary: entity.WorkspaceStatsSummary{TasksCompleted: 3}}, f.err("SystemGetDetailedStatsOfWorkspaces")
 }
-func (f *fake) SystemGetSkillFile(context.Context, entity.SystemGetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
-	return &entity.GetSkillFileResponse{}, f.err("SystemGetSkillFile")
-}
-func (f *fake) LinkSkill(_ context.Context, req entity.LinkSkillRequest) (*entity.LinkSkillResponse, error) {
-	f.linked = append(f.linked, req)
-	return &entity.LinkSkillResponse{Skill: entity.Skill{ID: 8}}, f.err("LinkSkill")
-}
-
 func (f *fake) SystemGetTask(context.Context, int64) (model.Task, error) {
 	return f.task, f.err("SystemGetTask")
 }
 func (f *fake) TeamWorkspaceInfo(_ context.Context, workspaceID int64) (base.TeamWorkspaceRow, error) {
 	return base.TeamWorkspaceRow{ID: workspaceID, UserID: 1, Name: "api fork", SharedName: "API", TeamWorkspaceID: 1, OwnerName: "Alice"}, f.err("TeamWorkspaceInfo")
 }
-func (f *fake) ListSkillsOnInWorkspaces(_ context.Context, ids []int64) ([]base.WorkspaceSkillRow, error) {
-	f.skillsIn = ids
-	return f.skillRows, f.err("ListSkillsOnInWorkspaces")
-}
-
 func (f *fake) Publish(_ context.Context, req pubsub.PublishRequest) (*pubsub.PublishResponse, error) {
 	f.published = append(f.published, req.Event.(entity.CRUDEvent))
 	return &pubsub.PublishResponse{}, nil
@@ -109,9 +92,6 @@ func newFake() (*fake, Controller) {
 		canRead: true,
 		visible: []entity.TeamWorkspace{{ID: 100, Tasks: true, Skills: true, OwnerID: 1, SharedName: "g", TeamWorkspaceID: 2}},
 		task:    model.Task{ID: 1000, WorkspaceID: 100, Attachments: []byte(`[{"id":"a","filename":"f.txt"}]`)},
-		skillRows: []base.WorkspaceSkillRow{
-			{WorkspaceID: 100, UserID: 1, SkillID: 70, Name: "deploy"},
-		},
 	}
 	return f, New(Params{Teams: f, Owner: f, Repository: f, PubSub: f})
 }
@@ -150,12 +130,6 @@ func TestFailures(t *testing.T) {
 		{"SystemGetTask", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
 		{"GetTeam", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
 		{"CreateTask", func(c Controller) error { _, err := c.CloneTask(ctx, clone); return err }},
-		{"ListTeamWorkspaces", func(c Controller) error { _, err := c.ListSkills(ctx, 2, 10, ""); return err }},
-		{"ListSkillsOnInWorkspaces", func(c Controller) error { _, err := c.ListSkills(ctx, 2, 10, ""); return err }},
-		{"ListSkillsOnInWorkspaces", func(c Controller) error { _, err := c.GetSkill(ctx, 2, 10, "", "deploy"); return err }},
-		{"SystemGetSkillFile", func(c Controller) error { _, err := c.GetSkill(ctx, 2, 10, "", "deploy"); return err }},
-		{"ListSkillsOnInWorkspaces", func(c Controller) error { _, err := c.AddSkill(ctx, 2, 10, "", "deploy", nil, false); return err }},
-		{"LinkSkill", func(c Controller) error { _, err := c.AddSkill(ctx, 2, 10, "", "deploy", nil, false); return err }},
 	} {
 		f, c := newFake()
 		f.fail = tc.fail
@@ -186,19 +160,15 @@ func TestNotReadable(t *testing.T) {
 	}
 }
 
-// The two writes are counted as team actions, by whom and on what.
+// A clone is counted as team actions, by whom and on what.
 func TestTelemetry(t *testing.T) {
 	ctx := context.Background()
 	f, c := newFake()
 	if _, err := c.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.AddSkill(ctx, 2, 10, "", "deploy", nil, false); err != nil {
-		t.Fatal(err)
-	}
 	want := []entity.CRUDEvent{
 		{Action: entity.ActionTeamTaskClone, WorkspaceID: 201, UserID: 2, ResourceID: 9},
-		{Action: entity.ActionTeamSkillAdd, UserID: 2, ResourceID: 8},
 	}
 	if len(f.published) != len(want) {
 		t.Fatalf("counted %v", f.published)
@@ -213,7 +183,7 @@ func TestTelemetry(t *testing.T) {
 
 	// With no publisher nothing is counted, and nothing fails.
 	quiet := New(Params{Teams: f, Owner: f, Repository: f})
-	if _, err := quiet.AddSkill(ctx, 2, 10, "", "deploy", nil, false); err != nil {
+	if _, err := quiet.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -364,7 +334,7 @@ func TestGetStatsScope(t *testing.T) {
 }
 
 // A workspace whose share holds its tasks back is left out of the task list
-// and the statistics; one holding its skills back, out of the skills.
+// and the statistics.
 func TestSharePartsLeaveWorkspacesOut(t *testing.T) {
 	ctx := context.Background()
 	f, c := newFake()
@@ -378,10 +348,6 @@ func TestSharePartsLeaveWorkspacesOut(t *testing.T) {
 	if _, err := c.GetStats(ctx, entity.GetTeamStatsRequest{UserID: 2, TeamID: 10}); err != nil || fmt.Sprint(f.statsReq.WorkspaceIDs) != "[1]" {
 		t.Errorf("statistics of %v, %v; want 1 alone", f.statsReq.WorkspaceIDs, err)
 	}
-	f.skillRows = nil
-	if _, err := c.ListSkills(ctx, 2, 10, ""); err != nil || fmt.Sprint(f.skillsIn) != "[2]" {
-		t.Errorf("skills read in %v, %v; want 2 alone", f.skillsIn, err)
-	}
 }
 
 func TestWorkspaceKey(t *testing.T) {
@@ -390,74 +356,8 @@ func TestWorkspaceKey(t *testing.T) {
 	}
 }
 
-// A skill two workspaces of one owner have on names that owner once.
-func TestSkillOwnersOnce(t *testing.T) {
-	f, c := newFake()
-	f.visible = []entity.TeamWorkspace{{ID: 100, Tasks: true, Skills: true, OwnerID: 1}, {ID: 101, Tasks: true, Skills: true, OwnerID: 1}, {ID: 200, Tasks: true, Skills: true, OwnerID: 2}}
-	f.skillRows = []base.WorkspaceSkillRow{
-		{WorkspaceID: 100, UserID: 1, Name: "deploy"}, {WorkspaceID: 101, UserID: 1, Name: "deploy"}, {WorkspaceID: 200, UserID: 2, Name: "deploy"},
-	}
-	ss, err := c.ListSkills(context.Background(), 2, 10, "")
-	if err != nil || len(ss) != 1 || len(ss[0].Owners) != 2 {
-		t.Errorf("the skills are %+v, %v: want deploy, owned by 1 and 2", ss, err)
-	}
-}
-
-// A team workspace's skills are read only from its members' workspaces of
-// that name, forks left out; with no name, from every one.
-func TestSkillsOfOneTeamWorkspace(t *testing.T) {
-	f, c := newFake()
-	f.visible = []entity.TeamWorkspace{
-		{ID: 100, OwnerID: 1, SharedName: "backend", TeamWorkspaceID: 4, Skills: true}, {ID: 101, OwnerID: 1, SharedName: "backend", TeamWorkspaceID: 4, ForkOfID: 100, Skills: true},
-		{ID: 200, OwnerID: 2, SharedName: " Backend", TeamWorkspaceID: 4, Skills: true}, {ID: 300, OwnerID: 2, SharedName: "api", TeamWorkspaceID: 1, Skills: true},
-	}
-	for workspace, want := range map[string][]int64{"BACKEND ": {100, 200}, "api": {300}, "": {100, 200, 300}, "none": {}} {
-		if _, err := c.ListSkills(context.Background(), 2, 10, workspace); err != nil || fmt.Sprint(f.skillsIn) != fmt.Sprint(want) {
-			t.Errorf("the skills of %q are read from %v (%v), want %v", workspace, f.skillsIn, err, want)
-		}
-	}
-	if _, err := c.GetSkill(context.Background(), 2, 10, "api", "deploy"); err != nil || fmt.Sprint(f.skillsIn) != "[300]" {
-		t.Errorf("deploy in api is read from %v (%v)", f.skillsIn, err)
-	}
-	if _, err := c.AddSkill(context.Background(), 2, 10, "api", "deploy", nil, false); err != nil || fmt.Sprint(f.skillsIn) != "[300]" {
-		t.Errorf("deploy is added from %v (%v)", f.skillsIn, err)
-	}
-}
-
-// Adding a teammate's skill links the caller's account to that very skill,
-// the one the team sees, rather than copying it.
-func TestAddSkillLinks(t *testing.T) {
-	f, c := newFake()
-	rs, err := c.AddSkill(context.Background(), 2, 10, "", "deploy", []int64{201}, false)
-	want := entity.LinkSkillRequest{SkillID: 70, UserID: monoflake.ID(2).String(), WorkspaceIDs: []int64{201}}
-	if err != nil || rs.ID != 8 || len(f.linked) != 1 || fmt.Sprint(f.linked[0]) != fmt.Sprint(want) {
-		t.Errorf("AddSkill = %+v, %v, linking %+v; want a link to skill 70 for user 2 in 201", rs, err, f.linked)
-	}
-}
-
-// With the caller's own copy changed last, Add links the teammate's copy,
-// and passes replace on; with only the caller's own, it is left to the link
-// to refuse.
-func TestAddSkillLinksATeammatesCopy(t *testing.T) {
-	f, c := newFake()
-	f.visible = append(f.visible, entity.TeamWorkspace{ID: 200, Skills: true, OwnerID: 2, SharedName: "g", TeamWorkspaceID: 2})
-	f.skillRows = []base.WorkspaceSkillRow{
-		{WorkspaceID: 200, UserID: 2, SkillID: 80, Name: "deploy"},
-		{WorkspaceID: 100, UserID: 1, SkillID: 70, Name: "deploy"},
-	}
-	if _, err := c.AddSkill(context.Background(), 2, 10, "", "deploy", nil, true); err != nil || len(f.linked) != 1 || f.linked[0].SkillID != 70 || !f.linked[0].Replace {
-		t.Errorf("AddSkill = %v, linking %+v; want Alice's 70, replacing", err, f.linked)
-	}
-	f.skillRows = f.skillRows[:1]
-	if _, err := c.AddSkill(context.Background(), 2, 10, "", "deploy", nil, true); err != nil || f.linked[1].SkillID != 80 {
-		t.Errorf("AddSkill with only the caller's own = %v, linking %+v; want 80 passed on", err, f.linked)
-	}
-}
-
-// A task with no body clones as the note alone; a skill is read from the
-// owner who changed it last, and a name that is not one, or that no shared
-// workspace has on, is not found.
-func TestCloneNoteAndSkillReads(t *testing.T) {
+// A task with no body clones as the note alone.
+func TestCloneNote(t *testing.T) {
 	ctx := context.Background()
 	f, c := newFake()
 	if _, err := c.CloneTask(ctx, entity.CloneTeamTaskRequest{UserID: 2, TeamID: 10, TaskID: 1000, WorkspaceID: 201}); err != nil {
@@ -472,13 +372,5 @@ func TestCloneNoteAndSkillReads(t *testing.T) {
 	}
 	if body := f.created.Task.Body; !strings.HasPrefix(body, "Ship it.\n\n---\nCloned from [core / Alice / api fork]") {
 		t.Errorf("a clone of a task with a body reads %q", body)
-	}
-	if s, err := c.GetSkill(ctx, 2, 10, "", "deploy"); err != nil || s.Name != "deploy" {
-		t.Errorf("GetSkill: %+v, %v", s, err)
-	}
-	for _, name := range []string{"Not A Name!", "absent"} {
-		if _, err := c.GetSkill(ctx, 2, 10, "", name); !errors.Is(err, base.ErrNotFound) {
-			t.Errorf("GetSkill(%q): %v, want not found", name, err)
-		}
 	}
 }
