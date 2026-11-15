@@ -79,7 +79,6 @@ type TeamWorkspaceRow struct {
 	OwnerName       string
 	OwnerPicture    string
 	HideTasks       bool
-	HideSkills      bool
 }
 
 // TeamActivityRow is a team's activity with its actor's and its target's
@@ -608,7 +607,7 @@ func (r *repository) AcceptTeamInvitation(ctx context.Context, id int64, m model
 func sharesWithTeams(tx *gorm.DB) *gorm.DB {
 	return tx.Model(&model.WorkspaceShare{}).
 		Select("workspace_shares.id, workspace_shares.created_at, workspace_shares.updated_at, workspace_shares.team_id, " +
-			"workspace_shares.workspace_id, workspace_shares.user_id, workspace_shares.hide_tasks, workspace_shares.hide_skills, " +
+			"workspace_shares.workspace_id, workspace_shares.user_id, workspace_shares.hide_tasks, " +
 			"workspace_shares.hide_memory, workspace_shares.team_workspace_id, workspace_shares.manual_team_skills, teams.name AS team_name").
 		Joins("JOIN teams ON teams.id = workspace_shares.team_id")
 }
@@ -678,8 +677,8 @@ func (r *repository) SetWorkspaceShare(ctx context.Context, s model.WorkspaceSha
 			act.Action = model.TeamActivityShareChanged
 			res = tx.Model(&model.WorkspaceShare{}).
 				Where("team_id = ? AND workspace_id = ? AND user_id = ?", s.TeamID, s.WorkspaceID, s.UserID).
-				Where("hide_tasks <> ? OR hide_skills <> ? OR hide_memory <> ? OR manual_team_skills <> ?", s.HideTasks, s.HideSkills, s.HideMemory, s.ManualTeamSkills).
-				Updates(map[string]any{"hide_tasks": s.HideTasks, "hide_skills": s.HideSkills, "hide_memory": s.HideMemory, "manual_team_skills": s.ManualTeamSkills, "updated_at": s.UpdatedAt})
+				Where("hide_tasks <> ? OR hide_memory <> ? OR manual_team_skills <> ?", s.HideTasks, s.HideMemory, s.ManualTeamSkills).
+				Updates(map[string]any{"hide_tasks": s.HideTasks, "hide_memory": s.HideMemory, "manual_team_skills": s.ManualTeamSkills, "updated_at": s.UpdatedAt})
 			if res.Error != nil {
 				return res.Error
 			}
@@ -804,7 +803,7 @@ func (r *repository) ListTeamWorkspaces(ctx context.Context, teamID int64) ([]Te
 	err := r.conn(ctx).Model(&model.Workspace{}).
 		Select("workspaces.id, workspaces.name, workspaces.fork_of_id, workspaces.user_id, "+
 			"workspace_shares.team_workspace_id, team_workspaces.name AS shared_name, "+
-			"users.name AS owner_name, users.picture AS owner_picture, workspace_shares.hide_tasks, workspace_shares.hide_skills").
+			"users.name AS owner_name, users.picture AS owner_picture, workspace_shares.hide_tasks").
 		Joins(sharedWorkspace).
 		Where("workspace_shares.team_id = ?", teamID).
 		Joins("JOIN team_workspaces ON team_workspaces.id = workspace_shares.team_workspace_id").

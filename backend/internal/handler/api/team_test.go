@@ -250,7 +250,7 @@ func TestTeamRoutes(t *testing.T) {
 	// Shares.
 	status, body = call(t, app, aliceID, http.MethodPut, "/workspaces/"+wsID+"/shares/"+team, `{"version":6,"memory":false}`)
 	if status != http.StatusOK || body["group"] != nil || body["teamName"] != "platform" || body["workspaceId"] != wsID || body["version"] != float64(7) ||
-		body["tasks"] != true || body["skills"] != true || body["memory"] != false {
+		body["tasks"] != true || body["skills"] != nil || body["memory"] != false {
 		t.Errorf("sharing answered %d %v", status, body)
 	}
 	status, body = call(t, app, aliceID, http.MethodPut, "/workspaces/"+wsID+"/shares/"+team, `{"version":6}`)
@@ -315,7 +315,7 @@ func TestTeamRoutes(t *testing.T) {
 		renamed, _ := acts[9].(map[string]any)
 		invited, _ := acts[8].(map[string]any)
 		if actor["name"] != "Dave" || target["name"] != "Bob" || target["userId"] != bobID ||
-			shared["targetWorkspaceId"] != wsID || fmt.Sprint(shared["details"]) != "map[autoOptInSkills:on memory:off skills:on tasks:on workspaceName:backend]" ||
+			shared["targetWorkspaceId"] != wsID || fmt.Sprint(shared["details"]) != "map[autoOptInSkills:on memory:off tasks:on workspaceName:backend]" ||
 			fmt.Sprint(created["details"]) != "map[name:backend]" ||
 			fmt.Sprint(renamed["details"]) != "map[from:core to:platform]" || invited["targetEmail"] != "bob@example.com" {
 			t.Errorf("the activities read %v", acts)

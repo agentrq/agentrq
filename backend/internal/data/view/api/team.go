@@ -35,12 +35,11 @@ type TeamVersionRequest struct {
 }
 
 // ShareWorkspaceRequest shares a workspace with a team, or sets what an
-// existing share lets the team read: its tasks, skills and memory, each
+// existing share lets the team read: its tasks and memory, each
 // shared unless sent false.
 type ShareWorkspaceRequest struct {
 	Version int64 `json:"version"`
 	Tasks   *bool `json:"tasks,omitempty"`
-	Skills  *bool `json:"skills,omitempty"`
 	Memory  *bool `json:"memory,omitempty"`
 	// AutoOptInSkills opts the workspace into every skill of its team
 	// workspace it has made no choice about, later ones included; on unless
@@ -135,14 +134,13 @@ type TeamInvitationPreview struct {
 }
 
 // WorkspaceShare is a workspace shared with a team, and whether the team
-// reads its tasks, skills and memory. version, the team's after the share,
+// reads its tasks and memory. version, the team's after the share,
 // is set when the share was just made.
 type WorkspaceShare struct {
 	TeamID      string `json:"teamId"`
 	TeamName    string `json:"teamName"`
 	WorkspaceID string `json:"workspaceId"`
 	Tasks       bool   `json:"tasks"`
-	Skills      bool   `json:"skills"`
 	Memory      bool   `json:"memory"`
 	// AutoOptInSkills is whether the workspace is opted into each skill of
 	// its team workspace it has made no choice about.

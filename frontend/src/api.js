@@ -1565,12 +1565,12 @@ export function declineInvitation(invitationId) {
   return teamCall(`/invitations/${enc(invitationId)}/decline`, 'Failed to decline the invitation', { method: 'POST' });
 }
 
-// The teams a workspace is shared with: { shares: [{ teamId, teamName, workspaceId, tasks, skills, memory, autoOptInSkills, createdAt, updatedAt }] }.
+// The teams a workspace is shared with: { shares: [{ teamId, teamName, workspaceId, tasks, memory, autoOptInSkills, createdAt, updatedAt }] }.
 export function listWorkspaceShares(workspaceId) {
   return teamCall(`/workspaces/${enc(workspaceId)}/shares`, 'Failed to load sharing');
 }
 
-// The share, with the team's new `version`. `parts` ({ tasks, skills, memory })
+// The share, with the team's new `version`. `parts` ({ tasks, memory })
 // says what the team reads, each shared unless false; on a workspace already
 // shared it sets them. `autoOptInSkills`, on unless false, opts the workspace
 // in to each team skill it has made no choice about, later ones included.

@@ -419,7 +419,7 @@ describe('the activity log', () => {
     expect(line('workspace.shareChanged', { details: { tasks: 'off', skills: 'off', memory: 'off' } }))
       .toBe('Alice changed what is shared of a workspace: nothing but the workspace');
     expect(line('workspace.shareChanged', { details: { workspaceName: 'docs', tasks: 'on', skills: 'on', memory: 'on', autoOptInSkills: 'off' } }))
-      .toBe('Alice changed what is shared of docs: tasks, skills, memory; new team skills stay off');
+      .toBe('Alice changed what is shared of docs: tasks, memory; new team skills stay off');
     expect(line('workspace.shareChanged', { details: { workspaceName: 'docs', tasks: 'on', autoOptInSkills: 'on' } }))
       .toBe('Alice changed what is shared of docs: tasks; new team skills are turned on');
     expect(line('workspace.shared', { details: { workspaceName: 'docs', autoOptInSkills: 'on' } })).toBe('Alice shared docs');

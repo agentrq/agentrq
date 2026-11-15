@@ -43,8 +43,8 @@ var t0 = time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 
 var errDB = errors.New("database unavailable")
 
-// allParts shares a workspace's tasks, skills and memory.
-var allParts = entity.SharedParts{Tasks: true, Skills: true, Memory: true}
+// allParts shares a workspace's tasks and memory.
+var allParts = entity.SharedParts{Tasks: true, Memory: true}
 
 type testConn struct{ db *gorm.DB }
 
@@ -989,16 +989,16 @@ func TestSharingParts(t *testing.T) {
 	each(t, func(f *fixture) {
 		f.db.Create(&model.Workspace{ID: 100, UserID: alice, Name: "backend"})
 		f.db.Create(&model.Workspace{ID: 101, UserID: alice, Name: "fork", ForkOfID: 100})
-		s := must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, entity.SharedParts{Skills: true}))
-		if s.SharedParts != (entity.SharedParts{Skills: true}) {
-			t.Errorf("sharing skills alone gave %+v", s.SharedParts)
+		s := must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, entity.SharedParts{Memory: true}))
+		if s.SharedParts != (entity.SharedParts{Memory: true}) {
+			t.Errorf("sharing memory alone gave %+v", s.SharedParts)
 		}
 		if must(f.c.CanReadTasksInTeam(f.ctx, bob, f.team, 101)) {
 			t.Error("Bob reads the tasks of a fork of a share holding tasks back")
 		}
 		list := must(f.c.ListTeamWorkspaces(f.ctx, bob, f.team))
-		if len(list) != 2 || list[0].Tasks || !list[0].Skills || list[1].Tasks || !list[1].Skills {
-			t.Errorf("the team's workspaces are %+v, want skills alone, the fork too", list)
+		if len(list) != 2 || list[0].Tasks || list[1].Tasks {
+			t.Errorf("the team's workspaces are %+v, want tasks held back, the fork's too", list)
 		}
 		s = must(f.c.ShareWorkspace(f.ctx, f.ch(alice), 100, entity.SharedParts{Tasks: true, Memory: true}))
 		if s.SharedParts != (entity.SharedParts{Tasks: true, Memory: true}) {
@@ -1009,8 +1009,8 @@ func TestSharingParts(t *testing.T) {
 		}
 		as := must(f.c.ListActivities(f.ctx, entity.ListTeamActivitiesRequest{UserID: bob, TeamID: f.team, Limit: 2}))
 		ch, sh := as.Activities[0], as.Activities[1]
-		if ch.Action != model.TeamActivityShareChanged || fmt.Sprint(ch.Details) != "map[autoOptInSkills:off memory:on skills:off tasks:on workspaceName:backend]" ||
-			sh.Action != model.TeamActivityWorkspaceShared || fmt.Sprint(sh.Details) != "map[autoOptInSkills:off memory:off skills:on tasks:off workspaceName:backend]" {
+		if ch.Action != model.TeamActivityShareChanged || fmt.Sprint(ch.Details) != "map[autoOptInSkills:off memory:on tasks:on workspaceName:backend]" ||
+			sh.Action != model.TeamActivityWorkspaceShared || fmt.Sprint(sh.Details) != "map[autoOptInSkills:off memory:on tasks:off workspaceName:backend]" {
 			t.Errorf("the share and its change are recorded as %+v and %+v", sh, ch)
 		}
 	})

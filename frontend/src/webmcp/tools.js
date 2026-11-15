@@ -157,8 +157,8 @@ const TEAM_WRITES = (api) => ({
   revokeInvitation: ({ teamId, invitationId, version }) => api.revokeTeamInvitation(teamId, invitationId, version),
   accept: ({ token, invitationId }) => (token ? api.acceptInvitation(token) : api.acceptInvitationById(invitationId)),
   decline: ({ invitationId }) => api.declineInvitation(invitationId),
-  share: ({ workspaceId, teamId, version, tasks, skills, memory, autoOptInSkills }) =>
-    api.shareWorkspace(workspaceId, teamId, version, { tasks, skills, memory, autoOptInSkills }),
+  share: ({ workspaceId, teamId, version, tasks, memory, autoOptInSkills }) =>
+    api.shareWorkspace(workspaceId, teamId, version, { tasks, memory, autoOptInSkills }),
   unshare: ({ workspaceId, teamId, version }) => api.unshareWorkspace(workspaceId, teamId, version),
   teammateMemory: ({ workspaceId, userId, included }) => api.setTeammateMemory(workspaceId, userId, included !== false),
   sharePano: ({ docId, teamId, version }) => api.sharePanoDoc(docId, teamId, version),
@@ -1577,7 +1577,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description:
         'Change a team; any member may. action: rename (name), delete, removeMember (userId), leave, ' +
         'invite (email; at most a few per team per day, 429 past it), revokeInvitation (invitationId), ' +
-        'share/unshare (workspaceId: one of yours; share takes tasks, skills, memory, false to hold that back, and sets them on a shared one), accept (token or invitationId), decline (invitationId), ' +
+        'share/unshare (workspaceId: one of yours; share takes tasks, memory, false to hold that back, and sets them on a shared one), accept (token or invitationId), decline (invitationId), ' +
         'teammateMemory (workspaceId: one of yours, userId, included: whether its agent\'s memory index lists that teammate\'s memory), ' +
         'sharePano/unsharePano (docId: a Pano doc of yours). ' +
         'Every change but accept, decline and teammateMemory takes the team\'s version, from get, members or invitations; ' +
@@ -1590,7 +1590,6 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         email: str('The email to invite.'),
         included: bool('For teammateMemory: true to include the teammate\'s memory, false to leave it out. Defaults to true.'),
         tasks: bool('For share: false holds the workspace\'s tasks back from the team. Defaults to true.'),
-        skills: bool('For share: false holds its skills back. Defaults to true.'),
         memory: bool('For share: false holds its memory back from teammates\' agents. Defaults to true.'),
         autoOptInSkills: bool('For share: false stops opting the workspace in to new team skills. Defaults to true.'),
       },

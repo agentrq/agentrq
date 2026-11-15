@@ -90,7 +90,7 @@ func (f *fake) Publish(_ context.Context, req pubsub.PublishRequest) (*pubsub.Pu
 func newFake() (*fake, Controller) {
 	f := &fake{
 		canRead: true,
-		visible: []entity.TeamWorkspace{{ID: 100, Tasks: true, Skills: true, OwnerID: 1, SharedName: "g", TeamWorkspaceID: 2}},
+		visible: []entity.TeamWorkspace{{ID: 100, Tasks: true, OwnerID: 1, SharedName: "g", TeamWorkspaceID: 2}},
 		task:    model.Task{ID: 1000, WorkspaceID: 100, Attachments: []byte(`[{"id":"a","filename":"f.txt"}]`)},
 	}
 	return f, New(Params{Teams: f, Owner: f, Repository: f, PubSub: f})
@@ -283,9 +283,9 @@ func TestListTasksFilters(t *testing.T) {
 	ctx := context.Background()
 	f, c := newFake()
 	f.visible = []entity.TeamWorkspace{
-		{ID: 1, Tasks: true, Skills: true, SharedName: "API", TeamWorkspaceID: 1, OwnerID: 7},
-		{ID: 2, Tasks: true, Skills: true, SharedName: " api ", TeamWorkspaceID: 1, OwnerID: 8},
-		{ID: 3, Tasks: true, Skills: true, SharedName: "docs", TeamWorkspaceID: 3, OwnerID: 7},
+		{ID: 1, Tasks: true, SharedName: "API", TeamWorkspaceID: 1, OwnerID: 7},
+		{ID: 2, Tasks: true, SharedName: " api ", TeamWorkspaceID: 1, OwnerID: 8},
+		{ID: 3, Tasks: true, SharedName: "docs", TeamWorkspaceID: 3, OwnerID: 7},
 	}
 	f.tasks = []entity.Task{{ID: 50, WorkspaceID: 2}}
 	got, err := c.ListTasks(ctx, entity.ListTeamTasksRequest{UserID: 2, TeamID: 10, Workspace: "Api"})
@@ -314,9 +314,9 @@ func TestGetStatsScope(t *testing.T) {
 	ctx := context.Background()
 	f, c := newFake()
 	f.visible = []entity.TeamWorkspace{
-		{ID: 1, Tasks: true, Skills: true, SharedName: "API", TeamWorkspaceID: 1, OwnerID: 7},
-		{ID: 2, Tasks: true, Skills: true, SharedName: " api ", TeamWorkspaceID: 1, OwnerID: 8},
-		{ID: 3, Tasks: true, Skills: true, SharedName: "docs", TeamWorkspaceID: 3, OwnerID: 7},
+		{ID: 1, Tasks: true, SharedName: "API", TeamWorkspaceID: 1, OwnerID: 7},
+		{ID: 2, Tasks: true, SharedName: " api ", TeamWorkspaceID: 1, OwnerID: 8},
+		{ID: 3, Tasks: true, SharedName: "docs", TeamWorkspaceID: 3, OwnerID: 7},
 	}
 	rs, err := c.GetStats(ctx, entity.GetTeamStatsRequest{UserID: 2, TeamID: 10, Workspace: "Api", Range: "custom", From: 5, To: 9})
 	if err != nil || rs.Summary.TasksCompleted != 3 {
@@ -340,7 +340,7 @@ func TestSharePartsLeaveWorkspacesOut(t *testing.T) {
 	f, c := newFake()
 	f.visible = []entity.TeamWorkspace{
 		{ID: 1, SharedName: "api", TeamWorkspaceID: 1, OwnerID: 7, Tasks: true},
-		{ID: 2, SharedName: "api", TeamWorkspaceID: 1, OwnerID: 8, Skills: true},
+		{ID: 2, SharedName: "api", TeamWorkspaceID: 1, OwnerID: 8},
 	}
 	if _, err := c.ListTasks(ctx, entity.ListTeamTasksRequest{UserID: 2, TeamID: 10}); err != nil || fmt.Sprint(f.listedIn) != "[1]" {
 		t.Errorf("tasks read in %v, %v; want 1 alone", f.listedIn, err)
