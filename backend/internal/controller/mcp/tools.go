@@ -84,7 +84,7 @@ func (ps *WorkspaceServer) skillsActions() []ToolAction {
 		NewToolAction("save", "Write one file of a skill, replacing it completely.", ps.handleSaveSkill).
 			WithDetails("Writing skill://<name>/SKILL.md creates or updates the skill: it must start with YAML frontmatter holding a description of at most 1024 characters, and a name, if any, equal to <name>. " +
 				"Names are lowercase letters and digits joined by single hyphens, at most 64 characters. Any other path adds or replaces a file of an existing skill. " +
-				fmt.Sprintf("Limits: SKILL.md %d KiB, other files %d KiB, UTF-8 text only, %d files per skill. A new skill belongs to the account and is turned on in this workspace.", skill.MaxSkillFileBytes/1024, skill.MaxSubFileBytes/1024, skill.MaxFiles)).
+				fmt.Sprintf("Limits: SKILL.md %d KiB, other files %d KiB, UTF-8 text only, %d files per skill. A new skill belongs to the account and is turned on in this workspace, except in a workspace shared into a team workspace, where it is the team's unless team is false. A team skill's file is replaced only on the version load showed.", skill.MaxSkillFileBytes/1024, skill.MaxSubFileBytes/1024, skill.MaxFiles)).
 			WithExample(`{"uri": "skill://release-notes/SKILL.md", "content": "---\ndescription: Write release notes from merged PRs.\n---\n# Release notes\n..."}`),
 		NewToolAction("delete", "Delete a skill (skill://<name>) or one of its files (skill://<name>/<path>).", ps.handleDeleteSkill).
 			WithDetails("Deleting a whole skill takes it out of this workspace, and deletes it when no other workspace uses it. A SKILL.md cannot be deleted on its own. Deleting something that does not exist is not an error.").

@@ -415,11 +415,12 @@ export const COMMANDS = [
   {
     path: ['skill', 'save'],
     summary: 'Replace a file of one of this workspace\'s skills',
-    usage: 'agentrq-ws skill save <uri> --content TEXT|@file|- [--version N] [--personal | --team-workspace NAME]',
+    usage: 'agentrq-ws skill save <uri> --content TEXT|@file|- [--version N] [--team | --no-team] [--team-workspace NAME]',
     options: {
       content: { type: 'string', short: 'C', description: 'The full new content (@file or - for stdin)' },
       version: { type: 'string', short: 'v', description: 'The version skill load printed; required to replace a file of a skill shared with your team, refused if it changed since' },
-      personal: { type: 'boolean', description: 'Keep a new skill in your own account rather than the team workspace this workspace is shared into' },
+      team: { type: 'boolean', description: 'Put a new skill in the team workspace this workspace is shared into (the default there)' },
+      'no-team': { type: 'boolean', description: 'Keep a new skill in your own account rather than the team workspace this workspace is shared into' },
       'team-workspace': { type: 'string', description: 'The team workspace a new skill goes to, when this workspace is shared into more than one' },
     },
     async run(ctx) {
@@ -428,8 +429,10 @@ export const COMMANDS = [
       const content = await resolveText(ctx.values.content, { stdin: ctx.stdin, what: 'the skill file' })
       const version = ctx.values.version === undefined ? undefined : wholeVersion(ctx.values.version)
       const args = { uri, content, version }
-      if (ctx.values.personal && ctx.values['team-workspace'] !== undefined) throw new UserError('--personal and --team-workspace cannot be used together')
-      if (ctx.values.personal) args.team = false
+      if (ctx.values.team && ctx.values['no-team']) throw new UserError('--team and --no-team cannot be used together')
+      if (ctx.values['no-team'] && ctx.values['team-workspace'] !== undefined) throw new UserError('--no-team and --team-workspace cannot be used together')
+      if (ctx.values.team) args.team = true
+      if (ctx.values['no-team']) args.team = false
       if (ctx.values['team-workspace'] !== undefined) args.teamWorkspace = ctx.values['team-workspace']
       return act(ctx, 'skills', 'save', args, 'saveSkill')
     },

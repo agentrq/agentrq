@@ -100,7 +100,23 @@ test('a team workspace\'s skills, from an agent\'s save to a member\'s delete', 
   await owner.screenshot({ path: test.info().outputPath('workspace-team-skills.png'), animations: 'disabled' })
   expect(await beaAgent('skills', { action: 'load', payload: { uri: `skill://${gift}` } })).toContain('# Checklist')
 
-  // 6. Bea deletes the first for every workspace in the team.
+  // 6. The owner turns auto opt-in off for their share: what their agent
+  //    sees stays, and a skill added later is not on for it.
+  await owner.getByRole('button', { name: 'Sharing', exact: true }).click()
+  const auto = owner.getByRole('switch', { name: `Turn new team skills on in ${name}` })
+  await expect(auto).toHaveAttribute('aria-checked', 'true')
+  const manual = nextResponse(owner, 'PUT', `/workspaces/${mine.id}/shares/${team.id}`)
+  await auto.click()
+  expect((await manual).status()).toBe(200)
+  expect((await manual).request().postDataJSON().autoOptInSkills).toBe(false)
+  await expect(auto).toHaveAttribute('aria-checked', 'false')
+  await owner.screenshot({ path: test.info().outputPath('share-auto-opt-in.png'), animations: 'disabled' })
+  const later = `qa-later-${Date.now().toString(36)}`
+  expect(await beaAgent('skills', { action: 'save', payload: { uri: `skill://${later}/SKILL.md`, content: '---\ndescription: Added after the switch.\n---\n# Later\n' } })).toContain(`team workspace ${name}`)
+  expect(await ownerAgent('skills', { action: 'search', payload: { q: later } })).toContain('No skill\'s name or description contains')
+  expect(await ownerAgent('skills', { action: 'load', payload: { uri: `skill://${gift}` } }), 'a skill on before the switch stays on').toContain('# Checklist')
+
+  // 7. Bea deletes the first for every workspace in the team.
   await bea.getByTestId('tws-delete-skill').click()
   const deleted = responseTo(bea, 'DELETE', `/teams/${team.id}/team-workspaces/`)
   await bea.getByRole('button', { name: 'Delete', exact: true }).click()
