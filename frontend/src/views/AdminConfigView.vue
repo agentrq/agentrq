@@ -53,23 +53,26 @@
           </nav>
 
           <section v-if="current" role="tabpanel" data-test="config-panel"
-            class="flex-1 min-w-0 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-sm p-4 sm:p-8 flex flex-col gap-5 shadow-sm">
-            <div class="flex items-start justify-between gap-4">
-              <div class="min-w-0">
-                <h2 class="text-sm font-black text-gray-900 dark:text-zinc-50">{{ title(current.key) }}</h2>
-                <p class="text-[10px] font-mono text-gray-400 dark:text-zinc-500">{{ current.key }}</p>
+            class="flex-1 min-w-0 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-sm p-4 sm:p-8 flex flex-col gap-6 shadow-sm">
+            <header class="pb-6 border-b border-gray-100 dark:border-zinc-800">
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <h2 class="text-base/7 font-semibold text-gray-900 dark:text-white">{{ title(current.key) }}</h2>
+                  <p class="text-[10px] font-mono text-gray-400 dark:text-zinc-500">{{ current.key }}</p>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                  <button type="button" data-test="config-reset" :disabled="busy || !dirty(current.key)" @click="reset(current.key)"
+                    class="px-3 py-2 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50">
+                    Reset
+                  </button>
+                  <button type="button" data-test="config-save" :disabled="busy || !dirty(current.key)" @click="save(current.key)"
+                    class="px-3 sm:px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50">
+                    Save
+                  </button>
+                </div>
               </div>
-              <div class="flex items-center gap-2 shrink-0">
-                <button type="button" data-test="config-reset" :disabled="busy || !dirty(current.key)" @click="reset(current.key)"
-                  class="px-3 py-2 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50">
-                  Reset
-                </button>
-                <button type="button" data-test="config-save" :disabled="busy || !dirty(current.key)" @click="save(current.key)"
-                  class="px-3 sm:px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50">
-                  Save
-                </button>
-              </div>
-            </div>
+              <p v-if="CONFIG_HELP[current.key]" data-test="config-block-help" class="mt-2 max-w-2xl text-sm/6 text-gray-500 dark:text-zinc-400">{{ CONFIG_HELP[current.key] }}</p>
+            </header>
             <AdminConfigFields :fields="drafts[current.key]" :original="current.value" :path="current.key" />
           </section>
         </div>
@@ -87,6 +90,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AdminLayout from '../components/AdminLayout.vue'
 import AdminConfigFields from '../components/AdminConfigFields.vue'
+import { CONFIG_HELP } from '../utils/adminConfigHelp'
 import { useToasts } from '../composables/useToasts'
 import { fetchAdminConfigurations, updateAdminConfiguration } from '../api'
 

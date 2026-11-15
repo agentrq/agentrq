@@ -31,7 +31,7 @@ const blocks = () => [
   { key: 'auth', value: { jwtSecret: MASK, allowedRedirectDomains: ['a.com', 'b.com'], google: { clientId: 'g', clientSecret: '' } } },
   { key: 'webPush', value: { subscriber: 'mailto:x' } },
   { key: 'teams', value: {} },
-  { key: 'future', value: { on: true } },
+  { key: 'future', value: { on: true, name: 'x' } },
 ]
 
 // Answers each call with the next reply for its method and path.
@@ -161,6 +161,32 @@ describe('AdminConfigView', () => {
     select.dispatchEvent(new Event('change'))
     await nextTick()
     expect(q(el, 'config-webPush.subscriber').value).toBe('mailto:x')
+  })
+
+  it('describes each block, group and setting in a line linked to its field', async () => {
+    serve({ [`GET ${CONFIGS}`]: [[{ configurations: blocks() }, 200]] })
+    const el = await mount()
+    expect(q(el, 'config-block-help').textContent).toBe('How people sign in to the web app.')
+    // A group's line sits under its name.
+    expect(q(el, 'config-group').querySelector('[data-test="config-help"]').textContent).toBe('Sign in with a Google account.')
+
+    // A field's line describes it, and its name is its label.
+    const input = q(el, 'config-auth.jwtSecret')
+    const line = document.getElementById(input.getAttribute('aria-describedby'))
+    expect(line.textContent).toBe('The key session tokens are signed with. Required. Changing it signs everyone out.')
+    expect(el.querySelector(`label[for="${input.id}"]`).textContent).toContain('Jwt secret')
+
+    await openTab(el, 'smtp')
+    const sw = q(el, 'config-smtp.enabled')
+    expect(document.getElementById(sw.getAttribute('aria-describedby')).textContent).toBe('Sends email through the server below. Off, no email is sent.')
+    expect(el.querySelector(`label[for="${sw.id}"]`).textContent).toBe('Enabled')
+
+    // A block or setting with no help shows none.
+    await openTab(el, 'future')
+    expect(q(el, 'config-block-help')).toBeNull()
+    expect(q(el, 'config-help')).toBeNull()
+    expect(q(el, 'config-future.on').hasAttribute('aria-describedby')).toBe(false)
+    expect(q(el, 'config-future.name').hasAttribute('aria-describedby')).toBe(false)
   })
 
   it('saves an edited block as its own types, then shows it as stored', async () => {
