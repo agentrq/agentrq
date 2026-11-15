@@ -18,7 +18,7 @@ vi.mock('vue-router', () => ({
 
 const RouterLink = { props: ['to'], setup: (props, { slots }) => () => h('a', { href: props.to }, slots.default?.()) }
 
-import { fetchAdminConfigurations, updateAdminConfiguration } from '../src/api'
+import { fetchAdminConfigurations, updateAdminConfiguration, uploadAdminLoginIcon } from '../src/api'
 import { useToasts } from '../src/composables/useToasts'
 import AdminConfigView from '../src/views/AdminConfigView.vue'
 
@@ -334,5 +334,139 @@ describe('AdminConfigView', () => {
     const el = await mount()
     await openTab(el, 'smtp')
     expect(el.querySelector('[role="tablist"]')).toBeNull()
+  })
+})
+
+const ICONS = '/admin/v1/login-icons'
+
+describe('the login icon upload', () => {
+  it('sends the file as it is and returns its link', async () => {
+    const seen = serve({ [`POST ${ICONS}`]: [[{ url: 'https://cdn.example/login-icons/abc' }, 201]] })
+    const file = new File(['png'], 'icon.png', { type: 'image/png' })
+    expect(await uploadAdminLoginIcon(file)).toBe('https://cdn.example/login-icons/abc')
+    expect(seen[0].init.headers).toEqual({ 'Content-Type': 'image/png' })
+    expect(seen[0].init.body).toBe(file)
+  })
+
+  it('is null once the admin session has ended, and says why it was refused', async () => {
+    serve({ [`POST ${ICONS}`]: [[{ error: 'admin session required' }, 401], [{ error: { message: 'the icon must be a PNG', code: 422 } }, 422]] })
+    const typeless = new File(['x'], 'icon')
+    expect(await uploadAdminLoginIcon(typeless)).toBeNull()
+    await expect(uploadAdminLoginIcon(typeless)).rejects.toThrow('the icon must be a PNG')
+  })
+})
+
+describe('AdminConfigView sign-in providers', () => {
+  const provider = { id: 'gitlab', name: 'GitLab', clientId: 'cid', clientSecret: MASK, authUrl: 'https://gl/a', tokenUrl: 'https://gl/t', userInfoUrl: 'https://gl/u', scopes: ['openid'], iconUrl: '' }
+  const withProviders = (providers) => [
+    { key: 'app', value: { baseUrl: 'https://app.example/' } },
+    { key: 'auth', value: { allowedRedirectDomains: [], apiJwtSecret: MASK, github: { clientId: '' }, mcpJwtSecret: MASK, oauth2Providers: providers } },
+  ]
+
+  async function openAuth(replies) {
+    const seen = serve(replies)
+    const el = await mount()
+    await openTab(el, 'auth')
+    return { el, seen }
+  }
+
+  it('shows the MCP JWT secret right after the API one', async () => {
+    const { el } = await openAuth({ [`GET ${CONFIGS}`]: [[{ configurations: withProviders([]) }, 200]] })
+    const ids = [...el.querySelectorAll('[data-test^="config-auth."]')].map((e) => e.dataset.test)
+    expect(ids.slice(0, 3)).toEqual(['config-auth.allowedRedirectDomains', 'config-auth.apiJwtSecret', 'config-auth.mcpJwtSecret'])
+  })
+
+  it('lists the providers, each with its callback URL, and adds and removes them', async () => {
+    const { el, seen } = await openAuth({
+      [`GET ${CONFIGS}`]: [[{ configurations: withProviders([provider]) }, 200]],
+      [`PUT ${CONFIGS}/auth`]: [[{ key: 'auth', value: {} }, 200]],
+    })
+    expect(qa(el, 'config-list-item')).toHaveLength(1)
+    expect(q(el, 'config-auth.oauth2Providers.0.clientSecret').type).toBe('password')
+    expect(q(el, 'config-auth.oauth2Providers.0.clientSecret').placeholder).toContain('Set.')
+    // A link is never a secret, even when its name says token.
+    expect(q(el, 'config-auth.oauth2Providers.0.tokenUrl').type).toBe('text')
+    expect(q(el, 'config-reveal-auth.oauth2Providers.0.tokenUrl')).toBeNull()
+    expect(q(el, 'config-list').querySelector('[data-test="config-help"]').textContent).toContain('OpenID Connect')
+    const idInput = q(el, 'config-auth.oauth2Providers.0.id')
+    expect(document.getElementById(idInput.getAttribute('aria-describedby')).textContent).toContain('lowercase letters')
+    expect(q(el, 'config-callback-url').querySelector('code').textContent).toBe('https://app.example/api/v1/auth/oauth2/gitlab/callback')
+
+    q(el, 'config-list-add').click()
+    await nextTick()
+    const items = qa(el, 'config-list-item')
+    expect(items).toHaveLength(2)
+    expect(items[1].textContent).toContain('New provider')
+    expect(qa(el, 'config-callback-url')[1].querySelector('code').textContent).toBe('https://app.example/api/v1/auth/oauth2/<id>/callback')
+    expect(qa(el, 'config-callback-copy')[1].disabled).toBe(true)
+    expect(q(el, 'config-auth.oauth2Providers.1.scopes').value).toBe('openid, email, profile')
+    expect(q(el, 'config-auth.oauth2Providers.1.clientSecret').placeholder).toBe('')
+    await type(q(el, 'config-auth.oauth2Providers.1.id'), 'okta')
+    await type(q(el, 'config-auth.oauth2Providers.1.name'), 'Okta')
+    expect(qa(el, 'config-list-item')[1].textContent).toContain('Okta')
+    expect(qa(el, 'config-callback-url')[1].querySelector('code').textContent).toBe('https://app.example/api/v1/auth/oauth2/okta/callback')
+
+    qa(el, 'config-list-remove')[0].click()
+    await nextTick()
+    expect(qa(el, 'config-list-item')).toHaveLength(1)
+    q(el, 'config-save').click()
+    await settle()
+    const sent = JSON.parse(seen.find((s) => s.init.method === 'PUT').init.body).value.oauth2Providers
+    expect(sent).toEqual([{ id: 'okta', name: 'Okta', clientId: '', clientSecret: '', authUrl: '', tokenUrl: '', userInfoUrl: '', scopes: ['openid', 'email', 'profile'], iconUrl: '' }])
+  })
+
+  it('copies a callback URL, or says it could not', async () => {
+    const { el } = await openAuth({ [`GET ${CONFIGS}`]: [[{ configurations: withProviders([provider]) }, 200]] })
+    const writeText = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const { toasts } = useToasts()
+    q(el, 'config-callback-copy').click()
+    await settle()
+    expect(writeText).toHaveBeenCalledWith('https://app.example/api/v1/auth/oauth2/gitlab/callback')
+    expect(toasts.value.at(-1).message).toBe('Copied the callback URL.')
+
+    vi.stubGlobal('navigator', { clipboard: { writeText: () => Promise.reject(new Error('denied')) } })
+    q(el, 'config-callback-copy').click()
+    await settle()
+    expect(toasts.value.at(-1).message).toBe('Could not copy. Select the URL and copy it.')
+  })
+
+  it('starts a callback URL with the page origin before the app block is known', async () => {
+    const { el } = await openAuth({ [`GET ${CONFIGS}`]: [[{ configurations: withProviders([provider]).slice(1) }, 200]] })
+    expect(q(el, 'config-callback-url').querySelector('code').textContent).toBe(`${window.location.origin}/api/v1/auth/oauth2/gitlab/callback`)
+  })
+
+  it('uploads an icon into the provider, or says why not', async () => {
+    const { el } = await openAuth({
+      [`GET ${CONFIGS}`]: [[{ configurations: withProviders([provider]) }, 200]],
+      [`POST ${ICONS}`]: [
+        [{ url: 'https://cdn.example/login-icons/abc' }, 201],
+        [{ error: { message: 'the icon must be a PNG', code: 422 } }, 422],
+        [{ error: 'admin session required' }, 401],
+      ],
+    })
+    expect(q(el, 'config-icon-preview')).toBeNull()
+    const input = q(el, 'config-upload-auth.oauth2Providers.0.iconUrl').querySelector('input[type=file]')
+    const pick = async (files) => {
+      Object.defineProperty(input, 'files', { value: files, configurable: true })
+      input.dispatchEvent(new Event('change'))
+      await settle()
+      await nextTick()
+    }
+
+    await pick([])
+    expect(q(el, 'config-auth.oauth2Providers.0.iconUrl').value).toBe('')
+
+    await pick([new File(['png'], 'i.png', { type: 'image/png' })])
+    expect(q(el, 'config-auth.oauth2Providers.0.iconUrl').value).toBe('https://cdn.example/login-icons/abc')
+    expect(q(el, 'config-icon-preview').getAttribute('src')).toBe('https://cdn.example/login-icons/abc')
+    expect(q(el, 'config-upload-error')).toBeNull()
+
+    await pick([new File(['x'], 'i.svg', { type: 'image/svg+xml' })])
+    expect(q(el, 'config-upload-error').textContent).toBe('the icon must be a PNG')
+
+    await pick([new File(['x'], 'i.png', { type: 'image/png' })])
+    expect(q(el, 'config-upload-error').textContent).toBe('The admin session has ended. Sign in again to upload.')
+    expect(q(el, 'config-auth.oauth2Providers.0.iconUrl').value).toBe('https://cdn.example/login-icons/abc')
   })
 })

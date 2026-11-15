@@ -63,6 +63,15 @@ paths:
                 properties:
                   rootLoginEnabled: { type: boolean }
                   githubLoginEnabled: { type: boolean }
+                  oauth2Providers:
+                    type: array
+                    description: Sign-in providers besides Google and GitHub, added by the operator.
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        iconUrl: { type: string }
                   basePath:
                     type: string
                     description: Path prefix the app is served under, if any.
@@ -130,6 +139,58 @@ paths:
       responses:
         '302':
           description: Session cookies set, then redirect.
+
+  /auth/oauth2/{id}/login:
+    get:
+      tags: [Auth]
+      summary: Begin the OAuth flow of a provider the operator added
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: redirect_url
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '302': { description: Redirect to the provider }
+        '404':
+          description: No such provider
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  /auth/oauth2/{id}/callback:
+    get:
+      tags: [Auth]
+      summary: OAuth callback of a provider the operator added
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        '302':
+          description: Session cookies set, then redirect.
+        '400':
+          description: The state is missing, expired, or for another provider
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '404':
+          description: No such provider
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
 
   /auth/root/login:
     post:

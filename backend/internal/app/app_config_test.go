@@ -274,6 +274,7 @@ func TestCheckConfig(t *testing.T) {
 		{"ssl", `{"s3":{"enabled":true,"bucket":""}}`, "ssl.s3.bucket is required"},
 		{"skills", `{"storage":"gcs"}`, `skills storage: unknown skills storage "gcs"`},
 		{"storage", `{"attachmentRetentionPeriod":"soon"}`, "cleanup: invalid retention period"},
+		{"auth", `{"oauth2Providers":[{"id":"Bad Id"}]}`, "auth.oauth2Providers[0].id"},
 	} {
 		svc, err := config.Overlay(base, map[string][]byte{tc.key: []byte(tc.block)})
 		if err != nil {

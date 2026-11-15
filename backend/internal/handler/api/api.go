@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"github.com/agentrq/agentrq/backend/internal/controller/appconfig"
+	"github.com/agentrq/agentrq/backend/internal/controller/loginicon"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -78,6 +79,19 @@ type (
 		// AppConfig is the stored config, for the admin pages; nil, they have
 		// no config page.
 		AppConfig appconfig.Controller
+		// LoginIcons keeps sign-in providers' icons; nil, the admin page
+		// cannot upload one.
+		LoginIcons loginicon.Controller
+		// OAuth2Logins are the sign-in providers the operator added.
+		OAuth2Logins []OAuth2Login
+	}
+
+	// OAuth2Login is a sign-in provider besides Google and GitHub.
+	OAuth2Login struct {
+		ID      string
+		Name    string
+		IconURL string
+		Service auth.Service
 	}
 
 	Handler interface{}
@@ -123,6 +137,8 @@ type (
 		teams            teamctrl.Controller
 		teamView         teamview.Controller
 		appConfig        appconfig.Controller
+		loginIcons       loginicon.Controller
+		oauth2Logins     []OAuth2Login
 	}
 )
 
@@ -173,6 +189,8 @@ func New(p Params) (Handler, error) {
 		teams:            p.Teams,
 		teamView:         p.TeamView,
 		appConfig:        p.AppConfig,
+		loginIcons:       p.LoginIcons,
+		oauth2Logins:     p.OAuth2Logins,
 	}
 	hosts, err := redirectHosts(p.RedirectDomains)
 	if err != nil {
@@ -262,6 +280,8 @@ func (h *handler) registerPublicAuthRoutes() {
 	r.Get("/google/callback", h.googleCallback())
 	r.Get("/github/login", h.githubLogin())
 	r.Get("/github/callback", h.githubCallback())
+	r.Get("/oauth2/:id/login", h.oauth2Login())
+	r.Get("/oauth2/:id/callback", h.oauth2Callback())
 	r.Post("/root/login", h.rootLogin())
 	// Public on purpose: the whole point is that the access token has expired,
 	// so this route cannot sit behind the middleware that checks it. It
@@ -432,6 +452,7 @@ func (h *handler) authConfig() fiber.Handler {
 		return c.JSON(fiber.Map{
 			"rootLoginEnabled":   h.rootLoginEnabled,
 			"githubLoginEnabled": h.githubClientID != "",
+			"oauth2Providers":    h.oauth2LoginViews(),
 			"basePath":           h.basePath,
 			// Never null, so the login page can read it as a list.
 			"allowedRedirectDomains": append([]string{}, h.redirectDomains...),

@@ -263,3 +263,42 @@ func TestPublicFile_ServesAPanoFile(t *testing.T) {
 		}
 	}
 }
+
+// A sign-in provider's icon is served by its public link, which is its
+// content hash and nothing else; with no icon store, nothing is.
+func TestPublicFile_ServesALoginIcon(t *testing.T) {
+	dir := t.TempDir()
+	icons, err := storage.NewNestedPublic(filepath.Join(dir, "login-icons"), "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := icons.Save("0123456789abcdef", base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\n icon"))); err != nil {
+		t.Fatal(err)
+	}
+	app := fiber.New()
+	h := &handler{crud: crud.New(crud.Params{Storage: mustFlat(t, dir), LoginIconStorage: icons})}
+	h.registerPublicFileRoutes(app)
+
+	status, hdr, body := get(t, app, "/storage/login-icons/0123456789abcdef")
+	if status != http.StatusOK || !strings.HasSuffix(body, " icon") || hdr.Get("Content-Type") != "image/png" {
+		t.Errorf("the icon was served as %d %q %q, want 200 image/png", status, hdr.Get("Content-Type"), body)
+	}
+	for _, path := range []string{
+		"/storage/login-icons/0123456789ABCDEF",
+		"/storage/login-icons/0123456789abcdef.png",
+		"/storage/login-icons/0123456789abcde",
+		"/storage/login-icons/../agentrq.db",
+		"/storage/pano/0123456789abcdef",
+	} {
+		if status, _, body := get(t, app, path); status != http.StatusNotFound {
+			t.Errorf("%s answered %d %q, want 404", path, status, body)
+		}
+	}
+
+	app = fiber.New()
+	h = &handler{crud: crud.New(crud.Params{Storage: mustFlat(t, dir)})}
+	h.registerPublicFileRoutes(app)
+	if status, _, _ := get(t, app, "/storage/login-icons/0123456789abcdef"); status != http.StatusNotFound {
+		t.Errorf("with no icon store the icon answered %d, want 404", status)
+	}
+}

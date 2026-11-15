@@ -21,6 +21,28 @@ func (h *handler) registerAdminConfigRoutes(r fiber.Router) {
 	}
 	r.Get("/configurations", h.listAppConfigurations())
 	r.Put("/configurations/:key", h.updateAppConfiguration())
+	if h.loginIcons != nil {
+		r.Post("/login-icons", h.uploadLoginIcon())
+	}
+}
+
+// uploadLoginIcon takes a sign-in provider's icon as the request body and
+// answers with its public link, for the provider's iconUrl.
+func (h *handler) uploadLoginIcon() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		rq := mapper.FromHTTPRequestToUploadLoginIconRequestEntity(c)
+		if rq == nil {
+			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
+		}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.loginIcons.Upload(ctx, *rq)
+		if err != nil {
+			return appConfigError(c, err)
+		}
+		c.Set(_headerContentType, _mimeJSON)
+		return c.Status(fiber.StatusCreated).Send(mapper.FromUploadLoginIconResponseEntityToHTTPResponse(rs))
+	}
 }
 
 func (h *handler) listAppConfigurations() fiber.Handler {

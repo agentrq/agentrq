@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 
 	zlog "github.com/rs/zerolog/log"
 	"gorm.io/gorm/clause"
@@ -46,6 +47,12 @@ const SecretMask = "••••••••"
 // secretField names a setting that holds a secret: a password, a token, a
 // private or API key, a client or signing secret.
 var secretField = regexp.MustCompile(`(?i)secret|password|token|privatekey|apikey`)
+
+// isSecret is a setting whose name says it holds a secret; a link is never
+// one, such as a sign-in provider's tokenUrl.
+func isSecret(key string) bool {
+	return secretField.MatchString(key) && !strings.HasSuffix(key, "Url")
+}
 
 type (
 	// Controller reads and writes the stored config.
@@ -178,8 +185,9 @@ func (c *controller) Update(ctx context.Context, rq entity.UpdateAppConfiguratio
 }
 
 // keepSecrets gives each secret in old that block sends back as the mask, or
-// leaves out, its stored value; nested blocks alike. A mask with nothing
-// stored behind it is unset. An empty string clears a secret.
+// leaves out, its stored value; nested blocks alike, and each block in a list
+// alike the stored one with its id. A mask with nothing stored behind it is
+// unset. An empty string clears a secret.
 func keepSecrets(block, old map[string]any) {
 	for k, ov := range old {
 		if oldGroup, ok := ov.(map[string]any); ok {
@@ -195,7 +203,7 @@ func keepSecrets(block, old map[string]any) {
 			}
 			continue
 		}
-		if v, present := block[k]; secretField.MatchString(k) && (!present || v == SecretMask) {
+		if v, present := block[k]; isSecret(k) && (!present || v == SecretMask) {
 			block[k] = ov
 		}
 	}
@@ -203,7 +211,25 @@ func keepSecrets(block, old map[string]any) {
 		if v == SecretMask {
 			block[k] = ""
 		}
+		if list, ok := v.([]any); ok {
+			oldList, _ := old[k].([]any)
+			for _, item := range list {
+				if item, ok := item.(map[string]any); ok {
+					keepSecrets(item, byID(oldList, item["id"]))
+				}
+			}
+		}
 	}
+}
+
+// byID is the block in list whose id is id, or an empty one.
+func byID(list []any, id any) map[string]any {
+	for _, item := range list {
+		if item, ok := item.(map[string]any); ok && id != nil && item["id"] == id {
+			return item
+		}
+	}
+	return map[string]any{}
 }
 
 // masked is a block with each secret that is set replaced by the mask.
@@ -219,8 +245,14 @@ func mask(block map[string]any) {
 		switch v := v.(type) {
 		case map[string]any:
 			mask(v)
+		case []any:
+			for _, item := range v {
+				if item, ok := item.(map[string]any); ok {
+					mask(item)
+				}
+			}
 		case string:
-			if v != "" && secretField.MatchString(k) {
+			if v != "" && isSecret(k) {
 				block[k] = SecretMask
 			}
 		}

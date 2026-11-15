@@ -1455,6 +1455,19 @@ export async function updateAdminConfiguration(key, value) {
   return res.json();
 }
 
+// Uploads a sign-in provider's icon, which the server crops square and
+// resizes, and returns its public link; null once the admin session has ended.
+export async function uploadAdminLoginIcon(file) {
+  const res = await fetch(`${ADMIN_BASE_URL}/login-icons`, {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file
+  });
+  if (res.status === 401) return null;
+  if (!res.ok) throw await responseError(res, 'Failed to upload the icon');
+  return (await res.json()).url;
+}
+
 // ── Teams ───────────────────────────────────────────────────────────────────
 // Teams, their members and invitations, and which of your workspaces a team
 // may see. Every member may change a team. Every refusal carries its HTTP

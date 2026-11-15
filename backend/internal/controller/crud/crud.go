@@ -28,7 +28,9 @@ type (
 		// PanoStorage holds Pano docs and their files. Nil falls back to
 		// Storage.
 		PanoStorage storage.Service
-		Image       image.Service
+		// LoginIconStorage holds sign-in providers' icons. Nil serves none.
+		LoginIconStorage storage.Service
+		Image            image.Service
 		// Avatars keeps a copy of each sign-in picture. Nil keeps the
 		// provider's link.
 		Avatars avatar.Service
@@ -81,8 +83,11 @@ type (
 
 		skillStorage storage.Service
 		panoStorage  storage.Service
-		skillImport  skillimport.Service
-		taskAgents   TaskAgentNames
+		// loginIconStorage is read by the public file route only; the
+		// admin page writes it through the loginicon controller.
+		loginIconStorage storage.Service
+		skillImport      skillimport.Service
+		taskAgents       TaskAgentNames
 	}
 )
 
@@ -104,10 +109,11 @@ func New(p Params) Controller {
 		pubsub:     p.PubSub,
 		limiter:    p.Limiter,
 
-		skillStorage: skillStorage,
-		panoStorage:  panoStorage,
-		skillImport:  p.SkillImport,
-		taskAgents:   p.TaskAgents,
+		skillStorage:     skillStorage,
+		panoStorage:      panoStorage,
+		loginIconStorage: p.LoginIconStorage,
+		skillImport:      p.SkillImport,
+		taskAgents:       p.TaskAgents,
 	}
 }
 

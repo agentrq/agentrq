@@ -37,3 +37,18 @@ func FromHTTPRequestToUpdateAppConfigurationRequestEntity(c *fiber.Ctx) *entity.
 	}
 	return &entity.UpdateAppConfigurationRequest{Key: c.Params("key"), Value: rq.Value}
 }
+
+// FromHTTPRequestToUploadLoginIconRequestEntity reads the image the body
+// carries; nil when it is empty.
+func FromHTTPRequestToUploadLoginIconRequestEntity(c *fiber.Ctx) *entity.UploadLoginIconRequest {
+	if len(c.Body()) == 0 {
+		return nil
+	}
+	return &entity.UploadLoginIconRequest{Data: append([]byte(nil), c.Body()...)}
+}
+
+// FromUploadLoginIconResponseEntityToHTTPResponse renders the icon's link.
+func FromUploadLoginIconResponseEntityToHTTPResponse(rs *entity.UploadLoginIconResponse) []byte {
+	b, _ := json.Marshal(view.UploadLoginIconResponse{URL: rs.URL})
+	return b
+}

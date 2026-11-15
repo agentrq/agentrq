@@ -55,6 +55,9 @@ auth:
   github:
     clientId: ${AGENTRQ_ACCOUNTS_OAUTH2_CLI_GITHUB_CLIENT_ID}
     clientSecret: ${AGENTRQ_ACCOUNTS_OAUTH2_CLI_GITHUB_CLIENT_SECRET}
+  # Sign-in providers besides Google and GitHub, added on /admin/config: any
+  # OAuth2 server whose userinfo endpoint answers with the OpenID Connect claims.
+  oauth2Providers: []
 
 smtp:
   enabled: ${AGENTRQ_SMTP_ENABLED:true}
@@ -160,7 +163,8 @@ mcp:
   openaiAppsChallenge: ${AGENTRQ_MCP_OPENAI_APPS_CHALLENGE:}
 
 # Any S3-compatible store. Objects are addressed path-style. With an endpoint
-# and a bucket set, sign-in pictures are kept public in it under avatars/.
+# and a bucket set, sign-in pictures are kept public in it under avatars/, and
+# sign-in providers' icons under login-icons/.
 s3:
   endpoint: "${AGENTRQ_S3_ENDPOINT:}"
   accessKey: "${AGENTRQ_S3_ACCESS_KEY:}"

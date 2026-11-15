@@ -87,6 +87,17 @@
               Continue with GitHub
             </a>
 
+            <template v-if="!admin">
+              <a v-for="p in oauth2Providers" :key="p.id" data-test="oauth2-login" :href="providerLoginUrl(`${API_BASE_URL}/auth/oauth2/${encodeURIComponent(p.id)}/login`, redirect)"
+                class="w-full py-4 px-6 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 font-bold rounded-2xl border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center gap-3 transform active:scale-[0.98] transition-all shadow-sm">
+                <img v-if="p.iconUrl && !brokenIcons.has(p.id)" :src="p.iconUrl" alt="" width="20" height="20" class="h-5 w-5 object-contain" @error="brokenIcons.add(p.id)" />
+                <svg v-else class="h-5 w-5 text-gray-900 dark:text-zinc-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                </svg>
+                Continue with {{ p.name }}
+              </a>
+            </template>
+
             <div v-if="!admin && rootLoginEnabled" class="relative py-4">
               <div class="absolute inset-0 flex items-center">
                 <div class="w-full border-t border-gray-100 dark:border-zinc-800"></div>
@@ -131,7 +142,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { API_BASE_URL, adminLogin } from '../api'
 import { loginRedirect, providerLoginUrl, loginErrorMessage } from '../utils/loginRedirect'
@@ -152,6 +163,10 @@ const allowedRedirectDomains = ref([])
 const redirect = computed(() => loginRedirect(rawRedirect, window.location.origin, allowedRedirectDomains.value))
 const rootLoginEnabled = ref(false)
 const githubLoginEnabled = ref(false)
+// Sign-in providers the operator added, each { id, name, iconUrl }.
+const oauth2Providers = ref([])
+// Icons that failed to load, such as in the desktop app, show a key instead.
+const brokenIcons = reactive(new Set())
 const loadingConfig = ref(true)
 
 // The server's live totals: null until the first event, so nothing shows
@@ -174,6 +189,9 @@ onMounted(async () => {
     }
     if (data && typeof data.githubLoginEnabled === 'boolean') {
       githubLoginEnabled.value = data.githubLoginEnabled
+    }
+    if (data && Array.isArray(data.oauth2Providers)) {
+      oauth2Providers.value = data.oauth2Providers
     }
     if (data && Array.isArray(data.allowedRedirectDomains)) {
       allowedRedirectDomains.value = data.allowedRedirectDomains

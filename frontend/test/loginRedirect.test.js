@@ -71,6 +71,7 @@ describe('loginErrorMessage', () => {
   it('names what to do for each refusal the server sends back', () => {
     expect(loginErrorMessage('githubEmailUnverified')).toBe('Verify an email address on GitHub, then sign in again.')
     expect(loginErrorMessage('googleEmailUnverified')).toBe('Verify your email address with Google, then sign in again.')
+    expect(loginErrorMessage('oauth2EmailUnverified')).toBe('Verify your email address with the sign-in provider, then sign in again.')
   })
 
   it.each([
@@ -177,6 +178,45 @@ describe('the login page', () => {
     const el = await mount({ query: { error: 'githubEmailUnverified' }, config: { githubLoginEnabled: true } })
     expect(el.querySelector('[role=alert]').textContent).toBe('Verify an email address on GitHub, then sign in again.')
     expect(links(el)).toEqual(['/api/v1/auth/google/login', '/api/v1/auth/github/login'])
+  })
+
+  it('offers each sign-in provider the operator added, with its icon or a key', async () => {
+    const el = await mount({
+      query: { redirect_url: back },
+      config: { oauth2Providers: [
+        { id: 'gitlab', name: 'GitLab', iconUrl: 'https://cdn.example/login-icons/abc' },
+        { id: 'okta', name: 'Okta', iconUrl: '' },
+      ] },
+    })
+    const encoded = encodeURIComponent(back)
+    expect(links(el)).toEqual([
+      `/api/v1/auth/google/login?redirect_url=${encoded}`,
+      `/api/v1/auth/oauth2/gitlab/login?redirect_url=${encoded}`,
+      `/api/v1/auth/oauth2/okta/login?redirect_url=${encoded}`,
+    ])
+    const buttons = [...el.querySelectorAll('[data-test="oauth2-login"]')]
+    expect(buttons.map((b) => b.textContent.trim())).toEqual(['Continue with GitLab', 'Continue with Okta'])
+    const icon = buttons[0].querySelector('img')
+    expect(icon.getAttribute('src')).toBe('https://cdn.example/login-icons/abc')
+    expect(buttons[1].querySelector('img')).toBeNull()
+    expect(buttons[1].querySelector('svg')).not.toBeNull()
+
+    // An icon that does not load, such as in the desktop app, shows the key.
+    icon.dispatchEvent(new Event('error'))
+    await settle()
+    expect(buttons[0].querySelector('img')).toBeNull()
+    expect(buttons[0].querySelector('svg')).not.toBeNull()
+  })
+
+  it('offers no added provider on the admin sign-in', async () => {
+    route.query = {}
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ oauth2Providers: [{ id: 'gitlab', name: 'GitLab' }] }) })))
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    app = createApp({ render: () => h(LoginView, { admin: true }) })
+    app.mount(el)
+    await settle()
+    expect(el.querySelector('[data-test="oauth2-login"]')).toBeNull()
   })
 
   it('shows no message for a code it does not know', async () => {

@@ -2625,6 +2625,7 @@ const (
 	PublicFileArtifacts = "artifacts"
 	PublicFileSkills    = "skills"
 	PublicFilePano      = "pano"
+	PublicFileLoginIcon = "login-icons"
 )
 
 // Why a fork, or a merge, was refused. Each one reaches the caller wrapped in a

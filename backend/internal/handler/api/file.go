@@ -19,6 +19,7 @@ const (
 	PublicFilesArtifacts = entity.PublicFileArtifacts
 	PublicFilesSkills    = entity.PublicFileSkills
 	PublicFilesPano      = entity.PublicFilePano
+	PublicFilesLoginIcon = entity.PublicFileLoginIcon
 )
 
 // _routePathPublicFile takes every path under the prefix, so that none of
@@ -33,6 +34,7 @@ var publicFilePath = regexp.MustCompile(`^` + PublicFilesPrefix + `/(?:` +
 	`(artifacts)/(w-[0-9A-Za-z]{11}/[0-9A-Za-z]{11}/[0-9A-Za-z]{11})` +
 	`|(skills)/(u-[0-9A-Za-z]{11}/skill-[0-9A-Za-z]{11}/[0-9A-Za-z]{11})` +
 	`|(pano)/(u-[0-9A-Za-z]{11}/pano-[0-9A-Za-z]{11}/[0-9A-Za-z]{11})` +
+	`|(login-icons)/([0-9a-f]{16})` +
 	`)$`)
 
 // registerPublicFileRoutes serves attachments, skill files and Pano files by their
@@ -50,7 +52,7 @@ func (h *handler) getPublicFile() fiber.Handler {
 		if m == nil {
 			return c.Status(fiber.StatusNotFound).SendString("Not Found")
 		}
-		kind, key := string(m[1])+string(m[3])+string(m[5]), string(m[2])+string(m[4])+string(m[6])
+		kind, key := string(m[1])+string(m[3])+string(m[5])+string(m[7]), string(m[2])+string(m[4])+string(m[6])+string(m[8])
 		ctx, cancel := newContext(c)
 		defer cancel()
 		res, err := h.crud.GetPublicFile(ctx, entity.GetPublicFileRequest{Kind: kind, Key: key})
