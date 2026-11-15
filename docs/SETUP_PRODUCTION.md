@@ -348,11 +348,7 @@ The server refuses to start on a negative value.
 
 ### Native ACP
 
-| Variable | Default | Description |
-|---|---|---|
-| `AGENTRQ_ACP_V1_ENABLED` | `true` | Serve `/api/acp/v1`, the only way acp-gateway connects. Off, the endpoint answers 404 and the gateway cannot run. |
-
-The value is `true` or `false`. The server refuses to start on anything else.
+The server always serves `/api/acp/v1`, the only way acp-gateway connects.
 
 `/api/acp/v1` is a WebSocket, so a reverse proxy in front of the server must:
 

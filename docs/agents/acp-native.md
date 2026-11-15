@@ -14,5 +14,5 @@
 - **A task's files go as `resource_link`s to their URLs, never inline** — the human's call: inlined files are too much for an agent to take in, and it fetches what it needs.
 - **No fs, no terminal, ever claimed.** The server cannot reach the agent's machine; agents use their own tools.
 - **The endpoint is on the stdlib mux and never also a Fiber route** (the mux shadows exact paths).
-- **On unless `AGENTRQ_ACP_V1_ENABLED=false`.** While it is off, the endpoint answers 404.
+- **Always on.** There is no switch; every server serves `/api/acp/v1`.
 - **A plan is a `task_plans` row, never a chat message.** Its id is the task's id, so a task has at most one, replaced whole on every update and deleted when the agent withdraws it. It has no `workspace_id` on purpose: it follows its task through moves, forks and id resets without being touched. People comment on a step with an ordinary message beginning `> Plan step: <step>`, so the comment reaches the agent on the composer's path; nobody but the agent edits the plan.

@@ -33,7 +33,6 @@ var upgrader = websocket.Upgrader{
 type Handler struct {
 	Hub       *Hub
 	Auth      TokenAuth
-	Enabled   func() bool                // acp.v1.enabled
 	NewEngine func(c *connection) engine // sets OnFrame, OnControl and OnState
 }
 
@@ -42,12 +41,8 @@ type Handler struct {
 var resumeHeader = regexp.MustCompile(`^([A-Z2-7]{26}):([0-9]{1,18})$`)
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !h.Enabled() {
-		http.NotFound(w, r)
-		return
-	}
 	// Auth before the upgrade check, on purpose: the bridge's plain-GET
-	// preflight then learns everything (404, 401/403, or 426 = go ahead)
+	// preflight then learns everything (401/403, or 426 = go ahead)
 	// before opening a socket, whose failed upgrade it cannot read.
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || token == "" {

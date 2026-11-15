@@ -100,7 +100,6 @@ func countACPV1(rec acpCounter, kind entity.RecordACPV1Request) func(ctx context
 
 // acpDeps is what mounting the native ACP endpoints takes.
 type acpDeps struct {
-	enabled    bool
 	hub        *acpv1.Hub
 	auth       acpTokenAuth
 	counter    acpCounter
@@ -114,9 +113,8 @@ type acpDeps struct {
 // other sockets, and never also a Fiber route: the mux would shadow it.
 func mountACP(mux *http.ServeMux, d acpDeps) {
 	mux.Handle("/api/acp/v1", &acpv1.Handler{
-		Hub:     d.hub,
-		Auth:    acpV1Auth{d.auth},
-		Enabled: func() bool { return d.enabled },
+		Hub:  d.hub,
+		Auth: acpV1Auth{d.auth},
 		NewEngine: acpv1.NewEngineFactory(acpv1.EngineDeps{
 			Workspace:  func(id int64, userID string) acpv1.Workspace { return d.workspaces.Get(id, userID) },
 			MCPURL:     d.mcpURL,

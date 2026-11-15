@@ -173,12 +173,12 @@ func TestMountACP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("minting the token failed: %v", err)
 	}
-	serve := func(t *testing.T, enabled bool) (*httptest.Server, *acpv1.Hub, *fakeACPCounter) {
+	serve := func(t *testing.T) (*httptest.Server, *acpv1.Hub, *fakeACPCounter) {
 		t.Helper()
 		hub, counter := acpv1.NewHub(), &fakeACPCounter{}
 		mux := http.NewServeMux()
 		mountACP(mux, acpDeps{
-			enabled: enabled, hub: hub, counter: counter,
+			hub: hub, counter: counter,
 			auth:       acpTokenAuth{tokens: tokens, workspaces: &fakeACPWorkspaces{}},
 			workspaces: mcp.NewManager(func(int64, string) *mcp.WorkspaceServer { return &mcp.WorkspaceServer{} }),
 			mcpURL:     func(int64) string { return "https://agentrq.test/mcp/ws" },
@@ -201,28 +201,21 @@ func TestMountACP(t *testing.T) {
 	}
 
 	t.Run("the endpoint is mounted on the mux and answers 426 to a plain GET", func(t *testing.T) {
-		srv, _, _ := serve(t, true)
+		srv, _, _ := serve(t)
 		if code := get(t, srv.URL+"/api/acp/v1"); code != http.StatusUpgradeRequired {
 			t.Fatalf("GET /api/acp/v1 answered %d, want 426", code)
 		}
 	})
 
 	t.Run("only the exact path is mounted", func(t *testing.T) {
-		srv, _, _ := serve(t, true)
+		srv, _, _ := serve(t)
 		if code := get(t, srv.URL+"/api/acp/v1/x"); code != http.StatusNotFound {
 			t.Fatalf("GET /api/acp/v1/x answered %d, want 404", code)
 		}
 	})
 
-	t.Run("a switched-off endpoint answers 404", func(t *testing.T) {
-		srv, _, _ := serve(t, false)
-		if code := get(t, srv.URL+"/api/acp/v1"); code != http.StatusNotFound {
-			t.Fatalf("GET /api/acp/v1 answered %d, want 404", code)
-		}
-	})
-
 	t.Run("a bridge is opened with initialize and told when the server shuts down", func(t *testing.T) {
-		srv, hub, _ := serve(t, true)
+		srv, hub, _ := serve(t)
 		hdr := http.Header{}
 		hdr.Set("Authorization", "Bearer "+token)
 		dialer := websocket.Dialer{Subprotocols: []string{"agentrq.bridge.1"}}
@@ -259,62 +252,14 @@ func TestMountACP(t *testing.T) {
 	})
 }
 
-// The switch reaches acp.v1.enabled through the real base.yaml, on unless set.
-func TestACPSwitchFromEnv(t *testing.T) {
-	for _, tt := range []struct {
-		env  string
-		set  bool
-		want bool
-	}{
-		{"", false, true},
-		{"true", true, true},
-		{"false", true, false},
-	} {
-		t.Run("AGENTRQ_ACP_V1_ENABLED="+tt.env, func(t *testing.T) {
-			t.Setenv("ENV", "development")
-			if tt.set {
-				t.Setenv("AGENTRQ_ACP_V1_ENABLED", tt.env)
-			}
-			t.Chdir("../../cmd/server")
-			svc, err := config.New()
-			if err != nil {
-				t.Fatal(err)
-			}
-			var cfg Config
-			if err := svc.Populate("acp", &cfg.ACP); err != nil {
-				t.Fatal(err)
-			}
-			if cfg.ACP.V1.Enabled != tt.want {
-				t.Errorf("acp.v1.enabled was %v, want %v", cfg.ACP.V1.Enabled, tt.want)
-			}
-		})
-	}
-
-	t.Run("a value that is not a boolean stops startup", func(t *testing.T) {
-		t.Setenv("ENV", "development")
-		t.Setenv("AGENTRQ_ACP_V1_ENABLED", "sometimes")
-		t.Chdir("../../cmd/server")
-		svc, err := config.New()
-		if err != nil {
-			t.Fatal(err)
-		}
-		var cfg Config
-		if err := svc.Populate("acp", &cfg.ACP); err == nil {
-			t.Fatalf("acp.v1.enabled took %q as %v, want an error", "sometimes", cfg.ACP.V1.Enabled)
-		}
-	})
-}
-
-// newTestApp builds the whole app the way main does, on a fresh SQLite file,
-// with the ACP v1 switch set to enabled.
-func newTestApp(t *testing.T, enabled string) *App {
+// newTestApp builds the whole app the way main does, on a fresh SQLite file.
+func newTestApp(t *testing.T) *App {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("ENV", "development")
 	t.Setenv("AGENTRQ_AUTH_JWT_SECRET", "acp-test-secret")
 	t.Setenv("AGENTRQ_SQLITE_DSN", filepath.Join(dir, "agentrq.db"))
 	t.Setenv("AGENTRQ_STORAGE_DIR", dir)
-	t.Setenv("AGENTRQ_ACP_V1_ENABLED", enabled)
 	t.Chdir("../../cmd/server")
 	svc, err := config.New()
 	if err != nil {
@@ -323,7 +268,7 @@ func newTestApp(t *testing.T, enabled string) *App {
 	var cfg Config
 	for key, dst := range map[string]any{"app": &cfg.App, "auth": &cfg.Auth, "smtp": &cfg.SMTP, "ssl": &cfg.SSL,
 		"slack": &cfg.Slack, "webPush": &cfg.WebPush, "storage": &cfg.Storage, "memory": &cfg.Memory,
-		"skills": &cfg.Skills, "pano": &cfg.Pano, "acp": &cfg.ACP, "idgen": &cfg.Idgen} {
+		"skills": &cfg.Skills, "pano": &cfg.Pano, "idgen": &cfg.Idgen} {
 		if err := svc.Populate(key, dst); err != nil {
 			t.Fatalf("config %s: %v", key, err)
 		}
@@ -347,29 +292,18 @@ func newTestApp(t *testing.T, enabled string) *App {
 	return a
 }
 
-// The real router, Fiber's fallback behind it, serves the endpoint only while
-// the switch is on.
+// The real router, Fiber's fallback behind it, always serves the endpoint: a
+// bridge with no token is asked for one.
 func TestTheAppServesACPV1(t *testing.T) {
-	for _, tt := range []struct {
-		enabled string
-		want    int
-		body    string
-	}{
-		// On, the endpoint itself answers: a bridge with no token is asked for one.
-		{"true", http.StatusUnauthorized, "a workspace access token is required"},
-		{"false", http.StatusNotFound, "404 page not found"},
-	} {
-		t.Run("AGENTRQ_ACP_V1_ENABLED="+tt.enabled, func(t *testing.T) {
-			a := newTestApp(t, tt.enabled)
-			if a.acpV1Hub == nil {
-				t.Fatal("the app keeps no ACP v1 hub to close on shutdown")
-			}
-			req := httptest.NewRequest(http.MethodGet, "http://localhost/api/acp/v1", nil)
-			rr := httptest.NewRecorder()
-			a.server.(http.Handler).ServeHTTP(rr, req)
-			if body := strings.TrimSpace(rr.Body.String()); rr.Code != tt.want || body != tt.body {
-				t.Fatalf("GET /api/acp/v1 answered %d %q, want %d %q", rr.Code, body, tt.want, tt.body)
-			}
-		})
+	a := newTestApp(t)
+	if a.acpV1Hub == nil {
+		t.Fatal("the app keeps no ACP v1 hub to close on shutdown")
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/acp/v1", nil)
+	rr := httptest.NewRecorder()
+	a.server.(http.Handler).ServeHTTP(rr, req)
+	want := "a workspace access token is required"
+	if body := strings.TrimSpace(rr.Body.String()); rr.Code != http.StatusUnauthorized || body != want {
+		t.Fatalf("GET /api/acp/v1 answered %d %q, want %d %q", rr.Code, body, http.StatusUnauthorized, want)
 	}
 }

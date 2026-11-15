@@ -63,7 +63,7 @@ func (e *echoEngine) seenStates() []bool {
 func serveHub(t *testing.T) (*httptest.Server, chan *echoEngine, *Handler) {
 	t.Helper()
 	engines := make(chan *echoEngine, 8)
-	h := &Handler{Hub: NewHub(), Auth: fakeAuth{}, Enabled: func() bool { return true },
+	h := &Handler{Hub: NewHub(), Auth: fakeAuth{},
 		NewEngine: func(c *connection) engine {
 			e := &echoEngine{c: c, stop: make(chan error, 1)}
 			c.OnFrame(func(f []byte) { e.mu.Lock(); e.got = append(e.got, string(f)); e.mu.Unlock() })
@@ -213,14 +213,6 @@ func TestSocket(t *testing.T) {
 		waitFor(t, func() bool { return len(e.seenStates()) == 3 })
 		if got := e.seenStates(); !got[0] || got[1] || !got[2] {
 			t.Fatalf("the engine was told %v, want attached, detached, attached", got)
-		}
-	})
-
-	t.Run("a switched-off endpoint answers 404", func(t *testing.T) {
-		srv, _, h := serveHub(t)
-		h.Enabled = func() bool { return false }
-		if code, _ := get(t, srv, "Bearer t"); code != http.StatusNotFound {
-			t.Fatalf("status was %d, want 404", code)
 		}
 	})
 

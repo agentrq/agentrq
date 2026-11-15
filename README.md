@@ -529,10 +529,9 @@ The gateway will automatically:
 
 ### ACP v1
 
-The gateway needs Node 22 or newer, and a server that has not turned ACP v1 off
-with `AGENTRQ_ACP_V1_ENABLED=false` (it is on by default; see
-[Native ACP](docs/SETUP_PRODUCTION.md#native-acp)). The gateway no longer talks
-to AgentRQ over MCP, so a server with ACP v1 off cannot run it.
+The gateway needs Node 22 or newer. Every server serves ACP v1 (see
+[Native ACP](docs/SETUP_PRODUCTION.md#native-acp)); the gateway no longer talks
+to AgentRQ over MCP.
 
 ## 🌌 Codex (via the ACP Gateway)
 
