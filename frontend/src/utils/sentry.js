@@ -9,7 +9,8 @@ import { API_BASE_URL } from '../api'
  * GET /sentry names the DSN, or is null when off, and then no SDK is loaded. Events are posted to that
  * same route, which relays them: the desktop app's CSP lets the page reach no
  * other origin. Resolves whether it started; it never throws, as the app runs
- * the same without it.
+ * the same without it. Only exceptions are sent: no sessions (one per page
+ * load), and no tracing or replay, which are off unless asked for.
  */
 export async function startSentry(app, { load = () => import('@sentry/vue') } = {}) {
   try {
@@ -24,6 +25,7 @@ export async function startSentry(app, { load = () => import('@sentry/vue') } = 
       environment: cfg.environment,
       release: __APP_VERSION__,
       tunnel: `${API_BASE_URL}/sentry`,
+      integrations: (defaults) => defaults.filter((i) => i.name !== 'BrowserSession'),
     })
     return true
   } catch {
