@@ -162,6 +162,12 @@ teams:
 mcp:
   openaiAppsChallenge: ${AGENTRQ_MCP_OPENAI_APPS_CHALLENGE:}
 
+# Errors and panics reported to Sentry, off by default. An event's release is
+# the app's version, and its environment the ENV the server runs with.
+sentry:
+  enabled: ${AGENTRQ_SENTRY_ENABLED:false}
+  dsn: "${AGENTRQ_SENTRY_DSN:}"
+
 # Any S3-compatible store. Objects are addressed path-style. With an endpoint
 # and a bucket set, sign-in pictures are kept public in it under avatars/, and
 # sign-in providers' icons under login-icons/.
