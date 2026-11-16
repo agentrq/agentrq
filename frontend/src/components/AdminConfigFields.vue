@@ -190,12 +190,13 @@ const help = (key) => CONFIG_HELP[settingPath(key)]
 
 /**
  * Settings shown right after another, rather than where the server's JSON,
- * sorted by name, puts them: the setting, and the one it follows.
+ * sorted by name, puts them: the setting, and the one it follows. A block's
+ * enabled switch always comes first.
  */
 const AFTER = { 'auth.mcpJwtSecret': 'apiJwtSecret' }
 
 const orderedKeys = computed(() => {
-  const keys = Object.keys(props.fields)
+  const keys = Object.keys(props.fields).sort((a, b) => (b === 'enabled') - (a === 'enabled'))
   for (const key of [...keys]) {
     const anchor = AFTER[settingPath(key)]
     if (!anchor || !keys.includes(anchor)) continue
