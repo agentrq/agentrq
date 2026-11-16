@@ -5,7 +5,7 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 )
@@ -16,7 +16,7 @@ import (
 // read a user id. The caller is unauthenticated and the code decides whose
 // machine this becomes — taking an account from the request would let anyone
 // enrol a machine into anyone's account.
-func FromHTTPRequestToEnrolMachineRequestEntity(c *fiber.Ctx) *entity.EnrolMachineRequest {
+func FromHTTPRequestToEnrolMachineRequestEntity(c fiber.Ctx) *entity.EnrolMachineRequest {
 	var payload struct {
 		Code     string `json:"code"`
 		Name     string `json:"name"`
@@ -25,7 +25,7 @@ func FromHTTPRequestToEnrolMachineRequestEntity(c *fiber.Ctx) *entity.EnrolMachi
 		Arch     string `json:"arch"`
 		Version  string `json:"version"`
 	}
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		return nil
 	}
 	return &entity.EnrolMachineRequest{

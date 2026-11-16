@@ -15,7 +15,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -36,7 +36,7 @@ func (m *mockCrudResetWorkspaceID) ResetWorkspaceID(_ context.Context, req entit
 func resetApp(ctrl *mockCrudResetWorkspaceID, mgr *fakeMCPManager) *fiber.App {
 	app := fiber.New()
 	h := &handler{crud: ctrl, mcpManager: mgr, bus: eventbus.New(), router: app.Group("")}
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return c.Next()
 	})

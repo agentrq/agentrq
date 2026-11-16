@@ -10,13 +10,13 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
 // ── Event HTTP mappers ────────────────────────────────────────────────────────
 
-func FromHTTPRequestToCreateEventRequestEntity(c *fiber.Ctx) *entity.CreateEventRequest {
+func FromHTTPRequestToCreateEventRequestEntity(c fiber.Ctx) *entity.CreateEventRequest {
 	var payload view.CreateEventRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -35,7 +35,7 @@ func FromCreateEventResponseEntityToHTTPResponse(rs *entity.CreateEventResponse)
 	return payload
 }
 
-func FromHTTPRequestToGetEventRequestEntity(c *fiber.Ctx) *entity.GetEventRequest {
+func FromHTTPRequestToGetEventRequestEntity(c fiber.Ctx) *entity.GetEventRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
@@ -57,7 +57,7 @@ func FromListEventsResponseEntityToHTTPResponse(rs *entity.ListEventsResponse) [
 	return payload
 }
 
-func FromHTTPRequestToUpdateEventRequestEntity(c *fiber.Ctx) *entity.UpdateEventRequest {
+func FromHTTPRequestToUpdateEventRequestEntity(c fiber.Ctx) *entity.UpdateEventRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
@@ -74,7 +74,7 @@ func FromUpdateEventResponseEntityToHTTPResponse(rs *entity.UpdateEventResponse)
 	return payload
 }
 
-func FromHTTPRequestToDeleteEventRequestEntity(c *fiber.Ctx) *entity.DeleteEventRequest {
+func FromHTTPRequestToDeleteEventRequestEntity(c fiber.Ctx) *entity.DeleteEventRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
@@ -84,7 +84,7 @@ func FromHTTPRequestToDeleteEventRequestEntity(c *fiber.Ctx) *entity.DeleteEvent
 
 // ── EventTrigger HTTP mappers ─────────────────────────────────────────────────
 
-func FromHTTPRequestToCreateEventTriggerRequestEntity(c *fiber.Ctx) *entity.CreateEventTriggerRequest {
+func FromHTTPRequestToCreateEventTriggerRequestEntity(c fiber.Ctx) *entity.CreateEventTriggerRequest {
 	eventID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if eventID == 0 {
 		return nil
@@ -118,7 +118,7 @@ func FromCreateEventTriggerResponseEntityToHTTPResponse(rs *entity.CreateEventTr
 	return payload
 }
 
-func FromHTTPRequestToUpdateEventTriggerRequestEntity(c *fiber.Ctx) *entity.UpdateEventTriggerRequest {
+func FromHTTPRequestToUpdateEventTriggerRequestEntity(c fiber.Ctx) *entity.UpdateEventTriggerRequest {
 	id := monoflake.IDFromBase62(c.Params("triggerID")).Int64()
 	if id == 0 {
 		return nil
@@ -169,7 +169,7 @@ func FromListEventTriggersResponseEntityToHTTPResponse(rs *entity.ListEventTrigg
 	return payload
 }
 
-func FromHTTPRequestToDeleteEventTriggerRequestEntity(c *fiber.Ctx) *entity.DeleteEventTriggerRequest {
+func FromHTTPRequestToDeleteEventTriggerRequestEntity(c fiber.Ctx) *entity.DeleteEventTriggerRequest {
 	id := monoflake.IDFromBase62(c.Params("triggerID")).Int64()
 	if id == 0 {
 		return nil

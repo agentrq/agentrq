@@ -22,7 +22,7 @@ import (
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/eventinstruction"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -79,7 +79,7 @@ func (h *handler) registerTaskRoutes() error {
 }
 
 func (h *handler) createTask() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToCreateTaskRequestEntity(c)
 		if rq == nil {
@@ -240,7 +240,7 @@ func agentTaskConcurrency(m mcpManager, workspaceID int64) int {
 }
 
 func (h *handler) listTasks() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToListTasksRequestEntity(c)
 		if rq == nil {
@@ -262,7 +262,7 @@ func (h *handler) listTasks() fiber.Handler {
 }
 
 func (h *handler) getTask() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToGetTaskRequestEntity(c)
 		if rq == nil {
@@ -286,7 +286,7 @@ func (h *handler) getTask() fiber.Handler {
 }
 
 func (h *handler) listTaskToolCalls() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToListTaskToolCallsRequestEntity(c)
 		if rq == nil {
@@ -309,7 +309,7 @@ func (h *handler) listTaskToolCalls() fiber.Handler {
 }
 
 func (h *handler) getTaskPlan() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToGetTaskPlanRequestEntity(c)
 		if rq == nil {
@@ -331,7 +331,7 @@ func (h *handler) getTaskPlan() fiber.Handler {
 }
 
 func (h *handler) respondToTask() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToRespondToTaskRequestEntity(c)
 		if rq == nil {
@@ -379,7 +379,7 @@ func (h *handler) respondToTask() fiber.Handler {
 // one it is working on — the fork waits as notstarted: the poller only offers
 // notstarted tasks, so an ongoing fork nobody pushed would never be delivered.
 func (h *handler) forkTask() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToForkTaskRequestEntity(c)
 		if rq == nil {
@@ -479,7 +479,7 @@ func isAdvertisedCommand(text string, commands *agentlink.CommandsSnapshot) bool
 }
 
 func (h *handler) replyToTask() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToReplyToTaskRequestEntity(c)
 		if rq == nil {
@@ -515,7 +515,7 @@ func (h *handler) replyToTask() fiber.Handler {
 }
 
 func (h *handler) updateTaskStatus() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToUpdateTaskStatusRequestEntity(c)
 		if rq == nil {
@@ -546,7 +546,7 @@ func (h *handler) updateTaskStatus() fiber.Handler {
 }
 
 func (h *handler) updateTaskOrder() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToUpdateTaskOrderRequestEntity(c)
 		if rq == nil {
@@ -577,7 +577,7 @@ func (h *handler) updateTaskOrder() fiber.Handler {
 }
 
 func (h *handler) updateTaskTitle() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToUpdateTaskTitleRequestEntity(c)
 		if rq == nil {
@@ -606,7 +606,7 @@ func (h *handler) updateTaskTitle() fiber.Handler {
 }
 
 func (h *handler) updateTaskAssignee() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToUpdateTaskAssigneeRequestEntity(c)
 		if rq == nil {
@@ -650,7 +650,7 @@ func (h *handler) updateTaskAssignee() fiber.Handler {
 }
 
 func (h *handler) moveTask() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToMoveTaskRequestEntity(c)
 		if rq == nil {
@@ -685,7 +685,7 @@ func (h *handler) moveTask() fiber.Handler {
 }
 
 func (h *handler) updateTaskAllowAllCommands() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToUpdateTaskAllowAllCommandsRequestEntity(c)
 		if rq == nil {
@@ -716,7 +716,7 @@ func (h *handler) updateTaskAllowAllCommands() fiber.Handler {
 }
 
 func (h *handler) deleteTask() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToDeleteTaskRequestEntity(c)
 		if rq == nil {
@@ -744,7 +744,7 @@ func (h *handler) deleteTask() fiber.Handler {
 // sseEvents streams real-time workspace events to the human UI.
 // Implements the standard text/event-stream protocol.
 func (h *handler) sseEvents() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		workspaceIDParam := c.Params("id")
 		workspaceID := monoflake.IDFromBase62(workspaceIDParam).Int64()
 		if workspaceID == 0 {
@@ -770,7 +770,7 @@ func (h *handler) sseEvents() fiber.Handler {
 		ch := h.bus.Subscribe(workspaceID, userID)
 
 		// Use Fiber's streaming response
-		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		c.RequestCtx().SetBodyStreamWriter(func(w *bufio.Writer) {
 			defer h.bus.Unsubscribe(workspaceID, userID, ch)
 			streamEvents(w, workspaceIDParam, ch, 30*time.Second)
 		})
@@ -813,7 +813,7 @@ func writeFrame(w *bufio.Writer, frame []byte) bool {
 	return w.Flush() == nil
 }
 func (h *handler) getAttachment() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 		taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
 		attachmentID := c.Params("attachmentID")
@@ -922,9 +922,9 @@ func rfc5987Encode(s string) string {
 }
 
 func (h *handler) sendPermissionVerdict() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		var rq view.SendPermissionVerdictRequest
-		if err := c.BodyParser(&rq); err != nil {
+		if err := c.Bind().Body(&rq); err != nil {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid request payload"})
 		}
 
@@ -949,7 +949,7 @@ func (h *handler) sendPermissionVerdict() fiber.Handler {
 			}
 		}
 
-		if err := srv.SendPermissionVerdictFrom(c.Context(), taskID, rq.RequestID, rq.Behavior, rq.DecidedBy); err != nil {
+		if err := srv.SendPermissionVerdictFrom(c.RequestCtx(), taskID, rq.RequestID, rq.Behavior, rq.DecidedBy); err != nil {
 			if strings.Contains(err.Error(), "(expired)") {
 				return c.Status(http.StatusGone).JSON(fiber.Map{"error": "This action request has expired (server was likely restarted). The agent must re-request this action."})
 			}
@@ -981,7 +981,7 @@ func (h *handler) sendPermissionVerdict() fiber.Handler {
 // Such an agent is instead refused the approval it is standing at, which is as
 // close to a stop as it can be brought.
 func (h *handler) stopTask() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 		userID := c.Locals("user_id").(string)
 
@@ -1005,7 +1005,7 @@ func (h *handler) stopTask() fiber.Handler {
 		// the human is told which it was: reporting a plain success for an
 		// agent that never stopped would leave them believing a task had
 		// ended while it is still running.
-		outcome := srv.SendCancelNotification(c.Context(), taskID)
+		outcome := srv.SendCancelNotification(c.RequestCtx(), taskID)
 		if !outcome.Acted() {
 			return c.Status(http.StatusConflict).JSON(fiber.Map{
 				"error": "the connected agent does not support being stopped",
@@ -1019,9 +1019,9 @@ func (h *handler) stopTask() fiber.Handler {
 }
 
 func (h *handler) respondToElicitation() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		var rq view.RespondToElicitationRequest
-		if err := c.BodyParser(&rq); err != nil {
+		if err := c.Bind().Body(&rq); err != nil {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid request payload"})
 		}
 		if rq.RequestID == "" || (rq.Action != "accept" && rq.Action != "decline" && rq.Action != "cancel") {
@@ -1065,7 +1065,7 @@ func (h *handler) respondToElicitation() fiber.Handler {
 }
 
 func (h *handler) updateScheduledTask() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToUpdateScheduledTaskRequestEntity(c)
 		if rq == nil {
@@ -1118,7 +1118,7 @@ func formatAttachments(atts []entity.Attachment) string {
 }
 
 func (h *handler) getGlobalTaskStats() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		userID := c.Locals("user_id").(string)
 		ctx, cancel := newContext(c)
@@ -1135,7 +1135,7 @@ func (h *handler) getGlobalTaskStats() fiber.Handler {
 }
 
 func (h *handler) getTaskOverview() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		userID := c.Locals("user_id").(string)
 		ctx, cancel := newContext(c)
@@ -1152,7 +1152,7 @@ func (h *handler) getTaskOverview() fiber.Handler {
 }
 
 func (h *handler) getWorkspaceTaskCounts() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if workspaceID == 0 {

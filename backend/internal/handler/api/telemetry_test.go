@@ -14,7 +14,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -35,7 +35,7 @@ func (m *mockTelemetryCrud) RecordTelemetry(ctx context.Context, req entity.Reco
 func newTelemetryApp(ctrl *mockTelemetryCrud) *fiber.App {
 	app := fiber.New()
 	h := &handler{crud: ctrl}
-	app.Post("/telemetry", func(c *fiber.Ctx) error {
+	app.Post("/telemetry", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.recordTelemetry()(c)
 	})

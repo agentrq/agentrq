@@ -13,7 +13,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -43,7 +43,7 @@ func TestCreateTask_LeavesTaskCreatedToTheForwarder(t *testing.T) {
 	}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: &fakeWorkspaceServer{}}, bus: bus}
 	app := fiber.New()
-	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", userID)
 		return h.createTask()(c)
 	})
@@ -69,7 +69,7 @@ func TestForkTask_LeavesTaskCreatedToTheForwarder(t *testing.T) {
 
 	h := &handler{crud: &mockCrudForkTask{}, mcpManager: &fakeMCPManager{server: &fakeWorkspaceServer{}}, bus: bus}
 	app := fiber.New()
-	app.Post(_routePathFork, func(c *fiber.Ctx) error {
+	app.Post(_routePathFork, func(c fiber.Ctx) error {
 		c.Locals("user_id", userID)
 		return h.forkTask()(c)
 	})

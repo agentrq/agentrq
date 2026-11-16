@@ -15,7 +15,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
@@ -87,7 +87,7 @@ func (m *commandCrud) RecordMachineCommand(_ context.Context, req entity.RecordM
 func commandApp(ctrl crud.Controller, reg *machinectrl.Registry) *fiber.App {
 	h := &handler{crud: ctrl, machineRegistry: reg}
 	app := fiber.New()
-	app.Use(func(ctx *fiber.Ctx) error {
+	app.Use(func(ctx fiber.Ctx) error {
 		ctx.Locals("user_id", "user-1")
 		return ctx.Next()
 	})
@@ -308,11 +308,11 @@ func TestCommandMachineRefusesWhatItCannotEncode(t *testing.T) {
 	reg, conn := connected(wire.CapabilityRestart)
 	h := &handler{machineRegistry: reg}
 	app := fiber.New()
-	app.Post("/unencodable", func(c *fiber.Ctx) error {
+	app.Post("/unencodable", func(c fiber.Ctx) error {
 		h.commandMachine(c, 11, "0.9.3", wire.CapabilityRestart, wire.OpRestart, make(chan int))
 		return nil
 	})
-	app.Post("/no-op", func(c *fiber.Ctx) error {
+	app.Post("/no-op", func(c fiber.Ctx) error {
 		h.commandMachine(c, 11, "0.9.3", wire.CapabilityRestart, "", struct{}{})
 		return nil
 	})

@@ -11,7 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
@@ -45,7 +45,7 @@ func (k *killCrud) RecordSessionKill(_ context.Context, req entity.RecordSession
 func killApp(c crud.Controller, reg *machinectrl.Registry) *fiber.App {
 	h := &handler{crud: c, machineRegistry: reg}
 	app := fiber.New()
-	app.Use(func(ctx *fiber.Ctx) error {
+	app.Use(func(ctx fiber.Ctx) error {
 		ctx.Locals("user_id", "user-1")
 		return ctx.Next()
 	})

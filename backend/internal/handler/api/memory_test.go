@@ -15,7 +15,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -45,7 +45,7 @@ func memoryApp(c crud.Controller) *fiber.App {
 	h := &handler{crud: c}
 	app := fiber.New()
 	// The session's user, exactly as the auth middleware supplies it.
-	app.Use(func(ctx *fiber.Ctx) error {
+	app.Use(func(ctx fiber.Ctx) error {
 		ctx.Locals("user_id", "user-1")
 		return ctx.Next()
 	})
@@ -150,7 +150,7 @@ func TestGetWorkspaceMemory_DecodesTheName(t *testing.T) {
 //
 // The request is built by hand: httptest.NewRequest parses the URL and refuses
 // a malformed escape outright, so the only way to send one is to set the raw
-// request line.
+// request line: Fiber's Test writes an opaque URL into it as it stands.
 func TestGetWorkspaceMemory_RejectsANameItCannotDecode(t *testing.T) {
 	c := &memoryCrud{}
 
@@ -159,9 +159,7 @@ func TestGetWorkspaceMemory_RejectsANameItCannotDecode(t *testing.T) {
 		"/workspaces/" + testMemoryWorkspaceID + "/memories/%",
 	} {
 		req := httptest.NewRequest(http.MethodGet, "/workspaces/"+testMemoryWorkspaceID+"/memories/placeholder", nil)
-		req.RequestURI = raw
-		req.URL.Path = raw
-		req.URL.RawPath = raw
+		req.URL.Opaque = raw
 
 		res, err := memoryApp(c).Test(req)
 		if err != nil {

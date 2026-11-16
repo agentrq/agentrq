@@ -10,7 +10,7 @@ import (
 	pushctrl "github.com/agentrq/agentrq/backend/internal/controller/push"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -24,14 +24,14 @@ func (h *handler) registerPushRoutes(pushCtrl pushctrl.Controller) {
 }
 
 func (h *handler) getVAPIDPublicKey(pushCtrl pushctrl.Controller) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		return c.Send(mapper.FromVAPIDPublicKeyToHTTPResponse(pushCtrl.VAPIDPublicKey()))
 	}
 }
 
 func (h *handler) pushSubscribe(pushCtrl pushctrl.Controller) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToSavePushSubscriptionRequestEntity(c)
 		if rq == nil {
@@ -70,7 +70,7 @@ func (h *handler) pushSubscribe(pushCtrl pushctrl.Controller) fiber.Handler {
 }
 
 func (h *handler) pushUnsubscribe(pushCtrl pushctrl.Controller) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToDeletePushSubscriptionRequestEntity(c)
 		if rq == nil {
@@ -95,7 +95,7 @@ func (h *handler) pushUnsubscribe(pushCtrl pushctrl.Controller) fiber.Handler {
 }
 
 func (h *handler) getPushSubscription(pushCtrl pushctrl.Controller) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		workspaceIDStr := c.Query("workspaceId")
 		endpoint := c.Query("endpoint")
@@ -132,7 +132,7 @@ func (h *handler) getPushSubscription(pushCtrl pushctrl.Controller) fiber.Handle
 }
 
 func (h *handler) pushUnsubscribeByWorkspace(pushCtrl pushctrl.Controller) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToDeletePushSubscriptionByWorkspaceRequestEntity(c)
 		if rq == nil {

@@ -15,7 +15,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -41,7 +41,7 @@ func (l *latencyCrud) GetTaskLatencyStats(_ context.Context, req entity.GetTaskL
 func latencyApp(c crud.Controller) *fiber.App {
 	h := &handler{crud: c}
 	app := fiber.New()
-	app.Use(func(ctx *fiber.Ctx) error {
+	app.Use(func(ctx fiber.Ctx) error {
 		ctx.Locals("user_id", "user-1")
 		return ctx.Next()
 	})

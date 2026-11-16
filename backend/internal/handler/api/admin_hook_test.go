@@ -20,7 +20,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/hookrunner"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -67,7 +67,7 @@ func adminHookApp(hooks *fakeHooks) (*fiber.App, map[string]string) {
 	app := fiber.New()
 	h := &handler{rootToken: "s3cret", hooks: hooks, basePath: "/base"}
 	h.registerAdminRoutes(app)
-	app.Use(func(c *fiber.Ctx) error { return c.SendStatus(http.StatusForbidden) })
+	app.Use(func(c fiber.Ctx) error { return c.SendStatus(http.StatusForbidden) })
 	return app, map[string]string{"Authorization": "Bearer " + h.adminToken(time.Now().Add(time.Minute))}
 }
 

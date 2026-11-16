@@ -12,7 +12,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -43,7 +43,7 @@ var (
 )
 
 func (h *handler) listTeamWorkspaces() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeam, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		ws, err := h.teams.ListTeamWorkspaces(ctx, sessionUser(c), ids[0])
@@ -53,7 +53,7 @@ func (h *handler) listTeamWorkspaces() fiber.Handler {
 
 // teamTasksPage is the page a team's task list asks for: 10 tasks unless it
 // says, and never more than 50, as for the account's own list.
-func teamTasksPage(c *fiber.Ctx) (limit, offset int) {
+func teamTasksPage(c fiber.Ctx) (limit, offset int) {
 	limit, _ = strconv.Atoi(c.Query("limit"))
 	if limit <= 0 {
 		limit = 10
@@ -63,7 +63,7 @@ func teamTasksPage(c *fiber.Ctx) (limit, offset int) {
 }
 
 func (h *handler) listTeamTasks() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeam, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		rq := entity.ListTeamTasksRequest{UserID: sessionUser(c), TeamID: ids[0], Workspace: c.Query("workspace")}
 		if s := c.Query("status"); s != "" {
 			rq.Status = strings.Split(s, ",")
@@ -84,7 +84,7 @@ func (h *handler) listTeamTasks() fiber.Handler {
 // getTeamStats is a workspace's analytics, in its shape, summed over the
 // team's workspaces or over the team workspace ?workspace= names.
 func (h *handler) getTeamStats() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeam, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		from, _ := strconv.ParseInt(c.Query("from"), 10, 64)
 		to, _ := strconv.ParseInt(c.Query("to"), 10, 64)
 		ctx, cancel := newContext(c)
@@ -100,7 +100,7 @@ func (h *handler) getTeamStats() fiber.Handler {
 }
 
 func (h *handler) getTeamTask() fiber.Handler {
-	return teamRoute(teamPathTask, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTask, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		d, err := h.teamView.GetTask(ctx, sessionUser(c), ids[0], ids[1])
@@ -111,7 +111,7 @@ func (h *handler) getTeamTask() fiber.Handler {
 // getTeamAttachment serves a file of a teammate's task as the owner's own
 // route does.
 func (h *handler) getTeamAttachment() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		ids, ok := pathIDs(c, teamPathTask...)
 		if !ok || c.Params("attachmentId") == "" {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
@@ -128,7 +128,7 @@ func (h *handler) getTeamAttachment() fiber.Handler {
 }
 
 func (h *handler) cloneTeamTask() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		ids, ok := pathIDs(c, teamPathTask...)
 		var rq view.CloneTeamTaskRequest
 		if !ok || body(c, &rq) != nil {
@@ -159,7 +159,7 @@ var (
 )
 
 func (h *handler) listTeammateMemories() fiber.Handler {
-	return teamRoute(teamPathWorkspace, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathWorkspace, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		ms, err := h.teamView.ListTeammateMemories(ctx, sessionUser(c), ids[0])
@@ -168,7 +168,7 @@ func (h *handler) listTeammateMemories() fiber.Handler {
 }
 
 func (h *handler) setTeammateMemory() fiber.Handler {
-	return teamRoute(teamPathTeammate, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeammate, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		var rq view.SetTeammateMemoryRequest
 		if err := body(c, &rq); err != nil || rq.Included == nil {
 			return nil, errBadRequest
@@ -181,7 +181,7 @@ func (h *handler) setTeammateMemory() fiber.Handler {
 }
 
 func (h *handler) listTeammateMemoryNames() fiber.Handler {
-	return teamRoute(teamPathTeammateWorkspace, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeammateWorkspace, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		rs, err := h.teamView.ListTeammateMemoryNames(ctx, sessionUser(c), ids[0], ids[1])
@@ -193,7 +193,7 @@ func (h *handler) listTeammateMemoryNames() fiber.Handler {
 }
 
 func (h *handler) getTeammateMemory() fiber.Handler {
-	return teamRoute(teamPathTeammateWorkspace, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeammateWorkspace, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		name, err := url.PathUnescape(c.Params("name"))
 		if err != nil {
 			return nil, errBadRequest
@@ -209,7 +209,7 @@ func (h *handler) getTeammateMemory() fiber.Handler {
 }
 
 func (h *handler) listTeamPanoDocs() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeam, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		docs, err := h.teamView.ListPanoDocs(ctx, sessionUser(c), ids[0])
@@ -218,7 +218,7 @@ func (h *handler) listTeamPanoDocs() fiber.Handler {
 }
 
 func (h *handler) getTeamPanoDoc() fiber.Handler {
-	return teamRoute(teamPathPanoDoc, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathPanoDoc, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		doc, err := h.teamView.GetPanoDoc(ctx, sessionUser(c), ids[0], ids[1])
@@ -229,7 +229,7 @@ func (h *handler) getTeamPanoDoc() fiber.Handler {
 // getTeamPanoFile serves a shared doc's file, sandboxed as a task's
 // attachment is.
 func (h *handler) getTeamPanoFile() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		ids, ok := pathIDs(c, teamPathPanoFile...)
 		if !ok {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)

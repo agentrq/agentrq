@@ -9,16 +9,16 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
 // panoDocID reads the doc id from the path; 0 when it is not one.
-func panoDocID(c *fiber.Ctx) int64 {
+func panoDocID(c fiber.Ctx) int64 {
 	return monoflake.IDFromBase62(c.Params("id")).Int64()
 }
 
-func FromHTTPRequestToGetPanoDocRequestEntity(c *fiber.Ctx) *entity.GetPanoDocRequest {
+func FromHTTPRequestToGetPanoDocRequestEntity(c fiber.Ctx) *entity.GetPanoDocRequest {
 	id := panoDocID(c)
 	if id == 0 {
 		return nil
@@ -28,7 +28,7 @@ func FromHTTPRequestToGetPanoDocRequestEntity(c *fiber.Ctx) *entity.GetPanoDocRe
 
 // FromHTTPRequestToSavePanoDocRequestEntity reads a new doc, or with an id in
 // the path a doc's new version.
-func FromHTTPRequestToSavePanoDocRequestEntity(c *fiber.Ctx) *entity.SavePanoDocRequest {
+func FromHTTPRequestToSavePanoDocRequestEntity(c fiber.Ctx) *entity.SavePanoDocRequest {
 	var id int64
 	if c.Params("id") != "" {
 		if id = panoDocID(c); id == 0 {
@@ -36,13 +36,13 @@ func FromHTTPRequestToSavePanoDocRequestEntity(c *fiber.Ctx) *entity.SavePanoDoc
 		}
 	}
 	var body view.SavePanoDocRequest
-	if err := c.BodyParser(&body); err != nil {
+	if err := c.Bind().Body(&body); err != nil {
 		return nil
 	}
 	return &entity.SavePanoDocRequest{ID: id, Version: body.Version, Title: body.Title, Markdown: body.Markdown, TTLDays: body.TTLDays, Color: body.Color, Files: fromPanoUploadViews(body.Files)}
 }
 
-func FromHTTPRequestToDeletePanoDocRequestEntity(c *fiber.Ctx) *entity.DeletePanoDocRequest {
+func FromHTTPRequestToDeletePanoDocRequestEntity(c fiber.Ctx) *entity.DeletePanoDocRequest {
 	id := panoDocID(c)
 	if id == 0 {
 		return nil
@@ -50,25 +50,25 @@ func FromHTTPRequestToDeletePanoDocRequestEntity(c *fiber.Ctx) *entity.DeletePan
 	return &entity.DeletePanoDocRequest{ID: id}
 }
 
-func FromHTTPRequestToAddPanoCommentRequestEntity(c *fiber.Ctx) *entity.AddPanoCommentRequest {
+func FromHTTPRequestToAddPanoCommentRequestEntity(c fiber.Ctx) *entity.AddPanoCommentRequest {
 	id := panoDocID(c)
 	if id == 0 {
 		return nil
 	}
 	var body view.AddPanoCommentRequest
-	if err := c.BodyParser(&body); err != nil {
+	if err := c.Bind().Body(&body); err != nil {
 		return nil
 	}
 	return &entity.AddPanoCommentRequest{ID: id, Body: body.Body}
 }
 
-func FromHTTPRequestToAttachPanoFilesRequestEntity(c *fiber.Ctx) *entity.AttachPanoFilesRequest {
+func FromHTTPRequestToAttachPanoFilesRequestEntity(c fiber.Ctx) *entity.AttachPanoFilesRequest {
 	id := panoDocID(c)
 	if id == 0 {
 		return nil
 	}
 	var body view.AttachPanoFilesRequest
-	if err := c.BodyParser(&body); err != nil {
+	if err := c.Bind().Body(&body); err != nil {
 		return nil
 	}
 	return &entity.AttachPanoFilesRequest{ID: id, Files: fromPanoUploadViews(body.Files)}

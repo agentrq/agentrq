@@ -10,7 +10,7 @@ import (
 
 	_crud "github.com/agentrq/agentrq/backend/internal/controller/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 const _routePathTelemetry = "/telemetry"
@@ -25,7 +25,7 @@ func (h *handler) registerTelemetryRoutes() error {
 }
 
 func (h *handler) recordTelemetry() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 
 		// A rejected mapping means an unknown action name or an unparseable

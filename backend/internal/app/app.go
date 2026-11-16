@@ -75,11 +75,11 @@ import (
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
 	"github.com/agentrq/agentrq/backend/internal/service/smtp"
 	"github.com/agentrq/agentrq/backend/internal/service/telemetryaggregator"
-	"github.com/gofiber/contrib/fiberzerolog"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/adaptor"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/filesystem"
+	fiberzerolog "github.com/gofiber/contrib/v3/zerolog"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/adaptor"
+	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -725,13 +725,12 @@ func New(cfg Config) (*App, error) {
 
 	// ── Fiber & Routing ────────────────────────────────────────────────────────
 	fiberApp := fiber.New(fiber.Config{
-		DisableStartupMessage: true,
-		BodyLimit:             4 * 1024 * 1024, // 4 MB
+		BodyLimit: 4 * 1024 * 1024, // 4 MB
 	})
 	fiberApp.Use(cors.New(cors.Config{
-		AllowOrigins:  "*",
-		AllowHeaders:  "Origin, Content-Type, Accept, mcp-session-id, mcp-protocol-version",
-		ExposeHeaders: "mcp-session-id, mcp-protocol-version",
+		AllowOrigins:  []string{"*"},
+		AllowHeaders:  []string{"Origin", "Content-Type", "Accept", "mcp-session-id", "mcp-protocol-version"},
+		ExposeHeaders: []string{"mcp-session-id", "mcp-protocol-version"},
 	}))
 	fiberApp.Use(fiberzerolog.New(fiberzerolog.Config{
 		Logger: &zlog.Logger,
@@ -743,7 +742,7 @@ func New(cfg Config) (*App, error) {
 			"error",
 			"status",
 		},
-		Next: func(c *fiber.Ctx) bool {
+		Next: func(c fiber.Ctx) bool {
 			return c.Method() == fiber.MethodOptions
 		},
 	}))
@@ -836,7 +835,7 @@ func New(cfg Config) (*App, error) {
 	}
 
 	// SPA Fallback
-	fiberApp.Get("/*", func(c *fiber.Ctx) error {
+	fiberApp.Get("/*", func(c fiber.Ctx) error {
 		path := c.Path()
 		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp") || strings.HasPrefix(path, "/.well-known/") {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Not Found"})
@@ -1118,9 +1117,11 @@ func namesAFile(path string) bool {
 // staticHandler serves the web app's files from web, each as its .br or .gz
 // copy when the build carries one and the client accepts it.
 func staticHandler(web fs.FS) fiber.Handler {
-	root := http.FS(web)
-	files := filesystem.New(filesystem.Config{Root: root})
-	return func(c *fiber.Ctx) error {
+	// A miss goes on to the routes behind as a 404, which the app shell keeps.
+	files := static.New("", static.Config{FS: web, NotFoundHandler: func(c fiber.Ctx) error {
+		return c.Status(fiber.StatusNotFound).Next()
+	}})
+	return func(c fiber.Ctx) error {
 		if skipStaticHandler(c.Path()) {
 			return c.Next()
 		}
@@ -1137,7 +1138,7 @@ func staticHandler(web fs.FS) fiber.Handler {
 			if _, err := fs.Stat(web, name+enc[1]); err != nil {
 				continue
 			}
-			err := filesystem.SendFile(c, root, name+enc[1])
+			err := c.SendFile(name+enc[1], fiber.SendFile{FS: web})
 			c.Type(filepath.Ext(name))
 			c.Set(fiber.HeaderContentEncoding, enc[0])
 			c.Vary(fiber.HeaderAcceptEncoding)

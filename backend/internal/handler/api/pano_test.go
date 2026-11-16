@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
@@ -80,7 +80,7 @@ func (p *panoCrud) AttachPanoFiles(_ context.Context, rq entity.AttachPanoFilesR
 func doPano(t *testing.T, c crud.Controller, method, path, body string) (int, string) {
 	t.Helper()
 	app := fiber.New()
-	app.Use(func(ctx *fiber.Ctx) error {
+	app.Use(func(ctx fiber.Ctx) error {
 		ctx.Locals("user_id", "user-1")
 		return ctx.Next()
 	})

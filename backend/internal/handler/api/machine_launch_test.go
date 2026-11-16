@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
@@ -97,7 +97,7 @@ func acpGatewayApp(c crud.Controller, reg *machinectrl.Registry) *fiber.App {
 func acpGatewayAppCached(c crud.Controller, reg *machinectrl.Registry, cache *machinectrl.LookupCache) *fiber.App {
 	h := &handler{crud: c, machineRegistry: reg, acpLookups: cache}
 	app := fiber.New()
-	app.Use(func(ctx *fiber.Ctx) error {
+	app.Use(func(ctx fiber.Ctx) error {
 		ctx.Locals("user_id", "user-1")
 		return ctx.Next()
 	})
@@ -468,7 +468,7 @@ func withLauncher(h *handler) *handler {
 
 func launchApp(h *handler, userID string) *fiber.App {
 	app := fiber.New()
-	app.Post("/api/v1/workspaces/:id/agent", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/agent", func(c fiber.Ctx) error {
 		c.Locals("user_id", userID)
 		return h.launchAgent()(c)
 	})

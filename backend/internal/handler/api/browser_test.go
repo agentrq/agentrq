@@ -12,7 +12,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 )
@@ -20,7 +20,7 @@ import (
 func browserTicketApp(tokens auth.TokenService) *fiber.App {
 	h := &handler{tokenSvc: tokens}
 	app := fiber.New()
-	app.Use(func(ctx *fiber.Ctx) error {
+	app.Use(func(ctx fiber.Ctx) error {
 		ctx.Locals("user_id", "user-1")
 		return ctx.Next()
 	})

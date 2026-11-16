@@ -10,13 +10,13 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
 // FromHTTPRequestToWorkspaceTeamSkillsRequestEntity reads the workspace and
 // ?q=.
-func FromHTTPRequestToWorkspaceTeamSkillsRequestEntity(c *fiber.Ctx) *entity.WorkspaceTeamSkillsRequest {
+func FromHTTPRequestToWorkspaceTeamSkillsRequestEntity(c fiber.Ctx) *entity.WorkspaceTeamSkillsRequest {
 	workspaceID, _, ok := skillParams(c, false)
 	if !ok || workspaceID == 0 {
 		return nil
@@ -26,11 +26,11 @@ func FromHTTPRequestToWorkspaceTeamSkillsRequestEntity(c *fiber.Ctx) *entity.Wor
 
 // FromHTTPRequestToSetWorkspaceTeamSkillRequestEntity reads {"on": bool},
 // which must be given.
-func FromHTTPRequestToSetWorkspaceTeamSkillRequestEntity(c *fiber.Ctx) *entity.SetWorkspaceTeamSkillRequest {
+func FromHTTPRequestToSetWorkspaceTeamSkillRequestEntity(c fiber.Ctx) *entity.SetWorkspaceTeamSkillRequest {
 	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	skillID := monoflake.IDFromBase62(c.Params("skillId")).Int64()
 	var rq view.SetWorkspaceTeamSkillRequest
-	if workspaceID == 0 || skillID == 0 || c.BodyParser(&rq) != nil || rq.On == nil {
+	if workspaceID == 0 || skillID == 0 || c.Bind().Body(&rq) != nil || rq.On == nil {
 		return nil
 	}
 	return &entity.SetWorkspaceTeamSkillRequest{WorkspaceID: workspaceID, SkillID: skillID, On: *rq.On}
@@ -38,10 +38,10 @@ func FromHTTPRequestToSetWorkspaceTeamSkillRequestEntity(c *fiber.Ctx) *entity.S
 
 // FromHTTPRequestToGiveSkillToTeamRequestEntity reads the skill from the
 // path and the team workspace from the body.
-func FromHTTPRequestToGiveSkillToTeamRequestEntity(c *fiber.Ctx) *entity.GiveSkillToTeamRequest {
+func FromHTTPRequestToGiveSkillToTeamRequestEntity(c fiber.Ctx) *entity.GiveSkillToTeamRequest {
 	workspaceID, name, ok := skillParams(c, true)
 	var rq view.GiveSkillToTeamRequest
-	if !ok || workspaceID == 0 || c.BodyParser(&rq) != nil {
+	if !ok || workspaceID == 0 || c.Bind().Body(&rq) != nil {
 		return nil
 	}
 	tw := monoflake.IDFromBase62(rq.TeamWorkspaceID).Int64()
@@ -53,7 +53,7 @@ func FromHTTPRequestToGiveSkillToTeamRequestEntity(c *fiber.Ctx) *entity.GiveSki
 
 // FromHTTPRequestToTeamSkillsRequestEntity reads the team and team workspace
 // from the path, and the skill and file path where the route has them.
-func FromHTTPRequestToTeamSkillsRequestEntity(c *fiber.Ctx) *entity.TeamSkillsRequest {
+func FromHTTPRequestToTeamSkillsRequestEntity(c fiber.Ctx) *entity.TeamSkillsRequest {
 	rq := &entity.TeamSkillsRequest{
 		TeamID:          monoflake.IDFromBase62(c.Params("teamId")).Int64(),
 		TeamWorkspaceID: monoflake.IDFromBase62(c.Params("teamWorkspaceId")).Int64(),
@@ -74,19 +74,19 @@ func FromHTTPRequestToTeamSkillsRequestEntity(c *fiber.Ctx) *entity.TeamSkillsRe
 	return rq
 }
 
-func FromHTTPRequestToSaveTeamSkillFileRequestEntity(c *fiber.Ctx) *entity.SaveTeamSkillFileRequest {
+func FromHTTPRequestToSaveTeamSkillFileRequestEntity(c fiber.Ctx) *entity.SaveTeamSkillFileRequest {
 	at := FromHTTPRequestToTeamSkillsRequestEntity(c)
 	var rq view.SaveTeamSkillFileRequest
-	if at == nil || c.BodyParser(&rq) != nil {
+	if at == nil || c.Bind().Body(&rq) != nil {
 		return nil
 	}
 	return &entity.SaveTeamSkillFileRequest{TeamSkillsRequest: *at, Content: rq.Content, Version: rq.Version}
 }
 
-func FromHTTPRequestToImportTeamSkillsRequestEntity(c *fiber.Ctx) *entity.ImportTeamSkillsRequest {
+func FromHTTPRequestToImportTeamSkillsRequestEntity(c fiber.Ctx) *entity.ImportTeamSkillsRequest {
 	at := FromHTTPRequestToTeamSkillsRequestEntity(c)
 	var rq view.ImportTeamSkillsRequest
-	if at == nil || c.BodyParser(&rq) != nil || rq.URL == "" {
+	if at == nil || c.Bind().Body(&rq) != nil || rq.URL == "" {
 		return nil
 	}
 	return &entity.ImportTeamSkillsRequest{TeamSkillsRequest: *at, URL: rq.URL, Overwrite: rq.Overwrite, Skills: rq.Skills}

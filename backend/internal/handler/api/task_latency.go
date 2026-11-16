@@ -8,14 +8,14 @@ import (
 	"net/http"
 
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	zlog "github.com/rs/zerolog/log"
 )
 
 // getTaskLatencyStats serves how long closed tasks took, for one workspace
 // (/workspaces/:id/stats/latency) or the whole account (/stats/latency).
 func (h *handler) getTaskLatencyStats(workspaceScoped bool) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToGetTaskLatencyStatsRequestEntity(c, workspaceScoped)
 		if rq == nil {

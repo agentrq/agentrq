@@ -14,7 +14,7 @@ import (
 
 	pushctrl "github.com/agentrq/agentrq/backend/internal/controller/push"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // ── mock push controller ──────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ func TestPushSubscribe_ForbiddenWhenNotOwner(t *testing.T) {
 	pushCtrl := &mockPushController{}
 
 	h := &handler{crud: crudCtrl}
-	app.Post("/push/subscribe", func(c *fiber.Ctx) error {
+	app.Post("/push/subscribe", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.pushSubscribe(pushCtrl)(c)
 	})
@@ -75,7 +75,7 @@ func TestPushSubscribe_CreatesWhenOwner(t *testing.T) {
 	pushCtrl := &mockPushController{}
 
 	h := &handler{crud: crudCtrl}
-	app.Post("/push/subscribe", func(c *fiber.Ctx) error {
+	app.Post("/push/subscribe", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.pushSubscribe(pushCtrl)(c)
 	})
@@ -102,7 +102,7 @@ func TestPushSubscribe_InvalidPayload(t *testing.T) {
 	h := &handler{}
 	pushCtrl := &mockPushController{}
 
-	app.Post("/push/subscribe", func(c *fiber.Ctx) error {
+	app.Post("/push/subscribe", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.pushSubscribe(pushCtrl)(c)
 	})
@@ -124,7 +124,7 @@ func TestGetPushSubscription_ForbiddenWhenNotOwner(t *testing.T) {
 	pushCtrl := &mockPushController{}
 
 	h := &handler{crud: crudCtrl}
-	app.Get("/push/subscription", func(c *fiber.Ctx) error {
+	app.Get("/push/subscription", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.getPushSubscription(pushCtrl)(c)
 	})
@@ -157,7 +157,7 @@ func TestGetPushSubscription_ReturnsStatus(t *testing.T) {
 			pushCtrl := &mockPushController{}
 
 			h := &handler{crud: crudCtrl}
-			app.Get("/push/subscription", func(c *fiber.Ctx) error {
+			app.Get("/push/subscription", func(c fiber.Ctx) error {
 				c.Locals("user_id", "user1")
 				return h.getPushSubscription(pushCtrl)(c)
 			})
@@ -184,7 +184,7 @@ func TestGetPushSubscription_MissingParams(t *testing.T) {
 	h := &handler{}
 	pushCtrl := &mockPushController{}
 
-	app.Get("/push/subscription", func(c *fiber.Ctx) error {
+	app.Get("/push/subscription", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.getPushSubscription(pushCtrl)(c)
 	})
@@ -205,7 +205,7 @@ func TestPushUnsubscribeByWorkspace_ForbiddenWhenNotOwner(t *testing.T) {
 	pushCtrl := &mockPushController{}
 
 	h := &handler{crud: crudCtrl}
-	app.Delete("/push/subscription", func(c *fiber.Ctx) error {
+	app.Delete("/push/subscription", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.pushUnsubscribeByWorkspace(pushCtrl)(c)
 	})
@@ -230,7 +230,7 @@ func TestPushUnsubscribeByWorkspace_NoContentWhenOwner(t *testing.T) {
 	pushCtrl := &mockPushController{}
 
 	h := &handler{crud: crudCtrl}
-	app.Delete("/push/subscription", func(c *fiber.Ctx) error {
+	app.Delete("/push/subscription", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.pushUnsubscribeByWorkspace(pushCtrl)(c)
 	})
@@ -257,7 +257,7 @@ func TestPushUnsubscribeByWorkspace_InvalidPayload(t *testing.T) {
 	h := &handler{}
 	pushCtrl := &mockPushController{}
 
-	app.Delete("/push/subscription", func(c *fiber.Ctx) error {
+	app.Delete("/push/subscription", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.pushUnsubscribeByWorkspace(pushCtrl)(c)
 	})

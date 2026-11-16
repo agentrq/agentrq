@@ -7,13 +7,15 @@ package api
 import (
 	"context"
 	"errors"
-	"github.com/agentrq/agentrq/backend/internal/controller/appconfig"
-	"github.com/agentrq/agentrq/backend/internal/controller/loginicon"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/agentrq/agentrq/backend/internal/controller/appconfig"
+	"github.com/agentrq/agentrq/backend/internal/controller/loginicon"
 
 	zlog "github.com/rs/zerolog/log"
 
@@ -34,7 +36,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -242,14 +244,14 @@ func New(p Params) (Handler, error) {
 	return h, nil
 }
 
-func newContext(c *fiber.Ctx) (context.Context, context.CancelFunc) {
+func newContext(c fiber.Ctx) (context.Context, context.CancelFunc) {
 	withLocals := func(ctx context.Context) context.Context {
 		if claims, ok := c.Locals("claims").(*auth.Claims); ok && claims != nil {
 			ctx = context.WithValue(ctx, auth.CtxKeyMCPClaims, claims)
 		}
 		return ctx
 	}
-	deadline, ok := c.Context().Deadline()
+	deadline, ok := c.RequestCtx().Deadline()
 	if ok {
 		ctx, cancel := context.WithDeadline(context.Background(), deadline)
 		return withLocals(ctx), cancel
@@ -317,7 +319,9 @@ func (h *handler) sessionCookie(name, value string, expires time.Time, path stri
 		SameSite: "Lax",
 		Path:     path,
 	}
-	if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
+	// An IP or a host:port is no cookie domain, and Fiber drops a cookie that
+	// names one, so the sign-in would never stick: those get a host-only cookie.
+	if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") && !strings.Contains(h.domain, ":") && net.ParseIP(h.domain) == nil {
 		cookie.Domain = "." + h.domain
 	}
 	return cookie
@@ -328,7 +332,7 @@ func (h *handler) sessionCookie(name, value string, expires time.Time, path stri
 // One function rather than a block copied into each sign-in path: three of
 // those already existed, and a fourth that set only the access cookie would
 // leave that provider's users signed out after a day with nothing to show why.
-func (h *handler) issueSession(c *fiber.Ctx, accessToken, userID string) {
+func (h *handler) issueSession(c fiber.Ctx, accessToken, userID string) {
 	now := time.Now()
 	c.Cookie(h.sessionCookie(_accessCookie, accessToken, now.Add(_accessTokenTTL), "/"))
 
@@ -347,7 +351,7 @@ func (h *handler) issueSession(c *fiber.Ctx, accessToken, userID string) {
 // clearSession expires both halves. The refresh cookie has to be cleared at the
 // path it was set on; a deletion at "/" would not match it and would leave the
 // session renewable after signing out.
-func (h *handler) clearSession(c *fiber.Ctx) {
+func (h *handler) clearSession(c fiber.Ctx) {
 	expired := time.Now().Add(-1 * time.Hour)
 	c.Cookie(h.sessionCookie(_accessCookie, "", expired, "/"))
 	c.Cookie(h.sessionCookie(_refreshCookie, "", expired, h.refreshCookiePath()))
@@ -358,7 +362,7 @@ func (h *handler) clearSession(c *fiber.Ctx) {
 // Both cookies are reissued, so a session in regular use never reaches the idle
 // limit while one that is genuinely abandoned still expires.
 func (h *handler) refreshSession() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 
 		claims, err := h.tokenSvc.ValidateRefreshToken(c.Cookies(_refreshCookie))
@@ -393,14 +397,14 @@ func (h *handler) refreshSession() fiber.Handler {
 }
 
 func (h *handler) logout() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		h.clearSession(c)
 		return c.SendStatus(fiber.StatusNoContent)
 	}
 }
 
 func (h *handler) getAuthenticatedUser() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		getLocalString := func(key string) string {
 			if v := c.Locals(key); v != nil {
 				if s, ok := v.(string); ok {
@@ -427,7 +431,7 @@ func (h *handler) getAuthenticatedUser() fiber.Handler {
 // auth middleware and token generation now use internal/service/auth common logic
 
 func (h *handler) authMiddleware() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		tokenStr := c.Cookies("at")
 		if tokenStr == "" {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
@@ -448,7 +452,7 @@ func (h *handler) authMiddleware() fiber.Handler {
 }
 
 func (h *handler) authConfig() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"rootLoginEnabled":   h.rootLoginEnabled,
 			"githubLoginEnabled": h.githubClientID != "",
@@ -461,7 +465,7 @@ func (h *handler) authConfig() fiber.Handler {
 }
 
 func (h *handler) rootLogin() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		if !h.rootLoginEnabled {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "root login disabled"})
 		}
@@ -470,7 +474,7 @@ func (h *handler) rootLogin() fiber.Handler {
 			RootToken string `json:"rootToken"`
 		}
 		var req RootLoginRequest
-		if err := c.BodyParser(&req); err != nil {
+		if err := c.Bind().Body(&req); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid payload"})
 		}
 
@@ -509,7 +513,7 @@ func (h *handler) rootLogin() fiber.Handler {
 }
 
 func (h *handler) googleLogin() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		defaultRedirect := "/"
 		if h.basePath != "" {
 			defaultRedirect = h.basePath + "/"
@@ -519,12 +523,12 @@ func (h *handler) googleLogin() fiber.Handler {
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate state"})
 		}
-		return c.Redirect(h.auth.GetAuthURL(state))
+		return c.Redirect().Status(fiber.StatusFound).To(h.auth.GetAuthURL(state))
 	}
 }
 
 func (h *handler) googleCallback() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		code := c.Query("code")
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -587,12 +591,12 @@ func (h *handler) googleCallback() fiber.Handler {
 			}
 		}
 
-		return c.Redirect(redirectURL)
+		return c.Redirect().Status(fiber.StatusFound).To(redirectURL)
 	}
 }
 
 func (h *handler) githubLogin() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		if h.githubClientID == "" {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "github login disabled"})
 		}
@@ -605,12 +609,12 @@ func (h *handler) githubLogin() fiber.Handler {
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate state"})
 		}
-		return c.Redirect(h.githubAuth.GetAuthURL(state))
+		return c.Redirect().Status(fiber.StatusFound).To(h.githubAuth.GetAuthURL(state))
 	}
 }
 
 func (h *handler) githubCallback() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		code := c.Query("code")
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -665,15 +669,15 @@ func (h *handler) githubCallback() fiber.Handler {
 			}
 		}
 
-		return c.Redirect(redirectURL)
+		return c.Redirect().Status(fiber.StatusFound).To(redirectURL)
 	}
 }
 
 // refuseSignIn sends a provider sign-in the server will not accept back to
 // the login page, which shows the message for code. Only a fixed code goes
 // on the URL, so a crafted link cannot put its own words on the page.
-func (h *handler) refuseSignIn(c *fiber.Ctx, code string) error {
-	return c.Redirect(h.basePath + "/login?error=" + code)
+func (h *handler) refuseSignIn(c fiber.Ctx, code string) error {
+	return c.Redirect().Status(fiber.StatusFound).To(h.basePath + "/login?error=" + code)
 }
 
 // sanitizeRedirectURL validates a redirect URL to prevent open redirect attacks.
@@ -751,9 +755,9 @@ func (h *handler) registerWorkspaceRoutes() error {
 // can do this" and "that model is not on offer" it was, is the whole content of
 // the answer.
 func (h *handler) setAgentModel() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		var rq view.SetAgentModelRequest
-		if err := c.BodyParser(&rq); err != nil {
+		if err := c.Bind().Body(&rq); err != nil {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid request payload"})
 		}
 		if strings.TrimSpace(rq.ModelID) == "" {
@@ -774,7 +778,7 @@ func (h *handler) setAgentModel() fiber.Handler {
 			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "mcp server not found"})
 		}
 
-		switch err := srv.SetAgentModel(c.Context(), rq.ModelID); {
+		switch err := srv.SetAgentModel(c.RequestCtx(), rq.ModelID); {
 		case errors.Is(err, mcpctrl.ErrModelSelectUnsupported):
 			return c.Status(http.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 		case errors.Is(err, mcpctrl.ErrModelNotOffered):
@@ -813,9 +817,9 @@ func (h *handler) setAgentModel() fiber.Handler {
 // setAgentEffort asks the workspace's connected agent to switch reasoning
 // level, refusing with the same reasons setAgentModel gives.
 func (h *handler) setAgentEffort() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		var rq view.SetAgentEffortRequest
-		if err := c.BodyParser(&rq); err != nil {
+		if err := c.Bind().Body(&rq); err != nil {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid request payload"})
 		}
 		if strings.TrimSpace(rq.Effort) == "" {
@@ -836,7 +840,7 @@ func (h *handler) setAgentEffort() fiber.Handler {
 			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "mcp server not found"})
 		}
 
-		switch err := srv.SetAgentEffort(c.Context(), rq.Effort); {
+		switch err := srv.SetAgentEffort(c.RequestCtx(), rq.Effort); {
 		case errors.Is(err, mcpctrl.ErrEffortSelectUnsupported), errors.Is(err, mcpctrl.ErrEffortSetNotDelivered):
 			return c.Status(http.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 		case errors.Is(err, mcpctrl.ErrEffortNotOffered):
@@ -873,9 +877,9 @@ func (h *handler) setAgentEffort() fiber.Handler {
 // only thing that knows which of the three happened. Returning the requested
 // value as though it were settled is the one thing this flow must not do.
 func (h *handler) setAgentConcurrency() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		var rq view.SetAgentConcurrencyRequest
-		if err := c.BodyParser(&rq); err != nil {
+		if err := c.Bind().Body(&rq); err != nil {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid request payload"})
 		}
 		// Absent and zero are told apart deliberately. A plain int would read a
@@ -903,7 +907,7 @@ func (h *handler) setAgentConcurrency() fiber.Handler {
 		// clamps it and reports what it settled on, which is both the
 		// documented behaviour and more truthful than refusing against a range
 		// this server only has a cached copy of.
-		switch err := srv.SetAgentConcurrency(c.Context(), *rq.MaxConcurrency); {
+		switch err := srv.SetAgentConcurrency(c.RequestCtx(), *rq.MaxConcurrency); {
 		case errors.Is(err, mcpctrl.ErrConcurrencyInvalid):
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		case errors.Is(err, mcpctrl.ErrConcurrencySetUnsupported):
@@ -931,7 +935,7 @@ func (h *handler) setAgentConcurrency() fiber.Handler {
 }
 
 func (h *handler) createWorkspace() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToCreateWorkspaceRequestEntity(c)
 		if rq == nil {
@@ -964,7 +968,7 @@ func (h *handler) createWorkspace() fiber.Handler {
 }
 
 func (h *handler) getWorkspace() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToGetWorkspaceRequestEntity(c)
 		if rq == nil {
@@ -1000,7 +1004,7 @@ func (h *handler) getWorkspace() fiber.Handler {
 // made with signup's defaults if there is none, so the Pano's chat always has
 // somebody to talk to.
 func (h *handler) ensureSupervisorWorkspace() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -1021,7 +1025,7 @@ func (h *handler) ensureSupervisorWorkspace() fiber.Handler {
 }
 
 func (h *handler) listWorkspaces() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -1054,7 +1058,7 @@ func (h *handler) listWorkspaces() fiber.Handler {
 }
 
 func (h *handler) deleteWorkspace() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToDeleteWorkspaceRequestEntity(c)
 		if rq == nil {
@@ -1081,7 +1085,7 @@ func (h *handler) deleteWorkspace() fiber.Handler {
 // for the old one. The servers held for it and its forks go: they read its
 // content under the old id.
 func (h *handler) resetWorkspaceID() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToResetWorkspaceIDRequestEntity(c)
 		if rq == nil {
@@ -1108,7 +1112,7 @@ func (h *handler) resetWorkspaceID() fiber.Handler {
 }
 
 func (h *handler) archiveWorkspace() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if workspaceID == 0 {
 			c.Status(http.StatusUnprocessableEntity)
@@ -1136,7 +1140,7 @@ func (h *handler) archiveWorkspace() fiber.Handler {
 }
 
 func (h *handler) forkWorkspace() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToForkWorkspaceRequestEntity(c)
 		if rq == nil {
@@ -1162,7 +1166,7 @@ func (h *handler) forkWorkspace() fiber.Handler {
 // mergeFork merges a fork back into its parent: its tasks move there, and the
 // fork is gone.
 func (h *handler) mergeFork() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToMergeForkRequestEntity(c)
 		if rq == nil {
@@ -1186,7 +1190,7 @@ func (h *handler) mergeFork() fiber.Handler {
 }
 
 func (h *handler) unarchiveWorkspace() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if workspaceID == 0 {
 			c.Status(http.StatusUnprocessableEntity)
@@ -1213,7 +1217,7 @@ func (h *handler) unarchiveWorkspace() fiber.Handler {
 }
 
 func (h *handler) updateWorkspace() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToUpdateWorkspaceRequestEntity(c)
 		if rq == nil {
@@ -1257,7 +1261,7 @@ func (h *handler) updateWorkspace() fiber.Handler {
 }
 
 func (h *handler) getWorkspaceToken() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		workspaceID := c.Params("id")
 		userID := c.Locals("user_id").(string)
 
@@ -1296,7 +1300,7 @@ func (h *handler) getWorkspaceToken() fiber.Handler {
 }
 
 func (h *handler) getWorkspaceStats() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		workspace64 := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if workspace64 == 0 {
@@ -1337,7 +1341,7 @@ func (h *handler) getWorkspaceStats() fiber.Handler {
 // The scope comes from the session rather than the path, so there is no ID to
 // authorize — a caller can only ever ask for their own totals.
 func (h *handler) getUserStats() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		userID, ok := c.Locals("user_id").(string)
 		if !ok || userID == "" {
@@ -1373,7 +1377,7 @@ func (h *handler) getUserStats() fiber.Handler {
 // human quietly rewriting one under an agent that has already read it is a
 // confusing failure from both sides.
 func (h *handler) listWorkspaceMemories() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToListMemoriesRequestEntity(c)
 		if rq == nil {
@@ -1395,7 +1399,7 @@ func (h *handler) listWorkspaceMemories() fiber.Handler {
 }
 
 func (h *handler) getWorkspaceMemory() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToGetMemoryRequestEntity(c)
 		if rq == nil {
@@ -1417,7 +1421,7 @@ func (h *handler) getWorkspaceMemory() fiber.Handler {
 }
 
 func (h *handler) setWorkspaceSlackChannel() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if workspaceID == 0 {
 			c.Status(http.StatusUnprocessableEntity)
@@ -1429,7 +1433,7 @@ func (h *handler) setWorkspaceSlackChannel() fiber.Handler {
 			ChannelID   string `json:"channelId"`
 			ChannelName string `json:"channelName"`
 		}
-		if err := c.BodyParser(&body); err != nil {
+		if err := c.Bind().Body(&body); err != nil {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid body"})
 		}
 		if body.ChannelID == "" || body.ChannelName == "" {
@@ -1462,7 +1466,7 @@ func (h *handler) setWorkspaceSlackChannel() fiber.Handler {
 }
 
 func (h *handler) removeWorkspaceSlackChannel() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if workspaceID == 0 {
 			c.Status(http.StatusUnprocessableEntity)

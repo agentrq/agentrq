@@ -16,7 +16,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -40,7 +40,7 @@ func patchTaskTitle(t *testing.T, body string, rename func(ctx context.Context, 
 	h := &handler{crud: &mockCrudUpdateTaskTitle{updateTaskTitleFunc: rename}, bus: bus}
 
 	app := fiber.New()
-	app.Patch("/api/v1/workspaces/:id/tasks/:taskID/title", func(c *fiber.Ctx) error {
+	app.Patch("/api/v1/workspaces/:id/tasks/:taskID/title", func(c fiber.Ctx) error {
 		c.Locals("user_id", userID)
 		return h.updateTaskTitle()(c)
 	})
@@ -135,7 +135,7 @@ func TestCreateTask_PassesAMissingTitleOnToTheController(t *testing.T) {
 	}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: &fakeWorkspaceServer{}}, bus: eventbus.New()}
 	app := fiber.New()
-	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.createTask()(c)
 	})

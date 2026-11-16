@@ -11,7 +11,7 @@ import (
 	_crud "github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // registerWorkflowRoutes mounts the experimental workflow graph API.
@@ -34,7 +34,7 @@ func (h *handler) registerWorkflowRoutes() {
 }
 
 func (h *handler) createWorkflow() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToCreateWorkflowRequestEntity(c)
 		if rq == nil {
@@ -66,7 +66,7 @@ func (h *handler) createWorkflow() fiber.Handler {
 }
 
 func (h *handler) listWorkflows() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -83,7 +83,7 @@ func (h *handler) listWorkflows() fiber.Handler {
 }
 
 func (h *handler) getWorkflow() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToGetWorkflowRequestEntity(c)
 		if rq == nil {
@@ -104,7 +104,7 @@ func (h *handler) getWorkflow() fiber.Handler {
 }
 
 func (h *handler) updateWorkflow() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToUpdateWorkflowRequestEntity(c)
 		if rq == nil {
@@ -129,7 +129,7 @@ func (h *handler) updateWorkflow() fiber.Handler {
 }
 
 func (h *handler) deleteWorkflow() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToDeleteWorkflowRequestEntity(c)
 		if rq == nil {
@@ -150,7 +150,7 @@ func (h *handler) deleteWorkflow() fiber.Handler {
 }
 
 func (h *handler) createWorkflowStep() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToCreateWorkflowStepRequestEntity(c)
 		if rq == nil {
@@ -179,7 +179,7 @@ func (h *handler) createWorkflowStep() fiber.Handler {
 }
 
 func (h *handler) listWorkflowSteps() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToListWorkflowStepsRequestEntity(c)
 		if rq == nil {
@@ -200,7 +200,7 @@ func (h *handler) listWorkflowSteps() fiber.Handler {
 }
 
 func (h *handler) deleteWorkflowStep() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToDeleteWorkflowStepRequestEntity(c)
 		if rq == nil {
@@ -221,7 +221,7 @@ func (h *handler) deleteWorkflowStep() fiber.Handler {
 }
 
 func (h *handler) getWorkflowText() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToGetWorkflowTextRequestEntity(c)
 		if rq == nil {
@@ -242,7 +242,7 @@ func (h *handler) getWorkflowText() fiber.Handler {
 }
 
 func (h *handler) replaceWorkflowFromText() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToReplaceWorkflowFromTextRequestEntity(c)
 		if rq == nil {
@@ -270,7 +270,7 @@ func (h *handler) replaceWorkflowFromText() fiber.Handler {
 }
 
 func (h *handler) listTasksFromWorkflow() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToListTasksFromWorkflowRequestEntity(c)
 		if rq == nil {

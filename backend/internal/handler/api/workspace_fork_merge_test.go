@@ -19,7 +19,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/daemon/wire"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -120,7 +120,7 @@ func mergeApp(c *mergeCrud, reg *machinectrl.Registry, mgr *fakeMCPManager) *fib
 	app := fiber.New()
 	forks := &forkmerge.Merger{Crud: c, Machines: reg, Servers: mgr, Bus: eventbus.New(), StopWait: time.Second, StopPoll: 5 * time.Millisecond}
 	h := &handler{crud: c, forks: forks, router: app.Group("")}
-	app.Use(func(ctx *fiber.Ctx) error {
+	app.Use(func(ctx fiber.Ctx) error {
 		ctx.Locals("user_id", monoflake.ID(100).String())
 		return ctx.Next()
 	})

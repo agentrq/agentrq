@@ -12,7 +12,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -32,7 +32,7 @@ func (m *mockCrudWorkspaceArchive) UnarchiveWorkspace(context.Context, entity.Un
 func archiveApp(ctrl *mockCrudWorkspaceArchive, mgr *fakeMCPManager) *fiber.App {
 	app := fiber.New()
 	h := &handler{crud: ctrl, mcpManager: mgr, router: app.Group("")}
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return c.Next()
 	})

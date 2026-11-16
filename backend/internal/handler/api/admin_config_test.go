@@ -15,7 +15,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/appconfig"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // fakeAppConfig records the update that reaches it and answers with err.

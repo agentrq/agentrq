@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
@@ -20,7 +21,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/mustafaturan/monoflake"
 )
@@ -184,7 +185,7 @@ func TestGetWorkspaceToken_Unauthorized(t *testing.T) {
 		tokenSvc: tokenSvc,
 	}
 
-	app.Get("/api/v1/workspaces/:id/token", func(c *fiber.Ctx) error {
+	app.Get("/api/v1/workspaces/:id/token", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.getWorkspaceToken()(c)
 	})
@@ -249,7 +250,7 @@ func TestListTasks_InvalidWorkspaceID(t *testing.T) {
 		crud: crudCtrl,
 	}
 
-	app.Get("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+	app.Get("/api/v1/workspaces/:id/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.listTasks()(c)
 	})
@@ -278,7 +279,7 @@ func TestListTasks_GlobalRouteAllowsMissingWorkspaceID(t *testing.T) {
 		crud: crudCtrl,
 	}
 
-	app.Get("/api/v1/tasks", func(c *fiber.Ctx) error {
+	app.Get("/api/v1/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.listTasks()(c)
 	})
@@ -309,7 +310,7 @@ func TestGetWorkspaceTaskCounts(t *testing.T) {
 		crud: crudCtrl,
 	}
 
-	app.Get("/api/v1/workspaces/:id/tasks/counts", func(c *fiber.Ctx) error {
+	app.Get("/api/v1/workspaces/:id/tasks/counts", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.getWorkspaceTaskCounts()(c)
 	})
@@ -365,7 +366,7 @@ func TestSendPermissionVerdict_RequiresWorkspaceAccess(t *testing.T) {
 	taskID := monoflake.ID(2).String()
 	userID := monoflake.ID(100).String()
 
-	app.Post("/api/v1/workspaces/:id/tasks/:taskID/permission", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/permission", func(c fiber.Ctx) error {
 		c.Locals("user_id", userID)
 		return h.sendPermissionVerdict()(c)
 	})
@@ -408,7 +409,7 @@ func TestStopTask_RequiresWorkspaceAccess(t *testing.T) {
 	taskID := monoflake.ID(2).String()
 	userID := monoflake.ID(100).String()
 
-	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c fiber.Ctx) error {
 		c.Locals("user_id", userID)
 		return h.stopTask()(c)
 	})
@@ -441,7 +442,7 @@ func TestStopTask_RejectsATaskIDThatIsNotOne(t *testing.T) {
 	}
 	h := &handler{crud: crudCtrl}
 
-	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.stopTask()(c)
 	})
@@ -493,7 +494,7 @@ func TestSendPermissionVerdict_RefusesADeciderThatIsNotAnExtension(t *testing.T)
 				mcpManager: &fakeMCPManager{server: &mcpctrl.WorkspaceServer{}},
 			}
 
-			app.Post("/api/v1/workspaces/:id/tasks/:taskID/permission", func(c *fiber.Ctx) error {
+			app.Post("/api/v1/workspaces/:id/tasks/:taskID/permission", func(c fiber.Ctx) error {
 				c.Locals("user_id", monoflake.ID(100).String())
 				return h.sendPermissionVerdict()(c)
 			})
@@ -533,7 +534,7 @@ func TestStopTask_RefusesWhenTheAgentCannotBeStopped(t *testing.T) {
 		mcpManager: &fakeMCPManager{server: &mcpctrl.WorkspaceServer{}},
 	}
 
-	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.stopTask()(c)
 	})
@@ -568,7 +569,7 @@ func TestStopTask_WithoutAWorkspaceServer(t *testing.T) {
 		mcpManager: &fakeMCPManager{},
 	}
 
-	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.stopTask()(c)
 	})
@@ -602,7 +603,7 @@ func TestRespondToElicitation_RequiresWorkspaceAccess(t *testing.T) {
 	taskID := monoflake.ID(2).String()
 	userID := monoflake.ID(100).String()
 
-	app.Post("/api/v1/workspaces/:id/tasks/:taskID/elicitation", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/elicitation", func(c fiber.Ctx) error {
 		c.Locals("user_id", userID)
 		return h.respondToElicitation()(c)
 	})
@@ -715,6 +716,35 @@ func TestRefreshCookiePath(t *testing.T) {
 	// has to carry it or the browser will not match the request path.
 	if got, want := (&handler{basePath: "/agentrq"}).refreshCookiePath(), "/agentrq/api/v1/auth/refresh"; got != want {
 		t.Errorf("with a base path, refreshCookiePath returned %q, want %q", got, want)
+	}
+}
+
+// TestSessionCookieIsSetForEveryDomain guards sign-in on a server addressed by
+// IP or host:port: Fiber silently drops a cookie whose Domain is not one.
+func TestSessionCookieIsSetForEveryDomain(t *testing.T) {
+	for domain, want := range map[string]string{
+		"agentrq.com":      "domain=.agentrq.com",
+		"localhost":        "",
+		"10.0.0.5":         "",
+		"example.com:8080": "",
+	} {
+		h := &handler{domain: domain}
+		app := fiber.New()
+		app.Get("/", func(c fiber.Ctx) error {
+			c.Cookie(h.sessionCookie("at", "v", time.Now().Add(time.Hour), "/"))
+			return nil
+		})
+		res, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil))
+		if err != nil {
+			t.Fatalf("%s: request: %v", domain, err)
+		}
+		got := res.Header.Get("Set-Cookie")
+		if !strings.HasPrefix(got, "at=v;") {
+			t.Errorf("with domain %q no session cookie was set: %q", domain, got)
+		}
+		if has := strings.Contains(got, "domain="); want == "" && has || want != "" && !strings.Contains(got, want) {
+			t.Errorf("with domain %q, Set-Cookie = %q, want domain attribute %q", domain, got, want)
+		}
 	}
 }
 
@@ -934,7 +964,7 @@ func TestSetAgentModel_RefusesACallerWithoutAccess(t *testing.T) {
 	// before anything reaches a workspace server.
 	h := &handler{crud: crudCtrl}
 
-	app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/agent/model", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.setAgentModel()(c)
 	})
@@ -979,7 +1009,7 @@ func TestSetAgentModel_RejectsARequestNamingNoModel(t *testing.T) {
 			}
 			h := &handler{crud: crudCtrl}
 
-			app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
+			app.Post("/api/v1/workspaces/:id/agent/model", func(c fiber.Ctx) error {
 				c.Locals("user_id", monoflake.ID(100).String())
 				return h.setAgentModel()(c)
 			})
@@ -1016,7 +1046,7 @@ func TestSetAgentModel_ReportsThatNothingIsConnected(t *testing.T) {
 	// is connected" looks like from here.
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{}}
 
-	app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/agent/model", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.setAgentModel()(c)
 	})
@@ -1090,7 +1120,7 @@ func TestSetAgentConcurrency_RefusesACallerWithoutAccess(t *testing.T) {
 	// before anything reaches a workspace server.
 	h := &handler{crud: crudCtrl}
 
-	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.setAgentConcurrency()(c)
 	})
@@ -1134,7 +1164,7 @@ func TestSetAgentConcurrency_RejectsARequestNamingNoLimit(t *testing.T) {
 			}
 			h := &handler{crud: crudCtrl}
 
-			app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+			app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c fiber.Ctx) error {
 				c.Locals("user_id", monoflake.ID(100).String())
 				return h.setAgentConcurrency()(c)
 			})
@@ -1168,7 +1198,7 @@ func TestSetAgentConcurrency_ReportsThatNothingIsConnected(t *testing.T) {
 	}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{}}
 
-	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.setAgentConcurrency()(c)
 	})
@@ -1218,7 +1248,7 @@ func TestSetAgentConcurrency_AnswersTheServerRefusals(t *testing.T) {
 			// would answer whatever it was told to and prove none of it.
 			h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: &mcpctrl.WorkspaceServer{}}}
 
-			app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+			app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c fiber.Ctx) error {
 				c.Locals("user_id", monoflake.ID(100).String())
 				return h.setAgentConcurrency()(c)
 			})
@@ -1265,7 +1295,7 @@ func TestSetAgentModel_AsksTheConnectedAgent(t *testing.T) {
 	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
 
-	app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/agent/model", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.setAgentModel()(c)
 	})
@@ -1326,7 +1356,7 @@ func TestSetAgentConcurrency_AsksTheConnectedGateway(t *testing.T) {
 	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
 
-	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.setAgentConcurrency()(c)
 	})
@@ -1379,7 +1409,7 @@ func TestSetAgentConcurrency_ForwardsAValueTheGatewayWillClamp(t *testing.T) {
 	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
 
-	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.setAgentConcurrency()(c)
 	})
@@ -1434,7 +1464,7 @@ func TestSetAgentModel_MapsEveryRefusalToItsOwnStatus(t *testing.T) {
 			srv := &fakeWorkspaceServer{modelErr: tc.err}
 			h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
 
-			app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
+			app.Post("/api/v1/workspaces/:id/agent/model", func(c fiber.Ctx) error {
 				c.Locals("user_id", monoflake.ID(100).String())
 				return h.setAgentModel()(c)
 			})
@@ -1483,7 +1513,7 @@ func TestSetAgentConcurrency_MapsEveryRefusalToItsOwnStatus(t *testing.T) {
 			srv := &fakeWorkspaceServer{concurrencyErr: tc.err}
 			h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
 
-			app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+			app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c fiber.Ctx) error {
 				c.Locals("user_id", monoflake.ID(100).String())
 				return h.setAgentConcurrency()(c)
 			})
@@ -1522,7 +1552,7 @@ func TestSetAgentModel_StillSucceedsWhenTheCountFails(t *testing.T) {
 	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
 
-	app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/agent/model", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.setAgentModel()(c)
 	})
@@ -1561,7 +1591,7 @@ func TestSetAgentConcurrency_StillSucceedsWhenTheCountFails(t *testing.T) {
 	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
 
-	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.setAgentConcurrency()(c)
 	})

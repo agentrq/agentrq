@@ -9,7 +9,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // registerPanoRoutes serves the account's Pano under /pano. The person
@@ -25,14 +25,14 @@ func (h *handler) registerPanoRoutes() {
 	r.Post("/:id/attachments", h.attachPanoFiles())
 }
 
-func sendPanoError(c *fiber.Ctx, err error) error {
+func sendPanoError(c fiber.Ctx, err error) error {
 	e, status := mapper.FromErrorToHTTPResponse(err)
 	c.Status(status)
 	return c.Send(e)
 }
 
 func (h *handler) listPanoDocs() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -45,7 +45,7 @@ func (h *handler) listPanoDocs() fiber.Handler {
 }
 
 func (h *handler) getPanoDoc() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToGetPanoDocRequestEntity(c)
 		if rq == nil {
@@ -66,7 +66,7 @@ func (h *handler) getPanoDoc() fiber.Handler {
 
 // savePanoDoc creates a doc on POST /pano and replaces one on PUT /pano/:id.
 func (h *handler) savePanoDoc() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToSavePanoDocRequestEntity(c)
 		if rq == nil {
@@ -89,7 +89,7 @@ func (h *handler) savePanoDoc() fiber.Handler {
 }
 
 func (h *handler) deletePanoDoc() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToDeletePanoDocRequestEntity(c)
 		if rq == nil {
@@ -109,7 +109,7 @@ func (h *handler) deletePanoDoc() fiber.Handler {
 }
 
 func (h *handler) addPanoComment() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToAddPanoCommentRequestEntity(c)
 		if rq == nil {
@@ -130,7 +130,7 @@ func (h *handler) addPanoComment() fiber.Handler {
 }
 
 func (h *handler) attachPanoFiles() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToAttachPanoFilesRequestEntity(c)
 		if rq == nil {

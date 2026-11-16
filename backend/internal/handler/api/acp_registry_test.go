@@ -11,7 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/acpregistry"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestFromHookEntitiesToHTTPResponse(t *testing.T) {
@@ -81,7 +81,7 @@ func TestFromHTTPRequestToHookRegistrationRequestEntity(t *testing.T) {
 	parse := func(body string) *entity.HookRegistrationRequest {
 		app := fiber.New()
 		var rq *entity.HookRegistrationRequest
-		app.Post("/", func(c *fiber.Ctx) error {
+		app.Post("/", func(c fiber.Ctx) error {
 			rq = FromHTTPRequestToHookRegistrationRequestEntity(c)
 			return nil
 		})
@@ -114,7 +114,7 @@ func TestFromHTTPRequestToHookIncomingRequestEntity(t *testing.T) {
 	parse := func(url string, header map[string]string) *entity.HookIncoming {
 		app := fiber.New()
 		var in *entity.HookIncoming
-		app.Post("/in/:id", func(c *fiber.Ctx) error {
+		app.Post("/in/:id", func(c fiber.Ctx) error {
 			in = FromHTTPRequestToHookIncomingRequestEntity(c)
 			return nil
 		})

@@ -14,7 +14,7 @@ import (
 
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 	zlog "github.com/rs/zerolog/log"
 )
@@ -67,8 +67,8 @@ func (l *loginAttempts) allow(key string, now time.Time, window time.Duration) (
 // clientIP names the client the sign-in throttle counts tries for: the peer,
 // which clientip's middleware has already replaced with the client a trusted
 // proxy names. No header is read here.
-func clientIP(c *fiber.Ctx) string {
-	return c.Context().RemoteIP().String()
+func clientIP(c fiber.Ctx) string {
+	return c.RequestCtx().RemoteIP().String()
 }
 
 // registerAdminRoutes adds the operator's routes, apart from the users' API:
@@ -88,7 +88,7 @@ func (h *handler) registerAdminRoutes(root fiber.Router) {
 
 // adminMiddleware refuses a request without an admin session.
 func (h *handler) adminMiddleware() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		if !h.isAdmin(c) {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "admin session required"})
 		}
@@ -124,7 +124,7 @@ func (h *handler) adminToken(expiresAt time.Time) string {
 
 // isAdmin reports whether the request carries an unexpired admin token, as a
 // bearer or as the admin cookie. Never true when no root token is configured.
-func (h *handler) isAdmin(c *fiber.Ctx) bool {
+func (h *handler) isAdmin(c fiber.Ctx) bool {
 	if h.rootToken == "" {
 		return false
 	}
@@ -143,7 +143,7 @@ func (h *handler) isAdmin(c *fiber.Ctx) bool {
 // adminLogin exchanges the root access token for a short-lived admin JWT, set
 // as the admin cookie and returned for scripts to send as a bearer.
 func (h *handler) adminLogin() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		if ok, wait := h.adminLogins.allow(clientIP(c), time.Now(), _adminLoginWindow); !ok {
 			c.Set(fiber.HeaderRetryAfter, strconv.Itoa(int(wait.Seconds())+1))
 			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{"error": "too many attempts"})
@@ -151,7 +151,7 @@ func (h *handler) adminLogin() fiber.Handler {
 		var req struct {
 			RootToken string `json:"rootToken"`
 		}
-		if err := c.BodyParser(&req); err != nil {
+		if err := c.Bind().Body(&req); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid payload"})
 		}
 		if h.rootToken == "" || !security.SecureCompare(req.RootToken, h.rootToken) {
@@ -166,7 +166,7 @@ func (h *handler) adminLogin() fiber.Handler {
 
 // adminLogout ends the admin session in this browser.
 func (h *handler) adminLogout() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Cookie(h.sessionCookie(_adminCookie, "", time.Now().Add(-time.Hour), h.adminCookiePath()))
 		return c.JSON(fiber.Map{"status": "ok"})
 	}
@@ -175,7 +175,7 @@ func (h *handler) adminLogout() fiber.Handler {
 // getAdminStats serves the operator's per-user figures: the MCP streams open
 // on this instance, and the machines online.
 func (h *handler) getAdminStats() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()

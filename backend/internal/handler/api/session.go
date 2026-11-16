@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
@@ -53,7 +53,7 @@ func (h *handler) registerSessionRoutes() {
 // whoever may see this session may watch its terminal, which is the same rule
 // the socket applies.
 func (h *handler) terminalTicket() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -102,7 +102,7 @@ func (h *handler) terminalTicket() fiber.Handler {
 // only show a rectangle and hope, and a session that has ended is
 // indistinguishable from one that is quiet.
 func (h *handler) getSession() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -122,7 +122,7 @@ func (h *handler) getSession() fiber.Handler {
 
 // listSessions returns a machine's sessions, newest first.
 func (h *handler) listSessions() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -147,7 +147,7 @@ func (h *handler) listSessions() fiber.Handler {
 // worse than one that takes a moment to catch up — the kill switch people
 // trust is the one that never lies about having worked.
 func (h *handler) killSession() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()

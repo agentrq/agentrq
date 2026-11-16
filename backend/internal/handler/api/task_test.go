@@ -15,7 +15,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -324,7 +324,7 @@ func TestCreateTask_ClearsBeforeNotifyingWhenPushedImmediately(t *testing.T) {
 	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
-	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.createTask()(c)
 	})
@@ -376,7 +376,7 @@ func TestCreateTask_SkipsClearWhenTheTaskDidNotAskForIt(t *testing.T) {
 	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
-	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.createTask()(c)
 	})
@@ -425,7 +425,7 @@ func TestCreateTask_PushesEvenWhenAnotherTaskIsAlreadyPending(t *testing.T) {
 	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
-	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.createTask()(c)
 	})
@@ -459,7 +459,7 @@ func TestCreateTask_DoesNotPushATaskAssignedToTheHuman(t *testing.T) {
 	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
-	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.createTask()(c)
 	})
@@ -505,7 +505,7 @@ func TestCreateTask_DoesNotPushWhileAnotherTaskIsOngoing(t *testing.T) {
 	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
-	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.createTask()(c)
 	})
@@ -548,7 +548,7 @@ func TestCreateTask_PushesWhileTheAgentHasRoomForMoreTasks(t *testing.T) {
 	mgr := &fakeMCPManager{server: srv, concurrency: &agentlink.ConcurrencySnapshot{MaxConcurrency: 4}}
 	h := &handler{crud: crudCtrl, mcpManager: mgr, bus: eventbus.New()}
 
-	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.createTask()(c)
 	})
@@ -594,7 +594,7 @@ func TestCreateTask_DoesNotPushWhenEverySlotIsBusy(t *testing.T) {
 	mgr := &fakeMCPManager{server: srv, concurrency: &agentlink.ConcurrencySnapshot{MaxConcurrency: 2}}
 	h := &handler{crud: crudCtrl, mcpManager: mgr, bus: eventbus.New()}
 
-	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.createTask()(c)
 	})
@@ -630,7 +630,7 @@ func TestCreateTask_DoesNotCountTheNewTaskAgainstTheLimit(t *testing.T) {
 	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
-	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.createTask()(c)
 	})
@@ -689,7 +689,7 @@ func TestUpdateTaskAssignee_ClearsBeforeNotifyingWhenReassignedToAgent(t *testin
 	srv := &fakeWorkspaceServer{notes: "Keep me posted."}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
-	app.Patch("/api/v1/workspaces/:id/tasks/:taskID/assignee", func(c *fiber.Ctx) error {
+	app.Patch("/api/v1/workspaces/:id/tasks/:taskID/assignee", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.updateTaskAssignee()(c)
 	})
@@ -762,7 +762,7 @@ func TestRespondAndReplyPushTheFilesTheyCarry(t *testing.T) {
 			app := fiber.New()
 			srv := &fakeWorkspaceServer{}
 			h := &handler{crud: &mockCrudSavesAttachments{}, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
-			app.Post("/api/v1/workspaces/:id/tasks/:taskID", func(c *fiber.Ctx) error {
+			app.Post("/api/v1/workspaces/:id/tasks/:taskID", func(c fiber.Ctx) error {
 				c.Locals("user_id", monoflake.ID(100).String())
 				return tc.route(h)(c)
 			})

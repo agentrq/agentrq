@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
@@ -76,7 +76,7 @@ func machineApp(ctrl crud.Controller, reg *machinectrl.Registry) *fiber.App {
 	app := fiber.New()
 	h := &handler{crud: ctrl, machineRegistry: reg, router: app.Group("")}
 	h.registerPublicMachineRoutes()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user_id", "user-1")
 		return c.Next()
 	})

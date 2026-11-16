@@ -5,7 +5,7 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
@@ -23,7 +23,7 @@ func (h *handler) registerBrowserRoutes() {
 // browser socket: the extension's origin never receives the `at` cookie, and
 // this cookie-authenticated POST is how it trades the cookie for one.
 func (h *handler) browserTicket() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		ticket, err := h.tokenSvc.CreateBrowserTicket(c.Locals("user_id").(string))
 		if err != nil {
 			e, status := mapper.FromErrorToHTTPResponse(err)

@@ -14,7 +14,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -35,7 +35,7 @@ func getToolCalls(t *testing.T, path string, list func(ctx context.Context, req 
 	t.Helper()
 	h := &handler{crud: &mockCrudListTaskToolCalls{list: list}}
 	app := fiber.New()
-	app.Get("/api/v1"+_routePathToolCalls, func(c *fiber.Ctx) error {
+	app.Get("/api/v1"+_routePathToolCalls, func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.listTaskToolCalls()(c)
 	})

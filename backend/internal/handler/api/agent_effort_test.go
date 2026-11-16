@@ -17,7 +17,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -65,7 +65,7 @@ func TestSetAgentEffort(t *testing.T) {
 			}
 			h := &handler{crud: crudCtrl, mcpManager: mgr}
 			app := fiber.New()
-			app.Post("/api/v1/workspaces/:id/agent/effort", func(c *fiber.Ctx) error {
+			app.Post("/api/v1/workspaces/:id/agent/effort", func(c fiber.Ctx) error {
 				c.Locals("user_id", monoflake.ID(100).String())
 				return h.setAgentEffort()(c)
 			})
@@ -127,7 +127,7 @@ func TestWorkspacePayloadCarriesTheAgentEffort(t *testing.T) {
 		ConfigID: "effort", CurrentEffort: "high", CanSet: true, Efforts: []agentlink.Effort{{ID: "high", Name: "High"}},
 	}}}
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error { c.Locals("user_id", monoflake.ID(100).String()); return c.Next() })
+	app.Use(func(c fiber.Ctx) error { c.Locals("user_id", monoflake.ID(100).String()); return c.Next() })
 	app.Get("/workspaces/:id", h.getWorkspace())
 	app.Post("/workspaces", h.createWorkspace())
 

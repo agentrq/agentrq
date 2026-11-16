@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -33,7 +33,7 @@ func (m *pushRoutesCtrl) DeleteSubscription(ctx context.Context, req entity.Dele
 // user, with every workspace owned by them.
 func pushRoutesApp(ctrl *pushRoutesCtrl, user string) *fiber.App {
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user_id", user)
 		return c.Next()
 	})

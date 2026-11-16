@@ -10,7 +10,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // registerSkillRoutes serves the account's skills under /skills, and the same
@@ -41,7 +41,7 @@ var skillStatus = map[crud.SkillErrorKind]int{
 	crud.SkillUpstream: http.StatusBadGateway,
 }
 
-func sendSkillError(c *fiber.Ctx, err error) error {
+func sendSkillError(c fiber.Ctx, err error) error {
 	var se *crud.SkillError
 	if errors.As(err, &se) {
 		c.Status(skillStatus[se.Kind])
@@ -53,7 +53,7 @@ func sendSkillError(c *fiber.Ctx, err error) error {
 }
 
 func (h *handler) searchSkills() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToSearchSkillsRequestEntity(c)
 		if rq == nil {
@@ -73,7 +73,7 @@ func (h *handler) searchSkills() fiber.Handler {
 }
 
 func (h *handler) getSkill() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToGetSkillRequestEntity(c)
 		if rq == nil {
@@ -95,7 +95,7 @@ func (h *handler) getSkill() fiber.Handler {
 // setSkillEnabled turns a skill on or off for agents: in every workspace
 // under /skills, in one under /workspaces/:id/skills.
 func (h *handler) setSkillEnabled() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToSetSkillEnabledRequestEntity(c)
 		if rq == nil {
@@ -115,7 +115,7 @@ func (h *handler) setSkillEnabled() fiber.Handler {
 }
 
 func (h *handler) getSkillFile() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToGetSkillFileRequestEntity(c)
 		if rq == nil {
@@ -137,7 +137,7 @@ func (h *handler) getSkillFile() fiber.Handler {
 // importSkills fetches skills from a public GitHub repository. What was left
 // out comes back in the report with a reason, not as a failure.
 func (h *handler) importSkills() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToImportSkillsRequestEntity(c)
 		if rq == nil {
@@ -157,7 +157,7 @@ func (h *handler) importSkills() fiber.Handler {
 }
 
 func (h *handler) deleteSkill() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToDeleteSkillRequestEntity(c)
 		if rq == nil {

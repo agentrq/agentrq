@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -27,7 +27,9 @@ func b62(id int64) string { return monoflake.ID(id).String() }
 // put a malformed escape in the path, carrying body as JSON.
 func jsonRequest(target, body string) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-	req.RequestURI = target // what the request line carries, unparsed
+	// Fiber's Test writes the URL, not RequestURI, as the request line, and
+	// writes an opaque URL unescaped: what the request line carries, unparsed.
+	req.URL.Opaque = target
 	req.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
 	return req
 }
@@ -35,16 +37,16 @@ func jsonRequest(target, body string) *http.Request {
 // mapRequest runs fn in a Fiber handler mounted on route and returns what it
 // mapped req to. The app is immutable, so what fn read from the path and the
 // query is still there once the request is over.
-func mapRequest[T any](t *testing.T, route string, req *http.Request, fn func(*fiber.Ctx) T) T {
+func mapRequest[T any](t *testing.T, route string, req *http.Request, fn func(fiber.Ctx) T) T {
 	t.Helper()
 	app := fiber.New(fiber.Config{Immutable: true})
 	var got T
 	ran := false
-	app.All(route, func(c *fiber.Ctx) error {
+	app.All(route, func(c fiber.Ctx) error {
 		got, ran = fn(c), true
 		return nil
 	})
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
 		t.Fatalf("request %s: %v", req.RequestURI, err)
 	}
@@ -57,7 +59,7 @@ func mapRequest[T any](t *testing.T, route string, req *http.Request, fn func(*f
 
 // checkRequest maps each case and compares the result with want; a nil want
 // is a request the mapper must refuse.
-func checkRequest[T any](t *testing.T, route string, fn func(*fiber.Ctx) *T, cases []requestCase[T]) {
+func checkRequest[T any](t *testing.T, route string, fn func(fiber.Ctx) *T, cases []requestCase[T]) {
 	t.Helper()
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

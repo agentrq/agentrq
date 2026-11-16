@@ -13,7 +13,7 @@ import (
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/hookrunner"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 )
@@ -29,7 +29,7 @@ func (h *handler) registerAdminHookRoutes(r fiber.Router) {
 }
 
 func (h *handler) listBuiltInHooks() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		hooks, err := h.hooks.ListBuiltIns(ctx)
@@ -42,7 +42,7 @@ func (h *handler) listBuiltInHooks() fiber.Handler {
 }
 
 func (h *handler) createBuiltInHook() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		wasm, ok := hookModule(c)
 		if !ok {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
@@ -59,7 +59,7 @@ func (h *handler) createBuiltInHook() fiber.Handler {
 }
 
 func (h *handler) upgradeBuiltInHook() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		id := monoflake.IDFromBase62(c.Params("id")).Int64()
 		wasm, ok := hookModule(c)
 		if id == 0 || !ok {
@@ -77,10 +77,10 @@ func (h *handler) upgradeBuiltInHook() fiber.Handler {
 }
 
 func (h *handler) setBuiltInHookEnabled() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		id := monoflake.IDFromBase62(c.Params("id")).Int64()
 		var req view.SetHookEnabledRequest
-		if id == 0 || c.BodyParser(&req) != nil || req.Enabled == nil {
+		if id == 0 || c.Bind().Body(&req) != nil || req.Enabled == nil {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
 		}
 		ctx, cancel := newContext(c)
@@ -95,7 +95,7 @@ func (h *handler) setBuiltInHookEnabled() fiber.Handler {
 }
 
 func (h *handler) deleteBuiltInHook() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		id := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if id == 0 {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
@@ -114,7 +114,7 @@ func (h *handler) deleteBuiltInHook() fiber.Handler {
 // gzip), and is unpacked here with a cap rather than by Fiber with none. One
 // over hookrunner.MaxModuleSize is cut one byte past it, and the runner
 // refuses it for its size.
-func hookModule(c *fiber.Ctx) ([]byte, bool) {
+func hookModule(c fiber.Ctx) ([]byte, bool) {
 	body := c.Request().Body()
 	switch strings.ToLower(strings.TrimSpace(c.Get(fiber.HeaderContentEncoding))) {
 	case "":
@@ -133,7 +133,7 @@ func hookModule(c *fiber.Ctx) ([]byte, bool) {
 	return body, len(body) > 0
 }
 
-func hookError(c *fiber.Ctx, err error) error {
+func hookError(c fiber.Ctx, err error) error {
 	b, status := mapper.FromErrorToHTTPResponse(err)
 	if status >= fiber.StatusInternalServerError {
 		zlog.Error().Err(err).Msg("hooks")

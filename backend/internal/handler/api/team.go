@@ -12,7 +12,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 )
@@ -54,7 +54,7 @@ func (h *handler) registerTeamRoutes() {
 
 // teamError answers a refused team request. A skill refused in team mode
 // is answered as the skills routes answer it.
-func teamError(c *fiber.Ctx, err error) error {
+func teamError(c fiber.Ctx, err error) error {
 	c.Set(_headerContentType, _mimeJSON)
 	var se *crud.SkillError
 	if errors.As(err, &se) {
@@ -74,7 +74,7 @@ func teamError(c *fiber.Ctx, err error) error {
 
 // pathIDs reads the named base62 ids from the path; false when one is not an
 // id.
-func pathIDs(c *fiber.Ctx, names ...string) ([]int64, bool) {
+func pathIDs(c fiber.Ctx, names ...string) ([]int64, bool) {
 	ids := make([]int64, len(names))
 	for i, name := range names {
 		if ids[i] = monoflake.IDFromBase62(c.Params(name)).Int64(); ids[i] == 0 {
@@ -86,8 +86,8 @@ func pathIDs(c *fiber.Ctx, names ...string) ([]int64, bool) {
 
 // teamRoute answers a request on the ids in its path, with fn's body or
 // error. A path id that is not one answers 400.
-func teamRoute(names []string, fn func(c *fiber.Ctx, ids []int64) ([]byte, error)) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+func teamRoute(names []string, fn func(c fiber.Ctx, ids []int64) ([]byte, error)) fiber.Handler {
+	return func(c fiber.Ctx) error {
 		ids, ok := pathIDs(c, names...)
 		if !ok {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
@@ -109,7 +109,7 @@ func teamRoute(names []string, fn func(c *fiber.Ctx, ids []int64) ([]byte, error
 
 // body reads the request's JSON body into v; errBadRequest when it is not
 // JSON.
-func body(c *fiber.Ctx, v any) error {
+func body(c fiber.Ctx, v any) error {
 	if !mapper.FromHTTPRequestToTeamRequestView(c.Body(), v) {
 		return errBadRequest
 	}
@@ -118,7 +118,7 @@ func body(c *fiber.Ctx, v any) error {
 
 // change is the team change a request makes from the version it sends,
 // which a team's versions start at 1; errBadRequest when it sends none.
-func change(c *fiber.Ctx, teamID, version int64) (entity.TeamChange, error) {
+func change(c fiber.Ctx, teamID, version int64) (entity.TeamChange, error) {
 	if version < 1 {
 		return entity.TeamChange{}, errBadRequest
 	}
@@ -126,7 +126,7 @@ func change(c *fiber.Ctx, teamID, version int64) (entity.TeamChange, error) {
 }
 
 // bodyChange is change from the version in the JSON body.
-func bodyChange(c *fiber.Ctx, teamID int64) (entity.TeamChange, error) {
+func bodyChange(c fiber.Ctx, teamID int64) (entity.TeamChange, error) {
 	var rq view.TeamVersionRequest
 	if err := body(c, &rq); err != nil {
 		return entity.TeamChange{}, err
@@ -135,7 +135,7 @@ func bodyChange(c *fiber.Ctx, teamID int64) (entity.TeamChange, error) {
 }
 
 // queryChange is change from ?version=, as a DELETE sends it.
-func queryChange(c *fiber.Ctx, teamID int64) (entity.TeamChange, error) {
+func queryChange(c fiber.Ctx, teamID int64) (entity.TeamChange, error) {
 	v, _ := strconv.ParseInt(c.Query("version"), 10, 64)
 	return change(c, teamID, v)
 }
@@ -151,7 +151,7 @@ var (
 )
 
 func (h *handler) listTeams() fiber.Handler {
-	return teamRoute(teamPathNone, func(c *fiber.Ctx, _ []int64) ([]byte, error) {
+	return teamRoute(teamPathNone, func(c fiber.Ctx, _ []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		teams, err := h.teams.ListTeams(ctx, sessionUser(c))
@@ -160,7 +160,7 @@ func (h *handler) listTeams() fiber.Handler {
 }
 
 func (h *handler) createTeam() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		var rq view.TeamNameRequest
 		if body(c, &rq) != nil {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
@@ -177,7 +177,7 @@ func (h *handler) createTeam() fiber.Handler {
 }
 
 func (h *handler) getTeam() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeam, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		team, err := h.teams.GetTeam(ctx, sessionUser(c), ids[0])
@@ -186,7 +186,7 @@ func (h *handler) getTeam() fiber.Handler {
 }
 
 func (h *handler) renameTeam() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeam, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		var rq view.TeamNameRequest
 		if err := body(c, &rq); err != nil {
 			return nil, err
@@ -203,7 +203,7 @@ func (h *handler) renameTeam() fiber.Handler {
 }
 
 func (h *handler) deleteTeam() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeam, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ch, err := queryChange(c, ids[0])
 		if err != nil {
 			return nil, err
@@ -215,7 +215,7 @@ func (h *handler) deleteTeam() fiber.Handler {
 }
 
 func (h *handler) listTeamMembers() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeam, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		members, err := h.teams.ListMembers(ctx, sessionUser(c), ids[0])
@@ -226,7 +226,7 @@ func (h *handler) listTeamMembers() fiber.Handler {
 // removeTeamMember answers the team's version, or no content when the
 // caller removed themself: they no longer see the team.
 func (h *handler) removeTeamMember() fiber.Handler {
-	return teamRoute(teamPathMember, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathMember, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ch, err := queryChange(c, ids[0])
 		if err != nil {
 			return nil, err
@@ -242,7 +242,7 @@ func (h *handler) removeTeamMember() fiber.Handler {
 }
 
 func (h *handler) leaveTeam() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeam, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ch, err := bodyChange(c, ids[0])
 		if err != nil {
 			return nil, err
@@ -254,7 +254,7 @@ func (h *handler) leaveTeam() fiber.Handler {
 }
 
 func (h *handler) listTeamInvitations() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeam, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		invs, err := h.teams.ListTeamInvitations(ctx, sessionUser(c), ids[0])
@@ -265,7 +265,7 @@ func (h *handler) listTeamInvitations() fiber.Handler {
 // createTeamInvitation answers 201 with the invitation, whether or not the
 // address has an account.
 func (h *handler) createTeamInvitation() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		ids, ok := pathIDs(c, teamPathTeam...)
 		var rq view.CreateTeamInvitationRequest
 		if !ok || body(c, &rq) != nil {
@@ -287,7 +287,7 @@ func (h *handler) createTeamInvitation() fiber.Handler {
 }
 
 func (h *handler) revokeTeamInvitation() fiber.Handler {
-	return teamRoute(teamPathInvitation, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathInvitation, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ch, err := queryChange(c, ids[0])
 		if err != nil {
 			return nil, err
@@ -302,7 +302,7 @@ func (h *handler) revokeTeamInvitation() fiber.Handler {
 // listTeamActivities pages the team's activity: ?limit= of them, older than
 // the activity ?before= names.
 func (h *handler) listTeamActivities() fiber.Handler {
-	return teamRoute(teamPathTeam, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathTeam, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		rq := entity.ListTeamActivitiesRequest{UserID: sessionUser(c), TeamID: ids[0]}
 		rq.Limit, _ = strconv.Atoi(c.Query("limit"))
 		if b := c.Query("before"); b != "" {
@@ -318,7 +318,7 @@ func (h *handler) listTeamActivities() fiber.Handler {
 }
 
 func (h *handler) listMyInvitations() fiber.Handler {
-	return teamRoute(teamPathNone, func(c *fiber.Ctx, _ []int64) ([]byte, error) {
+	return teamRoute(teamPathNone, func(c fiber.Ctx, _ []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		invs, err := h.teams.ListMyInvitations(ctx, sessionUser(c))
@@ -327,7 +327,7 @@ func (h *handler) listMyInvitations() fiber.Handler {
 }
 
 func (h *handler) previewInvitation() fiber.Handler {
-	return teamRoute(teamPathNone, func(c *fiber.Ctx, _ []int64) ([]byte, error) {
+	return teamRoute(teamPathNone, func(c fiber.Ctx, _ []int64) ([]byte, error) {
 		var rq view.TeamInvitationTokenRequest
 		if err := body(c, &rq); err != nil {
 			return nil, err
@@ -340,7 +340,7 @@ func (h *handler) previewInvitation() fiber.Handler {
 }
 
 func (h *handler) acceptInvitation() fiber.Handler {
-	return teamRoute(teamPathNone, func(c *fiber.Ctx, _ []int64) ([]byte, error) {
+	return teamRoute(teamPathNone, func(c fiber.Ctx, _ []int64) ([]byte, error) {
 		var rq view.TeamInvitationTokenRequest
 		if err := body(c, &rq); err != nil {
 			return nil, err
@@ -353,7 +353,7 @@ func (h *handler) acceptInvitation() fiber.Handler {
 }
 
 func (h *handler) acceptInvitationByID() fiber.Handler {
-	return teamRoute(teamPathMyInvitation, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathMyInvitation, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		team, err := h.teams.AcceptInvitationByID(ctx, sessionUser(c), ids[0])
@@ -362,7 +362,7 @@ func (h *handler) acceptInvitationByID() fiber.Handler {
 }
 
 func (h *handler) declineInvitation() fiber.Handler {
-	return teamRoute(teamPathMyInvitation, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathMyInvitation, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		return nil, h.teams.DeclineInvitation(ctx, sessionUser(c), ids[0])
@@ -370,7 +370,7 @@ func (h *handler) declineInvitation() fiber.Handler {
 }
 
 func (h *handler) listWorkspaceShares() fiber.Handler {
-	return teamRoute(teamPathWorkspace, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathWorkspace, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		shares, err := h.teams.ListShares(ctx, sessionUser(c), ids[0])
@@ -379,7 +379,7 @@ func (h *handler) listWorkspaceShares() fiber.Handler {
 }
 
 func (h *handler) shareWorkspace() fiber.Handler {
-	return teamRoute(teamPathShare, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathShare, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		var rq view.ShareWorkspaceRequest
 		if err := body(c, &rq); err != nil {
 			return nil, err
@@ -396,7 +396,7 @@ func (h *handler) shareWorkspace() fiber.Handler {
 }
 
 func (h *handler) unshareWorkspace() fiber.Handler {
-	return teamRoute(teamPathShare, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathShare, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ch, err := queryChange(c, ids[1])
 		if err != nil {
 			return nil, err
@@ -409,7 +409,7 @@ func (h *handler) unshareWorkspace() fiber.Handler {
 }
 
 func (h *handler) listPanoDocShares() fiber.Handler {
-	return teamRoute(teamPathWorkspace, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathWorkspace, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		shares, err := h.teams.ListPanoShares(ctx, sessionUser(c), ids[0])
@@ -418,7 +418,7 @@ func (h *handler) listPanoDocShares() fiber.Handler {
 }
 
 func (h *handler) sharePanoDoc() fiber.Handler {
-	return teamRoute(teamPathShare, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathShare, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ch, err := bodyChange(c, ids[1])
 		if err != nil {
 			return nil, err
@@ -431,7 +431,7 @@ func (h *handler) sharePanoDoc() fiber.Handler {
 }
 
 func (h *handler) unsharePanoDoc() fiber.Handler {
-	return teamRoute(teamPathShare, func(c *fiber.Ctx, ids []int64) ([]byte, error) {
+	return teamRoute(teamPathShare, func(c fiber.Ctx, ids []int64) ([]byte, error) {
 		ch, err := queryChange(c, ids[1])
 		if err != nil {
 			return nil, err

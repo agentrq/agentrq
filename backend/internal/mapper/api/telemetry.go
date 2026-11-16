@@ -9,7 +9,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -19,7 +19,7 @@ import (
 // The action name is looked up in the allowlist here rather than passed
 // through as a string, so an unrecognised name is rejected at the edge and the
 // rest of the stack only ever handles actions the server already knows.
-func FromHTTPRequestToRecordTelemetryRequestEntity(c *fiber.Ctx) *entity.RecordTelemetryRequest {
+func FromHTTPRequestToRecordTelemetryRequestEntity(c fiber.Ctx) *entity.RecordTelemetryRequest {
 	var payload view.RecordTelemetryRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil

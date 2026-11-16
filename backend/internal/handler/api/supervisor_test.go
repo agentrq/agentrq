@@ -14,7 +14,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -30,7 +30,7 @@ func (m *mockCrudEnsureSupervisor) EnsureSupervisorWorkspace(ctx context.Context
 func ensureSupervisorApp(crudCtrl crud.Controller, mgr *fakeMCPManager) *fiber.App {
 	app := fiber.New()
 	h := &handler{crud: crudCtrl, mcpManager: mgr}
-	app.Post("/api/v1/workspaces/supervisor", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/supervisor", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.ensureSupervisorWorkspace()(c)
 	})

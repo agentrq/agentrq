@@ -8,7 +8,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -37,7 +37,7 @@ func (h *handler) registerPublicHookRoutes() {
 }
 
 func (h *handler) receiveHookRequest() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		in := mapper.FromHTTPRequestToHookIncomingRequestEntity(c)
 		if in == nil {
 			return hookError(c, base.ErrNotFound)
@@ -54,9 +54,9 @@ func (h *handler) receiveHookRequest() fiber.Handler {
 }
 
 func (h *handler) listHookDeliveries() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		id := monoflake.IDFromBase62(c.Params("id")).Int64()
-		limit := c.QueryInt("limit", defaultDeliveryPage)
+		limit := fiber.Query[int](c, "limit", defaultDeliveryPage)
 		if id == 0 || limit < 1 || limit > maxDeliveryPage {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
 		}
@@ -78,7 +78,7 @@ func (h *handler) listHookDeliveries() fiber.Handler {
 }
 
 func (h *handler) replayHookDelivery() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		id := monoflake.IDFromBase62(c.Params("id")).Int64()
 		deliveryID := monoflake.IDFromBase62(c.Params("deliveryId")).Int64()
 		if id == 0 || deliveryID == 0 {
@@ -98,12 +98,12 @@ const (
 	maxDeliveryPage     = 200
 )
 
-func sessionUser(c *fiber.Ctx) int64 {
+func sessionUser(c fiber.Ctx) int64 {
 	return monoflake.IDFromBase62(c.Locals("user_id").(string)).Int64()
 }
 
 func (h *handler) listAvailableHooks() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		hooks, err := h.hooks.ListAvailable(ctx, sessionUser(c))
@@ -118,7 +118,7 @@ func (h *handler) listAvailableHooks() fiber.Handler {
 // createOwnHook adds an account's own hook from its module, sent as the
 // admin upload is: application/wasm, gzipped when large.
 func (h *handler) createOwnHook() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		wasm, ok := hookModule(c)
 		if !ok {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
@@ -135,7 +135,7 @@ func (h *handler) createOwnHook() fiber.Handler {
 }
 
 func (h *handler) upgradeOwnHook() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		id := monoflake.IDFromBase62(c.Params("id")).Int64()
 		wasm, ok := hookModule(c)
 		if id == 0 || !ok {
@@ -153,7 +153,7 @@ func (h *handler) upgradeOwnHook() fiber.Handler {
 }
 
 func (h *handler) deleteOwnHook() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		id := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if id == 0 {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
@@ -168,7 +168,7 @@ func (h *handler) deleteOwnHook() fiber.Handler {
 }
 
 func (h *handler) listHookRegistrations() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		regs, err := h.hooks.ListRegistrations(ctx, sessionUser(c))
@@ -181,7 +181,7 @@ func (h *handler) listHookRegistrations() fiber.Handler {
 }
 
 func (h *handler) createHookRegistration() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		rq := mapper.FromHTTPRequestToHookRegistrationRequestEntity(c)
 		if rq == nil || rq.HookID == 0 {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
@@ -194,7 +194,7 @@ func (h *handler) createHookRegistration() fiber.Handler {
 }
 
 func (h *handler) getHookRegistration() fiber.Handler {
-	return h.registrationByID(func(c *fiber.Ctx, id int64) (entity.HookRegistration, error) {
+	return h.registrationByID(func(c fiber.Ctx, id int64) (entity.HookRegistration, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		return h.hooks.GetRegistration(ctx, sessionUser(c), id)
@@ -202,7 +202,7 @@ func (h *handler) getHookRegistration() fiber.Handler {
 }
 
 func (h *handler) updateHookRegistration() fiber.Handler {
-	return h.registrationByID(func(c *fiber.Ctx, id int64) (entity.HookRegistration, error) {
+	return h.registrationByID(func(c fiber.Ctx, id int64) (entity.HookRegistration, error) {
 		rq := mapper.FromHTTPRequestToHookRegistrationRequestEntity(c)
 		if rq == nil || rq.HookID != 0 {
 			// A registration keeps its hook; another hook is a new one.
@@ -215,7 +215,7 @@ func (h *handler) updateHookRegistration() fiber.Handler {
 }
 
 func (h *handler) rotateHookToken() fiber.Handler {
-	return h.registrationByID(func(c *fiber.Ctx, id int64) (entity.HookRegistration, error) {
+	return h.registrationByID(func(c fiber.Ctx, id int64) (entity.HookRegistration, error) {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		return h.hooks.RotateToken(ctx, sessionUser(c), id)
@@ -223,7 +223,7 @@ func (h *handler) rotateHookToken() fiber.Handler {
 }
 
 func (h *handler) deleteHookRegistration() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		id := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if id == 0 {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
@@ -242,8 +242,8 @@ var errBadRequest = fiber.ErrBadRequest
 
 // registrationByID answers with the registration fn returns for the id in the
 // path.
-func (h *handler) registrationByID(fn func(c *fiber.Ctx, id int64) (entity.HookRegistration, error)) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+func (h *handler) registrationByID(fn func(c fiber.Ctx, id int64) (entity.HookRegistration, error)) fiber.Handler {
+	return func(c fiber.Ctx) error {
 		id := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if id == 0 {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
@@ -253,7 +253,7 @@ func (h *handler) registrationByID(fn func(c *fiber.Ctx, id int64) (entity.HookR
 	}
 }
 
-func sendRegistration(c *fiber.Ctx, status int, reg entity.HookRegistration, err error) error {
+func sendRegistration(c fiber.Ctx, status int, reg entity.HookRegistration, err error) error {
 	if err == errBadRequest {
 		return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
 	}

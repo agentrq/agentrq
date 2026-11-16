@@ -11,11 +11,11 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
-func FromHTTPRequestToCreateWorkspaceRequestEntity(c *fiber.Ctx) *entity.CreateWorkspaceRequest {
+func FromHTTPRequestToCreateWorkspaceRequestEntity(c fiber.Ctx) *entity.CreateWorkspaceRequest {
 	var payload view.CreateWorkspaceRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -125,7 +125,7 @@ func fromEntityAgentStateToView(p *entity.AgentState) *view.AgentState {
 	}
 }
 
-func FromHTTPRequestToGetWorkspaceRequestEntity(c *fiber.Ctx) *entity.GetWorkspaceRequest {
+func FromHTTPRequestToGetWorkspaceRequestEntity(c fiber.Ctx) *entity.GetWorkspaceRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
@@ -133,7 +133,7 @@ func FromHTTPRequestToGetWorkspaceRequestEntity(c *fiber.Ctx) *entity.GetWorkspa
 	return &entity.GetWorkspaceRequest{ID: id}
 }
 
-func FromHTTPRequestToDeleteWorkspaceRequestEntity(c *fiber.Ctx) *entity.DeleteWorkspaceRequest {
+func FromHTTPRequestToDeleteWorkspaceRequestEntity(c fiber.Ctx) *entity.DeleteWorkspaceRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
@@ -141,7 +141,7 @@ func FromHTTPRequestToDeleteWorkspaceRequestEntity(c *fiber.Ctx) *entity.DeleteW
 	return &entity.DeleteWorkspaceRequest{ID: id}
 }
 
-func FromHTTPRequestToResetWorkspaceIDRequestEntity(c *fiber.Ctx) *entity.ResetWorkspaceIDRequest {
+func FromHTTPRequestToResetWorkspaceIDRequestEntity(c fiber.Ctx) *entity.ResetWorkspaceIDRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
@@ -154,7 +154,7 @@ func FromResetWorkspaceIDResponseEntityToHTTPResponse(rs *entity.ResetWorkspaceI
 	return payload
 }
 
-func FromHTTPRequestToUpdateWorkspaceRequestEntity(c *fiber.Ctx) *entity.UpdateWorkspaceRequest {
+func FromHTTPRequestToUpdateWorkspaceRequestEntity(c fiber.Ctx) *entity.UpdateWorkspaceRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
@@ -376,7 +376,7 @@ func fromEntityAgentClientToView(c *entity.AgentClient) *view.AgentClient {
 
 // FromHTTPRequestToForkWorkspaceRequestEntity reads a fork request; the body
 // is optional, and so is the name in it.
-func FromHTTPRequestToForkWorkspaceRequestEntity(c *fiber.Ctx) *entity.ForkWorkspaceRequest {
+func FromHTTPRequestToForkWorkspaceRequestEntity(c fiber.Ctx) *entity.ForkWorkspaceRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
@@ -416,7 +416,7 @@ func FromForkWorkspaceResponseEntityToMCPResponse(rs *entity.ForkWorkspaceRespon
 	return payload
 }
 
-func FromHTTPRequestToMergeForkRequestEntity(c *fiber.Ctx) *entity.MergeForkRequest {
+func FromHTTPRequestToMergeForkRequestEntity(c fiber.Ctx) *entity.MergeForkRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
