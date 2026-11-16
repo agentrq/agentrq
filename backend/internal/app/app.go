@@ -678,6 +678,8 @@ func New(cfg Config) (*App, error) {
 		MemQ:       mqSvc,
 		SMTP:       smtpSvc,
 		BaseURL:    cfg.App.BaseURL,
+
+		SMTPEnabled: cfg.SMTP.Enabled && cfg.SMTP.Host != "",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("notification: %w", err)

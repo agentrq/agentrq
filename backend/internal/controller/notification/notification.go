@@ -25,6 +25,8 @@ type (
 		MemQ       memq.Service
 		SMTP       smtp.Service
 		BaseURL    string
+		// SMTPEnabled sends the welcome email at sign-up; off, none is sent.
+		SMTPEnabled bool
 	}
 
 	Controller interface {
@@ -38,6 +40,8 @@ type (
 		smtp    smtp.Service
 		baseURL string
 		queueID uint32
+
+		smtpEnabled bool
 	}
 )
 
@@ -58,6 +62,8 @@ func New(p Params) (Controller, error) {
 		smtp:    p.SMTP,
 		baseURL: p.BaseURL,
 		queueID: res.ID,
+
+		smtpEnabled: p.SMTPEnabled,
 	}
 
 	// Add workers for email queue
@@ -114,6 +120,8 @@ func (c *controller) processEvent(ctx context.Context, event entity.CRUDEvent) {
 		c.handleWorkspaceEvent(ctx, event)
 	case entity.ResourceMessage:
 		c.handleMessageEvent(ctx, event)
+	case entity.ResourceUser:
+		c.handleUserEvent(ctx, event)
 	}
 }
 
