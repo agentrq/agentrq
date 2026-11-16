@@ -111,9 +111,14 @@ func TestSentryReportsErrorLogLines(t *testing.T) {
 	zlog.Error().Err(errors.New("disk full")).Str("email", "a@example.com").Msg("save failed")
 	zlog.Error().Msg("no error field")
 	zlog.Error().Err(errors.New("bare")).Send()
-	events := transport.Events()
+	// Only this test's lines: an app an earlier test started may still be
+	// logging errors from its background work as it winds down.
+	ours := map[string]bool{"only a warning": true, "save failed: disk full": true, "no error field": true, "bare": true}
 	var got []string
-	for _, e := range events {
+	for _, e := range transport.Events() {
+		if !ours[e.Message] {
+			continue
+		}
 		got = append(got, e.Message)
 		if e.Level != sentry.LevelError {
 			t.Errorf("%q level = %s", e.Message, e.Level)
