@@ -23,8 +23,6 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
-	"github.com/rs/zerolog"
-	zlog "github.com/rs/zerolog/log"
 )
 
 // The error paths of the task routes: a request the mapper refuses, a
@@ -448,37 +446,6 @@ func TestGetAttachment_ServesTheFileUnderASafeName(t *testing.T) {
 	}
 	if cd := resp.Header.Get("Content-Disposition"); cd != `inline; filename="notes.txt"` {
 		t.Errorf("Content-Disposition = %q", cd)
-	}
-}
-
-// A missing attachment is logged below Error, as Error lines go to Sentry;
-// any other failure still logs at Error.
-func TestGetAttachment_LogsAMissingFileBelowError(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		err    error
-		status int
-		level  string
-	}{
-		{"not found", base.ErrNotFound, http.StatusNotFound, "warn"},
-		{"failure", errors.New("database unavailable"), http.StatusInternalServerError, "error"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var logs strings.Builder
-			prev := zlog.Logger
-			zlog.Logger = zerolog.New(&logs)
-			t.Cleanup(func() { zlog.Logger = prev })
-
-			app := errPathTaskApp(&handler{crud: &errPathCrud{err: tc.err}})
-			resp, _ := errPathDo(t, app, http.MethodGet,
-				"/workspaces/"+errPathWorkspace+"/tasks/"+errPathTask+"/attachments/att-1", "")
-			if resp.StatusCode != tc.status {
-				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.status)
-			}
-			if want := `"level":"` + tc.level + `"`; !strings.Contains(logs.String(), want) {
-				t.Errorf("log = %q, want %s", logs.String(), want)
-			}
-		})
 	}
 }
 

@@ -5,17 +5,13 @@
 package app
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	fibersentry "github.com/gofiber/contrib/v3/sentry"
 	fiberrecover "github.com/gofiber/fiber/v3/middleware/recover"
-	"github.com/rs/zerolog"
-	zlog "github.com/rs/zerolog/log"
 
 	handlerapi "github.com/agentrq/agentrq/backend/internal/handler/api"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
@@ -61,8 +57,8 @@ func frontendSentry(c SentryConfig, cfgSvc config.Service) handlerapi.Sentry {
 }
 
 // startSentry starts the client, its release the app's version and its
-// environment the config's, and sends every error-level log line to it too,
-// so errors outside a request are reported as well.
+// environment the config's. Only panics are reported: a log line, even at
+// Error, is not, as most are an expected failure already answered.
 func startSentry(c SentryConfig, cfgSvc config.Service) error {
 	if !c.Enabled {
 		return nil
@@ -79,7 +75,6 @@ func startSentry(c SentryConfig, cfgSvc config.Service) error {
 	}); err != nil {
 		return errors.New("sentry.dsn: " + err.Error())
 	}
-	zlog.Logger = zlog.Logger.Output(zerolog.MultiLevelWriter(os.Stderr, sentryLogs{}))
 	return nil
 }
 
@@ -109,40 +104,4 @@ func reportPanics(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(w, r)
 	})
-}
-
-// sentryLogs sends each error-level log line as an event: its message, and
-// its error when it has one. Other fields stay out, as they may name people.
-type sentryLogs struct{}
-
-func (sentryLogs) Write(p []byte) (int, error) { return len(p), nil }
-
-func (sentryLogs) WriteLevel(level zerolog.Level, p []byte) (int, error) {
-	if level < zerolog.ErrorLevel || level == zerolog.NoLevel || level == zerolog.Disabled {
-		return len(p), nil
-	}
-	var line struct {
-		Message string `json:"message"`
-		Error   string `json:"error"`
-	}
-	_ = json.Unmarshal(p, &line)
-	msg := line.Message
-	if line.Error != "" {
-		if msg != "" {
-			msg += ": "
-		}
-		msg += line.Error
-	}
-	event := sentry.NewEvent()
-	event.Level = sentry.LevelError
-	if level >= zerolog.FatalLevel {
-		event.Level = sentry.LevelFatal
-	}
-	event.Message = msg
-	sentry.CaptureEvent(event)
-	if level >= zerolog.FatalLevel {
-		// Fatal exits right after this write.
-		sentry.Flush(sentryFlushTimeout)
-	}
-	return len(p), nil
 }

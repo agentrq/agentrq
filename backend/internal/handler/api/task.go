@@ -20,7 +20,6 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/eventinstruction"
 	"github.com/gofiber/fiber/v3"
@@ -833,13 +832,7 @@ func (h *handler) getAttachment() fiber.Handler {
 			UserID:       userID,
 		})
 		if err != nil {
-			// A missing file is the caller's 404, not a server fault: Error
-			// lines go to Sentry.
-			if errors.Is(err, base.ErrNotFound) {
-				zlog.Warn().Err(err).Msg("Failed to fetch attachment")
-			} else {
-				zlog.Error().Err(err).Msg("Failed to fetch attachment")
-			}
+			zlog.Error().Err(err).Msg("Failed to fetch attachment")
 			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
