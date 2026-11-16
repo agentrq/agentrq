@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { test, expect } from '../lib/fixtures.js'
-import { createTask, createWorkspace, nextResponse, openSidebar, setTaskStatus, unique, watchTraffic } from '../lib/app.js'
+import { createTask, createWorkspace, finishOngoingTasks, nextResponse, openSidebar, setTaskStatus, unique, watchTraffic } from '../lib/app.js'
 import { signInAs } from '../lib/users.js'
 
 const API = '/api/v1'
@@ -121,6 +121,7 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   await bea.keyboard.press('Escape')
 
   // 7. The root user moves it on; Bea's open page follows, with no reload.
+  await finishOngoingTasks(owner, workspace.id)
   await setTaskStatus(owner, workspace.id, task.id, 'ongoing')
   await expect(bea.getByTestId('team-task-status')).toContainText(/ongoing/i)
 

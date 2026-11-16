@@ -178,7 +178,7 @@ func TestRespondToTask_Failures(t *testing.T) {
 		reads(e)
 		e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{task, {ID: 11, Status: "ongoing"}}, nil)
 		_, err := e.controller.RespondToTask(context.Background(), req("allow", ""))
-		wantErrText(t, "RespondToTask", err, "another task is already ongoing")
+		wantErrIs(t, "RespondToTask", err, entity.ErrAnotherTaskOngoing)
 	})
 	t.Run("unknown action", func(t *testing.T) {
 		e := newTestController(t)

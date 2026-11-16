@@ -2701,6 +2701,10 @@ const TaskTitleEditWindow = 7 * 24 * time.Hour
 // shown to the person as it is.
 var ErrTaskTitleLocked = errors.New("a task can only be renamed in the first 7 days after it was created")
 
+// ErrAnotherTaskOngoing refuses a task a second ongoing place in its workspace.
+// Its text is shown to the person as it is.
+var ErrAnotherTaskOngoing = errors.New("another task is already ongoing in this workspace")
+
 // ForkError is one of the Err* kinds above with the sentence a person sees.
 type ForkError struct {
 	Kind    error

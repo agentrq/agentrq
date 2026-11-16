@@ -4,7 +4,7 @@
 
 import { crc32, deflateSync } from 'node:zlib'
 import { test, expect } from '../lib/fixtures.js'
-import { agentSession, createTask, nextResponse, setTaskStatus, unique, watchTraffic } from '../lib/app.js'
+import { agentSession, createTask, finishOngoingTasks, nextResponse, setTaskStatus, unique, watchTraffic } from '../lib/app.js'
 
 // A solid PNG, so a linked image has something to show.
 function png(width, height, [r, g, b]) {
@@ -190,6 +190,7 @@ test('agents share docs on the Pano, and the person reads and comments on them',
 // one of its tasks.
 test('a checklist item assigned to a workspace follows its task, and a mention pings one', async ({ page, workspace }) => {
   const traffic = watchTraffic(page)
+  await finishOngoingTasks(page, workspace.id)
   const call = await agentSession(page, workspace.id)
   const doc = await pano(call, { action: 'save', title: unique('Launch'), color: 'purple', markdown: 'Who does what:\n\n- [ ] backend\n- [ ] frontend\n- [ ] docs' })
 
@@ -398,8 +399,7 @@ test('a doc is linked to the chat about it and to the task its agent was on', as
   const traffic = watchTraffic(page)
   const call = await agentSession(page, workspace.id)
   // The agent is on one task only, so that is the task a doc it writes is for.
-  const open = await (await page.request.get(`/api/v1/workspaces/${workspace.id}/tasks?status=ongoing`)).json()
-  for (const t of open.tasks || []) await setTaskStatus(page, workspace.id, t.id, 'completed')
+  await finishOngoingTasks(page, workspace.id)
   const onIt = await createTask(page, workspace.id, unique('the agent is on this'), 'ongoing')
   const doc = await pano(call, { action: 'save', payload: { title: unique('written on a task'), markdown: '- [ ] my own step' } })
 
@@ -435,8 +435,7 @@ test('a doc is linked to the chat about it and to the task its agent was on', as
 test('a doc an agent writes on its task is in that task\'s links', async ({ page, workspace }) => {
   const traffic = watchTraffic(page)
   const call = await agentSession(page, workspace.id)
-  const open = await (await page.request.get(`/api/v1/workspaces/${workspace.id}/tasks?status=ongoing`)).json()
-  for (const t of open.tasks || []) await setTaskStatus(page, workspace.id, t.id, 'completed')
+  await finishOngoingTasks(page, workspace.id)
   const task = await createTask(page, workspace.id, unique('the agent writes a doc on this'), 'ongoing')
 
   const title = unique('the design for it')

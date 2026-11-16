@@ -622,8 +622,8 @@ func TestUpdateTaskStatus_OngoingConflict(t *testing.T) {
 	_, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
 		WorkspaceID: 1, TaskID: 10, Status: "ongoing", UserID: testUserIDStr,
 	})
-	if err == nil || !strings.Contains(err.Error(), "another task is already ongoing") {
-		t.Fatalf("expected ongoing conflict error, got %v", err)
+	if !errors.Is(err, entity.ErrAnotherTaskOngoing) {
+		t.Fatalf("expected ErrAnotherTaskOngoing, got %v", err)
 	}
 }
 

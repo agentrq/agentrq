@@ -70,7 +70,7 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 	} else if errors.As(err, &teamErr) {
 		code = teamErrorStatus[teamErr.Kind]
 		msg = teamErr.Message
-	} else if errors.Is(err, entity.ErrTaskTitleLocked) {
+	} else if errors.Is(err, entity.ErrTaskTitleLocked) || errors.Is(err, entity.ErrAnotherTaskOngoing) {
 		code = http.StatusConflict
 		msg = err.Error()
 	} else if err.Error() == "rate limit exceeded" {

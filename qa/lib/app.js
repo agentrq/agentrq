@@ -70,6 +70,13 @@ export async function setTaskStatus(page, workspaceId, taskId, value) {
   return (await expectOk(res, `moving task ${taskId} to ${value}`)).task
 }
 
+// The workspace is shared and allows one ongoing task: a test that moves a
+// task to ongoing first completes whatever an earlier test left there.
+export async function finishOngoingTasks(page, workspaceId) {
+  const open = await (await page.request.get(`/api/v1/workspaces/${workspaceId}/tasks?status=ongoing`)).json()
+  for (const t of open.tasks || []) await setTaskStatus(page, workspaceId, t.id, 'completed')
+}
+
 export async function deleteTask(page, workspaceId, taskId) {
   const res = await send(page, 'DELETE', `/workspaces/${workspaceId}/tasks/${taskId}`)
   if (!res.ok()) throw new Error(`deleting task ${taskId} answered ${res.status()}`)
