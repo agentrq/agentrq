@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
 
+	handlerapi "github.com/agentrq/agentrq/backend/internal/handler/api"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 )
 
@@ -56,10 +57,21 @@ func TestCheckSentry(t *testing.T) {
 		{SentryConfig{Enabled: true}, "sentry.dsn: required when sentry is enabled"},
 		{SentryConfig{Enabled: true, DSN: "not a dsn"}, "sentry.dsn: "},
 	} {
-		err := checkSentry(tc.cfg)
+		err := checkSentry("sentry", tc.cfg)
 		if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.HasPrefix(err.Error(), tc.want)) {
 			t.Errorf("checkSentry(%+v) = %v, want %q", tc.cfg, err, tc.want)
 		}
+	}
+}
+
+// Off, the web app is told nowhere; on, the DSN and the server's environment.
+func TestFrontendSentry(t *testing.T) {
+	if got := frontendSentry(SentryConfig{DSN: testSentryDSN}, nil); got != (handlerapi.Sentry{}) {
+		t.Errorf("off: %+v", got)
+	}
+	want := handlerapi.Sentry{DSN: testSentryDSN, Environment: "staging"}
+	if got := frontendSentry(SentryConfig{Enabled: true, DSN: testSentryDSN}, stagingConfig{}); got != want {
+		t.Errorf("on: %+v, want %+v", got, want)
 	}
 }
 

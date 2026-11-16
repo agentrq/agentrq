@@ -23,6 +23,7 @@ import { fetchUser } from './api'
 import { usePlatformStore } from './stores/platformStore'
 import { rememberedTeam } from './stores/teamStore'
 import { teamLanding } from './composables/useTeamMode'
+import { startSentry } from './utils/sentry'
 
 // The Pano's board, shared by its two routes below.
 const PanoView = () => import('./views/PanoView.vue')
@@ -228,6 +229,9 @@ export function createAgentRQApp({ history, platform = 'web', os = '' } = {}) {
   // Passing the pinia instance explicitly: this runs before mount, so there is
   // no active instance for the store to infer.
   usePlatformStore(pinia).setPlatform(platform, os)
+
+  // Off unless the server turns frontend Sentry on.
+  startSentry(app)
 
   return { app, router, pinia }
 }

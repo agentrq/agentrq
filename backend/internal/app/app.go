@@ -187,6 +187,8 @@ type (
 		} `yaml:"mcp"`
 		// Sentry reports errors and panics, when it is enabled.
 		Sentry SentryConfig `yaml:"sentry"`
+		// SentryFrontend reports the web app's errors, when it is enabled.
+		SentryFrontend SentryConfig `yaml:"sentryFrontend"`
 		// Prometheus serves the HTTP metrics at /metrics, when it is enabled.
 		Prometheus PrometheusConfig `yaml:"prometheus"`
 		ConfigSvc  config.Service   `yaml:"-"` // injected, not from YAML
@@ -833,6 +835,7 @@ func New(cfg Config) (*App, error) {
 		RootLoginEnabled: cfg.Auth.RootLoginEnabled,
 		RootToken:        cfg.Auth.RootAccessToken,
 		RedirectDomains:  cfg.Auth.AllowedRedirectDomains,
+		Sentry:           frontendSentry(cfg.SentryFrontend, cfg.ConfigSvc),
 		GithubClientID:   cfg.Auth.GitHub.ClientID,
 		Router:           apiGroup,
 		Root:             fiberApp,

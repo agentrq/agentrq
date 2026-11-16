@@ -51,9 +51,11 @@ func registeredRoutes(t *testing.T) map[string]bool {
 	t.Helper()
 
 	app := fiber.New()
-	h := &handler{router: app.Group("/api/v1")}
+	// Sentry on, since its route is only served then.
+	h := &handler{router: app.Group("/api/v1"), sentry: newSentryRelay(Sentry{DSN: "https://key@sentry.example.com/1"})}
 
 	h.registerPublicAuthRoutes()
+	h.registerSentryRoutes()
 	h.registerProtectedAuthRoutes()
 	if err := h.registerWorkspaceRoutes(); err != nil {
 		t.Fatalf("registerWorkspaceRoutes: %v", err)

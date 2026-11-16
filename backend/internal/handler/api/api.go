@@ -86,6 +86,8 @@ type (
 		LoginIcons loginicon.Controller
 		// OAuth2Logins are the sign-in providers the operator added.
 		OAuth2Logins []OAuth2Login
+		// Sentry is where the web app reports its errors; zero, nowhere.
+		Sentry Sentry
 	}
 
 	// OAuth2Login is a sign-in provider besides Google and GitHub.
@@ -141,6 +143,7 @@ type (
 		appConfig        appconfig.Controller
 		loginIcons       loginicon.Controller
 		oauth2Logins     []OAuth2Login
+		sentry           sentryRelay
 	}
 )
 
@@ -193,6 +196,7 @@ func New(p Params) (Handler, error) {
 		appConfig:        p.AppConfig,
 		loginIcons:       p.LoginIcons,
 		oauth2Logins:     p.OAuth2Logins,
+		sentry:           newSentryRelay(p.Sentry),
 	}
 	hosts, err := redirectHosts(p.RedirectDomains)
 	if err != nil {
@@ -217,6 +221,7 @@ func New(p Params) (Handler, error) {
 	h.router.Use(h.authMiddleware())
 
 	h.registerProtectedAuthRoutes()
+	h.registerSentryRoutes()
 
 	if err := h.registerWorkspaceRoutes(); err != nil {
 		return nil, err

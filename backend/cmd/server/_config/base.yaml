@@ -168,6 +168,12 @@ sentry:
   enabled: ${AGENTRQ_SENTRY_ENABLED:false}
   dsn: "${AGENTRQ_SENTRY_DSN:}"
 
+# The web app's errors reported to Sentry, off by default, through the server
+# so the desktop app reports too. Usually a project apart from the server's.
+sentryFrontend:
+  enabled: ${AGENTRQ_SENTRY_FRONTEND_ENABLED:false}
+  dsn: "${AGENTRQ_SENTRY_FRONTEND_DSN:}"
+
 # HTTP metrics for Prometheus at /metrics, off by default. A scrape must carry
 # the 32-character token as ?prometheus_token=; any other answers 404.
 prometheus:
