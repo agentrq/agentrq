@@ -2005,6 +2005,8 @@ func (a Action) String() string {
 		return "task_approve_manual"
 	case ActionTaskFromScheduled:
 		return "task_from_scheduled"
+	case ActionTaskRejectManual:
+		return "task_reject_manual"
 	case ActionMCPToolCall:
 		return "mcp_tool_call"
 	case ActionMCPPermissionManual:

@@ -14,6 +14,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
+	"github.com/prometheus/client_golang/prometheus"
 	zlog "github.com/rs/zerolog/log"
 	"gorm.io/gorm/clause"
 )
@@ -24,6 +25,9 @@ type (
 		PubSub    pubsub.Service
 		BatchSize int
 		Interval  time.Duration
+		// Registerer, when set, also counts every recorded action on
+		// Prometheus, labelled by the action's name rather than its stored ID.
+		Registerer prometheus.Registerer
 	}
 
 	Controller interface {
@@ -40,6 +44,8 @@ type (
 		wg        sync.WaitGroup
 		batchSize int
 		interval  time.Duration
+		// actions counts recorded actions for Prometheus; nil when it is off.
+		actions *prometheus.CounterVec
 
 		// seenClients caches MCPClient IDs already persisted so recordMCPClient
 		// doesn't hit the DB for every single event from an already-known client.
@@ -56,7 +62,7 @@ func New(p Params) Controller {
 		p.Interval = 5 * time.Second
 	}
 
-	return &controller{
+	c := &controller{
 		db:          p.DB,
 		pubsub:      p.PubSub,
 		queue:       make(chan model.Telemetry, 10000),
@@ -65,6 +71,22 @@ func New(p Params) Controller {
 		interval:    p.Interval,
 		seenClients: make(map[int64]struct{}),
 	}
+	if p.Registerer != nil {
+		c.actions = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "agentrq_telemetry_actions_total",
+			Help: "Telemetry actions recorded, by action name and, for MCP calls, the tool, resource or prompt.",
+		}, []string{"action", "sub_action"})
+		p.Registerer.MustRegister(c.actions)
+	}
+	return c
+}
+
+// enqueue queues a telemetry row and counts it on Prometheus under its name.
+func (c *controller) enqueue(t model.Telemetry, name, subAction string) {
+	if c.actions != nil {
+		c.actions.WithLabelValues(name, subAction).Inc()
+	}
+	c.queue <- t
 }
 
 func (c *controller) Start(ctx context.Context) error {
@@ -153,20 +175,20 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 	case entity.ActionTaskApproveManual:
 		action = model.ActionIDTaskApproveManual
 	case entity.ActionTaskFromScheduled:
-		c.queue <- model.Telemetry{
+		c.enqueue(model.Telemetry{
 			UserID:      event.UserID,
 			WorkspaceID: event.WorkspaceID,
 			OccurredAt:  time.Now().Unix(),
 			Action:      model.ActionIDTaskFromScheduled,
 			Actor:       uint8(event.Actor),
-		}
-		c.queue <- model.Telemetry{
+		}, entity.ActionTaskFromScheduled.String(), "")
+		c.enqueue(model.Telemetry{
 			UserID:      event.UserID,
 			WorkspaceID: event.WorkspaceID,
 			OccurredAt:  time.Now().Unix(),
 			Action:      model.ActionIDTaskCreate,
 			Actor:       uint8(event.Actor),
-		}
+		}, entity.ActionTaskCreate.String(), "")
 		return
 	case entity.ActionTaskRejectManual:
 		action = model.ActionIDTaskRejectManual
@@ -340,13 +362,13 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		return
 	}
 
-	c.queue <- model.Telemetry{
+	c.enqueue(model.Telemetry{
 		UserID:      event.UserID,
 		WorkspaceID: event.WorkspaceID,
 		OccurredAt:  time.Now().Unix(),
 		Action:      action,
 		Actor:       uint8(event.Actor),
-	}
+	}, event.Action.String(), "")
 }
 
 // subActionIDByToolName maps every tool/resource/prompt name either MCP
@@ -454,31 +476,32 @@ var subActionIDByToolName = map[string]uint8{
 func (c *controller) recordMCP(event mcp.MCPEvent) {
 	var action uint8
 	var subAction uint8
+	var name, subName string
 	switch event.Action {
 	case mcp.ActionMCPToolCall:
-		action = model.ActionIDMCPToolCall
-		subAction = subActionIDByToolName[event.ToolName]
+		action, name = model.ActionIDMCPToolCall, "mcp_tool_call"
+		subAction, subName = mcpSubAction(event.ToolName)
 	case mcp.ActionMCPMethodCall:
-		action = model.ActionIDMCPMethodCall
-		subAction = subActionIDByToolName[event.ToolName]
+		action, name = model.ActionIDMCPMethodCall, "mcp_method_call"
+		subAction, subName = mcpSubAction(event.ToolName)
 	case mcp.ActionMCPConnect:
-		action = model.ActionIDMCPConnect
+		action, name = model.ActionIDMCPConnect, "mcp_connect"
 	case mcp.ActionMCPClearContext:
-		action = model.ActionIDMCPClearContext
+		action, name = model.ActionIDMCPClearContext, "mcp_clear_context"
 	case mcp.ActionMCPPlanUpdate:
-		action = model.ActionIDMCPPlanUpdate
+		action, name = model.ActionIDMCPPlanUpdate, "mcp_plan_update"
 	case mcp.ActionMCPNotification:
 		switch event.Method {
 		case "permission_manual_allow":
-			action = model.ActionIDMCPPermissionManual
+			action, name = model.ActionIDMCPPermissionManual, "mcp_permission_manual"
 		case "permission_auto_allow":
-			action = model.ActionIDMCPPermissionAuto
+			action, name = model.ActionIDMCPPermissionAuto, "mcp_permission_auto"
 		case "permission_manual_deny":
-			action = model.ActionIDMCPPermissionDeny
+			action, name = model.ActionIDMCPPermissionDeny, "mcp_permission_deny"
 		case "permission_extension_allow":
-			action = model.ActionIDMCPPermissionExtensionAllow
+			action, name = model.ActionIDMCPPermissionExtensionAllow, "mcp_permission_extension_allow"
 		case "permission_extension_deny":
-			action = model.ActionIDMCPPermissionExtensionDeny
+			action, name = model.ActionIDMCPPermissionExtensionDeny, "mcp_permission_extension_deny"
 		default:
 			return
 		}
@@ -488,7 +511,7 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 
 	c.recordMCPClient(event.ClientID, event.ClientName, event.ClientVersion)
 
-	c.queue <- model.Telemetry{
+	c.enqueue(model.Telemetry{
 		UserID:      event.UserID,
 		WorkspaceID: event.WorkspaceID,
 		OccurredAt:  time.Now().Unix(),
@@ -496,7 +519,18 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 		Actor:       uint8(event.Actor),
 		ClientID:    event.ClientID,
 		SubActionID: subAction,
+	}, name, subName)
+}
+
+// mcpSubAction is the stored ID and the Prometheus label of an MCP call's tool,
+// resource or prompt. A name not in subActionIDByToolName is labelled
+// "unknown", so a caller cannot grow the label set by inventing names.
+func mcpSubAction(toolName string) (uint8, string) {
+	id, ok := subActionIDByToolName[toolName]
+	if !ok {
+		return id, "unknown"
 	}
+	return id, toolName
 }
 
 // recordMCPClient upserts a lookup row for a newly-seen MCP client identity so
