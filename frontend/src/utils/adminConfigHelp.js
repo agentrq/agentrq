@@ -134,8 +134,8 @@ export const CONFIG_HELP = {
   mcp: 'The MCP servers agents connect to.',
   'mcp.openaiAppsChallenge': 'The domain verification token for an OpenAI plugin submission, served at /.well-known/openai-apps-challenge. Empty serves 404.',
 
-  sentry: 'Errors and panics reported to Sentry, with the server\'s version as their release and its ENV as their environment. Request bodies, cookies and auth headers are never sent.',
-  'sentry.enabled': 'Reports panics and error-level log lines. Off by default.',
+  sentry: 'Server panics reported to Sentry, with the server\'s version as their release and its ENV as their environment. Request bodies, cookies and auth headers are never sent.',
+  'sentry.enabled': 'Reports server panics only, not log lines. Off by default.',
   'sentry.dsn': 'The Sentry project\'s DSN, such as https://<key>@o0.ingest.sentry.io/<project>. Required when enabled.',
   sentryFrontend: 'The web and desktop app\'s errors reported to Sentry, relayed through this server, with the app\'s version as their release and the server\'s ENV as their environment. Read at startup.',
   'sentryFrontend.enabled': 'Reports the app\'s errors. Off by default.',

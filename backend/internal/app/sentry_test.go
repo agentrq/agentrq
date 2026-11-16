@@ -13,7 +13,6 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v3"
-	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
 
 	handlerapi "github.com/agentrq/agentrq/backend/internal/handler/api"

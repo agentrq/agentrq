@@ -352,7 +352,7 @@ The server refuses to start on a negative value.
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTRQ_SENTRY_ENABLED` | `false` | Report panics and error-level log lines to Sentry. Each event's release is the server's version and its environment is `ENV`. Request bodies, cookies and auth headers are never sent. |
+| `AGENTRQ_SENTRY_ENABLED` | `false` | Report server panics to Sentry; log lines, even at Error, are not sent. Each event's release is the server's version and its environment is `ENV`. Request bodies, cookies and auth headers are never sent. |
 | `AGENTRQ_SENTRY_DSN` | (empty) | The Sentry project's DSN. The server refuses to start with Sentry enabled and no valid DSN. |
 | `AGENTRQ_SENTRY_FRONTEND_ENABLED` | `false` | Report the web and desktop app's errors to Sentry. The app sends them to the server's `/api/v1/sentry`, which passes on only envelopes for this DSN; the route exists only while this is on. Each event's release is the app's version and its environment is `ENV`. |
 | `AGENTRQ_SENTRY_FRONTEND_DSN` | (empty) | The Sentry project the app reports to, usually apart from the server's. The server refuses to start with frontend Sentry enabled and no valid DSN. |
