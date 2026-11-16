@@ -138,7 +138,7 @@ func TestLoadStoresTheConfigThenPrefersIt(t *testing.T) {
 			for _, r := range rows {
 				keys = append(keys, r.ConfigKey)
 			}
-			want := "app artifacts auth ddos hooks mcp memory network pano pubsub ratelimit s3 sentry skills slack smtp ssl storage teams webPush"
+			want := "app artifacts auth ddos hooks mcp memory network pano prometheus pubsub ratelimit s3 sentry skills slack smtp ssl storage teams webPush"
 			if got := strings.Join(keys, " "); got != want {
 				t.Fatalf("stored blocks = %s\nwant %s", got, want)
 			}
@@ -277,6 +277,8 @@ func TestCheckConfig(t *testing.T) {
 		{"auth", `{"oauth2Providers":[{"id":"Bad Id"}]}`, "auth.oauth2Providers[0].id"},
 		{"sentry", `{"enabled":true}`, "sentry.dsn: required when sentry is enabled"},
 		{"sentry", `{"enabled":true,"dsn":"not a dsn"}`, "sentry.dsn: "},
+		{"prometheus", `{"enabled":true}`, "prometheus.token: must be 32 characters"},
+		{"prometheus", `{"enabled":true,"token":"short"}`, "prometheus.token: must be 32 characters"},
 	} {
 		svc, err := config.Overlay(base, map[string][]byte{tc.key: []byte(tc.block)})
 		if err != nil {

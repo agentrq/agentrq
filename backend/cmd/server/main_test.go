@@ -68,6 +68,7 @@ func TestLoadConfigTakesTheEnv(t *testing.T) {
 	t.Setenv("AGENTRQ_CLIENT_IP_HEADER", "X-Forwarded-For")
 	t.Setenv("AGENTRQ_MCP_OPENAI_APPS_CHALLENGE", "challenge")
 	t.Setenv("AGENTRQ_SENTRY_DSN", "https://key@sentry.example.com/1")
+	t.Setenv("AGENTRQ_PROMETHEUS_TOKEN", "0123456789abcdef0123456789abcdef")
 	svc, err := config.NewFS(bundled)
 	if err != nil {
 		t.Fatal(err)
@@ -90,6 +91,9 @@ func TestLoadConfigTakesTheEnv(t *testing.T) {
 	// Off unless turned on.
 	if cfg.Sentry.Enabled || cfg.Sentry.DSN != "https://key@sentry.example.com/1" {
 		t.Errorf("sentry = %+v", cfg.Sentry)
+	}
+	if cfg.Prometheus.Enabled || cfg.Prometheus.Token != "0123456789abcdef0123456789abcdef" {
+		t.Errorf("prometheus = %+v", cfg.Prometheus)
 	}
 }
 

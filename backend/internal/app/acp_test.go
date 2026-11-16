@@ -268,7 +268,7 @@ func newTestApp(t *testing.T) *App {
 	var cfg Config
 	for key, dst := range map[string]any{"app": &cfg.App, "auth": &cfg.Auth, "smtp": &cfg.SMTP, "ssl": &cfg.SSL,
 		"slack": &cfg.Slack, "webPush": &cfg.WebPush, "storage": &cfg.Storage, "memory": &cfg.Memory,
-		"skills": &cfg.Skills, "pano": &cfg.Pano, "idgen": &cfg.Idgen, "sentry": &cfg.Sentry} {
+		"skills": &cfg.Skills, "pano": &cfg.Pano, "idgen": &cfg.Idgen, "sentry": &cfg.Sentry, "prometheus": &cfg.Prometheus} {
 		if err := svc.Populate(key, dst); err != nil {
 			t.Fatalf("config %s: %v", key, err)
 		}

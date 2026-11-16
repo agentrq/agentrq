@@ -355,6 +355,13 @@ The server refuses to start on a negative value.
 | `AGENTRQ_SENTRY_ENABLED` | `false` | Report panics and error-level log lines to Sentry. Each event's release is the server's version and its environment is `ENV`. Request bodies, cookies and auth headers are never sent. |
 | `AGENTRQ_SENTRY_DSN` | (empty) | The Sentry project's DSN. The server refuses to start with Sentry enabled and no valid DSN. |
 
+### Prometheus
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENTRQ_PROMETHEUS_ENABLED` | `false` | Serve HTTP request metrics, and the Go runtime's and the process's, at `/metrics`. |
+| `AGENTRQ_PROMETHEUS_TOKEN` | (empty) | The secret a scrape passes as `/metrics?prometheus_token=<token>`; without it `/metrics` answers 404. Exactly 32 characters; the server refuses to start enabled without one. `/admin/config` can generate it. |
+
 ### Native ACP
 
 The server always serves `/api/acp/v1`, the only way acp-gateway connects.

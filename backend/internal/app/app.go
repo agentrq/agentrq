@@ -186,8 +186,10 @@ type (
 			OpenAIAppsChallenge string `yaml:"openaiAppsChallenge"`
 		} `yaml:"mcp"`
 		// Sentry reports errors and panics, when it is enabled.
-		Sentry    SentryConfig   `yaml:"sentry"`
-		ConfigSvc config.Service `yaml:"-"` // injected, not from YAML
+		Sentry SentryConfig `yaml:"sentry"`
+		// Prometheus serves the HTTP metrics at /metrics, when it is enabled.
+		Prometheus PrometheusConfig `yaml:"prometheus"`
+		ConfigSvc  config.Service   `yaml:"-"` // injected, not from YAML
 		// DB is the database Load opened and migrated; nil, New opens it.
 		DB dbconn.DBConn `yaml:"-"`
 		// AppConfig is the stored config Load read, for the admin pages; nil,
@@ -735,6 +737,9 @@ func New(cfg Config) (*App, error) {
 	})
 	if cfg.Sentry.Enabled {
 		fiberApp.Use(sentryFiber()...)
+	}
+	if cfg.Prometheus.Enabled {
+		fiberApp.Use(prometheusFiber(cfg.Prometheus)...)
 	}
 	fiberApp.Use(cors.New(cors.Config{
 		AllowOrigins:  []string{"*"},

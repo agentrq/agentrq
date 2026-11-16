@@ -168,6 +168,12 @@ sentry:
   enabled: ${AGENTRQ_SENTRY_ENABLED:false}
   dsn: "${AGENTRQ_SENTRY_DSN:}"
 
+# HTTP metrics for Prometheus at /metrics, off by default. A scrape must carry
+# the 32-character token as ?prometheus_token=; any other answers 404.
+prometheus:
+  enabled: ${AGENTRQ_PROMETHEUS_ENABLED:false}
+  token: "${AGENTRQ_PROMETHEUS_TOKEN:}"
+
 # Any S3-compatible store. Objects are addressed path-style. With an endpoint
 # and a bucket set, sign-in pictures are kept public in it under avatars/, and
 # sign-in providers' icons under login-icons/.

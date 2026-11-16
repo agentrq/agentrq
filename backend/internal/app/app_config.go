@@ -28,6 +28,7 @@ func LoadConfig(cfgSvc config.Service) (Config, error) {
 		"webPush": &cfg.WebPush, "network": &cfg.Network, "storage": &cfg.Storage, "memory": &cfg.Memory,
 		"skills": &cfg.Skills, "pano": &cfg.Pano, "hooks": &cfg.Hooks, "teams": &cfg.Teams, "mcp": &cfg.MCP,
 		"idgen": &cfg.Idgen, "ddos": &cfg.Ddos, "ratelimit": &cfg.Ratelimit, "sentry": &cfg.Sentry,
+		"prometheus": &cfg.Prometheus,
 	} {
 		if err := cfgSvc.Populate(key, dst); err != nil {
 			return Config{}, fmt.Errorf("%s: %w", key, err)
@@ -108,6 +109,9 @@ func checkConfig(c config.Service) error {
 		return fmt.Errorf("app.drainDelay: %s is negative", cfg.App.DrainDelay)
 	}
 	if err := checkSentry(cfg.Sentry); err != nil {
+		return err
+	}
+	if err := checkPrometheus(cfg.Prometheus); err != nil {
 		return err
 	}
 	if _, err := clientip.New(cfg.Network.TrustedProxies, cfg.Network.ClientIPHeader); err != nil {
