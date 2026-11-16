@@ -9,7 +9,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	zlog "github.com/rs/zerolog/log"
 )
 
@@ -29,7 +29,7 @@ func (h *handler) registerAdminConfigRoutes(r fiber.Router) {
 // uploadLoginIcon takes a sign-in provider's icon as the request body and
 // answers with its public link, for the provider's iconUrl.
 func (h *handler) uploadLoginIcon() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		rq := mapper.FromHTTPRequestToUploadLoginIconRequestEntity(c)
 		if rq == nil {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
@@ -46,7 +46,7 @@ func (h *handler) uploadLoginIcon() fiber.Handler {
 }
 
 func (h *handler) listAppConfigurations() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		blocks, err := h.appConfig.List(ctx)
@@ -59,7 +59,7 @@ func (h *handler) listAppConfigurations() fiber.Handler {
 }
 
 func (h *handler) updateAppConfiguration() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		rq := mapper.FromHTTPRequestToUpdateAppConfigurationRequestEntity(c)
 		if rq == nil {
 			return c.Status(fiber.StatusBadRequest).Send(_invalidPayload)
@@ -77,7 +77,7 @@ func (h *handler) updateAppConfiguration() fiber.Handler {
 
 // appConfigError answers a refused block with its reason, which names the
 // setting at fault, and anything else as the generic error.
-func appConfigError(c *fiber.Ctx, err error) error {
+func appConfigError(c fiber.Ctx, err error) error {
 	c.Set(_headerContentType, _mimeJSON)
 	var refused *entity.AppConfigurationError
 	if errors.As(err, &refused) {

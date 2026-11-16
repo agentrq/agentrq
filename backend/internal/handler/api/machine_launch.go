@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 
@@ -59,7 +59,7 @@ func (h *handler) registerAgentLaunchRoutes() {
 // Fails open like [handler.listAcpAgents]: a registry that cannot be reached
 // answers an empty list, and the forms fall back to the machine's own.
 func (h *handler) listAcpRegistryAgents() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -84,7 +84,7 @@ var _emptyAcpRegistry = mapper.FromAcpRegistryAgentsEntityToHTTPResponse(nil)
 // form's fallback and there is nothing an error status would tell it that
 // emptiness does not already say.
 func (h *handler) listAcpAgents() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -123,7 +123,7 @@ func (h *handler) listAcpAgents() fiber.Handler {
 // from (so no .mcp.json exists there yet), fails open the same as any other
 // reason this could come back empty.
 func (h *handler) listAcpModels() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -227,7 +227,7 @@ func (h *handler) askDaemon(ctx context.Context, machineID int64, c wire.Control
 // have no agent most of the time, and a 404 for the common case would have
 // every caller treating an error as a fact.
 func (h *handler) workspaceSession() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -248,7 +248,7 @@ func (h *handler) workspaceSession() fiber.Handler {
 // launchAgent starts an agent for a workspace on a chosen machine, through
 // the launcher the supervisor's launchAgent uses too.
 func (h *handler) launchAgent() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 
 		var payload struct {
@@ -263,7 +263,7 @@ func (h *handler) launchAgent() fiber.Handler {
 			Cols            uint16 `json:"cols,omitempty"`
 			Rows            uint16 `json:"rows,omitempty"`
 		}
-		if err := c.BodyParser(&payload); err != nil ||
+		if err := c.Bind().Body(&payload); err != nil ||
 			monoflake.IDFromBase62(c.Params("id")).Int64() == 0 ||
 			monoflake.IDFromBase62(payload.MachineID).Int64() == 0 {
 			c.Status(http.StatusUnprocessableEntity)

@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
@@ -44,7 +44,7 @@ func (k *ticketCrud) GetSession(_ context.Context, req entity.GetSessionRequest)
 func ticketApp(c crud.Controller, tokens auth.TokenService) *fiber.App {
 	h := &handler{crud: c, tokenSvc: tokens}
 	app := fiber.New()
-	app.Use(func(ctx *fiber.Ctx) error {
+	app.Use(func(ctx fiber.Ctx) error {
 		ctx.Locals("user_id", "user-1")
 		return ctx.Next()
 	})

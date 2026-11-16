@@ -15,7 +15,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -69,43 +69,43 @@ func (m *mockEventCrud) UpdateEvent(ctx context.Context, req entity.UpdateEventR
 func newEventApp(ctrl *mockEventCrud) *fiber.App {
 	app := fiber.New()
 	h := &handler{crud: ctrl}
-	app.Post("/events", func(c *fiber.Ctx) error {
+	app.Post("/events", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.createEvent()(c)
 	})
-	app.Get("/events", func(c *fiber.Ctx) error {
+	app.Get("/events", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.listEvents()(c)
 	})
-	app.Get("/events/:id", func(c *fiber.Ctx) error {
+	app.Get("/events/:id", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.getEvent()(c)
 	})
-	app.Delete("/events/:id", func(c *fiber.Ctx) error {
+	app.Delete("/events/:id", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.deleteEvent()(c)
 	})
-	app.Patch("/events/:id", func(c *fiber.Ctx) error {
+	app.Patch("/events/:id", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.updateEvent()(c)
 	})
-	app.Post("/events/:id/triggers", func(c *fiber.Ctx) error {
+	app.Post("/events/:id/triggers", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.createEventTrigger()(c)
 	})
-	app.Get("/events/:id/triggers", func(c *fiber.Ctx) error {
+	app.Get("/events/:id/triggers", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.listEventTriggers()(c)
 	})
-	app.Patch("/events/:id/triggers/:triggerID", func(c *fiber.Ctx) error {
+	app.Patch("/events/:id/triggers/:triggerID", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.updateEventTrigger()(c)
 	})
-	app.Delete("/events/:id/triggers/:triggerID", func(c *fiber.Ctx) error {
+	app.Delete("/events/:id/triggers/:triggerID", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.deleteEventTrigger()(c)
 	})
-	app.Get("/events/:id/tasks", func(c *fiber.Ctx) error {
+	app.Get("/events/:id/tasks", func(c fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.listTasksFromEvent()(c)
 	})

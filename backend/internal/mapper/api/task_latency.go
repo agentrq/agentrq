@@ -11,7 +11,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	"github.com/agentrq/agentrq/backend/internal/service/tasklatency"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -19,7 +19,7 @@ import (
 // ?range=&from=&to=&aggregate= and, when workspaceScoped, the workspace from
 // the path. aggregate defaults to p50; any other value than p50, min or max
 // is refused, as is a missing workspace.
-func FromHTTPRequestToGetTaskLatencyStatsRequestEntity(c *fiber.Ctx, workspaceScoped bool) *entity.GetTaskLatencyStatsRequest {
+func FromHTTPRequestToGetTaskLatencyStatsRequestEntity(c fiber.Ctx, workspaceScoped bool) *entity.GetTaskLatencyStatsRequest {
 	rq := &entity.GetTaskLatencyStatsRequest{
 		Range:     c.Query("range", "7d"),
 		Aggregate: c.Query("aggregate", tasklatency.AggregateP50),

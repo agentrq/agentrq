@@ -21,7 +21,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -186,7 +186,7 @@ func (m *errPathCrud) CloseExpiredElicitation(context.Context, entity.CloseExpir
 // middleware, which only ever sets the caller.
 func errPathTaskApp(h *handler) *fiber.App {
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user_id", errPathUser)
 		return c.Next()
 	})
@@ -603,12 +603,12 @@ func TestSSEEvents(t *testing.T) {
 		app := fiber.New()
 		// The stream never ends on its own, so the route reads the first two
 		// frames itself and answers with them, which also closes the stream.
-		app.Get("/workspaces/:id/events", func(c *fiber.Ctx) error {
+		app.Get("/workspaces/:id/events", func(c fiber.Ctx) error {
 			c.Locals("user_id", errPathUser)
 			if err := h.sseEvents()(c); err != nil {
 				return err
 			}
-			stream := c.Context().Response.BodyStream()
+			stream := c.RequestCtx().Response.BodyStream()
 			if stream == nil {
 				return errors.New("no stream was opened")
 			}
@@ -625,7 +625,7 @@ func TestSSEEvents(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			c.Context().Response.SetBodyString(hello + evt)
+			c.RequestCtx().Response.SetBodyString(hello + evt)
 			return nil
 		})
 

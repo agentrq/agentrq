@@ -10,14 +10,14 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
 // skillParams reads the workspace, when the route is under one, and the
 // percent-decoded skill name from the path; a name is required only when the
 // route has one. A route with no workspace is the account's, workspace 0.
-func skillParams(c *fiber.Ctx, wantName bool) (int64, string, bool) {
+func skillParams(c fiber.Ctx, wantName bool) (int64, string, bool) {
 	var workspaceID int64
 	if raw := c.Params("id"); raw != "" {
 		if workspaceID = monoflake.IDFromBase62(raw).Int64(); workspaceID == 0 {
@@ -37,7 +37,7 @@ func skillParams(c *fiber.Ctx, wantName bool) (int64, string, bool) {
 // FromHTTPRequestToSearchSkillsRequestEntity reads ?q=&limit=&offset=; all are
 // optional. A limit or offset that is not a number is left for the controller
 // to refuse, as a negative one.
-func FromHTTPRequestToSearchSkillsRequestEntity(c *fiber.Ctx) *entity.SearchSkillsRequest {
+func FromHTTPRequestToSearchSkillsRequestEntity(c fiber.Ctx) *entity.SearchSkillsRequest {
 	workspaceID, _, ok := skillParams(c, false)
 	if !ok {
 		return nil
@@ -45,12 +45,12 @@ func FromHTTPRequestToSearchSkillsRequestEntity(c *fiber.Ctx) *entity.SearchSkil
 	return &entity.SearchSkillsRequest{
 		WorkspaceID: workspaceID,
 		Query:       c.Query("q"),
-		Limit:       c.QueryInt("limit", 0),
-		Offset:      c.QueryInt("offset", 0),
+		Limit:       fiber.Query[int](c, "limit", 0),
+		Offset:      fiber.Query[int](c, "offset", 0),
 	}
 }
 
-func FromHTTPRequestToGetSkillRequestEntity(c *fiber.Ctx) *entity.GetSkillRequest {
+func FromHTTPRequestToGetSkillRequestEntity(c fiber.Ctx) *entity.GetSkillRequest {
 	workspaceID, name, ok := skillParams(c, true)
 	if !ok {
 		return nil
@@ -58,7 +58,7 @@ func FromHTTPRequestToGetSkillRequestEntity(c *fiber.Ctx) *entity.GetSkillReques
 	return &entity.GetSkillRequest{WorkspaceID: workspaceID, Name: name}
 }
 
-func FromHTTPRequestToGetSkillFileRequestEntity(c *fiber.Ctx) *entity.GetSkillFileRequest {
+func FromHTTPRequestToGetSkillFileRequestEntity(c fiber.Ctx) *entity.GetSkillFileRequest {
 	workspaceID, name, ok := skillParams(c, true)
 	if !ok {
 		return nil
@@ -71,7 +71,7 @@ func FromHTTPRequestToGetSkillFileRequestEntity(c *fiber.Ctx) *entity.GetSkillFi
 	return &entity.GetSkillFileRequest{WorkspaceID: workspaceID, Name: name, Path: p}
 }
 
-func FromHTTPRequestToDeleteSkillRequestEntity(c *fiber.Ctx) *entity.DeleteSkillRequest {
+func FromHTTPRequestToDeleteSkillRequestEntity(c fiber.Ctx) *entity.DeleteSkillRequest {
 	workspaceID, name, ok := skillParams(c, true)
 	if !ok {
 		return nil
@@ -81,13 +81,13 @@ func FromHTTPRequestToDeleteSkillRequestEntity(c *fiber.Ctx) *entity.DeleteSkill
 
 // FromHTTPRequestToSetSkillEnabledRequestEntity reads {"enabled": bool}, which
 // must be given: an empty body is refused rather than read as off.
-func FromHTTPRequestToSetSkillEnabledRequestEntity(c *fiber.Ctx) *entity.SetSkillEnabledRequest {
+func FromHTTPRequestToSetSkillEnabledRequestEntity(c fiber.Ctx) *entity.SetSkillEnabledRequest {
 	workspaceID, name, ok := skillParams(c, true)
 	if !ok {
 		return nil
 	}
 	var rq view.SetSkillEnabledRequest
-	if err := c.BodyParser(&rq); err != nil || rq.Enabled == nil {
+	if err := c.Bind().Body(&rq); err != nil || rq.Enabled == nil {
 		return nil
 	}
 	return &entity.SetSkillEnabledRequest{WorkspaceID: workspaceID, Name: name, Enabled: *rq.Enabled}
@@ -95,9 +95,9 @@ func FromHTTPRequestToSetSkillEnabledRequestEntity(c *fiber.Ctx) *entity.SetSkil
 
 // FromHTTPRequestToImportSkillsRequestEntity reads the import, and the
 // workspaces to turn the imported skills on in.
-func FromHTTPRequestToImportSkillsRequestEntity(c *fiber.Ctx) *entity.ImportSkillsRequest {
+func FromHTTPRequestToImportSkillsRequestEntity(c fiber.Ctx) *entity.ImportSkillsRequest {
 	var rq view.ImportSkillsRequest
-	if err := c.BodyParser(&rq); err != nil || rq.URL == "" {
+	if err := c.Bind().Body(&rq); err != nil || rq.URL == "" {
 		return nil
 	}
 	workspaceIDs := make([]int64, len(rq.WorkspaceIDs))

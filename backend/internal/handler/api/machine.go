@@ -9,7 +9,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 
@@ -63,13 +63,13 @@ func (h *handler) registerMachineRoutes() {
 // stays for the desktop builds already installed, which bundle a page that
 // still calls it.
 func (h *handler) approveMachineUpdate() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 
 		var payload struct {
 			Version string `json:"version"`
 		}
-		if err := c.BodyParser(&payload); err != nil {
+		if err := c.Bind().Body(&payload); err != nil {
 			c.Status(http.StatusUnprocessableEntity)
 			return c.Send(_invalidPayload)
 		}
@@ -83,14 +83,14 @@ func (h *handler) approveMachineUpdate() fiber.Handler {
 // and starts them again. Answers 202: the daemon's next hello is what says it
 // came back.
 func (h *handler) restartDaemon() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 
 		var payload struct {
 			Version string `json:"version"`
 		}
 		if len(c.Body()) > 0 {
-			if err := c.BodyParser(&payload); err != nil {
+			if err := c.Bind().Body(&payload); err != nil {
 				c.Status(http.StatusUnprocessableEntity)
 				return c.Send(_invalidPayload)
 			}
@@ -132,7 +132,7 @@ func (h *handler) restartDaemon() fiber.Handler {
 }
 
 // updateDaemon sends the update a machine offered, to exactly that version.
-func (h *handler) updateDaemon(c *fiber.Ctx, version string) error {
+func (h *handler) updateDaemon(c fiber.Ctx, version string) error {
 	ctx, cancel := newContext(c)
 	defer cancel()
 
@@ -179,7 +179,7 @@ func (h *handler) updateDaemon(c *fiber.Ctx, version string) error {
 // Only to a daemon that is at least wire.MinRemoteControlVersion and says the
 // capability. An older one ignores the op, or worse: its update never came
 // back under a service manager, and the agents it restored had no rows.
-func (h *handler) commandMachine(c *fiber.Ctx, machineID int64, version, capability string, op wire.Op, body any) bool {
+func (h *handler) commandMachine(c fiber.Ctx, machineID int64, version, capability string, op wire.Op, body any) bool {
 	refuse := func(status int, message string) bool {
 		c.Status(status)
 		_ = c.Send(mapper.FromMessageToHTTPResponse(message, status))
@@ -212,7 +212,7 @@ func (h *handler) commandMachine(c *fiber.Ctx, machineID int64, version, capabil
 }
 
 func (h *handler) listMachines() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -230,7 +230,7 @@ func (h *handler) listMachines() fiber.Handler {
 }
 
 func (h *handler) getMachine() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -250,7 +250,7 @@ func (h *handler) getMachine() fiber.Handler {
 
 // updateMachine renames a machine or flips its kill switch.
 func (h *handler) updateMachine() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 
 		// Pointers, so "not mentioned" and "set to empty/false" stay different
@@ -260,7 +260,7 @@ func (h *handler) updateMachine() fiber.Handler {
 			Name    *string `json:"name"`
 			Enabled *bool   `json:"enabled"`
 		}
-		if err := c.BodyParser(&payload); err != nil {
+		if err := c.Bind().Body(&payload); err != nil {
 			c.Status(http.StatusUnprocessableEntity)
 			return c.Send(_invalidPayload)
 		}
@@ -292,7 +292,7 @@ func (h *handler) updateMachine() fiber.Handler {
 }
 
 func (h *handler) deleteMachine() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -334,7 +334,7 @@ func (h *handler) dropMachineSocket(machineID string) {
 
 // createEnrolmentCode hands out a short code to type on a machine.
 func (h *handler) createEnrolmentCode() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 
 		ctx, cancel := newContext(c)
@@ -358,7 +358,7 @@ func (h *handler) createEnrolmentCode() fiber.Handler {
 
 // enrolMachine trades a code for a machine identity.
 func (h *handler) enrolMachine() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 
 		rq := mapper.FromHTTPRequestToEnrolMachineRequestEntity(c)

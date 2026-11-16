@@ -16,7 +16,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -45,7 +45,7 @@ func postElicitationAnswer(t *testing.T, closeFunc func(ctx context.Context, req
 		bus:        bus,
 	}
 	app := fiber.New()
-	app.Post("/api/v1/workspaces/:id/tasks/:taskID/elicitation", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/elicitation", func(c fiber.Ctx) error {
 		c.Locals("user_id", userID)
 		return h.respondToElicitation()(c)
 	})

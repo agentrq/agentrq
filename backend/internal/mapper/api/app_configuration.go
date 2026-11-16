@@ -9,7 +9,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // FromAppConfigurationEntitiesToHTTPResponse renders the stored config blocks.
@@ -30,7 +30,7 @@ func FromAppConfigurationEntityToHTTPResponse(e *entity.AppConfiguration) []byte
 
 // FromHTTPRequestToUpdateAppConfigurationRequestEntity reads the block named
 // by :key from the body; nil when the body is not JSON or has no value.
-func FromHTTPRequestToUpdateAppConfigurationRequestEntity(c *fiber.Ctx) *entity.UpdateAppConfigurationRequest {
+func FromHTTPRequestToUpdateAppConfigurationRequestEntity(c fiber.Ctx) *entity.UpdateAppConfigurationRequest {
 	var rq view.UpdateAppConfigurationRequest
 	if err := json.Unmarshal(c.Body(), &rq); err != nil || len(rq.Value) == 0 || string(rq.Value) == "null" {
 		return nil
@@ -40,7 +40,7 @@ func FromHTTPRequestToUpdateAppConfigurationRequestEntity(c *fiber.Ctx) *entity.
 
 // FromHTTPRequestToUploadLoginIconRequestEntity reads the image the body
 // carries; nil when it is empty.
-func FromHTTPRequestToUploadLoginIconRequestEntity(c *fiber.Ctx) *entity.UploadLoginIconRequest {
+func FromHTTPRequestToUploadLoginIconRequestEntity(c fiber.Ctx) *entity.UploadLoginIconRequest {
 	if len(c.Body()) == 0 {
 		return nil
 	}

@@ -21,7 +21,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -72,7 +72,7 @@ func teamServer(t *testing.T, maxInvites int) (*fiber.App, *gorm.DB) {
 
 func teamApp(ctrl teamctrl.Controller) *fiber.App {
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user_id", c.Get("X-Test-User"))
 		return c.Next()
 	})
@@ -100,7 +100,7 @@ func call(t *testing.T, app *fiber.App, user, method, path, body string) (int, m
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
 		t.Fatal(err)
 	}

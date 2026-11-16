@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestFromHTTPRequestToSavePushSubscriptionRequestEntity(t *testing.T) {

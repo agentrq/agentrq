@@ -10,13 +10,13 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
 // ── Workflow HTTP mappers ─────────────────────────────────────────────────────
 
-func FromHTTPRequestToCreateWorkflowRequestEntity(c *fiber.Ctx) *entity.CreateWorkflowRequest {
+func FromHTTPRequestToCreateWorkflowRequestEntity(c fiber.Ctx) *entity.CreateWorkflowRequest {
 	var payload view.CreateWorkflowRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -36,7 +36,7 @@ func FromCreateWorkflowResponseEntityToHTTPResponse(rs *entity.CreateWorkflowRes
 	return payload
 }
 
-func FromHTTPRequestToGetWorkflowRequestEntity(c *fiber.Ctx) *entity.GetWorkflowRequest {
+func FromHTTPRequestToGetWorkflowRequestEntity(c fiber.Ctx) *entity.GetWorkflowRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
@@ -61,7 +61,7 @@ func FromListWorkflowsResponseEntityToHTTPResponse(rs *entity.ListWorkflowsRespo
 // FromHTTPRequestToUpdateWorkflowRequestEntity carries each field through as a
 // pointer so the controller can tell "omitted" from "cleared": the graph editor
 // PATCHes only `layout` on every node drag, and that must not wipe the name.
-func FromHTTPRequestToUpdateWorkflowRequestEntity(c *fiber.Ctx) *entity.UpdateWorkflowRequest {
+func FromHTTPRequestToUpdateWorkflowRequestEntity(c fiber.Ctx) *entity.UpdateWorkflowRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
@@ -91,7 +91,7 @@ func FromUpdateWorkflowResponseEntityToHTTPResponse(rs *entity.UpdateWorkflowRes
 	return payload
 }
 
-func FromHTTPRequestToDeleteWorkflowRequestEntity(c *fiber.Ctx) *entity.DeleteWorkflowRequest {
+func FromHTTPRequestToDeleteWorkflowRequestEntity(c fiber.Ctx) *entity.DeleteWorkflowRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
@@ -101,7 +101,7 @@ func FromHTTPRequestToDeleteWorkflowRequestEntity(c *fiber.Ctx) *entity.DeleteWo
 
 // ── WorkflowStep HTTP mappers ─────────────────────────────────────────────────
 
-func FromHTTPRequestToCreateWorkflowStepRequestEntity(c *fiber.Ctx) *entity.CreateWorkflowStepRequest {
+func FromHTTPRequestToCreateWorkflowStepRequestEntity(c fiber.Ctx) *entity.CreateWorkflowStepRequest {
 	workflowID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if workflowID == 0 {
 		return nil
@@ -136,7 +136,7 @@ func FromCreateWorkflowStepResponseEntityToHTTPResponse(rs *entity.CreateWorkflo
 	return payload
 }
 
-func FromHTTPRequestToListWorkflowStepsRequestEntity(c *fiber.Ctx) *entity.ListWorkflowStepsRequest {
+func FromHTTPRequestToListWorkflowStepsRequestEntity(c fiber.Ctx) *entity.ListWorkflowStepsRequest {
 	workflowID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if workflowID == 0 {
 		return nil
@@ -153,7 +153,7 @@ func FromListWorkflowStepsResponseEntityToHTTPResponse(rs *entity.ListWorkflowSt
 	return payload
 }
 
-func FromHTTPRequestToDeleteWorkflowStepRequestEntity(c *fiber.Ctx) *entity.DeleteWorkflowStepRequest {
+func FromHTTPRequestToDeleteWorkflowStepRequestEntity(c fiber.Ctx) *entity.DeleteWorkflowStepRequest {
 	workflowID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	id := monoflake.IDFromBase62(c.Params("stepID")).Int64()
 	if workflowID == 0 || id == 0 {
@@ -162,7 +162,7 @@ func FromHTTPRequestToDeleteWorkflowStepRequestEntity(c *fiber.Ctx) *entity.Dele
 	return &entity.DeleteWorkflowStepRequest{ID: id, WorkflowID: workflowID}
 }
 
-func FromHTTPRequestToListTasksFromWorkflowRequestEntity(c *fiber.Ctx) *entity.ListTasksFromWorkflowRequest {
+func FromHTTPRequestToListTasksFromWorkflowRequestEntity(c fiber.Ctx) *entity.ListTasksFromWorkflowRequest {
 	workflowID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if workflowID == 0 {
 		return nil
@@ -181,7 +181,7 @@ func FromListTasksFromWorkflowResponseEntityToHTTPResponse(rs *entity.ListTasksF
 
 // ── Workflow text HTTP mappers ────────────────────────────────────────────────
 
-func FromHTTPRequestToGetWorkflowTextRequestEntity(c *fiber.Ctx) *entity.GetWorkflowTextRequest {
+func FromHTTPRequestToGetWorkflowTextRequestEntity(c fiber.Ctx) *entity.GetWorkflowTextRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
@@ -194,7 +194,7 @@ func FromGetWorkflowTextResponseEntityToHTTPResponse(rs *entity.GetWorkflowTextR
 	return payload
 }
 
-func FromHTTPRequestToReplaceWorkflowFromTextRequestEntity(c *fiber.Ctx) *entity.ReplaceWorkflowFromTextRequest {
+func FromHTTPRequestToReplaceWorkflowFromTextRequestEntity(c fiber.Ctx) *entity.ReplaceWorkflowFromTextRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil

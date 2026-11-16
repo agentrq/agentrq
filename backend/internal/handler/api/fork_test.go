@@ -17,7 +17,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -46,7 +46,7 @@ func postFork(t *testing.T, ctrl *mockCrudForkTask, srv *fakeWorkspaceServer, bo
 	t.Helper()
 	app := fiber.New()
 	h := &handler{crud: ctrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
-	app.Post(_routePathFork, func(c *fiber.Ctx) error {
+	app.Post(_routePathFork, func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.forkTask()(c)
 	})

@@ -9,15 +9,16 @@ import (
 	"strconv"
 	"strings"
 
+	"time"
+
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
-	"time"
 )
 
-func FromHTTPRequestToCreateTaskRequestEntity(c *fiber.Ctx) *entity.CreateTaskRequest {
+func FromHTTPRequestToCreateTaskRequestEntity(c fiber.Ctx) *entity.CreateTaskRequest {
 	var payload view.CreateTaskRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -64,7 +65,7 @@ func FromCreateTaskResponseEntityToHTTPResponse(rs *entity.CreateTaskResponse) [
 	return payload
 }
 
-func FromHTTPRequestToGetTaskRequestEntity(c *fiber.Ctx) *entity.GetTaskRequest {
+func FromHTTPRequestToGetTaskRequestEntity(c fiber.Ctx) *entity.GetTaskRequest {
 	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
 	if workspaceID == 0 || taskID == 0 {
@@ -73,7 +74,7 @@ func FromHTTPRequestToGetTaskRequestEntity(c *fiber.Ctx) *entity.GetTaskRequest 
 	return &entity.GetTaskRequest{WorkspaceID: workspaceID, TaskID: taskID}
 }
 
-func FromHTTPRequestToListTaskToolCallsRequestEntity(c *fiber.Ctx) *entity.ListTaskToolCallsRequest {
+func FromHTTPRequestToListTaskToolCallsRequestEntity(c fiber.Ctx) *entity.ListTaskToolCallsRequest {
 	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
 	var before int64
@@ -85,10 +86,10 @@ func FromHTTPRequestToListTaskToolCallsRequestEntity(c *fiber.Ctx) *entity.ListT
 	if workspaceID == 0 || taskID == 0 {
 		return nil
 	}
-	return &entity.ListTaskToolCallsRequest{WorkspaceID: workspaceID, TaskID: taskID, Before: before, Limit: c.QueryInt("limit", 0)}
+	return &entity.ListTaskToolCallsRequest{WorkspaceID: workspaceID, TaskID: taskID, Before: before, Limit: fiber.Query[int](c, "limit", 0)}
 }
 
-func FromHTTPRequestToGetTaskPlanRequestEntity(c *fiber.Ctx) *entity.GetTaskPlanRequest {
+func FromHTTPRequestToGetTaskPlanRequestEntity(c fiber.Ctx) *entity.GetTaskPlanRequest {
 	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
 	if workspaceID == 0 || taskID == 0 {
@@ -307,7 +308,7 @@ func fromMessageEntitiesToTaskMessageViews(msgs []entity.Message) []view.TaskMes
 	return out
 }
 
-func FromHTTPRequestToListTasksRequestEntity(c *fiber.Ctx) *entity.ListTasksRequest {
+func FromHTTPRequestToListTasksRequestEntity(c fiber.Ctx) *entity.ListTasksRequest {
 	var workspaceID int64
 	if idParam := c.Params("id"); idParam != "" {
 		workspaceID = monoflake.IDFromBase62(idParam).Int64()
@@ -382,7 +383,7 @@ func FromGetTaskOverviewResponseEntityToHTTPResponse(rs *entity.GetTaskOverviewR
 	return payload
 }
 
-func FromHTTPRequestToRespondToTaskRequestEntity(c *fiber.Ctx) *entity.RespondToTaskRequest {
+func FromHTTPRequestToRespondToTaskRequestEntity(c fiber.Ctx) *entity.RespondToTaskRequest {
 	var payload view.RespondToTaskRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -411,7 +412,7 @@ func FromHTTPRequestToRespondToTaskRequestEntity(c *fiber.Ctx) *entity.RespondTo
 	}
 }
 
-func FromHTTPRequestToForkTaskRequestEntity(c *fiber.Ctx) *entity.ForkTaskRequest {
+func FromHTTPRequestToForkTaskRequestEntity(c fiber.Ctx) *entity.ForkTaskRequest {
 	var payload view.ForkTaskRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -435,7 +436,7 @@ func FromRespondToTaskResponseEntityToHTTPResponse(rs *entity.RespondToTaskRespo
 	return payload
 }
 
-func FromHTTPRequestToUpdateTaskStatusRequestEntity(c *fiber.Ctx) *entity.UpdateTaskStatusRequest {
+func FromHTTPRequestToUpdateTaskStatusRequestEntity(c fiber.Ctx) *entity.UpdateTaskStatusRequest {
 	var payload view.UpdateTaskStatusRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -457,7 +458,7 @@ func FromUpdateTaskStatusResponseEntityToHTTPResponse(rs *entity.UpdateTaskStatu
 	return payload
 }
 
-func FromHTTPRequestToUpdateTaskOrderRequestEntity(c *fiber.Ctx) *entity.UpdateTaskOrderRequest {
+func FromHTTPRequestToUpdateTaskOrderRequestEntity(c fiber.Ctx) *entity.UpdateTaskOrderRequest {
 	var payload view.UpdateTaskOrderRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -479,7 +480,7 @@ func FromUpdateTaskOrderResponseEntityToHTTPResponse(rs *entity.UpdateTaskOrderR
 	return payload
 }
 
-func FromHTTPRequestToUpdateTaskAssigneeRequestEntity(c *fiber.Ctx) *entity.UpdateTaskAssigneeRequest {
+func FromHTTPRequestToUpdateTaskAssigneeRequestEntity(c fiber.Ctx) *entity.UpdateTaskAssigneeRequest {
 	var payload view.UpdateTaskAssigneeRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -501,7 +502,7 @@ func FromUpdateTaskAssigneeResponseEntityToHTTPResponse(rs *entity.UpdateTaskAss
 	return payload
 }
 
-func FromHTTPRequestToUpdateTaskTitleRequestEntity(c *fiber.Ctx) *entity.UpdateTaskTitleRequest {
+func FromHTTPRequestToUpdateTaskTitleRequestEntity(c fiber.Ctx) *entity.UpdateTaskTitleRequest {
 	var payload view.UpdateTaskTitleRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -524,7 +525,7 @@ func FromUpdateTaskTitleResponseEntityToHTTPResponse(rs *entity.UpdateTaskTitleR
 	return payload
 }
 
-func FromHTTPRequestToMoveTaskRequestEntity(c *fiber.Ctx) *entity.MoveTaskRequest {
+func FromHTTPRequestToMoveTaskRequestEntity(c fiber.Ctx) *entity.MoveTaskRequest {
 	var payload view.MoveTaskRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -547,7 +548,7 @@ func FromMoveTaskResponseEntityToHTTPResponse(rs *entity.MoveTaskResponse) []byt
 	return payload
 }
 
-func FromHTTPRequestToUpdateTaskAllowAllCommandsRequestEntity(c *fiber.Ctx) *entity.UpdateTaskAllowAllCommandsRequest {
+func FromHTTPRequestToUpdateTaskAllowAllCommandsRequestEntity(c fiber.Ctx) *entity.UpdateTaskAllowAllCommandsRequest {
 	var payload view.UpdateTaskAllowAllCommandsRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -569,7 +570,7 @@ func FromUpdateTaskAllowAllCommandsResponseEntityToHTTPResponse(rs *entity.Updat
 	return payload
 }
 
-func FromHTTPRequestToReplyToTaskRequestEntity(c *fiber.Ctx) *entity.ReplyToTaskRequest {
+func FromHTTPRequestToReplyToTaskRequestEntity(c fiber.Ctx) *entity.ReplyToTaskRequest {
 	var payload view.ReplyToTaskRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -602,7 +603,7 @@ func FromReplyToTaskResponseEntityToHTTPResponse(rs *entity.ReplyToTaskResponse)
 	return payload
 }
 
-func FromHTTPRequestToDeleteTaskRequestEntity(c *fiber.Ctx) *entity.DeleteTaskRequest {
+func FromHTTPRequestToDeleteTaskRequestEntity(c fiber.Ctx) *entity.DeleteTaskRequest {
 	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
 	if workspaceID == 0 || taskID == 0 {
@@ -799,7 +800,7 @@ func FromModelTaskToView(t model.Task) view.Task {
 	}
 	return res
 }
-func FromHTTPRequestToUpdateScheduledTaskRequestEntity(c *fiber.Ctx) *entity.UpdateScheduledTaskRequest {
+func FromHTTPRequestToUpdateScheduledTaskRequestEntity(c fiber.Ctx) *entity.UpdateScheduledTaskRequest {
 	var payload view.UpdateScheduledTaskRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil

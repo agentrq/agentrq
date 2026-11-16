@@ -16,7 +16,7 @@ import (
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // oauth2App is the sign-in routes with one provider the operator added,

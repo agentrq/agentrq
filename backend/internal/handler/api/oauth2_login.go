@@ -11,7 +11,7 @@ import (
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 )
@@ -40,7 +40,7 @@ func (h *handler) oauth2Provider(id string) (OAuth2Login, bool) {
 func oauth2State(id string) string { return "oauth2:" + id }
 
 func (h *handler) oauth2Login() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		p, ok := h.oauth2Provider(c.Params("id"))
 		if !ok {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "no such sign-in provider"})
@@ -50,7 +50,7 @@ func (h *handler) oauth2Login() fiber.Handler {
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate state"})
 		}
-		return c.Redirect(p.Service.GetAuthURL(state))
+		return c.Redirect().Status(fiber.StatusFound).To(p.Service.GetAuthURL(state))
 	}
 }
 
@@ -58,7 +58,7 @@ func (h *handler) oauth2Login() fiber.Handler {
 // must be the one oauth2Login made for this provider, so a link that starts
 // a sign-in somewhere else cannot finish one here.
 func (h *handler) oauth2Callback() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		p, ok := h.oauth2Provider(c.Params("id"))
 		if !ok {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "no such sign-in provider"})
@@ -97,12 +97,12 @@ func (h *handler) oauth2Callback() fiber.Handler {
 		}
 
 		h.issueSession(c, tokenString, userID)
-		return c.Redirect(h.sanitizeRedirectURL(redirectURL))
+		return c.Redirect().Status(fiber.StatusFound).To(h.sanitizeRedirectURL(redirectURL))
 	}
 }
 
 // sendError answers with the generic mapping of err.
-func sendError(c *fiber.Ctx, err error) error {
+func sendError(c fiber.Ctx, err error) error {
 	c.Set(_headerContentType, _mimeJSON)
 	e, status := mapper.FromErrorToHTTPResponse(err)
 	return c.Status(status).Send(e)

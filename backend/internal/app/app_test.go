@@ -20,7 +20,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	mock_repository "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/golang/mock/gomock"
 )
 
@@ -283,7 +283,7 @@ func TestStaticHandlerIsBypassedForAppRoutes(t *testing.T) {
 
 	app := fiber.New()
 	app.Use("/", staticHandler(public))
-	app.Get("/*", func(c *fiber.Ctx) error { return c.SendString("APP SHELL") })
+	app.Get("/*", func(c fiber.Ctx) error { return c.SendString("APP SHELL") })
 
 	cases := []struct {
 		path string
@@ -309,6 +309,24 @@ func TestStaticHandlerIsBypassedForAppRoutes(t *testing.T) {
 		if buf.String() != tc.body {
 			t.Errorf("GET %s: body %q, want %q", tc.path, buf.String(), tc.body)
 		}
+	}
+}
+
+// A file the build lacks reaches the routes behind as a 404, so the app shell
+// they answer with does not claim a page that is not there.
+func TestStaticHandlerMissKeepsNotFound(t *testing.T) {
+	app := fiber.New()
+	app.Use("/", staticHandler(fstest.MapFS{"assets/app.js": {Data: []byte("PLAIN")}}))
+	app.Get("/*", func(c fiber.Ctx) error { return c.SendString("APP SHELL") })
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/missing.html", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound || string(body) != "APP SHELL" {
+		t.Errorf("GET /missing.html: %d %q, want 404 %q", resp.StatusCode, body, "APP SHELL")
 	}
 }
 

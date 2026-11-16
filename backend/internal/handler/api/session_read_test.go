@@ -13,7 +13,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
@@ -51,7 +51,7 @@ func (s *sessionReadCrud) ListSessions(_ context.Context, req entity.ListSession
 // sessionReadApp mounts every session route the way the server does.
 func sessionReadApp(c crud.Controller, tokens auth.TokenService) *fiber.App {
 	app := fiber.New()
-	app.Use(func(ctx *fiber.Ctx) error {
+	app.Use(func(ctx fiber.Ctx) error {
 		ctx.Locals("user_id", "user-1")
 		return ctx.Next()
 	})

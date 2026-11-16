@@ -10,11 +10,11 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
-func FromHTTPRequestToListMemoriesRequestEntity(c *fiber.Ctx) *entity.ListMemoriesRequest {
+func FromHTTPRequestToListMemoriesRequestEntity(c fiber.Ctx) *entity.ListMemoriesRequest {
 	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if workspaceID == 0 {
 		return nil
@@ -22,7 +22,7 @@ func FromHTTPRequestToListMemoriesRequestEntity(c *fiber.Ctx) *entity.ListMemori
 	return &entity.ListMemoriesRequest{WorkspaceID: workspaceID}
 }
 
-func FromHTTPRequestToGetMemoryRequestEntity(c *fiber.Ctx) *entity.GetMemoryRequest {
+func FromHTTPRequestToGetMemoryRequestEntity(c fiber.Ctx) *entity.GetMemoryRequest {
 	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if workspaceID == 0 {
 		return nil

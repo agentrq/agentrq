@@ -6,7 +6,7 @@ package api
 
 import (
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // registerTeamSkillRoutes serves team workspaces' skills: as one of the
@@ -32,8 +32,8 @@ func (h *handler) registerTeamSkillRoutes(workspaces fiber.Router) {
 
 // teamSkillRoute answers with fn's body, 400 when the request does not
 // parse (fn's body and error both nil), and 204 for no body.
-func teamSkillRoute(fn func(c *fiber.Ctx) ([]byte, bool, error)) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+func teamSkillRoute(fn func(c fiber.Ctx) ([]byte, bool, error)) fiber.Handler {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		b, ok, err := fn(c)
 		switch {
@@ -49,7 +49,7 @@ func teamSkillRoute(fn func(c *fiber.Ctx) ([]byte, bool, error)) fiber.Handler {
 }
 
 func (h *handler) listWorkspaceTeamSkills() fiber.Handler {
-	return teamSkillRoute(func(c *fiber.Ctx) ([]byte, bool, error) {
+	return teamSkillRoute(func(c fiber.Ctx) ([]byte, bool, error) {
 		rq := mapper.FromHTTPRequestToWorkspaceTeamSkillsRequestEntity(c)
 		if rq == nil {
 			return nil, false, nil
@@ -66,7 +66,7 @@ func (h *handler) listWorkspaceTeamSkills() fiber.Handler {
 }
 
 func (h *handler) setWorkspaceTeamSkill() fiber.Handler {
-	return teamSkillRoute(func(c *fiber.Ctx) ([]byte, bool, error) {
+	return teamSkillRoute(func(c fiber.Ctx) ([]byte, bool, error) {
 		rq := mapper.FromHTTPRequestToSetWorkspaceTeamSkillRequestEntity(c)
 		if rq == nil {
 			return nil, false, nil
@@ -83,7 +83,7 @@ func (h *handler) setWorkspaceTeamSkill() fiber.Handler {
 }
 
 func (h *handler) giveSkillToTeam() fiber.Handler {
-	return teamSkillRoute(func(c *fiber.Ctx) ([]byte, bool, error) {
+	return teamSkillRoute(func(c fiber.Ctx) ([]byte, bool, error) {
 		rq := mapper.FromHTTPRequestToGiveSkillToTeamRequestEntity(c)
 		if rq == nil {
 			return nil, false, nil
@@ -100,7 +100,7 @@ func (h *handler) giveSkillToTeam() fiber.Handler {
 }
 
 func (h *handler) listTeamWorkspaceSkills() fiber.Handler {
-	return teamSkillRoute(func(c *fiber.Ctx) ([]byte, bool, error) {
+	return teamSkillRoute(func(c fiber.Ctx) ([]byte, bool, error) {
 		rq := mapper.FromHTTPRequestToTeamSkillsRequestEntity(c)
 		if rq == nil {
 			return nil, false, nil
@@ -117,7 +117,7 @@ func (h *handler) listTeamWorkspaceSkills() fiber.Handler {
 }
 
 func (h *handler) getTeamWorkspaceSkill() fiber.Handler {
-	return teamSkillRoute(func(c *fiber.Ctx) ([]byte, bool, error) {
+	return teamSkillRoute(func(c fiber.Ctx) ([]byte, bool, error) {
 		rq := mapper.FromHTTPRequestToTeamSkillsRequestEntity(c)
 		if rq == nil {
 			return nil, false, nil
@@ -134,7 +134,7 @@ func (h *handler) getTeamWorkspaceSkill() fiber.Handler {
 }
 
 func (h *handler) getTeamWorkspaceSkillFile() fiber.Handler {
-	return teamSkillRoute(func(c *fiber.Ctx) ([]byte, bool, error) {
+	return teamSkillRoute(func(c fiber.Ctx) ([]byte, bool, error) {
 		rq := mapper.FromHTTPRequestToTeamSkillsRequestEntity(c)
 		if rq == nil {
 			return nil, false, nil
@@ -157,7 +157,7 @@ func (h *handler) createTeamWorkspaceSkill() fiber.Handler {
 }
 
 func (h *handler) saveTeamWorkspaceSkillFile() fiber.Handler {
-	return teamSkillRoute(func(c *fiber.Ctx) ([]byte, bool, error) {
+	return teamSkillRoute(func(c fiber.Ctx) ([]byte, bool, error) {
 		rq := mapper.FromHTTPRequestToSaveTeamSkillFileRequestEntity(c)
 		if rq == nil {
 			return nil, false, nil
@@ -174,7 +174,7 @@ func (h *handler) saveTeamWorkspaceSkillFile() fiber.Handler {
 }
 
 func (h *handler) deleteTeamWorkspaceSkillFile() fiber.Handler {
-	return teamSkillRoute(func(c *fiber.Ctx) ([]byte, bool, error) {
+	return teamSkillRoute(func(c fiber.Ctx) ([]byte, bool, error) {
 		rq := mapper.FromHTTPRequestToTeamSkillsRequestEntity(c)
 		if rq == nil {
 			return nil, false, nil
@@ -191,7 +191,7 @@ func (h *handler) deleteTeamWorkspaceSkillFile() fiber.Handler {
 }
 
 func (h *handler) deleteTeamWorkspaceSkill() fiber.Handler {
-	return teamSkillRoute(func(c *fiber.Ctx) ([]byte, bool, error) {
+	return teamSkillRoute(func(c fiber.Ctx) ([]byte, bool, error) {
 		rq := mapper.FromHTTPRequestToTeamSkillsRequestEntity(c)
 		if rq == nil {
 			return nil, false, nil
@@ -204,7 +204,7 @@ func (h *handler) deleteTeamWorkspaceSkill() fiber.Handler {
 }
 
 func (h *handler) importTeamWorkspaceSkills() fiber.Handler {
-	return teamSkillRoute(func(c *fiber.Ctx) ([]byte, bool, error) {
+	return teamSkillRoute(func(c fiber.Ctx) ([]byte, bool, error) {
 		rq := mapper.FromHTTPRequestToImportTeamSkillsRequestEntity(c)
 		if rq == nil {
 			return nil, false, nil

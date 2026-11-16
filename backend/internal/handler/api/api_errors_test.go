@@ -22,7 +22,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -242,7 +242,7 @@ func TestGetAuthenticatedUser_WithoutASignedInUser(t *testing.T) {
 	h := &handler{}
 	app := fiber.New()
 	app.Get("/anonymous", h.getAuthenticatedUser())
-	app.Get("/odd-locals", func(c *fiber.Ctx) error {
+	app.Get("/odd-locals", func(c fiber.Ctx) error {
 		c.Locals("user_id", "u1")
 		c.Locals("user_email", 42) // not a string: read as missing
 		return h.getAuthenticatedUser()(c)
@@ -607,7 +607,7 @@ func (m *wsPathSlack) GetWorkspaceSlackConfig(context.Context, int64) (*entity.S
 // middleware.
 func wsPathApp(h *handler) *fiber.App {
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user_id", errPathUser)
 		return c.Next()
 	})

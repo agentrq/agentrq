@@ -9,11 +9,11 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
-func FromHTTPRequestToSavePushSubscriptionRequestEntity(c *fiber.Ctx) *entity.SavePushSubscriptionRequest {
+func FromHTTPRequestToSavePushSubscriptionRequestEntity(c fiber.Ctx) *entity.SavePushSubscriptionRequest {
 	var payload view.PushSubscribeRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -32,7 +32,7 @@ func FromHTTPRequestToSavePushSubscriptionRequestEntity(c *fiber.Ctx) *entity.Sa
 	}
 }
 
-func FromHTTPRequestToDeletePushSubscriptionRequestEntity(c *fiber.Ctx) *entity.DeletePushSubscriptionRequest {
+func FromHTTPRequestToDeletePushSubscriptionRequestEntity(c fiber.Ctx) *entity.DeletePushSubscriptionRequest {
 	var payload view.PushUnsubscribeRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
 		return nil
@@ -55,7 +55,7 @@ func FromPushSubscriptionStatusToHTTPResponse(subscribed bool) []byte {
 	return b
 }
 
-func FromHTTPRequestToDeletePushSubscriptionByWorkspaceRequestEntity(c *fiber.Ctx) *entity.DeletePushSubscriptionByWorkspaceRequest {
+func FromHTTPRequestToDeletePushSubscriptionByWorkspaceRequestEntity(c fiber.Ctx) *entity.DeletePushSubscriptionByWorkspaceRequest {
 	var payload struct {
 		Endpoint    string `json:"endpoint"`
 		WorkspaceID string `json:"workspaceId"`

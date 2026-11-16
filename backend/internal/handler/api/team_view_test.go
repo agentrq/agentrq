@@ -25,7 +25,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -215,7 +215,7 @@ func newTeamMode(t *testing.T, db *gorm.DB) *teamMode {
 	must(err)
 
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user_id", c.Get("X-Test-User"))
 		return c.Next()
 	})
@@ -416,7 +416,7 @@ func (m *teamMode) raw(t *testing.T, user, path string) (int, http.Header, strin
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1"+path, nil)
 	req.Header.Set("X-Test-User", user)
-	resp, err := m.app.Test(req, -1)
+	resp, err := m.app.Test(req, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -716,9 +716,9 @@ func (m *teamMode) teammateMemoryRead(t *testing.T) {
 	// httptest.NewRequest refuses a malformed escape, so the raw path is set by hand.
 	raw := "/api/v1" + path(ws100, ws200) + "/%zz"
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RequestURI, req.URL.Path, req.URL.RawPath = raw, raw, raw
+	req.URL.Opaque = raw // Fiber's Test writes an opaque URL as it stands
 	req.Header.Set("X-Test-User", aliceID)
-	if res, err := m.app.Test(req, -1); err != nil || res.StatusCode != http.StatusBadRequest {
+	if res, err := m.app.Test(req, fiber.TestConfig{Timeout: 0, FailOnTimeout: false}); err != nil || res.StatusCode != http.StatusBadRequest {
 		t.Errorf("a name that is not one: %v %v, want 400", res, err)
 	}
 	if status, _ = m.get(t, aliceID, path(ws100, "!")); status != http.StatusBadRequest {

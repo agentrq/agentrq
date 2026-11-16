@@ -11,7 +11,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -52,7 +52,7 @@ func FromHookEntitiesToHTTPResponse(es []entity.Hook) []byte {
 // FromHTTPRequestToHookRegistrationRequestEntity reads a registration's
 // fields from the body; nil when it is not JSON or names an id that is not
 // one.
-func FromHTTPRequestToHookRegistrationRequestEntity(c *fiber.Ctx) *entity.HookRegistrationRequest {
+func FromHTTPRequestToHookRegistrationRequestEntity(c fiber.Ctx) *entity.HookRegistrationRequest {
 	var v view.HookRegistrationRequest
 	if err := json.Unmarshal(c.Body(), &v); err != nil {
 		return nil
@@ -117,16 +117,16 @@ func FromHookRegistrationEntitiesToHTTPResponse(es []entity.HookRegistration) []
 // FromHTTPRequestToHookIncomingRequestEntity reads a request to a hook URL:
 // its token out of the query, which the hook never sees, and its headers
 // lowercased, without its cookies. nil when the id is not one.
-func FromHTTPRequestToHookIncomingRequestEntity(c *fiber.Ctx) *entity.HookIncoming {
+func FromHTTPRequestToHookIncomingRequestEntity(c fiber.Ctx) *entity.HookIncoming {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {
 		return nil
 	}
 	in := &entity.HookIncoming{
-		RegistrationID: id, Peer: c.Context().RemoteIP().String(), Method: c.Method(), Path: c.Path(),
+		RegistrationID: id, Peer: c.RequestCtx().RemoteIP().String(), Method: c.Method(), Path: c.Path(),
 		Query: map[string][]string{}, Headers: map[string][]string{}, Body: bytes.Clone(c.Body()),
 	}
-	c.Context().QueryArgs().VisitAll(func(k, v []byte) {
+	c.RequestCtx().QueryArgs().VisitAll(func(k, v []byte) {
 		if key := string(k); key == entity.HookTokenParam {
 			in.Token = string(v)
 		} else {

@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -42,7 +42,7 @@ func adminAppWith(rootToken string, mgr *fakeMCPManager, ctrl adminCrud) *fiber.
 	app := fiber.New()
 	h := &handler{rootToken: rootToken, mcpManager: mgr, crud: ctrl, basePath: "/base"}
 	h.registerAdminRoutes(app)
-	app.Use(func(c *fiber.Ctx) error { return c.SendStatus(http.StatusForbidden) })
+	app.Use(func(c fiber.Ctx) error { return c.SendStatus(http.StatusForbidden) })
 	return app
 }
 

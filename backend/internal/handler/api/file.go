@@ -9,7 +9,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // The kinds of file the public file routes serve, as they appear in a link:
@@ -46,7 +46,7 @@ func (h *handler) registerPublicFileRoutes(root fiber.Router) {
 }
 
 func (h *handler) getPublicFile() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		// The first of two exact checks; the controller makes the second.
 		m := publicFilePath.FindSubmatch(c.Request().URI().PathOriginal())
 		if m == nil {
@@ -72,7 +72,7 @@ func (h *handler) getPublicFile() fiber.Handler {
 // type (see storage.SafeContentType), never sniffed into something else, and
 // in a sandbox that runs no script even so: a file is uploaded by whoever
 // wrote the task, and is read on the app's origin with the reader's session.
-func sandboxFile(c *fiber.Ctx, contentType string) string {
+func sandboxFile(c fiber.Ctx, contentType string) string {
 	ct := storage.SafeContentType(contentType)
 	c.Set(fiber.HeaderContentType, ct)
 	c.Set(fiber.HeaderXContentTypeOptions, "nosniff")

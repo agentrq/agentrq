@@ -10,11 +10,11 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestFromHTTPRequestToGetTaskLatencyStatsRequestEntity(t *testing.T) {
-	scoped := func(c *fiber.Ctx) *entity.GetTaskLatencyStatsRequest {
+	scoped := func(c fiber.Ctx) *entity.GetTaskLatencyStatsRequest {
 		return FromHTTPRequestToGetTaskLatencyStatsRequestEntity(c, true)
 	}
 	ws := "/workspaces/" + b62(20) + "/latency"
@@ -29,7 +29,7 @@ func TestFromHTTPRequestToGetTaskLatencyStatsRequestEntity(t *testing.T) {
 		{"workspace 0", "/workspaces/0/latency", ``, nil},
 	})
 	// Account-wide, the path names no workspace.
-	checkRequest(t, "/latency", func(c *fiber.Ctx) *entity.GetTaskLatencyStatsRequest {
+	checkRequest(t, "/latency", func(c fiber.Ctx) *entity.GetTaskLatencyStatsRequest {
 		return FromHTTPRequestToGetTaskLatencyStatsRequestEntity(c, false)
 	}, []requestCase[entity.GetTaskLatencyStatsRequest]{
 		{"the account's", "/latency?range=30d", ``, &entity.GetTaskLatencyStatsRequest{Range: "30d", Aggregate: "p50"}},

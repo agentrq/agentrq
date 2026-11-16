@@ -13,7 +13,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -31,7 +31,7 @@ func (h *handler) registerEventRoutes() {
 }
 
 func (h *handler) createEvent() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToCreateEventRequestEntity(c)
 		if rq == nil {
@@ -66,7 +66,7 @@ func (h *handler) createEvent() fiber.Handler {
 }
 
 func (h *handler) listEvents() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -83,7 +83,7 @@ func (h *handler) listEvents() fiber.Handler {
 }
 
 func (h *handler) getEvent() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToGetEventRequestEntity(c)
 		if rq == nil {
@@ -104,7 +104,7 @@ func (h *handler) getEvent() fiber.Handler {
 }
 
 func (h *handler) updateEvent() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToUpdateEventRequestEntity(c)
 		if rq == nil {
@@ -125,7 +125,7 @@ func (h *handler) updateEvent() fiber.Handler {
 }
 
 func (h *handler) deleteEvent() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToDeleteEventRequestEntity(c)
 		if rq == nil {
@@ -146,7 +146,7 @@ func (h *handler) deleteEvent() fiber.Handler {
 }
 
 func (h *handler) createEventTrigger() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToCreateEventTriggerRequestEntity(c)
 		if rq == nil {
@@ -168,7 +168,7 @@ func (h *handler) createEventTrigger() fiber.Handler {
 }
 
 func (h *handler) listEventTriggers() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		eventID := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if eventID == 0 {
@@ -200,7 +200,7 @@ func (h *handler) listEventTriggers() fiber.Handler {
 }
 
 func (h *handler) updateEventTrigger() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToUpdateEventTriggerRequestEntity(c)
 		if rq == nil {
@@ -221,7 +221,7 @@ func (h *handler) updateEventTrigger() fiber.Handler {
 }
 
 func (h *handler) deleteEventTrigger() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		rq := mapper.FromHTTPRequestToDeleteEventTriggerRequestEntity(c)
 		if rq == nil {
@@ -242,7 +242,7 @@ func (h *handler) deleteEventTrigger() fiber.Handler {
 }
 
 func (h *handler) listTasksFromEvent() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		eventID := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if eventID == 0 {

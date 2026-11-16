@@ -18,7 +18,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -101,7 +101,7 @@ var tsUser = monoflake.ID(77).String()
 func doTeamSkill(t *testing.T, c crud.Controller, method, path, body string) (int, string) {
 	t.Helper()
 	app := fiber.New()
-	app.Use(func(ctx *fiber.Ctx) error {
+	app.Use(func(ctx fiber.Ctx) error {
 		ctx.Locals("user_id", tsUser)
 		return ctx.Next()
 	})
@@ -112,7 +112,7 @@ func doTeamSkill(t *testing.T, c crud.Controller, method, path, body string) (in
 		r = strings.NewReader(body)
 	}
 	req := httptest.NewRequest(method, "/placeholder", r)
-	req.RequestURI, req.URL.Path, req.URL.RawPath = path, path, path
+	req.URL.Opaque = path // Fiber's Test writes an opaque URL as it stands
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}

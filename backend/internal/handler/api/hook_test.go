@@ -13,7 +13,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -80,7 +80,7 @@ var (
 
 func hookApp(hooks *fakeRegistrations) *fiber.App {
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user_id", userText)
 		return c.Next()
 	})
@@ -200,7 +200,7 @@ func publicHookApp(hooks *fakeRegistrations) *fiber.App {
 	app := fiber.New()
 	h := &handler{router: app.Group("/api/v1"), hooks: hooks}
 	h.registerPublicHookRoutes()
-	h.router.Use(func(c *fiber.Ctx) error { return c.SendStatus(http.StatusUnauthorized) })
+	h.router.Use(func(c fiber.Ctx) error { return c.SendStatus(http.StatusUnauthorized) })
 	h.registerHookRoutes()
 	return app
 }

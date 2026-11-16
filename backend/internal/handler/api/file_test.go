@@ -6,7 +6,6 @@ package api
 
 import (
 	"encoding/base64"
-	"github.com/mustafaturan/monoflake"
 	"io"
 	"net/http"
 	"os"
@@ -14,9 +13,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mustafaturan/monoflake"
+
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // publicFileApp serves the public file routes, through the real controller,
