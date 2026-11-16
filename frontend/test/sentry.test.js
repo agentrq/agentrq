@@ -39,7 +39,18 @@ describe('startSentry', () => {
       environment: 'staging',
       release: __APP_VERSION__,
       tunnel: '/api/v1/sentry',
+      integrations: expect.any(Function),
     });
+  });
+
+  it('sends exceptions only, never a session per page load', async () => {
+    serve({ dsn: 'https://key@sentry.example.com/1' });
+    const { Sentry, load } = sdk();
+    await startSentry({}, { load });
+
+    const { integrations } = Sentry.init.mock.calls[0][0];
+    const kept = integrations([{ name: 'GlobalHandlers' }, { name: 'BrowserSession' }, { name: 'Vue' }]);
+    expect(kept.map((i) => i.name)).toEqual(['GlobalHandlers', 'Vue']);
   });
 
   it('loads nothing when frontend Sentry is off', async () => {
