@@ -65,18 +65,19 @@ func TestNewSentryRelayIsOffWithoutAValidDSN(t *testing.T) {
 	}
 }
 
-// Off, there are no routes at all.
+// Off, there is no relay, and the read answers null.
 func TestSentryOff(t *testing.T) {
 	app, _ := sentryApp("")
-	if resp := postEnvelope(t, app, envelopeFor("https://key@sentry.example.com/1")); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("POST /sentry = %d, want 404", resp.StatusCode)
+	if resp := postEnvelope(t, app, envelopeFor("https://key@sentry.example.com/1")); resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("POST /sentry = %d, want 405", resp.StatusCode)
 	}
 	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/sentry", nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("GET /sentry = %d, want 404", resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(body) != "null" {
+		t.Errorf("GET /sentry = %d %s, want 200 null", resp.StatusCode, body)
 	}
 }
 

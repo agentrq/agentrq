@@ -80,7 +80,7 @@ paths:
     get:
       tags: [Auth]
       summary: Where the web app reports its errors
-      description: Served only when frontend Sentry is enabled; a 404 means it is off.
+      description: Null when frontend Sentry is off.
       responses:
         '200':
           description: OK
@@ -88,6 +88,7 @@ paths:
             application/json:
               schema:
                 type: object
+                nullable: true
                 properties:
                   dsn: { type: string }
                   environment: { type: string }

@@ -69,17 +69,18 @@ func (r sentryRelay) accepts(envelope []byte) bool {
 	return err == nil && dsn.GetPublicKey() == r.dsn.GetPublicKey() && dsn.GetAPIURL().String() == r.envelope.String()
 }
 
-// registerSentryRoutes adds the routes only when the web app reports: off,
-// the app's read is a 404 and it loads no SDK. Signed out, it is a 401, so
-// only a signed-in user's errors are reported.
+// registerSentryRoutes adds the read always, so the app's request never
+// fails, and the relay only when the web app reports. Both take a signed-in
+// user: only their errors are reported.
 func (h *handler) registerSentryRoutes() {
+	h.router.Get("/sentry", h.sentryConfig())
 	if h.sentry.dsn != nil {
-		h.router.Get("/sentry", h.sentryConfig())
 		h.router.Post("/sentry", h.relaySentry())
 	}
 }
 
-// sentryConfig tells the web app where to report: the DSN and environment.
+// sentryConfig tells the web app where to report, the DSN and environment,
+// or null when it must not.
 func (h *handler) sentryConfig() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		return c.JSON(h.sentry.cfg)

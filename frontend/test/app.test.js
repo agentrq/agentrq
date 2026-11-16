@@ -8,6 +8,12 @@ import { setActivePinia, createPinia } from 'pinia'
 
 import { routes, adminRoutes, clickOutside, createAuthGuard, createAgentRQApp } from '../src/app'
 import { usePlatformStore } from '../src/stores/platformStore'
+import { fetchUser as signedInUser } from '../src/api'
+import { startSentry } from '../src/utils/sentry'
+
+// Who the factory's auth guard finds signed in, and Sentry's start, recorded.
+vi.mock('../src/api', async (importOriginal) => ({ ...(await importOriginal()), fetchUser: vi.fn(async () => null) }))
+vi.mock('../src/utils/sentry', () => ({ startSentry: vi.fn() }))
 
 /** Flatten the route tree so nested paths can be asserted on directly. */
 function flatten(list, parent = '') {
@@ -186,6 +192,17 @@ describe('createAuthGuard', () => {
     expect(destination).toBe('/login')
   })
 
+  it('reports a signed-in user, and nobody else', async () => {
+    const onSignedIn = vi.fn()
+
+    await createAuthGuard(async () => null, onSignedIn)({ meta: {} })
+    await createAuthGuard(vi.fn(), onSignedIn)({ meta: { public: true } })
+    expect(onSignedIn).not.toHaveBeenCalled()
+
+    await createAuthGuard(async () => ({ id: 'user-1' }), onSignedIn)({ meta: {} })
+    expect(onSignedIn).toHaveBeenCalledOnce()
+  })
+
   it('treats a route with no meta as protected', async () => {
     const destination = await createAuthGuard(async () => null)({ meta: {} })
 
@@ -265,6 +282,23 @@ describe('createAgentRQApp', () => {
     expect(router.getRoutes().length).toBeGreaterThanOrEqual(routes.length)
     expect(router.resolve('/login').matched).toHaveLength(1)
     expect(router.resolve('/workspaces/abc/board').matched).toHaveLength(2)
+  })
+
+  it('starts Sentry once, when someone is signed in', async () => {
+    startSentry.mockClear()
+    const { app, router } = createAgentRQApp({ history: createMemoryHistory() })
+
+    signedInUser.mockResolvedValue(null)
+    await router.push('/login')
+    await router.push('/')
+    expect(startSentry).not.toHaveBeenCalled()
+
+    signedInUser.mockResolvedValue({ id: 'user-1' })
+    await router.push('/kanban')
+    await router.push('/events')
+    expect(startSentry).toHaveBeenCalledOnce()
+    expect(startSentry).toHaveBeenCalledWith(app)
+    signedInUser.mockResolvedValue(null)
   })
 
   it('records the platform it was created for', () => {

@@ -6,8 +6,7 @@ import { API_BASE_URL } from '../api'
 
 /**
  * Reports a signed-in user's errors to Sentry when the server says so:
- * GET /sentry names the DSN. Off it is a 404 and signed out a 401, and then
- * no SDK is loaded. Events are posted to that
+ * GET /sentry names the DSN, or is null when off, and then no SDK is loaded. Events are posted to that
  * same route, which relays them: the desktop app's CSP lets the page reach no
  * other origin. Resolves whether it started; it never throws, as the app runs
  * the same without it.
