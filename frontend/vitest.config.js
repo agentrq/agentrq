@@ -68,6 +68,7 @@ export default defineConfig({
         'src/composables/useExtensionShortcuts.js',
         'src/utils/markdownBlocks.js',
         'src/utils/extensionPopup.js',
+        'src/utils/sentry.js',
         'src/composables/useExtensionPages.js',
         'src/composables/useExtensionRenderers.js',
         'src/composables/useExtensionSettingsTabs.js',

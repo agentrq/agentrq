@@ -23,6 +23,7 @@ import { fetchUser } from './api'
 import { usePlatformStore } from './stores/platformStore'
 import { rememberedTeam } from './stores/teamStore'
 import { teamLanding } from './composables/useTeamMode'
+import { startSentry } from './utils/sentry'
 
 // The Pano's board, shared by its two routes below.
 const PanoView = () => import('./views/PanoView.vue')
@@ -181,7 +182,7 @@ export const clickOutside = {
  *
  * `fetchUserFn` is a parameter so the guard can be tested without a network.
  */
-export function createAuthGuard(fetchUserFn = fetchUser) {
+export function createAuthGuard(fetchUserFn = fetchUser, onSignedIn = () => {}) {
   return async function authGuard(to) {
     if (to.meta.public) return
 
@@ -191,6 +192,7 @@ export function createAuthGuard(fetchUserFn = fetchUser) {
     } catch {
       return '/login'
     }
+    onSignedIn()
   }
 }
 
@@ -213,7 +215,15 @@ export function createAuthGuard(fetchUserFn = fetchUser) {
  */
 export function createAgentRQApp({ history, platform = 'web', os = '' } = {}) {
   const router = createRouter({ history, routes: platform === 'web' ? [...routes, ...adminRoutes] : routes })
-  router.beforeEach(createAuthGuard())
+  // Sentry starts once someone is signed in, as only their errors are
+  // reported; off, the server answers null and no SDK is loaded.
+  let sentryStarted = false
+  router.beforeEach(createAuthGuard(fetchUser, () => {
+    if (!sentryStarted) {
+      sentryStarted = true
+      startSentry(app)
+    }
+  }))
   // The home page in team mode is the team's tasks, and the first page opened
   // follows the Me | Team switch's last choice in this browser.
   router.beforeEach((to, from) => teamLanding(to, from, rememberedTeam()))

@@ -76,6 +76,39 @@ paths:
                     type: string
                     description: Path prefix the app is served under, if any.
 
+  /sentry:
+    get:
+      tags: [Auth]
+      summary: Where the web app reports its errors
+      description: Null when frontend Sentry is off.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                nullable: true
+                properties:
+                  dsn: { type: string }
+                  environment: { type: string }
+    post:
+      tags: [Auth]
+      summary: Relay one of the web app's Sentry envelopes
+      description: >-
+        Served only when frontend Sentry is enabled. The envelope must name
+        the configured frontend DSN; it is passed on to that Sentry project,
+        and Sentry's status and rate-limit headers come back.
+      requestBody:
+        required: true
+        content:
+          application/x-sentry-envelope:
+            schema: { type: string }
+      responses:
+        '200': { description: Accepted by Sentry }
+        '400': { description: Not an envelope for the configured project }
+        '502': { description: Sentry could not be reached }
+
   /auth/google/login:
     get:
       tags: [Auth]

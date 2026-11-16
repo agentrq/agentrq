@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
 
+	handlerapi "github.com/agentrq/agentrq/backend/internal/handler/api"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 )
 
@@ -35,18 +36,28 @@ var sentryTransport sentry.Transport
 // errSentryDSNRequired refuses Sentry turned on with nowhere to send.
 var errSentryDSNRequired = errors.New("sentry.dsn: required when sentry is enabled")
 
-// checkSentry refuses an enabled config without a DSN Sentry can parse.
-func checkSentry(c SentryConfig) error {
+// checkSentry refuses an enabled config, of the block named, without a DSN
+// Sentry can parse.
+func checkSentry(block string, c SentryConfig) error {
 	if !c.Enabled {
 		return nil
 	}
 	if c.DSN == "" {
-		return errSentryDSNRequired
+		return errors.New(block + ".dsn: required when " + block + " is enabled")
 	}
 	if _, err := sentry.NewDsn(c.DSN); err != nil {
-		return errors.New("sentry.dsn: " + err.Error())
+		return errors.New(block + ".dsn: " + err.Error())
 	}
 	return nil
+}
+
+// frontendSentry is where the web app reports its errors; the zero value,
+// nowhere.
+func frontendSentry(c SentryConfig, cfgSvc config.Service) handlerapi.Sentry {
+	if !c.Enabled {
+		return handlerapi.Sentry{}
+	}
+	return handlerapi.Sentry{DSN: c.DSN, Environment: cfgSvc.Env()}
 }
 
 // startSentry starts the client, its release the app's version and its
