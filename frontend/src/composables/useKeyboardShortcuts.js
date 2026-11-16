@@ -343,6 +343,17 @@ export function useShortcuts(handlers, options = {}) {
 }
 
 /**
+ * The workspace a route is on, if any. `id` is a workspace only under
+ * /workspaces/:id; elsewhere it is a machine, doc, event, session or workflow.
+ *
+ * @param {{ params: Record<string, string>, matched: Array<{ path: string }> }} route
+ */
+export function routeWorkspaceId(route) {
+  const onWorkspace = route.matched.some((r) => r.path.includes('/workspaces/:id'));
+  return (onWorkspace && route.params.id) || route.params.workspaceId;
+}
+
+/**
  * Where the new-task shortcut goes.
  *
  * The task form belongs to a workspace, so the shortcut has to pick one. The

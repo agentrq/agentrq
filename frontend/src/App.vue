@@ -573,6 +573,7 @@ import {
   SHORTCUTS,
   formatShortcut,
   newTaskRoute,
+  routeWorkspaceId,
   useShortcuts,
   usesCommandKey,
 } from './composables/useKeyboardShortcuts'
@@ -785,7 +786,7 @@ const OVERVIEW_EVENTS = new Set(['task.created', 'task.updated', 'task.deleted',
 // By the ids, not the count: a profile switch can bring as many workspaces.
 watch(() => workspaces.value.map((w) => w.id).join(), (ids) => { if (ids) loadTaskOverview() }, { immediate: true })
 
-const currentWorkspaceId = computed(() => route.params.id || route.params.workspaceId)
+const currentWorkspaceId = computed(() => routeWorkspaceId(route))
 
 /**
  * Enforce each workspace's retention limit, at most once a day.

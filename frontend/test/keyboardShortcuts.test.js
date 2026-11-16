@@ -14,6 +14,7 @@ import {
   matchShortcut,
   newTaskRoute,
   resetShortcuts,
+  routeWorkspaceId,
   useShortcuts,
   usesCommandKey,
 } from '../src/composables/useKeyboardShortcuts'
@@ -493,6 +494,26 @@ describe('newTaskRoute', () => {
   it('leads to the workspace list when there is no workspace to make it in', () => {
     expect(newTaskRoute(undefined, [])).toBe('/')
     expect(newTaskRoute(undefined)).toBe('/')
+  })
+})
+
+describe('routeWorkspaceId', () => {
+  const at = (paths, params) => ({ matched: paths.map((path) => ({ path })), params })
+
+  it('reads the workspace from a workspace page', () => {
+    expect(routeWorkspaceId(at(['/workspaces/:id', '/workspaces/:id/tasks/:taskId'], { id: 'ws1', taskId: 't' }))).toBe('ws1')
+    expect(routeWorkspaceId(at(['/teams/:teamId/workspaces/:id'], { teamId: 'tm', id: 'ws2' }))).toBe('ws2')
+  })
+
+  it('reads workspaceId where a route names it so', () => {
+    expect(routeWorkspaceId(at(['/tasks/:filter', '/tasks/:filter/:workspaceId/:taskId'], { filter: 'active', workspaceId: 'ws3', taskId: 't' }))).toBe('ws3')
+  })
+
+  it('never takes a machine, doc or session id for a workspace', () => {
+    // N on /machines/<id> went to /workspaces/<machine id>.
+    expect(routeWorkspaceId(at(['/machines/:id'], { id: 'machine1' }))).toBeUndefined()
+    expect(routeWorkspaceId(at(['/pano/:id'], { id: 'doc1' }))).toBeUndefined()
+    expect(routeWorkspaceId(at(['/sessions/:id'], { id: 's1' }))).toBeUndefined()
   })
 })
 
