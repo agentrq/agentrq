@@ -323,6 +323,23 @@ describe('AdminConfigView', () => {
     expect(JSON.parse(seen[1].init.body).value).toEqual({ enabled: false, token: generated })
   })
 
+  it('lists both Sentry blocks under Monitoring, each with its switch before the DSN', async () => {
+    const sentry = [
+      { key: 'sentry', value: { dsn: '', enabled: false } },
+      { key: 'sentryFrontend', value: { dsn: '', enabled: false } },
+    ]
+    serve({ [`GET ${CONFIGS}`]: [[{ configurations: [...blocks(), ...sentry] }, 200]] })
+    const el = await mount()
+    const tabs = [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent.trim())
+    expect(tabs.slice(-3)).toEqual(['Sentry', 'Sentry (frontend)', 'Future'])
+    expect(qa(el, 'config-group-name').map((g) => g.textContent.trim()).slice(-2)).toEqual(['Monitoring', 'Other'])
+    for (const key of ['sentry', 'sentryFrontend']) {
+      await openTab(el, key)
+      const ids = [...el.querySelectorAll(`[data-test^="config-${key}."]`)].map((e) => e.dataset.test)
+      expect(ids).toEqual([`config-${key}.enabled`, `config-${key}.dsn`])
+    }
+  })
+
   it("shows a refused save's reason and keeps the edit", async () => {
     serve({
       [`GET ${CONFIGS}`]: [[{ configurations: blocks() }, 200]],
