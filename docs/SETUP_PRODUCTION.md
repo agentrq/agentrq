@@ -361,7 +361,7 @@ The server refuses to start on a negative value.
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTRQ_PROMETHEUS_ENABLED` | `false` | Serve HTTP request metrics, and the Go runtime's and the process's, at `/metrics`. |
+| `AGENTRQ_PROMETHEUS_ENABLED` | `false` | Serve HTTP request metrics, the Go runtime's and the process's, and every telemetry action as `agentrq_telemetry_actions_total{action="task_create",sub_action=""}` (`sub_action` names an MCP call's tool, resource or prompt), at `/metrics`. |
 | `AGENTRQ_PROMETHEUS_TOKEN` | (empty) | The secret a scrape passes as `/metrics?prometheus_token=<token>`; without it `/metrics` answers 404. Exactly 32 characters; the server refuses to start enabled without one. `/admin/config` can generate it. |
 
 ### Native ACP

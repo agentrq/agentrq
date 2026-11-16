@@ -82,6 +82,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/mustafaturan/monoflake"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type (
@@ -382,12 +383,22 @@ func New(cfg Config) (*App, error) {
 	}
 
 	// ── Controllers ────────────────────────────────────────────────────────────
-	telemetryCtrl := telemetry.New(telemetry.Params{
+	// One registry for /metrics: the HTTP metrics and the telemetry actions.
+	// Nil when prometheus is off, so nothing is counted at all.
+	var metricsRegistry *prometheus.Registry
+	if cfg.Prometheus.Enabled {
+		metricsRegistry = prometheus.NewRegistry()
+	}
+	telemetryParams := telemetry.Params{
 		DB:        db,
 		PubSub:    pubsubSvc,
 		BatchSize: 1000,
 		Interval:  5 * time.Second,
-	})
+	}
+	if metricsRegistry != nil {
+		telemetryParams.Registerer = metricsRegistry
+	}
+	telemetryCtrl := telemetry.New(telemetryParams)
 	if err := telemetryCtrl.Start(appCtx); err != nil {
 		zlog.Error().Err(err).Msg("failed to start telemetry controller")
 	}
@@ -743,7 +754,7 @@ func New(cfg Config) (*App, error) {
 		fiberApp.Use(sentryFiber()...)
 	}
 	if cfg.Prometheus.Enabled {
-		fiberApp.Use(prometheusFiber(cfg.Prometheus)...)
+		fiberApp.Use(prometheusFiber(cfg.Prometheus, metricsRegistry)...)
 	}
 	fiberApp.Use(cors.New(cors.Config{
 		AllowOrigins:  []string{"*"},

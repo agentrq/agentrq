@@ -11,6 +11,7 @@ import (
 
 	fiberprometheus "github.com/gofiber/contrib/v3/prometheus"
 	"github.com/gofiber/fiber/v3"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // PrometheusConfig serves the HTTP metrics at /metrics. Off by default.
@@ -38,8 +39,9 @@ func checkPrometheus(c PrometheusConfig) error {
 
 // prometheusFiber guards /metrics with the token, then records every request
 // and answers the scrape. A scrape without the token is a 404, as if metrics
-// were off, so the endpoint is not found by probing.
-func prometheusFiber(c PrometheusConfig) []any {
+// were off, so the endpoint is not found by probing. The scrape answers from
+// reg, which the telemetry actions are counted in too.
+func prometheusFiber(c PrometheusConfig, reg *prometheus.Registry) []any {
 	token := []byte(c.Token)
 	guard := func(ctx fiber.Ctx) error {
 		if path := strings.TrimRight(ctx.Path(), "/"); path != metricsPath {
@@ -54,5 +56,7 @@ func prometheusFiber(c PrometheusConfig) []any {
 	return []any{guard, fiberprometheus.New(fiberprometheus.Config{
 		ServiceName: "agentrq",
 		MetricsPath: metricsPath,
+		Registerer:  reg,
+		Gatherer:    reg,
 	})}
 }

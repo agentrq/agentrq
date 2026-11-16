@@ -5,13 +5,19 @@
 package app
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const testMetricsToken = "0123456789abcdef0123456789abcdef"
@@ -43,7 +49,7 @@ func TestCheckPrometheus(t *testing.T) {
 // metricsApp is a Fiber app with the metrics in front of one route.
 func metricsApp(token string) *fiber.App {
 	app := fiber.New()
-	app.Use(prometheusFiber(PrometheusConfig{Enabled: true, Token: token})...)
+	app.Use(prometheusFiber(PrometheusConfig{Enabled: true, Token: token}, prometheus.NewRegistry())...)
 	app.Get("/api/v1/ping", func(c fiber.Ctx) error { return c.SendString("pong") })
 	return app
 }
@@ -119,5 +125,28 @@ func TestTheAppServesMetricsWithPrometheus(t *testing.T) {
 	rr := serve("/metrics?prometheus_token=" + testMetricsToken)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "go_goroutines") {
 		t.Fatalf("GET /metrics with the token = %d\n%s", rr.Code, rr.Body.String())
+	}
+}
+
+// The scrape also carries the telemetry actions, by name, from the same registry.
+func TestTheAppServesTelemetryActionsWithPrometheus(t *testing.T) {
+	t.Setenv("AGENTRQ_PROMETHEUS_ENABLED", "true")
+	t.Setenv("AGENTRQ_PROMETHEUS_TOKEN", testMetricsToken)
+	a := newTestApp(t)
+	a.pubsub.Publish(context.Background(), pubsub.PublishRequest{PubSubID: entity.PubSubTopicCRUD, Event: entity.CRUDEvent{
+		Action: entity.ActionTaskCreate, UserID: 1, WorkspaceID: 1,
+	}})
+	want := `agentrq_telemetry_actions_total{action="task_create",sub_action=""} 1`
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		rr := httptest.NewRecorder()
+		a.server.(http.Handler).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "http://localhost/metrics?prometheus_token="+testMetricsToken, nil))
+		if strings.Contains(rr.Body.String(), want) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no %s in:\n%s", want, rr.Body.String())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

@@ -7,6 +7,11 @@ makes them self-evidently true. A few happen entirely in the browser and are
 *reported* by it instead — the local-AI features, and interface usage
 (shortcuts, search, copies, the trajectory view).
 
+- **With Prometheus on, every queued row is also counted** as
+  `agentrq_telemetry_actions_total`, labelled by the action's *name*, never its
+  stored ID. A stored action without a `String()` name reads `unknown` there,
+  and `prometheus_test.go` fails on it. `sub_action` is only ever a name from
+  `subActionIDByToolName`, so a caller cannot grow the label set.
 - The allowlist in `entity.ClientReportableAction` is the security boundary for
   `POST /api/v1/telemetry`: only names in it may be reported, and the controller
   additionally checks the caller owns the workspace.
