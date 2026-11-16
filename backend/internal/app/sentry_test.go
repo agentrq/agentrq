@@ -13,7 +13,6 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v3"
-	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
 
 	handlerapi "github.com/agentrq/agentrq/backend/internal/handler/api"
@@ -115,48 +114,14 @@ func TestSentryReleaseAndEnvironment(t *testing.T) {
 	}
 }
 
-// An error-level log line is an event, with its error but not its other
-// fields; a warning is not.
-func TestSentryReportsErrorLogLines(t *testing.T) {
+// Only panics are reported: a log line is not, whatever its level.
+func TestSentryIgnoresLogLines(t *testing.T) {
 	transport := withSentry(t)
-	zlog.Warn().Msg("only a warning")
-	zlog.Error().Err(errors.New("disk full")).Str("email", "a@example.com").Msg("save failed")
-	zlog.Error().Msg("no error field")
-	zlog.Error().Err(errors.New("bare")).Send()
-	// Only this test's lines: an app an earlier test started may still be
-	// logging errors from its background work as it winds down.
-	ours := map[string]bool{"only a warning": true, "save failed: disk full": true, "no error field": true, "bare": true}
-	var got []string
+	zlog.Error().Err(errors.New("not found")).Msg("Failed to fetch attachment")
 	for _, e := range transport.Events() {
-		if !ours[e.Message] {
-			continue
+		if strings.Contains(e.Message, "Failed to fetch attachment") {
+			t.Fatalf("log line reported: %q", e.Message)
 		}
-		got = append(got, e.Message)
-		if e.Level != sentry.LevelError {
-			t.Errorf("%q level = %s", e.Message, e.Level)
-		}
-	}
-	if want := "save failed: disk full|no error field|bare"; strings.Join(got, "|") != want {
-		t.Fatalf("events = %q, want %q", strings.Join(got, "|"), want)
-	}
-}
-
-func TestSentryLogsLevels(t *testing.T) {
-	transport := withSentry(t)
-	w := sentryLogs{}
-	for _, l := range []zerolog.Level{zerolog.NoLevel, zerolog.Disabled, zerolog.TraceLevel, zerolog.InfoLevel} {
-		if n, err := w.WriteLevel(l, []byte(`{"message":"x"}`)); n != 15 || err != nil {
-			t.Fatalf("WriteLevel(%s) = %d, %v", l, n, err)
-		}
-	}
-	if n, err := w.Write([]byte("abc")); n != 3 || err != nil {
-		t.Fatalf("Write = %d, %v", n, err)
-	}
-	w.WriteLevel(zerolog.FatalLevel, []byte(`{"message":"dying"}`))
-	w.WriteLevel(zerolog.PanicLevel, []byte(`not json`))
-	events := transport.Events()
-	if len(events) != 2 || events[0].Message != "dying" || events[0].Level != sentry.LevelFatal || events[1].Level != sentry.LevelFatal {
-		t.Fatalf("events = %+v", events)
 	}
 }
 
