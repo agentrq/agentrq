@@ -48,6 +48,7 @@ func TestWelcomeEmail_SentAtSignUp(t *testing.T) {
 		"https://agentrq.com/guidelines/connect-agents/claude-code-and-machines",
 		"Optional: connect any other agent that speaks ACP",
 		"https://agentrq.com/guidelines/connect-agents/acp-gateway-and-machines",
+		"https://agentrq.com/guidelines/tasks/",
 		"https://agentrq.com/guidelines/yolo-mode/",
 		"https://agentrq.com/guidelines/workspaces/workspace-status-colors",
 	} {
