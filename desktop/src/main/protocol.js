@@ -220,16 +220,9 @@ export function webSocketOrigin(serverUrl) {
  * connect-src — API traffic needs nothing beyond 'self' because it is proxied
  * through this same origin.
  *
- * img-src carries the sign-in providers' avatar CDNs. `user.picture` is the URL
- * the provider hands back verbatim, pointing at their own host, so 'self' alone
- * silently blocked every profile photo and the sidebar fell back to the
- * initial-letter placeholder — visible only in the desktop build, because the
- * browser build is served without a CSP at all.
- *
- * These are listed host by host rather than opening img-src to `https:`. The
- * point of the policy is that injected markup cannot reach an arbitrary origin,
- * and an <img> to a URL of the attacker's choosing is a working beacon even
- * though it renders nothing.
+ * img-src allows any https host: `user.picture` is the server's own bucket or
+ * any OAuth2 provider the operator added, so no host list can name them, and
+ * one that tried broke every profile photo in v0.16.0.
  *
  * Deliberately absent: COOP/COEP. Cross-origin isolation would unlock
  * multi-threaded WASM, but `require-corp` also blocks every CDN response that
@@ -247,10 +240,6 @@ export function webSocketOrigin(serverUrl) {
  */
 export function buildCSP({ dev = false, devServerUrl = '', serverUrl = '' } = {}) {
   const hf = 'https://huggingface.co https://*.hf.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co'
-  // Google serves avatars from lh3/lh4/lh5.googleusercontent.com and rotates
-  // between them; GitHub uses a single host. Both are the providers the app
-  // offers, so a new sign-in provider means a new entry here.
-  const avatars = 'https://*.googleusercontent.com https://avatars.githubusercontent.com'
   const script = dev ? `'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'` : `'self' 'wasm-unsafe-eval'`
   // The terminal socket, at the configured server. In dev the local sockets
   // stay listed as well: they cover Vite's HMR client, which is a different
@@ -264,7 +253,7 @@ export function buildCSP({ dev = false, devServerUrl = '', serverUrl = '' } = {}
     `default-src 'self'`,
     `script-src ${script}`,
     `style-src 'self' 'unsafe-inline'`,
-    `img-src 'self' data: blob: ${avatars}`,
+    `img-src 'self' data: blob: https:`,
     `font-src 'self' data:`,
     `connect-src ${connect}`,
     `worker-src 'self' blob:`,

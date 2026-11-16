@@ -34,6 +34,9 @@ Consequences worth knowing before changing anything here:
   That is the whole story of the desktop terminal never working; see
   [the daemon note](machines-and-daemon.md). Anything else the renderer needs
   to reach still belongs behind the proxy, not in the policy.
+- **`img-src` allows any `https:` host, on purpose.** A profile picture is the
+  server's bucket or any operator-added OAuth2 provider; a host list broke
+  every avatar in v0.16.0. The Tauri app's policy must match.
 - **Give every await in the main process a deadline, and make it a race.** The
   handler's promise is what the renderer's `fetch` waits on, so an await that
   never settles is a frozen app rather than an error — and a crashed network
