@@ -29,6 +29,7 @@ func TestFromErrorToHTTPResponse(t *testing.T) {
 		{"any other fork refusal", entity.NewForkError(errors.New("other"), "never"), http.StatusUnprocessableEntity, "never"},
 		{"any other launch refusal", entity.NewLaunchError(errors.New("other"), "no"), http.StatusUnprocessableEntity, "no"},
 		{"a locked title", fmt.Errorf("rename: %w", entity.ErrTaskTitleLocked), http.StatusConflict, "rename: " + entity.ErrTaskTitleLocked.Error()},
+		{"another task ongoing", entity.ErrAnotherTaskOngoing, http.StatusConflict, entity.ErrAnotherTaskOngoing.Error()},
 		{"rate limited", errors.New("rate limit exceeded"), http.StatusTooManyRequests, "rate limit exceeded"},
 		// Anything else never leaks its text.
 		{"anything else", errors.New("dial tcp 10.0.0.1: refused"), http.StatusInternalServerError, "internal server error"},

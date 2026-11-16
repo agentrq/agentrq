@@ -226,7 +226,7 @@ export async function updateTaskStatus(workspaceId, taskId, value) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status: { value } })
   });
-  if (!res.ok) throw new Error('Failed to update task status');
+  if (!res.ok) throw await responseError(res, 'Failed to update task status');
   return res.json();
 }
 

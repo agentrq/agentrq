@@ -479,7 +479,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		if err == nil {
 			for _, t := range tasks {
 				if t.Status == "ongoing" && t.ID != req.TaskID {
-					return nil, fmt.Errorf("another task is already ongoing in this workspace")
+					return nil, entity.ErrAnotherTaskOngoing
 				}
 			}
 		}
@@ -600,7 +600,7 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 		if err == nil {
 			for _, t := range tasks {
 				if t.Status == "ongoing" && t.ID != req.TaskID {
-					return nil, fmt.Errorf("another task is already ongoing in this workspace")
+					return nil, entity.ErrAnotherTaskOngoing
 				}
 			}
 		}
