@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -105,5 +106,15 @@ func TestPrometheus_MCPActionsUseTheirNames(t *testing.T) {
 	c.recordMCP(mcp.MCPEvent{Action: mcp.Action(255)})
 	if got := testutil.CollectAndCount(c.actions); got != 12 {
 		t.Fatalf("counted %d series, want 12", got)
+	}
+}
+
+// Only MCP actions have an MCP name; an empty tool is no tool at all.
+func TestPrometheus_StringersFallBack(t *testing.T) {
+	if got := mcpAction(model.ActionIDTaskCreate).String(); got != "unknown" {
+		t.Errorf("mcpAction(task create) = %q, want unknown", got)
+	}
+	if got := mcpTool("").String(); got != "" {
+		t.Errorf("mcpTool(\"\") = %q, want empty", got)
 	}
 }

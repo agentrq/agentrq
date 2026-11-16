@@ -6,6 +6,7 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -81,10 +82,11 @@ func New(p Params) Controller {
 	return c
 }
 
-// enqueue queues a telemetry row and counts it on Prometheus under its name.
-func (c *controller) enqueue(t model.Telemetry, name, subAction string) {
+// enqueue queues a telemetry row and counts it on Prometheus under the
+// action's name and, for an MCP call, its tool's.
+func (c *controller) enqueue(t model.Telemetry, action fmt.Stringer, tool mcpTool) {
 	if c.actions != nil {
-		c.actions.WithLabelValues(name, subAction).Inc()
+		c.actions.WithLabelValues(action.String(), tool.String()).Inc()
 	}
 	c.queue <- t
 }
@@ -181,14 +183,14 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 			OccurredAt:  time.Now().Unix(),
 			Action:      model.ActionIDTaskFromScheduled,
 			Actor:       uint8(event.Actor),
-		}, entity.ActionTaskFromScheduled.String(), "")
+		}, entity.ActionTaskFromScheduled, "")
 		c.enqueue(model.Telemetry{
 			UserID:      event.UserID,
 			WorkspaceID: event.WorkspaceID,
 			OccurredAt:  time.Now().Unix(),
 			Action:      model.ActionIDTaskCreate,
 			Actor:       uint8(event.Actor),
-		}, entity.ActionTaskCreate.String(), "")
+		}, entity.ActionTaskCreate, "")
 		return
 	case entity.ActionTaskRejectManual:
 		action = model.ActionIDTaskRejectManual
@@ -368,7 +370,7 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		OccurredAt:  time.Now().Unix(),
 		Action:      action,
 		Actor:       uint8(event.Actor),
-	}, event.Action.String(), "")
+	}, event.Action, "")
 }
 
 // subActionIDByToolName maps every tool/resource/prompt name either MCP
@@ -474,34 +476,31 @@ var subActionIDByToolName = map[string]uint8{
 }
 
 func (c *controller) recordMCP(event mcp.MCPEvent) {
-	var action uint8
-	var subAction uint8
-	var name, subName string
+	var action mcpAction
+	var tool mcpTool
 	switch event.Action {
 	case mcp.ActionMCPToolCall:
-		action, name = model.ActionIDMCPToolCall, "mcp_tool_call"
-		subAction, subName = mcpSubAction(event.ToolName)
+		action, tool = mcpAction(model.ActionIDMCPToolCall), mcpTool(event.ToolName)
 	case mcp.ActionMCPMethodCall:
-		action, name = model.ActionIDMCPMethodCall, "mcp_method_call"
-		subAction, subName = mcpSubAction(event.ToolName)
+		action, tool = mcpAction(model.ActionIDMCPMethodCall), mcpTool(event.ToolName)
 	case mcp.ActionMCPConnect:
-		action, name = model.ActionIDMCPConnect, "mcp_connect"
+		action = mcpAction(model.ActionIDMCPConnect)
 	case mcp.ActionMCPClearContext:
-		action, name = model.ActionIDMCPClearContext, "mcp_clear_context"
+		action = mcpAction(model.ActionIDMCPClearContext)
 	case mcp.ActionMCPPlanUpdate:
-		action, name = model.ActionIDMCPPlanUpdate, "mcp_plan_update"
+		action = mcpAction(model.ActionIDMCPPlanUpdate)
 	case mcp.ActionMCPNotification:
 		switch event.Method {
 		case "permission_manual_allow":
-			action, name = model.ActionIDMCPPermissionManual, "mcp_permission_manual"
+			action = mcpAction(model.ActionIDMCPPermissionManual)
 		case "permission_auto_allow":
-			action, name = model.ActionIDMCPPermissionAuto, "mcp_permission_auto"
+			action = mcpAction(model.ActionIDMCPPermissionAuto)
 		case "permission_manual_deny":
-			action, name = model.ActionIDMCPPermissionDeny, "mcp_permission_deny"
+			action = mcpAction(model.ActionIDMCPPermissionDeny)
 		case "permission_extension_allow":
-			action, name = model.ActionIDMCPPermissionExtensionAllow, "mcp_permission_extension_allow"
+			action = mcpAction(model.ActionIDMCPPermissionExtensionAllow)
 		case "permission_extension_deny":
-			action, name = model.ActionIDMCPPermissionExtensionDeny, "mcp_permission_extension_deny"
+			action = mcpAction(model.ActionIDMCPPermissionExtensionDeny)
 		default:
 			return
 		}
@@ -515,22 +514,54 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 		UserID:      event.UserID,
 		WorkspaceID: event.WorkspaceID,
 		OccurredAt:  time.Now().Unix(),
-		Action:      action,
+		Action:      uint8(action),
 		Actor:       uint8(event.Actor),
 		ClientID:    event.ClientID,
-		SubActionID: subAction,
-	}, name, subName)
+		SubActionID: subActionIDByToolName[string(tool)],
+	}, action, tool)
 }
 
-// mcpSubAction is the stored ID and the Prometheus label of an MCP call's tool,
-// resource or prompt. A name not in subActionIDByToolName is labelled
-// "unknown", so a caller cannot grow the label set by inventing names.
-func mcpSubAction(toolName string) (uint8, string) {
-	id, ok := subActionIDByToolName[toolName]
-	if !ok {
-		return id, "unknown"
+// mcpAction is a stored MCP telemetry action; its String is the name
+// Prometheus counts it under.
+type mcpAction uint8
+
+func (a mcpAction) String() string {
+	switch uint8(a) {
+	case model.ActionIDMCPToolCall:
+		return "mcp_tool_call"
+	case model.ActionIDMCPMethodCall:
+		return "mcp_method_call"
+	case model.ActionIDMCPConnect:
+		return "mcp_connect"
+	case model.ActionIDMCPClearContext:
+		return "mcp_clear_context"
+	case model.ActionIDMCPPlanUpdate:
+		return "mcp_plan_update"
+	case model.ActionIDMCPPermissionManual:
+		return "mcp_permission_manual"
+	case model.ActionIDMCPPermissionAuto:
+		return "mcp_permission_auto"
+	case model.ActionIDMCPPermissionDeny:
+		return "mcp_permission_deny"
+	case model.ActionIDMCPPermissionExtensionAllow:
+		return "mcp_permission_extension_allow"
+	case model.ActionIDMCPPermissionExtensionDeny:
+		return "mcp_permission_extension_deny"
 	}
-	return id, toolName
+	return "unknown"
+}
+
+// mcpTool is the tool, resource or prompt an MCP call named, empty for any
+// other action. Its String is "unknown" for a name not in
+// subActionIDByToolName, so a caller cannot grow the label set by inventing
+// names.
+type mcpTool string
+
+func (t mcpTool) String() string {
+	if _, ok := subActionIDByToolName[string(t)]; t != "" && !ok {
+		return "unknown"
+	}
+	return string(t)
 }
 
 // recordMCPClient upserts a lookup row for a newly-seen MCP client identity so
