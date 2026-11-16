@@ -281,12 +281,6 @@ export function skillWorkspaceCount(skill) {
   return `On in ${n} ${n === 1 ? 'workspace' : 'workspaces'}`;
 }
 
-/** `ids` with `id` turned on or off, each id once. */
-export function withWorkspace(ids = [], id, on) {
-  const rest = ids.filter((x) => String(x) !== String(id));
-  return on ? [...rest, String(id)] : rest;
-}
-
 /**
  * The workspaces a skill can be turned on in: not archived, and not forks,
  * which use their parent's skills.

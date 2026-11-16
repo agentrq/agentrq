@@ -45,9 +45,9 @@
           Expected https://github.com/owner/repo, optionally /tree/&lt;ref&gt;/&lt;path&gt;
         </span>
       </div>
-      <!-- Where the imported skills are turned on. In a workspace, that one
-           starts ticked, so what is imported there is on there. -->
-      <SkillWorkspaceChoices v-model="importWorkspaceIds" :workspaces="workspaceChoices"
+      <!-- Where the imported skills are turned on: chosen on the Skills page;
+           in a workspace, that workspace alone. -->
+      <SkillWorkspaceChoices v-if="!workspaceId" v-model="importWorkspaceIds" :workspaces="workspaceChoices"
                              data-test="skill-import-workspaces" item-test="skill-import-workspace" />
       <p v-if="importError" class="text-[11px] font-bold text-red-600 dark:text-red-400 break-words">{{ importError }}</p>
       <!-- A repository too large to import whole: choose what to take. -->
@@ -203,7 +203,6 @@ import {
   skillWorkspaceCount,
   skillWorkspaceMessage,
   skillsState,
-  withWorkspace,
 } from '../composables/useSkills';
 import { useToasts } from '../composables/useToasts';
 import { onWebMCPChange } from '../composables/useWebMCPChanges';
@@ -353,25 +352,22 @@ const importError = ref('');
 const choice = ref(null);
 const chosen = ref([]);
 
-// The workspaces to turn what is imported on in. A workspace's tab starts with
-// its own ticked — a fork's parent, whose skills the fork uses — and moves the
-// tick if the store says otherwise once loaded.
+// The workspaces to turn what is imported on in: ticked on the Skills page; in
+// a workspace's tab, that workspace — a fork's parent, whose skills the fork uses.
 const workspaceChoices = computed(() => skillWorkspaceChoices(workspaceStore.workspaces));
-const homeWorkspaceId = computed(() =>
-  props.workspaceId ? contentWorkspaceId(workspaceStore.getWorkspace(props.workspaceId), props.workspaceId) : '',
-);
 const importWorkspaceIds = ref([]);
-watch(homeWorkspaceId, (id, old) => {
-  const ids = old ? withWorkspace(importWorkspaceIds.value, old, false) : importWorkspaceIds.value;
-  importWorkspaceIds.value = id ? withWorkspace(ids, id, true) : ids;
-}, { immediate: true });
+
+function importTargets() {
+  if (!props.workspaceId) return [...importWorkspaceIds.value];
+  return [contentWorkspaceId(workspaceStore.getWorkspace(props.workspaceId), props.workspaceId)];
+}
 
 async function doImport(url, skills) {
   importing.value = true;
   importError.value = '';
   importReport.value = null;
   try {
-    const res = await importSkills(url, importOverwrite.value, skills, [...importWorkspaceIds.value]);
+    const res = await importSkills(url, importOverwrite.value, skills, importTargets());
     if (res.candidates?.length) {
       choice.value = { url, repo: res.sourceRepo, candidates: orderCandidates(res.candidates) };
       chosen.value = [];
