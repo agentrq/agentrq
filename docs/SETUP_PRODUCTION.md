@@ -348,6 +348,13 @@ The server refuses to start on a negative value.
 |---|---|---|
 | `AGENTRQ_MCP_OPENAI_APPS_CHALLENGE` | (empty) | The domain verification token OpenAI issues when you submit the MCP server as a plugin, served as plain text at `/.well-known/openai-apps-challenge` on every host. Empty answers 404. |
 
+### Sentry
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENTRQ_SENTRY_ENABLED` | `false` | Report panics and error-level log lines to Sentry. Each event's release is the server's version and its environment is `ENV`. Request bodies, cookies and auth headers are never sent. |
+| `AGENTRQ_SENTRY_DSN` | (empty) | The Sentry project's DSN. The server refuses to start with Sentry enabled and no valid DSN. |
+
 ### Native ACP
 
 The server always serves `/api/acp/v1`, the only way acp-gateway connects.

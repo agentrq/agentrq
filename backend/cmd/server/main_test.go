@@ -67,6 +67,7 @@ func TestLoadConfigTakesTheEnv(t *testing.T) {
 	t.Setenv("AGENTRQ_TRUSTED_PROXIES", "10.0.0.0/8")
 	t.Setenv("AGENTRQ_CLIENT_IP_HEADER", "X-Forwarded-For")
 	t.Setenv("AGENTRQ_MCP_OPENAI_APPS_CHALLENGE", "challenge")
+	t.Setenv("AGENTRQ_SENTRY_DSN", "https://key@sentry.example.com/1")
 	svc, err := config.NewFS(bundled)
 	if err != nil {
 		t.Fatal(err)
@@ -85,6 +86,10 @@ func TestLoadConfigTakesTheEnv(t *testing.T) {
 	}
 	if cfg.Network.TrustedProxies != "10.0.0.0/8" || cfg.Network.ClientIPHeader != "X-Forwarded-For" || cfg.MCP.OpenAIAppsChallenge != "challenge" {
 		t.Errorf("network = %+v, mcp = %+v", cfg.Network, cfg.MCP)
+	}
+	// Off unless turned on.
+	if cfg.Sentry.Enabled || cfg.Sentry.DSN != "https://key@sentry.example.com/1" {
+		t.Errorf("sentry = %+v", cfg.Sentry)
 	}
 }
 

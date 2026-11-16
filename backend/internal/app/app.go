@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	zlog "github.com/rs/zerolog/log"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/acpv1"
@@ -184,6 +185,8 @@ type (
 			// OpenAI's domain verification token for a plugin submission.
 			OpenAIAppsChallenge string `yaml:"openaiAppsChallenge"`
 		} `yaml:"mcp"`
+		// Sentry reports errors and panics, when it is enabled.
+		Sentry    SentryConfig   `yaml:"sentry"`
 		ConfigSvc config.Service `yaml:"-"` // injected, not from YAML
 		// DB is the database Load opened and migrated; nil, New opens it.
 		DB dbconn.DBConn `yaml:"-"`
@@ -277,6 +280,9 @@ func New(cfg Config) (*App, error) {
 	}()
 
 	svclog.Setup(cfg.ConfigSvc)
+	if err := startSentry(cfg.Sentry, cfg.ConfigSvc); err != nil {
+		return nil, err
+	}
 
 	// ── Database (config-driven) ──────────────────────────────────────────
 	db := cfg.DB
@@ -727,6 +733,9 @@ func New(cfg Config) (*App, error) {
 	fiberApp := fiber.New(fiber.Config{
 		BodyLimit: 4 * 1024 * 1024, // 4 MB
 	})
+	if cfg.Sentry.Enabled {
+		fiberApp.Use(sentryFiber()...)
+	}
 	fiberApp.Use(cors.New(cors.Config{
 		AllowOrigins:  []string{"*"},
 		AllowHeaders:  []string{"Origin", "Content-Type", "Accept", "mcp-session-id", "mcp-protocol-version"},
@@ -950,6 +959,9 @@ func New(cfg Config) (*App, error) {
 	finalRouter = ratelimit.New(cfg.Ratelimit.Enabled, cfg.Ratelimit.MaxPerIP, cfg.Ratelimit.MaxPerUser, cfg.Ratelimit.Window, tokenSvc)(finalRouter)
 	finalRouter = ddos.New(cfg.Ddos.Enabled, cfg.Ddos.MaxRequestsPerSecond, cfg.Ddos.BlockDuration)(finalRouter)
 	finalRouter = clients.Middleware(finalRouter)
+	if cfg.Sentry.Enabled {
+		finalRouter = reportPanics(finalRouter)
+	}
 
 	probes := health.New(pingDB(db))
 
@@ -1397,7 +1409,8 @@ func (a *App) Run() error {
 // the supervisor's task listens and the event streams end, in-flight requests
 // finish, and only after them the app context is cancelled, so the consumers
 // wired to it still see what those requests published. Queued emails are
-// sent, and buffered telemetry and agent names written, before it returns.
+// sent, and buffered telemetry, agent names and Sentry events written, before
+// it returns.
 // Safe to call once on SIGINT/SIGTERM.
 func (a *App) Shutdown(ctx context.Context) error {
 	if a.probes != nil {
@@ -1426,6 +1439,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 	if a.taskAgents != nil {
 		a.taskAgents.Close()
 	}
+	sentry.Flush(sentryFlushTimeout)
 	return err
 }
 

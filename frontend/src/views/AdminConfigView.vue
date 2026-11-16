@@ -105,7 +105,7 @@ const busy = ref(false)
 /** The names a block is known by, where its key does not read as one. */
 const TITLES = {
   ddos: 'DDoS', mcp: 'MCP', pubsub: 'Pub/Sub', ratelimit: 'Rate limit',
-  s3: 'S3', smtp: 'SMTP', ssl: 'SSL', webPush: 'Web push',
+  s3: 'S3', sentry: 'Sentry', smtp: 'SMTP', ssl: 'SSL', webPush: 'Web push',
 }
 
 function title(key) {
@@ -125,6 +125,7 @@ const CATEGORIES = [
   ['Storage', ['storage', 's3', 'artifacts']],
   ['Features', ['skills', 'memory', 'pano', 'hooks', 'teams']],
   ['Protocols', ['mcp', 'pubsub']],
+  ['Monitoring', ['sentry']],
 ]
 
 const groups = computed(() => {
