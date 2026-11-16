@@ -145,11 +145,9 @@ describe('the Skills tab', () => {
     expect(el.querySelectorAll('[data-test="skill-card"]')).toHaveLength(2);
   });
 
-  it('imports, on in this workspace unless it is cleared, and reports what it left out', async () => {
+  it('imports into this workspace alone, with no choice of others, and reports what it left out', async () => {
     const el = await mount();
-    // Every workspace that can have skills, forks left out, this one ticked.
-    expect(workspaceBoxes(el).map((o) => o.textContent.trim())).toEqual(['Home', 'Ops', 'Platform']);
-    expect(ticked(el)).toEqual(['Home']);
+    expect(el.querySelector('[data-test="skill-import-workspaces"]')).toBeNull();
     await submitImport(el, 'https://github.com/obra/superpowers');
 
     expect(api.importSkills).toHaveBeenCalledWith('https://github.com/obra/superpowers', false, undefined, ['ws1']);
@@ -158,21 +156,10 @@ describe('the Skills tab', () => {
     expect(report).toContain('skills/brainstorming — SKILL.md is 100000 bytes');
     // The list is fetched again, so what arrived shows up, on here.
     expect(api.searchWorkspaceSkills).toHaveBeenCalledTimes(2);
-
-    // Other workspaces can be ticked, and this one cleared.
-    workspaceBoxes(el)[1].querySelector('input').click();
-    await settle();
-    workspaceBoxes(el)[0].querySelector('input').click();
-    await settle();
-    expect(ticked(el)).toEqual(['Ops']);
-    el.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    await settle();
-    expect(api.importSkills).toHaveBeenLastCalledWith('https://github.com/obra/superpowers', false, undefined, ['ws3']);
   });
 
-  it('ticks a fork\'s parent, whose skills the fork uses', async () => {
+  it('imports from a fork into its parent, whose skills the fork uses', async () => {
     const el = await mount('ws4');
-    expect(ticked(el)).toEqual(['Home']);
     await submitImport(el, 'https://github.com/obra/superpowers');
     expect(api.importSkills).toHaveBeenCalledWith('https://github.com/obra/superpowers', false, undefined, ['ws1']);
   });

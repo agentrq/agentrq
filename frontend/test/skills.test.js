@@ -41,7 +41,6 @@ import {
   skillsListPath,
   skillsState,
   skillsTabPath,
-  withWorkspace,
 } from '../src/composables/useSkills';
 
 describe('skill URIs', () => {
@@ -384,14 +383,6 @@ describe('the workspaces a skill is on in', () => {
     expect(skillWorkspaceCount({ workspaceIds: [] })).toBe('Not on in any workspace');
     expect(skillWorkspaceCount({})).toBe('Not on in any workspace');
     expect(skillWorkspaceCount(undefined)).toBe('Not on in any workspace');
-  });
-
-  it('turns one on or off in a list, each once, as strings', () => {
-    expect(withWorkspace(['a'], 'b', true)).toEqual(['a', 'b']);
-    expect(withWorkspace(['a', 'b'], 'a', true)).toEqual(['b', 'a']);
-    expect(withWorkspace(['a', 'b'], 'a', false)).toEqual(['b']);
-    expect(withWorkspace([7], 7, false)).toEqual([]);
-    expect(withWorkspace(undefined, 7, true)).toEqual(['7']);
   });
 
   it('offers neither forks, which use their parent\'s, nor archived workspaces', () => {
