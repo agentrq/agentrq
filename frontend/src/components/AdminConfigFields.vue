@@ -157,16 +157,21 @@ function toggle(key) {
   else revealed.add(field)
 }
 
-// The keys the server signs with itself, so any random value does; a
-// provider's secret is issued by the provider and cannot be made up here.
-const GENERATED = /jwtSecret$/i
+// The secrets the server only checks against itself, so any random value
+// does, by setting path, and how many random bytes each takes; a provider's
+// secret is issued by the provider and cannot be made up here.
+const GENERATED = {
+  'auth.apiJwtSecret': 48,
+  'auth.mcpJwtSecret': 48,
+  'prometheus.token': 24, // 32 characters, the only length the server takes
+}
 
 /** A secret the server only needs to be random, offered a Generate button. */
-const canGenerate = (key, value) => isSecret(key, value) && GENERATED.test(key)
+const canGenerate = (key, value) => isSecret(key, value) && settingPath(key) in GENERATED
 
-/** Fills the field with 48 random bytes, base64url, shown so it can be copied. */
+/** Fills the field with random bytes, base64url, shown so it can be copied. */
 function generate(key) {
-  const bytes = crypto.getRandomValues(new Uint8Array(48))
+  const bytes = crypto.getRandomValues(new Uint8Array(GENERATED[settingPath(key)]))
   props.fields[key] = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
   revealed.add(`${props.path}.${key}`)
 }

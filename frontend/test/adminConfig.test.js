@@ -300,6 +300,29 @@ describe('AdminConfigView', () => {
     expect(sent.apiJwtSecret).toBe(MASK)
   })
 
+  it('generates a 32-character Prometheus token, under Monitoring, and saves it', async () => {
+    const prometheus = { key: 'prometheus', value: { enabled: false, token: '' } }
+    const seen = serve({
+      [`GET ${CONFIGS}`]: [[{ configurations: [...blocks(), prometheus] }, 200]],
+      [`PUT ${CONFIGS}/prometheus`]: [[prometheus, 200]],
+    })
+    const el = await mount()
+    expect(qa(el, 'config-group-name').map((g) => g.textContent.trim())).toContain('Monitoring')
+    await openTab(el, 'prometheus')
+    expect(q(el, 'config-tab-prometheus').textContent.trim()).toBe('Prometheus')
+
+    q(el, 'config-generate-prometheus.token').click()
+    await nextTick()
+    const input = q(el, 'config-prometheus.token')
+    expect(input.type).toBe('text')
+    expect(input.value).toMatch(/^[A-Za-z0-9_-]{32}$/)
+    const generated = input.value
+
+    q(el, 'config-save').click()
+    await settle()
+    expect(JSON.parse(seen[1].init.body).value).toEqual({ enabled: false, token: generated })
+  })
+
   it("shows a refused save's reason and keeps the edit", async () => {
     serve({
       [`GET ${CONFIGS}`]: [[{ configurations: blocks() }, 200]],

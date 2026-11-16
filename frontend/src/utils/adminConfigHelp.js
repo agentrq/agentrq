@@ -138,6 +138,10 @@ export const CONFIG_HELP = {
   'sentry.enabled': 'Reports panics and error-level log lines. Off by default.',
   'sentry.dsn': 'The Sentry project\'s DSN, such as https://<key>@o0.ingest.sentry.io/<project>. Required when enabled.',
 
+  prometheus: 'HTTP request metrics for Prometheus, served at /metrics to a scrape that carries the token.',
+  'prometheus.enabled': 'Serves /metrics. Off by default.',
+  'prometheus.token': 'The secret a scrape passes as /metrics?prometheus_token=<token>; any other gets 404. Exactly 32 characters. Required when enabled.',
+
   pubsub: 'Messages passed between the parts of one instance.',
   'pubsub.maxDurationForSubscriberToReceive': 'How long a message waits for a busy receiver to take it, such as 5s.',
 }
