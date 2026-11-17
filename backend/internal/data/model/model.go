@@ -872,6 +872,9 @@ const (
 	ActionIDTeamSkillGive
 	ActionIDTeamSkillOptIn
 	ActionIDTeamSkillOptOut
+	// A person signing in and signing out; emitted by the backend.
+	ActionIDUserSignIn
+	ActionIDUserSignOut
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

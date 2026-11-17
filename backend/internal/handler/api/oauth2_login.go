@@ -96,7 +96,7 @@ func (h *handler) oauth2Callback() fiber.Handler {
 			return sendError(c, err)
 		}
 
-		h.issueSession(c, tokenString, userID)
+		h.signIn(c, tokenString, dbUser.User.ID)
 		return c.Redirect().Status(fiber.StatusFound).To(h.sanitizeRedirectURL(redirectURL))
 	}
 }

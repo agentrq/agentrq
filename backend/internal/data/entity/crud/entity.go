@@ -1921,6 +1921,11 @@ const (
 	ActionTeamSkillGive   Action = 128
 	ActionTeamSkillOptIn  Action = 129
 	ActionTeamSkillOptOut Action = 130
+	// A person signing in, by any provider or the root token, and signing
+	// out. Emitted by the backend; workspace 0, since a session belongs to
+	// the account. A session renewed by its refresh cookie is no sign-in.
+	ActionUserSignIn  Action = 131
+	ActionUserSignOut Action = 132
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2181,6 +2186,10 @@ func (a Action) String() string {
 		return "team_skill_opt_in"
 	case ActionTeamSkillOptOut:
 		return "team_skill_opt_out"
+	case ActionUserSignIn:
+		return "user_signin"
+	case ActionUserSignOut:
+		return "user_signout"
 	}
 	return "unknown"
 }
@@ -2404,6 +2413,12 @@ type (
 		// than one with a duration, because the socket can be closed by a
 		// crash, and half an interval is worse than two counts.
 		Open bool
+	}
+
+	// RecordSignInRequest counts a person signing in, or (SignOut) out.
+	RecordSignInRequest struct {
+		UserID  int64
+		SignOut bool
 	}
 
 	// RecordOAuthConsentRequest counts a person allowing (Allowed) or

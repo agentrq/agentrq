@@ -64,6 +64,12 @@ func (m *mockTokenSvc) ValidateOAuthStateToken(tokenStr, provider string) (strin
 type mockCrudController struct {
 	crud.Controller
 	findOrCreateUserFunc func(ctx context.Context, req entity.FindOrCreateUserRequest) (*entity.FindOrCreateUserResponse, error)
+	// signIns is every sign-in counted.
+	signIns []entity.RecordSignInRequest
+}
+
+func (m *mockCrudController) RecordSignIn(_ context.Context, req entity.RecordSignInRequest) {
+	m.signIns = append(m.signIns, req)
 }
 
 func (m *mockCrudController) FindOrCreateUser(ctx context.Context, req entity.FindOrCreateUserRequest) (*entity.FindOrCreateUserResponse, error) {

@@ -108,6 +108,8 @@ func TestActionString(t *testing.T) {
 		{ActionTeamCreate, "team_create"},
 		{ActionTeamInvite, "team_invite"},
 		{ActionTeamJoin, "team_join"},
+		{ActionUserSignIn, "user_signin"},
+		{ActionUserSignOut, "user_signout"},
 		{ActionWorkspaceShare, "workspace_share"},
 		{ActionTeamTaskClone, "team_task_clone"},
 		{ActionTeamMemorySave, "team_memory_save"},

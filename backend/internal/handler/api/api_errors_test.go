@@ -24,6 +24,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/mustafaturan/monoflake"
 )
 
 // The error paths of the sign-in and workspace routes in api.go, with the
@@ -88,6 +89,12 @@ type authPathCrud struct {
 	err error
 	// sawEmail is the email the last FindOrCreateUser was asked for.
 	sawEmail string
+	// signIns is every sign-in and sign-out counted.
+	signIns []entity.RecordSignInRequest
+}
+
+func (m *authPathCrud) RecordSignIn(_ context.Context, req entity.RecordSignInRequest) {
+	m.signIns = append(m.signIns, req)
 }
 
 func (m *authPathCrud) FindOrCreateUser(_ context.Context, req entity.FindOrCreateUserRequest) (*entity.FindOrCreateUserResponse, error) {
@@ -173,6 +180,34 @@ func TestIssueSession_KeepsTheSignInWhenTheRefreshTokenFails(t *testing.T) {
 	}
 }
 
+// Every sign-in path goes through signIn, which counts it; a refresh renews
+// the session without counting one.
+func TestSignIn_IsCountedAndARefreshIsNot(t *testing.T) {
+	stub := &authPathCrud{}
+	app := authPathApp(&handler{
+		rootLoginEnabled: true,
+		rootToken:        "s3cret",
+		crud:             stub,
+		tokenSvc:         &authPathTokens{claims: &auth.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "7"}}},
+	})
+
+	if resp, body := errPathDo(t, app, http.MethodPost, "/auth/root/login", `{"rootToken":"s3cret"}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, body)
+	}
+	if len(stub.signIns) != 1 || stub.signIns[0] != (entity.RecordSignInRequest{UserID: 7}) {
+		t.Fatalf("counted %+v, want one sign-in by user 7", stub.signIns)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	req.Header.Set("Cookie", "rt=a-valid-refresh-token")
+	if resp, err := app.Test(req); err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("refresh = %v, %v; want 200", resp, err)
+	}
+	if len(stub.signIns) != 1 {
+		t.Errorf("a refresh was counted as a sign-in: %+v", stub.signIns)
+	}
+}
+
 func TestRefreshSession_AnswersAFailedSigningWith500(t *testing.T) {
 	app := authPathApp(&handler{
 		crud: &authPathCrud{},
@@ -209,8 +244,12 @@ func TestLogout_ExpiresBothCookiesWhereTheyWereSet(t *testing.T) {
 	for _, tc := range cases {
 		t.Run("domain "+tc.domain, func(t *testing.T) {
 			app := fiber.New()
-			h := &handler{domain: tc.domain}
-			app.Post("/auth/logout", h.logout())
+			stub := &authPathCrud{}
+			h := &handler{domain: tc.domain, crud: stub}
+			app.Post("/auth/logout", func(c fiber.Ctx) error {
+				c.Locals("user_id", monoflake.ID(7).String())
+				return c.Next()
+			}, h.logout())
 
 			resp, _ := errPathDo(t, app, http.MethodPost, "/auth/logout", "")
 			if resp.StatusCode != http.StatusNoContent {
@@ -219,6 +258,9 @@ func TestLogout_ExpiresBothCookiesWhereTheyWereSet(t *testing.T) {
 			cookies := resp.Header.Values("Set-Cookie")
 			if len(cookies) != 2 {
 				t.Fatalf("Set-Cookie = %q, want both halves", cookies)
+			}
+			if len(stub.signIns) != 1 || stub.signIns[0] != (entity.RecordSignInRequest{UserID: 7, SignOut: true}) {
+				t.Errorf("counted %+v, want one sign-out by user 7", stub.signIns)
 			}
 			if !strings.HasPrefix(cookies[0], "at=;") || !strings.HasPrefix(cookies[1], "rt=;") {
 				t.Errorf("Set-Cookie = %q, want at then rt cleared", cookies)
