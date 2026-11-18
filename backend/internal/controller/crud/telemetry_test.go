@@ -91,6 +91,9 @@ func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
 		// Native ACP: the server sees every connection and turn itself.
 		"acp_v1_connect",
 		"acp_v1_turn",
+		// Sessions: the server issues and clears every one itself.
+		"user_signin",
+		"user_signout",
 	} {
 		if _, ok := entity.ClientReportableAction(name); ok {
 			t.Errorf("%q must not be client-reportable", name)

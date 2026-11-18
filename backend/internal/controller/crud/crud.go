@@ -60,6 +60,7 @@ type (
 		SiteShareController
 		ACPController
 		OAuthConsentController
+		SignInController
 		EventTriggerController
 		WorkflowController
 		WorkflowStepController

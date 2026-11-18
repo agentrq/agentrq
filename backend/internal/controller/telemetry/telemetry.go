@@ -360,6 +360,10 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDTeamSkillOptIn
 	case entity.ActionTeamSkillOptOut:
 		action = model.ActionIDTeamSkillOptOut
+	case entity.ActionUserSignIn:
+		action = model.ActionIDUserSignIn
+	case entity.ActionUserSignOut:
+		action = model.ActionIDUserSignOut
 	default:
 		return
 	}

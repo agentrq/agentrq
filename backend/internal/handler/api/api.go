@@ -353,6 +353,13 @@ func (h *handler) issueSession(c fiber.Ctx, accessToken, userID string) {
 	c.Cookie(h.sessionCookie(_refreshCookie, refreshToken, now.Add(auth.RefreshTokenTTL), h.refreshCookiePath()))
 }
 
+// signIn starts the session of a person who has just signed in, and counts
+// the sign-in. A refresh calls issueSession alone: renewing is no sign-in.
+func (h *handler) signIn(c fiber.Ctx, accessToken string, userID int64) {
+	h.issueSession(c, accessToken, monoflake.ID(userID).String())
+	h.crud.RecordSignIn(c.Context(), entity.RecordSignInRequest{UserID: userID})
+}
+
 // clearSession expires both halves. The refresh cookie has to be cleared at the
 // path it was set on; a deletion at "/" would not match it and would leave the
 // session renewable after signing out.
@@ -404,6 +411,7 @@ func (h *handler) refreshSession() fiber.Handler {
 func (h *handler) logout() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		h.clearSession(c)
+		h.crud.RecordSignIn(c.Context(), entity.RecordSignInRequest{UserID: sessionUser(c), SignOut: true})
 		return c.SendStatus(fiber.StatusNoContent)
 	}
 }
@@ -511,7 +519,7 @@ func (h *handler) rootLogin() fiber.Handler {
 			return c.Send(e)
 		}
 
-		h.issueSession(c, tokenString, userID)
+		h.signIn(c, tokenString, dbUser.User.ID)
 
 		return c.JSON(fiber.Map{"status": "ok"})
 	}
@@ -584,7 +592,7 @@ func (h *handler) googleCallback() fiber.Handler {
 			return c.Send(e)
 		}
 
-		h.issueSession(c, tokenString, userID)
+		h.signIn(c, tokenString, dbUser.User.ID)
 
 		redirectURL := "/"
 		if h.basePath != "" {
@@ -662,7 +670,7 @@ func (h *handler) githubCallback() fiber.Handler {
 			return c.Send(e)
 		}
 
-		h.issueSession(c, tokenString, userID)
+		h.signIn(c, tokenString, dbUser.User.ID)
 
 		redirectURL := "/"
 		if h.basePath != "" {
