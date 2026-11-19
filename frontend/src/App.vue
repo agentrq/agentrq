@@ -1166,11 +1166,11 @@ async function logout() {
   // agent holding the last person's session.
   webmcp?.unregister()
   webmcp = null
-  await unsubscribePush()
   // Unconditional, and before the request: a browser several people use must
   // not leave one person's task titles readable by the next, and that has to
-  // hold even if the sign-out call itself fails.
-  await forgetEverything({ userId: user.value?.id })
+  // hold even if the sign-out call itself fails. The push DELETE needs the
+  // cookie, so it too goes before; the two do not wait on each other.
+  await Promise.all([unsubscribePush(), forgetEverything({ userId: user.value?.id })])
   await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST' })
   router.push('/login')
 }
