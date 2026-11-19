@@ -522,6 +522,9 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionTeamSkillOptOut, model.ActionIDTeamSkillOptOut, "team skill opt out"},
 		{entity.ActionUserSignIn, model.ActionIDUserSignIn, "user signin"},
 		{entity.ActionUserSignOut, model.ActionIDUserSignOut, "user signout"},
+		{entity.ActionPresetCreate, model.ActionIDPresetCreate, "preset create"},
+		{entity.ActionPresetDelete, model.ActionIDPresetDelete, "preset delete"},
+		{entity.ActionUIPresetInsert, model.ActionIDUIPresetInsert, "ui preset insert"},
 	}
 
 	for _, tc := range cases {

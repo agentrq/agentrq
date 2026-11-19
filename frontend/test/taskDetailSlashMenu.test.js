@@ -39,6 +39,7 @@ vi.mock('../src/composables/useCachedTasks', () => ({
   sharedCache: () => null,
 }))
 
+const recordTelemetry = vi.fn()
 let createdAt = new Date().toISOString()
 const task = () => ({
   id: 't1',
@@ -60,6 +61,12 @@ vi.mock('../src/api', () => ({
     { name: 'review', description: 'skill review', workspaceEnabled: true },
     { name: 'hidden', workspaceEnabled: false },
   ] }),
+  listWorkspacePresets: () => Promise.resolve({ presets: [
+    { name: 'pull-n-push', body: 'pull latest main, tag and push' },
+    { name: 'deploy', body: 'deploy to staging' },
+  ] }),
+  recordTelemetry: (...a) => recordTelemetry(...a),
+  TELEMETRY_UI_PRESET_INSERT: 'ui_preset_insert',
   getTask: () => Promise.resolve({ task: task() }),
   fetchUser: () => Promise.resolve({ id: 'u1', name: 'Dev' }),
   fetchTasks: () => Promise.resolve({ tasks: [] }),
@@ -132,5 +139,54 @@ describe('the reply box\'s / menu', () => {
     await settle()
     expect(input.value).toBe('/release ')
     expect(view.el.querySelector('[data-test=slash-menu]')).toBeNull()
+  })
+})
+
+describe('the reply box\'s # menu', () => {
+  it('lists the workspace\'s presets with their message, and puts the chosen one\'s message in', async () => {
+    recordTelemetry.mockClear()
+    const view = await mount()
+    const input = view.composer()
+    input.value = 'then #'
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    expect(rows(view.el)).toEqual([
+      '#pull-n-pushpull latest main, tag and pushpreset',
+      '#deploydeploy to stagingpreset',
+    ])
+    input.value = 'then #pu'
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await settle()
+    expect(input.value).toBe('then pull latest main, tag and push')
+    expect(view.el.querySelector('[data-test=slash-menu]')).toBeNull()
+    expect(recordTelemetry).toHaveBeenCalledWith('ui_preset_insert', 'ws1')
+  })
+
+  it('highlights the row under the pointer, and puts a preset in with a click', async () => {
+    const view = await mount()
+    const input = view.composer()
+    input.value = '#'
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    const second = view.el.querySelectorAll('[data-test=slash-menu] li')[1]
+    second.dispatchEvent(new MouseEvent('mouseenter'))
+    await settle()
+    expect(second.getAttribute('aria-selected')).toBe('true')
+    second.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(input.value).toBe('deploy to staging')
+  })
+
+  it('puts a preset in with a click', async () => {
+    const view = await mount()
+    const input = view.composer()
+    input.value = '#dep'
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    view.el.querySelector('[data-test=slash-menu] li').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(input.value).toBe('deploy to staging')
   })
 })

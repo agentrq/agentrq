@@ -210,6 +210,18 @@ type (
 		AllowAllCommands bool   `gorm:"default:false"`
 	}
 
+	// Preset is a message kept for a workspace, which the composer puts in
+	// place of #name. A fork uses its parent's, so a merge moves none.
+	// One name per workspace: the unique index carries every column.
+	Preset struct {
+		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt   time.Time
+		UserID      int64  `gorm:"uniqueIndex:uk_presets_user_id_workspace_id_name,priority:1"`
+		WorkspaceID int64  `gorm:"uniqueIndex:uk_presets_user_id_workspace_id_name,priority:2"`
+		Name        string `gorm:"type:varchar(64);uniqueIndex:uk_presets_user_id_workspace_id_name,priority:3"`
+		Body        string `gorm:"type:text"`
+	}
+
 	// Message is an entry in a task's chat history
 	// Memory is what an agent has chosen to remember about a workspace.
 	//
@@ -875,6 +887,11 @@ const (
 	// A person signing in and signing out; emitted by the backend.
 	ActionIDUserSignIn
 	ActionIDUserSignOut
+	// A workspace preset saved or removed, emitted by the backend, and one
+	// put into the composer, reported by the browser.
+	ActionIDPresetCreate
+	ActionIDPresetDelete
+	ActionIDUIPresetInsert
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

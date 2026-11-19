@@ -76,6 +76,8 @@
 
           <!-- The workspace's skills, offered as the description starts with `/`. -->
           <SlashCommandMenu :menu="slashMenu" class="mx-4 mb-2" @accept="acceptSlashCommand" />
+          <!-- The workspace's presets, offered as a word starts with `#`. -->
+          <SlashCommandMenu :menu="presetMenu" prefix="#" label="Presets" class="mx-4 mb-2" @accept="acceptPreset" />
 
           <!-- Attachments Preview -->
           <TaskAttachmentChips :attachments="opts.attachments.value" @remove="(i) => opts.attachments.value.splice(i, 1)"
@@ -128,6 +130,7 @@ import TaskOptionsTools from '../components/TaskOptionsTools.vue';
 import TaskAttachmentChips from '../components/TaskAttachmentChips.vue';
 import SlashCommandMenu from '../components/SlashCommandMenu.vue';
 import { useSkillCommands, useSlashCommands } from '../composables/useSlashCommands';
+import { usePresetMenu } from '../composables/usePresets';
 
 const route = useRoute();
 const router = useRouter();
@@ -181,7 +184,7 @@ const bodyRef = computed({
  * button would have done.
  */
 function onDescriptionKeydown(event) {
-  const claimed = slashMenu.handleKeydown(event);
+  const claimed = slashMenu.handleKeydown(event) || presetMenu.handleKeydown(event);
   if (claimed) {
     event.preventDefault();
     if (claimed.text !== null) setBody(claimed.text);
@@ -201,6 +204,14 @@ const slashMenu = useSlashCommands({ text: bodyRef, commands: useSkillCommands(w
 /** Puts the chosen skill in the description, for a click on the menu. */
 function acceptSlashCommand(command) {
   const applied = slashMenu.accept(command);
+  if (applied !== null) setBody(applied);
+}
+
+const presetMenu = usePresetMenu({ text: bodyRef, workspaceId });
+
+/** Puts the chosen preset's body in place of its `#name`. */
+function acceptPreset(preset) {
+  const applied = presetMenu.accept(preset);
   if (applied !== null) setBody(applied);
 }
 

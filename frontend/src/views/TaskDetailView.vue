@@ -804,6 +804,7 @@
       <!-- The agent's slash commands and the workspace's skills. Sits above
            the composer so it never covers what is being typed. -->
       <SlashCommandMenu :menu="slashMenu" class="mb-2" @accept="acceptSlashCommand" />
+      <SlashCommandMenu :menu="presetMenu" prefix="#" label="Presets" class="mb-2" @accept="acceptPreset" />
 
       <form @submit.prevent="submitReply">
         <input type="file" ref="fileInput" multiple class="hidden" @change="handleFileUpload" />
@@ -1040,6 +1041,7 @@ import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { mergeCommands, useSkillCommands, useSlashCommands } from '../composables/useSlashCommands';
 import SlashCommandMenu from '../components/SlashCommandMenu.vue';
+import { usePresetMenu } from '../composables/usePresets';
 import { renderMarkdown } from '../utils/markdown';
 import {
   contextGauge,
@@ -1184,9 +1186,22 @@ function acceptSlashCommand(command) {
   if (applied !== null) setReplyText(applied);
 }
 
+// The workspace's presets, offered as a word starts with `#`; none for a
+// teammate's task, like the skills.
+const presetMenu = usePresetMenu({
+  text: replyText,
+  workspaceId: computed(() => (isTeamMode.value ? '' : workspaceId.value)),
+});
+
+/** Puts the chosen preset's body in place of its `#name`. */
+function acceptPreset(preset) {
+  const applied = presetMenu.accept(preset);
+  if (applied !== null) setReplyText(applied);
+}
+
 /** The menu's keys while it is open; everything else stays the composer's. */
 function onComposerKeydown(event) {
-  const claimed = slashMenu.handleKeydown(event);
+  const claimed = slashMenu.handleKeydown(event) || presetMenu.handleKeydown(event);
   if (!claimed) return;
   event.preventDefault();
   if (claimed.text !== null) setReplyText(claimed.text);

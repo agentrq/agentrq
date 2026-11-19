@@ -785,6 +785,77 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
+  /workspaces/{id}/presets:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Workspaces]
+      summary: The workspace's presets
+      description: >
+        Messages the composer puts in place of `#name`, ordered by name. A fork
+        has its parent's.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  presets:
+                    type: array
+                    items: { $ref: '#/components/schemas/Preset' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+    post:
+      tags: [Workspaces]
+      summary: Save a preset
+      description: >
+        The name follows the skill naming rules: lowercase letters and digits
+        joined by single hyphens, up to 64 characters. The body is up to 16 KiB,
+        and a workspace keeps up to 100 presets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, body]
+              properties:
+                name: { type: string, maxLength: 64 }
+                body: { type: string }
+      responses:
+        '201':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preset: { $ref: '#/components/schemas/Preset' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The workspace has a preset by that name.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/presets/{name}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: name
+        in: path
+        required: true
+        schema: { type: string, maxLength: 64 }
+    delete:
+      tags: [Workspaces]
+      summary: Remove a preset
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
   /workspaces/{id}/skills:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -4524,6 +4595,16 @@ components:
           description: >
             Present only when a single memory was requested by name; the list
             omits it.
+
+    Preset:
+      type: object
+      description: A message the composer puts in place of `#name`.
+      properties:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        workspaceId: { type: string }
+        name: { type: string, maxLength: 64 }
+        body: { type: string }
 
     PanoDoc:
       type: object

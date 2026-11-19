@@ -255,7 +255,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'workspaces; add "/<workspaceId>/<taskId>" to open one, then "/instances".\n' +
         '- "/workspaces/<id>" ("?filter=" as above); under it "/{board,analytics,settings}", ' +
         '"/settings/skills/<name>", "/tasks/{new,<taskId>}", plus "/instances" or "/edit". Its ' +
-        '"?tab=" general|setup|automations|notifications|memories|skills|sharing|slack|input|storage|danger.\n' +
+        '"?tab=" general|setup|automations|notifications|memories|presets|skills|sharing|slack|input|storage|danger.\n' +
         '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/{pano,events/hooks}/new", ' +
         '"/pano/[<id>/]chat/<workspaceId>/<taskId>".\n' +
         '- "/machines[/<id>]", "/sessions/<id>" (terminal).\n' +
@@ -499,6 +499,37 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       required: ['workspaceId', 'name'],
       readOnly: true,
       run: ({ workspaceId, name }) => api.getWorkspaceMemory(workspaceId, name),
+    }),
+    tool({
+      name: 'listWorkspacePresets',
+      description:
+        'A workspace\'s presets: messages a person puts in the composer by typing #name, each with its name and body.',
+      properties: { workspaceId: WORKSPACE_ID },
+      required: ['workspaceId'],
+      readOnly: true,
+      run: ({ workspaceId }) => api.listWorkspacePresets(workspaceId),
+    }),
+    tool({
+      name: 'createWorkspacePreset',
+      description:
+        'Save a preset in a workspace. The name is lowercase letters and digits joined by single hyphens, like ' +
+        'pull-n-push, unique in the workspace; the body is what #name puts in the composer.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        name: str('The preset\'s name, typed after #.'),
+        body: str('The message the preset puts in the composer.'),
+      },
+      required: ['workspaceId', 'name', 'body'],
+      screen: before(settingsPage('presets')),
+      run: ({ workspaceId, name, body }) => api.createWorkspacePreset(workspaceId, name, body),
+    }),
+    tool({
+      name: 'deleteWorkspacePreset',
+      description: 'Remove a workspace\'s preset by name.',
+      properties: { workspaceId: WORKSPACE_ID, name: str('The preset\'s name, as listWorkspacePresets reports it.') },
+      required: ['workspaceId', 'name'],
+      screen: before(settingsPage('presets')),
+      run: ({ workspaceId, name }) => api.deleteWorkspacePreset(workspaceId, name),
     }),
     // Skills belong to the account; a workspace turns each on or off, and its
     // agents see one only while that and the account-wide switch are both on.

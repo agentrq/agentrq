@@ -55,6 +55,7 @@ type (
 		TaskController
 		EventController
 		MemoryController
+		PresetController
 		SkillController
 		PanoController
 		SiteShareController

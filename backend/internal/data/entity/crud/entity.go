@@ -1926,6 +1926,13 @@ const (
 	// the account. A session renewed by its refresh cookie is no sign-in.
 	ActionUserSignIn  Action = 131
 	ActionUserSignOut Action = 132
+	// A workspace preset saved or removed from the settings page; emitted by
+	// the backend.
+	ActionPresetCreate Action = 133
+	ActionPresetDelete Action = 134
+	// A preset put into the composer with #name. Browser-reported: choosing
+	// it begins and ends in the tab.
+	ActionUIPresetInsert Action = 135
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1974,6 +1981,8 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionUITaskLinkOpen, true
 	case "ui_overview_task_open":
 		return ActionUIOverviewTaskOpen, true
+	case "ui_preset_insert":
+		return ActionUIPresetInsert, true
 	}
 	return 0, false
 }
@@ -2190,6 +2199,12 @@ func (a Action) String() string {
 		return "user_signin"
 	case ActionUserSignOut:
 		return "user_signout"
+	case ActionPresetCreate:
+		return "preset_create"
+	case ActionPresetDelete:
+		return "preset_delete"
+	case ActionUIPresetInsert:
+		return "ui_preset_insert"
 	}
 	return "unknown"
 }

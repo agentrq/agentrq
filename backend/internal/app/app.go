@@ -1523,6 +1523,7 @@ func migratedModels() []any {
 		&model.TaskPlan{},
 		&model.TaskStateTransition{},
 		&model.Memory{},
+		&model.Preset{},
 		&model.Skill{},
 		&model.SkillFile{},
 		&model.SkillShare{},

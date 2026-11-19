@@ -496,7 +496,7 @@ func TestChoicesGoWithTheirWorkspaceAndSkill(t *testing.T) {
 		} {
 			db.Create(&c)
 		}
-		if err := db.AutoMigrate(&model.SiteShare{}, &model.ForkFolder{}, &model.AgentNote{}, &model.PanoDocTask{}, &model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{},
+		if err := db.AutoMigrate(&model.SiteShare{}, &model.ForkFolder{}, &model.Preset{}, &model.AgentNote{}, &model.PanoDocTask{}, &model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{},
 			&model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.Agent{}, &model.AgentModel{}); err != nil {
 			t.Fatal(err)
 		}
@@ -649,7 +649,7 @@ func TestDeletingAMissingTeamSkillFile(t *testing.T) {
 func TestDeletingAWorkspaceFailsWithItsChoices(t *testing.T) {
 	forEachTeamDB(t, func(t *testing.T, db *gorm.DB, r Repository) {
 		seedTeamSkills(t, db)
-		if err := db.AutoMigrate(&model.SiteShare{}, &model.ForkFolder{}, &model.AgentNote{}, &model.PanoDocTask{}, &model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{},
+		if err := db.AutoMigrate(&model.SiteShare{}, &model.ForkFolder{}, &model.Preset{}, &model.AgentNote{}, &model.PanoDocTask{}, &model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{},
 			&model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.Agent{}, &model.AgentModel{}); err != nil {
 			t.Fatal(err)
 		}

@@ -673,6 +673,9 @@
                 <!-- Memories: memory.md, following its links in place. -->
                 <WorkspaceMemoryPage v-if="activeTab === 'memories'" :workspace-id="workspaceId" />
 
+                <!-- Presets: messages the composer puts in place of #name. -->
+                <WorkspacePresetsPanel v-if="activeTab === 'presets'" :workspace-id="workspaceId" />
+
                 <!-- Skills: playbooks agents load, with their own panel, and one
                      skill's page in its place when the route names one. -->
                 <SkillPage v-if="activeTab === 'skills' && skillName" :workspace-id="workspaceId" :name="skillName" />
@@ -983,6 +986,7 @@ import MergeForkModal from '../components/MergeForkModal.vue';
 import { isFork as isForkWorkspace, mergeBlockedReason, parentName, useForkActions } from '../composables/useWorkspaceForks';
 import DeleteModal from '../components/DeleteModal.vue';
 import WorkspaceMemoryPage from '../components/WorkspaceMemoryPage.vue';
+import WorkspacePresetsPanel from '../components/WorkspacePresetsPanel.vue';
 import WorkspaceSharing from '../components/WorkspaceSharing.vue';
 import TeammateMemories from '../components/TeammateMemories.vue';
 import SkillPage from '../components/SkillPage.vue';
@@ -1371,6 +1375,7 @@ const navItems = [
   { id: 'automations', label: 'Automations', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
   { id: 'notifications', label: 'Notifications', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
   { id: 'memories', label: 'Memories', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
+  { id: 'presets', label: 'Presets', icon: 'M7 20l4-16m2 16l4-16M6 9h14M4 15h14' },
   { id: 'skills', label: 'Skills', icon: 'M12 11.5v9M12 11.5c-2-1.3-4.5-2-7.5-2V19c3 0 5.5.7 7.5 2M12 11.5c2-1.3 4.5-2 7.5-2V19c-3 0-5.5.7-7.5 2M15.5 1.5c.3 1.6 1.4 2.7 3 3-1.6.3-2.7 1.4-3 3-.3-1.6-1.4-2.7-3-3 1.6-.3 2.7-1.4 3-3zM8 3.5c.2.9.6 1.3 1.5 1.5-.9.2-1.3.6-1.5 1.5-.2-.9-.6-1.3-1.5-1.5.9-.2 1.3-.6 1.5-1.5z' },
   { id: 'sharing', label: 'Sharing', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
   { id: 'slack', label: 'Slack', icon: `<svg viewBox="0 0 127 127" fill="currentColor"><path d="M27.2 80c0 7.3-5.9 13.2-13.2 13.2C6.7 93.2.8 87.3.8 80c0-7.3 5.9-13.2 13.2-13.2h13.2V80zm6.6 0c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V80zM47 27.2c-7.3 0-13.2-5.9-13.2-13.2C33.8 6.7 39.7.8 47 .8c7.3 0 13.2 5.9 13.2 13.2V27.2H47zm0 6.6c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H14c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33zM99.8 47c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H99.8V47zm-6.6 0c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V14c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33zM80 99.8c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V99.8H80zm0-6.6c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H80z"/></svg>` },

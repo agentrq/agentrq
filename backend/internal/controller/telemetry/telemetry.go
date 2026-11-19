@@ -364,6 +364,12 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUserSignIn
 	case entity.ActionUserSignOut:
 		action = model.ActionIDUserSignOut
+	case entity.ActionPresetCreate:
+		action = model.ActionIDPresetCreate
+	case entity.ActionPresetDelete:
+		action = model.ActionIDPresetDelete
+	case entity.ActionUIPresetInsert:
+		action = model.ActionIDUIPresetInsert
 	default:
 		return
 	}
