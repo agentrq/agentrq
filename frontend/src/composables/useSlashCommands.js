@@ -139,8 +139,11 @@ export function useSkillCommands(workspaceId, { load = (id) => api.searchWorkspa
  * @param {object} options
  * @param {import('vue').Ref<string>|(() => string)} options.text  the composer's contents
  * @param {import('vue').Ref<Array>|(() => Array)} options.commands  what the agent advertises
+ * @param {(text: string) => string|null} [options.query]  what is being typed, or null for no menu
+ * @param {(command: object, text: string) => string} [options.apply]  the text after choosing one
+ * @param {(command: object) => void} [options.onAccept]  told of each command chosen
  */
-export function useSlashCommands({ text, commands }) {
+export function useSlashCommands({ text, commands, query: queryOf = commandQuery, apply = applyCommand, onAccept = () => {} }) {
   /**
    * The text the menu was last dismissed for.
    *
@@ -152,7 +155,7 @@ export function useSlashCommands({ text, commands }) {
    */
   const dismissedFor = ref(null);
 
-  const query = computed(() => commandQuery(toValue(text)));
+  const query = computed(() => queryOf(toValue(text)));
   const matches = computed(() =>
     query.value === null ? [] : matchCommands(toValue(commands), query.value)
   );
@@ -200,8 +203,9 @@ export function useSlashCommands({ text, commands }) {
    */
   function accept(command = active.value) {
     if (!open.value || !command) return null;
-    const applied = applyCommand(command);
+    const applied = apply(command, toValue(text));
     dismissedFor.value = applied;
+    onAccept(command);
     return applied;
   }
 

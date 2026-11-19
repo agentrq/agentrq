@@ -74,7 +74,7 @@ func TestClientReportableAction(t *testing.T) {
 		ActionLocalAITitleGenerate, ActionLocalAIRecordingEnd, ActionUIShortcutUse, ActionUISearch, ActionUISearchOpen,
 		ActionUICopyLink, ActionUICopyMarkdown, ActionUITrajectoryView, ActionUICopyCode, ActionUIDictationEnd,
 		ActionUISpinUp, ActionUISidePanelOpen, ActionUISidePanelLink, ActionUIMessageReact, ActionUIAcpAgentPick,
-		ActionUIPlanComment, ActionUITaskLinkOpen, ActionUIOverviewTaskOpen,
+		ActionUIPlanComment, ActionUITaskLinkOpen, ActionUIOverviewTaskOpen, ActionUIPresetInsert,
 	}
 	for _, want := range allowed {
 		name := want.String()
@@ -82,7 +82,7 @@ func TestClientReportableAction(t *testing.T) {
 			t.Errorf("%q = %v, %v; want %v", name, got, ok, want)
 		}
 	}
-	for _, name := range []string{"", "unknown", ActionTaskCreate.String(), "UI_SEARCH"} {
+	for _, name := range []string{"", "unknown", ActionTaskCreate.String(), "UI_SEARCH", ActionPresetCreate.String(), ActionPresetDelete.String()} {
 		if got, ok := ClientReportableAction(name); ok || got != 0 {
 			t.Errorf("%q = %v, %v; want it refused", name, got, ok)
 		}
@@ -100,5 +100,11 @@ func TestRefusalErrors(t *testing.T) {
 	}
 	if got := (&PanoError{Message: "the doc changed", Conflict: true}).Error(); got != "the doc changed" {
 		t.Errorf("pano error = %q", got)
+	}
+}
+
+func TestPresetErrorReadsAsItsMessage(t *testing.T) {
+	if got := (&PresetError{Message: "preset body is empty"}).Error(); got != "preset body is empty" {
+		t.Errorf("the error reads %q, want its message", got)
 	}
 }

@@ -727,6 +727,28 @@ type (
 		Memories []Memory `json:"memories"`
 	}
 
+	// Preset is a message the composer puts in place of #name.
+	Preset struct {
+		ID          string    `json:"id"`
+		CreatedAt   time.Time `json:"createdAt"`
+		WorkspaceID string    `json:"workspaceId"`
+		Name        string    `json:"name"`
+		Body        string    `json:"body"`
+	}
+
+	ListPresetsResponse struct {
+		Presets []Preset `json:"presets"`
+	}
+
+	CreatePresetRequest struct {
+		Name string `json:"name"`
+		Body string `json:"body"`
+	}
+
+	CreatePresetResponse struct {
+		Preset Preset `json:"preset"`
+	}
+
 	GetMemoryResponse struct {
 		Memory Memory `json:"memory"`
 	}

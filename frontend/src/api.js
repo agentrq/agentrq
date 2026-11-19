@@ -826,6 +826,37 @@ export async function getWorkspaceMemory(workspaceId, name) {
   return res.json();
 }
 
+// A workspace's presets: messages the composer puts in place of #name. A
+// fork has its parent's.
+export async function listWorkspacePresets(workspaceId) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/presets`);
+  if (!res.ok) throw new Error('Failed to fetch presets');
+  return res.json();
+}
+
+// Refused with the server's sentence: a name taken, unusable, or a body too
+// long.
+export async function createWorkspacePreset(workspaceId, name, body) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/presets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, body }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error?.message || 'Failed to save preset');
+  }
+  return res.json();
+}
+
+export async function deleteWorkspacePreset(workspaceId, name) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/presets/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to remove preset');
+  return true;
+}
+
 // Skills belong to the account. Read through a workspace, each also says
 // whether it is on there (`workspaceEnabled`).
 // A skill's name is one URL segment and a file's path several, each encoded on
@@ -1332,6 +1363,8 @@ export const TELEMETRY_UI_PLAN_COMMENT = 'ui_plan_comment';
 export const TELEMETRY_UI_TASK_LINK_OPEN = 'ui_task_link_open';
 // A task opened from its workspace's card on the workspaces page.
 export const TELEMETRY_UI_OVERVIEW_TASK_OPEN = 'ui_overview_task_open';
+// A preset put into the composer with #name.
+export const TELEMETRY_UI_PRESET_INSERT = 'ui_preset_insert';
 export const TELEMETRY_UI_SPIN_UP = 'ui_spin_up';
 // A dictation done by a phone's own speech recognition rather than Whisper.
 export const TELEMETRY_UI_DICTATION_END = 'ui_dictation_end';

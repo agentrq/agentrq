@@ -15,6 +15,9 @@ import { nextTick, ref, watch } from 'vue'
 
 const props = defineProps({
   menu: { type: Object, required: true },
+  // What each entry is typed after: `/` for commands, `#` for presets.
+  prefix: { type: String, default: '/' },
+  label: { type: String, default: 'Commands and skills' },
 })
 const emit = defineEmits(['accept'])
 
@@ -28,14 +31,14 @@ watch(() => props.menu.selected.value, (i) => {
 <template>
   <div v-if="menu.open.value" data-test="slash-menu"
        class="max-h-52 overflow-y-auto rounded-sm border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-sm custom-scrollbar">
-    <ul ref="list" role="listbox" aria-label="Commands and skills">
+    <ul ref="list" role="listbox" :aria-label="label">
       <li v-for="(command, i) in menu.matches.value" :key="command.name"
           role="option" :aria-selected="i === menu.selected.value"
           @mouseenter="menu.highlight(i)"
           @mousedown.prevent="emit('accept', command)"
           :class="i === menu.selected.value ? 'bg-gray-105 dark:bg-zinc-700/60' : ''"
           class="flex items-baseline gap-2 px-3 py-1.5 cursor-pointer transition-colors">
-        <span class="text-[12px] font-bold text-gray-900 dark:text-zinc-100 shrink-0">/{{ command.name }}</span>
+        <span class="text-[12px] font-bold text-gray-900 dark:text-zinc-100 shrink-0">{{ prefix }}{{ command.name }}</span>
         <span v-if="command.description"
               class="text-[11px] font-medium text-gray-500 dark:text-zinc-400 truncate">{{ command.description }}</span>
         <!-- The argument it expects, or that it is a skill, kept to the right

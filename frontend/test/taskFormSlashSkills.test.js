@@ -33,6 +33,7 @@ vi.mock('../src/composables/useUntitledTaskTitles', () => ({
 }))
 
 const createTask = vi.fn()
+const recordTelemetry = vi.fn()
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal()),
   getWorkspace: () => Promise.resolve({ workspace: { id: 'ws1', name: 'ops' } }),
@@ -41,6 +42,8 @@ vi.mock('../src/api', async (importOriginal) => ({
   fetchWorkflows: () => Promise.resolve({ workflows: [] }),
   fetchWorkspaceSession: () => Promise.resolve(null),
   createTask: (...a) => createTask(...a),
+  listWorkspacePresets: () => Promise.resolve({ presets: [{ name: 'pull-n-push', body: 'pull latest main, tag and push' }] }),
+  recordTelemetry: (...a) => recordTelemetry(...a),
   searchWorkspaceSkills: () => Promise.resolve({ skills: [
     { name: 'release', description: 'Cut a release', workspaceEnabled: true },
     { name: 'review', workspaceEnabled: true },
@@ -128,5 +131,25 @@ describe('the description\'s / menu', () => {
     form.el.querySelector('#taskForm textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }))
     await settle()
     expect(createTask).toHaveBeenCalled()
+  })
+})
+
+describe('the description\'s # menu', () => {
+  it('puts the chosen preset\'s message in place of its #name, with Tab or a click', async () => {
+    const form = await mount()
+    const field = form.el.querySelector('#taskForm textarea')
+    form.fill('#taskForm textarea', 'Before release: #pull')
+    await settle()
+    expect(rows(form.el)).toEqual(['#pull-n-push'])
+    field.dispatchEvent(key('Tab'))
+    await settle()
+    expect(field.value).toBe('Before release: pull latest main, tag and push')
+    expect(recordTelemetry).toHaveBeenCalledWith('ui_preset_insert', 'ws1')
+
+    form.fill('#taskForm textarea', '#')
+    await settle()
+    form.el.querySelector('[data-test=slash-menu] li').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(field.value).toBe('pull latest main, tag and push')
   })
 })

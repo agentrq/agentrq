@@ -21,7 +21,7 @@ func forkFolderDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.Session{}, &model.ForkFolder{}, &model.PanoDocTask{}, &model.PanoDocShare{}, &model.Machine{}); err != nil {
+	if err := db.AutoMigrate(&model.Session{}, &model.ForkFolder{}, &model.Preset{}, &model.PanoDocTask{}, &model.PanoDocShare{}, &model.Machine{}); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -99,7 +99,7 @@ func TestForkFolderErrors(t *testing.T) {
 	if err := repo.DeleteMachine(ctx, 3, memUserID); err == nil {
 		t.Error("no fork_folders table, and no error")
 	}
-	if err := db.AutoMigrate(&model.ForkFolder{}, &model.PanoDocTask{}, &model.PanoDocShare{}); err != nil {
+	if err := db.AutoMigrate(&model.ForkFolder{}, &model.Preset{}, &model.PanoDocTask{}, &model.PanoDocShare{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repo.ForkFolderMachines(ctx, 7, memUserID); err == nil {

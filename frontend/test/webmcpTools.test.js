@@ -353,6 +353,14 @@ describe('each tool calls the interface the way the UI does', () => {
       ['ws1', '30d', 1, 2],
     ],
     ['listWorkspaceMemories', { workspaceId: 'ws1' }, 'fetchWorkspaceMemories', ['ws1']],
+    ['listWorkspacePresets', { workspaceId: 'ws1' }, 'listWorkspacePresets', ['ws1']],
+    [
+      'createWorkspacePreset',
+      { workspaceId: 'ws1', name: 'pull-n-push', body: 'pull latest main, tag and push' },
+      'createWorkspacePreset',
+      ['ws1', 'pull-n-push', 'pull latest main, tag and push'],
+    ],
+    ['deleteWorkspacePreset', { workspaceId: 'ws1', name: 'pull-n-push' }, 'deleteWorkspacePreset', ['ws1', 'pull-n-push']],
     [
       'getWorkspaceMemory',
       { workspaceId: 'ws1', name: 'MEMORY.md' },

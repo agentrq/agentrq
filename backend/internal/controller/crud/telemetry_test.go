@@ -41,6 +41,7 @@ var clientReportable = map[string]entity.Action{
 	"ui_plan_comment":         entity.ActionUIPlanComment,
 	"ui_task_link_open":       entity.ActionUITaskLinkOpen,
 	"ui_overview_task_open":   entity.ActionUIOverviewTaskOpen,
+	"ui_preset_insert":        entity.ActionUIPresetInsert,
 }
 
 func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
@@ -94,6 +95,9 @@ func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
 		// Sessions: the server issues and clears every one itself.
 		"user_signin",
 		"user_signout",
+		// Presets: the server sees every save and removal itself.
+		"preset_create",
+		"preset_delete",
 	} {
 		if _, ok := entity.ClientReportableAction(name); ok {
 			t.Errorf("%q must not be client-reportable", name)

@@ -92,6 +92,9 @@ type Repository interface {
 	GetMemory(ctx context.Context, userID, workspaceID int64, name string) (model.Memory, error)
 	SaveMemory(ctx context.Context, m model.Memory) (model.Memory, error)
 	ListMemoriesByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Memory, error)
+	ListPresets(ctx context.Context, userID, workspaceID int64) ([]model.Preset, error)
+	CreatePreset(ctx context.Context, p model.Preset) (model.Preset, error)
+	DeletePreset(ctx context.Context, userID, workspaceID int64, name string) error
 	DeleteMemory(ctx context.Context, userID, workspaceID int64, name string) error
 
 	// Hook — WebAssembly modules that turn outside requests into events.
@@ -663,6 +666,9 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.ForkFolder{}).Error; err != nil {
 		return err
 	}
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.Preset{}).Error; err != nil {
+		return err
+	}
 	if err := deleteEventRouting(tx, id); err != nil {
 		return err
 	}
@@ -695,7 +701,7 @@ var workspaceIDTables = []any{
 	&model.Memory{}, &model.Skill{}, &model.WorkspaceSkill{}, &model.EventTrigger{}, &model.WorkflowStep{},
 	&model.PanoFile{}, &model.PanoComment{}, &model.PanoDocTask{}, &model.Session{}, &model.ForkFolder{},
 	&model.SiteShare{}, &model.SlackWorkspaceLink{}, &model.SlackTaskThread{}, &model.PushSubscription{}, &model.WorkspaceShare{},
-	&model.MemoryExclusion{}, &model.TeamSkillChoice{},
+	&model.MemoryExclusion{}, &model.TeamSkillChoice{}, &model.Preset{},
 	&model.Telemetry{}, &model.HourlyTelemetry{}, &model.DailyTelemetry{}, &model.MonthlyTelemetry{},
 }
 

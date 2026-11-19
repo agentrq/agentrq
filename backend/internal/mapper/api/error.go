@@ -38,6 +38,7 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 	var panoErr *entity.PanoError
 	var hookErr *entity.HookError
 	var teamErr *entity.TeamError
+	var presetErr *entity.PresetError
 	if errors.Is(err, base.ErrNotFound) {
 		code = http.StatusNotFound
 		msg = "not found"
@@ -67,6 +68,12 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 			code = http.StatusUnprocessableEntity
 		}
 		msg = hookErr.Message
+	} else if errors.As(err, &presetErr) {
+		code = http.StatusUnprocessableEntity
+		if presetErr.Conflict {
+			code = http.StatusConflict
+		}
+		msg = presetErr.Message
 	} else if errors.As(err, &teamErr) {
 		code = teamErrorStatus[teamErr.Kind]
 		msg = teamErr.Message
