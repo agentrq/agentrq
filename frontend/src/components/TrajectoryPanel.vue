@@ -108,6 +108,7 @@
                       class="px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider transition-colors border-b-2 -mb-px"
                       :class="activeTab === tab.key ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white' : 'border-transparent text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'">
                 {{ tab.label }}
+                <kbd data-testid="trajectory-tab-hint" class="hidden @md:inline ml-1 font-sans border border-gray-200 dark:border-zinc-700 rounded px-1 py-px">{{ tab.key === 'summary' ? 'S' : 'P' }}</kbd>
               </button>
             </div>
 
@@ -163,6 +164,7 @@ import {
   TRAJECTORY_LANES,
   buildTrajectory,
   defaultDetailTab,
+  detailTabForKey,
   filterTrajectory,
   stepTrajectory,
   trajectoryLaneCounts,
@@ -222,6 +224,14 @@ function pick(id) {
 const { following, setFollowing } = useTrajectoryFollow(filteredItems, selectedId);
 
 function onListKeydown(e) {
+  const tab = detailTabForKey(e, detailTabs.value);
+  if (tab) {
+    // Ours alone: the shell's bare P would also open the Pano.
+    e.preventDefault();
+    e.stopPropagation();
+    activeTab.value = tab;
+    return;
+  }
   const delta = { ArrowDown: 1, ArrowUp: -1 }[e.key];
   if (!delta) return;
   e.preventDefault();
