@@ -89,8 +89,10 @@ func New(p Params) (dbconn.DBConn, error) {
 // withConcurrencyPragmas enables WAL journaling and a busy timeout on a file-backed SQLite
 // DSN. WAL lets readers and the single writer proceed concurrently (a bare DSN defaults to
 // "delete" journaling, where any reader blocks the writer and vice versa), and the busy
-// timeout makes contending writers wait rather than fail. It respects an operator that has
-// already configured pragmas, and leaves in-memory databases untouched.
+// timeout makes contending writers wait rather than fail. Transactions start IMMEDIATE: one
+// that reads and then writes cannot otherwise take the write lock after another connection
+// has written, and SQLite fails it at once, ignoring the busy timeout. It respects an operator
+// that has already configured pragmas, and leaves in-memory databases untouched.
 func withConcurrencyPragmas(dsn string) string {
 	if dsn == "" || strings.Contains(dsn, "_pragma=") {
 		return dsn // operator configured pragmas explicitly; do not override
@@ -108,7 +110,7 @@ func withConcurrencyPragmas(dsn string) string {
 	if strings.Contains(base, "?") {
 		sep = "&"
 	}
-	return base + sep + "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+	return base + sep + "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_txlock=immediate"
 }
 
 // makeDir creates the folder a file-backed DSN names, as SQLite creates the

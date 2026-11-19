@@ -8,7 +8,18 @@ import { createTask, deleteTask, getTask, nextResponse, unique, watchTraffic } f
 // A task row in a task list: its title, and the row around it holding its
 // buttons, the same way the app's own unit tests find one.
 function taskRow(page, title) {
-  return page.locator('h3.line-clamp-2', { hasText: title }).locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " group ")][1]')
+  return page.locator('h3.truncate', { hasText: title }).locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " group ")][1]')
+}
+
+// The cross-workspace list is in queue order, ten at a time, after the tasks
+// earlier specs left: Load More until the row is there.
+async function loadRow(page, title) {
+  await expect(async () => {
+    if (await taskRow(page, title).count() === 0) {
+      await page.getByRole('button', { name: 'Load More' }).click({ timeout: 2_000 })
+    }
+    await expect(taskRow(page, title)).toHaveCount(1, { timeout: 2_000 })
+  }, `the row of ${title}, paged in`).toPass()
 }
 
 test('a card dragged into Done on the board completes its task', async ({ page, workspace }) => {
@@ -34,6 +45,7 @@ test('deleting a task from the list removes it, and a delete the server refuses 
   const kept = await createTask(page, workspace.id, unique('a task deleted from the list'))
   const gone = await createTask(page, workspace.id, unique('a task deleted while its dialog is open'))
   await page.goto('/tasks/notstarted')
+  await loadRow(page, gone.title)
 
   await taskRow(page, kept.title).getByTitle('Delete Task').click()
   const deleted = nextResponse(page, 'DELETE', `/tasks/${kept.id}`)
@@ -45,6 +57,8 @@ test('deleting a task from the list removes it, and a delete the server refuses 
 
   // Deleted elsewhere while its dialog is open: the list drops the row as soon
   // as the server says so, and the confirmed delete is refused and reported.
+  // The delete read the list again, from its first page.
+  await loadRow(page, gone.title)
   await taskRow(page, gone.title).getByTitle('Delete Task').click()
   await deleteTask(page, workspace.id, gone.id)
   await expect(taskRow(page, gone.title), 'the row of a task deleted elsewhere, once the server says so').toHaveCount(0)

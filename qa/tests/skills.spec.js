@@ -7,15 +7,16 @@ import { nextResponse, watchTraffic } from '../lib/app.js'
 
 // Skills belong to the account. A workspace's Skills tab lists every one with
 // that workspace's switch; an import the server refuses shows its reason as
-// the server wrote it. The tab's import starts with this workspace ticked.
+// the server wrote it. The tab's import turns skills on in this workspace
+// alone, so it offers no choice of workspaces.
 test('the skills tab lists the account\'s skills and shows why an import was refused', async ({ page, workspace }) => {
   const traffic = watchTraffic(page)
   const listed = nextResponse(page, 'GET', `/workspaces/${workspace.id}/skills`)
   await page.goto(`/workspaces/${workspace.id}/settings`)
   await page.getByRole('button', { name: 'Skills', exact: true }).click()
   expect((await listed).status(), 'the skills list request').toBe(200)
-  await expect(page.getByTestId('skill-import-workspace').filter({ hasText: workspace.name }).getByRole('checkbox'),
-    'the workspace the import is started from is ticked').toBeChecked()
+  await expect(page.getByLabel('Import from GitHub'), 'the import form').toBeVisible()
+  await expect(page.getByTestId('skill-import-workspaces'), 'a choice of workspaces to import into').toHaveCount(0)
 
   await page.getByLabel('Import from GitHub').fill('https://example.com/owner/repo')
   const refused = nextResponse(page, 'POST', '/skills/import')
