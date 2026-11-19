@@ -133,7 +133,17 @@
 
             <!-- Payload (tool only) -->
             <div v-else-if="activeTab === 'payload'">
-              <pre class="text-[10px] font-mono bg-gray-50 text-gray-800 border border-gray-200 dark:bg-zinc-950 dark:text-zinc-300 dark:border-transparent p-3 rounded-lg overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar">{{ formattedPayload }}</pre>
+              <div class="flex items-center justify-end gap-1 mb-2">
+                <button v-if="prettyPayload !== null" type="button" data-testid="trajectory-payload-json" @click="toggleContentRaw(selectedItem.id)"
+                        :class="!rawContent.has(selectedItem.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
+                        class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">JSON</button>
+                <button type="button" @click="copyContentText(selectedItem.id, selectedItem.raw.inputPreview)"
+                        class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors p-0.5 rounded" title="Copy raw text">
+                  <svg v-if="!copiedContent.has(selectedItem.id)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                  <svg v-else class="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                </button>
+              </div>
+              <pre data-testid="trajectory-payload"class="text-[10px] font-mono bg-gray-50 text-gray-800 border border-gray-200 dark:bg-zinc-950 dark:text-zinc-300 dark:border-transparent p-3 rounded-lg overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar">{{ formattedPayload }}</pre>
             </div>
 
             <!-- Content (messages only) -->
@@ -272,14 +282,22 @@ watch(selectedItem, (item) => {
   activeTab.value = defaultDetailTab(item);
 });
 
-const formattedPayload = computed(() => {
+// The pretty-printed payload, or null when it is not JSON and has no toggle.
+const prettyPayload = computed(() => {
   const raw = selectedItem.value?.raw?.inputPreview;
-  if (!raw) return '(no payload recorded)';
+  if (!raw) return null;
   try {
     return JSON.stringify(JSON.parse(raw), null, 2);
   } catch {
-    return raw;
+    return null;
   }
+});
+
+const formattedPayload = computed(() => {
+  const raw = selectedItem.value?.raw?.inputPreview;
+  if (!raw) return '(no payload recorded)';
+  if (prettyPayload.value === null || rawContent.value.has(selectedItem.value.id)) return raw;
+  return prettyPayload.value;
 });
 
 const rawContent = ref(new Set());

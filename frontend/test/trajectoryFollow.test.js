@@ -225,6 +225,32 @@ describe('the trajectory panel', () => {
     expect(el.querySelectorAll('[data-testid="trajectory-tab-hint"]')).toHaveLength(2)
   })
 
+  it('shows the payload as JSON or as the text recorded, and copies the text', async () => {
+    const writeText = vi.fn().mockResolvedValue()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    await mount([{ ...toolCall('t1', 1), inputPreview: '{"a":1}' }])
+    await press(row('t1'), 'p')
+    const payload = () => el.querySelector('[data-testid="trajectory-payload"]').textContent
+    const json = el.querySelector('[data-testid="trajectory-payload-json"]')
+    expect(payload()).toBe('{\n  "a": 1\n}')
+    json.click()
+    await nextTick()
+    expect(payload()).toBe('{"a":1}')
+    json.click()
+    await nextTick()
+    expect(payload()).toBe('{\n  "a": 1\n}')
+    el.querySelector('button[title="Copy raw text"]').click()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(writeText).toHaveBeenCalledWith('{"a":1}')
+  })
+
+  it('offers no JSON toggle for a payload that is not JSON', async () => {
+    await mount([{ ...toolCall('t1', 1), inputPreview: 'git status' }])
+    await press(row('t1'), 'p')
+    expect(el.querySelector('[data-testid="trajectory-payload"]').textContent).toBe('git status')
+    expect(el.querySelector('[data-testid="trajectory-payload-json"]')).toBeNull()
+  })
+
   it('follows new rows when switched on, and a click hands control back', async () => {
     const toolCalls = await mount([toolCall('t1', 1), toolCall('t2', 2)])
     row('t1').click()
