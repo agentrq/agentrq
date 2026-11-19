@@ -49,15 +49,20 @@ test('a team workspace\'s analytics sum each member\'s workspace in it', async (
   await share(owner, workspace.id, team.id)
   await share(bea, beaWs.id, team.id)
   await share(owner, other.id, team.id)
+  // The run's one workspace carries what earlier specs completed in it, and
+  // their telemetry may still be landing: wait for more than before. The two
+  // made here start from none.
+  const before = (await summaryOf(owner, `/workspaces/${workspace.id}/stats`)).tasksCompleted
   await completeAsAgent(owner, workspace.id, unique('Ship the owner\'s part'))
   await completeAsAgent(bea, beaWs.id, unique('Ship Bea\'s part'))
   await completeAsAgent(bea, beaWs.id, unique('Ship Bea\'s second part'))
   await completeAsAgent(owner, other.id, unique('Ship the other part'))
 
   // Telemetry is written after the call answers: wait for each completion.
-  for (const [p, id, n] of [[owner, workspace.id, 1], [bea, beaWs.id, 2], [owner, other.id, 1]]) {
-    await expect.poll(async () => (await summaryOf(p, `/workspaces/${id}/stats`)).tasksCompleted, { message: `completions in ${id}` }).toBe(n)
-  }
+  const completions = (p, id) => expect.poll(async () => (await summaryOf(p, `/workspaces/${id}/stats`)).tasksCompleted, { message: `completions in ${id}` })
+  await completions(owner, workspace.id).toBeGreaterThan(before)
+  await completions(bea, beaWs.id).toBe(2)
+  await completions(owner, other.id).toBe(1)
   const mine = await summaryOf(owner, `/workspaces/${workspace.id}/stats`)
   const hers = await summaryOf(bea, `/workspaces/${beaWs.id}/stats`)
   const third = await summaryOf(owner, `/workspaces/${other.id}/stats`)

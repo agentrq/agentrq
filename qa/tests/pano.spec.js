@@ -269,7 +269,9 @@ test('a checklist item assigned to a workspace follows its task, and a mention p
   // A mention, picked from the suggestions, pings the workspace's agent.
   const input = page.getByTestId('pano-comment-input')
   await input.click()
-  await input.pressSequentially(`Can you take the docs, @${workspace.name.slice(0, 4)}`)
+  // The suggestions are in name order and every QA workspace starts "qa-",
+  // so all but the last character, to leave one to complete.
+  await input.pressSequentially(`Can you take the docs, @${workspace.name.slice(0, -1)}`)
   await expect(page.getByTestId('pano-mention-option').first()).toHaveText(`@${workspace.name}`)
   await page.screenshot({ path: test.info().outputPath('pano-mention-light.png'), animations: 'disabled' })
   await input.press('Enter')
@@ -421,7 +423,9 @@ test('a doc is linked to the chat about it and to the task its agent was on', as
   const read = await pano(call, { action: 'read', payload: { id: doc.id } })
   expect(read.version, 'a task\'s status change is no write').toBe(doc.version)
 
-  // A doc that is not the account's gets no task.
+  // A doc that is not the account's gets no task. The one-task-a-second limit
+  // is checked before the doc, and the chat's task was made a moment ago.
+  await page.waitForTimeout(1100)
   const refused = await page.request.post(`/api/v1/workspaces/${workspace.id}/tasks`, {
     data: { task: { title: 'never', createdBy: 'human', assignee: 'human' }, panoDocId: 'nosuchdoc1' },
   })

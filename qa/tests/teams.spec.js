@@ -134,19 +134,20 @@ test('a team, from the invitation to the member removed', async ({ page, browser
 
   // 8. Bea clones the task into a workspace of her own, with the picker, for
   //    a human: no status to choose.
-  const mine = await ok(await bea.request.post(`${API}/workspaces`, { data: { workspace: { name: unique('bea-ws'), description: 'QA' } } }), 'creating Bea\'s workspace')
+  // Through the helper, which waits out the two-workspaces-a-minute limit.
+  const mine = await createWorkspace(bea, unique('bea-ws'))
   await bea.goto(`/teams/${teamId}/tasks/active/${workspace.id}/${task.id}`)
   await bea.getByTestId('clone-task').click()
   await expect(bea.getByTestId('clone-status')).toHaveCount(0)
   await expect(bea.getByTestId('clone-assignee-human')).toHaveAttribute('aria-checked', 'true')
   await bea.getByTestId('clone-workspace').click()
-  await bea.locator(`[data-test=clone-workspace-option][data-value="${mine.workspace.id}"]`).click()
+  await bea.locator(`[data-test=clone-workspace-option][data-value="${mine.id}"]`).click()
   const cloned = nextResponse(bea, 'POST', `/teams/${teamId}/tasks/${task.id}/clone`)
   await bea.getByTestId('clone-confirm').click()
   const clonedRes = await cloned
   expect(clonedRes.status()).toBe(201)
-  expect(JSON.parse(clonedRes.request().postData())).toEqual({ workspaceId: mine.workspace.id, assignee: 'human' })
-  const hers = await ok(await bea.request.get(`${API}/workspaces/${mine.workspace.id}/tasks?limit=10&offset=0`), 'listing Bea\'s tasks')
+  expect(JSON.parse(clonedRes.request().postData())).toEqual({ workspaceId: mine.id, assignee: 'human' })
+  const hers = await ok(await bea.request.get(`${API}/workspaces/${mine.id}/tasks?limit=10&offset=0`), 'listing Bea\'s tasks')
   const copy = hers.tasks.find((t) => t.title === title)
   expect(copy, 'the clone in Bea\'s workspace').toBeTruthy()
   expect(copy.assignee).toBe('human')
@@ -154,22 +155,23 @@ test('a team, from the invitation to the member removed', async ({ page, browser
   // 8b. Bea shares a workspace of the same name: one team workspace with the
   //     root user's. Her agent reads the root user's memory until she turns it
   //     off in Settings › Sharing, which changes nothing on the root user's side.
-  const twin = await ok(await bea.request.post(`${API}/workspaces`, { data: { workspace: { name: workspace.name, description: 'QA' } } }), 'creating Bea\'s twin')
-  await ok(await bea.request.put(`${API}/workspaces/${twin.workspace.id}/shares/${teamId}`, { data: { version: await versionOf(bea, teamId) } }), 'sharing Bea\'s twin')
-  await bea.goto(`/workspaces/${twin.workspace.id}/settings?tab=sharing`)
+  const twin = await createWorkspace(bea, workspace.name)
+  await ok(await bea.request.put(`${API}/workspaces/${twin.id}/shares/${teamId}`, { data: { version: await versionOf(bea, teamId) } }), 'sharing Bea\'s twin')
+  await bea.goto(`/workspaces/${twin.id}/settings?tab=sharing`)
   const memories = bea.getByTestId('teammate-memories')
   await expect(memories.getByTestId('teammate-memory-row')).toHaveCount(1)
   const memorySwitch = memories.getByTestId('teammate-memory-switch')
   await expect(memorySwitch).toHaveAttribute('aria-checked', 'true')
-  const excluded = bea.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes(`/workspaces/${twin.workspace.id}/teammate-memories/`))
+  const excluded = bea.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes(`/workspaces/${twin.id}/teammate-memories/`))
   await memorySwitch.click()
   expect((await excluded).status()).toBe(200)
   await expect(memorySwitch).toHaveAttribute('aria-checked', 'false')
   await bea.screenshot({ path: test.info().outputPath('teammate-memory.png') })
   const theirs = await ok(await owner.request.get(`${API}/workspaces/${workspace.id}/teammate-memories`), 'the root user\'s teammates')
-  expect(theirs.teammates.map((t) => [t.userId, t.included])).toEqual([[who.userId, true]])
+  // Other specs' teammates may share the run's workspace too: Bea's row alone.
+  expect(theirs.teammates.filter((t) => t.userId === who.userId).map((t) => t.included)).toEqual([true])
   expect((await bea.request.get(`${API}/workspaces/${workspace.id}/teammate-memories`)).status()).toBe(404)
-  await ok(await bea.request.delete(`${API}/workspaces/${twin.workspace.id}/shares/${teamId}?version=${await versionOf(bea, teamId)}`), 'unsharing Bea\'s twin')
+  await ok(await bea.request.delete(`${API}/workspaces/${twin.id}/shares/${teamId}?version=${await versionOf(bea, teamId)}`), 'unsharing Bea\'s twin')
 
   // 9. A rename from two tabs: the second, made over the first, is refused,
   //    and the tab reads the team again and says so.

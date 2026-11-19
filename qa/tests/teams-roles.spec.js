@@ -79,7 +79,7 @@ test('a stranger gets nothing; any member can invite, rename, remove, leave and 
   await expect(dee.page.getByText(/You're no longer in/)).toBeVisible()
   await expect(dee.page).not.toHaveURL(/\/teams\//)
   await dee.page.goto(`/teams/${team.id}/tasks/active/${workspace.id}/${task.id}`)
-  await expect(dee.page.getByTestId('no-longer-shared').or(dee.page.getByText(/You're no longer in/))).toBeVisible()
+  await expect(dee.page.getByTestId('no-longer-shared').or(dee.page.getByText(/You're no longer in/)).first()).toBeVisible()
   await expect(dee.page.getByText(title)).toHaveCount(0)
 
   // 2. Any member can invite: Bea, who did not make the team, invites Cy.

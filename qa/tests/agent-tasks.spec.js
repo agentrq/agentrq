@@ -16,7 +16,7 @@ test('a task an agent creates is announced once', async ({ page, workspace }) =>
   const title = unique('a task the agent opened')
   await createTaskAsAgent(page, workspace.id, title)
 
-  await expect(page.locator('h3.line-clamp-2', { hasText: title }), 'the new row').toBeVisible()
+  await expect(page.locator('h3.truncate', { hasText: title }), 'the new row').toBeVisible()
   const toasts = page.locator('.toast', { hasText: title })
   await expect(toasts.first(), 'the toast').toBeVisible()
   // The stream delivers each event within moments; give any duplicate the time
