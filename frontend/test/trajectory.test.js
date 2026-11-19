@@ -12,6 +12,7 @@ import {
   toolCallKind,
   buildTrajectory,
   defaultDetailTab,
+  detailTabForKey,
   filterTrajectory,
   trajectoryLaneCounts,
   messagesSince,
@@ -526,5 +527,25 @@ describe('messagesSince', () => {
   it('keeps them all without a start', () => {
     expect(messagesSince(messages, null)).toBe(messages)
     expect(messagesSince(messages, undefined)).toBe(messages)
+  })
+})
+
+describe('detailTabForKey', () => {
+  const tool = [{ key: 'summary' }, { key: 'payload' }]
+  const written = [{ key: 'summary' }, { key: 'content' }]
+
+  it('maps S to the summary and P to the preview', () => {
+    expect(detailTabForKey({ key: 's' }, tool)).toBe('summary')
+    expect(detailTabForKey({ key: 'P' }, tool)).toBe('payload')
+    expect(detailTabForKey({ key: 'p' }, written)).toBe('content')
+  })
+
+  it('ignores other keys, modifiers and an empty selection', () => {
+    expect(detailTabForKey({ key: 'x' }, tool)).toBeNull()
+    expect(detailTabForKey({ key: 'p', metaKey: true }, tool)).toBeNull()
+    expect(detailTabForKey({ key: 'p', ctrlKey: true }, tool)).toBeNull()
+    expect(detailTabForKey({ key: 's', altKey: true }, tool)).toBeNull()
+    expect(detailTabForKey({ key: 's' }, [])).toBeNull()
+    expect(detailTabForKey({ key: 's' }, undefined)).toBeNull()
   })
 })

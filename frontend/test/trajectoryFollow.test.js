@@ -204,6 +204,27 @@ describe('the trajectory panel', () => {
     expect(selected()).toBe('t2')
   })
 
+  it('switches the detail tab with S and P, keeping P from the shell', async () => {
+    await mount([toolCall('t1', 1), toolCall('t2', 2)])
+    const activeTab = () => [...el.querySelectorAll('button')].find((b) => b.className.includes('border-gray-900')).textContent.trim()
+    const shell = vi.fn()
+    window.addEventListener('keydown', shell)
+    try {
+      expect(activeTab()).toBe('Summary S')
+      const p = new KeyboardEvent('keydown', { key: 'p', bubbles: true, cancelable: true })
+      row('t2').dispatchEvent(p)
+      await nextTick()
+      expect(p.defaultPrevented).toBe(true)
+      expect(activeTab()).toBe('Payload P')
+      await press(row('t2'), 's')
+      expect(activeTab()).toBe('Summary S')
+      expect(shell).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('keydown', shell)
+    }
+    expect(el.querySelectorAll('[data-testid="trajectory-tab-hint"]')).toHaveLength(2)
+  })
+
   it('follows new rows when switched on, and a click hands control back', async () => {
     const toolCalls = await mount([toolCall('t1', 1), toolCall('t2', 2)])
     row('t1').click()

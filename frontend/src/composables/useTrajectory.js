@@ -313,6 +313,22 @@ export function defaultDetailTab(item) {
 }
 
 /**
+ * The detail tab a key press in the list asks for, or null: S for the summary,
+ * P for the preview — whichever tab is not the summary.
+ *
+ * @param {KeyboardEvent} event
+ * @param {Array<{ key: string }>} tabs the selected entry's tabs, summary first
+ * @returns {string | null}
+ */
+export function detailTabForKey(event, tabs) {
+  if (!tabs?.length || event.metaKey || event.ctrlKey || event.altKey) return null;
+  const key = event.key?.toLowerCase();
+  if (key === 's') return tabs[0].key;
+  if (key === 'p') return tabs[tabs.length - 1].key;
+  return null;
+}
+
+/**
  * How many entries each lane holds, so the filter can say what it would show
  * before it is clicked.
  *
