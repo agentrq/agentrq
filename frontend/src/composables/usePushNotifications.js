@@ -43,10 +43,13 @@ async function getServiceWorkerRegistration() {
   return Promise.race([navigator.serviceWorker.ready, timeout])
 }
 
+// The subscription already made, if any. getRegistration, not ready: ready never
+// settles without a worker (desktop, dev), so each read waited out the timeout.
 async function getBrowserSubscription() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null
   try {
-    const reg = await getServiceWorkerRegistration()
+    const reg = await navigator.serviceWorker.getRegistration()
+    if (!reg) return null
     return await reg.pushManager.getSubscription()
   } catch {
     return null
@@ -106,7 +109,8 @@ export function usePushNotifications() {
       const sub = await getBrowserSubscription()
       if (!sub) return
       await deleteSubscription(sub.endpoint)
-      await sub.unsubscribe()
+      // Not awaited: it is a round trip to the push service, and nobody waits on it.
+      sub.unsubscribe().catch(() => {})
       isSubscribed.value = false
     } catch {
       // Silently ignore
