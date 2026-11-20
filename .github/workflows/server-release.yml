@@ -48,6 +48,29 @@ jobs:
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           fi
 
+      # Every dependency of the release and its licence, as SPDX, published
+      # beside the binaries: the server's Go modules, and the web app built
+      # into it. Read from the lockfiles, before npm ci installs anything.
+      - name: List the server's dependencies
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        env:
+          SYFT_GOLANG_SEARCH_REMOTE_LICENSES: 'true'
+        with:
+          path: backend
+          format: spdx-json
+          output-file: sbom/agentrq_${{ steps.version.outputs.version }}_server.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: List the web app's dependencies
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: frontend
+          format: spdx-json
+          output-file: sbom/agentrq_${{ steps.version.outputs.version }}_web.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
       - name: Build the web app
         working-directory: frontend
         run: |
@@ -97,6 +120,7 @@ jobs:
               tar -C build -czf "dist/${name}.tar.gz" "${name}"
             fi
           done
+          cp ../sbom/*.spdx.json dist/
           (cd dist && sha256sum * > "agentrq_${VERSION}_checksums.txt")
 
       # The same create-or-upload as the desktop and daemon releases, which

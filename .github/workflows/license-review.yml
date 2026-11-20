@@ -1,0 +1,54 @@
+name: Licence review
+
+# A pull request may not add or change a dependency whose licence would ship
+# copyleft terms inside the commercial build: only the licences below pass.
+# Only dependencies the pull request touches are checked, never ones already
+# on main, and development-only ones are skipped, since they are not shipped.
+# Not filtered by path, for the reason copyright.yml gives.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  licences:
+    name: New dependencies have allowed licences
+    runs-on: ubuntu-latest
+    steps:
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          # Licences only: vulnerabilities are Dependabot's job.
+          vulnerability-check: false
+          allow-licenses: >-
+            MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD,
+            MPL-2.0, BlueOak-1.0.0, CC0-1.0, CC-BY-4.0, OFL-1.1, Zlib,
+            Python-2.0, WTFPL, Unlicense,
+            LicenseRef-scancode-google-patent-license-golang,
+            LicenseRef-scancode-unicode
+          # sharp, which the local-model library pulls in: its native libvips
+          # builds are LGPL-3.0, but they are Node binaries the web build never
+          # bundles. Matched by exact name, one per platform package.
+          allow-dependencies-licenses: >-
+            pkg:npm/sharp,
+            pkg:npm/%40img/sharp-darwin-arm64, pkg:npm/%40img/sharp-darwin-x64,
+            pkg:npm/%40img/sharp-freebsd-wasm32,
+            pkg:npm/%40img/sharp-libvips-darwin-arm64,
+            pkg:npm/%40img/sharp-libvips-darwin-x64,
+            pkg:npm/%40img/sharp-libvips-linux-arm,
+            pkg:npm/%40img/sharp-libvips-linux-arm64,
+            pkg:npm/%40img/sharp-libvips-linux-ppc64,
+            pkg:npm/%40img/sharp-libvips-linux-riscv64,
+            pkg:npm/%40img/sharp-libvips-linux-s390x,
+            pkg:npm/%40img/sharp-libvips-linux-x64,
+            pkg:npm/%40img/sharp-libvips-linuxmusl-arm64,
+            pkg:npm/%40img/sharp-libvips-linuxmusl-x64,
+            pkg:npm/%40img/sharp-linux-arm, pkg:npm/%40img/sharp-linux-arm64,
+            pkg:npm/%40img/sharp-linux-ppc64, pkg:npm/%40img/sharp-linux-riscv64,
+            pkg:npm/%40img/sharp-linux-s390x, pkg:npm/%40img/sharp-linux-x64,
+            pkg:npm/%40img/sharp-linuxmusl-arm64,
+            pkg:npm/%40img/sharp-linuxmusl-x64,
+            pkg:npm/%40img/sharp-wasm32, pkg:npm/%40img/sharp-webcontainers-wasm32,
+            pkg:npm/%40img/sharp-win32-arm64, pkg:npm/%40img/sharp-win32-ia32,
+            pkg:npm/%40img/sharp-win32-x64
