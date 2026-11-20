@@ -423,12 +423,7 @@ func (e *engineV1) applyUpdate(n sessionNotification) {
 	case "config_option_update":
 		var u configOptionUpdate
 		lenient(n.Update, &u)
-		if id, current, models, ok := modelsFrom(u.ConfigOptions); ok {
-			e.mu.Lock()
-			s.configID, s.current, s.models = id, current, models
-			e.mu.Unlock()
-			e.reportModels(s)
-		}
+		e.setModelOptions(s, u.ConfigOptions)
 		e.setEffortOptions(s, u.ConfigOptions)
 	case "usage_update":
 		var u usageUpdate

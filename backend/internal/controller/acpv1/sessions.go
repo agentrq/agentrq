@@ -27,6 +27,7 @@ type session struct {
 	configID    string
 	current     string
 	models      []agentlink.Model
+	modelsShown bool // the workspace was last told the session offers models
 	effortID    string
 	effort      string
 	efforts     []agentlink.Effort
@@ -310,18 +311,31 @@ func (e *engineV1) ownsTask(taskID int64) bool {
 	return e.sessions.byTask[taskID] != nil
 }
 
+// setModelOptions takes the session's models from the agent's full list of
+// config options, and tells the workspace. A list without one means the
+// session no longer offers a model choice, and the picker goes.
+func (e *engineV1) setModelOptions(s *session, opts []configOption) {
+	e.mu.Lock()
+	s.configID, s.current, s.models, _ = modelsFrom(opts)
+	e.mu.Unlock()
+	e.reportModels(s)
+}
+
 // reportModels tells the workspace the session's models, once the link is
-// attached and if the agent offers any.
+// attached: while the agent offers models, and once more with none when they
+// go.
 func (e *engineV1) reportModels(s *session) {
 	e.mu.Lock()
 	p := agentlink.ModelsReport{TaskID: b62(s.taskID), SessionID: s.id, ConfigID: s.configID,
 		CurrentModel: s.current, Models: s.models, CanSet: s.configID != ""}
-	attached := e.attached
-	e.mu.Unlock()
-	if !attached || len(p.Models) == 0 {
-		return
+	send := e.attached && (len(s.models) > 0 || s.modelsShown)
+	if send {
+		s.modelsShown = len(s.models) > 0
 	}
-	e.ws.HandleAgentModels(e.ctx, e.linkID, p)
+	e.mu.Unlock()
+	if send {
+		e.ws.HandleAgentModels(e.ctx, e.linkID, p)
+	}
 }
 
 // applyModel switches a session to the requested model, found by id or by
@@ -394,6 +408,7 @@ func (e *engineV1) applyEffort(ctx context.Context, s *session, requested string
 		case err != nil:
 			zlog.Warn().Str("link", e.linkID).Err(err).Str("effort", requested).Msg("acp v1: the agent did not switch reasoning level")
 		case len(resp.ConfigOptions) > 0:
+			e.setModelOptions(s, resp.ConfigOptions)
 			e.setEffortOptions(s, resp.ConfigOptions)
 			return
 		default:
