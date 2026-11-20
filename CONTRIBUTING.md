@@ -15,6 +15,14 @@ you are here for.
 Both kinds of proposal are submitted the same way: a pull request that adds one
 `.md` file to the relevant folder.
 
+Every contribution is made under the
+[Contributor License Agreement](CLA.md). On your first pull request a bot asks
+you to sign it, which you do by commenting:
+
+> I have read the CLA Document and I hereby sign the CLA
+
+You sign once, and it covers all your contributions, earlier ones included.
+
 ## Extensions need none of this
 
 The three forms above are how you change *this* repository. Building an
