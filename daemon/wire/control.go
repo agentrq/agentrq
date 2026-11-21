@@ -76,10 +76,6 @@ type Hello struct {
 	// baseline. A daemon ignores a StartSession field it does not know, so a
 	// launch that needs one is refused by the backend unless it is listed here.
 	Capabilities []string `json:"capabilities,omitempty"`
-	// MaxPerProfile is --max-per-profile, so the machine's page can show the
-	// limit this daemon holds an account to: 0 is no limit, and nil a daemon
-	// older than the field.
-	MaxPerProfile *int `json:"maxPerProfile,omitempty"`
 }
 
 // CapabilityFork is a daemon that honours [StartSession.Fork]. Without it a

@@ -723,15 +723,6 @@ func TestAFinishedSessionGivesItsSlotBack(t *testing.T) {
 	})
 }
 
-// The hello reports the per-profile cap as it was given, 0 included.
-func TestPerProfileIsTheCapItWasGiven(t *testing.T) {
-	for _, n := range []int{0, 2} {
-		if got := New((&recordingStarter{}).start, n, 0).PerProfile(); got != n {
-			t.Errorf("PerProfile() = %d, want %d", got, n)
-		}
-	}
-}
-
 // A refusal has to say how many are really running, or the log sends whoever
 // reads it looking for agents that are not there.
 func TestCapacityRefusalCountsOnlyLiveSessions(t *testing.T) {

@@ -386,11 +386,6 @@ func TestHelloDescribesTheMachine(t *testing.T) {
 	if len(hello.Sessions) != 0 {
 		t.Errorf("a fresh daemon claimed sessions: %v", hello.Sessions)
 	}
-	// The machine's page shows it beside the server's limit. 0 (no limit)
-	// is sent, not dropped: an absent one is a daemon too old to say.
-	if hello.MaxPerProfile == nil || *hello.MaxPerProfile != 0 {
-		t.Errorf("maxPerProfile = %v, want 0", hello.MaxPerProfile)
-	}
 	// The backend refuses to launch a fork on a daemon that does not say this.
 	if !slices.Contains(hello.Capabilities, wire.CapabilityFork) {
 		t.Errorf("capabilities = %v, want %q", hello.Capabilities, wire.CapabilityFork)

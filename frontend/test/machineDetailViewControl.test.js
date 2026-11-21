@@ -259,29 +259,25 @@ describe('MachineDetailView: the agent limit', () => {
     expect(page.el.textContent).toContain("Set for this machine, up to the server's 8. Empty uses the server's.")
   })
 
-  // agentrqd's own --max-per-profile holds the account too, so the lowest is the headline.
-  it('shows all three limits, and the lowest as the one that applies', async () => {
-    const text = (page) => page.el.querySelector('[data-test="machine-limit-text"]').textContent
+  // agentrqd's own --max-per-profile holds the account too; the server cannot see it, so it is named.
+  it("names the server's limit, this machine's and agentrqd's flag", async () => {
     const sources = (page) => page.el.querySelector('[data-test="machine-limit-sources"]').textContent.trim()
-    Object.assign(machine, { sessionCeiling: 8, sessionLimit: 8, maxSessions: null, daemonSessionLimit: 4 })
+    const daemon = "agentrqd's --max-per-profile on the machine can also limit it; the lowest applies."
+    Object.assign(machine, { sessionCeiling: 8, sessionLimit: 8, maxSessions: null })
     let page = await mount()
     await page.click('Settings')
-    expect(text(page)).toContain('4 agents at once')
-    expect(sources(page)).toBe('Server 8 · This machine not set · agentrqd 4. The lowest applies.')
+    expect(sources(page)).toBe(`Server 8 · This machine not set. ${daemon}`)
     app.unmount()
 
-    Object.assign(machine, { sessionCeiling: 0, sessionLimit: 0, maxSessions: 0, daemonSessionLimit: 0 })
+    Object.assign(machine, { sessionCeiling: 0, sessionLimit: 0, maxSessions: 0 })
     page = await mount()
     await page.click('Settings')
-    expect(text(page)).toContain('No limit')
-    expect(sources(page)).toBe('Server no limit · This machine no limit · agentrqd no limit. The lowest applies.')
+    expect(sources(page)).toBe(`Server no limit · This machine no limit. ${daemon}`)
     app.unmount()
 
-    // A daemon too old to report it.
-    Object.assign(machine, { sessionCeiling: 8, sessionLimit: 3, maxSessions: 3, daemonSessionLimit: null })
+    Object.assign(machine, { sessionCeiling: 8, sessionLimit: 3, maxSessions: 3 })
     page = await mount()
     await page.click('Settings')
-    expect(text(page)).toContain('3 agents at once')
-    expect(sources(page)).toBe('Server 8 · This machine 3 · agentrqd not reported. The lowest applies.')
+    expect(sources(page)).toBe(`Server 8 · This machine 3. ${daemon}`)
   })
 })

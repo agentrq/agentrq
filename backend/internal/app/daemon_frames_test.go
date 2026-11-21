@@ -527,7 +527,7 @@ func TestTheHelloRecordsWhatIsRunning(t *testing.T) {
 	session := &machine.Session{Identity: machine.Identity{MachineID: 11, UserID: 3}}
 
 	hello, err := wire.ControlFrame(wire.Control{Op: wire.OpHello, Body: mustBytes(t, wire.Hello{
-		Version: "0.7.1", MaxPerProfile: new(4),
+		Version: "0.7.1",
 	})})
 	if err != nil {
 		t.Fatal(err)
@@ -536,8 +536,7 @@ func TestTheHelloRecordsWhatIsRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(rec.versions) != 1 || rec.versions[0].Version != "0.7.1" || rec.versions[0].MachineID != 11 ||
-		rec.versions[0].DaemonMaxSessions == nil || *rec.versions[0].DaemonMaxSessions != 4 {
+	if len(rec.versions) != 1 || rec.versions[0].Version != "0.7.1" || rec.versions[0].MachineID != 11 {
 		t.Fatalf("recorded %+v", rec.versions)
 	}
 	if len(sent) != 1 || sent[0].evt.Payload.(map[string]any)["version"] != "0.7.1" {

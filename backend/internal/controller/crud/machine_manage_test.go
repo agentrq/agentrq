@@ -280,9 +280,6 @@ func TestMachineViewSessionLimit(t *testing.T) {
 		{"no ceiling, nothing of its own", 0, nil, 0},
 	} {
 		setCeiling(t, tc.ceiling)
-		if got := toMachineView(model.Machine{DaemonMaxSessions: new(4)}, time.Now(), 0).DaemonSessionLimit; got == nil || *got != 4 {
-			t.Errorf("daemon's limit = %v, want 4", got)
-		}
 		if got := toMachineView(model.Machine{MaxSessions: tc.own}, time.Now(), 0).SessionLimit; got != tc.want {
 			t.Errorf("%s: %d, want %d", tc.name, got, tc.want)
 		}

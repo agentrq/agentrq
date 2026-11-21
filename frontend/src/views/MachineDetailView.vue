@@ -171,18 +171,15 @@ watch(
   },
   { immediate: true },
 )
-// The lowest of the server's limit, this machine's and agentrqd's own
-// --max-per-profile applies; 0 or an unreported one holds nothing.
 const limitText = computed(() => {
-  const n = Math.min(
-    ...[machine.value?.sessionLimit, machine.value?.daemonSessionLimit].filter((x) => x > 0),
-  )
-  return Number.isFinite(n) ? `${n} agents at once` : 'No limit'
+  const n = machine.value?.sessionLimit
+  return n ? `${n} agents at once` : 'No limit'
 })
+// The server never learns agentrqd's own --max-per-profile, so it is named, not shown.
 const limitSources = computed(() => {
   const say = (n, unset) => (n == null ? unset : n === 0 ? 'no limit' : n)
   const m = machine.value
-  return `Server ${say(m?.sessionCeiling || 0)} · This machine ${say(m?.maxSessions, 'not set')} · agentrqd ${say(m?.daemonSessionLimit, 'not reported')}. The lowest applies.`
+  return `Server ${say(m?.sessionCeiling || 0)} · This machine ${say(m?.maxSessions, 'not set')}. agentrqd's --max-per-profile on the machine can also limit it; the lowest applies.`
 })
 // The server's limit is a ceiling: under one, a machine can only go lower.
 const limitCeiling = computed(() => machine.value?.sessionCeiling || 0)

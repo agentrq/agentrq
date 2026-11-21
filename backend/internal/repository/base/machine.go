@@ -351,10 +351,7 @@ func (r *repository) UpdateSessionState(ctx context.Context, id int64, status st
 // Called from the hello, which is the only message that says what version is
 // actually running. Without it a machine that has just updated keeps showing
 // the version it replaced and an offer it has already taken.
-//
-// daemonMaxSessions is written even when nil, so a daemon rolled back to a
-// version that does not report it stops showing the newer one's limit.
-func (r *repository) RecordMachineVersion(ctx context.Context, id int64, version string, daemonMaxSessions *int) error {
+func (r *repository) RecordMachineVersion(ctx context.Context, id int64, version string) error {
 	if version == "" {
 		return nil
 	}
@@ -362,8 +359,7 @@ func (r *repository) RecordMachineVersion(ctx context.Context, id int64, version
 		Table("machines").
 		Where("id = ?", id).
 		Updates(map[string]any{
-			"version":             version,
-			"daemon_max_sessions": daemonMaxSessions,
+			"version": version,
 			// Cleared only when it is the version now running: a machine that
 			// is still behind must keep showing what it could update to.
 			"available_version": gorm.Expr("CASE WHEN available_version = ? THEN '' ELSE available_version END", version),

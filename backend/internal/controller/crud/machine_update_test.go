@@ -158,11 +158,10 @@ func TestRestartDaemon(t *testing.T) {
 
 func TestRecordMachineVersion(t *testing.T) {
 	env := newTestController(t)
-	limit := new(4)
-	env.repo.EXPECT().RecordMachineVersion(gomock.Any(), int64(11), "0.7.1", limit).Return(nil)
+	env.repo.EXPECT().RecordMachineVersion(gomock.Any(), int64(11), "0.7.1").Return(nil)
 
 	if err := env.controller.RecordMachineVersion(t.Context(), entity.RecordMachineVersionRequest{
-		MachineID: 11, Version: "0.7.1", DaemonMaxSessions: limit,
+		MachineID: 11, Version: "0.7.1",
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -660,9 +660,6 @@ func (s *Supervisor) Count() int {
 	return len(s.sessions)
 }
 
-// PerProfile is the most sessions one profile may run here; 0 is no limit.
-func (s *Supervisor) PerProfile() int { return s.perProfile }
-
 // Running lists the sessions that are still alive.
 //
 // Finished ones are excluded on purpose: this answers "what is this daemon
