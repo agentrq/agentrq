@@ -51,6 +51,10 @@ jobs:
       # Every dependency of the release and its licence, as SPDX, published
       # beside the binaries: the server's Go modules, and the web app built
       # into it. Read from the lockfiles, before npm ci installs anything.
+      # The action does not create output-file's folder.
+      - name: Make the dependency lists' folder
+        run: mkdir -p sbom
+
       - name: List the server's dependencies
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         env:
