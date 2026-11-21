@@ -1,0 +1,18 @@
+{
+  "name": "mesher",
+  "displayName": "Mesher",
+  "version": "0.1.0",
+  "description": "Mesher: one MCP tool, callTool, that reaches every connector you have installed (Gmail, GitHub, any remote MCP server) through a single command line",
+  "author": {
+    "name": "Mustafa Turan",
+    "email": "dev@agentrq.com"
+  },
+  "homepage": "https://mesher.sh",
+  "repository": "https://github.com/agentrq/agentrq",
+  "license": "Apache-2.0",
+  "keywords": ["mesher", "mcp", "connectors", "webassembly"],
+  "logo": "assets/logo.svg",
+  "category": "developer-tools",
+  "tags": ["mesher", "mcp", "connectors"],
+  "mcpServers": "./mcp.json"
+}

@@ -17,6 +17,11 @@
       "name": "agentrq-workspace",
       "source": "./plugins/cursor/agentrq-workspace",
       "description": "Human-in-the-loop task manager for AI agents"
+    },
+    {
+      "name": "mesher",
+      "source": "./plugins/cursor/mesher",
+      "description": "Mesher: one MCP tool, callTool, reaching every connector you install (Gmail, GitHub, any remote MCP server), with skills for the command grammar."
     }
   ]
 }

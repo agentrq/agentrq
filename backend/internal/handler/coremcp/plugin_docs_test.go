@@ -253,6 +253,7 @@ func TestClaudePluginManifestStrictRequirements(t *testing.T) {
 		"plugins/claude/agentrq",
 		"plugins/claude/agentrq-workspace",
 		"plugins/claude/agentrq-custom-supervisor",
+		"plugins/claude/mesher",
 	}
 
 	for _, rel := range plugins {
@@ -332,6 +333,8 @@ func TestPluginDocsCursorSkillsMatchTheClaudeOnes(t *testing.T) {
 	for _, skill := range []string{
 		"agentrq/skills/agentrq",
 		"agentrq-workspace/skills/agentrq-workspace",
+		"mesher/skills/mesher",
+		"mesher/skills/mesher-remote-mcp",
 	} {
 		checkSameSkill(t, root, "plugins/cursor/"+skill, "plugins/claude/"+skill)
 	}
@@ -412,13 +415,14 @@ func TestCursorPluginManifest(t *testing.T) {
 	servers := map[string][2]string{
 		"agentrq":           {"agentrq", "https://mcp.agentrq.com/mcp"},
 		"agentrq-workspace": {"agentrq-workspace", "${AGENTRQ_WORKSPACE_MCP_URL}"},
+		"mesher":            {"mesher", "https://app.mesher.sh/mcp"},
 	}
 	var names []string
 	for _, entry := range market.Plugins {
 		names = append(names, entry.Name)
 	}
-	if !slices.Equal(names, []string{"agentrq", "agentrq-workspace"}) {
-		t.Fatalf("%s lists %v, want [agentrq agentrq-workspace]", marketPath, names)
+	if !slices.Equal(names, []string{"agentrq", "agentrq-workspace", "mesher"}) {
+		t.Fatalf("%s lists %v, want [agentrq agentrq-workspace mesher]", marketPath, names)
 	}
 
 	for _, entry := range market.Plugins {

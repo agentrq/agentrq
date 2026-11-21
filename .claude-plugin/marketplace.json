@@ -35,6 +35,16 @@
         "email": "dev@agentrq.com",
         "url": "https://github.com/mustafaturan"
       }
+    },
+    {
+      "name": "mesher",
+      "source": "./plugins/claude/mesher",
+      "description": "Mesher: one MCP tool, callTool, reaching every connector you install (Gmail, GitHub, any remote MCP server), with skills for the command grammar.",
+      "author": {
+        "name": "Mustafa Turan",
+        "email": "dev@agentrq.com",
+        "url": "https://github.com/mustafaturan"
+      }
     }
   ]
 }

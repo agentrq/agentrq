@@ -8,11 +8,13 @@ from this repository's own marketplace.
 | [`agentrq`](agentrq/README.md) | `https://mcp.agentrq.com/mcp`, the account-level supervisor MCP server | nothing; it signs in with OAuth | orchestrating work across every workspace you own |
 | [`agentrq-custom-supervisor`](agentrq-custom-supervisor/README.md) | a self-hosted server's supervisor MCP server | its URL | the same, on your own server |
 | [`agentrq-workspace`](agentrq-workspace/README.md) | one workspace's own MCP server | its URL | working a single workspace's task queue |
+| [`mesher`](mesher/README.md) | `https://app.mesher.sh/mcp`, the hosted [Mesher](https://mesher.sh) server | nothing; it signs in with OAuth | reaching every connector you install through one `callTool` tool |
 
 ```bash
 /plugin marketplace add https://github.com/agentrq/agentrq
 /plugin install agentrq@agentrq
 /plugin install agentrq-workspace@agentrq
+/plugin install mesher@agentrq
 ```
 
 `agentrq-custom-supervisor`'s skill is a copy of `agentrq`'s, and a test fails if they drift.

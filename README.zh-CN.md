@@ -372,7 +372,7 @@ CoreMCP 使用 OAuth2，让管理型 Agent 在当前用户权限范围内查看�
 官方 README 提到的扩展包括：
 
 - Claude Code plugin marketplace extension
-- Cursor plugins（[`plugins/cursor`](plugins/cursor/agentrq/README.md)：`agentrq` 为 Supervisor，`agentrq-workspace` 为单个 Workspace 的执行 Agent）
+- Cursor plugins（[`plugins/cursor`](plugins/cursor/agentrq/README.md)：`agentrq` 为 Supervisor，`agentrq-workspace` 为单个 Workspace 的执行 Agent，`mesher` 连接 [Mesher](https://mesher.sh)）
 - Gemini CLI extension
 - ACP Gateway（Antigravity / Codex）
 - DeepSeek Harness plugin
@@ -383,6 +383,7 @@ Claude Code 插件安装（Marketplace 已迁移到本仓库；`agentrq` 为 Sup
 /plugin marketplace add https://github.com/agentrq/agentrq
 /plugin install agentrq@agentrq
 /plugin install agentrq-workspace@agentrq
+/plugin install mesher@agentrq
 ```
 
 Gemini CLI 扩展安装（扩展已迁移到本仓库的 [`plugins/gemini`](plugins/gemini/README.md)；如果安装过旧的 `agentrq-gemini-extension`，请先卸载，再用下面的地址重新安装）：

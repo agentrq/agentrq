@@ -630,12 +630,14 @@ Plugins for Claude Code are published from this repository's own marketplace, ea
 - [`agentrq`](plugins/claude/agentrq/README.md) — the **supervisor**, talking to the account-level MCP server so one agent can orchestrate work across every workspace you own.
 - [`agentrq-custom-supervisor`](plugins/claude/agentrq-custom-supervisor/README.md) — the same supervisor for a **self-hosted** server; it asks for the server's supervisor MCP URL.
 - [`agentrq-workspace`](plugins/claude/agentrq-workspace/README.md) — the **workspace agent**, connected to a single workspace's MCP server to work its queue.
+- [`mesher`](plugins/claude/mesher/README.md) — connects to [Mesher](https://mesher.sh) at `https://app.mesher.sh/mcp`, whose one `callTool` tool reaches every connector you install; its skills teach the command grammar.
 
 **Installation:**
 ```bash
 /plugin marketplace add https://github.com/agentrq/agentrq
 /plugin install agentrq@agentrq
 /plugin install agentrq-workspace@agentrq
+/plugin install mesher@agentrq
 ```
 
 > Previously these lived in a separate `agentrq-claude-extension` repository. The marketplace URL is now this repository; if you added the old one, re-add the marketplace at the URL above.
@@ -645,8 +647,9 @@ Plugins for Cursor are published from this repository too, with the same skills 
 
 - [`agentrq`](plugins/cursor/agentrq/README.md) — the **supervisor**, connected to `https://mcp.agentrq.com/mcp`; it signs in with OAuth and asks nothing at install.
 - [`agentrq-workspace`](plugins/cursor/agentrq-workspace/README.md) — the **workspace agent**; its MCP URL is a plugin variable set under **Plugins → Configure** in the Cursor dashboard.
+- [`mesher`](plugins/cursor/mesher/README.md) — [Mesher](https://mesher.sh) at `https://app.mesher.sh/mcp`; it signs in with OAuth and asks nothing at install.
 
-**Installation:** open **Customize** in Cursor's sidebar, find **AgentRQ** and select **Install**.
+**Installation:** open **Customize** in Cursor's sidebar, find **AgentRQ** (or **Mesher**) and select **Install**.
 
 ### ♊ Gemini CLI
 The Gemini CLI extension allows you to manage AgentRQ workspaces and tasks directly from your terminal using Google's Gemini models.

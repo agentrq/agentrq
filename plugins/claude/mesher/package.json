@@ -1,0 +1,14 @@
+{
+  "name": "mesher",
+  "version": "0.1.0",
+  "description": "Mesher Plugin for Claude Code",
+  "keywords": [
+    "claude-plugin",
+    "mesher",
+    "mcp",
+    "connectors",
+    "webassembly"
+  ],
+  "author": "Mustafa Turan",
+  "license": "Apache-2.0"
+}
