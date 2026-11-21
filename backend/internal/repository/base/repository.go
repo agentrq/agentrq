@@ -260,7 +260,7 @@ type Repository interface {
 	GetSession(ctx context.Context, id, userID int64) (model.Session, error)
 	RecordMachineMetrics(ctx context.Context, m model.Machine) error
 	RecordAvailableVersion(ctx context.Context, id int64, version string) error
-	RecordMachineVersion(ctx context.Context, id int64, version string) error
+	RecordMachineVersion(ctx context.Context, id int64, version string, daemonMaxSessions *int) error
 	CountLiveSessionsByUser(ctx context.Context, userID int64) (map[int64]int, error)
 	CountOnlineMachinesPerUser(ctx context.Context, since time.Time) (map[int64]int, error)
 	ReconcileSessions(ctx context.Context, machineID int64, running []int64, at time.Time) error

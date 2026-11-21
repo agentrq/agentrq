@@ -171,9 +171,18 @@ watch(
   },
   { immediate: true },
 )
+// The lowest of the server's limit, this machine's and agentrqd's own
+// --max-per-profile applies; 0 or an unreported one holds nothing.
 const limitText = computed(() => {
-  const n = machine.value?.sessionLimit
-  return n ? `${n} agents at once` : 'No limit'
+  const n = Math.min(
+    ...[machine.value?.sessionLimit, machine.value?.daemonSessionLimit].filter((x) => x > 0),
+  )
+  return Number.isFinite(n) ? `${n} agents at once` : 'No limit'
+})
+const limitSources = computed(() => {
+  const say = (n, unset) => (n == null ? unset : n === 0 ? 'no limit' : n)
+  const m = machine.value
+  return `Server ${say(m?.sessionCeiling || 0)} · This machine ${say(m?.maxSessions, 'not set')} · agentrqd ${say(m?.daemonSessionLimit, 'not reported')}. The lowest applies.`
 })
 // The server's limit is a ceiling: under one, a machine can only go lower.
 const limitCeiling = computed(() => machine.value?.sessionCeiling || 0)
@@ -794,6 +803,9 @@ async function stopSession(id) {
                   </p>
                   <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
                     {{ limitHint }}
+                  </p>
+                  <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5" data-test="machine-limit-sources">
+                    {{ limitSources }}
                   </p>
                 </div>
                 <form class="flex shrink-0 items-center gap-2" @submit.prevent="saveLimit">

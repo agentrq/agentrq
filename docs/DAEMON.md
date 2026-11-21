@@ -448,7 +448,8 @@ The server applies a cap of its own before a launch reaches the machine: 8
 agents per account on one machine unless the operator sets
 `machines.maxSessions`. That is a ceiling: the machine's page can set a lower
 cap for that machine, never a higher one. The lower of the server's cap and
-`--max-per-profile` is the one you meet.
+`--max-per-profile` is the one you meet. The daemon reports its
+`--max-per-profile` when it connects, so the machine's page shows all three.
 
 Installation is at the top of this page; the archive carries the same steps as
 `INSTALL.md`, plus the systemd unit and the macOS LaunchAgent themselves.

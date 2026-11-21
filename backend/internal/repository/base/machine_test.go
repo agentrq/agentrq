@@ -154,12 +154,13 @@ func TestRecordMachineVersion(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for id, v := range map[int64]string{1: "0.2", 2: "0.2"} {
-		if err := repo.RecordMachineVersion(ctx, id, v); err != nil {
+	// Machine 1's daemon reports its --max-per-profile; machine 2's is too old to.
+	for id, limit := range map[int64]*int{1: new(5), 2: nil} {
+		if err := repo.RecordMachineVersion(ctx, id, "0.2", limit); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := repo.RecordMachineVersion(ctx, 1, ""); err != nil {
+	if err := repo.RecordMachineVersion(ctx, 1, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	m1, _ := repo.GetMachine(ctx, 1, memUserID)
@@ -169,6 +170,9 @@ func TestRecordMachineVersion(t *testing.T) {
 	}
 	if m2.Version != "0.2" || m2.AvailableVersion != "0.3" {
 		t.Errorf("still-behind machine = %q offered %q, want 0.2 offered 0.3", m2.Version, m2.AvailableVersion)
+	}
+	if m1.DaemonMaxSessions == nil || *m1.DaemonMaxSessions != 5 || m2.DaemonMaxSessions != nil {
+		t.Errorf("daemon limits = %v, %v, want 5 and none", m1.DaemonMaxSessions, m2.DaemonMaxSessions)
 	}
 
 	if err := repo.RecordAvailableVersion(ctx, 1, "0.4"); err != nil {

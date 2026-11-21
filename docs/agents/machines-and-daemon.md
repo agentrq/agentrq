@@ -39,6 +39,8 @@ pseudo-terminals, and streams them to the browser.
   The server checks the per-profile cap first, in `agentlaunch` (a profile is
   one machine row): the row's `MaxSessions`, held to `machines.maxSessions` as
   a ceiling, since the owner sets the row and the operator the ceiling. The
+  hello carries `--max-per-profile` only so the page can show it; nil is an
+  older daemon, never "no limit". The
   per-machine cap spans accounts the server cannot see, so only the daemon
   can hold it.
 - **A refused launch is only ever explained by the event.** The session row is

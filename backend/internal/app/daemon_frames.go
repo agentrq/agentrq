@@ -75,8 +75,9 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 			// running, which is how a machine that has just replaced itself
 			// stops showing the version it replaced and an offer it has taken.
 			if err := rec.RecordMachineVersion(ctx, entity.RecordMachineVersionRequest{
-				MachineID: s.Identity.MachineID,
-				Version:   hello.Version,
+				MachineID:         s.Identity.MachineID,
+				Version:           hello.Version,
+				DaemonMaxSessions: hello.MaxPerProfile,
 			}); err != nil {
 				zlog.Warn().Err(err).Int64("machine_id", s.Identity.MachineID).Msg("[machine] could not record the running version")
 			}

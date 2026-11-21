@@ -568,6 +568,10 @@ type (
 		// server's machines.maxSessions; 0 is no cap.
 		MaxSessions *int
 
+		// DaemonMaxSessions is the daemon's --max-per-profile from its last
+		// hello, shown beside the cap above; nil from a daemon too old to say.
+		DaemonMaxSessions *int
+
 		// LastSeenAt drives online/offline, which is **derived** and never
 		// stored: a stored flag says "online" forever when a daemon is killed,
 		// which is exactly when the answer matters.

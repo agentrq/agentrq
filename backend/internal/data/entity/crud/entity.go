@@ -2261,6 +2261,9 @@ type (
 		MaxSessions    *int `json:"maxSessions"`
 		SessionLimit   int  `json:"sessionLimit"`
 		SessionCeiling int  `json:"sessionCeiling"`
+		// DaemonSessionLimit is agentrqd's own --max-per-profile, which also
+		// holds this account here: 0 is none, null a daemon too old to say.
+		DaemonSessionLimit *int `json:"daemonSessionLimit"`
 
 		// Metrics is the last snapshot the daemon reported, or nil if it has
 		// not reported one. Nil rather than a zeroed struct: a machine that
@@ -2377,6 +2380,8 @@ type (
 	RecordMachineVersionRequest struct {
 		MachineID int64
 		Version   string
+		// DaemonMaxSessions is its --max-per-profile; nil when it does not say.
+		DaemonMaxSessions *int
 	}
 
 	ReconcileSessionsRequest struct {

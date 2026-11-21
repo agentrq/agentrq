@@ -173,8 +173,9 @@ func (l *Link) once(ctx context.Context) error {
 		// What this daemon is actually supervising. Empty after a restart,
 		// which is how the backend learns that rows it thinks are running
 		// are not.
-		Sessions:     l.Supervisor.Running(),
-		Capabilities: l.capabilities(),
+		Sessions:      l.Supervisor.Running(),
+		Capabilities:  l.capabilities(),
+		MaxPerProfile: new(l.Supervisor.PerProfile()),
 	})}); err != nil {
 		return fmt.Errorf("hello: %w", err)
 	}

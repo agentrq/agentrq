@@ -93,22 +93,23 @@ func toMachineView(m model.Machine, now time.Time, sessions int) entity.MachineV
 		lastSeen = *m.LastSeenAt
 	}
 	return entity.MachineView{
-		ID:               monoflake.ID(m.ID).String(),
-		Name:             m.Name,
-		Hostname:         m.Hostname,
-		OS:               m.OS,
-		Arch:             m.Arch,
-		Version:          m.Version,
-		Enabled:          m.Enabled,
-		Online:           machinerules.IsOnline(lastSeen, now, machinerules.OnlineThreshold),
-		LastSeenAt:       m.LastSeenAt,
-		CreatedAt:        m.CreatedAt,
-		AvailableVersion: m.AvailableVersion,
-		Sessions:         sessions,
-		MaxSessions:      m.MaxSessions,
-		SessionLimit:     sessionLimit(m),
-		SessionCeiling:   MachineMaxSessions,
-		Metrics:          toMetricsView(m),
+		ID:                 monoflake.ID(m.ID).String(),
+		Name:               m.Name,
+		Hostname:           m.Hostname,
+		OS:                 m.OS,
+		Arch:               m.Arch,
+		Version:            m.Version,
+		Enabled:            m.Enabled,
+		Online:             machinerules.IsOnline(lastSeen, now, machinerules.OnlineThreshold),
+		LastSeenAt:         m.LastSeenAt,
+		CreatedAt:          m.CreatedAt,
+		AvailableVersion:   m.AvailableVersion,
+		Sessions:           sessions,
+		MaxSessions:        m.MaxSessions,
+		SessionLimit:       sessionLimit(m),
+		SessionCeiling:     MachineMaxSessions,
+		DaemonSessionLimit: m.DaemonMaxSessions,
+		Metrics:            toMetricsView(m),
 	}
 }
 
@@ -227,7 +228,7 @@ func (c *controller) RecordMachineVersion(ctx context.Context, req entity.Record
 	if req.MachineID == 0 {
 		return fmt.Errorf("invalid machine id")
 	}
-	return c.repository.RecordMachineVersion(ctx, req.MachineID, req.Version)
+	return c.repository.RecordMachineVersion(ctx, req.MachineID, req.Version, req.DaemonMaxSessions)
 }
 
 // RecordMachineMetrics stores the latest snapshot and nothing historical.
