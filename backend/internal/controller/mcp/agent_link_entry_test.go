@@ -172,8 +172,8 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 		}
 		rec.ps.SetToolCallStatus(ctx, 903, "completed", "")
 		rec.ps.SetToolCallStatus(ctx, 904, "failed", strings.Repeat("e", toolCallInputPreviewMaxLen+50))
-		// What a failed call said is capped like its input, with the ellipsis.
-		if want := []string{"903|completed|0", fmt.Sprintf("904|failed|%d", toolCallInputPreviewMaxLen+1)}; !slices.Equal(statuses, want) {
+		// What a failed call said goes to the store whole: the repository caps it.
+		if want := []string{"903|completed|0", fmt.Sprintf("904|failed|%d", toolCallInputPreviewMaxLen+50)}; !slices.Equal(statuses, want) {
 			t.Fatalf("the statuses written were %q, want %q", statuses, want)
 		}
 	})

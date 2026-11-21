@@ -2301,9 +2301,14 @@ func (ps *WorkspaceServer) resolveTaskID(ctx context.Context, sessID, payloadTas
 // and the "tool calls" list only needs enough to identify what happened.
 const toolCallInputPreviewMaxLen = 2000
 
+// truncateForStorage keeps at most max bytes of s, backing off to the last
+// whole character so the cut is never invalid UTF-8, which Postgres refuses.
 func truncateForStorage(s string, max int) string {
 	if len(s) <= max {
 		return s
+	}
+	for max > 0 && !utf8.RuneStart(s[max]) {
+		max--
 	}
 	return s[:max] + "…"
 }
@@ -2335,7 +2340,7 @@ func (ps *WorkspaceServer) storeToolCall(ctx context.Context, taskID int64, p ag
 		Description:  p.Description,
 		InputPreview: truncateForStorage(p.InputPreview, toolCallInputPreviewMaxLen),
 		Status:       status,
-		Output:       truncateForStorage(output, toolCallInputPreviewMaxLen),
+		Output:       output,
 	})
 	if err != nil {
 		zlog.Error().Err(err).Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("failed to record tool call")

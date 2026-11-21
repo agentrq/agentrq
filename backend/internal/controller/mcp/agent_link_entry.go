@@ -52,13 +52,13 @@ func (ps *WorkspaceServer) RecordToolCall(ctx context.Context, taskID int64, c a
 		ToolName: c.ToolName, Description: c.Description, InputPreview: c.InputPreview}, c.Status, c.Output)
 }
 
-// SetToolCallStatus moves a recorded call on, keeping what a failed one said.
-// Best-effort, like the record.
+// SetToolCallStatus moves a recorded call on, keeping what a failed one said
+// (the repository caps it). Best-effort, like the record.
 func (ps *WorkspaceServer) SetToolCallStatus(ctx context.Context, id int64, status, output string) {
 	if ps.updateToolCallStatus == nil {
 		return
 	}
-	if err := ps.updateToolCallStatus(ctx, id, status, truncateForStorage(output, toolCallInputPreviewMaxLen)); err != nil {
+	if err := ps.updateToolCallStatus(ctx, id, status, output); err != nil {
 		zlog.Error().Err(err).Int64("tool_call_id", id).Str("status", status).Msg("failed to update tool call status")
 	}
 }

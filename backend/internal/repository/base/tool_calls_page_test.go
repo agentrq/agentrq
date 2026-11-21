@@ -7,8 +7,10 @@ package base
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/glebarez/sqlite"
@@ -141,6 +143,14 @@ func TestUpdateToolCallStatus(t *testing.T) {
 				t.Errorf("returned %+v, %v, want the output cleared", got, err)
 			}
 
+			// Past the cap, output is trimmed by characters, never refused.
+			long := strings.Repeat("é", model.ToolCallOutputMaxLen+5)
+			got, err = repo.UpdateToolCallStatus(ctx, 1001, "failed", long)
+			want := strings.Repeat("é", model.ToolCallOutputMaxLen-1) + "…"
+			if err != nil || got.Output != want {
+				t.Errorf("returned %d characters, %v, want %d ending in an ellipsis", utf8.RuneCountInString(got.Output), err, model.ToolCallOutputMaxLen)
+			}
+
 			if _, err := repo.UpdateToolCallStatus(ctx, 9999, "failed", ""); !errors.Is(err, ErrNotFound) {
 				t.Errorf("err for a missing row = %v, want ErrNotFound", err)
 			}
@@ -226,5 +236,16 @@ func TestCreateToolCall(t *testing.T) {
 				t.Errorf("stored row after SQL metacharacter round-trip = %+v", updated)
 			}
 		})
+	}
+}
+
+func TestTrimToolCallOutput(t *testing.T) {
+	full := strings.Repeat("界", model.ToolCallOutputMaxLen)
+	if got := trimToolCallOutput(full); got != full {
+		t.Errorf("output at the cap was changed to %d characters", utf8.RuneCountInString(got))
+	}
+	got := trimToolCallOutput(full + "x")
+	if utf8.RuneCountInString(got) != model.ToolCallOutputMaxLen || !strings.HasSuffix(got, "界…") || !utf8.ValidString(got) {
+		t.Errorf("output past the cap was trimmed to %q…, want %d whole characters ending in an ellipsis", got[:9], model.ToolCallOutputMaxLen)
 	}
 }

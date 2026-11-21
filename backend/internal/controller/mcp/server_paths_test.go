@@ -261,6 +261,10 @@ func TestTruncateForStorage_CutsALongInput(t *testing.T) {
 	if got := truncateForStorage("abcdef", 3); got != "abc…" {
 		t.Errorf("truncateForStorage = %q, want abc…", got)
 	}
+	// A cut inside a character backs off to the one before it: "é" is 2 bytes.
+	if got := truncateForStorage("aéb", 2); got != "a…" {
+		t.Errorf("truncateForStorage = %q, want a… with no half character", got)
+	}
 	if got := truncateForStorage("abc", 3); got != "abc" {
 		t.Errorf("truncateForStorage = %q, want abc untouched", got)
 	}
