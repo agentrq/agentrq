@@ -978,7 +978,8 @@ func TestEngine(t *testing.T) {
 		}
 		a.expectParams("session/cancel", `{"sessionId":"idle-1"}`)
 		a.expect(methodCancelRequest) // the prompt is given up on
-		rec.wait(t, func() bool { return len(rec.replies) == 1 })
+		// The turn posts its note before it releases the queue's slot.
+		rec.wait(t, func() bool { return len(rec.replies) == 1 && !l.(*link).e.q.owns(42) })
 		rec.read(func() {
 			if rec.replies[0] != "42|"+noteCancelled {
 				t.Fatalf("reply was %q, want the cancelled note", rec.replies[0])
