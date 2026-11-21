@@ -113,7 +113,7 @@ func TestUpdateToolCallStatus(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			got, err := repo.UpdateToolCallStatus(ctx, 1001, "completed")
+			got, err := repo.UpdateToolCallStatus(ctx, 1001, "completed", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -132,13 +132,22 @@ func TestUpdateToolCallStatus(t *testing.T) {
 				t.Errorf("stored statuses %q and %q, want only 1001 completed", rows[0].Status, rows[1].Status)
 			}
 
-			if _, err := repo.UpdateToolCallStatus(ctx, 9999, "failed"); !errors.Is(err, ErrNotFound) {
+			// A failed call keeps what it said; a later status clears it.
+			got, err = repo.UpdateToolCallStatus(ctx, 1001, "failed", "exit status 1")
+			if err != nil || got.Status != "failed" || got.Output != "exit status 1" {
+				t.Errorf("returned %+v, %v, want 1001 failed with its output", got, err)
+			}
+			if got, err = repo.UpdateToolCallStatus(ctx, 1001, "cancelled", ""); err != nil || got.Output != "" {
+				t.Errorf("returned %+v, %v, want the output cleared", got, err)
+			}
+
+			if _, err := repo.UpdateToolCallStatus(ctx, 9999, "failed", ""); !errors.Is(err, ErrNotFound) {
 				t.Errorf("err for a missing row = %v, want ErrNotFound", err)
 			}
 			if err := d.db.Exec("DROP TABLE tool_calls").Error; err != nil {
 				t.Fatal(err)
 			}
-			if _, err := repo.UpdateToolCallStatus(ctx, 1001, "failed"); err == nil || errors.Is(err, ErrNotFound) {
+			if _, err := repo.UpdateToolCallStatus(ctx, 1001, "failed", ""); err == nil || errors.Is(err, ErrNotFound) {
 				t.Errorf("err without the table = %v, want the database's", err)
 			}
 		})
@@ -159,7 +168,7 @@ func TestCreateToolCall(t *testing.T) {
 				t.Fatal(err)
 			}
 			now := time.Now().UTC().Truncate(time.Microsecond)
-			tc := model.ToolCall{ID: 7, CreatedAt: now, TaskID: 1, WorkspaceID: dtWorkspaceID, ToolName: "Read", Description: "Read a.go", InputPreview: "{}", Status: "running"}
+			tc := model.ToolCall{ID: 7, CreatedAt: now, TaskID: 1, WorkspaceID: dtWorkspaceID, ToolName: "Read", Description: "Read a.go", InputPreview: "{}", Status: "failed", Output: "no such file"}
 			got, err := repo.CreateToolCall(ctx, tc, dtUserID)
 			if err != nil || got != tc {
 				t.Fatalf("CreateToolCall = %+v, %v, want %+v", got, err, tc)
@@ -172,7 +181,7 @@ func TestCreateToolCall(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !stored.CreatedAt.Equal(now) || stored.TaskID != 1 || stored.WorkspaceID != dtWorkspaceID || stored.ToolName != "Read" ||
-				stored.Description != "Read a.go" || stored.InputPreview != "{}" || stored.Status != "running" {
+				stored.Description != "Read a.go" || stored.InputPreview != "{}" || stored.Status != "failed" || stored.Output != "no such file" {
 				t.Errorf("stored %+v, want %+v", stored, tc)
 			}
 
@@ -209,7 +218,7 @@ func TestCreateToolCall(t *testing.T) {
 			if _, err := repo.CreateToolCall(ctx, inj, dtUserID); err != nil {
 				t.Fatalf("CreateToolCall with SQL metacharacters failed: %v", err)
 			}
-			updated, err := repo.UpdateToolCallStatus(ctx, 11, "completed'; DROP TABLE tool_calls; --")
+			updated, err := repo.UpdateToolCallStatus(ctx, 11, "completed'; DROP TABLE tool_calls; --", "")
 			if err != nil {
 				t.Fatalf("UpdateToolCallStatus with SQL metacharacters failed: %v", err)
 			}

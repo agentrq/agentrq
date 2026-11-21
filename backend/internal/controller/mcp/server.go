@@ -100,8 +100,9 @@ type PublishEventFunc func(ctx context.Context, eventName string, payload string
 type RecordToolCallFunc func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error)
 
 // UpdateToolCallStatusFunc updates a previously-recorded tool call once a manual
-// permission request is resolved ("allowed" or "denied").
-type UpdateToolCallStatusFunc func(ctx context.Context, id int64, status string) error
+// permission request is resolved ("allowed" or "denied"), or the call ends;
+// output is what a failed call said.
+type UpdateToolCallStatusFunc func(ctx context.Context, id int64, status, output string) error
 
 // TaskPlanStore keeps the one plan a task's agent works to, as markdown.
 type TaskPlanStore interface {
@@ -944,7 +945,7 @@ func (ps *WorkspaceServer) closeRequest(ctx context.Context, taskID int64, reque
 	tcID, hasToolCall := ps.toolCallIDs[requestID]
 	ps.toolCallIDsMu.RUnlock()
 	if hasToolCall && ps.updateToolCallStatus != nil {
-		if err := ps.updateToolCallStatus(ctx, tcID, "cancelled"); err != nil {
+		if err := ps.updateToolCallStatus(ctx, tcID, "cancelled", ""); err != nil {
 			zlog.Error().Err(err).Int64("tool_call_id", tcID).Msg("failed to mark tool call cancelled")
 		}
 	}
@@ -2314,9 +2315,14 @@ func truncateForStorage(s string, max int) string {
 // call a native link already recorded keeps its row, which takes the status.
 func (ps *WorkspaceServer) persistToolCall(ctx context.Context, taskID int64, p agentlink.PermissionRequest, status string) int64 {
 	if p.ToolCallRowID != 0 {
-		ps.SetToolCallStatus(ctx, p.ToolCallRowID, status)
+		ps.SetToolCallStatus(ctx, p.ToolCallRowID, status, "")
 		return p.ToolCallRowID
 	}
+	return ps.storeToolCall(ctx, taskID, p, status, "")
+}
+
+// storeToolCall writes a new tool_calls row; 0 when it was not recorded.
+func (ps *WorkspaceServer) storeToolCall(ctx context.Context, taskID int64, p agentlink.PermissionRequest, status, output string) int64 {
 	if ps.recordToolCall == nil {
 		return 0
 	}
@@ -2329,6 +2335,7 @@ func (ps *WorkspaceServer) persistToolCall(ctx context.Context, taskID int64, p 
 		Description:  p.Description,
 		InputPreview: truncateForStorage(p.InputPreview, toolCallInputPreviewMaxLen),
 		Status:       status,
+		Output:       truncateForStorage(output, toolCallInputPreviewMaxLen),
 	})
 	if err != nil {
 		zlog.Error().Err(err).Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("failed to record tool call")
@@ -2597,7 +2604,7 @@ func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, reques
 			if effectiveBehavior == "allow" {
 				tcStatus = "allowed"
 			}
-			if err := ps.updateToolCallStatus(ctx, tcID, tcStatus); err != nil {
+			if err := ps.updateToolCallStatus(ctx, tcID, tcStatus, ""); err != nil {
 				zlog.Error().Err(err).Int64("tool_call_id", tcID).Msg("failed to update tool call status")
 			}
 		}

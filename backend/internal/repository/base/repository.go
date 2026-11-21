@@ -280,7 +280,7 @@ type Repository interface {
 	// ToolCall
 	CreateToolCall(ctx context.Context, tc model.ToolCall, userID int64) (model.ToolCall, error)
 	ListToolCalls(ctx context.Context, taskID, before int64, limit int) ([]model.ToolCall, error)
-	UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error)
+	UpdateToolCallStatus(ctx context.Context, id int64, status, output string) (model.ToolCall, error)
 	UpdateToolCallsWorkspaceID(ctx context.Context, taskID int64, workspaceID int64) error
 	SaveTaskPlan(ctx context.Context, p model.TaskPlan, workspaceID, userID int64) (model.TaskPlan, error)
 	DeleteTaskPlan(ctx context.Context, taskID, workspaceID, userID int64) error
@@ -1189,9 +1189,9 @@ func (r *repository) UpdateMessageMetadata(ctx context.Context, taskID int64, me
 // userID owns, ErrNotFound for any other task. The check and the insert are
 // one statement: a native agent's run records a row per call it makes.
 func (r *repository) CreateToolCall(ctx context.Context, tc model.ToolCall, userID int64) (model.ToolCall, error) {
-	res := r.conn(ctx).Exec(`INSERT INTO tool_calls (id, created_at, task_id, workspace_id, tool_name, description, input_preview, status)
-		SELECT ?, ?, id, workspace_id, ?, ?, ?, ? FROM tasks WHERE id = ? AND workspace_id = ? AND user_id = ?`,
-		tc.ID, tc.CreatedAt, tc.ToolName, tc.Description, tc.InputPreview, tc.Status, tc.TaskID, tc.WorkspaceID, userID)
+	res := r.conn(ctx).Exec(`INSERT INTO tool_calls (id, created_at, task_id, workspace_id, tool_name, description, input_preview, status, output)
+		SELECT ?, ?, id, workspace_id, ?, ?, ?, ?, ? FROM tasks WHERE id = ? AND workspace_id = ? AND user_id = ?`,
+		tc.ID, tc.CreatedAt, tc.ToolName, tc.Description, tc.InputPreview, tc.Status, tc.Output, tc.TaskID, tc.WorkspaceID, userID)
 	if res.Error != nil {
 		return model.ToolCall{}, res.Error
 	}
@@ -1220,11 +1220,12 @@ func (r *repository) ListToolCalls(ctx context.Context, taskID, before int64, li
 	return tcs, nil
 }
 
-// UpdateToolCallStatus sets a tool call's status and returns the row, in one
-// statement: a native agent's run updates one per call it makes.
-func (r *repository) UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error) {
+// UpdateToolCallStatus sets a tool call's status and output and returns the
+// row, in one statement: a native agent's run updates one per call it makes.
+func (r *repository) UpdateToolCallStatus(ctx context.Context, id int64, status, output string) (model.ToolCall, error) {
 	var tc model.ToolCall
-	res := r.conn(ctx).Model(&tc).Clauses(clause.Returning{}).Where("id = ?", id).Update("status", status)
+	res := r.conn(ctx).Model(&tc).Clauses(clause.Returning{}).Where("id = ?", id).
+		Updates(map[string]any{"status": status, "output": output})
 	if res.Error != nil {
 		return model.ToolCall{}, res.Error
 	}

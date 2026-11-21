@@ -118,10 +118,10 @@ func TestToolCallRecorderAnswerPublishesOnlyTheCall(t *testing.T) {
 	r, repo, stream := newToolCallRecorder(t)
 	ctx := context.Background()
 
-	repo.EXPECT().UpdateToolCallStatus(ctx, int64(5), "allowed").
+	repo.EXPECT().UpdateToolCallStatus(ctx, int64(5), "allowed", "").
 		Return(model.ToolCall{ID: 5, TaskID: 101, ToolName: "Bash", Status: "allowed"}, nil)
 
-	if err := r.answer(ctx, 5, "allowed"); err != nil {
+	if err := r.answer(ctx, 5, "allowed", ""); err != nil {
 		t.Fatalf("answer: %v", err)
 	}
 	got := nextToolCallEvent(t, stream)
@@ -134,9 +134,9 @@ func TestToolCallRecorderAnswerReportsStorageFailures(t *testing.T) {
 	r, repo, stream := newToolCallRecorder(t)
 	ctx := context.Background()
 
-	repo.EXPECT().UpdateToolCallStatus(ctx, int64(5), "denied").Return(model.ToolCall{}, errRepo)
+	repo.EXPECT().UpdateToolCallStatus(ctx, int64(5), "denied", "").Return(model.ToolCall{}, errRepo)
 
-	if err := r.answer(ctx, 5, "denied"); err != errRepo {
+	if err := r.answer(ctx, 5, "denied", ""); err != errRepo {
 		t.Fatalf("err = %v, want %v", err, errRepo)
 	}
 	assertNothingPublished(t, stream)

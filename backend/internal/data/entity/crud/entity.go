@@ -312,6 +312,7 @@ type (
 		Description  string
 		InputPreview string
 		Status       string
+		Output       string
 	}
 
 	// Task entity

@@ -669,6 +669,7 @@ func fromEntityToolCallsToView(tcs []entity.ToolCall) []view.ToolCall {
 			Description:  tc.Description,
 			InputPreview: tc.InputPreview,
 			Status:       tc.Status,
+			Output:       tc.Output,
 		}
 	}
 	return res
@@ -714,6 +715,7 @@ func FromModelToolCallToView(tc model.ToolCall) view.ToolCall {
 		Description:  tc.Description,
 		InputPreview: tc.InputPreview,
 		Status:       tc.Status,
+		Output:       tc.Output,
 	}
 }
 

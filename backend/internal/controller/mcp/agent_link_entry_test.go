@@ -122,7 +122,7 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 			return tc, nil
 		}
 		var statuses []string
-		rec.ps.updateToolCallStatus = func(ctx context.Context, id int64, status string) error {
+		rec.ps.updateToolCallStatus = func(ctx context.Context, id int64, status, _ string) error {
 			statuses = append(statuses, fmt.Sprintf("%d|%s", id, status))
 			return nil
 		}
@@ -138,7 +138,7 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 		}
 	})
 
-	t.Run("a call a link ran without asking is recorded with its status", func(t *testing.T) {
+	t.Run("a call a link ran without asking is recorded with its status and what it said", func(t *testing.T) {
 		rec := newEntryServer(t)
 		var recorded model.ToolCall
 		rec.ps.recordToolCall = func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
@@ -147,32 +147,33 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 			return tc, nil
 		}
 		got := rec.ps.RecordToolCall(ctx, 42, agentlink.ToolCall{
-			ToolName: "Read", Description: "Read a.go", InputPreview: `{"path":"a.go"}`, Status: "running"})
+			ToolName: "Read", Description: "Read a.go", InputPreview: `{"path":"a.go"}`, Status: "failed", Output: "no such file"})
 
 		if got != 902 {
 			t.Fatalf("RecordToolCall returned %d, want 902", got)
 		}
 		if recorded.TaskID != 42 || recorded.ToolName != "Read" || recorded.Description != "Read a.go" ||
-			recorded.InputPreview != `{"path":"a.go"}` || recorded.Status != "running" {
-			t.Fatalf("the row recorded was %+v, want Read on task 42, running", recorded)
+			recorded.InputPreview != `{"path":"a.go"}` || recorded.Status != "failed" || recorded.Output != "no such file" {
+			t.Fatalf("the row recorded was %+v, want Read on task 42, failed with its words", recorded)
 		}
 	})
 
 	t.Run("a recorded call's status moves on, and a failed write is only logged", func(t *testing.T) {
 		rec := newEntryServer(t)
-		rec.ps.SetToolCallStatus(ctx, 903, "completed") // no store wired: nothing to do
+		rec.ps.SetToolCallStatus(ctx, 903, "completed", "") // no store wired: nothing to do
 
 		var statuses []string
-		rec.ps.updateToolCallStatus = func(ctx context.Context, id int64, status string) error {
-			statuses = append(statuses, fmt.Sprintf("%d|%s", id, status))
+		rec.ps.updateToolCallStatus = func(ctx context.Context, id int64, status, output string) error {
+			statuses = append(statuses, fmt.Sprintf("%d|%s|%d", id, status, len([]rune(output))))
 			if status == "failed" {
 				return errors.New("database unavailable")
 			}
 			return nil
 		}
-		rec.ps.SetToolCallStatus(ctx, 903, "completed")
-		rec.ps.SetToolCallStatus(ctx, 904, "failed")
-		if want := []string{"903|completed", "904|failed"}; !slices.Equal(statuses, want) {
+		rec.ps.SetToolCallStatus(ctx, 903, "completed", "")
+		rec.ps.SetToolCallStatus(ctx, 904, "failed", strings.Repeat("e", toolCallInputPreviewMaxLen+50))
+		// What a failed call said is capped like its input, with the ellipsis.
+		if want := []string{"903|completed|0", fmt.Sprintf("904|failed|%d", toolCallInputPreviewMaxLen+1)}; !slices.Equal(statuses, want) {
 			t.Fatalf("the statuses written were %q, want %q", statuses, want)
 		}
 	})
@@ -236,7 +237,7 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 			return nil
 		}
 		var toolCalls []string
-		rec.ps.updateToolCallStatus = func(ctx context.Context, id int64, status string) error {
+		rec.ps.updateToolCallStatus = func(ctx context.Context, id int64, status, _ string) error {
 			toolCalls = append(toolCalls, fmt.Sprintf("%d=%s", id, status))
 			return nil
 		}

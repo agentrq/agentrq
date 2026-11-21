@@ -171,7 +171,7 @@ func TestPermissions(t *testing.T) {
 		a.request(5, methodRequestPermission, request)
 		got := rec.permissionRequests(t, 1)[0]
 		want := agentlink.PermissionRequest{RequestID: "acp1:" + a.connID + ":sess-1:call-2", TaskID: b62(42),
-			ToolName: "Unknown Tool", Description: "Unknown Tool", InputPreview: "{}"}
+			ToolName: "Unknown Tool", Description: "Unknown Tool", InputPreview: "{}", ToolCallRowID: 100}
 		if got != want {
 			t.Fatalf("the workspace was asked %+v, want %+v", got, want)
 		}

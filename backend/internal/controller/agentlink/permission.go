@@ -24,4 +24,5 @@ type ToolCall struct {
 	Description  string
 	InputPreview string
 	Status       string
+	Output       string // what a failed call said
 }

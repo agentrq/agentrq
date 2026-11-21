@@ -136,10 +136,14 @@ func (r *recorder) RecordToolCall(_ context.Context, taskID int64, c agentlink.T
 	return row
 }
 
-func (r *recorder) SetToolCallStatus(_ context.Context, id int64, status string) {
+func (r *recorder) SetToolCallStatus(_ context.Context, id int64, status, output string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.callStatus = append(r.callStatus, fmt.Sprintf("%d|%s", id, status))
+	entry := fmt.Sprintf("%d|%s", id, status)
+	if output != "" {
+		entry += "|" + output
+	}
+	r.callStatus = append(r.callStatus, entry)
 }
 
 func (r *recorder) PostAgentReply(_ context.Context, _ string, taskID int64, text string) (int64, error) {

@@ -20,12 +20,12 @@ afterEach(() => {
   el?.remove()
 })
 
-async function mountWith(status) {
+async function mountWith(status, toolCalls) {
   el = document.createElement('div')
   document.body.appendChild(el)
   app = createApp({
     render: () => h(TrajectoryPanel, {
-      toolCalls: [{ id: 't1', toolName: 'Read a.go', description: 'Read a.go', inputPreview: '{}', status, createdAt: new Date().toISOString() }],
+      toolCalls: toolCalls ?? [{ id: 't1', toolName: 'Read a.go', description: 'Read a.go', inputPreview: '{}', status, createdAt: new Date().toISOString() }],
     }),
   })
   app.mount(el)
@@ -44,5 +44,43 @@ describe('a tool call\'s run status in the trajectory', () => {
     expect(badgeEl, `no ${label} badge`).toBeTruthy()
     expect(badgeEl.className).toContain(badge)
     expect(el.querySelector(`button.${dot}`), `no ${dot} dot`).toBeTruthy()
+  })
+})
+
+describe('a failed tool call', () => {
+  const at = (s) => new Date(Date.UTC(2026, 10, 21, 12, 0, s)).toISOString()
+  const calls = [
+    { id: 't1', toolName: 'Bash', inputPreview: '{}', status: 'failed', output: 'exit status 1', createdAt: at(0) },
+    { id: 't2', toolName: 'Read', inputPreview: '{}', status: 'completed', createdAt: at(1) },
+  ]
+  const rows = () => [...el.querySelectorAll('[data-trajectory-id]')].map((r) => r.dataset.trajectoryId)
+
+  it('shows what it said under its summary', async () => {
+    await mountWith(null, calls)
+    el.querySelector('[data-trajectory-id="t-t1"]').click()
+    await nextTick()
+    expect(el.querySelector('[data-testid="trajectory-tool-output"]').textContent).toBe('exit status 1')
+    el.querySelector('[data-trajectory-id="t-t2"]').click()
+    await nextTick()
+    expect(el.querySelector('[data-testid="trajectory-tool-output"]')).toBeNull()
+  })
+
+  it('can be the only thing listed, and the filter toggles off', async () => {
+    await mountWith(null, calls)
+    const chip = el.querySelector('[data-testid="trajectory-failed-filter"]')
+    expect(chip.textContent).toContain('1')
+    expect(chip.className).toContain('text-red-600')
+    chip.click()
+    await nextTick()
+    expect(rows()).toEqual(['t-t1'])
+    expect(chip.className).toContain('bg-red-600')
+    chip.click()
+    await nextTick()
+    expect(rows()).toEqual(['t-t1', 't-t2'])
+  })
+
+  it('offers no failed filter when nothing failed', async () => {
+    await mountWith('completed')
+    expect(el.querySelector('[data-testid="trajectory-failed-filter"]')).toBeNull()
   })
 })

@@ -210,7 +210,8 @@ type (
 		Metadata    any          `json:"metadata,omitempty"`
 	}
 
-	// Status: "auto_allowed" | "pending" | "allowed" | "denied"
+	// Status: "auto_allowed" | "pending" | "allowed" | "denied" | "running" |
+	// "completed" | "failed" | "cancelled"; Output is what a failed call said.
 	ToolCall struct {
 		ID           string    `json:"id"`
 		CreatedAt    time.Time `json:"createdAt"`
@@ -219,6 +220,7 @@ type (
 		Description  string    `json:"description,omitempty"`
 		InputPreview string    `json:"inputPreview,omitempty"`
 		Status       string    `json:"status"`
+		Output       string    `json:"output,omitempty"`
 	}
 
 	// ToolCallUpdated is a toolCall.updated stream event: one tool call made or

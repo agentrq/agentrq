@@ -458,10 +458,10 @@ type toolCallStatuses struct {
 }
 
 func (s *toolCallStatuses) update(err error) UpdateToolCallStatusFunc {
-	return func(_ context.Context, id int64, status string) error {
+	return func(_ context.Context, id int64, status, output string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		s.rows = append(s.rows, monoflake.ID(id).String()+"="+status)
+		s.rows = append(s.rows, monoflake.ID(id).String()+"="+status+output)
 		return err
 	}
 }
