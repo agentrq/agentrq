@@ -564,6 +564,10 @@ type (
 		// and takes effect without the daemon's cooperation.
 		Enabled bool `gorm:"default:true"`
 
+		// MaxSessions caps the agents this account may run here. Nil is the
+		// server's machines.maxSessions; 0 is no cap.
+		MaxSessions *int
+
 		// LastSeenAt drives online/offline, which is **derived** and never
 		// stored: a stored flag says "online" forever when a daemon is killed,
 		// which is exactly when the answer matters.
@@ -892,6 +896,7 @@ const (
 	ActionIDPresetCreate
 	ActionIDPresetDelete
 	ActionIDUIPresetInsert
+	ActionIDMachineSessionLimitSet
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

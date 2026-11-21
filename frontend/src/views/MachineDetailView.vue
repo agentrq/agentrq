@@ -13,7 +13,7 @@
  * inventing it here. A confirm dialog that does not name what it destroys is
  * not consent, and that sentence is worth testing.
  */
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   useMachineDetail,
@@ -157,6 +157,35 @@ async function toggleEnabled() {
   const next = !machine.value?.enabled
   if (await detail.setEnabled(next)) {
     notifySuccess(next ? 'Machine enabled' : 'Machine disabled')
+  } else {
+    notifyError(error.value)
+  }
+}
+
+// Empty is the server's default; 0 is no cap.
+const limitInput = ref('')
+watch(
+  () => machine.value?.maxSessions,
+  (n) => {
+    limitInput.value = n ?? ''
+  },
+  { immediate: true },
+)
+const limitText = computed(() => {
+  const n = machine.value?.sessionLimit
+  return n ? `${n} agents at once` : 'No limit'
+})
+const limitHint = computed(() =>
+  machine.value?.maxSessions == null
+    ? "The server's default. Set a number for this machine; 0 is no limit."
+    : "Set for this machine. Empty uses the server's default; 0 is no limit.",
+)
+
+async function saveLimit() {
+  const raw = String(limitInput.value).trim()
+  // The input's min and step keep a fraction or a negative from submitting.
+  if (await detail.setMaxSessions(raw === '' ? null : Number(raw))) {
+    notifySuccess('Agent limit saved')
   } else {
     notifyError(error.value)
   }
@@ -735,6 +764,50 @@ async function stopSession(id) {
                     :class="machine.enabled ? 'left-[23px] bg-white dark:bg-zinc-900' : 'left-[3px] bg-white dark:bg-zinc-400'"
                   ></span>
                 </button>
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <label
+                for="machine-max-sessions"
+                class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 ml-1"
+              >
+                Agent limit
+              </label>
+              <!-- Wraps on a phone: the form takes its own line rather than
+                   squeezing the text into a column a word wide. -->
+              <div
+                class="flex flex-wrap items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-zinc-800/50 border border-gray-100 dark:border-zinc-800 rounded-lg"
+              >
+                <div class="min-w-0 flex-1 basis-48">
+                  <p class="text-sm font-bold text-gray-900 dark:text-zinc-100" data-test="machine-limit-text">
+                    {{ limitText }}
+                  </p>
+                  <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
+                    {{ limitHint }}
+                  </p>
+                </div>
+                <form class="flex shrink-0 items-center gap-2" @submit.prevent="saveLimit">
+                  <input
+                    id="machine-max-sessions"
+                    v-model="limitInput"
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputmode="numeric"
+                    placeholder="Default"
+                    :disabled="busy"
+                    data-test="machine-limit-input"
+                    class="w-24 px-3 py-2 bg-white dark:bg-zinc-900 text-sm text-gray-900 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:border-gray-900 dark:focus:border-white disabled:opacity-50"
+                  />
+                  <button
+                    type="submit"
+                    :disabled="busy"
+                    class="px-4 py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                </form>
               </div>
             </div>
 

@@ -182,3 +182,59 @@ describe('MachineDetailView: the phone controls', () => {
     expect(page.el.querySelectorAll('[aria-label="Update daemon"] svg')).toHaveLength(2)
   })
 })
+
+// Empty is the server's default, 0 is no cap, and a bad number is refused here.
+describe('MachineDetailView: the agent limit', () => {
+  async function save(page, value) {
+    const input = page.el.querySelector('[data-test="machine-limit-input"]')
+    input.value = value
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    input.form.requestSubmit()
+    await settle()
+  }
+
+  it('says which limit applies', async () => {
+    machine.sessionLimit = 8
+    machine.maxSessions = null
+    let page = await mount()
+    await page.click('Settings')
+    expect(page.el.querySelector('[data-test="machine-limit-text"]').textContent).toContain('8 agents at once')
+    expect(page.el.textContent).toContain("The server's default.")
+    app.unmount()
+
+    machine.sessionLimit = 0
+    machine.maxSessions = 0
+    page = await mount()
+    await page.click('Settings')
+    expect(page.el.querySelector('[data-test="machine-limit-text"]').textContent).toContain('No limit')
+    expect(page.el.querySelector('[data-test="machine-limit-input"]').value).toBe('0')
+  })
+
+  it('saves a number, and empty as the default', async () => {
+    updateMachine.mockReset().mockResolvedValue({ machine: { ...machine, maxSessions: 3, sessionLimit: 3 } })
+    const page = await mount()
+    await page.click('Settings')
+    await save(page, '3')
+    expect(updateMachine).toHaveBeenLastCalledWith('m1', { maxSessions: 3 })
+    expect(page.el.querySelector('[data-test="machine-limit-text"]').textContent).toContain('3 agents at once')
+    expect(page.el.textContent).toContain('Set for this machine.')
+    expect(lastToast().message).toBe('Agent limit saved')
+
+    await save(page, '')
+    expect(updateMachine).toHaveBeenLastCalledWith('m1', { maxSessions: null })
+  })
+
+  it('refuses a number that is not one, and says when the save fails', async () => {
+    updateMachine.mockReset().mockRejectedValue(new Error('nope'))
+    const page = await mount()
+    await page.click('Settings')
+    for (const bad of ['1.5', '-1']) {
+      await save(page, bad)
+      expect(updateMachine).not.toHaveBeenCalled()
+    }
+
+    await save(page, '2')
+    expect(lastToast().message).toBe('nope')
+  })
+})
