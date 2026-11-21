@@ -370,6 +370,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDPresetDelete
 	case entity.ActionUIPresetInsert:
 		action = model.ActionIDUIPresetInsert
+	case entity.ActionMachineSessionLimitSet:
+		action = model.ActionIDMachineSessionLimitSet
 	default:
 		return
 	}

@@ -1907,6 +1907,9 @@ const (
 	// A preset put into the composer with #name. Browser-reported: choosing
 	// it begins and ends in the tab.
 	ActionUIPresetInsert Action = 135
+	// A machine's own session cap set or cleared; emitted by the backend,
+	// workspace 0 like the other machine actions.
+	ActionMachineSessionLimitSet Action = 136
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2179,6 +2182,8 @@ func (a Action) String() string {
 		return "preset_delete"
 	case ActionUIPresetInsert:
 		return "ui_preset_insert"
+	case ActionMachineSessionLimitSet:
+		return "machine_session_limit_set"
 	}
 	return "unknown"
 }
@@ -2249,6 +2254,13 @@ type (
 		// real answer here, unlike Metrics: a machine with no agents on it is
 		// exactly what "0" should say.
 		Sessions int `json:"sessions"`
+
+		// MaxSessions is this machine's own cap, null when it uses the
+		// server's. SessionLimit is the one that applies, and SessionCeiling
+		// the server's, which an own cap cannot exceed; 0 is no cap.
+		MaxSessions    *int `json:"maxSessions"`
+		SessionLimit   int  `json:"sessionLimit"`
+		SessionCeiling int  `json:"sessionCeiling"`
 
 		// Metrics is the last snapshot the daemon reported, or nil if it has
 		// not reported one. Nil rather than a zeroed struct: a machine that
@@ -2482,6 +2494,10 @@ type (
 		MachineID string
 		Name      *string
 		Enabled   *bool
+		// MaxSessions sets the machine's own cap when SetMaxSessions is
+		// true; nil then clears it back to the server's.
+		SetMaxSessions bool
+		MaxSessions    *int
 	}
 	UpdateMachineResponse struct {
 		Machine MachineView `json:"machine"`

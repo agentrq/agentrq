@@ -162,6 +162,38 @@ func TestMachineRoutesRefuseMalformedBodies(t *testing.T) {
 	}
 }
 
+// maxSessions tells "not sent" from null, which clears the machine's cap.
+func TestUpdateMachinePassesTheSessionCapOn(t *testing.T) {
+	three := 3
+	for _, tc := range []struct {
+		body  string
+		set   bool
+		limit *int
+	}{
+		{`{"maxSessions":3}`, true, &three},
+		{`{"maxSessions":null}`, true, nil},
+		{`{"name":"x"}`, false, nil},
+	} {
+		ctrl := &machineCrud{}
+		if status, body := send(t, machineApp(ctrl, nil), http.MethodPatch, "/machines/"+machine11, tc.body); status != http.StatusOK {
+			t.Fatalf("%s = %d %s", tc.body, status, body)
+		}
+		got := ctrl.updateGot
+		if got.SetMaxSessions != tc.set || (got.MaxSessions == nil) != (tc.limit == nil) ||
+			(tc.limit != nil && *got.MaxSessions != *tc.limit) {
+			t.Errorf("%s asked for set=%v limit=%v, want set=%v limit=%v", tc.body, got.SetMaxSessions, got.MaxSessions, tc.set, tc.limit)
+		}
+	}
+
+	ctrl := &machineCrud{}
+	if status, _ := send(t, machineApp(ctrl, nil), http.MethodPatch, "/machines/"+machine11, `{"maxSessions":"many"}`); status != http.StatusUnprocessableEntity {
+		t.Errorf("a non-number cap = %d, want 422", status)
+	}
+	if ctrl.updateGot.MachineID != "" {
+		t.Error("a non-number cap reached the controller")
+	}
+}
+
 // Disabling or deleting a machine closes its socket here and now; a rename
 // leaves it connected.
 func TestDisablingOrDeletingAMachineDropsItsSocket(t *testing.T) {

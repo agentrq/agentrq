@@ -123,7 +123,7 @@ const CATEGORIES = [
   ['Security', ['auth', 'network', 'ssl', 'ddos', 'ratelimit']],
   ['Messaging', ['smtp', 'slack', 'webPush']],
   ['Storage', ['storage', 's3', 'artifacts']],
-  ['Features', ['skills', 'memory', 'pano', 'hooks', 'teams']],
+  ['Features', ['skills', 'memory', 'pano', 'hooks', 'machines', 'teams']],
   ['Protocols', ['mcp', 'pubsub']],
   ['Monitoring', ['sentry', 'sentryFrontend', 'prometheus']],
 ]

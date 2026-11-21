@@ -384,6 +384,8 @@ func TestLaunch_Refusals(t *testing.T) {
 		}, entity.ErrLaunchNoFolder, "set api's working directory before launching an agent in its fork"},
 		{"the machine is disabled", nil, func(_ *Launcher, f *fakeCrud, _ *Request) { f.machine.Enabled = false },
 			entity.ErrLaunchBusy, "that machine is disabled"},
+		{"the machine is at its cap", nil, func(_ *Launcher, f *fakeCrud, _ *Request) { f.machine.Sessions, f.machine.SessionLimit = 2, 2 },
+			entity.ErrLaunchBusy, "2 agents already running on this machine, and the limit is 2"},
 		{"no machine connections", nil, func(l *Launcher, _ *fakeCrud, _ *Request) { l.Machines = nil },
 			entity.ErrLaunchUnavailable, "machine connections are not available on this server"},
 		{"the machine is offline", nil, func(_ *Launcher, _ *fakeCrud, rq *Request) { rq.MachineID = monoflake.ID(6).String() },
@@ -413,6 +415,21 @@ func TestLaunch_Refusals(t *testing.T) {
 			wantRefusal(t, err, tc.kind, tc.message)
 			if len(crud.created) != 0 || len(c.sent) != 0 {
 				t.Errorf("a refused launch left created=%v sent=%v", crud.created, c.sent)
+			}
+		})
+	}
+}
+
+func TestLaunch_UnderTheCapOrWithNone(t *testing.T) {
+	for name, m := range map[string]struct{ sessions, limit int }{
+		"under the cap": {1, 2},
+		"no cap":        {50, 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			l, crud, _ := launcher(wire.CapabilityClaudeOptions)
+			crud.machine.Sessions, crud.machine.SessionLimit = m.sessions, m.limit
+			if _, err := l.Launch(context.Background(), request("claude-code")); err != nil {
+				t.Fatalf("Launch: %v", err)
 			}
 		})
 	}

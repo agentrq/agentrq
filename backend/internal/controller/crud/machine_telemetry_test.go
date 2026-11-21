@@ -213,7 +213,11 @@ func TestUpdateMachineCountsTheKillSwitchTransition(t *testing.T) {
 		was     bool
 		set     *bool
 		newName *string
-		want    []entity.Action
+		// The machine's own session cap before, and what is sent.
+		limitWas *int
+		setLimit bool
+		limit    *int
+		want     []entity.Action
 	}{
 		{name: "enabled to disabled", was: true, set: boolPtr(false), want: []entity.Action{entity.ActionMachineDisable}},
 		{name: "disabled to enabled", was: false, set: boolPtr(true), want: []entity.Action{entity.ActionMachineEnable}},
@@ -223,17 +227,23 @@ func TestUpdateMachineCountsTheKillSwitchTransition(t *testing.T) {
 		{name: "already enabled", was: true, set: boolPtr(true), want: nil},
 		// A rename says nothing about whether machines are being used.
 		{name: "rename only", was: true, newName: strPtr("kitchen pi"), want: nil},
+		{name: "a cap set", was: true, setLimit: true, limit: intPtr(4), want: []entity.Action{entity.ActionMachineSessionLimitSet}},
+		{name: "a cap changed", was: true, limitWas: intPtr(4), setLimit: true, limit: intPtr(2), want: []entity.Action{entity.ActionMachineSessionLimitSet}},
+		{name: "a cap cleared", was: true, limitWas: intPtr(4), setLimit: true, want: []entity.Action{entity.ActionMachineSessionLimitSet}},
+		{name: "the same cap again", was: true, limitWas: intPtr(4), setLimit: true, limit: intPtr(4), want: nil},
+		{name: "no cap cleared again", was: true, setLimit: true, want: nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := newMachineTelemetryEnv(t)
 			env.repo.EXPECT().GetMachine(gomock.Any(), int64(9), testUserID).
-				Return(model.Machine{ID: 9, UserID: testUserID, Enabled: tc.was}, nil)
+				Return(model.Machine{ID: 9, UserID: testUserID, Enabled: tc.was, MaxSessions: tc.limitWas}, nil)
 			env.repo.EXPECT().UpdateMachine(gomock.Any(), gomock.Any()).
 				DoAndReturn(func(_ context.Context, m model.Machine) (model.Machine, error) { return m, nil })
 
 			_, err := env.controller.UpdateMachine(t.Context(), entity.UpdateMachineRequest{
 				UserID: testUserIDStr, MachineID: monoflake.ID(9).String(),
 				Enabled: tc.set, Name: tc.newName,
+				SetMaxSessions: tc.setLimit, MaxSessions: tc.limit,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -594,4 +604,5 @@ func TestMachineResourceTypesStringify(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool    { return &b }
+func intPtr(n int) *int       { return &n }
 func strPtr(s string) *string { return &s }

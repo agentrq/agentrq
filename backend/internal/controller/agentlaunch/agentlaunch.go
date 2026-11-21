@@ -207,6 +207,12 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 	if !machine.Machine.Enabled {
 		return nil, busy("that machine is disabled")
 	}
+	// The same words as agentrqd's own refusal, which still stands behind
+	// this one with its own --max-per-profile.
+	if limit := machine.Machine.SessionLimit; limit > 0 && machine.Machine.Sessions >= limit {
+		return nil, busy(fmt.Sprintf("%d agents already running on this machine, and the limit is %d",
+			machine.Machine.Sessions, limit))
+	}
 	// Refused here rather than sent and silently dropped: a launch that
 	// goes nowhere and reports success is worse than one that fails.
 	if l.Machines == nil {

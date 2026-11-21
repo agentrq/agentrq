@@ -182,3 +182,102 @@ describe('MachineDetailView: the phone controls', () => {
     expect(page.el.querySelectorAll('[aria-label="Update daemon"] svg')).toHaveLength(2)
   })
 })
+
+// Empty is the server's default, 0 is no cap, and a bad number is refused here.
+describe('MachineDetailView: the agent limit', () => {
+  async function save(page, value) {
+    const input = page.el.querySelector('[data-test="machine-limit-input"]')
+    input.value = value
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    input.form.requestSubmit()
+    await settle()
+  }
+
+  it('says which limit applies', async () => {
+    machine.sessionLimit = 8
+    machine.maxSessions = null
+    let page = await mount()
+    await page.click('Settings')
+    expect(page.el.querySelector('[data-test="machine-limit-text"]').textContent).toContain('8 agents at once')
+    expect(page.el.textContent).toContain("The server's default.")
+    app.unmount()
+
+    machine.sessionLimit = 0
+    machine.maxSessions = 0
+    page = await mount()
+    await page.click('Settings')
+    expect(page.el.querySelector('[data-test="machine-limit-text"]').textContent).toContain('No limit')
+    expect(page.el.querySelector('[data-test="machine-limit-input"]').value).toBe('0')
+  })
+
+  it('saves a number, and empty as the default', async () => {
+    updateMachine.mockReset().mockResolvedValue({ machine: { ...machine, maxSessions: 3, sessionLimit: 3 } })
+    const page = await mount()
+    await page.click('Settings')
+    await save(page, '3')
+    expect(updateMachine).toHaveBeenLastCalledWith('m1', { maxSessions: 3 })
+    expect(page.el.querySelector('[data-test="machine-limit-text"]').textContent).toContain('3 agents at once')
+    expect(page.el.textContent).toContain('Set for this machine.')
+    expect(lastToast().message).toBe('Agent limit saved')
+
+    await save(page, '')
+    expect(updateMachine).toHaveBeenLastCalledWith('m1', { maxSessions: null })
+  })
+
+  it('refuses a number that is not one, and says when the save fails', async () => {
+    updateMachine.mockReset().mockRejectedValue(new Error('nope'))
+    const page = await mount()
+    await page.click('Settings')
+    for (const bad of ['1.5', '-1']) {
+      await save(page, bad)
+      expect(updateMachine).not.toHaveBeenCalled()
+    }
+
+    await save(page, '2')
+    expect(lastToast().message).toBe('nope')
+  })
+
+  // Under the server's ceiling a machine can only go lower, and never to "no cap".
+  it("holds a machine's limit to the server's", async () => {
+    machine.sessionCeiling = 8
+    machine.sessionLimit = 8
+    machine.maxSessions = null
+    let page = await mount()
+    await page.click('Settings')
+    expect(page.el.textContent).toContain("The server's limit. Set a lower number for this machine.")
+    for (const bad of ['9', '0']) {
+      await save(page, bad)
+      expect(updateMachine).not.toHaveBeenCalled()
+    }
+    app.unmount()
+
+    machine.maxSessions = 3
+    machine.sessionLimit = 3
+    page = await mount()
+    await page.click('Settings')
+    expect(page.el.textContent).toContain("Set for this machine, up to the server's 8. Empty uses the server's.")
+  })
+
+  // agentrqd's own --max-per-profile holds the account too; the server cannot see it, so it is named.
+  it("names the server's limit, this machine's and agentrqd's flag", async () => {
+    const sources = (page) => page.el.querySelector('[data-test="machine-limit-sources"]').textContent.trim()
+    const daemon = "agentrqd's --max-per-profile on the machine can also limit it; the lowest applies."
+    Object.assign(machine, { sessionCeiling: 8, sessionLimit: 8, maxSessions: null })
+    let page = await mount()
+    await page.click('Settings')
+    expect(sources(page)).toBe(`Server 8 · This machine not set. ${daemon}`)
+    app.unmount()
+
+    Object.assign(machine, { sessionCeiling: 0, sessionLimit: 0, maxSessions: 0 })
+    page = await mount()
+    await page.click('Settings')
+    expect(sources(page)).toBe(`Server no limit · This machine no limit. ${daemon}`)
+    app.unmount()
+
+    Object.assign(machine, { sessionCeiling: 8, sessionLimit: 3, maxSessions: 3 })
+    page = await mount()
+    await page.click('Settings')
+    expect(sources(page)).toBe(`Server 8 · This machine 3. ${daemon}`)
+  })
+})

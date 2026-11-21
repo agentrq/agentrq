@@ -126,6 +126,14 @@ export function useMachineDetail(deps = {}) {
     return change({ enabled }, enabled ? 'Failed to enable this machine' : 'Failed to disable this machine')
   }
 
+  /**
+   * Cap the agents this account may run here: a number, 0 for no cap, or
+   * null for the server's default.
+   */
+  async function setMaxSessions(maxSessions) {
+    return change({ maxSessions }, "Failed to set this machine's agent limit")
+  }
+
   async function change(patch, failure) {
     busy.value = true
     error.value = ''
@@ -253,6 +261,7 @@ export function useMachineDetail(deps = {}) {
     load,
     rename,
     setEnabled,
+    setMaxSessions,
     remove,
     stop,
     updating,

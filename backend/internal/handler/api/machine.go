@@ -256,23 +256,35 @@ func (h *handler) updateMachine() fiber.Handler {
 		// Pointers, so "not mentioned" and "set to empty/false" stay different
 		// requests. Without that, a rename would silently re-enable a machine
 		// somebody had deliberately turned off.
+		// maxSessions stays raw because null means something here: back to
+		// the server's cap, which a nil pointer could not tell from absent.
 		var payload struct {
-			Name    *string `json:"name"`
-			Enabled *bool   `json:"enabled"`
+			Name        *string         `json:"name"`
+			Enabled     *bool           `json:"enabled"`
+			MaxSessions json.RawMessage `json:"maxSessions"`
 		}
 		if err := c.Bind().Body(&payload); err != nil {
 			c.Status(http.StatusUnprocessableEntity)
 			return c.Send(_invalidPayload)
+		}
+		var maxSessions *int
+		if len(payload.MaxSessions) > 0 {
+			if err := json.Unmarshal(payload.MaxSessions, &maxSessions); err != nil {
+				c.Status(http.StatusUnprocessableEntity)
+				return c.Send(_invalidPayload)
+			}
 		}
 
 		ctx, cancel := newContext(c)
 		defer cancel()
 
 		rs, err := h.crud.UpdateMachine(ctx, entity.UpdateMachineRequest{
-			UserID:    c.Locals("user_id").(string),
-			MachineID: c.Params("id"),
-			Name:      payload.Name,
-			Enabled:   payload.Enabled,
+			UserID:         c.Locals("user_id").(string),
+			MachineID:      c.Params("id"),
+			Name:           payload.Name,
+			Enabled:        payload.Enabled,
+			SetMaxSessions: len(payload.MaxSessions) > 0,
+			MaxSessions:    maxSessions,
 		})
 		if err != nil {
 			e, status := mapper.FromErrorToHTTPResponse(err)

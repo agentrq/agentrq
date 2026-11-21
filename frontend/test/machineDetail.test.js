@@ -184,6 +184,24 @@ describe('the kill switch', () => {
   })
 })
 
+describe('the agent limit', () => {
+  it('sends a number, 0 or null as it is', async () => {
+    const h = harness()
+    await h.d.load()
+    for (const n of [3, 0, null]) {
+      expect(await h.d.setMaxSessions(n)).toBe(true)
+      expect(h.deps.updateMachine).toHaveBeenLastCalledWith('m1', { maxSessions: n })
+    }
+  })
+
+  it('says what failed', async () => {
+    const h = harness({ updateMachine: vi.fn().mockRejectedValue({}) })
+    await h.d.load()
+    expect(await h.d.setMaxSessions(2)).toBe(false)
+    expect(h.d.error.value).toBe("Failed to set this machine's agent limit")
+  })
+})
+
 describe('deleting', () => {
   it('deletes', async () => {
     const h = harness()
