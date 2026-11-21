@@ -28,6 +28,7 @@ type toolCall struct {
 	rawInput        json.RawMessage
 	row             int64 // the tool_calls row recorded for it, 0 for none yet
 	gated           bool  // a permission request asked about it, and owns its row
+	allowed         bool  // that request was answered with an allow option
 }
 
 // label names a call the way its permission card would.
@@ -204,6 +205,15 @@ func (p *projector) gate(id string) int64 {
 	tc := el.Value.(*toolCall)
 	tc.gated = true
 	return tc.row
+}
+
+// allow marks a call its permission request let run.
+func (p *projector) allow(id string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if el := p.calls[id]; el != nil {
+		el.Value.(*toolCall).allowed = true
+	}
 }
 
 // setRow remembers the row recorded for a call still in flight.
@@ -473,7 +483,7 @@ func (e *engineV1) toolCallUpdate(s *session, raw json.RawMessage) {
 	tc := s.proj.rememberCall(u)
 	tool, ours := workspaceTool(tc.title, tc.name, e.ownServers(), e.ws.ToolNames())
 	if !ours {
-		e.recordCall(s, tc, rowStatus(u.Status))
+		e.recordCall(s, tc, rowStatus(u.Status), failureOutput(u))
 	}
 	s.proj.rows.Unlock()
 	if !ours || u.Status == nil || *u.Status != "completed" {
@@ -499,18 +509,48 @@ func rowStatus(status *string) string {
 // recordCall writes a call the agent runs without asking as its task's
 // tool_calls row once it starts, and moves the row on as it finishes. A call
 // a permission request asked about is left to that request's row, whose
-// verdict says more than how it ended. s.proj.rows is held.
-func (e *engineV1) recordCall(s *session, tc toolCall, status string) {
+// verdict says more than how it ended, unless it was allowed and then failed.
+// output is what a failed call said. s.proj.rows is held.
+func (e *engineV1) recordCall(s *session, tc toolCall, status, output string) {
 	taskID := e.taskOf(s)
 	switch {
-	case tc.gated || status == "" || taskID == 0:
+	case tc.gated:
+		if tc.allowed && tc.row != 0 && status == "failed" {
+			e.ws.SetToolCallStatus(e.ctx, tc.row, status, output)
+		}
+	case status == "" || taskID == 0:
 	case tc.row == 0:
 		row := e.ws.RecordToolCall(e.ctx, taskID, agentlink.ToolCall{
-			ToolName: tc.label(), Description: tc.label(), InputPreview: inputPreview(tc.rawInput), Status: status})
+			ToolName: tc.label(), Description: tc.label(), InputPreview: inputPreview(tc.rawInput), Status: status, Output: output})
 		s.proj.setRow(tc.id, row)
 	case status != "running":
-		e.ws.SetToolCallStatus(e.ctx, tc.row, status)
+		e.ws.SetToolCallStatus(e.ctx, tc.row, status, output)
 	}
+}
+
+// failureOutput is what a failed call said: the text of its content, else its
+// raw output; "" for a call that did not fail.
+func failureOutput(u toolCallUpdate) string {
+	if deref(u.Status) != "failed" {
+		return ""
+	}
+	var texts []string
+	for _, c := range u.Content {
+		if c.Type == "content" && c.Content.Type == "text" && strings.TrimSpace(c.Content.Text) != "" {
+			texts = append(texts, c.Content.Text)
+		}
+	}
+	if len(texts) > 0 {
+		return strings.Join(texts, "\n")
+	}
+	var text string
+	if json.Unmarshal(u.RawOutput, &text) == nil {
+		return text
+	}
+	if len(u.RawOutput) == 0 || string(u.RawOutput) == "null" {
+		return ""
+	}
+	return string(u.RawOutput)
 }
 
 // normalizeCommands is the gateway's: names trimmed, nameless commands

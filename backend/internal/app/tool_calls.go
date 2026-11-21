@@ -40,9 +40,9 @@ func (r toolCallRecorder) create(ctx context.Context, tc model.ToolCall) (model.
 	return created, err
 }
 
-// answer records the permission decision on a tool call.
-func (r toolCallRecorder) answer(ctx context.Context, id int64, status string) error {
-	updated, err := r.repo.UpdateToolCallStatus(ctx, id, status)
+// answer records the permission decision on a tool call, or how it ended.
+func (r toolCallRecorder) answer(ctx context.Context, id int64, status, output string) error {
+	updated, err := r.repo.UpdateToolCallStatus(ctx, id, status, output)
 	if err != nil {
 		return err
 	}

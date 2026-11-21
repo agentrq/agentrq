@@ -261,6 +261,10 @@ func TestTruncateForStorage_CutsALongInput(t *testing.T) {
 	if got := truncateForStorage("abcdef", 3); got != "abc…" {
 		t.Errorf("truncateForStorage = %q, want abc…", got)
 	}
+	// A cut inside a character backs off to the one before it: "é" is 2 bytes.
+	if got := truncateForStorage("aéb", 2); got != "a…" {
+		t.Errorf("truncateForStorage = %q, want a… with no half character", got)
+	}
 	if got := truncateForStorage("abc", 3); got != "abc" {
 		t.Errorf("truncateForStorage = %q, want abc untouched", got)
 	}
@@ -458,10 +462,10 @@ type toolCallStatuses struct {
 }
 
 func (s *toolCallStatuses) update(err error) UpdateToolCallStatusFunc {
-	return func(_ context.Context, id int64, status string) error {
+	return func(_ context.Context, id int64, status, output string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		s.rows = append(s.rows, monoflake.ID(id).String()+"="+status)
+		s.rows = append(s.rows, monoflake.ID(id).String()+"="+status+output)
 		return err
 	}
 }

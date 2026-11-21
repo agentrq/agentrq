@@ -37,7 +37,7 @@ type Workspace interface {
 	HandlePermissionRequest(ctx context.Context, linkID string, p agentlink.PermissionRequest)
 	ClosePermissionRequest(ctx context.Context, requestID string)
 	RecordToolCall(ctx context.Context, taskID int64, c agentlink.ToolCall) int64
-	SetToolCallStatus(ctx context.Context, id int64, status string)
+	SetToolCallStatus(ctx context.Context, id int64, status, output string)
 	PostAgentReply(ctx context.Context, linkID string, taskID int64, text string) (int64, error)
 	AskHuman(ctx context.Context, taskID int64, q agentlink.Question) (agentlink.Answer, error)
 	CreateHumanTask(ctx context.Context, title, body string) (int64, error)

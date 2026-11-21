@@ -50,9 +50,14 @@ func (e *engineV1) requestPermission(ctx context.Context, params json.RawMessage
 		return requestPermissionResponse{Outcome: allowOwnTool(req.Options)}, nil
 	}
 	// The request owns the call's row from here: the one already recorded for
-	// it, else the one the request records.
+	// it, else one recorded now, so a failure after an allow can reach it.
 	s.proj.rows.Lock()
 	row := s.proj.gate(req.ToolCall.ToolCallID)
+	if taskID := e.taskOf(s); row == 0 && taskID != 0 {
+		row = e.ws.RecordToolCall(ctx, taskID, agentlink.ToolCall{
+			ToolName: title, Description: title, InputPreview: inputPreview(rawInput), Status: "pending"})
+		s.proj.setRow(req.ToolCall.ToolCallID, row)
+	}
 	s.proj.rows.Unlock()
 
 	requestID := e.linkID + ":" + req.SessionID + ":" + req.ToolCall.ToolCallID
@@ -89,6 +94,9 @@ func (e *engineV1) requestPermission(ctx context.Context, params json.RawMessage
 	}
 	select {
 	case o := <-answer:
+		if allows(req.Options, o) {
+			s.proj.allow(req.ToolCall.ToolCallID)
+		}
 		return requestPermissionResponse{Outcome: o}, nil
 	case <-timeout:
 		// The turn is cancelled as well as the call: "cancelled" is the answer
@@ -149,6 +157,16 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// allows reports whether an outcome picks an option that grants the call.
+func allows(options []permissionOption, o permissionOutcome) bool {
+	for _, opt := range options {
+		if o.Outcome == "selected" && opt.OptionID == o.OptionID {
+			return looksLikeAllow(opt)
+		}
+	}
+	return false
 }
 
 // looksLikeAllow is an option that grants the call: by its kind, or by its

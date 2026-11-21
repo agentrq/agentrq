@@ -44,6 +44,14 @@
                 class="shrink-0 text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
           {{ lane.label }} <span class="font-bold opacity-60">{{ laneCounts[lane.key] }}</span>
         </button>
+        <button v-if="failedCount > 0" type="button" data-testid="trajectory-failed-filter"
+                @click="toggleLane(FAILED_FILTER)"
+                :class="laneFilter === FAILED_FILTER
+                  ? 'bg-red-600 text-white border-transparent'
+                  : 'bg-white dark:bg-zinc-900 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/30 hover:border-red-300 dark:hover:border-red-500/50'"
+                class="shrink-0 text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-lg border transition-colors">
+          Failed <span class="font-bold opacity-60">{{ failedCount }}</span>
+        </button>
       </div>
 
       <!-- Search -->
@@ -129,6 +137,10 @@
                 <span class="text-gray-800 dark:text-zinc-200">{{ formatAbsolute(selectedItem.createdAt) }}</span>
               </div>
               <p v-if="selectedItem.raw.description" class="text-[11px] text-gray-600 dark:text-zinc-400 italic border-l-2 border-gray-200 dark:border-zinc-700 pl-2 mt-1">"{{ selectedItem.raw.description }}"</p>
+              <div v-if="selectedItem.lane === 'tool' && selectedItem.raw.output" class="mt-1">
+                <span class="text-[9px] font-black uppercase tracking-wider text-red-700 dark:text-red-400">Error</span>
+                <pre data-testid="trajectory-tool-output" class="mt-1 text-[10px] font-mono bg-red-50 text-red-800 border border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-transparent p-3 rounded-lg overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar">{{ selectedItem.raw.output }}</pre>
+              </div>
             </div>
 
             <!-- Payload (tool only) -->
@@ -175,7 +187,9 @@ import {
   buildTrajectory,
   defaultDetailTab,
   detailTabForKey,
+  FAILED_FILTER,
   filterTrajectory,
+  isFailedCall,
   stepTrajectory,
   trajectoryLaneCounts,
   useTrajectoryFollow,
@@ -196,6 +210,7 @@ const LANES = TRAJECTORY_LANES;
 const items = computed(() => buildTrajectory(props.messages, props.toolCalls));
 
 const laneCounts = computed(() => trajectoryLaneCounts(items.value));
+const failedCount = computed(() => items.value.filter(isFailedCall).length);
 
 // Which category the reader has narrowed to, or null for all of them. Reading
 // a long run means asking one question at a time — what did it think, what did

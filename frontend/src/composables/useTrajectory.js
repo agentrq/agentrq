@@ -343,17 +343,26 @@ export function trajectoryLaneCounts(items) {
   return counts;
 }
 
+/** The filter that keeps only the tool calls that failed. */
+export const FAILED_FILTER = 'failed';
+
+/** Whether an entry is a tool call that failed. */
+export function isFailedCall(item) {
+  return item?.lane === 'tool' && item.raw?.status === 'failed';
+}
+
 /**
  * The entries a lane filter and a search leave visible.
  *
  * @param {Array<object>} items
- * @param {{lane?: string|null, query?: string}} [filter] a null lane is every lane
+ * @param {{lane?: string|null, query?: string}} [filter] a null lane is every
+ *   lane, and FAILED_FILTER the failed tool calls
  * @returns {Array<object>}
  */
 export function filterTrajectory(items, { lane = null, query = '' } = {}) {
   const needle = query.trim().toLowerCase();
   return (items ?? []).filter((item) => {
-    if (lane && item.lane !== lane) return false;
+    if (lane === FAILED_FILTER ? !isFailedCall(item) : lane && item.lane !== lane) return false;
     if (!needle) return true;
     return [item.label, item.preview, item.raw?.description]
       .some((field) => field?.toLowerCase().includes(needle));

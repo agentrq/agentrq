@@ -13,7 +13,9 @@ import {
   buildTrajectory,
   defaultDetailTab,
   detailTabForKey,
+  FAILED_FILTER,
   filterTrajectory,
+  isFailedCall,
   trajectoryLaneCounts,
   messagesSince,
 } from '../src/composables/useTrajectory'
@@ -414,6 +416,29 @@ describe('filterTrajectory', () => {
 
   it('has nothing to filter when there is nothing there', () => {
     expect(filterTrajectory(undefined, { query: 'anything' })).toEqual([])
+  })
+})
+
+describe('the failed filter', () => {
+  const items = buildTrajectory([
+    message({ id: 'a', sender: 'agent', text: 'failed to start', createdAt: at(0) }),
+  ], [
+    toolCall({ id: 'b', toolName: 'Bash', status: 'failed', output: 'exit status 1', createdAt: at(1) }),
+    toolCall({ id: 'c', toolName: 'Read', status: 'completed', createdAt: at(2) }),
+    toolCall({ id: 'd', toolName: 'Grep', status: 'denied', createdAt: at(3) }),
+  ])
+
+  it('keeps only the tool calls that failed', () => {
+    expect(items.filter(isFailedCall).map((it) => it.id)).toEqual(['t-b'])
+    expect(filterTrajectory(items, { lane: FAILED_FILTER }).map((it) => it.id)).toEqual(['t-b'])
+  })
+
+  it('applies the search too', () => {
+    expect(filterTrajectory(items, { lane: FAILED_FILTER, query: 'read' })).toEqual([])
+  })
+
+  it('is no failed call for nothing', () => {
+    expect(isFailedCall(undefined)).toBe(false)
   })
 })
 

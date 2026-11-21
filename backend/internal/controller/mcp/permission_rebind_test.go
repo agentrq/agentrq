@@ -299,7 +299,7 @@ func TestSendCancelNotification_ClosesTheOutstandingApproval(t *testing.T) {
 		return nil
 	}
 	var toolCallStatus string
-	ps.updateToolCallStatus = func(ctx context.Context, id int64, status string) error {
+	ps.updateToolCallStatus = func(ctx context.Context, id int64, status, _ string) error {
 		toolCallStatus = status
 		return nil
 	}
@@ -339,7 +339,7 @@ func TestSendCancelNotification_SurvivesAToolCallThatWillNotClose(t *testing.T) 
 	ps.updateMessageMetadata = func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
 		return nil
 	}
-	ps.updateToolCallStatus = func(ctx context.Context, id int64, status string) error {
+	ps.updateToolCallStatus = func(ctx context.Context, id int64, status, _ string) error {
 		return errors.New("write failed")
 	}
 

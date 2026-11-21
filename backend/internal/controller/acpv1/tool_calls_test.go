@@ -6,6 +6,7 @@ package acpv1
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"testing"
 
@@ -59,13 +60,13 @@ func TestToolCallRows(t *testing.T) {
 		}
 	})
 
-	t.Run("a call asked about is recorded by its permission request only", func(t *testing.T) {
+	t.Run("a call asked about gets its row before the request, which owns it from then on", func(t *testing.T) {
 		rec, a, l := midTurn(t, agentOpts{})
 		a.update("sess-1", `{"sessionUpdate":"tool_call","toolCallId":"call-2","title":"Bash","status":"pending","rawInput":{"cmd":"ls"}}`)
 		a.request(5, methodRequestPermission, request)
 		p := rec.permissionRequests(t, 1)[0]
-		if p.ToolCallRowID != 0 {
-			t.Fatalf("the request named row %d, want none: the call had not run", p.ToolCallRowID)
+		if p.ToolCallRowID != 100 {
+			t.Fatalf("the request named row %d, want the row recorded for it, 100", p.ToolCallRowID)
 		}
 		if !l.DeliverVerdict(ctx, p.RequestID, "allow") {
 			t.Fatal("the verdict for the waiting call was refused")
@@ -74,22 +75,52 @@ func TestToolCallRows(t *testing.T) {
 		a.update("sess-1", `{"sessionUpdate":"tool_call_update","toolCallId":"call-2","status":"in_progress"}`)
 		a.update("sess-1", `{"sessionUpdate":"tool_call_update","toolCallId":"call-2","status":"completed"}`)
 		a.sync(l)
-		if calls, statuses := rec.rows(); len(calls) != 0 || len(statuses) != 0 {
-			t.Fatalf("the engine recorded %+v then %q, want the request's row alone", calls, statuses)
+		calls, statuses := rec.rows()
+		want := []recordedCall{{42, 100, agentlink.ToolCall{ToolName: "Bash", Description: "Bash", InputPreview: `{"cmd":"ls"}`, Status: "pending"}}}
+		if !slices.Equal(calls, want) || len(statuses) != 0 {
+			t.Fatalf("the engine recorded %+v then %q, want %+v and the verdict kept", calls, statuses, want)
 		}
 	})
 
-	t.Run("a call asked about before any update is still left to its request", func(t *testing.T) {
+	t.Run("an allowed call that fails moves its row to failed, with what it said", func(t *testing.T) {
 		rec, a, l := midTurn(t, agentOpts{})
 		a.request(5, methodRequestPermission, request)
 		p := rec.permissionRequests(t, 1)[0]
 		l.DeliverVerdict(ctx, p.RequestID, "allow")
 		a.answerTo(5)
 		a.update("sess-1", `{"sessionUpdate":"tool_call","toolCallId":"call-2","title":"Bash","status":"in_progress"}`)
-		a.update("sess-1", `{"sessionUpdate":"tool_call_update","toolCallId":"call-2","status":"failed"}`)
+		a.update("sess-1", `{"sessionUpdate":"tool_call_update","toolCallId":"call-2","status":"failed","content":[{"type":"content","content":{"type":"text","text":"exit status 1"}}]}`)
 		a.sync(l)
-		if calls, statuses := rec.rows(); len(calls) != 0 || len(statuses) != 0 {
-			t.Fatalf("the engine recorded %+v then %q, want the request's row alone", calls, statuses)
+		if _, statuses := rec.rows(); !slices.Equal(statuses, []string{"100|failed|exit status 1"}) {
+			t.Fatalf("the row's statuses were %q, want it failed with the agent's words", statuses)
+		}
+	})
+
+	t.Run("a denied call that fails keeps its verdict", func(t *testing.T) {
+		rec, a, l := midTurn(t, agentOpts{})
+		a.request(5, methodRequestPermission, request)
+		p := rec.permissionRequests(t, 1)[0]
+		l.DeliverVerdict(ctx, p.RequestID, "deny")
+		a.answerTo(5)
+		a.update("sess-1", `{"sessionUpdate":"tool_call_update","toolCallId":"call-2","status":"failed","rawOutput":"the user refused"}`)
+		a.sync(l)
+		if _, statuses := rec.rows(); len(statuses) != 0 {
+			t.Fatalf("the row's statuses were %q, want the denial kept", statuses)
+		}
+	})
+
+	t.Run("a call run without asking that fails keeps what it said", func(t *testing.T) {
+		rec, a, l := midTurn(t, agentOpts{})
+		a.update("sess-1", `{"sessionUpdate":"tool_call","toolCallId":"c1","title":"Read","status":"in_progress"}`)
+		a.update("sess-1", `{"sessionUpdate":"tool_call_update","toolCallId":"c1","status":"failed","rawOutput":{"error":"no such file"}}`)
+		a.update("sess-1", `{"sessionUpdate":"tool_call","toolCallId":"c2","title":"Grep","status":"failed","rawOutput":"bad pattern"}`)
+		a.sync(l)
+		calls, statuses := rec.rows()
+		if len(calls) != 2 || calls[1].call.Output != "bad pattern" || calls[1].call.Status != "failed" {
+			t.Fatalf("the rows were %+v, want Grep recorded failed with its words", calls)
+		}
+		if want := []string{`100|failed|{"error":"no such file"}`}; !slices.Equal(statuses, want) {
+			t.Fatalf("the row's statuses were %q, want %q", statuses, want)
 		}
 	})
 
@@ -130,4 +161,32 @@ func TestToolCallRows(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestFailureOutput(t *testing.T) {
+	failed, completed := "failed", "completed"
+	for _, tc := range []struct {
+		name string
+		u    toolCallUpdate
+		want string
+	}{
+		{"a call that did not fail says nothing", toolCallUpdate{Status: &completed, RawOutput: json.RawMessage(`"fine"`)}, ""},
+		{"text content, joined", toolCallUpdate{Status: &failed, RawOutput: json.RawMessage(`"ignored"`), Content: []toolContent{
+			{Type: "content", Content: contentBlock{Type: "text", Text: "first"}},
+			{Type: "content", Content: contentBlock{Type: "text", Text: "  "}},
+			{Type: "diff"},
+			{Type: "content", Content: contentBlock{Type: "image"}},
+			{Type: "content", Content: contentBlock{Type: "text", Text: "second"}},
+		}}, "first\nsecond"},
+		{"a raw output string", toolCallUpdate{Status: &failed, RawOutput: json.RawMessage(`"boom"`)}, "boom"},
+		{"a raw output object", toolCallUpdate{Status: &failed, RawOutput: json.RawMessage(`{"code":2}`)}, `{"code":2}`},
+		{"a null raw output", toolCallUpdate{Status: &failed, RawOutput: json.RawMessage(`null`)}, ""},
+		{"nothing at all", toolCallUpdate{Status: &failed}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := failureOutput(tc.u); got != tc.want {
+				t.Errorf("failureOutput = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }

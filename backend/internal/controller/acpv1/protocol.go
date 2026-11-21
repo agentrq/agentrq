@@ -352,6 +352,15 @@ type toolCallUpdate struct {
 	Kind       *string         `json:"kind"`
 	Status     *string         `json:"status"`
 	RawInput   json.RawMessage `json:"rawInput"`
+	Content    []toolContent   `json:"content"`
+	RawOutput  json.RawMessage `json:"rawOutput"`
+}
+
+// toolContent is one item of what a call produced; only a "content" item's
+// text block is read.
+type toolContent struct {
+	Type    string       `json:"type"`
+	Content contentBlock `json:"content"`
 }
 
 type planEntry struct {

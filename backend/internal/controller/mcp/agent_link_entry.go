@@ -48,16 +48,17 @@ func (ps *WorkspaceServer) ClosePermissionRequest(ctx context.Context, requestID
 // RecordToolCall records a call a native agent ran without asking, as its
 // tool_calls row; 0 when it was not recorded.
 func (ps *WorkspaceServer) RecordToolCall(ctx context.Context, taskID int64, c agentlink.ToolCall) int64 {
-	return ps.persistToolCall(ctx, taskID, agentlink.PermissionRequest{
-		ToolName: c.ToolName, Description: c.Description, InputPreview: c.InputPreview}, c.Status)
+	return ps.storeToolCall(ctx, taskID, agentlink.PermissionRequest{
+		ToolName: c.ToolName, Description: c.Description, InputPreview: c.InputPreview}, c.Status, c.Output)
 }
 
-// SetToolCallStatus moves a recorded call on. Best-effort, like the record.
-func (ps *WorkspaceServer) SetToolCallStatus(ctx context.Context, id int64, status string) {
+// SetToolCallStatus moves a recorded call on, keeping what a failed one said
+// (the repository caps it). Best-effort, like the record.
+func (ps *WorkspaceServer) SetToolCallStatus(ctx context.Context, id int64, status, output string) {
 	if ps.updateToolCallStatus == nil {
 		return
 	}
-	if err := ps.updateToolCallStatus(ctx, id, status); err != nil {
+	if err := ps.updateToolCallStatus(ctx, id, status, output); err != nil {
 		zlog.Error().Err(err).Int64("tool_call_id", id).Str("status", status).Msg("failed to update tool call status")
 	}
 }

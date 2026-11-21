@@ -5013,7 +5013,10 @@ components:
         inputPreview: { type: string }
         status:
           type: string
-          enum: [auto_allowed, pending, allowed, denied]
+          enum: [auto_allowed, pending, allowed, denied, running, completed, failed, cancelled]
+        output:
+          type: string
+          description: What a failed call said; absent otherwise.
 
     TaskPlan:
       type: object

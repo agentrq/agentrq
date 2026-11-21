@@ -118,7 +118,8 @@ type (
 		ToolName     string `gorm:"type:varchar(128)"`
 		Description  string `gorm:"type:text"`
 		InputPreview string `gorm:"type:text"`
-		Status       string `gorm:"type:varchar(16)"` // "auto_allowed" | "pending" | "allowed" | "denied"
+		Status       string `gorm:"type:varchar(16)"` // "auto_allowed" | "pending" | "allowed" | "denied" | "running" | "completed" | "failed" | "cancelled"
+		Output       string `gorm:"type:text"`        // what a failed call said, "" otherwise; at most ToolCallOutputMaxLen characters
 	}
 
 	// TaskPlan is the plan a task's agent is working to, as markdown: at most
@@ -1047,3 +1048,7 @@ func (w Workspace) ContentID() int64 {
 	}
 	return w.ID
 }
+
+// ToolCallOutputMaxLen caps ToolCall.Output, in characters: the repository
+// trims anything longer before it is written.
+const ToolCallOutputMaxLen = 2000

@@ -10,7 +10,7 @@
 - **`/logout` is AgentRQ's own command, never a prompt.** For an agent advertising `auth.logout` the engine lists it among the agent's commands, so a reply reaches it bare, and answers it with ACP `logout`; its note must end a turn like the rest. An agent without the capability gets `/logout` as a plain prompt.
 - **Wait on the barrier before flushing a turn or asking permission.** Otherwise the chunks that raced the prompt's answer are lost from the reply, and the card says "Unknown Tool".
 - **A dropped socket is not a closed connection.** The peer and its turns live through the 120 s grace window, and a resume replays what was missed. Only the window running out, the bridge's goodbye or the agent's exit ends them.
-- **One tool_calls row per call.** The engine records a call once it runs; a call a permission request asked about belongs to that request's row (reused if the engine wrote one first), so it is never recorded twice and keeps its verdict.
+- **One tool_calls row per call.** The engine records a call once it runs; a call a permission request asked about belongs to that request's row, which the engine writes first so it can find it again. It keeps its verdict unless it was allowed and then failed. Only a failed call keeps its output.
 - **The server never sends a cwd.** Only the gateway knows the agent's folder, so it writes its own into every `session/new`; the server has no `X-AgentRQ-Cwd`.
 - **A task's files go as `resource_link`s to their URLs, never inline** — the human's call: inlined files are too much for an agent to take in, and it fetches what it needs.
 - **No fs, no terminal, ever claimed.** The server cannot reach the agent's machine; agents use their own tools.
