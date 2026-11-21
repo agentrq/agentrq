@@ -33,7 +33,6 @@ type Workspace interface {
 	HandleAgentModels(ctx context.Context, sessionID string, p agentlink.ModelsReport)
 	HandleAgentEffort(ctx context.Context, sessionID string, p agentlink.EffortReport)
 	HandleAgentCommands(ctx context.Context, sessionID string, p agentlink.CommandsReport)
-	HandleAgentConcurrency(ctx context.Context, sessionID string, p agentlink.ConcurrencyReport)
 	HandleAgentTelemetry(ctx context.Context, sessionID string, p agentlink.TelemetryReport)
 	HandlePermissionRequest(ctx context.Context, linkID string, p agentlink.PermissionRequest)
 	ClosePermissionRequest(ctx context.Context, requestID string)

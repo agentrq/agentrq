@@ -26,7 +26,7 @@ import (
 // by exactly one type, and neither is a plugin point: what they buy is a
 // handler test that can drive a *successful* call. Before this, `Get` handed
 // back a concrete `*mcpctrl.WorkspaceServer` whose fields are unexported, and
-// the only way to obtain one that would accept a model or a concurrency change
+// the only way to obtain one that would accept a model or a reasoning-level change
 // was to stand up a live MCP session — which needs unexported test helpers from
 // the controller's own package. So every handler test could reach the refusals
 // and none could reach the success, and the two routes that ask an agent to do
@@ -48,7 +48,6 @@ type (
 		AgentEffort(workspaceID int64) *agentlink.EffortSnapshot
 		AgentCommands(workspaceID int64) *agentlink.CommandsSnapshot
 		AgentClient(workspaceID int64) *agentlink.ClientInfo
-		AgentConcurrency(workspaceID int64) *agentlink.ConcurrencySnapshot
 		ConnectionsByUser() map[string]int
 	}
 
@@ -58,7 +57,6 @@ type (
 	workspaceServer interface {
 		SetAgentModel(ctx context.Context, modelID string) error
 		SetAgentEffort(ctx context.Context, effort string) error
-		SetAgentConcurrency(ctx context.Context, limit int) error
 		SendChannelNotification(ctx context.Context, taskID int64, content string, attachments ...entity.Attachment)
 		// AgentTaskBody is a task's body with the workspace's notes, which
 		// go with the task only when it is handed to the agent, and records

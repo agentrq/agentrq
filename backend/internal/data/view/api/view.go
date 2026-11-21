@@ -28,7 +28,6 @@ type (
 		AgentEffort          *AgentEffort          `json:"agentEffort,omitempty"`
 		AgentCommands        *AgentCommands        `json:"agentCommands,omitempty"`
 		AgentClient          *AgentClient          `json:"agentClient,omitempty"`
-		AgentConcurrency     *AgentConcurrency     `json:"agentConcurrency,omitempty"`
 		MCPURL               string                `json:"mcpUrl"`
 		MCPToken             string                `json:"mcpToken,omitempty"`
 		AutoAllowedTools     []string              `json:"autoAllowedTools,omitempty"`
@@ -148,25 +147,6 @@ type (
 		Name    string `json:"name"`
 		Title   string `json:"title,omitempty"`
 		Version string `json:"version,omitempty"`
-	}
-
-	// AgentConcurrency is how many tasks the connected gateway runs at once.
-	// Omitted entirely when nothing is connected or nothing has reported a
-	// limit, so a client can treat its presence as "there is a number to show".
-	AgentConcurrency struct {
-		MaxConcurrency int `json:"maxConcurrency"`
-		// Active may legitimately exceed MaxConcurrency after a lower, since
-		// running tasks are allowed to finish. Worth showing rather than
-		// treating as an error state.
-		Active int `json:"active"`
-		Queued int `json:"queued"`
-		Min    int `json:"min"`
-		// Max is 0 when the gateway named no ceiling of its own.
-		Max int `json:"max"`
-		// CanSet says whether changing the limit would do anything. A client
-		// offers a control only when it is true; false is a gateway that
-		// reports what it is running but cannot be told to change it.
-		CanSet bool `json:"canSet"`
 	}
 
 	SlackConfig struct {
@@ -649,14 +629,6 @@ type (
 	// reasoning level, one of the levels it offers.
 	SetAgentEffortRequest struct {
 		Effort string `json:"effort"`
-	}
-
-	// SetAgentConcurrencyRequest asks the workspace's connected gateway to run
-	// a different number of tasks at once. A pointer so an omitted field is
-	// refused rather than read as a request for zero, which would ask the
-	// gateway to stall its queue.
-	SetAgentConcurrencyRequest struct {
-		MaxConcurrency *int `json:"maxConcurrency"`
 	}
 
 	RespondToElicitationRequest struct {

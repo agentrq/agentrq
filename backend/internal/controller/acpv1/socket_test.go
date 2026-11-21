@@ -589,7 +589,9 @@ func bodyOf(resp *http.Response) string {
 }
 
 func TestParseMeta(t *testing.T) {
-	t.Run("every header is read and trimmed", func(t *testing.T) {
+	// An older gateway still sends X-AgentRQ-Max-Concurrency: it is ignored,
+	// since an agent works on one task at a time.
+	t.Run("every header is read and trimmed, and the concurrency header ignored", func(t *testing.T) {
 		m, err := parseMeta(http.Header{
 			"X-Agentrq-Bridge-Version":     {"0.3.0"},
 			"X-Agentrq-Agent":              {" codex "},
@@ -601,7 +603,7 @@ func TestParseMeta(t *testing.T) {
 			"X-Agentrq-Permission-Timeout": {"0"},
 		})
 		want := bridgeMeta{BridgeVersion: "0.3.0", Agent: "codex", Model: "gpt-5", Effort: "high", AuthMethod: "chatgpt",
-			Platform: "linux/arm64", MaxConcurrency: 3, PermissionTimeout: 0}
+			Platform: "linux/arm64", PermissionTimeout: 0}
 		if err != nil || m != want {
 			t.Fatalf("parseMeta returned %+v (error %v), want %+v", m, err, want)
 		}
@@ -609,25 +611,24 @@ func TestParseMeta(t *testing.T) {
 
 	t.Run("missing optional headers mean their defaults", func(t *testing.T) {
 		m, err := parseMeta(http.Header{})
-		if err != nil || m.MaxConcurrency != 0 || m.PermissionTimeout != -1 {
-			t.Fatalf("parseMeta returned %+v (error %v), want concurrency 0 and timeout -1", m, err)
+		if err != nil || m.PermissionTimeout != -1 {
+			t.Fatalf("parseMeta returned %+v (error %v), want timeout -1", m, err)
 		}
 	})
 
-	t.Run("concurrency is clamped and a timeout out of range is ignored", func(t *testing.T) {
+	t.Run("a timeout out of range is ignored", func(t *testing.T) {
 		for _, c := range []struct {
-			concurrency, timeout string
-			wantN                int
-			wantT                time.Duration
+			timeout string
+			want    time.Duration
 		}{
-			{"0", "1441", 1, -1},
-			{"500", "-1", 64, -1},
-			{"many", "forever", 0, -1},
-			{"1", "1440", 1, 24 * time.Hour},
+			{"1441", -1},
+			{"-1", -1},
+			{"forever", -1},
+			{"1440", 24 * time.Hour},
 		} {
-			m, _ := parseMeta(http.Header{"X-Agentrq-Max-Concurrency": {c.concurrency}, "X-Agentrq-Permission-Timeout": {c.timeout}})
-			if m.MaxConcurrency != c.wantN || m.PermissionTimeout != c.wantT {
-				t.Errorf("concurrency %q and timeout %q gave %d and %v, want %d and %v", c.concurrency, c.timeout, m.MaxConcurrency, m.PermissionTimeout, c.wantN, c.wantT)
+			m, _ := parseMeta(http.Header{"X-Agentrq-Permission-Timeout": {c.timeout}})
+			if m.PermissionTimeout != c.want {
+				t.Errorf("timeout %q gave %v, want %v", c.timeout, m.PermissionTimeout, c.want)
 			}
 		}
 	})

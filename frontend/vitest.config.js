@@ -62,7 +62,6 @@ export default defineConfig({
         'src/composables/useAgentModelPicker.js',
         'src/composables/useAgentEffortPicker.js',
         'src/composables/useAcpRegistry.js',
-        'src/composables/useAgentConcurrency.js',
         'src/composables/useExtensionCatalogue.js',
         'src/composables/useExtensionGrant.js',
         'src/composables/useExtensionShortcuts.js',

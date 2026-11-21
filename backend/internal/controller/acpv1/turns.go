@@ -20,9 +20,9 @@ type delivery struct {
 	seq         uint64
 }
 
-// chain is a task's turns: one running or waiting for a slot, the rest parked
-// behind it. A parked delivery holds no slot, so a chatty task cannot take
-// every slot while doing nothing (the gateway's runTurnForTask rule). The
+// chain is a task's turns: one running or waiting for the slot, the rest
+// parked behind it. A parked delivery holds no place in the FIFO, so a chatty
+// task cannot crowd out the others (the gateway's runTurnForTask rule). The
 // repeat guard and the cancel mark live here too, and go with the chain: both
 // only matter while the task has a turn queued or running, so nothing about a
 // finished task is kept.
@@ -32,27 +32,23 @@ type chain struct {
 	cancelled uint64 // seq of the task's last cancel, 0 for none
 }
 
-// turnQueue decides which turn runs when. Waiting turns are a FIFO
-// (container/list: O(1) push and pop); chains are a map keyed by task id, so
-// it holds exactly the tasks with a turn queued or running.
+// turnQueue decides which turn runs when: one at a time, since a workspace's
+// agent works on one task at a time. Waiting turns are a FIFO (container/list:
+// O(1) push and pop); chains are a map keyed by task id, so it holds exactly
+// the tasks with a turn queued or running.
 type turnQueue struct {
 	mu      sync.Mutex
-	limit   int
 	active  int
 	waiting *list.List // of delivery
 	chains  map[int64]*chain
 	seq     uint64
 	start   func(delivery) // runs a turn on its own goroutine
-	moved   func()         // the numbers moved: report them
-	room    func()         // a slot is free with nothing waiting: ask for work
+	room    func()         // the slot is free with nothing waiting: ask for work
 }
 
-func newTurnQueue(limit int, start func(delivery), moved, room func()) *turnQueue {
-	return &turnQueue{limit: clampLimit(limit), waiting: list.New(), chains: map[int64]*chain{},
-		start: start, moved: moved, room: room}
+func newTurnQueue(start func(delivery), room func()) *turnQueue {
+	return &turnQueue{waiting: list.New(), chains: map[int64]*chain{}, start: start, room: room}
 }
-
-func clampLimit(limit int) int { return min(max(limit, 1), maxConcurrency) }
 
 // deliver queues a message. A byte-identical repeat of a task's last message
 // while that task is still queued or running is dropped: the poller re-pushes
@@ -77,11 +73,10 @@ func (q *turnQueue) deliver(taskID int64, content string, attachments ...agentli
 	toStart := q.fillLocked()
 	q.mu.Unlock()
 	q.launch(toStart)
-	q.moved()
 }
 
 // finish releases a finished turn's slot, moves its task's next parked
-// message to the back of the FIFO, and starts whatever now fits.
+// message to the back of the FIFO, and starts the turn at its front.
 func (q *turnQueue) finish(taskID int64) {
 	q.mu.Lock()
 	q.active--
@@ -94,25 +89,9 @@ func (q *turnQueue) finish(taskID int64) {
 		}
 	}
 	toStart := q.fillLocked()
-	idle := q.active < q.limit && q.waiting.Len() == 0
+	idle := q.active == 0 && q.waiting.Len() == 0
 	q.mu.Unlock()
 	q.launch(toStart)
-	q.moved()
-	if idle {
-		q.room()
-	}
-}
-
-// setLimit changes how many turns run at once. Raising starts every waiting
-// turn that now fits; lowering interrupts nothing.
-func (q *turnQueue) setLimit(limit int) {
-	q.mu.Lock()
-	q.limit = clampLimit(limit)
-	toStart := q.fillLocked()
-	idle := q.active < q.limit && q.waiting.Len() == 0
-	q.mu.Unlock()
-	q.launch(toStart)
-	q.moved()
 	if idle {
 		q.room()
 	}
@@ -142,11 +121,11 @@ func (q *turnQueue) cancelledSince(taskID int64, seq uint64) bool {
 	return ch != nil && ch.cancelled > seq
 }
 
-// numbers reports the limit, how many run, and how many wait for a slot.
-func (q *turnQueue) numbers() (limit, active, queued int) {
+// free reports whether the slot is free with nothing waiting for it.
+func (q *turnQueue) free() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return q.limit, q.active, q.waiting.Len()
+	return q.active == 0 && q.waiting.Len() == 0
 }
 
 func (q *turnQueue) owns(taskID int64) bool {
@@ -157,7 +136,7 @@ func (q *turnQueue) owns(taskID int64) bool {
 
 func (q *turnQueue) fillLocked() []delivery {
 	var out []delivery
-	for q.active < q.limit && q.waiting.Len() > 0 {
+	for q.active == 0 && q.waiting.Len() > 0 {
 		d := q.waiting.Remove(q.waiting.Front()).(delivery)
 		q.active++
 		out = append(out, d)

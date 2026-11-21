@@ -43,7 +43,6 @@ type (
 		AgentEffort           *AgentEffort
 		AgentCommands         *AgentCommands
 		AgentClient           *AgentClient
-		AgentConcurrency      *AgentConcurrency
 		AutoAllowedTools      []string
 		AllowAllCommands      bool
 		ClearContextDefault   bool
@@ -127,29 +126,6 @@ type (
 		Name    string
 		Title   string
 		Version string
-	}
-
-	// AgentConcurrency is how many tasks the workspace's connected gateway
-	// will run at once, and what its queue is doing right now. Live state read
-	// off the MCP session rather than a stored column — the limit itself lives
-	// in the gateway's memory and does not survive its restart — so it is
-	// absent whenever nothing is connected or nothing has reported one.
-	AgentConcurrency struct {
-		// MaxConcurrency is the limit in force.
-		MaxConcurrency int
-		// Active may exceed MaxConcurrency for a while after a lower: running
-		// tasks are never interrupted, the queue simply stops handing out new
-		// ones until the count falls back under the limit.
-		Active int
-		Queued int
-		// Min and Max bound what may be asked for, as the gateway reported it.
-		// Max is 0 when it named no ceiling.
-		Min int
-		Max int
-		// CanSet reports whether the connected gateway will act on being told a
-		// new limit. False for every gateway too old to say so, which is what
-		// keeps a control from being offered where it would do nothing.
-		CanSet bool
 	}
 
 	SlackConfig struct {
@@ -1766,11 +1742,9 @@ const (
 	// redeems it got stuck installing the daemon, and that is invisible if
 	// only the finished enrolments are counted.
 	ActionMachineEnrolCodeCreate Action = 70
-	// The gateway's task-concurrency limit changed from the interface.
-	// Counted on the asking, same as ActionAgentModelSelect and for the same
-	// reason: the gateway clamps or ignores the value and only its own
-	// notification says which, so the count answers "how often people reach
-	// for this", not "how often it took effect".
+	// Retired: the gateway's task-concurrency limit, changed from the
+	// interface. Kept for the counts already stored; an agent now runs one
+	// task at a time and nothing records this.
 	ActionAgentConcurrencySelect Action = 71
 	// Which kind of agent process was launched for a workspace. Two actions
 	// rather than one action with a kind attribute, so acp-gateway and

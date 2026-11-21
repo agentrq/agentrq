@@ -755,7 +755,6 @@ func (h *handler) registerWorkspaceRoutes() error {
 	r.Delete("/:id/slack", h.removeWorkspaceSlackChannel())
 	r.Post("/:id/agent/model", h.setAgentModel())
 	r.Post("/:id/agent/effort", h.setAgentEffort())
-	r.Post("/:id/agent/concurrency", h.setAgentConcurrency())
 	return nil
 }
 
@@ -879,77 +878,6 @@ func (h *handler) setAgentEffort() fiber.Handler {
 	}
 }
 
-// setAgentConcurrency asks the workspace's connected gateway to run a different
-// number of tasks at once.
-//
-// Under /workspaces rather than under a task, and beside setAgentModel for the
-// same reason: the limit belongs to the gateway process attached to the
-// workspace and governs every task in it, so hanging this off one task would
-// imply a setting that applied only there.
-//
-// It answers 202 and names nothing but what was asked for. The gateway always
-// replies with a fresh concurrency notification — accepted, clamped to its own
-// range, or ignored because the value was not a number — and that report is the
-// only thing that knows which of the three happened. Returning the requested
-// value as though it were settled is the one thing this flow must not do.
-func (h *handler) setAgentConcurrency() fiber.Handler {
-	return func(c fiber.Ctx) error {
-		var rq view.SetAgentConcurrencyRequest
-		if err := c.Bind().Body(&rq); err != nil {
-			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid request payload"})
-		}
-		// Absent and zero are told apart deliberately. A plain int would read a
-		// missing field as a request to run nothing at all, which is a stalled
-		// queue rather than a setting.
-		if rq.MaxConcurrency == nil {
-			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "maxConcurrency is required"})
-		}
-
-		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
-		userID := c.Locals("user_id").(string)
-
-		ctx, cancel := newContext(c)
-		defer cancel()
-		if ok, err := h.crud.CheckWorkspaceAccess(ctx, workspaceID, userID); err != nil || !ok {
-			return c.Status(http.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
-		}
-
-		srv := h.mcpManager.Get(workspaceID, userID)
-		if srv == nil {
-			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "mcp server not found"})
-		}
-
-		// A value above the gateway's ceiling is not refused here — the gateway
-		// clamps it and reports what it settled on, which is both the
-		// documented behaviour and more truthful than refusing against a range
-		// this server only has a cached copy of.
-		switch err := srv.SetAgentConcurrency(c.RequestCtx(), *rq.MaxConcurrency); {
-		case errors.Is(err, mcpctrl.ErrConcurrencyInvalid):
-			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
-		case errors.Is(err, mcpctrl.ErrConcurrencySetUnsupported):
-			return c.Status(http.StatusConflict).JSON(fiber.Map{"error": err.Error()})
-		case errors.Is(err, mcpctrl.ErrConcurrencySetNotDelivered):
-			return c.Status(http.StatusConflict).JSON(fiber.Map{"error": err.Error()})
-		case err != nil:
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "failed to change the concurrency"})
-		}
-
-		// Counted on the asking, not on the gateway's confirmation, for the same
-		// reason as setAgentModel: the gateway has already been asked, and a
-		// failure here would report a change as failed that in fact happened.
-		if err := h.crud.RecordTelemetry(ctx, entity.RecordTelemetryRequest{
-			Action:      entity.ActionAgentConcurrencySelect,
-			WorkspaceID: workspaceID,
-			UserID:      userID,
-		}); err != nil {
-			zlog.Warn().Err(err).Int64("workspace_id", workspaceID).
-				Msg("concurrency change was made but not counted")
-		}
-
-		return c.Status(http.StatusAccepted).JSON(fiber.Map{"requested": *rq.MaxConcurrency})
-	}
-}
-
 func (h *handler) createWorkspace() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
@@ -975,7 +903,6 @@ func (h *handler) createWorkspace() fiber.Handler {
 		rs.Workspace.AgentEffort = agentEffortEntity(h.mcpManager.AgentEffort(rs.Workspace.ID))
 		rs.Workspace.AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rs.Workspace.ID))
 		rs.Workspace.AgentClient = agentClientEntity(h.mcpManager.AgentClient(rs.Workspace.ID))
-		rs.Workspace.AgentConcurrency = agentConcurrencyEntity(h.mcpManager.AgentConcurrency(rs.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusCreated)
@@ -1008,7 +935,6 @@ func (h *handler) getWorkspace() fiber.Handler {
 		rs.Workspace.AgentEffort = agentEffortEntity(h.mcpManager.AgentEffort(rs.Workspace.ID))
 		rs.Workspace.AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rs.Workspace.ID))
 		rs.Workspace.AgentClient = agentClientEntity(h.mcpManager.AgentClient(rs.Workspace.ID))
-		rs.Workspace.AgentConcurrency = agentConcurrencyEntity(h.mcpManager.AgentConcurrency(rs.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusOK)
@@ -1064,7 +990,6 @@ func (h *handler) listWorkspaces() fiber.Handler {
 			rs.Workspaces[i].AgentEffort = agentEffortEntity(h.mcpManager.AgentEffort(rs.Workspaces[i].ID))
 			rs.Workspaces[i].AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rs.Workspaces[i].ID))
 			rs.Workspaces[i].AgentClient = agentClientEntity(h.mcpManager.AgentClient(rs.Workspaces[i].ID))
-			rs.Workspaces[i].AgentConcurrency = agentConcurrencyEntity(h.mcpManager.AgentConcurrency(rs.Workspaces[i].ID))
 			h.enrichWorkspaceSlack(ctx, &rs.Workspaces[i])
 		}
 
@@ -1268,7 +1193,6 @@ func (h *handler) updateWorkspace() fiber.Handler {
 		rs.Workspace.AgentEffort = agentEffortEntity(h.mcpManager.AgentEffort(rq.Workspace.ID))
 		rs.Workspace.AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rq.Workspace.ID))
 		rs.Workspace.AgentClient = agentClientEntity(h.mcpManager.AgentClient(rq.Workspace.ID))
-		rs.Workspace.AgentConcurrency = agentConcurrencyEntity(h.mcpManager.AgentConcurrency(rq.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusOK)
@@ -1633,26 +1557,6 @@ func agentModelsEntity(s *agentlink.ModelsSnapshot) *entity.AgentModels {
 		// advertising no config option to switch through cannot be obeyed, and
 		// a picker offered on that promise would do nothing.
 		CanSet: s.Selectable(),
-	}
-}
-
-// agentConcurrencyEntity converts a live MCP snapshot into the entity the
-// workspace carries, so the API layer keeps its own shape rather than exposing
-// the MCP controller's type through the view.
-func agentConcurrencyEntity(s *agentlink.ConcurrencySnapshot) *entity.AgentConcurrency {
-	if s == nil {
-		return nil
-	}
-	return &entity.AgentConcurrency{
-		MaxConcurrency: s.MaxConcurrency,
-		Active:         s.Active,
-		Queued:         s.Queued,
-		Min:            s.Min,
-		Max:            s.Max,
-		// The rule, not the raw field: a gateway willing to be told a limit but
-		// never saying what the current one is cannot be obeyed usefully, and a
-		// control offered on that promise would have nothing to show.
-		CanSet: s.Settable(),
 	}
 }
 

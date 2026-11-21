@@ -190,23 +190,17 @@ type WorkspaceServer struct {
 	agentCommands     map[string]agentlink.CommandsSnapshot // sessionID -> slash commands last reported
 	agentIdentitiesMu sync.RWMutex
 	agentIdentities   map[string]agentlink.ClientInfo // sessionID -> the agent a gateway says it drives
-	// How many tasks each connected gateway will run at once, and what its
-	// queue is doing. Cached for the same reason the models are: it only ever
-	// arrives by notification, and a page has to be able to render a number
-	// before the gateway next speaks.
-	agentConcurrencyMu sync.RWMutex
-	agentConcurrency   map[string]agentlink.ConcurrencySnapshot // sessionID -> concurrency last reported
-	streamingMu        sync.RWMutex
-	streaming          map[string]int // sessionID -> how many streams it currently holds
-	elicitationsMu     sync.Mutex
-	elicitations       map[string]chan elicitationResponse // requestID -> channel the waiting elicit tool call blocks on
-	metadataMu         sync.RWMutex
-	icon               string
-	name               string
-	description        string
-	archivedAt         *time.Time
-	lastUpdateCheckAt  time.Time
-	agentConnections   atomic.Int32
+	streamingMu       sync.RWMutex
+	streaming         map[string]int // sessionID -> how many streams it currently holds
+	elicitationsMu    sync.Mutex
+	elicitations      map[string]chan elicitationResponse // requestID -> channel the waiting elicit tool call blocks on
+	metadataMu        sync.RWMutex
+	icon              string
+	name              string
+	description       string
+	archivedAt        *time.Time
+	lastUpdateCheckAt time.Time
+	agentConnections  atomic.Int32
 
 	// Native agent links, in attach order (agent_link.go).
 	linksMu sync.RWMutex
@@ -525,7 +519,6 @@ func NewWorkspaceServer(
 		agentEffort:            make(map[string]agentlink.EffortSnapshot),
 		agentCommands:          make(map[string]agentlink.CommandsSnapshot),
 		agentIdentities:        make(map[string]agentlink.ClientInfo),
-		agentConcurrency:       make(map[string]agentlink.ConcurrencySnapshot),
 		streaming:              make(map[string]int),
 		elicitations:           make(map[string]chan elicitationResponse),
 		clearedTaskIDs:         make(map[int64]struct{}),
@@ -1150,14 +1143,6 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 	if isArchived {
 		return 0
 	}
-	// Full when the agent is already running everything it will run at once,
-	// which is what the gateway itself reports. One when it has reported
-	// nothing, which is the single-task behaviour every workspace had before
-	// the limit was something a gateway could name.
-	limit := 1
-	if c := ps.AgentConcurrency(); c != nil && c.MaxConcurrency > 0 {
-		limit = c.MaxConcurrency
-	}
 
 	uid := monoflake.IDFromBase62(ps.userID).Int64()
 
@@ -1176,7 +1161,8 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 		return 0
 	}
 
-	if ongoingCount >= int64(limit) {
+	// The agent works on one task at a time: full while one is ongoing.
+	if ongoingCount > 0 {
 		// The one case that does need an actual row: naming the task in the
 		// hourly status-check message. Asked for here, not above, because
 		// this branch is rare — most ticks return before ever needing it.
@@ -1192,7 +1178,7 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 		return 0
 	}
 
-	// Room for more: look at the agent's own pending backlog. Kept as a
+	// Idle: look at the agent's own pending backlog. Kept as a
 	// second, separate query rather than combined with the one above — a
 	// query naming two statuses sorts everything but "ongoing" by
 	// updated_at DESC, not the FIFO order a single "notstarted" query gets,

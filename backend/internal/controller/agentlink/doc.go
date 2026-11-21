@@ -4,8 +4,8 @@
 
 // Package agentlink is what a workspace and a connected agent say to each
 // other, whatever the protocol: the Link a native connection implements, and
-// what a session reports (models, reasoning level, commands, concurrency,
-// identity, telemetry, permission requests, questions).
+// what a session reports (models, reasoning level, commands, identity,
+// telemetry, permission requests, questions).
 //
 // It imports no MCP package, so native ACP can use it without depending on the
 // MCP layer. PermissionRequest's JSON tags are Claude Code's channel wire

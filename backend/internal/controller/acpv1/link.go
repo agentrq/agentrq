@@ -47,15 +47,12 @@ func (l *link) SetEffort(_ context.Context, acpSessionID, _ /* configID: the ses
 	return l.e.setEffort(acpSessionID, effort)
 }
 
-func (l *link) SetConcurrency(_ context.Context, limit int) bool {
-	l.e.q.setLimit(limit)
-	return true
-}
-
 func (l *link) Dispatch(taskID int64) (bool, int) {
 	if l.e.q.owns(taskID) || l.e.ownsTask(taskID) {
 		return true, 0
 	}
-	limit, active, queued := l.e.q.numbers()
-	return false, max(limit-active-queued, 0)
+	if l.e.q.free() {
+		return false, 1
+	}
+	return false, 0
 }

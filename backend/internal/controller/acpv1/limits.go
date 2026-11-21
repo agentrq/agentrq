@@ -19,7 +19,6 @@ const (
 	replayMaxBytes    = 8 << 20  // the same, by size
 	maxPendingCalls   = 256      // our requests waiting for an answer
 	maxServedRequests = 64       // the agent's requests we are still answering
-	maxConcurrency    = 64       // turns one connection runs at once
 	ackEveryFrames    = 64       // acknowledge after this many frames at most
 )
 

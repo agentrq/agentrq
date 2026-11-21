@@ -56,7 +56,7 @@ gateway, CLI or extension installed before the merge may still call it.
 
 ## What an agent reports leaves with its link
 
-Models, commands, concurrency and the usage ring come only from native ACP
+Models, commands and the usage ring come only from native ACP
 links (the gateway's MCP channel notifications are gone; the MCP allowlist keeps
 only Claude Code's `permission_request`). They are cached per link and pushed to
 the page only as events. When a link detaches, `agentSessionEnded`
@@ -159,10 +159,10 @@ for `StartPoller`'s next tick. Both must call `ClearContextForTask` before
 clear wipes the task text the agent was just handed.
 
 **A pending task must never be able to hide the ones behind it.** The handler
-holds a push back only when the agent is already running its full
-`maxConcurrency` — never because another task is merely queued — and the poller
-moves on to a different pending task each tick instead of always offering the
-oldest. With both rules reversed, one task the agent ignored blocked every task
+holds a push back only when the agent is already running a task — an agent
+works on one task at a time — never because another task is merely queued,
+and the poller moves on to a different pending task each tick instead of
+always offering the oldest. With both rules reversed, one task the agent ignored blocked every task
 created after it, permanently and silently: the handler skipped them and the
 poller re-offered the stuck one forever, which acp-gateway then dropped as a
 repeat.
@@ -176,7 +176,7 @@ task falls outside the window and is simply not seen.
 **The push repeats and the clear does not.** A pending task is offered again on
 every tick until the agent moves it to `ongoing`, because a push is the only
 thing that starts an idle agent (a gateway asks for work itself only when a
-task finishes or its concurrency limit moves) and a push made while nothing was
+task finishes) and a push made while nothing was
 attached reaches nobody, silently. Recording the push instead — which is what
 `MarkTaskPushed` used to do — turned a task created at that moment into one
 that never arrived at all. The `/clear` is the half that must not repeat, and
