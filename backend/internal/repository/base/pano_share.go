@@ -143,3 +143,22 @@ func (r *repository) PanoDocOwnerInTeam(ctx context.Context, userID, teamID, doc
 	}
 	return rows[0], nil
 }
+
+// SharedPanoDocOwner is the owner of a Pano doc shared with any team the
+// user is in: what the user's agents read it as. ErrNotFound when not.
+func (r *repository) SharedPanoDocOwner(ctx context.Context, userID, docID int64) (PanoDocOwner, error) {
+	rows := []PanoDocOwner{}
+	err := r.conn(ctx).Model(&model.PanoDocShare{}).
+		Select("pano_doc_shares.user_id, COALESCE(users.name, '') AS name, COALESCE(users.picture, '') AS picture").
+		Joins("JOIN team_members ON team_members.team_id = pano_doc_shares.team_id AND team_members.user_id = ?", userID).
+		Joins("LEFT JOIN users ON users.id = pano_doc_shares.user_id").
+		Where("pano_doc_shares.doc_id = ?", docID).
+		Limit(1).Scan(&rows).Error
+	if err != nil {
+		return PanoDocOwner{}, err
+	}
+	if len(rows) == 0 {
+		return PanoDocOwner{}, ErrNotFound
+	}
+	return rows[0], nil
+}

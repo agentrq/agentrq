@@ -29,6 +29,7 @@ type WorkspaceServer struct {
 	server       *mcp.Server
 	streamServer *mcp.StreamableHTTPHandler
 	crud         crud.Controller
+	pano         crud.PanoController
 	forks        ForkMerger
 	launcher     AgentLauncher
 	agents       AgentPresence
@@ -103,6 +104,7 @@ func newServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Servic
 		server:       srv,
 		streamServer: streamHandler,
 		crud:         crudCtrl,
+		pano:         crudCtrl,
 		baseURL:      baseURL,
 		pubsub:       pubsubSvc,
 		listeners:    listeners,

@@ -156,6 +156,7 @@ type Repository interface {
 	DeletePanoDocShare(ctx context.Context, docID, teamID, userID, version int64, act model.TeamManagementActivity) (int64, error)
 	ListTeamPanoDocs(ctx context.Context, teamID int64, now time.Time) ([]TeamPanoDocRow, error)
 	PanoDocOwnerInTeam(ctx context.Context, userID, teamID, docID int64) (PanoDocOwner, error)
+	SharedPanoDocOwner(ctx context.Context, userID, docID int64) (PanoDocOwner, error)
 	ListTeamActivities(ctx context.Context, teamID int64, limit int, before int64) ([]TeamActivityRow, error)
 	CanReadWorkspaceInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)
 	CanReadTasksInTeam(ctx context.Context, userID, teamID, workspaceID int64) (bool, error)

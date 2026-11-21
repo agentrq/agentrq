@@ -33,6 +33,7 @@ type fake struct {
 	created   entity.CreateTaskRequest            // the last task created
 	statsReq  *entity.GetStatsOfWorkspacesRequest // the last statistics asked for
 	panoReq   string                              // the account the last Pano read was made as
+	panoFiles bool                                // whether the last Pano read asked for attachments
 }
 
 func (f *fake) err(name string) error {

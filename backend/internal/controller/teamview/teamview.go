@@ -60,6 +60,11 @@ type Controller interface {
 	ListPanoDocs(ctx context.Context, userID, teamID int64) ([]entity.TeamPanoDoc, error)
 	GetPanoDoc(ctx context.Context, userID, teamID, docID int64) (entity.TeamPanoDoc, error)
 	GetPanoFile(ctx context.Context, userID, teamID, docID, fileID int64) (*entity.GetAttachmentResponse, error)
+	// GetSharedPanoDoc is a doc shared with any team the user is in, as
+	// their agents read it: GetPanoDoc's, with no file links, since the
+	// public one would outlive the share and an agent has no session for
+	// the team's route.
+	GetSharedPanoDoc(ctx context.Context, userID, docID int64, attachments bool) (entity.PanoDoc, error)
 
 	// ListTeammateMemories is the teammates in the team workspace of one of
 	// the caller's own workspaces, and whether its agent's memory index
@@ -113,6 +118,7 @@ type Repository interface {
 	MemoryUpdates(ctx context.Context, workspaceIDs []int64) (map[int64]time.Time, error)
 	ListTeamPanoDocs(ctx context.Context, teamID int64, now time.Time) ([]base.TeamPanoDocRow, error)
 	PanoDocOwnerInTeam(ctx context.Context, userID, teamID, docID int64) (base.PanoDocOwner, error)
+	SharedPanoDocOwner(ctx context.Context, userID, docID int64) (base.PanoDocOwner, error)
 }
 
 // Publisher carries telemetry.

@@ -51,6 +51,17 @@ func TestPanoDocShares(t *testing.T) {
 				t.Errorf("%s: %v", name, err)
 			}
 		}
+		if o, err := r.SharedPanoDocOwner(ctx, 11, 7); err != nil || o.UserID != 10 || o.Name != "Alice" || o.Picture != "a.png" {
+			t.Errorf("a teammate's agent reading: %+v %v", o, err)
+		}
+		// Dan is in another team, which the doc is not shared with.
+		db.Create(&model.Team{ID: 2, Name: "ops", CreatedAt: teamT0})
+		db.Create(&model.TeamMember{ID: 3, TeamID: 2, UserID: 13})
+		for name, ids := range map[string][2]int64{"an outsider's agent": {12, 7}, "another team's agent": {13, 7}, "an unshared doc": {11, 8}, "no doc": {11, 99}} {
+			if _, err := r.SharedPanoDocOwner(ctx, ids[0], ids[1]); !errors.Is(err, ErrNotFound) {
+				t.Errorf("%s: %v", name, err)
+			}
+		}
 		if _, err := r.DeletePanoDocShare(ctx, 7, 1, 11, 2, act()); !errors.Is(err, ErrNotFound) {
 			t.Errorf("a teammate unsharing the owner's doc: %v", err)
 		}
@@ -60,10 +71,16 @@ func TestPanoDocShares(t *testing.T) {
 		if docs, _ := r.ListTeamPanoDocs(ctx, 1, teamT0); len(docs) != 0 {
 			t.Errorf("the team still lists %+v", docs)
 		}
+		if _, err := r.SharedPanoDocOwner(ctx, 11, 7); !errors.Is(err, ErrNotFound) {
+			t.Errorf("an agent still reads an unshared doc: %v", err)
+		}
 
 		failTeamStatement(t, db, "row", "pano_doc_shares", 0)
 		if _, err := r.PanoDocOwnerInTeam(ctx, 11, 1, 7); !errors.Is(err, errTeamDB) {
 			t.Errorf("a failed read: %v", err)
+		}
+		if _, err := r.SharedPanoDocOwner(ctx, 11, 7); !errors.Is(err, errTeamDB) {
+			t.Errorf("a failed agent read: %v", err)
 		}
 	})
 }

@@ -63,6 +63,13 @@ func TestPanoDocTaskQueriesUseAnIndex(t *testing.T) {
 			}
 			return err
 		}},
+		{"a shared doc's owner, for a teammate's agent", func() error {
+			_, err := r.SharedPanoDocOwner(ctx, skUser, 1)
+			if errors.Is(err, ErrNotFound) {
+				return nil
+			}
+			return err
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sent = nil

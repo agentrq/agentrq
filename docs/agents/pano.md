@@ -50,6 +50,10 @@
   workspace, so naming another workspace's task is refused, not misdelivered.
 - **There is no agent search, on purpose**: agents pass doc ids. Only the board
   filters, in the browser.
+- **An agent reads a doc shared with its account's team by id, read-only**
+  (`teamview.AgentPano`, for both MCP servers): only after its own Pano says
+  not found, through `SharedPanoDocOwner`, and with no comments, tasks or file
+  links. A file's public link outlives the share; writes stay owner-only.
 - **Workspace 0 is the person.** Authors and commenters are a workspace id (the
   parent, for a fork) or 0; the board puts 0's docs first, and only they get the
   to-task button.

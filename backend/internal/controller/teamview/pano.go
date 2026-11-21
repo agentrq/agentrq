@@ -6,8 +6,10 @@ package teamview
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/mustafaturan/monoflake"
@@ -61,6 +63,52 @@ func (c *controller) GetPanoDoc(ctx context.Context, userID, teamID, docID int64
 		}
 	}
 	return entity.TeamPanoDoc{PanoDoc: d, OwnerID: o.UserID, OwnerName: o.Name, OwnerPicture: o.Picture}, nil
+}
+
+func (c *controller) GetSharedPanoDoc(ctx context.Context, userID, docID int64, attachments bool) (entity.PanoDoc, error) {
+	o, err := c.repo.SharedPanoDocOwner(ctx, userID, docID)
+	if err != nil {
+		return entity.PanoDoc{}, err
+	}
+	rs, err := c.owner.GetPanoDoc(ctx, entity.GetPanoDocRequest{UserID: monoflake.ID(o.UserID).String(), ID: docID, IncludeAttachments: attachments})
+	if err != nil {
+		return entity.PanoDoc{}, err
+	}
+	d := rs.Doc
+	d.Tasks = nil
+	d.CreatedByWorkspaceID, d.UpdatedByWorkspaceID = 0, 0
+	for _, files := range [][]entity.PanoFile{d.Files, d.Attachments} {
+		for i := range files {
+			files[i].URL = ""
+			files[i].WorkspaceID = 0
+		}
+	}
+	return d, nil
+}
+
+// agentPano is the Pano an agent reads: its account's own, and, for a read
+// of a doc not among them, one shared with a team the account is in.
+type agentPano struct {
+	crud.PanoController
+	shared Controller
+}
+
+// AgentPano is own, with the docs shared with the account's teams readable
+// through GetPanoDoc; every other method, and every write, is own's alone.
+func AgentPano(own crud.PanoController, shared Controller) crud.PanoController {
+	return agentPano{PanoController: own, shared: shared}
+}
+
+func (p agentPano) GetPanoDoc(ctx context.Context, req entity.GetPanoDocRequest) (*entity.GetPanoDocResponse, error) {
+	rs, err := p.PanoController.GetPanoDoc(ctx, req)
+	if !errors.Is(err, base.ErrNotFound) {
+		return rs, err
+	}
+	d, err := p.shared.GetSharedPanoDoc(ctx, monoflake.IDFromBase62(req.UserID).Int64(), req.ID, req.IncludeAttachments)
+	if err != nil {
+		return nil, err
+	}
+	return &entity.GetPanoDocResponse{Doc: d}, nil
 }
 
 func (c *controller) GetPanoFile(ctx context.Context, userID, teamID, docID, fileID int64) (*entity.GetAttachmentResponse, error) {

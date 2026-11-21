@@ -459,6 +459,8 @@ func New(cfg Config) (*App, error) {
 		Repository: repo,
 		PubSub:     pubsubSvc,
 	})
+	// Agents read the docs shared with their account's teams too, by id.
+	agentPano := teamview.AgentPano(crudCtrl, teamViewCtrl)
 	moveLegacySkills(context.Background(), crudCtrl)
 	startPanoSweep(appCtx, crudCtrl, panoSweepInterval, sweepJitter)
 	startMachineSweep(appCtx, crudCtrl, machineSweepInterval, sweepJitter)
@@ -646,7 +648,7 @@ func New(cfg Config) (*App, error) {
 			memory.save,
 			memory.delete,
 			&skillStore{crud: crudCtrl, workspaceID: workspaceID, userID: workspaceOwner},
-			crudCtrl,
+			agentPano,
 			siteToolsBackend{repo: repo, hub: siteHub},
 			toolCallRecorder{repo: repo, bus: bus, workspaceID: workspaceID, owner: workspaceOwner}.create,
 			toolCallRecorder{repo: repo, bus: bus, workspaceID: workspaceID, owner: workspaceOwner}.answer,
@@ -804,6 +806,7 @@ func New(cfg Config) (*App, error) {
 	// CoreMCP Handler
 	if _, err := handlercoremcp.New(handlercoremcp.Params{
 		Crud:       crudCtrl,
+		Pano:       agentPano,
 		ForkMerger: forkMerger,
 		Launcher:   launcher,
 		Agents:     mcpManager,
