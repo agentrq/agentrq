@@ -1104,6 +1104,18 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ machineId, name }) => api.updateMachine(machineId, { name }),
     }),
     tool({
+      name: 'setMachineMaxSessions',
+      description:
+        "Cap how many agents this account may run on a machine at once. Leave maxSessions out to use the server's default; 0 is no cap.",
+      properties: {
+        machineId: MACHINE_ID,
+        maxSessions: { ...int('The most agents at once, 0 for no cap; left out, the server default.'), minimum: 0 },
+      },
+      required: ['machineId'],
+      screen: before(machinePage),
+      run: ({ machineId, maxSessions }) => api.updateMachine(machineId, { maxSessions: maxSessions ?? null }),
+    }),
+    tool({
       name: 'setMachineEnabled',
       description:
         'Turn a machine on or off. Disabling is the kill switch: its connection is closed immediately and the next one is refused.',

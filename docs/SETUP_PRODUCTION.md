@@ -329,6 +329,12 @@ gzip -c agentrq-hook-github_1.0.0.wasm | curl -s "$AGENTRQ_BASE_URL/admin/v1/hoo
 
 `PUT /admin/v1/hooks/<id>` upgrades one with a new version of the same hook. That is refused when it would break a registration: an event someone routes is gone, an input becomes required, or an input changes type or stops being secret. `PATCH` with `{"enabled": false}` turns a hook off for every account, and `DELETE` removes one that nothing registers.
 
+### Machines
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENTRQ_MACHINES_MAX_SESSIONS` | `8` | Most agents one account may run on one machine at once. A machine's own page can set a different cap for it. `0` is no cap. agentrqd still applies its own `--max-per-profile` on the machine. |
+
 ### Teams
 
 A team's members read the workspaces they share with it. Invitations go by email when SMTP is set up (`AGENTRQ_SMTP_HOST`) and `AGENTRQ_TEAMS_EMAIL_INVITES` is on; either way the inviter is given the link to share, which is the only way in without SMTP. A link is `<AGENTRQ_BASE_URL>/invite#<token>` and works once, for the invited address, for 7 days.

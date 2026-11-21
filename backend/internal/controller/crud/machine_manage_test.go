@@ -176,3 +176,73 @@ func TestCountOnlineMachinesPerUser_PassesOnAFailure(t *testing.T) {
 		t.Errorf("got %v, %v; want nil and the error", got, err)
 	}
 }
+
+// A machine's own cap is stored as sent, and null takes it back to the
+// server's; a request that does not mention it leaves it alone.
+func TestUpdateMachineSetsAndClearsItsSessionCap(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		was      *int
+		set      bool
+		limit    *int
+		want     *int
+		wantView int
+	}{
+		{name: "set", set: true, limit: intPtr(3), want: intPtr(3), wantView: 3},
+		{name: "no cap", was: intPtr(3), set: true, limit: intPtr(0), want: intPtr(0), wantView: 0},
+		{name: "cleared", was: intPtr(3), set: true, want: nil, wantView: DefaultMachineMaxSessions},
+		{name: "not mentioned", was: intPtr(3), want: intPtr(3), wantView: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newMachineTelemetryEnv(t)
+			env.repo.EXPECT().GetMachine(gomock.Any(), int64(9), testUserID).
+				Return(model.Machine{ID: 9, UserID: testUserID, Enabled: true, MaxSessions: tc.was}, nil)
+			var saved model.Machine
+			env.repo.EXPECT().UpdateMachine(gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ any, m model.Machine) (model.Machine, error) { saved = m; return m, nil })
+
+			rs, err := env.controller.UpdateMachine(t.Context(), entity.UpdateMachineRequest{
+				UserID: testUserIDStr, MachineID: monoflake.ID(9).String(),
+				SetMaxSessions: tc.set, MaxSessions: tc.limit,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !sameLimit(saved.MaxSessions, tc.want) {
+				t.Errorf("stored cap = %v, want %v", saved.MaxSessions, tc.want)
+			}
+			if rs.Machine.SessionLimit != tc.wantView || !sameLimit(rs.Machine.MaxSessions, tc.want) {
+				t.Errorf("view = %v/%d, want %v/%d", rs.Machine.MaxSessions, rs.Machine.SessionLimit, tc.want, tc.wantView)
+			}
+		})
+	}
+}
+
+// Refused before the machine is read, so nothing is stored.
+func TestUpdateMachineRefusesASessionCapOutOfRange(t *testing.T) {
+	for _, n := range []int{-1, MaxMachineSessionsOverride + 1} {
+		env := newTestController(t) // no repository calls may happen
+		_, err := env.controller.UpdateMachine(t.Context(), entity.UpdateMachineRequest{
+			UserID: testUserBase62, MachineID: monoflake.ID(5).String(),
+			SetMaxSessions: true, MaxSessions: intPtr(n),
+		})
+		var launchErr *entity.LaunchError
+		if !errors.As(err, &launchErr) || !errors.Is(launchErr.Kind, entity.ErrLaunchInvalid) {
+			t.Errorf("maxSessions %d: err = %v, want an invalid request", n, err)
+		}
+	}
+}
+
+// The server's cap applies until the machine sets one, and follows the config.
+func TestMachineViewSessionLimit(t *testing.T) {
+	was := MachineMaxSessions
+	t.Cleanup(func() { MachineMaxSessions = was })
+	MachineMaxSessions = 5
+
+	if got := toMachineView(model.Machine{}, time.Now(), 0).SessionLimit; got != 5 {
+		t.Errorf("no cap of its own: %d, want the server's 5", got)
+	}
+	if got := toMachineView(model.Machine{MaxSessions: intPtr(2)}, time.Now(), 0).SessionLimit; got != 2 {
+		t.Errorf("its own cap: %d, want 2", got)
+	}
+}

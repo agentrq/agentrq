@@ -169,7 +169,12 @@ type (
 			MaxTTLDays int `yaml:"maxTtlDays"`
 		} `yaml:"pano"`
 		// Hooks turn requests from outside services into events.
-		Hooks hook.Config `yaml:"hooks"`
+		Hooks    hook.Config `yaml:"hooks"`
+		Machines struct {
+			// How many agents one account may run on one of its machines,
+			// unless the machine sets its own; 0 is no cap.
+			MaxSessions int `yaml:"maxSessions"`
+		} `yaml:"machines"`
 		Teams struct {
 			// How many invitations one team may create in any 24 hours; 0
 			// turns invitations off.
@@ -1582,6 +1587,8 @@ func applyLimits(cfg Config) error {
 	skill.MaxFiles = cmp.Or(cfg.Skills.MaxFiles, skill.DefaultMaxFiles)
 	crud.PanoMaxTTLDays = cmp.Or(cfg.Pano.MaxTTLDays, crud.DefaultPanoMaxTTLDays)
 	crud.TeamSkillsPerWorkspace = cmp.Or(cfg.Teams.MaxSkillsPerWorkspace, crud.DefaultTeamSkillsPerWorkspace)
+	// Not cmp.Or: 0 is no cap here, not "unset".
+	crud.MachineMaxSessions = cfg.Machines.MaxSessions
 	return nil
 }
 
@@ -1596,6 +1603,8 @@ func checkLimits(cfg Config) error {
 		return fmt.Errorf("skills.maxFiles: %d is negative", cfg.Skills.MaxFiles)
 	case cfg.Pano.MaxTTLDays < 0:
 		return fmt.Errorf("pano.maxTtlDays: %d is negative", cfg.Pano.MaxTTLDays)
+	case cfg.Machines.MaxSessions < 0:
+		return fmt.Errorf("machines.maxSessions: %d is negative", cfg.Machines.MaxSessions)
 	case cfg.Teams.MaxInvitesPerDay < 0:
 		return fmt.Errorf("teams.maxInvitesPerDay: %d is negative", cfg.Teams.MaxInvitesPerDay)
 	case cfg.Teams.MaxInvitesPerUserPerDay < 0:

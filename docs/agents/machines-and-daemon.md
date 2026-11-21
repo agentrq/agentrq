@@ -36,6 +36,10 @@ pseudo-terminals, and streams them to the browser.
   on a machine running none. Skip terminal states, as `Running`, `Live` and
   `Dirs` already do. The numbers themselves are `--max-per-profile` and
   `--max-per-machine`, defaulting to the constants in `serve.go`.
+  The server checks the per-profile cap first, in `agentlaunch` (a profile is
+  one machine row): `machines.maxSessions`, or the row's `MaxSessions`. The
+  per-machine cap spans accounts the server cannot see, so only the daemon
+  can hold it.
 - **A refused launch is only ever explained by the event.** The session row is
   deleted the instant it fails, so `session.updated` carries the reason and
   nothing else does — the terminal page it navigated to has nothing left to
