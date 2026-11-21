@@ -48,10 +48,10 @@ func (ps *WorkspaceServer) rememberUsageMessage(sessionID string, taskID, msgID 
 // longer holds, once it has detached.
 //
 // The REST payload already filters to live sessions, but a page that is open
-// only hears events, and nothing else says that the gateway's limit, models
-// and commands left with it. Without this, switching a workspace from
-// acp-gateway to Claude Code left the gateway's concurrency control and context
-// ring on screen for an agent that has neither.
+// only hears events, and nothing else says that the gateway's models,
+// reasoning levels and commands left with it. Without this, switching a
+// workspace from acp-gateway to Claude Code left the gateway's model picker
+// and context ring on screen for an agent that has neither.
 func (ps *WorkspaceServer) agentSessionEnded(ctx context.Context, sessionID string) {
 	ps.agentModelsMu.RLock()
 	hadModels := len(ps.agentModels[sessionID].Models) > 0
@@ -72,13 +72,6 @@ func (ps *WorkspaceServer) agentSessionEnded(ctx context.Context, sessionID stri
 	ps.agentCommandsMu.RUnlock()
 	if hadCommands {
 		ps.publishAgentCommands(agentlink.CommandsSnapshot{})
-	}
-
-	ps.agentConcurrencyMu.RLock()
-	hadConcurrency := ps.agentConcurrency[sessionID].Reported()
-	ps.agentConcurrencyMu.RUnlock()
-	if hadConcurrency {
-		ps.publishAgentConcurrency(agentlink.ConcurrencySnapshot{})
 	}
 
 	ps.endUsageMessages(ctx, sessionID)

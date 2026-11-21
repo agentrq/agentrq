@@ -9,7 +9,7 @@ import "context"
 // Link is an agent attached to this workspace by a connection this
 // process holds natively — a live ACP connection — rather than by an MCP
 // session. The workspace server treats it as one more session: it is handed
-// pushes, stops, verdicts, model and concurrency changes, and whatever it
+// pushes, stops, verdicts, model and reasoning-level changes, and whatever it
 // reports is keyed by ID exactly as an MCP session's reports are.
 //
 // Every method must return promptly. They are called from request handlers and
@@ -30,10 +30,9 @@ type Link interface {
 	SetModel(ctx context.Context, acpSessionID, configID, modelID string) bool
 	// SetEffort switches the reasoning level of one of the link's ACP sessions.
 	SetEffort(ctx context.Context, acpSessionID, configID, effort string) bool
-	// SetConcurrency changes how many tasks the link runs at once.
-	SetConcurrency(ctx context.Context, limit int) bool
 	// Dispatch says whether the link already holds a session for the task,
-	// and how many more turns it could start right now.
+	// and how many more turns it could start right now: 1 when it is idle,
+	// else 0, since a link runs one turn at a time.
 	Dispatch(taskID int64) (owns bool, free int)
 }
 

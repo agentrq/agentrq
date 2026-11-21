@@ -112,7 +112,7 @@ func NewEngineFactory(d EngineDeps) func(c *connection) engine {
 		e.link = &link{e: e}
 		e.ws = d.Workspace(c.WorkspaceID(), c.UserID())
 		e.peer = newPeer(c.Send, e)
-		e.q = newTurnQueue(c.Meta().MaxConcurrency, e.runTurn, e.reportConcurrency, e.askForWork)
+		e.q = newTurnQueue(e.runTurn, e.askForWork)
 		c.OnFrame(e.peer.receive)
 		c.OnControl(e.onControl)
 		return e
@@ -235,7 +235,7 @@ func (e *engineV1) loginInstructions() string {
 
 // attach makes the agent visible: the link first, then everything it reported
 // while it was coming up (a report before the link exists would be pruned as
-// belonging to no live session), then work for every free slot.
+// belonging to no live session), then a task if the agent has none.
 func (e *engineV1) attach() {
 	e.ws.AttachAgentLink(e.link)
 	e.mu.Lock()
@@ -259,37 +259,15 @@ func (e *engineV1) attach() {
 	if commands != nil {
 		e.ws.HandleAgentCommands(e.ctx, e.linkID, *commands)
 	}
-	e.reportConcurrency()
 	if e.deps.OnConnect != nil {
 		e.deps.OnConnect(e.ctx, e.c.WorkspaceID(), e.c.UserID())
 	}
-	limit, active, queued := e.q.numbers()
-	go func() {
-		for range limit - active - queued {
-			if e.ws.OfferNextTask(e.ctx) == 0 {
-				return
-			}
-		}
-	}()
-}
-
-func (e *engineV1) isAttached() bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.attached
-}
-
-func (e *engineV1) reportConcurrency() {
-	if !e.isAttached() {
-		return
+	if e.q.free() {
+		e.askForWork()
 	}
-	limit, active, queued := e.q.numbers()
-	lo, hi, canSet := 1, maxConcurrency, true
-	e.ws.HandleAgentConcurrency(e.ctx, e.linkID, agentlink.ConcurrencyReport{
-		MaxConcurrency: &limit, Active: active, Queued: queued, Min: &lo, Max: &hi, CanSet: &canSet})
 }
 
-// askForWork is the queue saying a slot is free with nothing waiting. It never
+// askForWork is the queue saying the slot is free with nothing waiting. It never
 // runs OfferNextTask on the caller's goroutine: that may be a link method the
 // poller called while holding the lock OfferNextTask takes.
 func (e *engineV1) askForWork() {

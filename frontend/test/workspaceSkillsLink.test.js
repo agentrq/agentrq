@@ -33,7 +33,6 @@ vi.mock('../src/api', async (importOriginal) => ({
 const stub = { render: () => null }
 vi.mock('../src/components/TaskFeed.vue', () => ({ default: stub }))
 vi.mock('../src/components/StartAgentPanel.vue', () => ({ default: stub }))
-vi.mock('../src/components/AgentConcurrencyControl.vue', () => ({ default: stub }))
 
 const { default: WorkspaceDetailView } = await import('../src/views/WorkspaceDetailView.vue')
 

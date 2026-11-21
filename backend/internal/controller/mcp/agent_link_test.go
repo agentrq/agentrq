@@ -36,7 +36,6 @@ type fakeLink struct {
 	efforts  []string // session/config/effort
 	// unreachable makes SetEffort fail, as a link gone mid-call does.
 	unreachable bool
-	limits      []int
 	attachments []agentlink.Attachment
 }
 
@@ -84,13 +83,6 @@ func (l *fakeLink) SetEffort(_ context.Context, sessionID, configID, effort stri
 	return !l.unreachable
 }
 
-func (l *fakeLink) SetConcurrency(_ context.Context, limit int) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.limits = append(l.limits, limit)
-	return true
-}
-
 func (l *fakeLink) Dispatch(taskID int64) (bool, int) { return l.owns[taskID], l.free }
 
 // recorded returns a copy of what the link was handed, safe to read while a
@@ -122,7 +114,6 @@ func newLinkServer(t *testing.T) (*WorkspaceServer, chan []byte) {
 		agentEffort:            make(map[string]agentlink.EffortSnapshot),
 		agentCommands:          make(map[string]agentlink.CommandsSnapshot),
 		agentIdentities:        make(map[string]agentlink.ClientInfo),
-		agentConcurrency:       make(map[string]agentlink.ConcurrencySnapshot),
 		permissionRequests:     make(map[string]string),
 		requestTaskIDs:         make(map[string]int64),
 	}, events
@@ -258,7 +249,7 @@ func TestAgentLinks(t *testing.T) {
 	t.Run("a push goes to the link already holding the task, not the freer one", func(t *testing.T) {
 		ps, _ := newLinkServer(t)
 		holder := &fakeLink{id: "acp1:a", owns: map[int64]bool{7: true}, free: 0}
-		freer := &fakeLink{id: "acp1:b", free: 3}
+		freer := &fakeLink{id: "acp1:b", free: 1}
 		ps.AttachAgentLink(holder)
 		ps.AttachAgentLink(freer)
 
@@ -269,10 +260,10 @@ func TestAgentLinks(t *testing.T) {
 		}
 	})
 
-	t.Run("a push goes to the link with the most free capacity when none holds the task", func(t *testing.T) {
+	t.Run("a push goes to the idle link when none holds the task", func(t *testing.T) {
 		ps, _ := newLinkServer(t)
 		busy := &fakeLink{id: "acp1:a", free: 0}
-		idle := &fakeLink{id: "acp1:b", free: 2}
+		idle := &fakeLink{id: "acp1:b", free: 1}
 		ps.AttachAgentLink(busy)
 		ps.AttachAgentLink(idle)
 
@@ -392,21 +383,6 @@ func TestAgentLinks(t *testing.T) {
 		}
 	})
 
-	t.Run("set_concurrency for a link's snapshot reaches the link as a typed call", func(t *testing.T) {
-		ps, _ := newLinkServer(t)
-		link := &fakeLink{id: "acp1:a"}
-		ps.AttachAgentLink(link)
-		limit, canSet := 1, true
-		ps.HandleAgentConcurrency(context.Background(), "acp1:a", agentlink.ConcurrencyReport{MaxConcurrency: &limit, CanSet: &canSet})
-
-		if err := ps.SetAgentConcurrency(context.Background(), 3); err != nil {
-			t.Fatalf("SetAgentConcurrency returned %v, want nil", err)
-		}
-		if len(link.limits) != 1 || link.limits[0] != 3 {
-			t.Fatalf("link limits were %v, want [3]", link.limits)
-		}
-	})
-
 	t.Run("live and streaming lists put MCP sessions first, then links in attach order", func(t *testing.T) {
 		ps, _ := newLinkServer(t)
 		m, _ := withMCPSession(t, ps)
@@ -496,22 +472,6 @@ func TestSetAgentReachesALinkByItsOwnCall(t *testing.T) {
 		}
 		if len(link.models) != 1 || link.models[0] != "s1/model/b" {
 			t.Fatalf("link models were %v, want [s1/model/b]", link.models)
-		}
-	})
-
-	t.Run("concurrency", func(t *testing.T) {
-		ps, _ := newLinkServer(t)
-		link := &fakeLink{id: "acp1:a"}
-		ps.AttachAgentLink(link)
-		ps.HandleAgentConcurrency(context.Background(), "acp1:a", agentlink.ConcurrencyReport{
-			MaxConcurrency: intPtr(2), Min: intPtr(1), Max: intPtr(8), CanSet: boolPtr(true),
-		})
-
-		if err := ps.SetAgentConcurrency(context.Background(), 4); err != nil {
-			t.Fatalf("SetAgentConcurrency() = %v, want nil", err)
-		}
-		if len(link.limits) != 1 || link.limits[0] != 4 {
-			t.Fatalf("link limits were %v, want [4]", link.limits)
 		}
 	})
 }

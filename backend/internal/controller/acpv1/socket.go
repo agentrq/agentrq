@@ -150,9 +150,6 @@ func parseMeta(h http.Header) (bridgeMeta, error) {
 		}
 		*f.to = strings.Clone(v)
 	}
-	if n, err := strconv.Atoi(h.Get("X-AgentRQ-Max-Concurrency")); err == nil {
-		m.MaxConcurrency = min(max(n, 1), 64) // clamped, as the gateway's flag is
-	}
 	if n, err := strconv.Atoi(h.Get("X-AgentRQ-Permission-Timeout")); err == nil && n >= 0 && n <= 24*60 {
 		m.PermissionTimeout = time.Duration(n) * time.Minute
 	}

@@ -12,22 +12,21 @@ import (
 )
 
 // starts records the turns a queue starts, as "<task><content>", and how
-// often it reported its numbers or asked for work.
+// often it asked for work.
 type starts struct {
 	mu    sync.Mutex
 	got   []string
-	moves int
 	rooms int
 	queue *turnQueue
 }
 
-func newStarts(limit int) *starts {
+func newStarts() *starts {
 	s := &starts{}
-	s.queue = newTurnQueue(limit, func(d delivery) {
+	s.queue = newTurnQueue(func(d delivery) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.got = append(s.got, fmt.Sprintf("%d%s", d.taskID, d.content))
-	}, func() { s.mu.Lock(); s.moves++; s.mu.Unlock() }, func() { s.mu.Lock(); s.rooms++; s.mu.Unlock() })
+	}, func() { s.mu.Lock(); s.rooms++; s.mu.Unlock() })
 	return s
 }
 
@@ -52,56 +51,66 @@ func (s *starts) waitStarted(t *testing.T, want ...string) {
 	waitFor(t, func() bool { return slices.Equal(s.started(), want) })
 }
 
-func (s *starts) numbers(t *testing.T, limit, active, queued int) {
+func (s *starts) numbers(t *testing.T, active, queued int) {
 	t.Helper()
-	if l, a, q := s.queue.numbers(); l != limit || a != active || q != queued {
-		t.Fatalf("numbers were (limit %d, active %d, queued %d), want (%d, %d, %d)", l, a, q, limit, active, queued)
+	s.queue.mu.Lock()
+	a, q := s.queue.active, s.queue.waiting.Len()
+	s.queue.mu.Unlock()
+	if a != active || q != queued {
+		t.Fatalf("numbers were (active %d, queued %d), want (%d, %d)", a, q, active, queued)
+	}
+	if free := s.queue.free(); free != (active == 0 && queued == 0) {
+		t.Fatalf("free() = %v with %d active and %d queued", free, active, queued)
 	}
 }
 
 func TestTurnQueue(t *testing.T) {
 	t.Run("a delivery starts at once when a slot is free", func(t *testing.T) {
-		s := newStarts(1)
+		s := newStarts()
 		s.queue.deliver(1, "a")
 		s.waitStarted(t, "1a")
-		s.numbers(t, 1, 1, 0)
+		s.numbers(t, 1, 0)
 	})
 
 	t.Run("a second task waits for the slot", func(t *testing.T) {
-		s := newStarts(1)
+		s := newStarts()
 		s.queue.deliver(1, "a")
 		s.queue.deliver(2, "b")
 		s.waitStarted(t, "1a")
-		s.numbers(t, 1, 1, 1)
+		s.numbers(t, 1, 1)
 		s.queue.finish(1)
 		s.waitStarted(t, "1a", "2b")
+		s.numbers(t, 1, 0)
 	})
 
-	t.Run("a second message for a running task waits for the turn and does not hold a slot", func(t *testing.T) {
-		s := newStarts(2)
+	t.Run("a second message for a running task waits behind the tasks already waiting", func(t *testing.T) {
+		s := newStarts()
 		s.queue.deliver(1, "a")
 		s.queue.deliver(1, "b")
 		s.queue.deliver(2, "c")
-		s.waitStarted(t, "1a", "2c")
-		s.numbers(t, 2, 2, 0)
+		s.waitStarted(t, "1a")
+		s.numbers(t, 1, 1)
 		s.queue.finish(1)
+		s.waitStarted(t, "1a", "2c")
+		s.numbers(t, 1, 1)
+		s.queue.finish(2)
 		s.waitStarted(t, "1a", "2c", "1b")
 	})
 
 	t.Run("a byte-identical repeat for a queued task is dropped", func(t *testing.T) {
-		s := newStarts(1)
+		s := newStarts()
 		s.queue.deliver(1, "a")
 		s.queue.deliver(1, "a")
 		s.waitStarted(t, "1a")
 		s.queue.finish(1)
-		s.numbers(t, 1, 0, 0)
+		s.numbers(t, 0, 0)
 		if s.queue.owns(1) {
 			t.Fatal("the task still had a chain after its only turn finished; the repeat was queued")
 		}
 	})
 
 	t.Run("the same text after the task finished runs again", func(t *testing.T) {
-		s := newStarts(1)
+		s := newStarts()
 		s.queue.deliver(1, "a")
 		s.waitStarted(t, "1a")
 		s.queue.finish(1)
@@ -109,44 +118,25 @@ func TestTurnQueue(t *testing.T) {
 		s.waitStarted(t, "1a", "1a")
 	})
 
-	t.Run("raising the limit starts every waiting turn that fits", func(t *testing.T) {
-		s := newStarts(1)
-		s.queue.deliver(1, "a")
-		s.queue.deliver(2, "b")
-		s.queue.deliver(3, "c")
-		s.waitStarted(t, "1a")
-		s.queue.setLimit(3)
-		s.waitStarted(t, "1a", "2b", "3c")
-		s.numbers(t, 3, 3, 0)
-	})
-
-	t.Run("lowering the limit interrupts nothing", func(t *testing.T) {
-		s := newStarts(3)
-		for i := int64(1); i <= 4; i++ {
+	t.Run("turns run strictly one at a time, in the order they came", func(t *testing.T) {
+		s := newStarts()
+		for i := int64(1); i <= 3; i++ {
 			s.queue.deliver(i, "x")
 		}
-		s.waitStarted(t, "1x", "2x", "3x")
-		s.queue.setLimit(1)
-		s.numbers(t, 1, 3, 1)
+		s.waitStarted(t, "1x")
+		s.numbers(t, 1, 2)
 		s.queue.finish(1)
-		s.numbers(t, 1, 2, 1)
+		s.waitStarted(t, "1x", "2x")
+		s.numbers(t, 1, 1)
 		s.queue.finish(2)
-		s.numbers(t, 1, 1, 1)
+		s.waitStarted(t, "1x", "2x", "3x")
+		s.numbers(t, 1, 0)
 		s.queue.finish(3)
-		s.waitStarted(t, "1x", "2x", "3x", "4x")
-	})
-
-	t.Run("the limit stays between 1 and 64", func(t *testing.T) {
-		s := newStarts(0)
-		s.numbers(t, 1, 0, 0)
-		s.queue.setLimit(500)
-		s.numbers(t, 64, 0, 0)
-		s.queue.setLimit(-3)
-		s.numbers(t, 1, 0, 0)
+		s.numbers(t, 0, 0)
 	})
 
 	t.Run("a cancel skips what was queued before it and not what came after", func(t *testing.T) {
-		s := newStarts(1)
+		s := newStarts()
 		s.queue.deliver(1, "a") // seq 1
 		if !s.queue.cancel(1) {
 			t.Fatal("cancel reported no turn for a task with one running")
@@ -161,7 +151,7 @@ func TestTurnQueue(t *testing.T) {
 	})
 
 	t.Run("a cancel for a task with nothing queued records nothing", func(t *testing.T) {
-		s := newStarts(1)
+		s := newStarts()
 		if s.queue.cancel(7) {
 			t.Fatal("cancel reported a turn for a task the queue never saw")
 		}
@@ -171,7 +161,7 @@ func TestTurnQueue(t *testing.T) {
 	})
 
 	t.Run("a freed slot with nothing waiting asks for work", func(t *testing.T) {
-		s := newStarts(1)
+		s := newStarts()
 		s.queue.deliver(1, "a")
 		s.waitStarted(t, "1a")
 		s.queue.finish(1)
@@ -181,7 +171,7 @@ func TestTurnQueue(t *testing.T) {
 	})
 
 	t.Run("a freed slot with a turn waiting asks for nothing", func(t *testing.T) {
-		s := newStarts(1)
+		s := newStarts()
 		s.queue.deliver(1, "a")
 		s.queue.deliver(2, "b")
 		s.queue.finish(1)
@@ -191,7 +181,7 @@ func TestTurnQueue(t *testing.T) {
 	})
 
 	t.Run("nothing is kept about finished tasks", func(t *testing.T) {
-		s := newStarts(64)
+		s := newStarts()
 		for i := int64(1); i <= 300; i++ {
 			s.queue.deliver(i, "x")
 			s.queue.cancel(i)

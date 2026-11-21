@@ -3,7 +3,8 @@
 > Read before changing `controller/acpv1`, `app/acp.go`, or anything an agent link touches. A later `acpv2` follows the same rules.
 
 - **Versions never share code.** Only `app` imports a version package; `app/acp_isolation_test.go` fails otherwise. A new version copies what it needs, and a shared idea is fixed in each, on purpose.
-- **A native connection is an agent link inside the workspace server**, not a second implementation: permissions, questions, models, commands, concurrency and usage all go through `WorkspaceServer`. Add behaviour there, not in a version package.
+- **A native connection is an agent link inside the workspace server**, not a second implementation: permissions, questions, models, commands and usage all go through `WorkspaceServer`. Add behaviour there, not in a version package.
+- **A link runs one turn at a time**: the turn queue has one slot, and a gateway's `X-AgentRQ-Max-Concurrency` header is ignored. There is no per-workspace limit to read or set.
 - **ACP never goes through MCP.** A version package imports `controller/agentlink`, never `controller/mcp` or the MCP SDK (`app/acp_isolation_test.go` fails otherwise). A choice for a link calls its `agentlink.Link` method. A `notifications/claude/channel/*` string or `notifySession` reaches MCP sessions only, which are Claude Code's: acp-gateway speaks only native ACP, so a feature routed that way never reaches it.
 - **The notes are the gateway's words, byte for byte** ("this gateway" included): the composer matches them, and `frontend/test/acpNotesParity.test.js` reads `notes.go`.
 - **`/logout` is AgentRQ's own command, never a prompt.** For an agent advertising `auth.logout` the engine lists it among the agent's commands, so a reply reaches it bare, and answers it with ACP `logout`; its note must end a turn like the rest. An agent without the capability gets `/logout` as a plain prompt.

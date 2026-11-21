@@ -34,7 +34,6 @@ type recorder struct {
 	models    []agentlink.ModelsReport
 	effort    []agentlink.EffortReport
 	commands  []agentlink.CommandsReport
-	conc      []agentlink.ConcurrencyReport
 	ongoing   []int64
 	offers    int
 	identity  []agentlink.IdentityReport
@@ -108,12 +107,6 @@ func (r *recorder) HandleAgentCommands(_ context.Context, _ string, p agentlink.
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.commands = append(r.commands, p)
-}
-
-func (r *recorder) HandleAgentConcurrency(_ context.Context, _ string, p agentlink.ConcurrencyReport) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.conc = append(r.conc, p)
 }
 
 func (r *recorder) HandleAgentTelemetry(_ context.Context, _ string, p agentlink.TelemetryReport) {
@@ -598,12 +591,7 @@ func TestEngine(t *testing.T) {
 		})
 		a.answer(req, `{"sessionId":"idle-1"}`)
 		rec.link(t)
-		rec.wait(t, func() bool { return len(rec.conc) == 1 && rec.offers == 1 })
-		rec.read(func() {
-			if c := rec.conc[0]; *c.MaxConcurrency != 1 || *c.Min != 1 || *c.Max != 64 || !*c.CanSet {
-				t.Fatalf("the concurrency report was %+v, want limit 1 of 1–64, settable", c)
-			}
-		})
+		rec.wait(t, func() bool { return rec.offers == 1 })
 	})
 
 	t.Run("a session that will not open still attaches, and the first task opens its own", func(t *testing.T) {
@@ -700,7 +688,7 @@ func TestEngine(t *testing.T) {
 		b.answer(b.expect("initialize"), `{"protocolVersion":1}`)
 		b.answer(b.expect("session/new"), `{"sessionId":"idle-1"}`)
 		rec2.link(t)
-		rec2.wait(t, func() bool { return len(rec2.conc) == 1 })
+		rec2.wait(t, func() bool { return rec2.offers == 1 }) // attach has run to its end
 		rec2.read(func() {
 			if len(rec2.identity) != 0 {
 				t.Fatalf("identity was %+v, want none for an agent with no name", rec2.identity)
@@ -919,16 +907,23 @@ func TestEngine(t *testing.T) {
 		a.turn(rec, l, 42, "idle-1", "end_turn")
 	})
 
-	t.Run("a second task gets a session of its own", func(t *testing.T) {
+	// One task at a time, whatever an older gateway's concurrency header says:
+	// the second task waits for the first to end, then gets a session of its own.
+	t.Run("a second task waits for the first, then gets a session of its own", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgentWith(t, rec, agentOpts{header: map[string]string{"X-AgentRQ-Max-Concurrency": "2"}})
 		l := a.ready(rec, `{"sessionId":"idle-1"}`)
 		l.DeliverTask(context.Background(), 42, "a")
 		l.DeliverTask(context.Background(), 43, "b")
+		first := a.expect("session/prompt")
+		if !strings.Contains(string(first.Params), `"idle-1"`) {
+			t.Fatalf("the first prompt was %s, want it on idle-1", first.Params)
+		}
+		a.quiet() // no session/new nor prompt for 43 while 42 runs
+		a.answer(first, `{"stopReason":"end_turn"}`)
 		a.answer(a.expect("session/new"), `{"sessionId":"s-43"}`)
-		first, second := a.expect("session/prompt"), a.expect("session/prompt")
-		if got := string(first.Params) + string(second.Params); !strings.Contains(got, `"idle-1"`) || !strings.Contains(got, `"s-43"`) {
-			t.Fatalf("prompts were %s and %s, want one on idle-1 and one on s-43", first.Params, second.Params)
+		if second := a.expect("session/prompt"); !strings.Contains(string(second.Params), `"s-43"`) {
+			t.Fatalf("the second prompt was %s, want it on s-43", second.Params)
 		}
 	})
 
@@ -1022,11 +1017,11 @@ func TestEngine(t *testing.T) {
 		}
 	})
 
-	t.Run("a freed slot asks the workspace for the next task", func(t *testing.T) {
+	t.Run("a finished turn asks the workspace for the next task", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgent(t, rec)
 		l := a.ready(rec, `{"sessionId":"idle-1"}`)
-		rec.wait(t, func() bool { return rec.offers == 1 }) // attach asked for the free slot
+		rec.wait(t, func() bool { return rec.offers == 1 }) // attach asked for a task
 		a.turn(rec, l, 42, "idle-1", "end_turn")
 		rec.read(func() {
 			if rec.offers != 2 {
@@ -1035,26 +1030,26 @@ func TestEngine(t *testing.T) {
 		})
 	})
 
-	t.Run("raising the limit from the workspace is reported and asks for work", func(t *testing.T) {
+	t.Run("Dispatch has room for one task, and only while the link is idle", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgent(t, rec)
 		l := a.ready(rec, `{"sessionId":"idle-1"}`)
 		rec.wait(t, func() bool { return rec.offers == 1 })
-		if !l.SetConcurrency(context.Background(), 3) {
-			t.Fatal("SetConcurrency was refused")
+		if owns, free := l.Dispatch(42); owns || free != 1 {
+			t.Fatalf("Dispatch(42) on an idle link was (%v, %d), want (false, 1)", owns, free)
 		}
-		rec.wait(t, func() bool { return rec.offers == 2 && len(rec.conc) == 2 })
-		rec.read(func() {
-			if got := *rec.conc[1].MaxConcurrency; got != 3 {
-				t.Fatalf("the limit reported was %d, want 3", got)
-			}
-		})
-		if owns, free := l.Dispatch(42); owns || free != 3 {
-			t.Fatalf("Dispatch(42) was (%v, %d), want (false, 3)", owns, free)
+		l.DeliverTask(context.Background(), 42, "go")
+		p := a.expect("session/prompt")
+		if owns, free := l.Dispatch(43); owns || free != 0 {
+			t.Fatalf("Dispatch(43) mid-turn was (%v, %d), want (false, 0)", owns, free)
 		}
-		a.turn(rec, l, 42, "idle-1", "end_turn")
+		a.answer(p, `{"stopReason":"end_turn"}`)
+		rec.wait(t, func() bool { return rec.offers == 2 })
 		if owns, _ := l.Dispatch(42); !owns {
 			t.Fatal("Dispatch did not see the session the task ran on")
+		}
+		if owns, free := l.Dispatch(43); owns || free != 1 {
+			t.Fatalf("Dispatch(43) after the turn was (%v, %d), want (false, 1)", owns, free)
 		}
 	})
 
@@ -1615,14 +1610,22 @@ func TestEngine(t *testing.T) {
 }
 
 func TestEngineEdges(t *testing.T) {
-	t.Run("a task pushed while the link attaches starts, and its numbers wait for the link", func(t *testing.T) {
+	t.Run("a task pushed while the link attaches starts, and attach asks for no other", func(t *testing.T) {
 		rec := &recorder{}
 		rec.onAttach = func(l agentlink.Link) { l.DeliverTask(context.Background(), 42, "early") }
-		a := startAgent(t, rec)
+		a := startAgentWith(t, rec, agentOpts{deps: func(d *EngineDeps) {
+			d.OnConnect = func(context.Context, int64, string) { rec.mu.Lock(); rec.connects++; rec.mu.Unlock() }
+		}})
 		a.answer(a.expect("initialize"), string(fixture(t, "initialize.response.json")))
 		a.answer(a.expect("session/new"), `{"sessionId":"idle-1"}`)
 		a.expectParams("session/prompt", `{"sessionId":"idle-1","prompt":[{"type":"text","text":"early"}]}`)
-		rec.wait(t, func() bool { return len(rec.conc) >= 1 })
+		rec.wait(t, func() bool { return rec.connects == 1 })
+		time.Sleep(50 * time.Millisecond)
+		rec.read(func() {
+			if rec.offers != 0 {
+				t.Fatalf("attach asked for %d more tasks while one ran, want none", rec.offers)
+			}
+		})
 	})
 
 	t.Run("past the cap the oldest unfinished call is forgotten", func(t *testing.T) {

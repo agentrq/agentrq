@@ -175,27 +175,25 @@ func TestHandleAgentTelemetry_UndeliveredUsageIsNotRemembered(t *testing.T) {
 func sessionEndServer(t *testing.T) (*WorkspaceServer, chan []byte) {
 	t.Helper()
 	ps := &WorkspaceServer{
-		bus:              eventbus.New(),
-		workspaceID:      7,
-		userID:           "0ZzhYQG2qtl",
-		agentModels:      make(map[string]agentlink.ModelsSnapshot),
-		agentEffort:      make(map[string]agentlink.EffortSnapshot),
-		agentCommands:    make(map[string]agentlink.CommandsSnapshot),
-		agentConcurrency: make(map[string]agentlink.ConcurrencySnapshot),
+		bus:           eventbus.New(),
+		workspaceID:   7,
+		userID:        "0ZzhYQG2qtl",
+		agentModels:   make(map[string]agentlink.ModelsSnapshot),
+		agentEffort:   make(map[string]agentlink.EffortSnapshot),
+		agentCommands: make(map[string]agentlink.CommandsSnapshot),
 	}
 	sub := ps.bus.Subscribe(ps.workspaceID, "")
 	t.Cleanup(func() { ps.bus.Unsubscribe(ps.workspaceID, "", sub) })
 	return ps, sub
 }
 
-// The gateway's limit, models and commands leave with it, and the open page
+// The gateway's models, reasoning levels and commands leave with it, and the open page
 // hears that they did.
 func TestAgentSessionEnded_WithdrawsWhatTheSessionReported(t *testing.T) {
 	ps, sub := sessionEndServer(t)
 	ps.agentModels["gw"] = agentlink.ModelsSnapshot{ConfigID: "model", CurrentModel: "opus", Models: []agentlink.Model{{ID: "opus"}}}
 	ps.agentEffort["gw"] = agentlink.EffortSnapshot{ConfigID: "effort", CurrentEffort: "high", Efforts: []agentlink.Effort{{ID: "high"}}}
 	ps.agentCommands["gw"] = agentlink.CommandsSnapshot{Commands: []agentlink.Command{{Name: "compact"}}}
-	ps.agentConcurrency["gw"] = agentlink.ConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}
 
 	ps.agentSessionEnded(context.Background(), "gw")
 
@@ -208,16 +206,13 @@ func TestAgentSessionEnded_WithdrawsWhatTheSessionReported(t *testing.T) {
 	if got := readEvent(t, sub); got.Type != "agent.commands" || len(got.Payload["commands"].([]any)) != 0 {
 		t.Errorf("commands event = %+v, want an empty list", got)
 	}
-	if got := readEvent(t, sub); got.Type != "agent.concurrency" || got.Payload["maxConcurrency"] != 0.0 {
-		t.Errorf("concurrency event = %+v, want no limit", got)
-	}
 }
 
 // A session that never reported any of them, Claude Code among them, ends
 // without anything published for it.
 func TestAgentSessionEnded_SilentSessionPublishesNothing(t *testing.T) {
 	ps, sub := sessionEndServer(t)
-	ps.agentConcurrency["gw"] = agentlink.ConcurrencySnapshot{MaxConcurrency: 4}
+	ps.agentCommands["gw"] = agentlink.CommandsSnapshot{Commands: []agentlink.Command{{Name: "compact"}}}
 
 	ps.agentSessionEnded(context.Background(), "claude")
 

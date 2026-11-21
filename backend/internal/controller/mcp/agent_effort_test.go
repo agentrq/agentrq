@@ -177,7 +177,6 @@ func TestAgentSettingsNeverReachAnMCPSession(t *testing.T) {
 	ps.bus = eventbus.New()
 	ps.agentModels = make(map[string]agentlink.ModelsSnapshot)
 	ps.agentEffort = make(map[string]agentlink.EffortSnapshot)
-	ps.agentConcurrency = make(map[string]agentlink.ConcurrencySnapshot)
 	sessionID := connectedServer(t, ps, "claude-code")
 	streamFor(ps, sessionID)
 
@@ -191,12 +190,6 @@ func TestAgentSettingsNeverReachAnMCPSession(t *testing.T) {
 	})
 	if err := ps.SetAgentModel(context.Background(), "b"); !errors.Is(err, ErrModelSetNotDelivered) {
 		t.Errorf("model: err = %v, want ErrModelSetNotDelivered", err)
-	}
-
-	limit, canSet := 4, true
-	ps.HandleAgentConcurrency(context.Background(), sessionID, agentlink.ConcurrencyReport{MaxConcurrency: &limit, CanSet: &canSet})
-	if err := ps.SetAgentConcurrency(context.Background(), 8); !errors.Is(err, ErrConcurrencySetNotDelivered) {
-		t.Errorf("concurrency: err = %v, want ErrConcurrencySetNotDelivered", err)
 	}
 }
 

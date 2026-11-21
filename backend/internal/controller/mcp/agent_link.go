@@ -78,9 +78,9 @@ func (ps *WorkspaceServer) hasAgentLinks() bool {
 }
 
 // pickLinkFor chooses the one link a task goes to: the link already holding
-// the task's session, else the one with the most free capacity (the first on a
-// tie), else nil. MCP sessions are not chosen between — they are broadcast to,
-// as they always were.
+// the task's session, else an idle one (the first when several are), else the
+// first link, else nil. MCP sessions are not chosen between — they are
+// broadcast to, as they always were.
 func (ps *WorkspaceServer) pickLinkFor(taskID int64) agentlink.Link {
 	var best agentlink.Link
 	bestFree := -1

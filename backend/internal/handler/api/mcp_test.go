@@ -35,7 +35,6 @@ type fakeMCPManager struct {
 	effort      *agentlink.EffortSnapshot
 	commands    *agentlink.CommandsSnapshot
 	client      *agentlink.ClientInfo
-	concurrency *agentlink.ConcurrencySnapshot
 	connected   bool
 	supportStop bool
 	connections map[string]int
@@ -62,10 +61,6 @@ func (f *fakeMCPManager) AgentCommands(workspaceID int64) *agentlink.CommandsSna
 
 func (f *fakeMCPManager) AgentClient(workspaceID int64) *agentlink.ClientInfo { return f.client }
 
-func (f *fakeMCPManager) AgentConcurrency(workspaceID int64) *agentlink.ConcurrencySnapshot {
-	return f.concurrency
-}
-
 func (f *fakeMCPManager) ConnectionsByUser() map[string]int { return f.connections }
 
 // fakeWorkspaceServer records what the handler asked a connected agent to do.
@@ -83,10 +78,6 @@ type fakeWorkspaceServer struct {
 	effort      string
 	effortCalls int
 	effortErr   error
-
-	limit            int
-	concurrencyCalls int
-	concurrencyErr   error
 
 	stopOutcome mcpctrl.StopOutcome
 
@@ -123,12 +114,6 @@ func (f *fakeWorkspaceServer) SetAgentEffort(ctx context.Context, effort string)
 	f.effortCalls++
 	f.effort = effort
 	return f.effortErr
-}
-
-func (f *fakeWorkspaceServer) SetAgentConcurrency(ctx context.Context, limit int) error {
-	f.concurrencyCalls++
-	f.limit = limit
-	return f.concurrencyErr
 }
 
 func (f *fakeWorkspaceServer) SendCancelNotification(ctx context.Context, taskID int64) mcpctrl.StopOutcome {

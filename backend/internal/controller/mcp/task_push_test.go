@@ -370,44 +370,25 @@ func TestPollOnceReconcilesEveryPendingTaskNotJustThoseBeforeAnOngoingOne(t *tes
 	}
 }
 
-// The poller reads the same limit the handler does: a gateway that will run
-// four tasks at once and is running one has room for another. Gating on "is
-// anything ongoing" made the concurrency control meaningless — the workspace
-// would hand over one task and then wait for it, whatever the agent said it
-// could take.
-func TestPollOnceOffersWhileTheAgentHasRoomForMoreTasks(t *testing.T) {
+// The agent works on one task at a time: while one of its tasks is ongoing the
+// poller offers nothing, and once it finishes the next one goes out.
+func TestPollOnceOffersOneTaskAtATime(t *testing.T) {
 	ps := pushServer(t)
-	ps.agentConcurrency = map[string]agentlink.ConcurrencySnapshot{}
 	sessID := connectedServer(t, ps, "claude-code")
 	defer streamFor(ps, sessID)()
-	ps.agentConcurrency[sessID] = agentlink.ConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}
 
-	got := ps.pollOnce(pendingTaskRepo(
+	if got := ps.pollOnce(pendingTaskRepo(
 		model.Task{ID: 1, Status: "ongoing", Assignee: "agent"},
 		model.Task{ID: 7, Status: "notstarted", Assignee: "agent"},
-	))
-
-	if got != 7 {
-		t.Fatalf("offered task %d while three of four slots were free, want 7", got)
+	)); got != 0 {
+		t.Fatalf("offered task %d while task 1 was ongoing, want none", got)
 	}
-}
 
-// Full is full.
-func TestPollOnceOffersNothingWhenEverySlotIsBusy(t *testing.T) {
-	ps := pushServer(t)
-	ps.agentConcurrency = map[string]agentlink.ConcurrencySnapshot{}
-	sessID := connectedServer(t, ps, "claude-code")
-	defer streamFor(ps, sessID)()
-	ps.agentConcurrency[sessID] = agentlink.ConcurrencySnapshot{MaxConcurrency: 2, CanSet: true}
-
-	got := ps.pollOnce(pendingTaskRepo(
-		model.Task{ID: 1, Status: "ongoing", Assignee: "agent"},
-		model.Task{ID: 2, Status: "ongoing", Assignee: "agent"},
+	if got := ps.pollOnce(pendingTaskRepo(
+		model.Task{ID: 1, Status: "completed", Assignee: "agent"},
 		model.Task{ID: 7, Status: "notstarted", Assignee: "agent"},
-	))
-
-	if got != 0 {
-		t.Fatalf("offered task %d with both slots busy, want none", got)
+	)); got != 7 {
+		t.Fatalf("offered task %d once task 1 completed, want 7", got)
 	}
 }
 
@@ -416,7 +397,7 @@ func TestPollOnceOffersNothingWhenEverySlotIsBusy(t *testing.T) {
 // combined query returned the hundred most recent tasks of any status or
 // assignee: a workspace with a hundred completed or human tasks could push
 // the agent's pending ones out of the window, and a human's own ongoing task
-// counted toward the agent's concurrency, blocking every push behind it.
+// counted as the agent's own, blocking every push behind it.
 func TestPollOnceAsksTwoSeparateQueriesForItsOwnTasks(t *testing.T) {
 	ps := pushServer(t)
 	repo, asked := recordingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent"})
