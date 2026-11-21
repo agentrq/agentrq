@@ -29,6 +29,8 @@ import (
 
 type Params struct {
 	Crud crud.Controller
+	// Pano is the Pano the supervisor reads and writes; Crud's when nil.
+	Pano crud.PanoController
 	// ForkMerger merges a fork back, stopping its agent first.
 	ForkMerger ForkMerger
 	// Launcher starts and stops a workspace's agent on a machine, as the
@@ -103,6 +105,9 @@ func New(p Params) (Handler, error) {
 	srv.launcher = p.Launcher
 	srv.agents = p.Agents
 	srv.notifier = p.Notifier
+	if p.Pano != nil {
+		srv.pano = p.Pano
+	}
 	h := &handler{
 		coremcpServer: srv,
 		crud:          p.Crud,

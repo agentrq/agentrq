@@ -7,6 +7,7 @@ package coremcp
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -47,7 +48,7 @@ func TestPano_WritesAsTheSupervisorWorkspace(t *testing.T) {
 		{ID: 302, Name: "supervisor", ForkOfID: testWorkspace},
 		{ID: testWorkspace, Name: "supervisor"},
 	}}
-	s := &WorkspaceServer{crud: ctrl}
+	s := &WorkspaceServer{crud: ctrl, pano: ctrl}
 	body := textOf(t, toolResult(s.handlePano(authedContext(), nil, mcpevent.PanoParams{Action: "delete", Payload: map[string]any{"id": base62(7)}})))
 
 	if ctrl.listed != (entity.ListWorkspacesRequest{UserID: testUserID, IncludeArchived: true}) {
@@ -76,7 +77,7 @@ func TestPano_Refusals(t *testing.T) {
 		{"an account with no supervisor workspace is told so", authedContext(), &mockPanoCrud{workspaces: []entity.Workspace{{ID: 301, Name: "alpha"}}}, "no supervisor workspace"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := &WorkspaceServer{crud: tc.ctrl}
+			s := &WorkspaceServer{crud: tc.ctrl, pano: tc.ctrl}
 			res := toolResult(s.handlePano(tc.ctx, nil, mcpevent.PanoParams{Action: "delete", Payload: map[string]any{"id": base62(7)}}))
 			if !res.isError || !strings.Contains(res.text, tc.want) {
 				t.Errorf("the tool answered %+v, want an error containing %q", res, tc.want)
@@ -85,5 +86,25 @@ func TestPano_Refusals(t *testing.T) {
 				t.Errorf("the controller was asked to delete %+v, want no call", tc.ctrl.deleted)
 			}
 		})
+	}
+}
+
+// New hands the supervisor the Pano app.go gives agents, which reads the
+// docs shared with the account's teams; without one, the account's own.
+func TestNew_WiresThePano(t *testing.T) {
+	own, agents := &mockPanoCrud{}, &mockPanoCrud{}
+	h, err := New(Params{Mux: http.NewServeMux(), Crud: own, Pano: agents})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := h.(*handler).coremcpServer.pano; got != agents {
+		t.Errorf("pano = %v, want the agents' Pano", got)
+	}
+	h, err = New(Params{Mux: http.NewServeMux(), Crud: own})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := h.(*handler).coremcpServer.pano; got != own {
+		t.Errorf("pano = %v, want the account's own", got)
 	}
 }
