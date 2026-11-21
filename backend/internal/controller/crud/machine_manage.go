@@ -39,23 +39,42 @@ type MachineManageController interface {
 	RecordMachineCommand(ctx context.Context, req entity.RecordMachineCommandRequest)
 }
 
-// MachineMaxSessions is machines.maxSessions: the agents one account may run
-// on a machine whose row sets no cap of its own. 0 is no cap.
+// MachineMaxSessions is machines.maxSessions: the most agents one account may
+// run on a machine. A machine's owner can set a lower cap, never a higher one.
+// 0 is no ceiling.
 var MachineMaxSessions = DefaultMachineMaxSessions
 
 // DefaultMachineMaxSessions matches agentrqd's own --max-per-profile default.
 const DefaultMachineMaxSessions = 8
 
-// MaxMachineSessionsOverride bounds a machine's own cap; 0 (no cap) is the
-// way past it.
+// MaxMachineSessionsOverride bounds a machine's own cap when the server sets
+// no ceiling; 0 (no cap) is the way past it.
 const MaxMachineSessionsOverride = 1000
 
-// sessionLimit is the cap that applies to m: its own, or the server's.
+// sessionLimit is the cap that applies to m: its own, held to the server's
+// ceiling, so lowering the ceiling also lowers every cap set above it.
 func sessionLimit(m model.Machine) int {
-	if m.MaxSessions != nil {
-		return *m.MaxSessions
+	ceiling := MachineMaxSessions
+	if m.MaxSessions == nil {
+		return ceiling
 	}
-	return MachineMaxSessions
+	if own := *m.MaxSessions; ceiling == 0 || (own > 0 && own < ceiling) {
+		return own
+	}
+	return ceiling
+}
+
+// checkMaxSessions refuses a cap the server's ceiling does not allow.
+func checkMaxSessions(n int) error {
+	if ceiling := MachineMaxSessions; ceiling > 0 && (n < 1 || n > ceiling) {
+		return entity.NewLaunchError(entity.ErrLaunchInvalid,
+			fmt.Sprintf("maxSessions must be between 1 and %d, the server's limit, or null for the server's", ceiling))
+	}
+	if n < 0 || n > MaxMachineSessionsOverride {
+		return entity.NewLaunchError(entity.ErrLaunchInvalid,
+			fmt.Sprintf("maxSessions must be between 0 and %d, or null for the server's", MaxMachineSessionsOverride))
+	}
+	return nil
 }
 
 // sameLimit reports whether two machine caps are the same, nil included.
@@ -88,6 +107,7 @@ func toMachineView(m model.Machine, now time.Time, sessions int) entity.MachineV
 		Sessions:         sessions,
 		MaxSessions:      m.MaxSessions,
 		SessionLimit:     sessionLimit(m),
+		SessionCeiling:   MachineMaxSessions,
 		Metrics:          toMetricsView(m),
 	}
 }
@@ -312,10 +332,10 @@ func (c *controller) UpdateMachine(ctx context.Context, req entity.UpdateMachine
 		return nil, fmt.Errorf("invalid id")
 	}
 
-	if req.SetMaxSessions && req.MaxSessions != nil &&
-		(*req.MaxSessions < 0 || *req.MaxSessions > MaxMachineSessionsOverride) {
-		return nil, entity.NewLaunchError(entity.ErrLaunchInvalid,
-			fmt.Sprintf("maxSessions must be between 0 and %d, or null for the server's", MaxMachineSessionsOverride))
+	if req.SetMaxSessions && req.MaxSessions != nil {
+		if err := checkMaxSessions(*req.MaxSessions); err != nil {
+			return nil, err
+		}
 	}
 
 	m, err := c.repository.GetMachine(ctx, id, uid)

@@ -228,7 +228,7 @@ func TestUpdateMachineCountsTheKillSwitchTransition(t *testing.T) {
 		// A rename says nothing about whether machines are being used.
 		{name: "rename only", was: true, newName: strPtr("kitchen pi"), want: nil},
 		{name: "a cap set", was: true, setLimit: true, limit: intPtr(4), want: []entity.Action{entity.ActionMachineSessionLimitSet}},
-		{name: "a cap changed", was: true, limitWas: intPtr(4), setLimit: true, limit: intPtr(0), want: []entity.Action{entity.ActionMachineSessionLimitSet}},
+		{name: "a cap changed", was: true, limitWas: intPtr(4), setLimit: true, limit: intPtr(2), want: []entity.Action{entity.ActionMachineSessionLimitSet}},
 		{name: "a cap cleared", was: true, limitWas: intPtr(4), setLimit: true, want: []entity.Action{entity.ActionMachineSessionLimitSet}},
 		{name: "the same cap again", was: true, limitWas: intPtr(4), setLimit: true, limit: intPtr(4), want: nil},
 		{name: "no cap cleared again", was: true, setLimit: true, want: nil},

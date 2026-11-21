@@ -2256,9 +2256,11 @@ type (
 		Sessions int `json:"sessions"`
 
 		// MaxSessions is this machine's own cap, null when it uses the
-		// server's. SessionLimit is the one that applies; 0 is no cap.
-		MaxSessions  *int `json:"maxSessions"`
-		SessionLimit int  `json:"sessionLimit"`
+		// server's. SessionLimit is the one that applies, and SessionCeiling
+		// the server's, which an own cap cannot exceed; 0 is no cap.
+		MaxSessions    *int `json:"maxSessions"`
+		SessionLimit   int  `json:"sessionLimit"`
+		SessionCeiling int  `json:"sessionCeiling"`
 
 		// Metrics is the last snapshot the daemon reported, or nil if it has
 		// not reported one. Nil rather than a zeroed struct: a machine that

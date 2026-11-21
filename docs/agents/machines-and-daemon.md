@@ -37,7 +37,8 @@ pseudo-terminals, and streams them to the browser.
   `Dirs` already do. The numbers themselves are `--max-per-profile` and
   `--max-per-machine`, defaulting to the constants in `serve.go`.
   The server checks the per-profile cap first, in `agentlaunch` (a profile is
-  one machine row): `machines.maxSessions`, or the row's `MaxSessions`. The
+  one machine row): the row's `MaxSessions`, held to `machines.maxSessions` as
+  a ceiling, since the owner sets the row and the operator the ceiling. The
   per-machine cap spans accounts the server cannot see, so only the daemon
   can hold it.
 - **A refused launch is only ever explained by the event.** The session row is

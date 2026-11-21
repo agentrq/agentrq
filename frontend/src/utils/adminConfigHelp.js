@@ -126,7 +126,7 @@ export const CONFIG_HELP = {
   'hooks.maxPayloadSize': 'The most bytes one event payload a hook writes may hold, from 1024 to 1048576.',
 
   machines: 'Machines running agentrqd for an account.',
-  'machines.maxSessions': 'The agents one account may run on one machine, unless the machine page sets its own. 0 is no cap. Counted in the database, so across all instances; agentrqd still applies its own --max-per-profile.',
+  'machines.maxSessions': 'The most agents one account may run on one machine. A machine page can set a lower cap, never a higher one. 0 is no cap. Counted in the database, so across all instances; agentrqd still applies its own --max-per-profile.',
   teams: 'Teams let accounts read the workspaces their members share with them. Limits here are counted across all instances.',
   'teams.maxInvitesPerDay': 'The invitations one team may create in any 24 hours, revoked ones included. 0 turns invitations off.',
   'teams.maxInvitesPerUserPerDay': 'The invitations one account may create in any 24 hours, across all its teams. 0 is no such cap.',

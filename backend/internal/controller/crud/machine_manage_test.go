@@ -6,6 +6,7 @@ package crud
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -177,23 +178,34 @@ func TestCountOnlineMachinesPerUser_PassesOnAFailure(t *testing.T) {
 	}
 }
 
+// setCeiling sets the server's machines.maxSessions for one test.
+func setCeiling(t *testing.T, n int) {
+	was := MachineMaxSessions
+	t.Cleanup(func() { MachineMaxSessions = was })
+	MachineMaxSessions = n
+}
+
 // A machine's own cap is stored as sent, and null takes it back to the
 // server's; a request that does not mention it leaves it alone.
 func TestUpdateMachineSetsAndClearsItsSessionCap(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
+		ceiling  int
 		was      *int
 		set      bool
 		limit    *int
 		want     *int
 		wantView int
 	}{
-		{name: "set", set: true, limit: intPtr(3), want: intPtr(3), wantView: 3},
-		{name: "no cap", was: intPtr(3), set: true, limit: intPtr(0), want: intPtr(0), wantView: 0},
-		{name: "cleared", was: intPtr(3), set: true, want: nil, wantView: DefaultMachineMaxSessions},
-		{name: "not mentioned", was: intPtr(3), want: intPtr(3), wantView: 3},
+		{name: "set", ceiling: 8, set: true, limit: intPtr(3), want: intPtr(3), wantView: 3},
+		{name: "set to the ceiling", ceiling: 8, set: true, limit: intPtr(8), want: intPtr(8), wantView: 8},
+		{name: "no cap under no ceiling", was: intPtr(3), set: true, limit: intPtr(0), want: intPtr(0), wantView: 0},
+		{name: "above 8 under no ceiling", set: true, limit: intPtr(50), want: intPtr(50), wantView: 50},
+		{name: "cleared", ceiling: 8, was: intPtr(3), set: true, want: nil, wantView: 8},
+		{name: "not mentioned", ceiling: 8, was: intPtr(3), want: intPtr(3), wantView: 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			setCeiling(t, tc.ceiling)
 			env := newMachineTelemetryEnv(t)
 			env.repo.EXPECT().GetMachine(gomock.Any(), int64(9), testUserID).
 				Return(model.Machine{ID: 9, UserID: testUserID, Enabled: true, MaxSessions: tc.was}, nil)
@@ -214,35 +226,62 @@ func TestUpdateMachineSetsAndClearsItsSessionCap(t *testing.T) {
 			if rs.Machine.SessionLimit != tc.wantView || !sameLimit(rs.Machine.MaxSessions, tc.want) {
 				t.Errorf("view = %v/%d, want %v/%d", rs.Machine.MaxSessions, rs.Machine.SessionLimit, tc.want, tc.wantView)
 			}
+			if rs.Machine.SessionCeiling != tc.ceiling {
+				t.Errorf("ceiling = %d, want %d", rs.Machine.SessionCeiling, tc.ceiling)
+			}
 		})
 	}
 }
 
-// Refused before the machine is read, so nothing is stored.
+// Refused before the machine is read, so nothing is stored. Under a ceiling a
+// machine may only go lower, and "no cap" would go past it.
 func TestUpdateMachineRefusesASessionCapOutOfRange(t *testing.T) {
-	for _, n := range []int{-1, MaxMachineSessionsOverride + 1} {
+	for _, tc := range []struct {
+		ceiling int
+		n       int
+		want    string
+	}{
+		{0, -1, "between 0 and 1000"},
+		{0, MaxMachineSessionsOverride + 1, "between 0 and 1000"},
+		{8, 9, "between 1 and 8, the server's limit"},
+		{8, 0, "between 1 and 8, the server's limit"},
+		{8, -1, "between 1 and 8, the server's limit"},
+	} {
+		setCeiling(t, tc.ceiling)
 		env := newTestController(t) // no repository calls may happen
 		_, err := env.controller.UpdateMachine(t.Context(), entity.UpdateMachineRequest{
 			UserID: testUserBase62, MachineID: monoflake.ID(5).String(),
-			SetMaxSessions: true, MaxSessions: intPtr(n),
+			SetMaxSessions: true, MaxSessions: intPtr(tc.n),
 		})
 		var launchErr *entity.LaunchError
-		if !errors.As(err, &launchErr) || !errors.Is(launchErr.Kind, entity.ErrLaunchInvalid) {
-			t.Errorf("maxSessions %d: err = %v, want an invalid request", n, err)
+		if !errors.As(err, &launchErr) || !errors.Is(launchErr.Kind, entity.ErrLaunchInvalid) ||
+			!strings.Contains(err.Error(), tc.want) {
+			t.Errorf("ceiling %d, maxSessions %d: err = %v, want an invalid request saying %q", tc.ceiling, tc.n, err, tc.want)
 		}
 	}
 }
 
-// The server's cap applies until the machine sets one, and follows the config.
+// The server's cap applies until the machine sets one, and is the ceiling of
+// one it sets: lowering it lowers a cap stored above it, or a stored "no cap".
 func TestMachineViewSessionLimit(t *testing.T) {
-	was := MachineMaxSessions
-	t.Cleanup(func() { MachineMaxSessions = was })
-	MachineMaxSessions = 5
-
-	if got := toMachineView(model.Machine{}, time.Now(), 0).SessionLimit; got != 5 {
-		t.Errorf("no cap of its own: %d, want the server's 5", got)
-	}
-	if got := toMachineView(model.Machine{MaxSessions: intPtr(2)}, time.Now(), 0).SessionLimit; got != 2 {
-		t.Errorf("its own cap: %d, want 2", got)
+	for _, tc := range []struct {
+		name    string
+		ceiling int
+		own     *int
+		want    int
+	}{
+		{"no cap of its own", 5, nil, 5},
+		{"its own, lower", 5, intPtr(2), 2},
+		{"its own, the same", 5, intPtr(5), 5},
+		{"its own, above a lowered ceiling", 5, intPtr(9), 5},
+		{"its own no cap, under a ceiling", 5, intPtr(0), 5},
+		{"no ceiling, its own", 0, intPtr(50), 50},
+		{"no ceiling, its own no cap", 0, intPtr(0), 0},
+		{"no ceiling, nothing of its own", 0, nil, 0},
+	} {
+		setCeiling(t, tc.ceiling)
+		if got := toMachineView(model.Machine{MaxSessions: tc.own}, time.Now(), 0).SessionLimit; got != tc.want {
+			t.Errorf("%s: %d, want %d", tc.name, got, tc.want)
+		}
 	}
 }

@@ -237,4 +237,25 @@ describe('MachineDetailView: the agent limit', () => {
     await save(page, '2')
     expect(lastToast().message).toBe('nope')
   })
+
+  // Under the server's ceiling a machine can only go lower, and never to "no cap".
+  it("holds a machine's limit to the server's", async () => {
+    machine.sessionCeiling = 8
+    machine.sessionLimit = 8
+    machine.maxSessions = null
+    let page = await mount()
+    await page.click('Settings')
+    expect(page.el.textContent).toContain("The server's limit. Set a lower number for this machine.")
+    for (const bad of ['9', '0']) {
+      await save(page, bad)
+      expect(updateMachine).not.toHaveBeenCalled()
+    }
+    app.unmount()
+
+    machine.maxSessions = 3
+    machine.sessionLimit = 3
+    page = await mount()
+    await page.click('Settings')
+    expect(page.el.textContent).toContain("Set for this machine, up to the server's 8. Empty uses the server's.")
+  })
 })

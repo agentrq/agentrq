@@ -333,7 +333,7 @@ gzip -c agentrq-hook-github_1.0.0.wasm | curl -s "$AGENTRQ_BASE_URL/admin/v1/hoo
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTRQ_MACHINES_MAX_SESSIONS` | `8` | Most agents one account may run on one machine at once. A machine's own page can set a different cap for it. `0` is no cap. agentrqd still applies its own `--max-per-profile` on the machine. |
+| `AGENTRQ_MACHINES_MAX_SESSIONS` | `8` | Most agents one account may run on one machine at once. A ceiling: a machine's own page can set a lower cap for it, never a higher one. `0` is no cap, and lets a machine's page set any. agentrqd still applies its own `--max-per-profile` on the machine. |
 
 ### Teams
 

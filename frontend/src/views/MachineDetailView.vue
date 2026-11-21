@@ -162,7 +162,7 @@ async function toggleEnabled() {
   }
 }
 
-// Empty is the server's default; 0 is no cap.
+// Empty is the server's limit; 0 is no cap, where the server sets none.
 const limitInput = ref('')
 watch(
   () => machine.value?.maxSessions,
@@ -175,11 +175,20 @@ const limitText = computed(() => {
   const n = machine.value?.sessionLimit
   return n ? `${n} agents at once` : 'No limit'
 })
-const limitHint = computed(() =>
-  machine.value?.maxSessions == null
-    ? "The server's default. Set a number for this machine; 0 is no limit."
-    : "Set for this machine. Empty uses the server's default; 0 is no limit.",
-)
+// The server's limit is a ceiling: under one, a machine can only go lower.
+const limitCeiling = computed(() => machine.value?.sessionCeiling || 0)
+const limitHint = computed(() => {
+  const own = machine.value?.maxSessions != null
+  const n = limitCeiling.value
+  if (n) {
+    return own
+      ? `Set for this machine, up to the server's ${n}. Empty uses the server's.`
+      : "The server's limit. Set a lower number for this machine."
+  }
+  return own
+    ? "Set for this machine. Empty uses the server's default; 0 is no limit."
+    : "The server's default. Set a number for this machine; 0 is no limit."
+})
 
 async function saveLimit() {
   const raw = String(limitInput.value).trim()
@@ -792,7 +801,8 @@ async function stopSession(id) {
                     id="machine-max-sessions"
                     v-model="limitInput"
                     type="number"
-                    min="0"
+                    :min="limitCeiling ? 1 : 0"
+                    :max="limitCeiling || undefined"
                     step="1"
                     inputmode="numeric"
                     placeholder="Default"

@@ -151,8 +151,9 @@ hooks:
 # 0 turns invitations off. One account may create at most maxInvitesPerUserPerDay
 # across all its teams in the same window; 0 is no per-account cap.
 # A team workspace holds at most maxSkillsPerWorkspace skills; 0 is the default, 100.
-# How many agents one account may run on one machine, unless the machine page
-# sets that machine's own; 0 is no cap. agentrqd keeps --max-per-profile too.
+# The most agents one account may run on one machine. A machine's page can set
+# a lower cap, never a higher one; 0 is no cap, and then a machine's page may set
+# any. agentrqd keeps --max-per-profile too.
 machines:
   maxSessions: ${AGENTRQ_MACHINES_MAX_SESSIONS:8}
 
