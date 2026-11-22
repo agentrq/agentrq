@@ -449,6 +449,18 @@ func (c *controller) LastTaskAgents(ctx context.Context, taskIDs []int64) (map[i
 	return out, nil
 }
 
+// resumedByMessage puts a task a message was posted to back to ongoing, even
+// with another task ongoing; not a notstarted one, still waiting for its agent,
+// nor a schedule. It returns the column to write, if any.
+func resumedByMessage(m *model.Task) []string {
+	switch m.Status {
+	case "blocked", "completed", "rejected":
+		m.Status = "ongoing"
+		return []string{"Status"}
+	}
+	return nil
+}
+
 func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTaskRequest) (*entity.RespondToTaskResponse, error) {
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	if c.limiter != nil && !c.limiter.AllowMessage(uid) {
@@ -549,6 +561,9 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 			ResourceID:   msg.ID,
 			Actor:        entity.ActorHuman,
 		})
+		if req.Action == "text" {
+			changed = resumedByMessage(&m)
+		}
 	}
 
 	m.UpdatedAt = time.Now()
@@ -885,7 +900,7 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	})
 
 	m.UpdatedAt = time.Now()
-	updated, err := c.repository.UpdateTask(ctx, m)
+	updated, err := c.repository.UpdateTask(ctx, m, resumedByMessage(&m)...)
 	if err != nil {
 		return nil, err
 	}
