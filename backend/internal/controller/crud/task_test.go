@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -1079,6 +1080,65 @@ func TestReplyToTask_Success(t *testing.T) {
 	if resp.MessageID != 101 {
 		t.Errorf("message id = %d, want 101, the message the reply posted", resp.MessageID)
 	}
+}
+
+// A message, by reply or by a text response, puts a blocked, completed or
+// rejected task back to ongoing; a notstarted, ongoing or schedule task keeps
+// its status, which is not written. A text response with nothing in it posts
+// no message and changes nothing.
+func TestMessage_ResumesTheTask(t *testing.T) {
+	send := map[string]func(c Controller, text string) error{
+		"reply": func(c Controller, text string) error {
+			_, err := c.ReplyToTask(context.Background(), entity.ReplyToTaskRequest{WorkspaceID: 1, TaskID: 10, Text: text, UserID: testUserIDStr})
+			return err
+		},
+		"respond": func(c Controller, text string) error {
+			_, err := c.RespondToTask(context.Background(), entity.RespondToTaskRequest{WorkspaceID: 1, TaskID: 10, Action: "text", Text: text, UserID: testUserIDStr})
+			return err
+		},
+	}
+	expect := func(t *testing.T, e *testEnv, from, want string) {
+		task := model.Task{ID: 10, WorkspaceID: 1, Status: from}
+		e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+		e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+		e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, m model.Task, columns ...string) (model.Task, error) {
+			if m.Status != want {
+				t.Errorf("status = %q, want %q", m.Status, want)
+			}
+			if writes := slices.Contains(columns, "Status"); writes != (from != want) {
+				t.Errorf("columns = %v, want Status written only when it changes", columns)
+			}
+			return m, nil
+		})
+		e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	}
+	for path, sendFn := range send {
+		for from, want := range map[string]string{
+			"blocked":    "ongoing",
+			"completed":  "ongoing",
+			"rejected":   "ongoing",
+			"notstarted": "notstarted",
+			"ongoing":    "ongoing",
+			"cron":       "cron",
+		} {
+			t.Run(path+"/"+from, func(t *testing.T) {
+				e := newTestController(t)
+				expect(t, e, from, want)
+				e.idgen.EXPECT().NextID().Return(int64(101))
+				e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(nil)
+				if err := sendFn(e.controller, "hello"); err != nil {
+					t.Fatalf("%s: %v", path, err)
+				}
+			})
+		}
+	}
+	t.Run("respond/empty", func(t *testing.T) {
+		e := newTestController(t)
+		expect(t, e, "completed", "completed")
+		if err := send["respond"](e.controller, ""); err != nil {
+			t.Fatalf("respond: %v", err)
+		}
+	})
 }
 
 // ── UpdateScheduledTask ───────────────────────────────────────────────────────
