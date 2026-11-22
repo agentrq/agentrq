@@ -648,7 +648,8 @@
         </div>
 
         <!-- Human message — right aligned -->
-        <div v-else class="group flex flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-[90%] @min-[48rem]:max-w-[80%]" :class="m._pending || m._queued ? 'opacity-80' : ''">
+        <div v-else class="group flex flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-[90%] @min-[48rem]:max-w-[80%] scroll-mt-4" :class="m._pending || m._queued ? 'opacity-80' : ''"
+             :data-minimap-id="m._pending || m._queued ? null : m.id">
           <div class="flex flex-col items-end min-w-0 max-w-full">
              <div class="text-gray-900 dark:text-zinc-100 rounded-2xl rounded-br-md px-3.5 py-2.5 min-w-0 max-w-full"
                   :class="m._pending || m._queued ? 'bg-gray-50 dark:bg-zinc-800/40 border border-dashed border-gray-300 dark:border-zinc-600' : 'bg-gray-100 dark:bg-zinc-800/70'">
@@ -769,7 +770,8 @@
         </li>
       </ul>
     </div>
-    <TaskLinksPanel pinned class="hidden @min-[48rem]:flex absolute top-0 right-4 z-10 max-h-[calc(100%-0.5rem)] shadow-lg" :task="task" :task-id="taskId" :pano-docs="panoDocs" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
+    <ChatMinimap v-if="minimapShown" class="hidden @min-[40rem]:flex shrink-0" :entries="minimapDots" :active-id="minimapActiveId" @jump="jumpToMessage" />
+    <TaskLinksPanel pinned class="hidden @min-[48rem]:flex absolute top-0 z-10 max-h-[calc(100%-0.5rem)] shadow-lg" :class="minimapShown ? 'right-10' : 'right-4'" :task="task" :task-id="taskId" :pano-docs="panoDocs" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
     </div>
 
     <!-- Tool call trajectory (replaces the chat area in place) -->
@@ -1070,6 +1072,8 @@ import { withRequestAnswered } from '../composables/useRequestAnswer';
 import MarkdownBody from '../components/MarkdownBody.vue';
 import TaskPlanPanel from '../components/TaskPlanPanel.vue';
 import TaskLinksPanel from '../components/TaskLinksPanel.vue';
+import ChatMinimap from '../components/ChatMinimap.vue';
+import { minimapEntries, minimapWindow, useChatMinimap } from '../composables/useChatMinimap';
 import { useTaskPlan, planCommentText } from '../composables/useTaskPlan';
 import EmojiPicker from '../components/EmojiPicker.vue';
 import ComposerBox from '../components/ComposerBox.vue';
@@ -1540,6 +1544,11 @@ const displayMessages = computed(() => {
 // badge on the message it answers rather than as a bubble. The plan card is
 // not something said, so it is never what a reaction answers.
 const shownThread = computed(() => foldReactions(displayMessages.value, (m) => !isThreadTelemetry(m)));
+
+// The person's own messages, as dots down the side of the chat to jump between.
+const minimap = computed(() => minimapEntries(shownThread.value.thread));
+const { activeId: minimapActiveId, shown: minimapShown, jumpTo: jumpToMessage } = useChatMinimap(scrollContainer, minimap);
+const minimapDots = computed(() => minimapWindow(minimap.value, minimapActiveId.value));
 
 // What each agent message cost in time: from the person's message it answers.
 const workedFor = computed(() => workDurations(sortedMessages.value));
