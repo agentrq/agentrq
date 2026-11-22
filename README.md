@@ -678,6 +678,20 @@ Copy the filled-in commands and config block from **Workspace Settings → Setup
 AgentRQ supports multi-tenant Slack integration for real-time task creation, thread replies sync, and agent permission requests:
 - [Slack Integration Setup & Usage Guide](integrations/slack/README.md)
 
+## 🧪 Test Coverage
+
+Test coverage of each tested component, measured on `main` in November 2026. Where CI enforces a gate, a pull request that drops below it fails.
+
+| Component | Coverage | CI gate | Reproduce |
+|-----------|----------|---------|-----------|
+| Backend (Go) | 98.4% | — | `make mocks && cd backend && go test ./internal/... -cover` |
+| Frontend (Vue) | 100% | 100% | `cd frontend && npm run test:coverage` |
+| Desktop (Electron) | 100% | 100% | `cd desktop && npm run test:coverage` |
+| `agentrqd` daemon (Go) | 87.2% | — | `cd daemon && go test ./... -cover` |
+| WebAssembly hooks (Go) | 100% | — | `cd wasm-hooks && go test ./... -cover` |
+| `agentrq-ws` CLI | 100% lines, 98.3% branches | 100% lines, 95% branches | `cd cli/agentrq-ws && npm run test:ci` |
+| Chrome extension | 100% | 100% | `cd plugins/chrome && npm run test:ci` |
+
 ## 🙌 Contributing
 
 Bug reports go in a [GitHub issue](https://github.com/agentrq/agentrq/issues/new) and feature or architecture ideas go in a short written proposal — see [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -429,6 +429,20 @@ npx @deepseek-ai/dsh --profile agentrq-<workspace>
 
 仓库当前文档没有给出官方展开。不要在文档或 PR 描述中擅自定义它；可以把 AgentRQ 当作产品名理解。
 
+## 测试覆盖率
+
+各组件的测试覆盖率，于 2026 年 11 月在 `main` 上测得。CI 设有门槛的组件，低于门槛的 PR 会失败。
+
+| 组件 | 覆盖率 | CI 门槛 | 复现命令 |
+|------|--------|---------|----------|
+| 后端（Go） | 98.4% | — | `make mocks && cd backend && go test ./internal/... -cover` |
+| 前端（Vue） | 100% | 100% | `cd frontend && npm run test:coverage` |
+| 桌面端（Electron） | 100% | 100% | `cd desktop && npm run test:coverage` |
+| `agentrqd` 守护进程（Go） | 87.2% | — | `cd daemon && go test ./... -cover` |
+| WebAssembly hooks（Go） | 100% | — | `cd wasm-hooks && go test ./... -cover` |
+| `agentrq-ws` CLI | 行 100%，分支 98.3% | 行 100%，分支 95% | `cd cli/agentrq-ws && npm run test:ci` |
+| Chrome 扩展 | 100% | 100% | `cd plugins/chrome && npm run test:ci` |
+
 ## 贡献指南
 
 如果你想从中文文档开始贡献，建议保持低风险、小范围：
