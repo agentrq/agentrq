@@ -453,6 +453,7 @@ func New(cfg Config) (*App, error) {
 		MaxInvitesPerDay:        cfg.Teams.MaxInvitesPerDay,
 		MaxInvitesPerUserPerDay: cfg.Teams.MaxInvitesPerUserPerDay,
 	})
+	startInvitationExpirySweep(appCtx, teamCtrl, invitationExpirySweep)
 	teamViewCtrl := teamview.New(teamview.Params{
 		Teams:      teamCtrl,
 		Owner:      crudCtrl,

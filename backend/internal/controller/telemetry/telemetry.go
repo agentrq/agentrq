@@ -372,6 +372,16 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUIPresetInsert
 	case entity.ActionMachineSessionLimitSet:
 		action = model.ActionIDMachineSessionLimitSet
+	case entity.ActionTeamInviteEmailSent:
+		action = model.ActionIDTeamInviteEmailSent
+	case entity.ActionTeamInviteEmailFailed:
+		action = model.ActionIDTeamInviteEmailFailed
+	case entity.ActionTeamInviteRevoke:
+		action = model.ActionIDTeamInviteRevoke
+	case entity.ActionTeamInviteDecline:
+		action = model.ActionIDTeamInviteDecline
+	case entity.ActionTeamInviteExpire:
+		action = model.ActionIDTeamInviteExpire
 	default:
 		return
 	}

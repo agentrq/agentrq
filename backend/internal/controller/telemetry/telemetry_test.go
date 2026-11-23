@@ -525,6 +525,11 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionPresetCreate, model.ActionIDPresetCreate, "preset create"},
 		{entity.ActionPresetDelete, model.ActionIDPresetDelete, "preset delete"},
 		{entity.ActionUIPresetInsert, model.ActionIDUIPresetInsert, "ui preset insert"},
+		{entity.ActionTeamInviteEmailSent, model.ActionIDTeamInviteEmailSent, "team invite email sent"},
+		{entity.ActionTeamInviteEmailFailed, model.ActionIDTeamInviteEmailFailed, "team invite email failed"},
+		{entity.ActionTeamInviteRevoke, model.ActionIDTeamInviteRevoke, "team invite revoke"},
+		{entity.ActionTeamInviteDecline, model.ActionIDTeamInviteDecline, "team invite decline"},
+		{entity.ActionTeamInviteExpire, model.ActionIDTeamInviteExpire, "team invite expire"},
 	}
 
 	for _, tc := range cases {

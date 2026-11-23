@@ -124,8 +124,10 @@ func (c *controller) CreateInvitation(ctx context.Context, ch entity.TeamChange,
 		err := c.mailer.Send(ctx, smtp.SendRequest{To: []string{email}, Subject: inviteSubject(inviter, team.Name), Body: c.inviteBody(team.Name, token)})
 		if err == nil {
 			rs.EmailSent = true
+			c.emit(ctx, entity.ActionTeamInviteEmailSent, ch.UserID, 0, ch.TeamID)
 			return rs, nil
 		}
+		c.emit(ctx, entity.ActionTeamInviteEmailFailed, ch.UserID, 0, ch.TeamID)
 		zlog.Warn().Err(err).Int64("invitation", inv.ID).Msg("team invitation email not sent; the inviter has only the link")
 	}
 	return rs, nil
@@ -192,7 +194,33 @@ func (c *controller) ListTeamInvitations(ctx context.Context, userID, teamID int
 // reads it under the team's lock.
 func (c *controller) RevokeInvitation(ctx context.Context, ch entity.TeamChange, invitationID int64) (int64, error) {
 	next, err := c.repo.RevokeTeamInvitation(ctx, ch.TeamID, ch.UserID, ch.Version, invitationID, c.activity())
-	return next, fromRepo(err)
+	if err != nil {
+		return next, fromRepo(err)
+	}
+	c.emit(ctx, entity.ActionTeamInviteRevoke, ch.UserID, 0, ch.TeamID)
+	return next, nil
+}
+
+// expirySweepBatch is the most expired invitations one sweep counts; the
+// next sweep takes the rest.
+const expirySweepBatch = 500
+
+// CountExpiredInvitations emits one team_invite_expire, as its inviter, for
+// each invitation that reached its expiry unaccepted and not revoked before
+// it. The repository marks each once, so instances sweeping together never
+// count one twice.
+func (c *controller) CountExpiredInvitations(ctx context.Context) (int, error) {
+	total := 0
+	for {
+		rows, err := c.repo.MarkExpiredTeamInvitations(ctx, c.now(), expirySweepBatch)
+		for _, inv := range rows {
+			c.emit(ctx, entity.ActionTeamInviteExpire, inv.InvitedBy, 0, inv.TeamID)
+		}
+		total += len(rows)
+		if err != nil || len(rows) < expirySweepBatch {
+			return total, err
+		}
+	}
 }
 
 // myEmail is the account's email, lowercased.
@@ -344,5 +372,9 @@ func (c *controller) DeclineInvitation(ctx context.Context, userID, invitationID
 	if errors.Is(err, base.ErrInvitationNotPending) {
 		return errGone
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	c.emit(ctx, entity.ActionTeamInviteDecline, userID, 0, inv.TeamID)
+	return nil
 }

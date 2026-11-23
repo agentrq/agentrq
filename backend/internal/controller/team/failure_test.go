@@ -446,3 +446,10 @@ func TestNewDefaultsTheClockAndNeedsNoPublisher(t *testing.T) {
 	}
 	c.emit(context.Background(), 0, alice, 0, 1) // no publisher: nothing to do, no panic
 }
+
+func (f failing) MarkExpiredTeamInvitations(ctx context.Context, now time.Time, limit int) ([]model.TeamInvitation, error) {
+	if f.method == "MarkExpiredTeamInvitations" {
+		return nil, errDB
+	}
+	return f.Repository.MarkExpiredTeamInvitations(ctx, now, limit)
+}

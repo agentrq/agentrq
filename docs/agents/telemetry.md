@@ -79,3 +79,7 @@ makes them self-evidently true. A few happen entirely in the browser and are
   Older tasks are backfilled once, in a goroutine at boot, behind the claim
   `latency_backfill`/`v1`. Keep the claim even when the run fails, or every
   restart redoes it; `backend/sql/backfill` is the manual fallback.
+- **`team_invite_expire` comes from an hourly sweep**, since an expiry happens
+  to no request. Each invitation's `expiry_counted_at` is set by a conditional
+  UPDATE, which is what stops instances sweeping together counting one twice;
+  a time-window query instead would double-count or miss on overlap.

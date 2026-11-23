@@ -898,6 +898,13 @@ const (
 	ActionIDPresetDelete
 	ActionIDUIPresetInsert
 	ActionIDMachineSessionLimitSet
+	// An invitation's email sent or failed, the invitation revoked, declined
+	// or expired; emitted by the backend.
+	ActionIDTeamInviteEmailSent
+	ActionIDTeamInviteEmailFailed
+	ActionIDTeamInviteRevoke
+	ActionIDTeamInviteDecline
+	ActionIDTeamInviteExpire
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

@@ -1911,6 +1911,17 @@ const (
 	// A machine's own session cap set or cleared; emitted by the backend,
 	// workspace 0 like the other machine actions.
 	ActionMachineSessionLimitSet Action = 136
+	// An invitation's email sent, or the send failed and the inviter has only
+	// the link. Emitted by the backend; workspace 0, like the other team
+	// actions, and the invitation's team.
+	ActionTeamInviteEmailSent   Action = 137
+	ActionTeamInviteEmailFailed Action = 138
+	// An invitation revoked by a member, or declined by its invitee.
+	ActionTeamInviteRevoke  Action = 139
+	ActionTeamInviteDecline Action = 140
+	// An invitation that reached its expiry unaccepted and unrevoked, counted
+	// once by the hourly sweep, as its inviter.
+	ActionTeamInviteExpire Action = 141
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2185,6 +2196,16 @@ func (a Action) String() string {
 		return "ui_preset_insert"
 	case ActionMachineSessionLimitSet:
 		return "machine_session_limit_set"
+	case ActionTeamInviteEmailSent:
+		return "team_invite_email_sent"
+	case ActionTeamInviteEmailFailed:
+		return "team_invite_email_failed"
+	case ActionTeamInviteRevoke:
+		return "team_invite_revoke"
+	case ActionTeamInviteDecline:
+		return "team_invite_decline"
+	case ActionTeamInviteExpire:
+		return "team_invite_expire"
 	}
 	return "unknown"
 }
