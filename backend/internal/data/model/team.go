@@ -36,14 +36,18 @@ type TeamInvitation struct {
 	ID     int64 `gorm:"primaryKey;autoIncrement:false"`
 	TeamID int64 `gorm:"not null;index:idx_team_invitations_team_id_created_at,priority:1;uniqueIndex:uk_team_invitations_pending_email,priority:1,where:accepted_at IS NULL AND revoked_at IS NULL"`
 	// Email is stored lowercased, so matching an account ignores case.
-	Email      string `gorm:"type:varchar(255);not null;index:idx_team_invitations_email;uniqueIndex:uk_team_invitations_pending_email,priority:2"`
-	InvitedBy  int64  `gorm:"not null;index:idx_team_invitations_invited_by_created_at,priority:1"`
-	TokenHash  string `gorm:"type:char(64);not null;uniqueIndex:uk_team_invitations_token_hash"`
-	ExpiresAt  time.Time
+	Email      string    `gorm:"type:varchar(255);not null;index:idx_team_invitations_email;uniqueIndex:uk_team_invitations_pending_email,priority:2"`
+	InvitedBy  int64     `gorm:"not null;index:idx_team_invitations_invited_by_created_at,priority:1"`
+	TokenHash  string    `gorm:"type:char(64);not null;uniqueIndex:uk_team_invitations_token_hash"`
+	ExpiresAt  time.Time `gorm:"index:idx_team_invitations_expiry_counted_at_expires_at,priority:2"`
 	AcceptedAt *time.Time
 	AcceptedBy int64 `gorm:"not null;default:0"`
 	RevokedAt  *time.Time
 	CreatedAt  time.Time `gorm:"index:idx_team_invitations_team_id_created_at,priority:2;index:idx_team_invitations_invited_by_created_at,priority:2"`
+	// ExpiryCountedAt is when the expiry sweep counted it, so it is counted
+	// once. Invitations already expired when the column arrived were marked
+	// uncounted, so the first sweep is not a burst of old expiries.
+	ExpiryCountedAt *time.Time `gorm:"index:idx_team_invitations_expiry_counted_at_expires_at,priority:1"`
 }
 
 // WorkspaceShare lets a team's members read a workspace, and its forks.

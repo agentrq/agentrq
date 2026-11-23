@@ -71,6 +71,9 @@ type Controller interface {
 	AcceptInvitation(ctx context.Context, userID int64, token string) (entity.Team, error)
 	AcceptInvitationByID(ctx context.Context, userID, invitationID int64) (entity.Team, error)
 	DeclineInvitation(ctx context.Context, userID, invitationID int64) error
+	// CountExpiredInvitations records each invitation that expired since the
+	// last sweep, once; it returns how many it counted.
+	CountExpiredInvitations(ctx context.Context) (int, error)
 
 	// ListActivities is a page of the team's changes, newest first.
 	ListActivities(ctx context.Context, req entity.ListTeamActivitiesRequest) (entity.TeamActivities, error)
@@ -117,6 +120,7 @@ type Repository interface {
 	RevokeTeamInvitation(ctx context.Context, teamID, callerID, version, id int64, act model.TeamManagementActivity) (int64, error)
 	DeclineTeamInvitation(ctx context.Context, teamID, id int64, act model.TeamManagementActivity) error
 	AcceptTeamInvitation(ctx context.Context, id int64, member model.TeamMember, now time.Time, act model.TeamManagementActivity) error
+	MarkExpiredTeamInvitations(ctx context.Context, now time.Time, limit int) ([]model.TeamInvitation, error)
 	SetWorkspaceShare(ctx context.Context, s model.WorkspaceShare, tw model.TeamWorkspace, ids func() int64, version int64, act model.TeamManagementActivity) (base.WorkspaceShareWithTeam, int64, error)
 	ListWorkspaceShares(ctx context.Context, workspaceID, userID int64) ([]base.WorkspaceShareWithTeam, error)
 	DeleteWorkspaceShare(ctx context.Context, workspaceID, teamID, userID, version int64, act model.TeamManagementActivity, keep base.TeamSkillCopies) (int64, error)

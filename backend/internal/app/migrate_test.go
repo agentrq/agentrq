@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/glebarez/sqlite"
@@ -172,5 +173,69 @@ func TestMigrateFailsWhenARoleCannotBeDropped(t *testing.T) {
 	}
 	if err := migrateSchema(db); !errors.Is(err, full) {
 		t.Errorf("migrate = %v, want the failed drop", err)
+	}
+}
+
+// Invitations already expired when the expiry sweep arrives are marked
+// counted, so its first run reports none of them; open ones are left to it,
+// and a later run marks nothing.
+func TestMigrateMarksInvitationsAlreadyExpired(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "a.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type before struct {
+		ID        int64 `gorm:"primaryKey;autoIncrement:false"`
+		TeamID    int64
+		Email     string
+		InvitedBy int64
+		TokenHash string
+		ExpiresAt time.Time
+		CreatedAt time.Time
+	}
+	if err := db.Table("team_invitations").AutoMigrate(&before{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	for _, inv := range []before{{ID: 1, Email: "old@x", TokenHash: "a", ExpiresAt: now.Add(-time.Hour)}, {ID: 2, Email: "open@x", TokenHash: "b", ExpiresAt: now.Add(time.Hour)}} {
+		if err := db.Table("team_invitations").Create(&inv).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := migrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	var marked []int64
+	db.Model(&model.TeamInvitation{}).Where("expiry_counted_at IS NOT NULL").Pluck("id", &marked)
+	if len(marked) != 1 || marked[0] != 1 {
+		t.Errorf("marked %v, want only the invitation already expired", marked)
+	}
+	// Once the column exists, the open one expiring is the sweep's to count.
+	db.Model(&model.TeamInvitation{}).Where("id = 2").Update("expires_at", now.Add(-time.Minute))
+	if err := migrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	var n int64
+	db.Model(&model.TeamInvitation{}).Where("expiry_counted_at IS NULL").Count(&n)
+	if n != 1 {
+		t.Errorf("a second migration left %d unmarked, want 1", n)
+	}
+}
+
+func TestMigrateFailsWhenExpiredInvitationsCannotBeMarked(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "a.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := errors.New("disk full")
+	if err := db.Callback().Update().Before("gorm:update").Register("fail_mark", func(tx *gorm.DB) {
+		if tx.Statement.Table == "team_invitations" {
+			_ = tx.AddError(full)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateSchema(db); !errors.Is(err, full) {
+		t.Errorf("migrate = %v, want the failed mark", err)
 	}
 }

@@ -6,6 +6,7 @@ package app
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 
@@ -71,8 +72,20 @@ func migrateSchema(conn *gorm.DB) error {
 	// team workspaces a skill of the same name.
 	_ = conn.Exec("DROP INDEX IF EXISTS uk_skills_user_id_workspace_id_name").Error
 
+	// Invitations already expired when the expiry sweep arrived are marked
+	// counted without being counted: the first sweep would otherwise report
+	// every old expiry at once, as if it had just happened.
+	newExpiryColumn := !conn.Migrator().HasColumn(&model.TeamInvitation{}, "expiry_counted_at")
 	if err := conn.AutoMigrate(migratedModels()...); err != nil {
 		return err
+	}
+	if newExpiryColumn {
+		now := time.Now()
+		err := conn.Model(&model.TeamInvitation{}).Where("expires_at <= ? AND expiry_counted_at IS NULL", now).
+			Update("expiry_counted_at", now).Error
+		if err != nil {
+			return err
+		}
 	}
 	// hook_registrations.token held the plain token before it was hashed, and
 	// is NOT NULL: left in place, every new registration would fail to insert.

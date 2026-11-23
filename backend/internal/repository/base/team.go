@@ -603,6 +603,33 @@ func (r *repository) AcceptTeamInvitation(ctx context.Context, id int64, m model
 	})
 }
 
+// MarkExpiredTeamInvitations marks up to limit invitations that expired by
+// now and were neither accepted nor revoked before expiring, and not yet
+// counted, as counted at now, and returns those it marked. Each is marked by
+// its own conditional UPDATE, so an instance sweeping at the same time never
+// marks one this one did. Revoked after expiring still counts: re-inviting
+// an address revokes its expired invitation, and declining may follow expiry.
+func (r *repository) MarkExpiredTeamInvitations(ctx context.Context, now time.Time, limit int) ([]model.TeamInvitation, error) {
+	const unmarkedExpired = "expiry_counted_at IS NULL AND expires_at <= ? AND accepted_at IS NULL AND (revoked_at IS NULL OR revoked_at >= expires_at)"
+	var rows []model.TeamInvitation
+	err := r.conn(ctx).Where(unmarkedExpired, now).Order("expires_at, id").Limit(limit).Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	marked := make([]model.TeamInvitation, 0, len(rows))
+	for _, inv := range rows {
+		res := r.conn(ctx).Model(&model.TeamInvitation{}).Where("id = ? AND "+unmarkedExpired, inv.ID, now).
+			Update("expiry_counted_at", now)
+		if res.Error != nil {
+			return marked, res.Error
+		}
+		if res.RowsAffected == 1 {
+			marked = append(marked, inv)
+		}
+	}
+	return marked, nil
+}
+
 // sharesWithTeams selects shares with their team's name.
 func sharesWithTeams(tx *gorm.DB) *gorm.DB {
 	return tx.Model(&model.WorkspaceShare{}).
