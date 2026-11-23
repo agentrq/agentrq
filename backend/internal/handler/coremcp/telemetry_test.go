@@ -6,7 +6,11 @@ package coremcp
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -86,5 +90,46 @@ func TestEmitTelemetry_MethodCallAction(t *testing.T) {
 	}
 	if got.WorkspaceID != 0 {
 		t.Errorf("WorkspaceID = %d, want 0 (resources/prompts have no single workspace)", got.WorkspaceID)
+	}
+}
+
+// A failed call is counted under the name its call was counted as, with its
+// workspace; one refused before it was counted, and a tool that does not
+// exist, under the name it was called by.
+func TestToolErrors_CountedThroughTheServer(t *testing.T) {
+	var errs []mcpevent.MCPEvent
+	fps := &fakePubSub{onPublish: func(req pubsub.PublishRequest) {
+		if ev := req.Event.(mcpevent.MCPEvent); ev.Action == mcpevent.ActionMCPToolCallError {
+			errs = append(errs, ev)
+		}
+	}}
+	srv := NewServer(&taskCrud{}, "https://agentrq.example", fps)
+	ctx := context.Background()
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	ss, err := srv.server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ss.Close() })
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+
+	// No user in the context, so each call that reaches its handler fails.
+	_, _ = cs.CallTool(ctx, &mcp.CallToolParams{Name: "workspace", Arguments: map[string]any{"action": "list"}})
+	_, _ = cs.CallTool(ctx, &mcp.CallToolParams{Name: "launchAgent", Arguments: map[string]any{"workspaceId": base62(testWorkspace), "machineId": base62(1), "kind": "bogus"}})
+	// A payload refused before its action runs counts under the tool.
+	_, _ = cs.CallTool(ctx, &mcp.CallToolParams{Name: "launchAgent", Arguments: map[string]any{"workspaceId": base62(testWorkspace)}})
+	_, _ = cs.CallTool(ctx, &mcp.CallToolParams{Name: "help", Arguments: map[string]any{}})
+	_, _ = cs.CallTool(ctx, &mcp.CallToolParams{Name: "noSuchTool", Arguments: map[string]any{}})
+
+	var got []string
+	for _, e := range errs {
+		got = append(got, fmt.Sprintf("%s@%d", e.ToolName, e.WorkspaceID))
+	}
+	if want := []string{"listWorkspaces@0", fmt.Sprintf("launchAgent@%d", testWorkspace), "machines@0", "noSuchTool@0"}; !slices.Equal(got, want) {
+		t.Errorf("counted errors %v, want %v", got, want)
 	}
 }

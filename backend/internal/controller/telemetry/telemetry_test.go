@@ -296,16 +296,26 @@ func TestRecordMCP_PersistsSubActionID(t *testing.T) {
 		Action: mcp.ActionMCPMethodCall, ToolName: "resource:new-workspace-guide",
 		Actor: uint8(entity.ActorAgent),
 	}
+	mcpChan <- mcp.MCPEvent{
+		UserID: 1, WorkspaceID: 10,
+		Action: mcp.ActionMCPToolCallError, ToolName: "getTask",
+		Actor: uint8(entity.ActorAgent),
+	}
+	mcpChan <- mcp.MCPEvent{
+		UserID: 1, WorkspaceID: 10,
+		Action: mcp.ActionMCPAgentToolCallFail,
+		Actor:  uint8(entity.ActorAgent),
+	}
 
 	time.Sleep(150 * time.Millisecond)
 
 	var records []model.Telemetry
 	db.Find(&records)
-	if len(records) != 2 {
-		t.Fatalf("expected 2 records, got %d", len(records))
+	if len(records) != 4 {
+		t.Fatalf("expected 4 records, got %d", len(records))
 	}
 
-	var gotToolCall, gotMethodCall bool
+	var gotToolCall, gotMethodCall, gotToolError, gotAgentFail bool
 	for _, r := range records {
 		switch r.Action {
 		case model.ActionIDMCPToolCall:
@@ -318,10 +328,20 @@ func TestRecordMCP_PersistsSubActionID(t *testing.T) {
 			if r.SubActionID != model.SubActionIDMCPResourceNewWorkspaceGuide {
 				t.Errorf("method call SubActionID = %d, want SubActionIDMCPResourceNewWorkspaceGuide (%d)", r.SubActionID, model.SubActionIDMCPResourceNewWorkspaceGuide)
 			}
+		case model.ActionIDMCPToolCallError:
+			gotToolError = true
+			if r.SubActionID != model.SubActionIDMCPGetTask {
+				t.Errorf("tool call error SubActionID = %d, want SubActionIDMCPGetTask (%d)", r.SubActionID, model.SubActionIDMCPGetTask)
+			}
+		case model.ActionIDAgentToolCallFail:
+			gotAgentFail = true
+			if r.SubActionID != model.SubActionIDUnknown || r.WorkspaceID != 10 {
+				t.Errorf("agent tool failure stored %+v, want workspace 10 and no sub-action", r)
+			}
 		}
 	}
-	if !gotToolCall || !gotMethodCall {
-		t.Fatalf("missing expected rows: toolCall=%v methodCall=%v", gotToolCall, gotMethodCall)
+	if !gotToolCall || !gotMethodCall || !gotToolError || !gotAgentFail {
+		t.Fatalf("missing expected rows: toolCall=%v methodCall=%v toolError=%v agentFail=%v", gotToolCall, gotMethodCall, gotToolError, gotAgentFail)
 	}
 }
 

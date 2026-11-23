@@ -505,6 +505,10 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 		action, tool = mcpAction(model.ActionIDMCPToolCall), mcpTool(event.ToolName)
 	case mcp.ActionMCPMethodCall:
 		action, tool = mcpAction(model.ActionIDMCPMethodCall), mcpTool(event.ToolName)
+	case mcp.ActionMCPToolCallError:
+		action, tool = mcpAction(model.ActionIDMCPToolCallError), mcpTool(event.ToolName)
+	case mcp.ActionMCPAgentToolCallFail:
+		action = mcpAction(model.ActionIDAgentToolCallFail)
 	case mcp.ActionMCPConnect:
 		action = mcpAction(model.ActionIDMCPConnect)
 	case mcp.ActionMCPClearContext:
@@ -559,6 +563,10 @@ func (a mcpAction) String() string {
 		return "mcp_clear_context"
 	case model.ActionIDMCPPlanUpdate:
 		return "mcp_plan_update"
+	case model.ActionIDMCPToolCallError:
+		return "mcp_tool_call_error"
+	case model.ActionIDAgentToolCallFail:
+		return "agent_tool_call_fail"
 	case model.ActionIDMCPPermissionManual:
 		return "mcp_permission_manual"
 	case model.ActionIDMCPPermissionAuto:

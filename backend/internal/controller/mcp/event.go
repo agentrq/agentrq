@@ -25,6 +25,12 @@ const (
 	// A native agent's plan for a task, written or replaced. Emitted once
 	// the plan is stored, never for a failed write.
 	ActionMCPPlanUpdate
+	// A call of one of our tools that ended in an error, under the same tool
+	// name as its ActionMCPToolCall: successes are the difference.
+	ActionMCPToolCallError
+	// A call of one of the agent's own tools that failed, as a native agent
+	// reported it. Never named: those names are the agent's, not a set we own.
+	ActionMCPAgentToolCallFail
 )
 
 func (a Action) String() string {
@@ -41,6 +47,10 @@ func (a Action) String() string {
 		return "clear_context"
 	case ActionMCPPlanUpdate:
 		return "plan_update"
+	case ActionMCPToolCallError:
+		return "tool_call_error"
+	case ActionMCPAgentToolCallFail:
+		return "agent_tool_call_fail"
 	}
 	return "unknown"
 }

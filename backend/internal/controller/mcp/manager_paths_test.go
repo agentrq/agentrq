@@ -60,13 +60,15 @@ func TestManager_AgentSnapshots(t *testing.T) {
 
 func TestAction_String(t *testing.T) {
 	for action, want := range map[Action]string{
-		ActionMCPToolCall:     "tool_call",
-		ActionMCPMethodCall:   "method_call",
-		ActionMCPNotification: "notification",
-		ActionMCPConnect:      "connect",
-		ActionMCPClearContext: "clear_context",
-		ActionMCPPlanUpdate:   "plan_update",
-		Action(250):           "unknown",
+		ActionMCPToolCall:          "tool_call",
+		ActionMCPMethodCall:        "method_call",
+		ActionMCPNotification:      "notification",
+		ActionMCPConnect:           "connect",
+		ActionMCPClearContext:      "clear_context",
+		ActionMCPPlanUpdate:        "plan_update",
+		ActionMCPToolCallError:     "tool_call_error",
+		ActionMCPAgentToolCallFail: "agent_tool_call_fail",
+		Action(250):                "unknown",
 	} {
 		if got := action.String(); got != want {
 			t.Errorf("Action(%d).String() = %q, want %q", action, got, want)
