@@ -135,20 +135,23 @@ const pausedTasks = reactive(new Set());
 
 /**
  * Whether new messages may pull this task's chat to the bottom, and the switch
- * the minimap offers to pause that while the person reads up.
+ * the minimap offers to pause that while the person reads up. Jumping to a
+ * message pauses it too, until the person resumes.
  *
  * @param {import('vue').MaybeRefOrGetter<string>} taskId
  * @param {() => void} [onPause] called each time a pause begins
  */
 export function useAutoscrollPause(taskId, onPause = () => {}) {
   const paused = computed(() => pausedTasks.has(String(toValue(taskId))));
-  const toggle = () => {
-    const id = String(toValue(taskId));
-    if (pausedTasks.delete(id)) return;
-    pausedTasks.add(id);
+  const pause = () => {
+    if (paused.value) return;
+    pausedTasks.add(String(toValue(taskId)));
     onPause();
   };
-  return { paused, toggle };
+  const toggle = () => {
+    if (!pausedTasks.delete(String(toValue(taskId)))) pause();
+  };
+  return { paused, pause, toggle };
 }
 
 /** Forgets every pause; for tests. */

@@ -275,6 +275,15 @@ describe('useAutoscrollPause', () => {
     expect(onPause).toHaveBeenCalledTimes(1)
   })
 
+  it('pauses without toggling, reporting only a pause that begins', () => {
+    const onPause = vi.fn()
+    const { paused, pause } = useAutoscrollPause('t3', onPause)
+    pause()
+    pause()
+    expect(paused.value).toBe(true)
+    expect(onPause).toHaveBeenCalledTimes(1)
+  })
+
   it('reports nothing by default', () => {
     const { paused, toggle } = useAutoscrollPause(() => 't9')
     toggle()
@@ -350,4 +359,25 @@ describe('ChatMinimap', () => {
     expect(button.getAttribute('aria-pressed')).toBe('true')
     expect(button.title).toBe('Resume autoscroll')
   })
+
+  it('only jumps on a tap: the mouse and focus events a tap brings open no preview', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(10_000)
+    const { el, state } = mount([{ id: 'a', preview: 'one' }])
+    el.querySelector('nav').getBoundingClientRect = () => ({ top: 0 })
+    dots(el)[0].getBoundingClientRect = () => ({ top: 20, height: 24 })
+    dots(el)[0].dispatchEvent(new Event('touchstart'))
+    dots(el)[0].dispatchEvent(new Event('mouseenter'))
+    dots(el)[0].dispatchEvent(new Event('focus'))
+    dots(el)[0].click()
+    await nextTick()
+    expect(preview(el)).toBeNull()
+    expect(state.jumps).toEqual(['a'])
+    // A mouse a moment later previews again.
+    now.mockReturnValue(11_001)
+    dots(el)[0].dispatchEvent(new Event('mouseenter'))
+    await nextTick()
+    expect(preview(el).textContent).toBe('one')
+    now.mockRestore()
+  })
 })
+

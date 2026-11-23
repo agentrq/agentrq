@@ -6,7 +6,7 @@
 
 <template>
   <nav aria-label="Your messages" data-testid="chat-minimap"
-       class="relative w-6 flex-col justify-center py-4" @mouseleave="hovered = null">
+       class="relative w-4 @min-[40rem]:w-6 flex-col justify-center py-4" @mouseleave="hovered = null">
     <button type="button" data-testid="chat-minimap-autoscroll" :aria-pressed="paused ? 'true' : 'false'"
             :title="paused ? 'Resume autoscroll' : 'Pause autoscroll'" :aria-label="paused ? 'Resume autoscroll' : 'Pause autoscroll'"
             class="shrink-0 mb-1.5 mx-auto w-3.5 h-3.5 flex items-center justify-center rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600"
@@ -23,8 +23,9 @@
       <li v-for="e in entries" :key="e.id" class="shrink-0">
         <button type="button" :data-minimap-dot="e.id" :aria-current="e.id === activeId ? 'true' : null"
                 :aria-label="`Message ${e.n}: ${e.preview}`"
-                class="group w-6 h-4 flex items-center justify-center outline-none"
-                @click="emit('jump', e.id)" @mouseenter="hover($event, e)" @focus="hover($event, e)" @blur="hovered = null">
+                class="group w-4 h-6 @min-[40rem]:w-6 @min-[40rem]:h-4 flex items-center justify-center outline-none"
+                @click="emit('jump', e.id)" @mouseenter="hoverUnlessTouched($event, e)" @focus="hoverUnlessTouched($event, e)" @blur="hovered = null"
+                @touchstart.passive="touchedAt = Date.now()">
           <span class="block rounded-full transition-all duration-150"
                 :class="e.id === activeId
                   ? 'w-2 h-2 bg-gray-700 dark:bg-zinc-200'
@@ -57,6 +58,15 @@ defineProps({
 const emit = defineEmits(['jump', 'toggle-autoscroll']);
 
 const hovered = ref(null);
+// A touch screen has no hover: a tap only jumps. The mouse and focus events a
+// browser fires after a tap would open the preview, so they are ignored for a
+// moment after a touch.
+const TOUCH_GRACE_MS = 1000;
+let touchedAt = -Infinity;
+
+function hoverUnlessTouched(event, entry) {
+  if (Date.now() - touchedAt > TOUCH_GRACE_MS) hover(event, entry);
+}
 
 function hover(event, entry) {
   const dot = event.currentTarget.getBoundingClientRect();

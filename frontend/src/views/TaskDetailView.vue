@@ -770,7 +770,7 @@
         </li>
       </ul>
     </div>
-    <ChatMinimap v-if="minimapShown" class="hidden @min-[40rem]:flex shrink-0" :entries="minimapDots" :active-id="minimapActiveId" :paused="autoscrollPaused" @jump="jumpToMessage" @toggle-autoscroll="toggleAutoscroll" />
+    <ChatMinimap v-if="minimapShown" class="flex shrink-0" :entries="minimapDots" :active-id="minimapActiveId" :paused="autoscrollPaused" @jump="jumpToMessageAndPause" @toggle-autoscroll="toggleAutoscroll" />
     <TaskLinksPanel pinned class="hidden @min-[48rem]:flex absolute top-0 z-10 max-h-[calc(100%-0.5rem)] shadow-lg" :class="minimapShown ? 'right-10' : 'right-4'" :task="task" :task-id="taskId" :pano-docs="panoDocs" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
     </div>
 
@@ -1549,7 +1549,12 @@ const shownThread = computed(() => foldReactions(displayMessages.value, (m) => !
 const minimap = computed(() => minimapEntries(shownThread.value.thread));
 const { activeId: minimapActiveId, shown: minimapShown, jumpTo: jumpToMessage } = useChatMinimap(scrollContainer, minimap);
 const minimapDots = computed(() => minimapWindow(minimap.value, minimapActiveId.value));
-const { paused: autoscrollPaused, toggle: toggleAutoscroll } = useAutoscrollPause(taskId, () => recordUiAction(TELEMETRY_UI_AUTOSCROLL_PAUSE, route));
+const { paused: autoscrollPaused, pause: pauseAutoscroll, toggle: toggleAutoscroll } = useAutoscrollPause(taskId, () => recordUiAction(TELEMETRY_UI_AUTOSCROLL_PAUSE, route));
+// Jumping to a message is reading back: the chat stays there until resumed.
+function jumpToMessageAndPause(id) {
+  pauseAutoscroll();
+  jumpToMessage(id);
+}
 
 // What each agent message cost in time: from the person's message it answers.
 const workedFor = computed(() => workDurations(sortedMessages.value));
