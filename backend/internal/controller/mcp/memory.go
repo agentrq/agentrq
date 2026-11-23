@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 // Per-workspace memory: what an agent chooses to remember about a workspace,

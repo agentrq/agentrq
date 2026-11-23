@@ -11,8 +11,8 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // mockServerCrud covers the workspace and task tools in server.go that had no

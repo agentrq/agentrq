@@ -13,10 +13,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/golang/mock/gomock"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // fakeSkills is a SkillStore over a map of name → path → content, with a

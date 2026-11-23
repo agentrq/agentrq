@@ -20,8 +20,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp/jsonrpc"
 	"gopkg.in/yaml.v3"
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
@@ -268,8 +268,8 @@ func mustLoadSkills(fsys fs.FS) *skillSet {
 	return set
 }
 
-// skillsCapabilities are what the SDK infers, plus the Skills extension.
-// Setting any capability drops the SDK's default logging one, so it is kept
+// skillsCapabilities are what the mcp package infers, plus the Skills
+// extension. Setting any capability drops the package's default logging one, so it is kept
 // here to leave every other capability as it was.
 func skillsCapabilities() *mcp.ServerCapabilities {
 	caps := &mcp.ServerCapabilities{Logging: &mcp.LoggingCapabilities{}}

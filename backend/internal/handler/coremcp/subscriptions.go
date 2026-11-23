@@ -11,13 +11,13 @@ import (
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp/jsonrpc"
 	zlog "github.com/rs/zerolog/log"
 )
 
 // A supervisor hears of a change to a task it follows through
-// subscriptions/listen, which the SDK serves on this stateless server: the
+// subscriptions/listen, which the mcp package serves on this stateless server: the
 // acknowledgement first, the listen's id on every notice, and a complete
 // result when the listen's context ends. What is added here is who may listen
 // to what, the changes themselves, and ending every listen on shutdown.
@@ -106,8 +106,8 @@ func (l *TaskListeners) run() {
 	}
 }
 
-// notify tells the listens following the URIs c changed. The SDK sends to
-// one listen at a time, each within its own deadline.
+// notify tells the listens following the URIs c changed. The mcp package sends
+// to one listen at a time, each within its own deadline.
 func (l *TaskListeners) notify(c taskChange) {
 	uris := []string{taskURI(c.workspaceID, c.taskID), workspaceTasksURI(c.workspaceID)}
 	if c.delegatedByWorkspaceID != 0 {
@@ -147,7 +147,7 @@ func (l *TaskListeners) release(uris []string) {
 
 // errLegacySubscribe turns down an older revision's resources/subscribe: on
 // a stateless server it has no stream to deliver on, so it would subscribe to
-// nothing. The 2026-07-28 revision has none, and the SDK says so.
+// nothing. The 2026-07-28 revision has none, and the mcp package says so.
 var errLegacySubscribe = &jsonrpc.Error{Code: jsonrpc.CodeMethodNotFound, Message: "method not found"}
 
 // subscriptionsMiddleware lets a listen follow only the task resources of the
@@ -216,9 +216,9 @@ func (s *WorkspaceServer) ownTaskURIs(ctx context.Context, uris []string) []stri
 	return kept
 }
 
-// subscribeNothing is the SDK's subscribe hook. The SDK advertises
-// subscriptions only when it is set; who may follow what is decided in
-// subscriptionsMiddleware, before the SDK sees the listen.
+// subscribeNothing is the mcp package's subscribe hook. The package
+// advertises subscriptions only when it is set; who may follow what is
+// decided in subscriptionsMiddleware, before the package sees the listen.
 func subscribeNothing(context.Context, *mcp.SubscribeRequest) error { return nil }
 
 func unsubscribeNothing(context.Context, *mcp.UnsubscribeRequest) error { return nil }

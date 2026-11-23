@@ -12,8 +12,8 @@ import (
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // taskCrud answers every task call the task tool makes.

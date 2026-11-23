@@ -16,8 +16,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/sitetools"
@@ -100,7 +100,7 @@ type GetSiteToolDefinitionParams struct {
 }
 
 // CallSiteToolParams is one call of a shared site's tool. Arguments is a map,
-// not a json.RawMessage, because the SDK infers a RawMessage as a byte array.
+// not a json.RawMessage, because the mcp package infers a RawMessage as a byte array.
 type CallSiteToolParams struct {
 	TaskID    string         `json:"taskId" jsonschema:"The ID of the task you are working on (base62). A tool that is not read-only asks the human there first."`
 	Site      string         `json:"site" jsonschema:"The site's origin, exactly as siteTools search prints it, e.g. https://github.com."`

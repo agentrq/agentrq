@@ -16,7 +16,7 @@ import (
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/handler/oauthconsent/oauthconsenttest"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 // The tokens a grant is redeemed for are for the resource it was for: a

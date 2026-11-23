@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
 	"github.com/golang/mock/gomock"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // A server with the memory tools wired to an in-memory store, so a save and the

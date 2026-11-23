@@ -11,7 +11,7 @@ import (
 
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/handler/coremcp"
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	sdkmcp "github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 // listedNames connects an in-process client to srv and returns every name

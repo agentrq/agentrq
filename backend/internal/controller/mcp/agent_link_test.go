@@ -16,9 +16,9 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	mock_auth "github.com/agentrq/agentrq/backend/internal/service/mocks/auth"
 	"github.com/golang/mock/gomock"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // fakeLink records every call a WorkspaceServer makes on a link.

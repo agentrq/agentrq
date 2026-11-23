@@ -2,8 +2,8 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
-// Package mcp provides a Fiber handler that bridges Fiber routing with the
-// standard http.Handler returned by mcp-go's SSEServer.
+// Package mcp serves the per-workspace MCP endpoint and its OAuth endpoints
+// on the stdlib mux.
 package mcp
 
 import (
@@ -27,12 +27,12 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/handler/oauthconsent"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp/jsonrpc"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/mustafaturan/monoflake"
 )
 
-// customNotificationMethods are the channel notifications the MCP SDK rejects
+// customNotificationMethods are the channel notifications the mcp package rejects
 // as unsupported methods, so they are recognised here and handed to the
 // workspace server directly instead of reaching its middleware.
 //
@@ -52,9 +52,9 @@ var customNotificationMethods = []string{
 // message.
 //
 // A body that is not a single JSON-RPC object — malformed, or a batch array —
-// declares no method and so is not one of these. It falls through to the SDK,
-// which handled it before this interception existed and knows how to report
-// what is wrong with it. Answering it here with an empty 200 would turn a bad
+// declares no method and so is not one of these. It falls through to the mcp
+// package, which handled it before this interception existed and knows how to
+// report what is wrong with it. Answering it here with an empty 200 would turn a bad
 // request into a lost one.
 func customNotificationMethod(body []byte) (string, bool) {
 	var msg struct {
@@ -345,7 +345,8 @@ func (h *handler) oauthRegisterHandler() http.Handler {
 	})
 }
 
-// streamableHandler serves both GET (Stream) and POST (Messages) via mcp-go StreamableHTTPServer.
+// streamableHandler serves GET (the push stream), POST (messages) and DELETE
+// through the workspace server's Streamable HTTP handler.
 func (h *handler) streamableHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		workspaceID := workspaceIDFromParam(r)
@@ -420,9 +421,9 @@ func (h *handler) streamableHandler() http.Handler {
 		}
 
 		if r.Method == "POST" {
-			// Custom handling for the channel notifications the SDK does not
-			// know about, because mcp-go (SDK) rejects them as unsupported
-			// methods before any middleware sees them.
+			// Custom handling for the channel notifications the mcp package
+			// does not know about: it rejects them as unsupported methods
+			// before any middleware sees them.
 			if method, ok := customNotificationMethod(body); ok {
 				zlog.Debug().Str("session_id", sessionID).Str("method", method).Msg("Handling custom channel notification")
 				srv.HandleCustomNotification(ctx, sessionID, body)

@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -20,7 +19,6 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
-	"unsafe"
 
 	zlog "github.com/rs/zerolog/log"
 
@@ -35,11 +33,11 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 )
@@ -622,11 +620,16 @@ func NewWorkspaceServer(
 	// Allow all origins for the MCP server in development (same syntax as ServeMux)
 	cp.AddInsecureBypassPattern("/")
 
+	streamOpts := &mcp.StreamableHTTPOptions{CrossOriginProtection: cp}
+	if tokenSvc != nil {
+		// A session's id is a signed record of its handshake, so the session
+		// survives a restart, a redeploy or another instance taking the
+		// request.
+		streamOpts.SessionIDs = sessionIDs{tokens: tokenSvc, userID: userID, workspaceID: workspaceIDStr}
+	}
 	streamHandler := mcp.NewStreamableHTTPHandler(func(request *http.Request) *mcp.Server {
 		return mcpSrv
-	}, &mcp.StreamableHTTPOptions{
-		CrossOriginProtection: cp,
-	})
+	}, streamOpts)
 
 	ps.mcpServer = mcpSrv
 	ps.streamServer = streamHandler
@@ -736,7 +739,6 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 	}
 	//zlog.Debug().Interface("params", params).Msg("sending MCP notification params")
 
-	// as the official SDK does not yet expose a public API for generic notifications.
 	sessionCount := 0
 	for sess := range ps.mcpServer.Sessions() {
 		sessionCount++
@@ -752,25 +754,8 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 		}
 
 		zlog.Debug().Str("session_id", logID).Str("auth", authStatus).Msg("found active session")
-		v := reflect.ValueOf(sess).Elem()
-		connField := v.FieldByName("conn")
-		if connField.IsValid() {
-			// Bypass export check using reflect.NewAt + unsafe.Pointer
-			connField = reflect.NewAt(connField.Type(), unsafe.Pointer(connField.UnsafeAddr())).Elem()
-			if !connField.IsNil() {
-				method := connField.MethodByName("Notify")
-				if method.IsValid() {
-					results := method.Call([]reflect.Value{
-						reflect.ValueOf(ctx),
-						reflect.ValueOf("notifications/claude/channel"),
-						reflect.ValueOf(params),
-					})
-					if len(results) > 0 && !results[0].IsNil() {
-						err := results[0].Interface().(error)
-						zlog.Error().Err(err).Msg("MCP notify error for session")
-					}
-				}
-			}
+		if err := sess.Notify(ctx, "notifications/claude/channel", params); err != nil {
+			zlog.Error().Err(err).Msg("MCP notify error for session")
 		}
 	}
 	zlog.Debug().Int("sessions", sessionCount).Msg("MCP notification sent")
@@ -956,7 +941,7 @@ func (ps *WorkspaceServer) closeRequest(ctx context.Context, taskID int64, reque
 
 // StartPing pings all connected MCP client sessions every minute to keep connections alive.
 // If a session's underlying stream is already closed or times out, it is explicitly closed
-// so the SDK removes it from its session registry, preventing repeated errors.
+// so it leaves the server's session registry, preventing repeated errors.
 func (ps *WorkspaceServer) StartPing() {
 	go func() {
 		ticker := time.NewTicker(60 * time.Second)
@@ -1285,7 +1270,7 @@ func (ps *WorkspaceServer) UpdateMetadata(name, description, icon string) {
 	ps.description = description
 	ps.icon = icon
 
-	// MCP SDK might not allow easy dynamic implementation metadata update after Server creation
+	// The MCP server's implementation metadata is fixed when it is created.
 }
 
 func (ps *WorkspaceServer) UpdateArchivedAt(at *time.Time) {
@@ -2099,7 +2084,7 @@ func buildConversationJSON(task model.Task, cursor, limit int) string {
 	return string(b)
 }
 
-// methodServerDiscover is the SDK's discovery method. The SDK keeps its own
+// methodServerDiscover is the discovery method. The mcp package keeps its own
 // constant unexported, so the literal is repeated here.
 const methodServerDiscover = "server/discover"
 
@@ -2108,8 +2093,8 @@ const methodServerDiscover = "server/discover"
 // Everything the result carries — the advertised protocol revisions, the
 // capabilities, the tool set and the instructions — is fixed when the server is
 // constructed and never mutated afterwards (every AddTool call happens in
-// NewWorkspaceServer). The SDK defaults the hint to 0, which its own docs
-// define as "immediately stale", so without this a client re-fetches static
+// NewWorkspaceServer). The mcp package defaults the hint to 0, which the
+// protocol defines as "immediately stale", so without this a client re-fetches static
 // configuration on every connection.
 //
 // An hour is comfortable precisely because the tool set cannot change while
@@ -2117,7 +2102,7 @@ const methodServerDiscover = "server/discover"
 // see a different answer, and reconnecting re-probes anyway.
 const discoverCacheTTL = time.Hour
 
-// discoverCacheMiddleware supplies the cache hint the SDK leaves at zero.
+// discoverCacheMiddleware supplies the cache hint the mcp package leaves at zero.
 // server/discover is a CacheableResult, and answering it is the cheap probe
 // clients use before negotiating, so telling them how long the answer is good
 // for is the difference between a usable hint and a no-op.
@@ -2127,7 +2112,7 @@ func (ps *WorkspaceServer) discoverCacheMiddleware(next mcp.MethodHandler) mcp.M
 		if err != nil || method != methodServerDiscover {
 			return res, err
 		}
-		// CacheScope is left as the SDK set it ("public"): the result is
+		// CacheScope is left as the mcp package set it ("public"): the result is
 		// identical for every caller, carrying no per-user state.
 		if discoverRes, ok := res.(*mcp.DiscoverResult); ok {
 			discoverRes.TTLMs = int(discoverCacheTTL.Milliseconds())
@@ -2668,8 +2653,8 @@ func (ps *WorkspaceServer) deliverVerdict(ctx context.Context, sessID, requestID
 // whether that session was still there to receive it. MCP only: a native link
 // is never sent a method string, it is called.
 //
-// The official SDK exposes no public API for generic notifications, hence the
-// reflection.
+// A session that is there counts as reached, even when its client holds no
+// stream to deliver on.
 func (ps *WorkspaceServer) notifySession(ctx context.Context, sessID, method string, params map[string]any) bool {
 	if ps.mcpServer == nil {
 		return false
@@ -2678,24 +2663,9 @@ func (ps *WorkspaceServer) notifySession(ctx context.Context, sessID, method str
 		if sess.ID() != sessID {
 			continue
 		}
-		v := reflect.ValueOf(sess).Elem()
-		connField := v.FieldByName("conn")
-		if !connField.IsValid() {
-			continue
+		if err := sess.Notify(ctx, method, params); err != nil {
+			zlog.Debug().Err(err).Str("method", method).Msg("MCP notification not delivered")
 		}
-		connField = reflect.NewAt(connField.Type(), unsafe.Pointer(connField.UnsafeAddr())).Elem()
-		if connField.IsNil() {
-			continue
-		}
-		notify := connField.MethodByName("Notify")
-		if !notify.IsValid() {
-			continue
-		}
-		notify.Call([]reflect.Value{
-			reflect.ValueOf(ctx),
-			reflect.ValueOf(method),
-			reflect.ValueOf(params),
-		})
 		return true
 	}
 	return false

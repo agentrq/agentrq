@@ -10,8 +10,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/golang/mock/gomock"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"

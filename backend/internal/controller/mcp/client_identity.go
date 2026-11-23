@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"reflect"
 
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/cespare/xxhash/v2"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // clientInfoMetaKey is the per-request "_meta" key MCP spec 2026-07-28 (SEP-2575)

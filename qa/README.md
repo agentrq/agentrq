@@ -44,6 +44,7 @@ Postgres one, on a fresh database each run.
 | `team-pano.spec.js` | The owner shares one Pano doc with a team from its page; a teammate finds it on the team's Pano from the team sidebar and reads it, and its picture, on the team's route, never the owner's other docs or shares. Switched off, the doc and its file answer 404. |
 | `launch-shortcuts.spec.js` | The installed app's icon shortcuts: `?shortcut=find-task` opens the task finder and `?shortcut=new-task` asks which workspace, and both drop the query. |
 | `app-badge.spec.js` | The installed app's icon badge counts the tasks waiting on the person, live: one more when a task is blocked, back again when it completes. |
+| `mcp-sessions.spec.js` | A workspace's MCP session id is a signed token holding only the handshake, and opens nothing without the bearer token. The session keeps working after the backend restarts: calls, its push stream, and a task pushed to it. Forged, foreign and deleted ids are 404. The server speaks 2025-11-25 and 2025-06-18, and refuses 2026-07-28 with the versions to fall back to. |
 | `skills.spec.js` | The skills tab lists the account's skills, with the workspace ticked for an import. An import the server refuses shows the server's own reason. The sidebar's Skills link opens the account's Skills page. |
 
 Every test also fails if the page made an API call that failed, or logged a
@@ -59,7 +60,7 @@ console error, other than the failures it causes on purpose.
 | `QA_DATA_DIR` | a new temp folder | Where the backend keeps its database and files. |
 | `QA_SERVER_LOGS` | unset | Set it to show the servers' logs. |
 | `QA_POSTGRES_HOST` | unset | Runs the server on the Postgres at this host instead of SQLite (user, password `postgres`, database `agentrq`). Set by `postgres.sh`. |
-| `QA_BACKEND_CMD` | `go run .` | The command that starts the server, such as a prebuilt binary. Set by `postgres.sh`. |
+| `QA_BACKEND_CMD` | builds `backend/cmd/server` | The command that starts the server, such as a prebuilt binary. Set by `postgres.sh`. `lib/backend.mjs` runs it, so a test can restart it. |
 | `QA_BROWSER_LIBRARY_PATH` | unset | A folder of shared libraries for Chromium on a host without its system dependencies. It is given to the browser only. |
 
 ## Writing a test

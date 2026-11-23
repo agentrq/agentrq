@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Workspace skills: playbooks an agent loads when a task matches one, a

@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/golang/mock/gomock"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func taskResult(t *testing.T, res *mcp.CallToolResult) (string, bool) {

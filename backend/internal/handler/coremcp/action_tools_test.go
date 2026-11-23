@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Every retired tool is an action, and that action, given its own example,

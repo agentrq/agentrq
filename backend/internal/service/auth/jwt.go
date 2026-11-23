@@ -139,6 +139,21 @@ type OAuthConsentClaims struct {
 	OAuthConsent
 }
 
+// MCPSessionTTL is how long an MCP session id is honoured. The id is not a
+// credential, and every request is authenticated on its own, so it outlives
+// the access tokens it is used with: a session ends sooner only by DELETE.
+const MCPSessionTTL = 30 * 24 * time.Hour
+
+// MCPSession is what an MCP session id records: the revision the client asked
+// for in its handshake and the name it gave, so the session can be served
+// after the process that opened it is gone.
+type MCPSession struct {
+	ProtocolVersion string
+	ClientName      string
+	ClientVersion   string
+	ExpiresAt       time.Time
+}
+
 type TokenService interface {
 	CreateToken(userID, email, name, picture string) (string, error)
 	CreateRefreshToken(userID string) (string, error)
@@ -158,11 +173,17 @@ type TokenService interface {
 	ValidateSessionToken(tokenStr string) (*Claims, error)
 	ValidateOAuthStateToken(tokenStr, provider string) (redirectURL string, err error)
 	ValidateClientRegistrationToken(tokenStr string) (*ClientRegistrationClaims, error)
+	CreateMCPSessionToken(userID, workspaceID string, session MCPSession) (string, error)
+	ValidateMCPSessionToken(tokenStr, userID, workspaceID string) (*MCPSession, error)
 }
 
 type tokenService struct {
 	apiSecret []byte
 	mcpSecret []byte
+	// sessionKey signs MCP session ids. It is derived from the MCP secret
+	// rather than being it, so a session id never verifies as a token and no
+	// token verifies as a session id.
+	sessionKey []byte
 }
 
 func NewTokenService(cfg TokenConfig) TokenService {
@@ -172,8 +193,9 @@ func NewTokenService(cfg TokenConfig) TokenService {
 		panic("situational security: JWT secrets are required but not provided in configuration")
 	}
 	return &tokenService{
-		apiSecret: []byte(cfg.APISecret),
-		mcpSecret: []byte(cfg.MCPSecret),
+		apiSecret:  []byte(cfg.APISecret),
+		mcpSecret:  []byte(cfg.MCPSecret),
+		sessionKey: deriveKey([]byte(cfg.MCPSecret), mcpSessionKeyLabel),
 	}
 }
 

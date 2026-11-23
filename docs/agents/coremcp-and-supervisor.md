@@ -46,8 +46,8 @@ do; nothing else needs to be told it exists.
 **The `agentrq` skill this server serves (`skills/`, MCP Skills extension) is
 a copy of the plugins' skill folder**: edit the plugin one and copy the folder
 over, or `plugin_docs_test.go` fails. Every file in it stays within 2000
-characters, a short SKILL.md and `references/`: split rather than grow one. Setting `Capabilities` drops the SDK's default
-`logging`, so `skillsCapabilities` keeps it.
+characters, a short SKILL.md and `references/`: split rather than grow one. Setting `Capabilities` drops the mcp package's
+default `logging`, so `skillsCapabilities` keeps it.
 
 **A new tool, resource or prompt here needs a telemetry line too** — see
 [telemetry.md](telemetry.md)'s MCP section; `emitTelemetry` is on
@@ -55,8 +55,8 @@ characters, a short SKILL.md and `references/`: split rather than grow one. Sett
 per-workspace server.
 
 **This server is stateless** (`StreamableHTTPOptions.Stateless = true`), which
-is how it serves protocol revision 2026-07-28 — the SDK offers that revision
-only on a stateless transport. Older revisions are served exactly as before;
+is how it serves protocol revision 2026-07-28 — the mcp package offers that
+revision only on a stateless transport. Older revisions are served exactly as before;
 what changes is that GET and DELETE now answer 405. It pushes only on a
 `subscriptions/listen`, on that POST's own stream. The **opposite** rule holds for the
 per-workspace server, which must stay stateful — see
@@ -101,8 +101,8 @@ on one instance misses another instance's changes. A listen is a POST that
 stays open: `App.Shutdown` closes the listeners before the drain, or every
 listen holds it until the deadline. **Authorization is decided once, when the
 listen opens**: `subscriptionsMiddleware` keeps only URIs of workspaces the
-caller owns, and the listen ends when its token expires. The SDK fans a notice
-out by URI alone, so never let a URI past it unchecked.
+caller owns, and the listen ends when its token expires. The mcp package fans a
+notice out by URI alone, so never let a URI past it unchecked.
 
 **An agent's state is read from its terminal, not its MCP connection.** A
 usage-limit pause keeps the connection open and calls nothing, so only the

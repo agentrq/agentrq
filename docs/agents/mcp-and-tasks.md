@@ -69,8 +69,23 @@ leaves the gateway's on screen.
 Never set `StreamableHTTPOptions.Stateless = true` here to "add" protocol
 revision 2026-07-28: stateless 405s the GET/SSE stream, and that stream is how
 `SendChannelNotification` and `SendPermissionVerdict` reach a connected agent.
-We advertise `2025-11-25` downwards and refuse the newer revision with a
-JSON-RPC `-32022` naming those versions, so clients renegotiate down.
+We advertise `2025-11-25` and `2025-06-18` and refuse the newer revision with
+a JSON-RPC `-32022` naming those versions, so clients renegotiate down.
+
+## A session id is a signed record, not a credential
+
+Both servers run on our own MCP package, `internal/service/mcp`. The workspace
+server's `Mcp-Session-Id` is a JWT from `auth.CreateMCPSessionToken`, signed
+with a key derived from the MCP secret, so any process can rebuild the session
+after a restart, an eviction or a redeploy. It records only the handshake
+(the revision asked for, the client's name and version) and is bound to the
+workspace and user: the bearer token is still checked first on every request.
+Never put anything that grants access in it. A DELETE is remembered only by the
+process that served it.
+
+The package's in-process client negotiates like the newest clients
+(`server/discover`, then `_meta` on every request), so a test through it sees a
+2026-07-28 session, not a handshake.
 
 coremcp is stateless and does serve 2026-07-28 — it pushes nothing, so it has
 no stream to lose. The two servers differ on purpose; see

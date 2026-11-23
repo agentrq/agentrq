@@ -13,7 +13,7 @@
 // the least careful of them.
 package mcphint
 
-import "github.com/modelcontextprotocol/go-sdk/mcp"
+import "github.com/agentrq/agentrq/backend/internal/service/mcp"
 
 // The protocol takes two of these hints as pointers, and every annotation
 // block gets its own copy rather than sharing one: a package-level `false`

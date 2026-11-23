@@ -5,9 +5,12 @@
 package mcp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -19,11 +22,11 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	mock_auth "github.com/agentrq/agentrq/backend/internal/service/mocks/auth"
 	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/golang/mock/gomock"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -575,24 +578,87 @@ func TestHandleCustomNotification_DropsABodyThatIsNotJSON(t *testing.T) {
 	}
 }
 
-// A push goes to each session, noting which ones hold a valid token, and a
-// session that cannot take it does not stop the rest.
+// A push goes to each session, noting which ones hold a valid token.
 func TestSendChannelNotification_EverySession(t *testing.T) {
 	ps := pushServer(t)
 	ctrl := gomock.NewController(t)
 	tokens := mock_auth.NewMockTokenService(ctrl)
 	tokens.EXPECT().ValidateToken("a-session-id-longer-than-twelve").
-		Return(&auth.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}}, nil).Times(2)
+		Return(&auth.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}}, nil).Times(1)
 	ps.tokenSvc = tokens
 	namedSession(t, ps, "a-session-id-longer-than-twelve")
 
 	ps.SendChannelNotification(context.Background(), 7, "next task")
+}
 
-	// A cancelled context makes every write fail, which is reported per
-	// session and not returned to the caller.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	ps.SendChannelNotification(ctx, 7, "next task")
+// A session whose client holds no stream cannot take a push. It still
+// counts as reached, and takes the next push once its stream is open.
+func TestPush_ToASessionWithNoStream(t *testing.T) {
+	ps := NewWorkspaceServer(
+		1, 0, "user", "http://localhost",
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, nil,
+	)
+	t.Cleanup(ps.Close)
+	tokens := mock_auth.NewMockTokenService(gomock.NewController(t))
+	tokens.EXPECT().ValidateToken(gomock.Any()).Return(nil, errNotTheRealThing).AnyTimes()
+	ps.tokenSvc = tokens
+	srv := httptest.NewServer(ps.Handler())
+	t.Cleanup(srv.Close)
+
+	post := func(body, session string) *http.Response {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("MCP-Protocol-Version", "2025-06-18")
+		if session != "" {
+			req.Header.Set("Mcp-Session-Id", session)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, res.Body)
+		_ = res.Body.Close()
+		return res
+	}
+	opened := post(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-code","version":"1"}}}`, "")
+	session := opened.Header.Get("Mcp-Session-Id")
+	if opened.StatusCode != http.StatusOK || session == "" {
+		t.Fatalf("initialize answered %d with session %q", opened.StatusCode, session)
+	}
+	post(`{"jsonrpc":"2.0","method":"notifications/initialized"}`, session)
+
+	ctx := context.Background()
+	ps.SendChannelNotification(ctx, 7, "dropped")
+	if !ps.notifySession(ctx, session, "notifications/claude/channel/permission", map[string]any{"request_id": "r1", "behavior": "allow"}) {
+		t.Fatal("a session with no stream was reported gone")
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("MCP-Protocol-Version", "2025-06-18")
+	req.Header.Set("Mcp-Session-Id", session)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = res.Body.Close() })
+	lines := bufio.NewScanner(res.Body)
+	if !lines.Scan() || lines.Text() != ": ok" {
+		t.Fatalf("the stream opened with %q", lines.Text())
+	}
+
+	ps.SendChannelNotification(ctx, 7, "delivered")
+	for lines.Scan() {
+		if line := lines.Text(); strings.HasPrefix(line, "data: ") {
+			if strings.Contains(line, "dropped") || !strings.Contains(line, `"content":"delivered"`) {
+				t.Fatalf("the stream carried %s", line)
+			}
+			return
+		}
+	}
+	t.Fatalf("the stream ended without the push: %v", lines.Err())
 }
 
 // The poller offers nothing when the pending backlog cannot be read.
