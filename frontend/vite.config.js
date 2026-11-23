@@ -14,6 +14,59 @@ const { version } = JSON.parse(readFileSync('./package.json', 'utf-8'))
 // another port, so it never takes over the one a developer is using.
 const apiTarget = process.env.AGENTRQ_DEV_API_TARGET || 'http://localhost:3000'
 
+// The installed app's web manifest. No `orientation`: a lock would pin
+// tablets and foldables to portrait.
+export const manifest = {
+  // The app's identity once installed; without it, a change to start_url
+  // would make browsers treat the installed app as a different app.
+  id: '/',
+  name: 'AgentRQ',
+  short_name: 'AgentRQ',
+  description: 'Self-learning task manager and orchestrator for AI agents',
+  theme_color: '#000000',
+  background_color: '#fafafa',
+  display: 'standalone',
+  start_url: '/',
+  scope: '/',
+  icons: [
+    {
+      src: 'pwa-192x192.png',
+      sizes: '192x192',
+      type: 'image/png',
+    },
+    {
+      src: 'pwa-512x512.png',
+      sizes: '512x512',
+      type: 'image/png',
+    },
+    {
+      // The logo sits well inside the centre 80% circle, which is all an
+      // Android launcher mask is guaranteed to keep.
+      src: 'pwa-maskable-512x512.png',
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'maskable',
+    },
+  ],
+  // Chrome shows its richer install sheet only with both form factors.
+  screenshots: [
+    {
+      src: 'screenshots/narrow.png',
+      sizes: '780x1688',
+      type: 'image/png',
+      form_factor: 'narrow',
+      label: 'A task chat between you and your agent',
+    },
+    {
+      src: 'screenshots/wide.png',
+      sizes: '1280x800',
+      type: 'image/png',
+      form_factor: 'wide',
+      label: 'A task chat between you and your agent',
+    },
+  ],
+}
+
 export default defineConfig({
   base: '',
   define: {
@@ -28,37 +81,11 @@ export default defineConfig({
       filename: 'sw.js',
       registerType: 'prompt',
       includeAssets: ['favicon.ico', 'favicon.svg', 'agentrq.png', 'robots.txt'],
-      manifest: {
-        name: 'AgentRQ',
-        short_name: 'AgentRQ',
-        description: 'AI-powered task queue for autonomous agents',
-        theme_color: '#000000',
-        background_color: '#fafafa',
-        display: 'standalone',
-        orientation: 'portrait',
-        start_url: '/',
-        scope: '/',
-        icons: [
-          {
-            src: 'pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-          },
-          {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-          },
-          {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
-        ],
-      },
+      manifest,
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Only the install sheet shows these; no need to precache them.
+        globIgnores: ['**/screenshots/**'],
       },
     }),
   ],
