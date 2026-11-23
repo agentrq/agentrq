@@ -16,6 +16,7 @@ import { createWebHistory } from 'vue-router'
 import { createAgentRQApp } from './app'
 import { reportRouteToExtensionPopup } from './utils/extensionPopup'
 import { followNotificationClicks } from './composables/useNotificationClick'
+import { captureInstallPrompt } from './utils/installPrompt'
 
 const { app, router } = createAgentRQApp({
   history: createWebHistory(window.__AGENTRQ_BASE_PATH__ || '/'),
@@ -24,5 +25,6 @@ const { app, router } = createAgentRQApp({
 
 reportRouteToExtensionPopup(router)
 followNotificationClicks(router)
+captureInstallPrompt()
 
 app.mount('#app')
