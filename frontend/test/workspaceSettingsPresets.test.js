@@ -29,6 +29,10 @@ vi.mock('../src/api', async (importOriginal) => ({
   listWorkspacePresets: (...a) => listWorkspacePresets(...a),
   createWorkspacePreset: (...a) => createWorkspacePreset(...a),
   deleteWorkspacePreset: (...a) => deleteWorkspacePreset(...a),
+  searchWorkspaceSkills: () => Promise.resolve({ skills: [
+    { name: 'release', description: 'Cut a release', workspaceEnabled: true },
+    { name: 'review', workspaceEnabled: true },
+  ] }),
 }))
 
 const { default: WorkspaceSettingsView } = await import('../src/views/WorkspaceSettingsView.vue')
@@ -156,5 +160,29 @@ describe('the Presets tab', () => {
     notifyWebMCPChange()
     await settle()
     expect(page.names()).toEqual(['#deploy'])
+  })
+
+  it('lists skills for a / typed in the message, also in its middle', async () => {
+    const page = await mount()
+    const field = page.q('preset-body')
+    const menu = () => page.el.querySelector('[data-test=slash-menu]')
+    const rows = () => [...page.el.querySelectorAll('[data-test=slash-menu] li')].map((li) => li.querySelector('span').textContent)
+    field.value = 'pull main, /rev then push'
+    field.setSelectionRange(15, 15)
+    field.dispatchEvent(new Event('input'))
+    await settle()
+    expect(rows()).toEqual(['/review'])
+
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await settle()
+    expect(field.value).toBe('pull main, /review then push')
+    expect(menu()).toBeNull()
+
+    page.fill('preset-body', '/')
+    await settle()
+    expect(rows()).toEqual(['/release', '/review'])
+    page.el.querySelector('[data-test=slash-menu] li').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(field.value).toBe('/release ')
   })
 })

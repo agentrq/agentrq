@@ -74,8 +74,8 @@
                     class="w-full px-4 pt-3 pb-2 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-none min-h-[160px] custom-scrollbar"
                     required></textarea>
 
-          <!-- The workspace's skills, offered as the description starts with `/`. -->
-          <SlashCommandMenu :menu="slashMenu" class="mx-4 mb-2" @accept="acceptSlashCommand" />
+          <!-- The workspace's skills, offered as a word starts with `/`. -->
+          <SlashCommandMenu :menu="slashMenu" class="mx-4 mb-2" @accept="slashMenu.accept" />
           <!-- The workspace's presets, offered as a word starts with `#`. -->
           <SlashCommandMenu :menu="presetMenu" prefix="#" label="Presets" class="mx-4 mb-2" @accept="acceptPreset" />
 
@@ -129,7 +129,7 @@ import { useEscapeKey } from '../composables/useEscapeKey';
 import TaskOptionsTools from '../components/TaskOptionsTools.vue';
 import TaskAttachmentChips from '../components/TaskAttachmentChips.vue';
 import SlashCommandMenu from '../components/SlashCommandMenu.vue';
-import { useSkillCommands, useSlashCommands } from '../composables/useSlashCommands';
+import { useInlineSkillMenu } from '../composables/useSlashCommands';
 import { usePresetMenu } from '../composables/usePresets';
 
 const route = useRoute();
@@ -184,7 +184,8 @@ const bodyRef = computed({
  * button would have done.
  */
 function onDescriptionKeydown(event) {
-  const claimed = slashMenu.handleKeydown(event) || presetMenu.handleKeydown(event);
+  if (slashMenu.handleKeydown(event)) return;
+  const claimed = presetMenu.handleKeydown(event);
   if (claimed) {
     event.preventDefault();
     if (claimed.text !== null) setBody(claimed.text);
@@ -199,13 +200,7 @@ function onDescriptionKeydown(event) {
 
 const bodyInput = ref(null);
 
-const slashMenu = useSlashCommands({ text: bodyRef, commands: useSkillCommands(workspaceId) });
-
-/** Puts the chosen skill in the description, for a click on the menu. */
-function acceptSlashCommand(command) {
-  const applied = slashMenu.accept(command);
-  if (applied !== null) setBody(applied);
-}
+const slashMenu = useInlineSkillMenu({ text: bodyRef, workspaceId, el: bodyInput });
 
 const presetMenu = usePresetMenu({ text: bodyRef, workspaceId });
 
