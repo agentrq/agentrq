@@ -1,4 +1,4 @@
-# AgentRQ ── Agent-Human Collaboration Platform
+# AgentRQ ── Self-learning task manager and orchestrator for AI agents
 
 <p align="center">
   <a href="README.zh-CN.md">简体中文</a>
@@ -9,7 +9,7 @@
   </a>
 </p>
 
-AgentRQ is a modern, high-performance platform designed for seamless collaboration between human operators and AI agents. It leverages the **Model Context Protocol (MCP)** to allow AI models (like Claude) to interact directly with your workspace's task management system.
+AgentRQ is a self-learning task manager and orchestrator for AI agents, where human operators and agents work side by side. It leverages the **Model Context Protocol (MCP)** to allow AI models (like Claude) to interact directly with your workspace's task management system.
 
 ## 🚀 Overview
 
