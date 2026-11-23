@@ -125,6 +125,9 @@ func newServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Servic
 // (listWorkspaces, an account-wide machine tool, a resource or prompt read),
 // mirroring the machine-action convention in controller/telemetry.
 func (s *WorkspaceServer) emitTelemetry(ctx context.Context, action mcpevent.Action, toolOrMethod string, workspaceID int64) {
+	if action == mcpevent.ActionMCPToolCall {
+		mcpevent.NoteToolCall(ctx, toolOrMethod, workspaceID)
+	}
 	if s.pubsub == nil {
 		return
 	}
@@ -139,6 +142,11 @@ func (s *WorkspaceServer) emitTelemetry(ctx context.Context, action mcpevent.Act
 			Actor:       2, // Agent — coremcp is reached only from a workspace's own agent session.
 		},
 	})
+}
+
+// emitToolError counts a call of one of this server's tools that failed.
+func (s *WorkspaceServer) emitToolError(ctx context.Context, _ *mcp.CallToolRequest, call mcpevent.ToolCall) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCallError, call.Name, call.WorkspaceID)
 }
 
 func (s *WorkspaceServer) Handler() *mcp.StreamableHTTPHandler {
@@ -435,6 +443,8 @@ func (s *WorkspaceServer) registerTools() {
 	s.registerResources()
 	s.registerTaskResources()
 	s.server.AddReceivingMiddleware(s.subscriptionsMiddleware)
+	// Last, so outermost: it sees the refusals of every middleware above.
+	s.server.AddReceivingMiddleware(mcpevent.ToolErrorsMiddleware(s.emitToolError))
 	s.registerPrompts()
 	s.registerSkills()
 }

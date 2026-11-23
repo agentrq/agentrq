@@ -905,10 +905,14 @@ const (
 	ActionIDTeamInviteRevoke
 	ActionIDTeamInviteDecline
 	ActionIDTeamInviteExpire
+	// A call of one of our MCP tools that ended in an error, and a call of
+	// one of the agent's own tools that failed; emitted by the backend.
+	ActionIDMCPToolCallError
+	ActionIDAgentToolCallFail
 )
 
-// SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or
-// ActionIDMCPMethodCall row was for. It is its own enumeration, not a
+// SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,
+// ActionIDMCPToolCallError or ActionIDMCPMethodCall row was for. It is its own enumeration, not a
 // continuation of ActionID above: the two columns are independent, and a
 // SubActionID value only means something alongside one of those two actions.
 //

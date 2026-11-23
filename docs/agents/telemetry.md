@@ -56,6 +56,12 @@ makes them self-evidently true. A few happen entirely in the browser and are
   one workspace (`listWorkspaces`, `createEnrolmentCode`, `listMachines`, defining an
   event/workflow) store workspace `0`, same convention as the machine actions
   above.
+- **A failed tool call is a second row, `mcp_tool_call_error`**, under the
+  name the call was counted as: `ToolErrorsMiddleware` reads it from the
+  `NoteToolCall` that each server's `emitTelemetry` makes. Keep the middleware
+  outermost on both servers, or the refusals of the ones outside it go
+  uncounted. The agent's own tools are `agent_tool_call_fail`, never named,
+  because those names are the agent's and would grow the label set.
 - **Skills used from the interface** (`skill_import`/`_view`/`_search`/`_enable`/`_disable`) share
   controller methods with the MCP skill tools, so MCP callers mark their ctx
   `OriginMCP` and the controller skips it; drop the mark and every agent read

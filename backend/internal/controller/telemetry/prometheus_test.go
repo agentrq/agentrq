@@ -90,6 +90,9 @@ func TestPrometheus_MCPActionsUseTheirNames(t *testing.T) {
 		{mcp.MCPEvent{Action: mcp.ActionMCPConnect}, "mcp_connect", ""},
 		{mcp.MCPEvent{Action: mcp.ActionMCPClearContext}, "mcp_clear_context", ""},
 		{mcp.MCPEvent{Action: mcp.ActionMCPPlanUpdate}, "mcp_plan_update", ""},
+		{mcp.MCPEvent{Action: mcp.ActionMCPToolCallError, ToolName: "getTask"}, "mcp_tool_call_error", "getTask"},
+		{mcp.MCPEvent{Action: mcp.ActionMCPToolCallError, ToolName: "noSuchTool"}, "mcp_tool_call_error", "unknown"},
+		{mcp.MCPEvent{Action: mcp.ActionMCPAgentToolCallFail}, "agent_tool_call_fail", ""},
 		{mcp.MCPEvent{Action: mcp.ActionMCPNotification, Method: "permission_manual_allow"}, "mcp_permission_manual", ""},
 		{mcp.MCPEvent{Action: mcp.ActionMCPNotification, Method: "permission_auto_allow"}, "mcp_permission_auto", ""},
 		{mcp.MCPEvent{Action: mcp.ActionMCPNotification, Method: "permission_manual_deny"}, "mcp_permission_deny", ""},
@@ -104,8 +107,8 @@ func TestPrometheus_MCPActionsUseTheirNames(t *testing.T) {
 	// Events that store nothing count nothing.
 	c.recordMCP(mcp.MCPEvent{Action: mcp.ActionMCPNotification, Method: "permission_request"})
 	c.recordMCP(mcp.MCPEvent{Action: mcp.Action(255)})
-	if got := testutil.CollectAndCount(c.actions); got != 12 {
-		t.Fatalf("counted %d series, want 12", got)
+	if got := testutil.CollectAndCount(c.actions); got != 15 {
+		t.Fatalf("counted %d series, want 15", got)
 	}
 }
 

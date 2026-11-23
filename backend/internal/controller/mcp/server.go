@@ -616,6 +616,7 @@ func NewWorkspaceServer(
 
 	// Add middleware to handle incoming notifications (like permission_request)
 	mcpSrv.AddReceivingMiddleware(ps.notificationMiddleware, ps.discoverCacheMiddleware, ActionToolsMiddleware(actionToolNames, legacyTools))
+	mcpSrv.AddReceivingMiddleware(ToolErrorsMiddleware(ps.emitToolError))
 
 	cp := http.NewCrossOriginProtection()
 	// Allow all origins for the MCP server in development (same syntax as ServeMux)
@@ -2817,6 +2818,9 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 }
 
 func (ps *WorkspaceServer) emitTelemetry(ctx context.Context, action Action, toolOrMethod string, ci clientIdentity) {
+	if action == ActionMCPToolCall {
+		NoteToolCall(ctx, toolOrMethod, ps.workspaceID)
+	}
 	if ps.pubsub == nil {
 		return
 	}
@@ -2835,6 +2839,11 @@ func (ps *WorkspaceServer) emitTelemetry(ctx context.Context, action Action, too
 			ClientVersion: ci.version,
 		},
 	})
+}
+
+// emitToolError counts a call of one of this server's tools that failed.
+func (ps *WorkspaceServer) emitToolError(ctx context.Context, req *mcp.CallToolRequest, call ToolCall) {
+	ps.emitTelemetry(ctx, ActionMCPToolCallError, call.Name, clientIdentityFromRequest(req))
 }
 
 // linkTTL is how long a signed link handed to an agent reads its file.
