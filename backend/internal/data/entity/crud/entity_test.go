@@ -118,6 +118,7 @@ func TestActionString(t *testing.T) {
 		{ActionPresetCreate, "preset_create"},
 		{ActionPresetDelete, "preset_delete"},
 		{ActionUIPresetInsert, "ui_preset_insert"},
+		{ActionUIAutoscrollPause, "ui_autoscroll_pause"},
 		{ActionWorkspaceShare, "workspace_share"},
 		{ActionTeamTaskClone, "team_task_clone"},
 		{ActionTeamMemorySave, "team_memory_save"},

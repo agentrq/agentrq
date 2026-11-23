@@ -1922,6 +1922,9 @@ const (
 	// An invitation that reached its expiry unaccepted and unrevoked, counted
 	// once by the hourly sweep, as its inviter.
 	ActionTeamInviteExpire Action = 141
+	// Autoscroll paused for a task from its chat minimap. Browser-reported:
+	// the pause lives only in the tab.
+	ActionUIAutoscrollPause Action = 142
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1972,6 +1975,8 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionUIOverviewTaskOpen, true
 	case "ui_preset_insert":
 		return ActionUIPresetInsert, true
+	case "ui_autoscroll_pause":
+		return ActionUIAutoscrollPause, true
 	}
 	return 0, false
 }
@@ -2206,6 +2211,8 @@ func (a Action) String() string {
 		return "team_invite_decline"
 	case ActionTeamInviteExpire:
 		return "team_invite_expire"
+	case ActionUIAutoscrollPause:
+		return "ui_autoscroll_pause"
 	}
 	return "unknown"
 }

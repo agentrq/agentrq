@@ -770,7 +770,7 @@
         </li>
       </ul>
     </div>
-    <ChatMinimap v-if="minimapShown" class="hidden @min-[40rem]:flex shrink-0" :entries="minimapDots" :active-id="minimapActiveId" @jump="jumpToMessage" />
+    <ChatMinimap v-if="minimapShown" class="hidden @min-[40rem]:flex shrink-0" :entries="minimapDots" :active-id="minimapActiveId" :paused="autoscrollPaused" @jump="jumpToMessage" @toggle-autoscroll="toggleAutoscroll" />
     <TaskLinksPanel pinned class="hidden @min-[48rem]:flex absolute top-0 z-10 max-h-[calc(100%-0.5rem)] shadow-lg" :class="minimapShown ? 'right-10' : 'right-4'" :task="task" :task-id="taskId" :pano-docs="panoDocs" @follow="recordUiAction(TELEMETRY_UI_TASK_LINK_OPEN, route)" />
     </div>
 
@@ -1031,7 +1031,7 @@ import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { downloadAttachment, isInlineImage } from '../composables/useAttachmentDownload';
 import { useEscapeKey } from '../composables/useEscapeKey';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT, TELEMETRY_UI_PLAN_COMMENT, TELEMETRY_UI_TASK_LINK_OPEN } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT, TELEMETRY_UI_PLAN_COMMENT, TELEMETRY_UI_TASK_LINK_OPEN, TELEMETRY_UI_AUTOSCROLL_PAUSE } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
@@ -1073,7 +1073,7 @@ import MarkdownBody from '../components/MarkdownBody.vue';
 import TaskPlanPanel from '../components/TaskPlanPanel.vue';
 import TaskLinksPanel from '../components/TaskLinksPanel.vue';
 import ChatMinimap from '../components/ChatMinimap.vue';
-import { minimapEntries, minimapWindow, useChatMinimap } from '../composables/useChatMinimap';
+import { minimapEntries, minimapWindow, useChatMinimap, useAutoscrollPause } from '../composables/useChatMinimap';
 import { useTaskPlan, planCommentText } from '../composables/useTaskPlan';
 import EmojiPicker from '../components/EmojiPicker.vue';
 import ComposerBox from '../components/ComposerBox.vue';
@@ -1487,7 +1487,7 @@ const busyFallbackStart = ref(Date.now());
 watch(agentBusy, (busy) => {
   if (!busy) return;
   busyFallbackStart.value = Date.now();
-  scrollToBottom();
+  if (!autoscrollPaused.value) scrollToBottom();
 });
 const busyClockTimer = setInterval(() => { busyClock.value = Date.now(); }, 1000);
 onUnmounted(() => clearInterval(busyClockTimer));
@@ -1549,6 +1549,7 @@ const shownThread = computed(() => foldReactions(displayMessages.value, (m) => !
 const minimap = computed(() => minimapEntries(shownThread.value.thread));
 const { activeId: minimapActiveId, shown: minimapShown, jumpTo: jumpToMessage } = useChatMinimap(scrollContainer, minimap);
 const minimapDots = computed(() => minimapWindow(minimap.value, minimapActiveId.value));
+const { paused: autoscrollPaused, toggle: toggleAutoscroll } = useAutoscrollPause(taskId, () => recordUiAction(TELEMETRY_UI_AUTOSCROLL_PAUSE, route));
 
 // What each agent message cost in time: from the person's message it answers.
 const workedFor = computed(() => workDurations(sortedMessages.value));
@@ -1683,8 +1684,14 @@ function scrollToBottom() {
 // also fire on in-place UI-only mutations on existing messages (e.g. toggling
 // a resolved permission card's expanded state), yanking the scroll position
 // to the bottom just from expanding a card.
+// Paused from the minimap, a new message leaves the reader where they are.
 watch(sortedMessages, () => {
-  scrollToBottom();
+  if (!autoscrollPaused.value) scrollToBottom();
+});
+
+// Resuming catches up with whatever arrived during the pause.
+watch(autoscrollPaused, (paused) => {
+  if (!paused) scrollToBottom();
 });
 
 // The chat pane is behind a v-if, so switching to History destroys the scroll

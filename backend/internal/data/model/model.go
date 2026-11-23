@@ -909,6 +909,8 @@ const (
 	// one of the agent's own tools that failed; emitted by the backend.
 	ActionIDMCPToolCallError
 	ActionIDAgentToolCallFail
+	// Autoscroll paused for a task from its chat minimap.
+	ActionIDUIAutoscrollPause
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

@@ -1338,6 +1338,8 @@ export const TELEMETRY_UI_TASK_LINK_OPEN = 'ui_task_link_open';
 export const TELEMETRY_UI_OVERVIEW_TASK_OPEN = 'ui_overview_task_open';
 // A preset put into the composer with #name.
 export const TELEMETRY_UI_PRESET_INSERT = 'ui_preset_insert';
+// Autoscroll paused for a task from its chat minimap.
+export const TELEMETRY_UI_AUTOSCROLL_PAUSE = 'ui_autoscroll_pause';
 export const TELEMETRY_UI_SPIN_UP = 'ui_spin_up';
 // A dictation done by a phone's own speech recognition rather than Whisper.
 export const TELEMETRY_UI_DICTATION_END = 'ui_dictation_end';
