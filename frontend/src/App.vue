@@ -557,6 +557,7 @@ import TeamModeBar from './components/TeamModeBar.vue'
 import { useTeamStore } from './stores/teamStore'
 import { useTeamMode, mePath } from './composables/useTeamMode'
 import { coalesce, indexOverview } from './composables/useWorkspaceOverview'
+import { setBadge, waitingOnYou } from './composables/useAppBadge'
 import DesktopTitleBar from './components/DesktopTitleBar.vue'
 import SidePanel from './components/SidePanel.vue'
 import PanoChatColumn from './components/PanoChatColumn.vue'
@@ -786,6 +787,11 @@ const loadTaskOverview = coalesce(async () => {
   taskOverview.value = indexOverview(await api.fetchTaskOverview())
 })
 const OVERVIEW_EVENTS = new Set(['task.created', 'task.updated', 'task.deleted', 'status.updated', 'respond.ack', 'reply.received'])
+// The installed web app's icon shows how many wait on the person. The desktop
+// shell has its own icon to manage.
+watch(taskOverview, (overview) => {
+  if (platformStore.isWeb) setBadge(navigator, waitingOnYou(overview.values()))
+})
 // By the ids, not the count: a profile switch can bring as many workspaces.
 watch(() => workspaces.value.map((w) => w.id).join(), (ids) => { if (ids) loadTaskOverview() }, { immediate: true })
 
@@ -1164,6 +1170,8 @@ async function logout() {
   // hold even if the sign-out call itself fails. The push DELETE needs the
   // cookie, so it too goes before; the two do not wait on each other.
   await Promise.all([unsubscribePush(), forgetEverything({ userId: user.value?.id })])
+  // Clears the icon's badge too: the next person's count is not this one's.
+  taskOverview.value = new Map()
   await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST' })
   router.push('/login')
 }

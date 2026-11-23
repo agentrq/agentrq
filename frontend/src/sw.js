@@ -19,6 +19,7 @@ import {
 } from './composables/useAttachmentCache'
 import { precacheProgressPlugin, precacheTotal } from './composables/usePwaUpdateProgress'
 import { openNotificationUrl } from './composables/useNotificationClick'
+import { refreshBadge } from './composables/useAppBadge'
 
 self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting()
@@ -148,7 +149,10 @@ self.addEventListener('push', event => {
     tag: data.tag || 'agentrq',
     renotify: true,
   }
-  event.waitUntil(self.registration.showNotification(title, options))
+  event.waitUntil(Promise.all([
+    self.registration.showNotification(title, options),
+    refreshBadge(fetch, self.registration.scope, self.navigator),
+  ]))
 })
 
 self.addEventListener('notificationclick', event => {
