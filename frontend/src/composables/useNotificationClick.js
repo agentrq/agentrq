@@ -13,6 +13,14 @@
 
 export const OPEN_NOTIFICATION_URL = 'OPEN_NOTIFICATION_URL'
 
+/**
+ * A path in the app, from the worker's scope: under a base path, a bare `/`
+ * would leave the app for whatever else the origin serves.
+ */
+export function appPath(scope, path = '') {
+  return new URL(path, scope).pathname
+}
+
 /** The worker's side: `clients` is the worker's `self.clients`. */
 export async function openNotificationUrl(clients, url) {
   const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true })

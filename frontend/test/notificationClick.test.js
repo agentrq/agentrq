@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from 'vitest'
 
 import {
   OPEN_NOTIFICATION_URL,
+  appPath,
   followNotificationClicks,
   openNotificationUrl,
   routeForUrl,
@@ -100,5 +101,15 @@ describe('followNotificationClicks', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+describe('appPath', () => {
+  it('keeps the worker inside the app at the root and under a base path', () => {
+    expect(appPath('https://h/')).toBe('/')
+    expect(appPath('https://h/', 'pwa-192x192.png')).toBe('/pwa-192x192.png')
+    expect(appPath('https://h/agentrq/')).toBe('/agentrq/')
+    expect(appPath('https://h/agentrq/', 'pwa-192x192.png')).toBe('/agentrq/pwa-192x192.png')
+    expect(routeForUrl(appPath('https://h/agentrq/'), '/agentrq')).toBe('/')
   })
 })
