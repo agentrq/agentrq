@@ -15,6 +15,7 @@ import { createWebHistory } from 'vue-router'
 
 import { createAgentRQApp } from './app'
 import { reportRouteToExtensionPopup } from './utils/extensionPopup'
+import { followNotificationClicks } from './composables/useNotificationClick'
 
 const { app, router } = createAgentRQApp({
   history: createWebHistory(window.__AGENTRQ_BASE_PATH__ || '/'),
@@ -22,5 +23,6 @@ const { app, router } = createAgentRQApp({
 })
 
 reportRouteToExtensionPopup(router)
+followNotificationClicks(router)
 
 app.mount('#app')
