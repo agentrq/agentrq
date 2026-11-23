@@ -1,6 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 // Package oauthconsenttest walks an authorize request through the consent
 // page the way a person's browser does, for the handlers' own tests.

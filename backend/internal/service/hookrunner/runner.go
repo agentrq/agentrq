@@ -1,6 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 // Package hookrunner runs hooks: WebAssembly modules, sandboxed, that
 // validate a request from an outside service and write the events it stands

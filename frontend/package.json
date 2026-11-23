@@ -2,7 +2,7 @@
   "name": "agentrq-frontend",
   "private": true,
   "version": "0.17.4",
-  "license": "AGPL-3.0-only",
+  "license": "AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial",
   "type": "module",
   "scripts": {
     "dev": "vite --port 5173 --force",

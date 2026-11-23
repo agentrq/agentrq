@@ -1,6 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 // Package acpv1 is AgentRQ's client for the Agent Client Protocol, version 1,
 // served at /api/acp/v1 for acp-gateway in native mode.

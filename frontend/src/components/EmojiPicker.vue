@@ -1,7 +1,7 @@
 <!--
   Copyright 2026 Contextual, Inc. https://agentrq.com
   This notice may not be modified or removed.
-  SPDX-License-Identifier: AGPL-3.0-only
+  SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 -->
 <template>
   <!-- A row of quick reactions, and optionally a way to the system's full

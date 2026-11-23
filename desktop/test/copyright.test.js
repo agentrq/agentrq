@@ -1,6 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 import { describe, it, expect } from 'vitest'
 
@@ -79,7 +79,7 @@ describe('noticeLinesFor', () => {
     ]) {
       expect(noticeLinesFor(path), path).toEqual([...NOTICE_LINES, SPDX])
     }
-    expect(SPDX).toBe('SPDX-License-Identifier: AGPL-3.0-only')
+    expect(SPDX).toBe('SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial')
   })
 
   it('adds the Apache licence line on the daemon, the installers and the built-in hooks', () => {

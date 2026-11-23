@@ -1,7 +1,7 @@
 #!/bin/sh
 # Copyright 2026 Contextual, Inc. https://agentrq.com
 # This notice may not be modified or removed.
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 # Runs specs against Postgres 18 instead of SQLite. Everything runs in docker,
 # on one network: Postgres in its own container, and the server, vite and

@@ -1,6 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 import TitleWorker from '../workers/titleWorker.js?worker';
 import { getTask, updateTaskTitle, recordTelemetry, TELEMETRY_LOCAL_AI_TITLE_GENERATE } from '../api';

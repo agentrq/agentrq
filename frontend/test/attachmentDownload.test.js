@@ -1,6 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { downloadAttachment, isInlineImage, REVOKE_DELAY_MS } from '../src/composables/useAttachmentDownload'

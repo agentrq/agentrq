@@ -1,6 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 /**
  * The copyright line every source file carries, and the rules about it.
@@ -51,7 +51,7 @@ export const NOTICE = NOTICE_LINES[0]
  * and the examples are published under their own licences with no line, and
  * either line in one of them would be false.
  */
-export const SPDX = 'SPDX-License-Identifier: AGPL-3.0-only'
+export const SPDX = 'SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial'
 export const SPDX_APACHE = 'SPDX-License-Identifier: Apache-2.0'
 
 const AGPL = /^(backend|desktop|frontend)\//
