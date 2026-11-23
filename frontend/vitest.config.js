@@ -48,6 +48,7 @@ export default defineConfig({
         'src/composables/useStreamToasts.js',
         'src/composables/useHiddenTabNotifications.js',
         'src/composables/useNotificationClick.js',
+        'src/composables/useAppBadge.js',
         'src/composables/useToasts.js',
         'src/composables/useDrawerFrame.js',
         'src/composables/usePanelGuest.js',
