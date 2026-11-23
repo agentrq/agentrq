@@ -9,12 +9,12 @@
        class="relative w-6 flex-col justify-center py-4" @mouseleave="hovered = null">
     <button type="button" data-testid="chat-minimap-autoscroll" :aria-pressed="paused ? 'true' : 'false'"
             :title="paused ? 'Resume autoscroll' : 'Pause autoscroll'" :aria-label="paused ? 'Resume autoscroll' : 'Pause autoscroll'"
-            class="shrink-0 mb-2 mx-auto w-5 h-5 flex items-center justify-center rounded outline-none transition-colors focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600"
+            class="shrink-0 mb-1.5 mx-auto w-4 h-4 flex items-center justify-center rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600"
             :class="paused
               ? 'bg-gray-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
               : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:text-zinc-500 dark:hover:text-zinc-200 dark:hover:bg-zinc-800'"
             @click="emit('toggle-autoscroll')">
-      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path v-if="paused" d="M12 4v12M6 11l6 6 6-6M5 20h14" />
         <path v-else d="M9 5v14M15 5v14" />
       </svg>
