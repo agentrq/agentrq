@@ -86,8 +86,9 @@ export default defineConfig({
       manifest,
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        // Only the install sheet shows these; no need to precache them.
-        globIgnores: ['**/screenshots/**'],
+        // Only the install sheet shows the screenshots, and iOS fetches its
+        // one launch screen when the app is added; no need to precache them.
+        globIgnores: ['**/screenshots/**', '**/launch/**'],
       },
     }),
   ],
