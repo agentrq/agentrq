@@ -1,6 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 const cleanBase = (window.__AGENTRQ_BASE_PATH__ || '').replace(/\/$/, '');
 export const API_BASE_URL = `${cleanBase}/api/v1`;

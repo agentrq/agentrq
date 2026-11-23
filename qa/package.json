@@ -2,7 +2,7 @@
   "name": "agentrq-qa",
   "private": true,
   "version": "0.0.0",
-  "license": "AGPL-3.0-only",
+  "license": "AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial",
   "type": "module",
   "description": "End-to-end sanity checks that drive the real web app against a real backend",
   "scripts": {

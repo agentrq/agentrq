@@ -1,6 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 import { describe, it, expect } from 'vitest'
 
@@ -10,6 +10,7 @@ import {
   NOTICE_LINES,
   SPDX,
   SPDX_APACHE,
+  SPDX_AGPL_ONLY,
   carriesNotice,
   extensionOf,
   isOurs,
@@ -79,7 +80,7 @@ describe('noticeLinesFor', () => {
     ]) {
       expect(noticeLinesFor(path), path).toEqual([...NOTICE_LINES, SPDX])
     }
-    expect(SPDX).toBe('SPDX-License-Identifier: AGPL-3.0-only')
+    expect(SPDX).toBe('SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial')
   })
 
   it('adds the Apache licence line on the daemon, the installers and the built-in hooks', () => {
@@ -238,6 +239,17 @@ describe('withNotice', () => {
       expect(carriesNotice(older, path), path).toBe(false)
       expect(withNotice(older, path), path).toBe(`${noticeFor(path)}\n\nbody\n`)
       expect(carriesNotice(withNotice(older, path), path), path).toBe(true)
+    }
+  })
+
+  // An AGPL-only line is upgraded to name the commercial licence too, not
+  // followed by a second licence line.
+  it('upgrades an AGPL-only notice in place', () => {
+    for (const path of ['backend/a.go', 'frontend/src/A.vue']) {
+      const older = `${COMMENT[extensionOf(path)]([...NOTICE_LINES, SPDX_AGPL_ONLY])}\n\nbody\n`
+
+      expect(carriesNotice(older, path), path).toBe(false)
+      expect(withNotice(older, path), path).toBe(`${noticeFor(path)}\n\nbody\n`)
     }
   })
 

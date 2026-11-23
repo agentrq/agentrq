@@ -1,6 +1,6 @@
 -- Copyright 2026 Contextual, Inc. https://agentrq.com
 -- This notice may not be modified or removed.
--- SPDX-License-Identifier: AGPL-3.0-only
+-- SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 -- Backfill task latency (postgres): one task_latencies row per task whose
 -- history ends closed (completed/rejected), then the hourly, daily and monthly
