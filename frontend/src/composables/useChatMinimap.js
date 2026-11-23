@@ -2,7 +2,7 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { ref, computed, watch, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, onUnmounted, toValue } from 'vue';
 
 // The longest preview kept; the hover card clamps it to two lines anyway.
 const PREVIEW_CHARS = 280;
@@ -127,4 +127,31 @@ export function useChatMinimap(containerRef, entriesRef, schedule = (fn) => requ
   };
 
   return { activeId, shown, jumpTo };
+}
+
+// The tasks whose autoscroll was paused from the minimap. Kept for the life of
+// the tab, not stored: a pause is for reading back through one conversation.
+const pausedTasks = reactive(new Set());
+
+/**
+ * Whether new messages may pull this task's chat to the bottom, and the switch
+ * the minimap offers to pause that while the person reads up.
+ *
+ * @param {import('vue').MaybeRefOrGetter<string>} taskId
+ * @param {() => void} [onPause] called each time a pause begins
+ */
+export function useAutoscrollPause(taskId, onPause = () => {}) {
+  const paused = computed(() => pausedTasks.has(String(toValue(taskId))));
+  const toggle = () => {
+    const id = String(toValue(taskId));
+    if (pausedTasks.delete(id)) return;
+    pausedTasks.add(id);
+    onPause();
+  };
+  return { paused, toggle };
+}
+
+/** Forgets every pause; for tests. */
+export function resetAutoscrollPauses() {
+  pausedTasks.clear();
 }

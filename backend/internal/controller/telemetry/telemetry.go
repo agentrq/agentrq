@@ -382,6 +382,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDTeamInviteDecline
 	case entity.ActionTeamInviteExpire:
 		action = model.ActionIDTeamInviteExpire
+	case entity.ActionUIAutoscrollPause:
+		action = model.ActionIDUIAutoscrollPause
 	default:
 		return
 	}

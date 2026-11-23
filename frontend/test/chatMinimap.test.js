@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createApp, h, ref, reactive, nextTick } from 'vue'
 import ChatMinimap from '../src/components/ChatMinimap.vue'
-import { minimapEntries, minimapWindow, activeMessageId, useChatMinimap } from '../src/composables/useChatMinimap'
+import { minimapEntries, minimapWindow, activeMessageId, useChatMinimap, useAutoscrollPause, resetAutoscrollPauses } from '../src/composables/useChatMinimap'
 
 const mounted = []
 afterEach(() => {
@@ -254,13 +254,44 @@ describe('useChatMinimap', () => {
   })
 })
 
+describe('useAutoscrollPause', () => {
+  afterEach(() => resetAutoscrollPauses())
+
+  it('pauses and resumes one task, remembering it across uses, and reports each pause', () => {
+    const taskId = ref('t1')
+    const onPause = vi.fn()
+    const { paused, toggle } = useAutoscrollPause(taskId, onPause)
+    expect(paused.value).toBe(false)
+    toggle()
+    expect(paused.value).toBe(true)
+    expect(onPause).toHaveBeenCalledTimes(1)
+    // Another task still follows its chat; coming back finds the pause.
+    taskId.value = 't2'
+    expect(paused.value).toBe(false)
+    taskId.value = 't1'
+    expect(useAutoscrollPause('t1').paused.value).toBe(true)
+    toggle()
+    expect(paused.value).toBe(false)
+    expect(onPause).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports nothing by default', () => {
+    const { paused, toggle } = useAutoscrollPause(() => 't9')
+    toggle()
+    expect(paused.value).toBe(true)
+  })
+})
+
 describe('ChatMinimap', () => {
   function mount(entries, activeId = null) {
-    const state = reactive({ entries, activeId, jumps: [] })
+    const state = reactive({ entries, activeId, jumps: [], paused: false, toggles: 0 })
     const el = document.createElement('div')
     document.body.appendChild(el)
     const app = createApp({
-      render: () => h(ChatMinimap, { entries: state.entries, activeId: state.activeId, onJump: (id) => state.jumps.push(id) }),
+      render: () => h(ChatMinimap, {
+        entries: state.entries, activeId: state.activeId, paused: state.paused,
+        onJump: (id) => state.jumps.push(id), onToggleAutoscroll: () => { state.toggles++ },
+      }),
     })
     app.mount(el)
     mounted.push(app)
@@ -305,5 +336,18 @@ describe('ChatMinimap', () => {
     dots(el)[1].dispatchEvent(new Event('blur'))
     await nextTick()
     expect(preview(el)).toBeNull()
+  })
+
+  it('offers to pause autoscroll, and shows when it is paused', async () => {
+    const { el, state } = mount([{ id: 'a', preview: 'one' }])
+    const button = el.querySelector('[data-testid="chat-minimap-autoscroll"]')
+    expect(button.getAttribute('aria-pressed')).toBe('false')
+    expect(button.getAttribute('aria-label')).toBe('Pause autoscroll')
+    button.click()
+    expect(state.toggles).toBe(1)
+    state.paused = true
+    await nextTick()
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+    expect(button.title).toBe('Resume autoscroll')
   })
 })

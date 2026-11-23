@@ -7,6 +7,18 @@
 <template>
   <nav aria-label="Your messages" data-testid="chat-minimap"
        class="relative w-6 flex-col justify-center py-4" @mouseleave="hovered = null">
+    <button type="button" data-testid="chat-minimap-autoscroll" :aria-pressed="paused ? 'true' : 'false'"
+            :title="paused ? 'Resume autoscroll' : 'Pause autoscroll'" :aria-label="paused ? 'Resume autoscroll' : 'Pause autoscroll'"
+            class="shrink-0 mb-2 mx-auto w-6 h-6 flex items-center justify-center rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600"
+            :class="paused
+              ? 'bg-gray-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+              : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:text-zinc-500 dark:hover:text-zinc-200 dark:hover:bg-zinc-800'"
+            @click="emit('toggle-autoscroll')">
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path v-if="paused" d="M12 4v12M6 11l6 6 6-6M5 20h14" />
+        <path v-else d="M9 5v14M15 5v14" />
+      </svg>
+    </button>
     <ol class="flex flex-col items-center max-h-full overflow-y-auto [scrollbar-width:none]">
       <li v-for="e in entries" :key="e.id" class="shrink-0">
         <button type="button" :data-minimap-dot="e.id" :aria-current="e.id === activeId ? 'true' : null"
@@ -32,15 +44,17 @@
 /**
  * One dot per message the person sent, down the side of the chat: the dot of
  * the message being read stands out, hovering shows the start of a message,
- * and a click scrolls to it. The tracking lives in useChatMinimap.
+ * and a click scrolls to it. The button above them pauses autoscroll for the
+ * task. The tracking lives in useChatMinimap.
  */
 import { ref } from 'vue';
 
 defineProps({
   entries: { type: Array, required: true },
   activeId: { type: String, default: null },
+  paused: { type: Boolean, default: false },
 });
-const emit = defineEmits(['jump']);
+const emit = defineEmits(['jump', 'toggle-autoscroll']);
 
 const hovered = ref(null);
 
