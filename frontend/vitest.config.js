@@ -73,6 +73,7 @@ export default defineConfig({
         'src/utils/sentry.js',
         'src/utils/iosHomeScreen.js',
         'src/utils/installPrompt.js',
+        'src/utils/launchShortcut.js',
         'src/composables/useExtensionPages.js',
         'src/composables/useExtensionRenderers.js',
         'src/composables/useExtensionSettingsTabs.js',

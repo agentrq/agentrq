@@ -50,6 +50,20 @@ export const manifest = {
       purpose: 'maskable',
     },
   ],
+  // A long-press on the app icon. Relative like start_url; the shell opens
+  // the overlay the query names (src/utils/launchShortcut.js).
+  shortcuts: [
+    {
+      name: 'New task',
+      url: './?shortcut=new-task',
+      icons: [{ src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' }],
+    },
+    {
+      name: 'Find task',
+      url: './?shortcut=find-task',
+      icons: [{ src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' }],
+    },
+  ],
   // Chrome shows its richer install sheet only with both form factors.
   screenshots: [
     {
