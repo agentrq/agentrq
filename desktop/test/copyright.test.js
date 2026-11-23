@@ -10,6 +10,7 @@ import {
   NOTICE_LINES,
   SPDX,
   SPDX_APACHE,
+  SPDX_AGPL_ONLY,
   carriesNotice,
   extensionOf,
   isOurs,
@@ -238,6 +239,17 @@ describe('withNotice', () => {
       expect(carriesNotice(older, path), path).toBe(false)
       expect(withNotice(older, path), path).toBe(`${noticeFor(path)}\n\nbody\n`)
       expect(carriesNotice(withNotice(older, path), path), path).toBe(true)
+    }
+  })
+
+  // An AGPL-only line is upgraded to name the commercial licence too, not
+  // followed by a second licence line.
+  it('upgrades an AGPL-only notice in place', () => {
+    for (const path of ['backend/a.go', 'frontend/src/A.vue']) {
+      const older = `${COMMENT[extensionOf(path)]([...NOTICE_LINES, SPDX_AGPL_ONLY])}\n\nbody\n`
+
+      expect(carriesNotice(older, path), path).toBe(false)
+      expect(withNotice(older, path), path).toBe(`${noticeFor(path)}\n\nbody\n`)
     }
   })
 

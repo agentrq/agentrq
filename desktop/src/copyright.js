@@ -54,6 +54,9 @@ export const NOTICE = NOTICE_LINES[0]
 export const SPDX = 'SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial'
 export const SPDX_APACHE = 'SPDX-License-Identifier: Apache-2.0'
 
+/** The AGPL line before the commercial licence was named in it; `--fix` upgrades it in place. */
+export const SPDX_AGPL_ONLY = 'SPDX-License-Identifier: AGPL-3.0-only'
+
 const AGPL = /^(backend|desktop|frontend)\//
 const APACHE = /^(daemon|installers|wasm-hooks)\//
 
@@ -148,9 +151,13 @@ export function withNotice(contents, path) {
   const text = String(contents ?? '')
   if (!noticeFor(path) || carriesNotice(text, path)) return text
 
-  // A notice written before the licence line existed is completed in place,
-  // not given a second notice above it.
-  const before = COMMENT[extensionOf(path)](NOTICE_LINES)
+  // A notice with the AGPL-only line is upgraded in place, and one written
+  // before the licence line existed is completed in place; neither is given a
+  // second notice, or a second licence line.
+  const comment = COMMENT[extensionOf(path)]
+  const agplOnly = comment([...NOTICE_LINES, SPDX_AGPL_ONLY])
+  if (text.includes(agplOnly)) return text.replace(agplOnly, noticeFor(path))
+  const before = comment(NOTICE_LINES)
   if (text.includes(before)) return text.replace(before, noticeFor(path))
 
   return `${noticeFor(path)}\n\n${text}`
