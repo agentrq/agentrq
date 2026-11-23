@@ -651,6 +651,9 @@
                             {{ isPushLoading ? '...' : isPushSubscribed ? 'Push Active' : 'Enable Push' }}
                           </span>
                         </button>
+                        <p v-else-if="pushNeedsHomeScreen" data-test="push-home-screen" class="text-xs text-gray-500 dark:text-zinc-400 self-center">
+                          On iPhone and iPad, push needs the app on your Home Screen: tap Share, then Add to Home Screen, and open AgentRQ from there.
+                        </p>
                         <!--
                           Desktop only. Web Push has no Electron equivalent, so the desktop app
                           raises native notifications from the event stream instead; this is the
@@ -974,6 +977,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { API_BASE_URL, getWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace, deleteWorkspace, resetWorkspaceId, getWorkspaceToken, setWorkspaceSlackChannel, removeWorkspaceSlackChannel } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { usePushNotifications } from '../composables/usePushNotifications';
+import { needsHomeScreen } from '../utils/iosHomeScreen';
 import { usePlatformStore } from '../stores/platformStore';
 import {
   chooseDirectory,
@@ -1164,6 +1168,8 @@ async function toggleDesktopAlerts() {
 const isPushSubscribed = ref(false);
 const isPushLoading = ref(false);
 const isPushAvailable = ref(false); // true when browser supports push AND server has VAPID configured
+// iOS Safari has no PushManager until the app is on the Home Screen.
+const pushNeedsHomeScreen = platformStore.isWeb && needsHomeScreen();
 
 async function refreshPushStatus() {
   if (!isPushAvailable.value) return;

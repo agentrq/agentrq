@@ -69,6 +69,7 @@ export default defineConfig({
         'src/utils/markdownBlocks.js',
         'src/utils/extensionPopup.js',
         'src/utils/sentry.js',
+        'src/utils/iosHomeScreen.js',
         'src/composables/useExtensionPages.js',
         'src/composables/useExtensionRenderers.js',
         'src/composables/useExtensionSettingsTabs.js',
