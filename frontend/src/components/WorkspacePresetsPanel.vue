@@ -51,9 +51,12 @@
       </div>
       <div class="space-y-2">
         <label for="presetBody" class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Message</label>
-        <textarea id="presetBody" v-model="body" data-test="preset-body" rows="4"
+        <textarea id="presetBody" ref="bodyInput" v-model="body" data-test="preset-body" rows="4"
+                  @keydown="skillMenu.handleKeydown"
                   class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none shadow-sm"
                   placeholder="pull latest main, tag and push"></textarea>
+        <!-- The workspace's skills, offered as a word starts with `/`. -->
+        <SlashCommandMenu :menu="skillMenu" @accept="skillMenu.accept" />
       </div>
       <button type="button" data-test="preset-add" :disabled="!canAdd" @click="submit"
               class="px-5 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-zinc-900 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:bg-black dark:hover:bg-zinc-100 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
@@ -66,6 +69,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { useWorkspacePresets } from '../composables/usePresets';
+import { useInlineSkillMenu } from '../composables/useSlashCommands';
+import SlashCommandMenu from './SlashCommandMenu.vue';
 import { onWebMCPChange } from '../composables/useWebMCPChanges';
 import { useFormat } from '../composables/useFormat';
 
@@ -79,6 +84,8 @@ const { presets, loading, error, saving, load, add, remove } = useWorkspacePrese
 
 const name = ref('');
 const body = ref('');
+const bodyInput = ref(null);
+const skillMenu = useInlineSkillMenu({ text: body, workspaceId: () => props.workspaceId, el: bodyInput });
 const canAdd = computed(() => !saving.value && name.value.trim() !== '' && body.value.trim() !== '');
 
 async function submit() {

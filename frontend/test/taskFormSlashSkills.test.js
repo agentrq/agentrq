@@ -124,6 +124,28 @@ describe('the description\'s / menu', () => {
     expect(field.value).toBe('/release ')
   })
 
+  it('lists skills for a / typed in the middle of the description, and puts one there', async () => {
+    const form = await mount()
+    const field = form.el.querySelector('#taskForm textarea')
+    field.value = 'First pull, then /rel and push'
+    field.setSelectionRange(21, 21)
+    field.dispatchEvent(new Event('input'))
+    await settle()
+    expect(rows(form.el)).toEqual(['/release'])
+    field.dispatchEvent(key('Enter'))
+    await settle()
+    expect(field.value).toBe('First pull, then /release and push')
+    expect(field.selectionStart).toBe(26)
+    expect(form.el.querySelector('[data-test=slash-menu]')).toBeNull()
+  })
+
+  it('opens no menu for a path in the description', async () => {
+    const form = await mount()
+    form.fill('#taskForm textarea', 'look in src/views')
+    await settle()
+    expect(form.el.querySelector('[data-test=slash-menu]')).toBeNull()
+  })
+
   it('still creates the task with Cmd-Enter when the menu is shut', async () => {
     const form = await mount()
     form.fill('#taskForm textarea', 'Ship it')

@@ -2,7 +2,7 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { computed, ref, toValue, watch } from 'vue';
+import { computed, nextTick, ref, toValue, watch } from 'vue';
 import * as api from '../api';
 import { skillSeenByAgents } from './useSkills';
 
@@ -133,6 +133,119 @@ export function useSkillCommands(workspaceId, { load = (id) => api.searchWorkspa
     { immediate: true }
   );
   return commands;
+}
+
+/**
+ * A `/name` being typed at the caret, anywhere in the text: after its start or
+ * whitespace, so a path or URL (`a/b`, `https://`) never opens the menu.
+ */
+const SKILL_TOKEN = /(^|\s)\/([^\s/]*)$/;
+
+/**
+ * Where the `/name` at the caret starts and ends, and the name typed up to the
+ * caret; null when the caret is not in one. A caret inside a word takes the
+ * whole word, so choosing a skill never leaves half the old name behind.
+ */
+export function skillTokenAt(text, caret) {
+  if (typeof text !== 'string') return null;
+  const at = Number.isInteger(caret) ? Math.min(Math.max(caret, 0), text.length) : text.length;
+  const m = SKILL_TOKEN.exec(text.slice(0, at));
+  if (!m) return null;
+  const rest = /^[^\s/]*/.exec(text.slice(at))[0];
+  return { start: m.index + m[1].length, end: at + rest.length, query: m[2] };
+}
+
+/**
+ * The text after choosing a skill for the `/name` at the caret, and where the
+ * caret goes: just past the name and the one space after it, where what to do
+ * with the skill is typed.
+ */
+export function applyInlineSkill(command, text, caret) {
+  const current = typeof text === 'string' ? text : '';
+  const at = Number.isInteger(caret) ? Math.min(Math.max(caret, 0), current.length) : current.length;
+  const token = skillTokenAt(current, at) ?? { start: at, end: at };
+  const after = current.slice(token.end);
+  const name = `/${command.name}`;
+  const space = /^\s/.test(after) ? '' : ' ';
+  return {
+    text: current.slice(0, token.start) + name + space + after,
+    caret: token.start + name.length + 1,
+  };
+}
+
+/** What moves a textarea's caret, each a reason to read it again. */
+const CARET_EVENTS = ['input', 'keyup', 'click', 'focus'];
+
+/**
+ * The workspace's skills offered for a `/name` typed anywhere in a textarea,
+ * not only at its start: the New Task description and a preset's message.
+ * Choosing one writes the text and puts the caret after the name itself, so
+ * the caller only hands over its keydown and the menu's clicks.
+ *
+ * @param {object} options
+ * @param {import('vue').Ref<string>} options.text  the textarea's contents, writable
+ * @param {import('vue').Ref<string>|(() => string)} options.workspaceId
+ * @param {import('vue').Ref<HTMLTextAreaElement|null>} options.el  the textarea
+ */
+export function useInlineSkillMenu({ text, workspaceId, el, load }) {
+  const caret = ref(null);
+  const sync = () => {
+    const node = toValue(el);
+    if (node) caret.value = node.selectionStart;
+  };
+  watch(
+    () => toValue(el),
+    (node, old) => {
+      for (const name of CARET_EVENTS) {
+        old?.removeEventListener(name, sync);
+        node?.addEventListener(name, sync);
+      }
+    },
+    { immediate: true }
+  );
+  // Text set from code (a preset, dictation) moves the caret with no event.
+  watch(() => toValue(text), () => nextTick(sync));
+
+  let placed = null;
+  const menu = useSlashCommands({
+    text,
+    commands: useSkillCommands(workspaceId, load ? { load } : undefined),
+    query: (current) => skillTokenAt(current, caret.value)?.query ?? null,
+    apply: (command, current) => {
+      const next = applyInlineSkill(command, current, caret.value);
+      placed = next.caret;
+      return next.text;
+    },
+  });
+
+  function write(next) {
+    text.value = next;
+    caret.value = placed;
+    nextTick(() => {
+      const node = toValue(el);
+      node?.focus();
+      node?.setSelectionRange?.(placed, placed);
+    });
+  }
+
+  /** Chooses a skill, for a click on the menu; false when the menu is shut. */
+  function accept(command) {
+    const next = menu.accept(command);
+    if (next === null) return false;
+    write(next);
+    return true;
+  }
+
+  /** The textarea's keydown; true when the menu took the key. */
+  function handleKeydown(event) {
+    const claimed = menu.handleKeydown(event);
+    if (!claimed) return false;
+    event.preventDefault();
+    if (claimed.text !== null) write(claimed.text);
+    return true;
+  }
+
+  return { ...menu, caret, accept, handleKeydown };
 }
 
 /**
