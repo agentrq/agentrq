@@ -243,6 +243,7 @@ Or **[download the latest release →](https://github.com/agentrq/agentrq/releas
 | Windows | `.exe` installer — x64 and arm64 |
 | Linux | `.AppImage` or `.deb` — x64 and arm64 |
 | Tauri build (preview) | `.dmg`, `.exe`, `.AppImage`, or `.deb` (`AgentRQ-Tauri-` assets, or `install.sh --tauri`) — see [Preview: Tauri build](docs/DESKTOP.md#preview-tauri-build) |
+| iPhone and iPad | No download: add the web app to your Home Screen from Safari — see [AgentRQ on iPhone and iPad](docs/IPHONE.md) |
 
 Builds are currently **unsigned**, so a hand-downloaded build warns on first
 launch on macOS and Windows, and macOS cannot auto-update until signing

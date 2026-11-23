@@ -100,4 +100,27 @@ describe('workspace settings push availability probe', () => {
     expect(checkWorkspaceSubscription).not.toHaveBeenCalled()
     fetchSpy.mockRestore()
   })
+
+  it('tells iOS Safari, which has no PushManager in a tab, to add the app to the Home Screen', async () => {
+    delete window.PushManager
+    const ua = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    const { el, pushButton } = await mount()
+
+    expect(pushButton()).toBeUndefined()
+    expect(text(el.querySelector('[data-test="push-home-screen"]'))).toContain('Add to Home Screen')
+    expect(fetchSpy).not.toHaveBeenCalledWith('/subpath/api/v1/push/vapid-public-key')
+    ua.mockRestore()
+    fetchSpy.mockRestore()
+  })
+
+  it('shows no Home Screen hint off iOS', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: () => Promise.resolve({ publicKey: '' }) })
+
+    const { el } = await mount()
+
+    expect(el.querySelector('[data-test="push-home-screen"]')).toBeNull()
+    vi.restoreAllMocks()
+  })
 })

@@ -77,7 +77,7 @@
     <!-- Global Mobile Menu Toggle (Bottom Floating Action) -->
     <button v-if="!isLoginPage" 
             @click.stop="isMobileMenuOpen = true"
-            class="md:hidden fixed bottom-3 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-black/80 dark:bg-white/80 backdrop-blur-md text-white dark:text-black text-[10px] font-semibold rounded-full shadow-lg z-[60] border border-white/10 dark:border-black/10 transition-all active:scale-95 flex items-center justify-center gap-2">
+            class="md:hidden fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 px-4 py-1.5 bg-black/80 dark:bg-white/80 backdrop-blur-md text-white dark:text-black text-[10px] font-semibold rounded-full shadow-lg z-[60] border border-white/10 dark:border-black/10 transition-all active:scale-95 flex items-center justify-center gap-2">
       <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16m-7 6h7" />
       </svg>
@@ -92,6 +92,8 @@
          :class="[
            isMobileMenuOpen ? 'flex' : 'hidden', 'md:flex fixed inset-y-0 left-0 z-[100] transform bg-white md:bg-zinc-100 dark:bg-zinc-950 md:relative md:translate-x-0',
            'text-gray-900 dark:text-zinc-100 shrink-0 flex-col h-full transition-all duration-300 ease-in-out',
+           // The open phone drawer is fixed to the screen, so it keeps clear of the notch and the home indicator itself.
+           'max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] max-md:pl-[env(safe-area-inset-left)]',
            isCollapsed && !isMobileMenuOpen ? 'w-16' : 'w-64',
            isMobileMenuOpen ? 'w-[280px] shadow-2xl' : ''
          ]">
@@ -543,6 +545,7 @@ import { useTooltipStore } from './stores/tooltipStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useFormat } from './composables/useFormat'
 import { usePushNotifications } from './composables/usePushNotifications'
+import { offerHomeScreen } from './utils/iosHomeScreen'
 import { toastFor, createPresenceToasts } from './composables/useStreamToasts'
 import { createHiddenTabNotifier, pageUnattended, showSystemNotification } from './composables/useHiddenTabNotifications'
 import Toast from './components/Toast.vue'
@@ -607,7 +610,7 @@ const { toKebabCase } = useFormat()
 
 const route = useRoute()
 const router = useRouter()
-const { notifySuccess, notifyInfo, notifyError, notifyEvent } = useToasts()
+const { addToast, notifySuccess, notifyInfo, notifyError, notifyEvent } = useToasts()
 // Public pages — the login, and the operator's admin pages — are drawn without
 // the app around them: there is no signed-in user to build it for.
 const isLoginPage = computed(() => route.meta.public === true)
@@ -1190,6 +1193,7 @@ const loadUser = async () => {
       const db = await connectCache(user.value.id)
       startRetentionSweep(db)
       offerWebMCPTools()
+      if (platformStore.isWeb) offerHomeScreen((message) => addToast(message, 'info', null, 0))
     }
   } catch (err) {
     console.error('Failed to fetch user:', err)
