@@ -177,4 +177,29 @@ describe('TaskDetailView and pausing autoscroll', () => {
     expect(pane(el).scrollTop).toBe(2000)
     expect(recordTelemetry).toHaveBeenCalledTimes(1)
   })
+
+  it('pauses on a jump to a message, until resumed', async () => {
+    const el = await mount()
+    const dot = el.querySelector('[data-minimap-dot="h1"]')
+    el.querySelectorAll('[data-minimap-id]').forEach((m) => { m.scrollIntoView = vi.fn() })
+    const target = el.querySelector('[data-minimap-id="h1"]')
+    pane(el).scrollTop = 100
+    dot.click()
+    await settle()
+    expect(target.scrollIntoView).toHaveBeenCalled()
+    expect(toggle(el).getAttribute('aria-pressed')).toBe('true')
+    expect(recordTelemetry).toHaveBeenCalledWith('ui_autoscroll_pause', 'ws1')
+
+    await arrive(4)
+    expect(pane(el).scrollTop).toBe(100)
+
+    // A second jump while paused is no second pause.
+    el.querySelector('[data-minimap-dot="h2"]').click()
+    await settle()
+    expect(recordTelemetry).toHaveBeenCalledTimes(1)
+
+    toggle(el).click()
+    await settle()
+    expect(pane(el).scrollTop).toBe(2000)
+  })
 })
