@@ -309,14 +309,15 @@ describe('HooksView', () => {
     expect(click).toHaveBeenCalled()
     await choose([])
     expect(calls(seen)).not.toContain(`POST ${API}/hooks`)
+    // An upload gzips the file on a worker thread, which no count of ticks waits for.
     await choose([new Blob(['\0asm'])])
-    expect(toastMessages()).toEqual(['Added linear 0.2.1.'])
+    await vi.waitFor(() => expect(toastMessages()).toEqual(['Added linear 0.2.1.']))
 
     q(el, 'own-hook-upgrade').click()
     await choose([new Blob(['\0asm'])])
-    expect(toastMessages()).toContain('no required secret input')
+    await vi.waitFor(() => expect(toastMessages()).toContain('no required secret input'))
     await choose([new Blob(['\0asm'])])
-    expect(toastMessages()).toContain('Upgraded sentry to 0.3.0.')
+    await vi.waitFor(() => expect(toastMessages()).toContain('Upgraded sentry to 0.3.0.'))
 
     q(el, 'own-hook-delete').click()
     await flush()
