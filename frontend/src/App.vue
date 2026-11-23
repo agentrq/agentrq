@@ -554,6 +554,7 @@ import { useFormat } from './composables/useFormat'
 import { usePushNotifications } from './composables/usePushNotifications'
 import { offerHomeScreen } from './utils/iosHomeScreen'
 import { canInstall, promptInstall } from './utils/installPrompt'
+import { followLaunchShortcut } from './utils/launchShortcut'
 import { toastFor, createPresenceToasts } from './composables/useStreamToasts'
 import { createHiddenTabNotifier, pageUnattended, showSystemNotification } from './composables/useHiddenTabNotifications'
 import Toast from './components/Toast.vue'
@@ -865,6 +866,17 @@ useShortcuts(
     'show-help': () => openOverlay('help'),
   },
   { mac: () => isMacKeyboard.value, onUse: recordShortcutUse }
+)
+
+// A long-press on the installed app's icon. New task waits for the workspace
+// list, which decides between the form and the switcher.
+watch(
+  () => route.query.shortcut,
+  () => followLaunchShortcut(router, route, {
+    'new-task': async () => { await workspaceStore.fetchWorkspaces(); startNewTask() },
+    'find-task': () => openOverlay('palette'),
+  }).then((ran) => { if (ran) recordShortcutUse() }),
+  { immediate: true }
 )
 
 /**
