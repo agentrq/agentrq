@@ -16,8 +16,15 @@ const publicFile = (src) => fileURLToPath(new URL(`../public/${src}`, import.met
 describe('the installed app manifest', () => {
   it('keeps its identity and does not lock the orientation', () => {
     expect(manifest.id).toBe('/')
-    expect(manifest.start_url).toBe('/')
     expect(manifest).not.toHaveProperty('orientation')
+  })
+
+  it('opens the app where it is served, at the root or under a base path', () => {
+    for (const base of ['https://h/', 'https://h/agentrq/']) {
+      const manifestUrl = new URL('manifest.webmanifest', base)
+      expect(new URL(manifest.start_url, manifestUrl).href).toBe(base)
+      expect(new URL(manifest.scope, manifestUrl).href).toBe(base)
+    }
   })
 
   it('describes the app with the README tagline', () => {

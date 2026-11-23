@@ -26,8 +26,10 @@ export const manifest = {
   theme_color: '#000000',
   background_color: '#fafafa',
   display: 'standalone',
-  start_url: '/',
-  scope: '/',
+  // Relative, so under a base path the installed app opens there and not at
+  // the origin's root. Browsers resolve id against the origin, so it stays.
+  start_url: './',
+  scope: './',
   icons: [
     {
       src: 'pwa-192x192.png',

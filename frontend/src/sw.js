@@ -18,7 +18,7 @@ import {
   withinSizeCap,
 } from './composables/useAttachmentCache'
 import { precacheProgressPlugin, precacheTotal } from './composables/usePwaUpdateProgress'
-import { openNotificationUrl } from './composables/useNotificationClick'
+import { appPath, openNotificationUrl } from './composables/useNotificationClick'
 import { refreshBadge } from './composables/useAppBadge'
 
 self.addEventListener('message', event => {
@@ -143,9 +143,9 @@ self.addEventListener('push', event => {
   const title = data.title || 'AgentRQ'
   const options = {
     body: data.body || '',
-    icon: '/pwa-192x192.png',
-    badge: '/pwa-192x192.png',
-    data: { url: data.url || '/' },
+    icon: appPath(self.registration.scope, 'pwa-192x192.png'),
+    badge: appPath(self.registration.scope, 'pwa-192x192.png'),
+    data: { url: data.url || appPath(self.registration.scope) },
     tag: data.tag || 'agentrq',
     renotify: true,
   }
@@ -157,5 +157,5 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close()
-  event.waitUntil(openNotificationUrl(self.clients, event.notification.data?.url || '/'))
+  event.waitUntil(openNotificationUrl(self.clients, event.notification.data?.url || appPath(self.registration.scope)))
 })
