@@ -413,6 +413,13 @@
 
               <div class="h-px bg-gray-100 dark:bg-zinc-800 mx-1 my-1"></div>
 
+              <button v-if="platformStore.isWeb && canInstall" @click="installApp" role="menuitem" class="group/install w-full flex items-center gap-2.5 px-[3px] py-1.5 rounded-lg text-[13px] text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
+                <svg class="w-4 h-4 shrink-0 text-gray-400 dark:text-zinc-500 group-hover/install:text-gray-600 dark:group-hover/install:text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Install app
+              </button>
+
               <button @click="logout" role="menuitem" class="group/logout w-full flex items-center gap-2.5 px-[3px] py-1.5 rounded-lg text-[13px] text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
                 <svg class="w-4 h-4 shrink-0 text-gray-400 dark:text-zinc-500 group-hover/logout:text-gray-600 dark:group-hover/logout:text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
@@ -546,6 +553,7 @@ import { useWorkspaceStore } from './stores/workspaceStore'
 import { useFormat } from './composables/useFormat'
 import { usePushNotifications } from './composables/usePushNotifications'
 import { offerHomeScreen } from './utils/iosHomeScreen'
+import { canInstall, promptInstall } from './utils/installPrompt'
 import { toastFor, createPresenceToasts } from './composables/useStreamToasts'
 import { createHiddenTabNotifier, pageUnattended, showSystemNotification } from './composables/useHiddenTabNotifications'
 import Toast from './components/Toast.vue'
@@ -1158,6 +1166,11 @@ const hideTooltip = () => {
 
 /** The registration handle, so the tools can be withdrawn on sign-out. */
 let webmcp = null
+
+function installApp() {
+  isUserMenuOpen.value = false
+  promptInstall()
+}
 
 async function logout() {
   // Before anything else: these tools act as the signed-in user, and the page
