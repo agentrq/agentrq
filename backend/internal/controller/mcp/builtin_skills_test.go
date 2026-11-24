@@ -102,14 +102,15 @@ func TestBuiltinSkills_EveryFileFitsIn2000Characters(t *testing.T) {
 }
 
 // Every reference file the SKILL.md sends an agent to is served: the ones it
-// names, and references/<tool>.md for each tool in its table but help.
+// names or links, and references/<tool>.md for each tool in its table but
+// help.
 func TestBuiltinSkills_SKILLmdNamesOnlyServedFiles(t *testing.T) {
 	body, err := builtinSkillFiles.ReadFile("skills/agentrq/SKILL.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var named []string
-	for _, m := range regexp.MustCompile("`references/([a-zA-Z-]+\\.md)`").FindAllSubmatch(body, -1) {
+	for _, m := range regexp.MustCompile("[`(]references/([a-zA-Z-]+\\.md)[`)]").FindAllSubmatch(body, -1) {
 		named = append(named, string(m[1]))
 	}
 	for _, m := range regexp.MustCompile("(?m)^\\| `([a-zA-Z]+)`").FindAllSubmatch(body, -1) {
