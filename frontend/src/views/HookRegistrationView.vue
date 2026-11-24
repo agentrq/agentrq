@@ -21,6 +21,7 @@ import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import DeleteModal from '../components/DeleteModal.vue'
 import HookRegistrationForm from '../components/HookRegistrationForm.vue'
 import LoadingState from '../components/LoadingState.vue'
+import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { statusStyle, takeTokenUrl } from '../utils/hooks'
 
 const PAGE = 50
@@ -42,6 +43,7 @@ const busy = ref(false)
 const editing = ref(false)
 const confirmRotate = ref(false)
 const confirmDelete = ref(false)
+const copied = ref(false)
 
 async function loadDeliveries() {
   const page = await fetchHookDeliveries(id, { limit: PAGE })
@@ -130,7 +132,8 @@ async function replay(d) {
 async function copy() {
   try {
     await navigator.clipboard.writeText(tokenUrl.value || reg.value.url)
-    notifySuccess('Copied.')
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 2000)
   } catch {
     notifyError('Could not copy; select the URL instead.')
   }
@@ -182,29 +185,32 @@ const small = 'px-2 py-1 text-[11px] font-bold rounded-md border border-gray-200
             <span v-if="!reg.hookAvailable" class="text-red-600 dark:text-red-400"> · its hook is gone or turned off</span>
           </p>
         </div>
-        <button type="button" role="switch" data-test="reg-enabled" :aria-checked="reg.enabled" :disabled="busy" @click="toggle"
-          class="flex items-center gap-2 shrink-0 text-[11px] font-bold text-gray-600 dark:text-zinc-300 disabled:opacity-50">
-          {{ reg.enabled ? 'Enabled' : 'Off' }}
-          <span class="relative w-9 h-5 rounded-full transition-colors" :class="reg.enabled ? 'bg-black dark:bg-white' : 'bg-gray-200 dark:bg-zinc-700'">
-            <span class="absolute top-0.5 w-4 h-4 rounded-full bg-white dark:bg-black transition-all" :class="reg.enabled ? 'right-0.5' : 'left-0.5 dark:bg-zinc-400'"></span>
-          </span>
-        </button>
+        <div class="flex items-center gap-2 shrink-0 pt-1">
+          <span id="reg-enabled-label" class="text-[11px] font-bold text-gray-600 dark:text-zinc-300">{{ reg.enabled ? 'Receiving' : 'Off' }}</span>
+          <ToggleSwitch data-test="reg-enabled" :model-value="reg.enabled" :disabled="busy" aria-label="Receive requests"
+            @update:model-value="toggle" />
+        </div>
       </div>
 
-      <div class="px-4 pb-10 space-y-4 max-w-4xl">
+      <div class="px-4 pb-10 space-y-4">
         <section :class="card" class="space-y-2">
           <p :class="heading">Payload URL</p>
           <div class="flex flex-col sm:flex-row gap-2">
             <code data-test="reg-url" class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-gray-50 dark:bg-zinc-800 text-xs text-gray-800 dark:text-zinc-100 break-all select-all">{{ tokenUrl || reg.url }}</code>
             <div class="flex gap-2 shrink-0">
               <button data-test="reg-copy" type="button" @click="copy"
-                class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80">Copy</button>
+                class="inline-flex items-center justify-center gap-1.5 min-w-[6.5rem] px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80">
+                <svg v-if="copied" class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" /></svg>
+                <span aria-live="polite">{{ copied ? 'Copied' : 'Copy URL' }}</span>
+              </button>
               <button data-test="reg-rotate" type="button" :disabled="busy" @click="confirmRotate = true"
                 class="px-3 py-2 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 disabled:opacity-50">Rotate token</button>
             </div>
           </div>
-          <p v-if="tokenUrl" data-test="reg-token-once" class="text-[11px] text-amber-700 dark:text-amber-300">
-            Copy it now: the token is shown only this once. Give the provider this URL and the secret you set.
+          <p v-if="tokenUrl" data-test="reg-token-once"
+            class="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-xs text-amber-800 dark:text-amber-200">
+            <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" /></svg>
+            <span><strong>Copy it now:</strong> the token is shown only this once. Give the provider this URL and the secret you set.</span>
           </p>
           <p v-else class="text-[11px] text-gray-500 dark:text-zinc-400">
             The token was shown once, when it was made. Lost it? Rotate the token for a new URL.
@@ -219,17 +225,23 @@ const small = 'px-2 py-1 text-[11px] font-bold rounded-md border border-gray-200
               <p :class="heading">Inputs</p>
               <button v-if="hook" data-test="reg-edit" type="button" :class="small" @click="editing = true">Edit</button>
             </div>
-            <p v-for="row in inputRows" :key="row.name" class="text-xs flex gap-2">
-              <span class="text-gray-500 dark:text-zinc-400 min-w-[7rem]">{{ row.name }}</span>
-              <span class="font-mono text-gray-800 dark:text-zinc-200 break-all">{{ row.value }}</span>
-            </p>
+            <dl class="space-y-1.5">
+              <div v-for="row in inputRows" :key="row.name" class="text-xs flex gap-2">
+                <dt class="text-gray-500 dark:text-zinc-400 min-w-[7rem]">{{ row.name }}</dt>
+                <dd class="font-mono text-gray-800 dark:text-zinc-200 break-all">{{ row.value }}</dd>
+              </div>
+            </dl>
           </div>
           <div class="space-y-1.5" data-test="reg-routes">
             <p :class="heading">Routes</p>
             <p v-if="!routes.length" class="text-xs text-gray-500 dark:text-zinc-400">Nothing routed: requests are logged but fire no event.</p>
             <p v-for="r in routes" :key="r.from" class="text-xs font-mono text-gray-800 dark:text-zinc-200">
               {{ r.from }} <span class="text-gray-400">→</span> {{ r.to }}
-              <span v-if="reg.allowAllCommandsEvents?.includes(r.from)" class="font-sans text-amber-600 dark:text-amber-300" title="An event with a trigger that runs every command">⚠</span>
+              <span v-if="reg.allowAllCommandsEvents?.includes(r.from)" data-test="reg-route-risky" title="An event with a trigger in YOLO mode, which runs every command"
+                class="inline-flex align-middle ml-0.5 text-amber-600 dark:text-amber-300">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" /></svg>
+                <span class="sr-only">(fires a trigger in YOLO mode)</span>
+              </span>
             </p>
           </div>
         </section>

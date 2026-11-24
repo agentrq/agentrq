@@ -100,6 +100,14 @@ const toastMessages = () => useToasts().toasts.value.map((t) => t.message)
 const calls = (seen) => seen.map((s) => `${s.init.method || 'GET'} ${s.url}`)
 const modalButton = (label) => [...document.body.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.trim() === label)
 
+// The error shown for a control: the first thing its aria-describedby names.
+function errorFor(control) {
+  const ids = (control.getAttribute('aria-describedby') || '').split(' ')
+  return ids.map((id) => document.getElementById(id)).find((n) => n?.dataset.test === 'field-error') ?? null
+}
+const hookError = (el) => el.querySelector('fieldset [data-test="field-error"]')
+const keydown = (target, key, mods = {}) => target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...mods }))
+
 function type(input, value) {
   input.value = value
   input.dispatchEvent(new Event('input'))
@@ -260,6 +268,8 @@ describe('HooksView', () => {
     const seen = serve(list([]))
     const el = await mount(HooksView)
     expect(q(el, 'reg-empty')).not.toBeNull()
+    q(el, 'reg-empty-new').click()
+    expect(push).toHaveBeenCalledWith('/events/hooks/new')
     notifyWebMCPChange()
     await flush()
     expect(seen).toHaveLength(4)
@@ -352,15 +362,28 @@ describe('HookRegistrationForm', () => {
   it('asks for a name and a hook before anything else', async () => {
     serve({})
     const { el, onSubmit, onCancel } = await form()
-    expect(q(el, 'reg-name').maxLength).toBe(64) // the server's limit
+    const nameInput = q(el, 'reg-name')
+    expect(nameInput.maxLength).toBe(64) // the server's limit
     q(el, 'reg-submit').click()
     await flush()
-    expect(q(el, 'reg-error').textContent).toBe('A name is required.')
-    type(q(el, 'reg-name'), 'CI')
+    // Every problem at once, each under its field, the cursor on the first.
+    expect(errorFor(nameInput).textContent.trim()).toBe('Give the registration a name.')
+    expect(nameInput.getAttribute('aria-invalid')).toBe('true')
+    expect(hookError(el).textContent.trim()).toBe('Pick a hook.')
+    expect(document.activeElement).toBe(nameInput)
+    type(nameInput, 'CI')
+    await flush()
+    expect(errorFor(nameInput)).toBeNull()
     q(el, 'reg-submit').click()
     await flush()
-    expect(q(el, 'reg-error').textContent).toBe('Pick a hook.')
+    expect(hookError(el).textContent.trim()).toBe('Pick a hook.')
+    expect(document.activeElement).toBe(q(el, 'reg-hook').querySelector('input'))
     expect(onSubmit).not.toHaveBeenCalled()
+    const radio = q(el, 'reg-hook').querySelector('input')
+    radio.checked = true
+    radio.dispatchEvent(new Event('change'))
+    await flush()
+    expect(hookError(el)).toBeNull()
     q(el, 'reg-cancel').click()
     expect(onCancel).toHaveBeenCalled()
   })
@@ -380,24 +403,82 @@ describe('HookRegistrationForm', () => {
 
     // A browser keeps "10s" out of a number field's value and flags it.
     const max = q(el, 'reg-input-maxRuns')
+    expect(el.textContent).toContain('Numbers, separated by commas.')
+    expect(el.textContent).toContain('A number.')
     Object.defineProperty(max, 'validity', { value: { badInput: true }, configurable: true })
     q(el, 'reg-submit').click()
     await flush()
-    expect(q(el, 'reg-error').textContent).toBe('Max runs must be a number.')
+    expect(errorFor(max).textContent.trim()).toBe('Max runs must be a number.')
 
     Object.defineProperty(max, 'validity', { value: { badInput: false }, configurable: true })
     type(q(el, 'reg-input-ids'), '1, x')
     q(el, 'reg-submit').click()
     await flush()
-    expect(q(el, 'reg-error').textContent).toBe('ids must be numbers, separated by commas.')
+    expect(errorFor(q(el, 'reg-input-ids')).textContent.trim()).toBe('ids must be numbers, separated by commas.')
+    expect(errorFor(max)).toBeNull()
     expect(onSubmit).not.toHaveBeenCalled()
 
     type(q(el, 'reg-input-ids'), '1, 2')
     type(max, '10')
     q(el, 'reg-submit').click()
     await flush()
-    expect(q(el, 'reg-error')).toBeNull()
+    expect(el.querySelector('[data-test="field-error"]')).toBeNull()
     expect(onSubmit).toHaveBeenCalledWith({ hookId: 'gh1', name: 'CI', inputs: { maxRuns: 10, ids: [1, 2] }, routes: {} })
+  })
+
+  it('submits on Cmd+Enter, cancels on Esc, and leaves a plain text input undescribed', async () => {
+    serve({})
+    const hook = github({ inputs: [{ name: 'repo', label: 'Repository', type: 'string', secret: false, required: true }], events: [] })
+    const { el, onSubmit, onCancel } = await form({ hooks: [hook] })
+    type(q(el, 'reg-name'), 'CI')
+    const radio = q(el, 'reg-hook').querySelector('input')
+    radio.checked = true
+    radio.dispatchEvent(new Event('change'))
+    await flush()
+    const repo = q(el, 'reg-input-repo')
+    expect(repo.hasAttribute('aria-describedby')).toBe(false)
+    keydown(repo, 'x')
+    keydown(repo, 'Enter', { metaKey: true })
+    await flush()
+    expect(errorFor(repo).textContent.trim()).toBe('Repository is required.')
+    expect(document.activeElement).toBe(repo)
+    type(repo, 'agentrq/agentrq')
+    keydown(repo, 'Enter', { ctrlKey: true })
+    await flush()
+    expect(onSubmit).toHaveBeenCalledWith({ hookId: 'gh1', name: 'CI', inputs: { repo: 'agentrq/agentrq' }, routes: {} })
+    keydown(repo, 'Escape')
+    expect(onCancel).toHaveBeenCalled()
+  })
+
+  it("keeps the name's error, and drops the old hook's, when another hook is picked", async () => {
+    serve({})
+    const { el } = await form({ hooks: [github(), own({ inputs: [] })] })
+    const pick = async (i) => {
+      const radio = qa(el, 'reg-hook')[i].querySelector('input')
+      radio.checked = true
+      radio.dispatchEvent(new Event('change'))
+      await flush()
+    }
+    await pick(0)
+    q(el, 'reg-submit').click()
+    await flush()
+    expect(errorFor(q(el, 'reg-input-webhookSecret')).textContent.trim()).toBe('Webhook secret is required.')
+    q(el, 'reg-reveal-webhookSecret').click()
+    await flush()
+    await pick(1)
+    expect(errorFor(q(el, 'reg-name')).textContent.trim()).toBe('Give the registration a name.')
+    await pick(0)
+    expect(errorFor(q(el, 'reg-input-webhookSecret'))).toBeNull()
+    expect(q(el, 'reg-input-webhookSecret').type).toBe('password')
+  })
+
+  it('sends nothing while busy', async () => {
+    serve({})
+    const { el, onSubmit } = await form({ registration: reg(), busy: true })
+    q(el, 'reg-submit').click()
+    keydown(q(el, 'reg-name'), 'Enter', { metaKey: true })
+    await flush()
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 
   it('says when no hook is available', async () => {
@@ -425,17 +506,46 @@ describe('HookRegistrationForm', () => {
     expect(qa(el, 'reg-input')).toHaveLength(4)
     expect(qa(el, 'reg-route')).toHaveLength(2)
 
+    const secretInput = q(el, 'reg-input-webhookSecret')
+    expect(secretInput.type).toBe('password')
+    expect(q(el, 'reg-copy-webhookSecret')).toBeNull()
     q(el, 'reg-generate-webhookSecret').click()
     await flush()
-    const secret = q(el, 'reg-input-webhookSecret').value
+    const secret = secretInput.value
     expect(secret).toMatch(/^[0-9a-f]{32}$/)
-    expect(q(el, 'reg-secret-shown').textContent).toBe(secret)
+    // A generated secret is shown, to be copied to the provider.
+    expect(secretInput.type).toBe('text')
+    q(el, 'reg-reveal-webhookSecret').click()
+    await flush()
+    expect(secretInput.type).toBe('password')
+    expect(q(el, 'reg-reveal-webhookSecret').getAttribute('aria-label')).toBe('Show Webhook secret')
+    const writeText = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    q(el, 'reg-copy-webhookSecret').click()
+    await flush()
+    expect(writeText).toHaveBeenCalledWith(secret)
+    expect(q(el, 'reg-copy-webhookSecret').textContent.trim()).toBe('Copied')
+    await new Promise((r) => setTimeout(r, 2100))
+    expect(q(el, 'reg-copy-webhookSecret').textContent.trim()).toBe('Copy')
+    // Copied, then a failed copy: the first one's timer finds nothing to undo.
+    q(el, 'reg-copy-webhookSecret').click()
+    await flush()
+    vi.stubGlobal('navigator', { clipboard: { writeText: () => Promise.reject(new Error('denied')) } })
+    q(el, 'reg-copy-webhookSecret').click()
+    await flush()
+    expect(q(el, 'reg-copy-webhookSecret').textContent.trim()).toBe('Copy')
+    await new Promise((r) => setTimeout(r, 2100))
     type(q(el, 'reg-input-branches'), 'main, release/*')
-    const box = qa(el, 'reg-input')[3].querySelector('input[type=checkbox]')
-    box.checked = true
-    box.dispatchEvent(new Event('change'))
-    box.checked = false
-    box.dispatchEvent(new Event('change'))
+    const drafts = (state) => q(el, `reg-input-drafts-${state}`).querySelector('input')
+    expect(q(el, 'reg-input-drafts').querySelector('legend').textContent.trim()).toBe('drafts')
+    expect(drafts('off').checked).toBe(true)
+    drafts('on').checked = true
+    drafts('on').dispatchEvent(new Event('change'))
+    await flush()
+    expect(drafts('on').checked).toBe(true)
+    drafts('off').checked = true
+    drafts('off').dispatchEvent(new Event('change'))
+    await flush()
     const routeTo = (event, id) => {
       const select = q(el, `reg-route-${event}`)
       select.value = id
@@ -480,10 +590,11 @@ describe('HookRegistrationForm', () => {
     const { el, onSubmit } = await form({ registration: reg(), events: [] })
     expect(qa(el, 'reg-hook')).toHaveLength(0)
     expect(q(el, 'reg-name').value).toBe('agentrq CI')
-    expect(q(el, 'reg-input-webhookSecret').placeholder).toContain('leave blank to keep')
+    expect(q(el, 'reg-input-webhookSecret').placeholder).toBe('•••••••• set')
+    expect(el.textContent).toContain('Leave it blank to keep it')
     expect(q(el, 'reg-input-branches').value).toBe('main, release/*')
     expect(el.textContent).toContain('You have no events yet')
-    expect(q(el, 'reg-submit').textContent.trim()).toBe('Save')
+    expect(q(el, 'reg-submit').textContent.trim()).toBe('Save changes')
     q(el, 'reg-submit').click()
     await flush()
     expect(onSubmit).toHaveBeenCalledWith({
@@ -584,8 +695,10 @@ describe('HookRegistrationView', () => {
     expect(inputs).toContain('maxRuns2')
     expect(inputs).toContain('drafts—')
     const routes = q(el, 'reg-routes').textContent.replace(/\s+/g, ' ')
-    expect(routes).toContain('ci.failed → ci_failed ⚠')
+    expect(routes).toContain('ci.failed → ci_failed')
     expect(routes).toContain('pr.opened → evX')
+    expect(qa(el, 'reg-route-risky')).toHaveLength(1)
+    expect(q(el, 'reg-route-risky').textContent).toContain('YOLO')
     expect(q(el, 'reg-no-deliveries').textContent).toContain('No requests yet')
   })
 
@@ -600,7 +713,11 @@ describe('HookRegistrationView', () => {
     q(el, 'reg-copy').click()
     await flush()
     expect(writeText).toHaveBeenCalledWith('https://x.test/api/v1/hooks/in/r1?agentrq_hook_token=k3x9q2ma')
-    expect(toastMessages()).toEqual(['Copied.'])
+    // Said on the button, not in a toast; it goes back after a while.
+    expect(q(el, 'reg-copy').textContent.trim()).toBe('Copied')
+    expect(toastMessages()).toEqual([])
+    await new Promise((r) => setTimeout(r, 2100))
+    expect(q(el, 'reg-copy').textContent.trim()).toBe('Copy URL')
   })
 
   it('says when copying fails', async () => {

@@ -11,13 +11,13 @@ An event fires the tasks its triggers describe, so set up the event and its trig
 
 1. Open **Events → Hooks** and choose **New registration**.
 2. Pick the hook and give the registration a name.
-3. Fill in its inputs. Every hook has at least one secret, which the service you are connecting must also know. **Generate** makes a random one; copy it now, because it is never shown again.
+3. Fill in its inputs. Every hook has at least one secret, which the service you are connecting must also know. **Generate** makes a random one; **Copy** it now, because it is never shown again.
 4. Route the hook's events to your events. An event left as **Not routed** is ignored.
-5. Choose **Create**.
+5. Choose **Create registration**.
 
 The page then shows the registration's **payload URL**. It ends with `?agentrq_hook_token=…`, and this is the only time the full URL is shown: copy it into the service now. If you lose it, **Rotate** gives the registration a new token. The old URL stops working at once.
 
-A route to an event whose trigger has **Allow all commands** on is marked with a warning. Anybody who can send the hook a genuine request can start a task that runs any command, so route only events you would let that service start.
+A route to an event whose trigger has **YOLO mode** on, which runs every command without asking, is marked with a warning. Anybody who can send the hook a genuine request can start a task that runs any command, so route only events you would let that service start.
 
 ## The built-in hooks
 
@@ -31,20 +31,20 @@ This example gives an agent a task whenever an issue is opened in a repository.
 
 1. **+ New Event**.
 2. Name it `github_issue_opened`.
-3. **Create Event**.
+3. **Create event**.
 
 **2. Add a trigger to it.** On the event's page:
 
-![The event's page, with the + Add Trigger button](assets/hooks/github-2-add-trigger.png)
+![The event's page, with the + Add trigger button](assets/hooks/github-2-add-trigger.png)
 
-1. **+ Add Trigger**.
+1. **+ Add trigger**.
 
 ![The New Trigger form, with the workspace, title and instructions filled in](assets/hooks/github-3-trigger.png)
 
 2. The workspace that gets the task.
 3. A task title.
-4. `{{EVENT_PAYLOAD}}` in the instructions, which brings in the issue's details.
-5. **Create Trigger**.
+4. **+ Event payload** puts `{{EVENT_PAYLOAD}}` in the instructions, which brings in the issue's details.
+5. **Create trigger**.
 
 **3. Register the hook.** In **Events → Hooks**, choose **New registration**:
 
@@ -53,13 +53,13 @@ This example gives an agent a task whenever an issue is opened in a repository.
 1. A name.
 2. The **github** hook.
 3. **Generate** a webhook secret.
-4. Copy the secret shown under the field: GitHub needs it, and it is never shown again.
+4. **Copy** the secret: GitHub needs it, and it is never shown again.
 5. Route `issue.opened` to `github_issue_opened`. Leave the others **Not routed**.
-6. **Create**.
+6. **Create registration**.
 
 ![The registration's payload URL, with the Copy button](assets/hooks/github-5-payload-url.png)
 
-7. **Copy** the payload URL, which ends in `?agentrq_hook_token=…`. Copy all of it, token included: it is shown only once.
+7. **Copy URL**: the payload URL, which ends in `?agentrq_hook_token=…`. Copy all of it, token included: it is shown only once.
 
 **4. Add the webhook in GitHub.** In the repository, open **Settings → Webhooks → Add webhook**:
 

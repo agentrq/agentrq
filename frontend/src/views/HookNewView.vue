@@ -58,7 +58,7 @@ async function create(fields) {
       <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 leading-tight">New registration</h1>
       <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">Pick a hook, fill in its inputs, and map its events to yours.</p>
     </div>
-    <div class="px-4 pb-10 max-w-3xl">
+    <div class="px-4 pb-10">
       <LoadingState v-if="loading" label="Loading hooks…" />
       <HookRegistrationForm v-else :hooks="hooks" :events="events" :busy="busy"
         @submit="create" @cancel="router.push('/events/hooks')" />

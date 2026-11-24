@@ -55,13 +55,8 @@
               </p>
             </div>
             <div class="flex items-center gap-2 shrink-0">
-              <button type="button" role="switch" data-test="hook-enabled" :aria-checked="hook.enabled"
-                :aria-label="`${hook.enabled ? 'Turn off' : 'Turn on'} ${hook.name}`" :disabled="busy" @click="toggle(hook)"
-                class="relative w-9 h-5 rounded-full transition-colors disabled:opacity-50"
-                :class="hook.enabled ? 'bg-black dark:bg-white' : 'bg-gray-200 dark:bg-zinc-700'">
-                <span class="absolute top-0.5 w-4 h-4 rounded-full bg-white dark:bg-black transition-all"
-                  :class="hook.enabled ? 'right-0.5' : 'left-0.5 dark:bg-zinc-400'"></span>
-              </button>
+              <ToggleSwitch data-test="hook-enabled" :model-value="hook.enabled"
+                :aria-label="`${hook.enabled ? 'Turn off' : 'Turn on'} ${hook.name}`" :disabled="busy" @update:model-value="toggle(hook)" />
               <button type="button" data-test="hook-upgrade" :disabled="busy" @click="pick(hook.id)"
                 class="px-2 py-1 text-[11px] font-bold rounded-md border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50">
                 Upgrade
@@ -105,6 +100,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AdminLayout from '../components/AdminLayout.vue'
 import DeleteModal from '../components/DeleteModal.vue'
+import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { useToasts } from '../composables/useToasts'
 import { deleteAdminHook, fetchAdminHooks, setAdminHookEnabled, uploadAdminHook } from '../api'
 

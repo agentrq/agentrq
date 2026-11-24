@@ -31,7 +31,7 @@ The hook matches people by account id only. A display name can be shared by two 
 ## 3. Make an event and its trigger
 
 1. In AgentRQ, open **Events** and choose **+ New Event**. Name it, for example `jira-issue`.
-2. Open the event and choose **+ Add Trigger**:
+2. Open the event and choose **+ Add trigger**:
    - **Target Workspace**: the workspace whose agent should do the work.
    - **Task Title**: for example `Jira issue`. Every task gets this title; the issue's own summary is in the body.
    - **Task Instructions**: what the agent should do, with `{{EVENT_PAYLOAD}}` where the issue goes. For example:
@@ -59,7 +59,7 @@ The hook matches people by account id only. A display name can be shared by two 
    Separate several account ids with commas. For a team's shared workspace, list everybody's in both.
 
 4. Route **jira.issue.sent** to the event from step 3. Leave the others **Not routed** unless you also set up the webhook below.
-5. Choose **Create**, and copy the **Payload URL** the page now shows. It is shown in full only this once. If you lose it, **Rotate** makes a new one.
+5. Choose **Create registration**, and copy the **Payload URL** the page now shows. It is shown in full only this once. If you lose it, **Rotate** makes a new one.
 
 ## 5. Make the "Send to AgentRQ" rule in Jira
 
