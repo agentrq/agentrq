@@ -81,6 +81,46 @@ export function readAttachment(filePath, { readFile = readFileSync, stat = statS
   }
 }
 
+/** The workspace server refuses a request body over 4 MiB, with HTTP 413. */
+export const MAX_REQUEST_BYTES = 4 << 20
+
+/** Room kept for the JSON-RPC envelope, the tool's name and the ids around the payload. */
+const ENVELOPE_BYTES = 16 << 10
+
+const mib = (bytes) => `${(bytes / (1 << 20)).toFixed(1)} MiB`
+
+/**
+ * Split attachments into groups that each fit one request beside `reservedBytes`
+ * of other payload, in the order given. Base64 grows a file by a third, so a
+ * file over about 3 MiB fits no request: it is refused here, naming the file,
+ * rather than sent to come back as a bare 413.
+ */
+export function batchAttachments(attachments, reservedBytes = 0, limit = MAX_REQUEST_BYTES) {
+  const room = limit - ENVELOPE_BYTES - reservedBytes
+  const batches = []
+  let current = []
+  let used = 0
+  for (const attachment of attachments) {
+    const size = Buffer.byteLength(JSON.stringify(attachment))
+    if (size > room) {
+      const raw = Buffer.byteLength(attachment.data, 'base64')
+      throw new UserError(
+        `cannot attach ${attachment.filename}: ${mib(raw)} is ${mib(size)} once base64-encoded, ` +
+          `over the workspace server's ${mib(limit)} request limit; compress it (gzip) or split it`,
+      )
+    }
+    if (current.length > 0 && used + size > room) {
+      batches.push(current)
+      current = []
+      used = 0
+    }
+    current.push(attachment)
+    used += size
+  }
+  if (current.length > 0) batches.push(current)
+  return batches
+}
+
 /**
  * Work out where a downloaded attachment should land.
  *

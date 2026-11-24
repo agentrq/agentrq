@@ -8,6 +8,8 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import {
+  MAX_REQUEST_BYTES,
+  batchAttachments,
   mimeTypeFor,
   readAttachment,
   resolveOutputPath,
@@ -149,4 +151,17 @@ test('writeAttachment explains a failed write', () => {
     () => writeAttachment(join(dir, 'blocked'), Buffer.from('x').toString('base64')),
     UserError,
   )
+})
+
+test('batchAttachments packs attachments in order into groups that fit a request', () => {
+  const file = (filename, bytes) => ({ id: `upload-${filename}`, filename, mimeType: 'text/plain', data: Buffer.alloc(bytes).toString('base64') })
+  assert.deepEqual(batchAttachments([]), [])
+  const small = [file('a', 10), file('b', 10)]
+  assert.deepEqual(batchAttachments(small), [small])
+  const [a, b, c] = [file('a', 1 << 20), file('b', 1 << 20), file('c', 1 << 20)]
+  assert.deepEqual(batchAttachments([a, b, c]), [[a, b], [c]])
+  // What the rest of the payload takes leaves less room for the files.
+  assert.deepEqual(batchAttachments([a, b], 2 << 20), [[a], [b]])
+  assert.equal(MAX_REQUEST_BYTES, 4194304)
+  assert.throws(() => batchAttachments([a], 0, 1 << 20), (err) => err instanceof UserError && /cannot attach a: 1\.0 MiB is 1\.3 MiB once base64-encoded/.test(err.message))
 })
