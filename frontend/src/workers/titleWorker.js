@@ -7,8 +7,8 @@ import { pipeline, env } from '@huggingface/transformers';
 // Skip local check, we'll fetch from HF Hub using WASM
 env.allowLocalModels = false;
 
-// We'll use a more capable model (248M parameters) for better instruction following
-const MODEL_NAME = 'Xenova/LaMini-Flan-T5-248M';
+// Google FLAN-T5-base (248M parameters).
+const MODEL_NAME = 'Xenova/flan-t5-base';
 
 class TitleGenerationPipeline {
   static task = 'text2text-generation';
@@ -35,7 +35,7 @@ self.addEventListener('message', async (e) => {
         self.postMessage({ id, type: 'PROGRESS', data: x });
       });
 
-      // Format the prompt for LaMini-Flan-T5
+      // Format the prompt for FLAN-T5
       const prompt = `Write a very short, concise task title (max 6 words) for the following task description:\n\n${data.text}`;
 
       const output = await generator(prompt, {
