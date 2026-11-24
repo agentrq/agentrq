@@ -514,7 +514,7 @@ func (s *Server) discover(ctx context.Context, req *ServerRequest[*DiscoverParam
 }
 
 func (s *Server) subscribe(ctx context.Context, req *SubscribeRequest) (*emptyResult, error) {
-	id, ok := requestIDFrom(ctx)
+	id, ok := requestIDFrom(ctx, req.Session)
 	if !ok {
 		return nil, fmt.Errorf("%w: subscribe requires a request ID", jsonrpc.ErrInvalidRequest)
 	}
@@ -555,7 +555,7 @@ func (s *Server) unsubscribe(ctx context.Context, req *UnsubscribeRequest) (*emp
 // server will send, then holds the request open, notifying on its stream,
 // until the client goes away. A listen for nothing returns at once.
 func (s *Server) subscriptionsListen(ctx context.Context, req *SubscriptionsListenRequest) (*SubscriptionsListenResult, error) {
-	id, ok := requestIDFrom(ctx)
+	id, ok := requestIDFrom(ctx, req.Session)
 	if !ok {
 		return nil, fmt.Errorf("%w: subscriptions/listen requires a request ID", jsonrpc.ErrInvalidRequest)
 	}

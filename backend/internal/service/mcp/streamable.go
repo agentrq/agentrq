@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +20,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 	"unicode/utf8"
 
 	"github.com/agentrq/agentrq/backend/internal/service/mcp/jsonrpc"
@@ -63,6 +63,10 @@ type StreamableHTTPOptions struct {
 	// address under another host's name, which is refused by default as
 	// DNS rebinding.
 	DisableLocalhostProtection bool
+	// OnStreamOpen, when set, runs each time a session's client opens its
+	// push stream, once the stream carries messages: what the session could
+	// not be sent while it had none can go out then.
+	OnStreamOpen func(ctx context.Context, sessionID string)
 }
 
 // SessionInfo is what a stateful session's id records about it: enough to
@@ -73,7 +77,6 @@ type SessionInfo struct {
 	ProtocolVersion string
 	ClientName      string
 	ClientVersion   string
-	ExpiresAt       time.Time
 }
 
 // maxSessionField caps each field a session id records, so a client cannot
@@ -123,7 +126,43 @@ type StreamableHTTPHandler struct {
 
 	mu       sync.Mutex
 	sessions map[string]*httpSession
-	ended    map[string]time.Time // ids a client deleted, until they expire
+	ended    endedIDs
+}
+
+// maxEnded is how many deleted session ids a handler remembers. Past it the
+// oldest is forgotten, which, like a restart, only lets the client that
+// deleted it reopen it.
+var maxEnded = 10000
+
+// endedIDs are the session ids clients deleted, by hash, the most recent
+// maxEnded of them.
+type endedIDs struct {
+	ids  map[[sha256.Size]byte]struct{}
+	ring [][sha256.Size]byte
+	next int
+}
+
+func (e *endedIDs) add(id string) {
+	k := sha256.Sum256([]byte(id))
+	if _, ok := e.ids[k]; ok {
+		return
+	}
+	if e.ids == nil {
+		e.ids = map[[sha256.Size]byte]struct{}{}
+	}
+	if len(e.ring) < maxEnded {
+		e.ring = append(e.ring, k)
+	} else {
+		delete(e.ids, e.ring[e.next])
+		e.ring[e.next] = k
+		e.next = (e.next + 1) % len(e.ring)
+	}
+	e.ids[k] = struct{}{}
+}
+
+func (e *endedIDs) has(id string) bool {
+	_, ok := e.ids[sha256.Sum256([]byte(id))]
+	return ok
 }
 
 // NewStreamableHTTPHandler serves the server getServer returns for each
@@ -132,7 +171,6 @@ func NewStreamableHTTPHandler(getServer func(*http.Request) *Server, opts *Strea
 	h := &StreamableHTTPHandler{
 		getServer: getServer,
 		sessions:  map[string]*httpSession{},
-		ended:     map[string]time.Time{},
 	}
 	if opts != nil {
 		h.opts = *opts
@@ -259,18 +297,21 @@ func accepts(values []string) (jsonOK, streamOK bool) {
 	return jsonOK, streamOK
 }
 
-// lookup finds the session id names. One this process has not seen, or no
-// longer holds, is rebuilt from the id when the id is one SessionIDs
-// minted for this server and nobody deleted it.
+// lookup finds the session id names. One this process does not hold is
+// rebuilt from the id only by a GET, its client reopening its push stream,
+// and only when SessionIDs minted the id for this server and nobody deleted
+// it. A POST or DELETE naming it is 404, as before ids were signed: a client
+// whose push stream is gone for good then starts a new session, push stream
+// and all, rather than carrying on without one.
 func (h *StreamableHTTPHandler) lookup(w http.ResponseWriter, req *http.Request, id string) (*httpSession, bool) {
 	h.mu.Lock()
 	sess := h.sessions[id]
-	_, deleted := h.ended[id]
+	deleted := h.ended.has(id)
 	h.mu.Unlock()
 	if sess != nil {
 		return sess, true
 	}
-	if h.opts.SessionIDs == nil || deleted {
+	if h.opts.SessionIDs == nil || deleted || req.Method != http.MethodGet {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return nil, false
 	}
@@ -284,18 +325,26 @@ func (h *StreamableHTTPHandler) lookup(w http.ResponseWriter, req *http.Request,
 		http.Error(w, "no server available", http.StatusBadRequest)
 		return nil, false
 	}
-	return h.resume(server, id, info), true
+	if sess = h.resume(server, id, info); sess == nil {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return nil, false
+	}
+	return sess, true
 }
 
 // resume rebuilds a session from what its id records: initialized, speaking
-// the revision it negotiated, as the client it said it was.
+// the revision it negotiated, as the client it said it was. Nil when the id
+// was deleted while it was being read.
 func (h *StreamableHTTPHandler) resume(server *Server, id string, info SessionInfo) *httpSession {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if sess := h.sessions[id]; sess != nil {
 		return sess
 	}
-	sess := h.newSession(server, id, info.ExpiresAt)
+	if h.ended.has(id) {
+		return nil
+	}
+	sess := h.newSession(server, id)
 	p := &InitializeParams{ProtocolVersion: info.ProtocolVersion, Capabilities: &ClientCapabilities{}}
 	if info.ClientName != "" {
 		p.ClientInfo = &Implementation{Name: info.ClientName, Version: info.ClientVersion}
@@ -312,12 +361,11 @@ func (h *StreamableHTTPHandler) resume(server *Server, id string, info SessionIn
 
 // newSession is a session of server with no streams yet. h.mu is held when
 // id is set.
-func (h *StreamableHTTPHandler) newSession(server *Server, id string, expires time.Time) *httpSession {
+func (h *StreamableHTTPHandler) newSession(server *Server, id string) *httpSession {
 	sess := &httpSession{
 		handler:   h,
 		id:        id,
 		stateless: h.opts.Stateless,
-		expires:   expires,
 		byRequest: map[jsonrpc.ID]*stream{},
 		done:      make(chan struct{}),
 	}
@@ -343,17 +391,9 @@ func (h *StreamableHTTPHandler) forget(sess *httpSession) {
 // rebuilt while this process runs.
 func (h *StreamableHTTPHandler) end(sess *httpSession) {
 	if h.opts.SessionIDs != nil {
-		now := time.Now()
-		sess.mu.Lock()
-		id, expires := sess.id, sess.expires
-		sess.mu.Unlock()
+		id := sess.sessionID()
 		h.mu.Lock()
-		for id, until := range h.ended {
-			if now.After(until) {
-				delete(h.ended, id)
-			}
-		}
-		h.ended[id] = expires
+		h.ended.add(id)
 		h.mu.Unlock()
 	}
 	_ = sess.session.Close()
@@ -389,10 +429,15 @@ func (h *StreamableHTTPHandler) serveGET(w http.ResponseWriter, req *http.Reques
 		return
 	}
 	defer sess.detachStandalone(st)
+	// The stream holds what is pushed to it until open, so nothing else
+	// writes to w while its headers are set.
 	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Connection", "keep-alive")
 	st.open()
+	if h.opts.OnStreamOpen != nil {
+		h.opts.OnStreamOpen(req.Context(), id)
+	}
 	select {
 	case <-req.Context().Done():
 	case <-sess.done:
@@ -538,7 +583,7 @@ func (h *StreamableHTTPHandler) servePOST(w http.ResponseWriter, req *http.Reque
 	// the revision it named.
 	keep := false
 	if sess == nil {
-		sess = h.newSession(server, "", time.Time{})
+		sess = h.newSession(server, "")
 		if h.opts.Stateless {
 			if !p.hasInit && !p.modern {
 				sess.session.state.initialize = &InitializeParams{ProtocolVersion: version}
@@ -632,26 +677,18 @@ func (h *StreamableHTTPHandler) servePOST(w http.ResponseWriter, req *http.Reque
 
 // establish gives a session that initialized its id, and keeps it.
 func (h *StreamableHTTPHandler) establish(ctx context.Context, w http.ResponseWriter, sess *httpSession) bool {
-	p := sess.session.InitializeParams()
-	var (
-		id      string
-		expires time.Time
-	)
+	var id string
 	if h.opts.SessionIDs != nil {
-		info := sessionInfoOf(p)
-		minted, err := h.opts.SessionIDs.Issue(ctx, info)
+		minted, err := h.opts.SessionIDs.Issue(ctx, sessionInfoOf(sess.session.InitializeParams()))
 		if err != nil {
 			return false
 		}
 		id = minted
-		if resolved, err := h.opts.SessionIDs.Resolve(ctx, minted); err == nil {
-			expires = resolved.ExpiresAt
-		}
 	} else {
 		id = rand.Text()
 	}
 	sess.mu.Lock()
-	sess.id, sess.expires = id, expires
+	sess.id = id
 	sess.mu.Unlock()
 	sess.session.setID(id)
 	h.mu.Lock()
@@ -718,7 +755,6 @@ type httpSession struct {
 	session   *ServerSession
 	id        string
 	stateless bool
-	expires   time.Time
 
 	mu         sync.Mutex
 	standalone *stream
@@ -777,15 +813,17 @@ func (s *httpSession) release(st *stream) {
 }
 
 // attachStandalone claims the session's push stream for a GET; nil when
-// another GET holds it.
+// another GET holds it. The stream holds what it is sent until it is open.
 func (s *httpSession) attachStandalone(w http.ResponseWriter) *stream {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.standalone != nil {
 		return nil
 	}
-	s.standalone = newStream(w, nil, false, false)
-	return s.standalone
+	st := newStream(w, nil, false, false)
+	st.held = true
+	s.standalone = st
+	return st
 }
 
 func (s *httpSession) detachStandalone(st *stream) {
@@ -818,7 +856,7 @@ func (s *httpSession) send(ctx context.Context, msg jsonrpc.Message) error {
 	resp, isResponse := msg.(*jsonrpc.Response)
 	if isResponse {
 		related, answers = resp.ID, resp.ID
-	} else if id, ok := requestIDFrom(ctx); ok {
+	} else if id, ok := requestIDFrom(ctx, s.session); ok {
 		related = id
 	}
 
@@ -915,7 +953,8 @@ func newStream(w http.ResponseWriter, calls map[jsonrpc.ID]bool, modern, listen 
 }
 
 // open starts a GET's stream: headers out at once, with a comment, so a
-// proxy that holds headers until it has a body still forwards them.
+// proxy that holds headers until it has a body still forwards them. What
+// was sent to it before follows.
 func (st *stream) open() {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -923,6 +962,11 @@ func (st *stream) open() {
 	st.w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(st.w, ": ok\n\n")
 	_ = http.NewResponseController(st.w).Flush()
+	st.held = false
+	for _, data := range st.queue {
+		_ = st.event(data)
+	}
+	st.queue = nil
 }
 
 // hold queues what is written until unhold, so a handshake can set its

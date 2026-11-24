@@ -5,6 +5,7 @@
 package auth
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +22,7 @@ func sessionTokens() *tokenService {
 func TestMCPSessionToken_RoundTrips(t *testing.T) {
 	svc := sessionTokens()
 	before := time.Now()
-	tok, err := svc.CreateMCPSessionToken("user-1", "ws-1", MCPSession{ProtocolVersion: "2025-06-18", ClientName: "claude-code", ClientVersion: "2.1.0"})
+	tok, err := svc.CreateMCPSessionToken(context.Background(), "user-1", "ws-1", MCPSession{ProtocolVersion: "2025-06-18", ClientName: "claude-code", ClientVersion: "2.1.0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +30,7 @@ func TestMCPSessionToken_RoundTrips(t *testing.T) {
 		t.Fatalf("session id %q is not a JWT", tok)
 	}
 
-	got, err := svc.ValidateMCPSessionToken(tok, "user-1", "ws-1")
+	got, err := svc.ValidateMCPSessionToken(context.Background(), tok, "user-1", "ws-1")
 	if err != nil {
 		t.Fatalf("its own session id was refused: %v", err)
 	}
@@ -44,8 +45,8 @@ func TestMCPSessionToken_RoundTrips(t *testing.T) {
 // Two sessions opened by the same client are told apart.
 func TestMCPSessionToken_EverySessionIsItsOwn(t *testing.T) {
 	svc := sessionTokens()
-	a, _ := svc.CreateMCPSessionToken("user-1", "ws-1", MCPSession{})
-	b, _ := svc.CreateMCPSessionToken("user-1", "ws-1", MCPSession{})
+	a, _ := svc.CreateMCPSessionToken(context.Background(), "user-1", "ws-1", MCPSession{})
+	b, _ := svc.CreateMCPSessionToken(context.Background(), "user-1", "ws-1", MCPSession{})
 	if a == b {
 		t.Fatal("two sessions got the same id")
 	}
@@ -55,11 +56,11 @@ func TestMCPSessionToken_EverySessionIsItsOwn(t *testing.T) {
 // for: it cannot be carried into another workspace or account.
 func TestMCPSessionToken_BoundToUserAndWorkspace(t *testing.T) {
 	svc := sessionTokens()
-	tok, _ := svc.CreateMCPSessionToken("user-1", "ws-1", MCPSession{})
-	if _, err := svc.ValidateMCPSessionToken(tok, "user-2", "ws-1"); err == nil {
+	tok, _ := svc.CreateMCPSessionToken(context.Background(), "user-1", "ws-1", MCPSession{})
+	if _, err := svc.ValidateMCPSessionToken(context.Background(), tok, "user-2", "ws-1"); err == nil {
 		t.Error("another user's session id was accepted")
 	}
-	if _, err := svc.ValidateMCPSessionToken(tok, "user-1", "ws-2"); err == nil {
+	if _, err := svc.ValidateMCPSessionToken(context.Background(), tok, "user-1", "ws-2"); err == nil {
 		t.Error("another workspace's session id was accepted")
 	}
 }
@@ -68,7 +69,7 @@ func TestMCPSessionToken_BoundToUserAndWorkspace(t *testing.T) {
 // credential anywhere, and no token passes as a session id.
 func TestMCPSessionToken_NeverATokenNorTheReverse(t *testing.T) {
 	svc := sessionTokens()
-	session, _ := svc.CreateMCPSessionToken("user-1", "ws-1", MCPSession{})
+	session, _ := svc.CreateMCPSessionToken(context.Background(), "user-1", "ws-1", MCPSession{})
 	if _, err := svc.ValidateToken(session); err == nil {
 		t.Error("a session id validated as an MCP token")
 	}
@@ -77,16 +78,16 @@ func TestMCPSessionToken_NeverATokenNorTheReverse(t *testing.T) {
 	}
 
 	access, _ := svc.CreateMCPToken("user-1", "ws-1", "access")
-	if _, err := svc.ValidateMCPSessionToken(access, "user-1", "ws-1"); err == nil {
+	if _, err := svc.ValidateMCPSessionToken(context.Background(), access, "user-1", "ws-1"); err == nil {
 		t.Error("an access token validated as a session id")
 	}
 	cookie, _ := svc.CreateToken("user-1", "", "", "")
-	if _, err := svc.ValidateMCPSessionToken(cookie, "user-1", "ws-1"); err == nil {
+	if _, err := svc.ValidateMCPSessionToken(context.Background(), cookie, "user-1", "ws-1"); err == nil {
 		t.Error("a person's session token validated as a session id")
 	}
 
 	other := NewTokenService(TokenConfig{APISecret: "api-secret", MCPSecret: "another-secret"})
-	if _, err := other.ValidateMCPSessionToken(session, "user-1", "ws-1"); err == nil {
+	if _, err := other.ValidateMCPSessionToken(context.Background(), session, "user-1", "ws-1"); err == nil {
 		t.Error("a session id verified under another MCP secret")
 	}
 }
@@ -117,11 +118,11 @@ func TestMCPSessionToken_RefusesBadIDs(t *testing.T) {
 		"unsigned":       unsignedToken(t, mcpSessionClaims{RegisteredClaims: valid}),
 		"not a JWT":      "not-a-session",
 	} {
-		if _, err := svc.ValidateMCPSessionToken(tok, "user-1", "ws-1"); err == nil {
+		if _, err := svc.ValidateMCPSessionToken(context.Background(), tok, "user-1", "ws-1"); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	if _, err := svc.ValidateMCPSessionToken(sign(mcpSessionClaims{RegisteredClaims: valid}, jwt.SigningMethodHS256), "user-1", "ws-1"); err != nil {
+	if _, err := svc.ValidateMCPSessionToken(context.Background(), sign(mcpSessionClaims{RegisteredClaims: valid}, jwt.SigningMethodHS256), "user-1", "ws-1"); err != nil {
 		t.Errorf("the control id was refused: %v", err)
 	}
 }

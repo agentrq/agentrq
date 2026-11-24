@@ -74,18 +74,11 @@ a JSON-RPC `-32022` naming those versions, so clients renegotiate down.
 
 ## A session id is a signed record, not a credential
 
-Both servers run on our own MCP package, `internal/service/mcp`. The workspace
-server's `Mcp-Session-Id` is a JWT from `auth.CreateMCPSessionToken`, signed
-with a key derived from the MCP secret, so any process can rebuild the session
-after a restart, an eviction or a redeploy. It records only the handshake
-(the revision asked for, the client's name and version) and is bound to the
-workspace and user: the bearer token is still checked first on every request.
-Never put anything that grants access in it. A DELETE is remembered only by the
-process that served it.
-
-The package's in-process client negotiates like the newest clients
-(`server/discover`, then `_meta` on every request), so a test through it sees a
-2026-07-28 session, not a handshake.
+The workspace server's `Mcp-Session-Id` is a JWT holding only the handshake:
+never put anything that grants access in it. Only a GET (the client reopening
+its push stream) rebuilds a session the process does not hold; a POST stays
+404, or Claude Code, whose push stream gives up after about 2.5 s, carries on
+deaf after a long deploy instead of starting over.
 
 coremcp is stateless and does serve 2026-07-28 — it pushes nothing, so it has
 no stream to lose. The two servers differ on purpose; see

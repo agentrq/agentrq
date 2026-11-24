@@ -20,16 +20,16 @@ type sessionIDs struct {
 	workspaceID string
 }
 
-func (s sessionIDs) Issue(_ context.Context, info mcp.SessionInfo) (string, error) {
-	return s.tokens.CreateMCPSessionToken(s.userID, s.workspaceID, auth.MCPSession{
+func (s sessionIDs) Issue(ctx context.Context, info mcp.SessionInfo) (string, error) {
+	return s.tokens.CreateMCPSessionToken(ctx, s.userID, s.workspaceID, auth.MCPSession{
 		ProtocolVersion: info.ProtocolVersion,
 		ClientName:      info.ClientName,
 		ClientVersion:   info.ClientVersion,
 	})
 }
 
-func (s sessionIDs) Resolve(_ context.Context, id string) (mcp.SessionInfo, error) {
-	session, err := s.tokens.ValidateMCPSessionToken(id, s.userID, s.workspaceID)
+func (s sessionIDs) Resolve(ctx context.Context, id string) (mcp.SessionInfo, error) {
+	session, err := s.tokens.ValidateMCPSessionToken(ctx, id, s.userID, s.workspaceID)
 	if err != nil {
 		return mcp.SessionInfo{}, err
 	}
@@ -37,6 +37,5 @@ func (s sessionIDs) Resolve(_ context.Context, id string) (mcp.SessionInfo, erro
 		ProtocolVersion: session.ProtocolVersion,
 		ClientName:      session.ClientName,
 		ClientVersion:   session.ClientVersion,
-		ExpiresAt:       session.ExpiresAt,
 	}, nil
 }

@@ -54,14 +54,19 @@ test('a session outlives a restart of the server', async ({ page }) => {
   // A new server process, which has never seen the session.
   await restartBackend()
 
+  // Until the client reopens its push stream a call is 404, as it always was,
+  // so a client that has given up on the stream starts a new session.
+  expect((await mcpPost(origin, workspace.id, token, getWorkspace, { session })).status, 'tools/call before the push stream reopens').toBe(404)
+
+  // Reopening the push stream takes the session back, and it serves calls.
+  const stream = await openStream(origin, workspace.id, token, session)
+  expect(stream.status, 'the push stream after the restart').toBe(200)
+  expect(await stream.next(5_000), 'the stream opens').toBe(': ok')
   const call = await mcpPost(origin, workspace.id, token, getWorkspace, { session })
   expect(call.status, 'tools/call after the restart').toBe(200)
   expect(call.message?.result?.content?.[0]?.text, 'its answer').toContain(`Workspace: ${workspace.name}`)
 
-  // The push stream reopens on it too, and a task for the agent reaches it.
-  const stream = await openStream(origin, workspace.id, token, session)
-  expect(stream.status, 'the push stream after the restart').toBe(200)
-  expect(await stream.next(5_000), 'the stream opens').toBe(': ok')
+  // A task for the agent reaches it.
   const title = unique('pushed after the restart')
   await createTask(page, workspace.id, title)
   const push = await stream.next(10_000)

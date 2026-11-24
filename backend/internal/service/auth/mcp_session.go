@@ -5,6 +5,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -35,7 +36,7 @@ func deriveKey(secret []byte, label string) []byte {
 
 // CreateMCPSessionToken mints the id of userID's MCP session with
 // workspaceID.
-func (s *tokenService) CreateMCPSessionToken(userID, workspaceID string, session MCPSession) (string, error) {
+func (s *tokenService) CreateMCPSessionToken(_ context.Context, userID, workspaceID string, session MCPSession) (string, error) {
 	now := time.Now()
 	claims := mcpSessionClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -55,7 +56,7 @@ func (s *tokenService) CreateMCPSessionToken(userID, workspaceID string, session
 // ValidateMCPSessionToken reads back an id CreateMCPSessionToken minted for
 // userID's session with workspaceID. Any other id, an expired one included,
 // is an error.
-func (s *tokenService) ValidateMCPSessionToken(tokenStr, userID, workspaceID string) (*MCPSession, error) {
+func (s *tokenService) ValidateMCPSessionToken(_ context.Context, tokenStr, userID, workspaceID string) (*MCPSession, error) {
 	claims := &mcpSessionClaims{}
 	_, err := jwt.ParseWithClaims(tokenStr, claims, func(*jwt.Token) (any, error) {
 		return s.sessionKey, nil

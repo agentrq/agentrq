@@ -173,8 +173,8 @@ type TokenService interface {
 	ValidateSessionToken(tokenStr string) (*Claims, error)
 	ValidateOAuthStateToken(tokenStr, provider string) (redirectURL string, err error)
 	ValidateClientRegistrationToken(tokenStr string) (*ClientRegistrationClaims, error)
-	CreateMCPSessionToken(userID, workspaceID string, session MCPSession) (string, error)
-	ValidateMCPSessionToken(tokenStr, userID, workspaceID string) (*MCPSession, error)
+	CreateMCPSessionToken(ctx context.Context, userID, workspaceID string, session MCPSession) (string, error)
+	ValidateMCPSessionToken(ctx context.Context, tokenStr, userID, workspaceID string) (*MCPSession, error)
 }
 
 type tokenService struct {

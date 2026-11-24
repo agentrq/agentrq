@@ -591,8 +591,9 @@ func TestSendChannelNotification_EverySession(t *testing.T) {
 	ps.SendChannelNotification(context.Background(), 7, "next task")
 }
 
-// A session whose client holds no stream cannot take a push. It still
-// counts as reached, and takes the next push once its stream is open.
+// A session whose client holds no push stream takes neither a push nor a
+// verdict. The verdict is held and goes out as soon as the stream opens, and
+// the next push follows it there.
 func TestPush_ToASessionWithNoStream(t *testing.T) {
 	ps := NewWorkspaceServer(
 		1, 0, "user", "http://localhost",
@@ -603,6 +604,7 @@ func TestPush_ToASessionWithNoStream(t *testing.T) {
 	tokens := mock_auth.NewMockTokenService(gomock.NewController(t))
 	tokens.EXPECT().ValidateToken(gomock.Any()).Return(nil, errNotTheRealThing).AnyTimes()
 	ps.tokenSvc = tokens
+	ps.getTask = func(_ context.Context, id int64) (model.Task, error) { return model.Task{ID: id}, nil }
 	srv := httptest.NewServer(ps.Handler())
 	t.Cleanup(srv.Close)
 
@@ -631,8 +633,13 @@ func TestPush_ToASessionWithNoStream(t *testing.T) {
 
 	ctx := context.Background()
 	ps.SendChannelNotification(ctx, 7, "dropped")
-	if !ps.notifySession(ctx, session, "notifications/claude/channel/permission", map[string]any{"request_id": "r1", "behavior": "allow"}) {
-		t.Fatal("a session with no stream was reported gone")
+	ps.permissionRequests["req-1"] = session
+	ps.requestTaskIDs["req-1"] = 42
+	if err := ps.SendPermissionVerdict(ctx, 42, "req-1", "allow"); err == nil {
+		t.Fatal("a verdict to a session with no stream was reported delivered")
+	}
+	if ps.undeliveredVerdicts["req-1"] != "allow" {
+		t.Fatalf("the verdict was not held: %v", ps.undeliveredVerdicts)
 	}
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
@@ -648,17 +655,51 @@ func TestPush_ToASessionWithNoStream(t *testing.T) {
 	if !lines.Scan() || lines.Text() != ": ok" {
 		t.Fatalf("the stream opened with %q", lines.Text())
 	}
+	next := func() string {
+		t.Helper()
+		for lines.Scan() {
+			if line := lines.Text(); strings.HasPrefix(line, "data: ") {
+				return line
+			}
+		}
+		t.Fatalf("the stream ended: %v", lines.Err())
+		return ""
+	}
+
+	if line := next(); !strings.Contains(line, `"method":"notifications/claude/channel/permission"`) || !strings.Contains(line, `"request_id":"req-1"`) || !strings.Contains(line, `"behavior":"allow"`) {
+		t.Fatalf("the stream opened with %s, want the held verdict", line)
+	}
+	ps.undeliveredVerdictsMu.RLock()
+	_, stillHeld := ps.undeliveredVerdicts["req-1"]
+	ps.undeliveredVerdictsMu.RUnlock()
+	if stillHeld {
+		t.Error("the delivered verdict is still held")
+	}
 
 	ps.SendChannelNotification(ctx, 7, "delivered")
-	for lines.Scan() {
-		if line := lines.Text(); strings.HasPrefix(line, "data: ") {
-			if strings.Contains(line, "dropped") || !strings.Contains(line, `"content":"delivered"`) {
-				t.Fatalf("the stream carried %s", line)
-			}
-			return
-		}
+	if line := next(); strings.Contains(line, "dropped") || !strings.Contains(line, `"content":"delivered"`) {
+		t.Fatalf("the stream carried %s", line)
 	}
-	t.Fatalf("the stream ended without the push: %v", lines.Err())
+}
+
+// Opening a push stream hands over only the verdicts held for that session.
+func TestDeliverHeldVerdicts_OnlyThatSessions(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	sessID := connectedServer(t, ps, "agent")
+	ps.permissionRequests["mine"] = sessID
+	ps.permissionRequests["theirs"] = "another-session"
+	ps.undeliveredVerdicts["mine"] = "deny"
+	ps.undeliveredVerdicts["theirs"] = "allow"
+
+	ps.deliverHeldVerdicts(context.Background(), sessID)
+
+	if _, held := ps.undeliveredVerdicts["mine"]; held {
+		t.Error("this session's verdict is still held")
+	}
+	if ps.undeliveredVerdicts["theirs"] != "allow" {
+		t.Error("another session's verdict was handed over")
+	}
 }
 
 // The poller offers nothing when the pending backlog cannot be read.

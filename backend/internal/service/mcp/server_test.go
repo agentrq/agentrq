@@ -1120,7 +1120,7 @@ func TestSubscribeRefusals(t *testing.T) {
 	if _, err := s.subscriptionsListen(context.Background(), &SubscriptionsListenRequest{Session: ss, Params: &SubscriptionsListenParams{}}); !errors.Is(err, jsonrpc.ErrInvalidRequest) {
 		t.Errorf("listen outside a call = %v", err)
 	}
-	ctx := withRequestID(context.Background(), jsonrpc.Int64ID(1))
+	ctx := withRequestID(context.Background(), ss, jsonrpc.Int64ID(1))
 	if _, err := s.subscriptionsListen(ctx, &SubscriptionsListenRequest{Session: ss, Params: &SubscriptionsListenParams{}}); err == nil || !strings.Contains(err.Error(), "missing required 'notifications' field") {
 		t.Errorf("listen without notifications = %v", err)
 	}
@@ -1143,6 +1143,7 @@ func TestSubscribeRefusals(t *testing.T) {
 	})
 	refusing.AddResource(&Resource{URI: "x://a", Name: "a"}, nil)
 	rs, _ := testSession(refusing, refusing.versions)
+	ctx = withRequestID(context.Background(), rs, jsonrpc.Int64ID(1))
 	if _, err := refusing.subscriptionsListen(ctx, &SubscriptionsListenRequest{Session: rs, Params: &SubscriptionsListenParams{Notifications: &NotificationSubscriptions{ResourceSubscriptions: []string{"x://a"}}}}); err == nil || err.Error() != "no" {
 		t.Errorf("a listen whose subscription is refused = %v", err)
 	}
@@ -1165,7 +1166,15 @@ func TestServerRequestAccessors(t *testing.T) {
 	if r.GetSession() != ss || r.GetParams().(*CallToolParamsRaw).Name != "x" || r.GetExtra() != extra {
 		t.Error("accessors disagree with the fields")
 	}
-	if id, ok := requestIDFrom(context.Background()); ok || id.IsValid() {
+	if id, ok := requestIDFrom(context.Background(), ss); ok || id.IsValid() {
 		t.Error("a context with no call has a request id")
+	}
+	other := &ServerSession{}
+	ctx := withRequestID(context.Background(), other, jsonrpc.Int64ID(7))
+	if _, ok := requestIDFrom(ctx, ss); ok {
+		t.Error("another session's call id was read as this session's")
+	}
+	if id, ok := requestIDFrom(ctx, other); !ok || id.Raw() != int64(7) {
+		t.Errorf("the call's own session read %v, %v", id, ok)
 	}
 }

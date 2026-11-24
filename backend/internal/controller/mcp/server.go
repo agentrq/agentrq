@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"regexp"
 	"sort"
@@ -620,11 +621,11 @@ func NewWorkspaceServer(
 	// Allow all origins for the MCP server in development (same syntax as ServeMux)
 	cp.AddInsecureBypassPattern("/")
 
-	streamOpts := &mcp.StreamableHTTPOptions{CrossOriginProtection: cp}
+	streamOpts := &mcp.StreamableHTTPOptions{CrossOriginProtection: cp, OnStreamOpen: ps.deliverHeldVerdicts}
 	if tokenSvc != nil {
-		// A session's id is a signed record of its handshake, so the session
-		// survives a restart, a redeploy or another instance taking the
-		// request.
+		// A session's id is a signed record of its handshake, so a client
+		// that reopens its push stream after a restart, a redeploy or on
+		// another instance carries on in the same session.
 		streamOpts.SessionIDs = sessionIDs{tokens: tokenSvc, userID: userID, workspaceID: workspaceIDStr}
 	}
 	streamHandler := mcp.NewStreamableHTTPHandler(func(request *http.Request) *mcp.Server {
@@ -652,11 +653,7 @@ func (ps *WorkspaceServer) Handler() http.Handler {
 		}
 
 		sessID := r.Header.Get("Mcp-Session-Id")
-
-		logID := sessID
-		if len(logID) > 12 {
-			logID = logID[:12] + "..."
-		}
+		logID := sessionLogID(sessID)
 
 		// Track agent connection status
 		isSSE := r.Header.Get("Accept") == "text/event-stream"
@@ -680,6 +677,16 @@ func (ps *WorkspaceServer) Handler() http.Handler {
 		zlog.Debug().Str("method", r.Method).Str("path", r.URL.Path).Str("session_id", logID).Bool("sse", isSSE).Msg("MCP request")
 		ps.streamServer.ServeHTTP(w, r)
 	})
+}
+
+// sessionLogID is how a log names a session: the end of its id. Every
+// signed id starts the same way, with its header, and ends in its own
+// signature.
+func sessionLogID(id string) string {
+	if len(id) <= 12 {
+		return id
+	}
+	return "..." + id[len(id)-12:]
 }
 
 // publishAgentConnected tells the human clients whether an agent is attached.
@@ -743,10 +750,7 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 	for sess := range ps.mcpServer.Sessions() {
 		sessionCount++
 		sessID := sess.ID()
-		logID := sessID
-		if len(logID) > 12 {
-			logID = logID[:12] + "..."
-		}
+		logID := sessionLogID(sessID)
 
 		authStatus := "UNAUTHENTICATED"
 		if c, err := ps.tokenSvc.ValidateToken(sessID); err == nil {
@@ -2650,11 +2654,11 @@ func (ps *WorkspaceServer) deliverVerdict(ctx context.Context, sessID, requestID
 }
 
 // notifySession sends a notification to one MCP session by id, reporting
-// whether that session was still there to receive it. MCP only: a native link
-// is never sent a method string, it is called.
+// whether it went out. MCP only: a native link is never sent a method string,
+// it is called.
 //
-// A session that is there counts as reached, even when its client holds no
-// stream to deliver on.
+// A session whose client holds no push stream is not reached: a verdict for
+// it is held, and handed over when the stream reopens.
 func (ps *WorkspaceServer) notifySession(ctx context.Context, sessID, method string, params map[string]any) bool {
 	if ps.mcpServer == nil {
 		return false
@@ -2665,10 +2669,36 @@ func (ps *WorkspaceServer) notifySession(ctx context.Context, sessID, method str
 		}
 		if err := sess.Notify(ctx, method, params); err != nil {
 			zlog.Debug().Err(err).Str("method", method).Msg("MCP notification not delivered")
+			return false
 		}
 		return true
 	}
 	return false
+}
+
+// deliverHeldVerdicts hands a session the verdicts it could not be given
+// while it had no push stream, once it opens one: after a restart or a
+// dropped connection the client keeps its session id, so it never asks
+// again, and without this it would wait on the answer forever.
+func (ps *WorkspaceServer) deliverHeldVerdicts(ctx context.Context, sessID string) {
+	ps.undeliveredVerdictsMu.RLock()
+	held := maps.Clone(ps.undeliveredVerdicts)
+	ps.undeliveredVerdictsMu.RUnlock()
+	for requestID, behavior := range held {
+		ps.permissionRequestsMu.RLock()
+		owner := ps.permissionRequests[requestID]
+		ps.permissionRequestsMu.RUnlock()
+		if owner != sessID {
+			continue
+		}
+		ps.requestTaskIDsMu.RLock()
+		taskID := ps.requestTaskIDs[requestID]
+		ps.requestTaskIDsMu.RUnlock()
+		zlog.Info().Str("request_id", requestID).Str("behavior", behavior).
+			Msg("delivering the verdict held while the agent had no push stream")
+		// verdictReplayed: this decision was counted when it was first made.
+		_ = ps.sendVerdict(ctx, taskID, requestID, behavior, verdictReplayed, "")
+	}
 }
 
 // rememberUndeliveredVerdict keeps a decision the agent never received, so that

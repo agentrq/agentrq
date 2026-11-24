@@ -75,9 +75,8 @@ func (p *process) post(t *testing.T, token, session, body string) (int, string, 
 	return resp.StatusCode, resp.Header.Get("Mcp-Session-Id"), msg
 }
 
-// open holds the session's push stream open and returns the data lines it
-// carries.
-func (p *process) open(t *testing.T, token, session string) <-chan string {
+// get opens the session's push stream, returning its status and response.
+func (p *process) get(t *testing.T, token, session string) *http.Response {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -89,6 +88,15 @@ func (p *process) open(t *testing.T, token, session string) <-chan string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { resp.Body.Close() })
+	return resp
+}
+
+// open holds the session's push stream open and returns the data lines it
+// carries.
+func (p *process) open(t *testing.T, token, session string) <-chan string {
+	t.Helper()
+	resp := p.get(t, token, session)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("the push stream answered %d, want 200", resp.StatusCode)
 	}
@@ -119,7 +127,10 @@ func initialize(t *testing.T, p *process, token string) string {
 
 // The reason sessions are signed: a client keeps its session across a
 // restart. The process that opened it is gone, and a new one, which has
-// never seen it, serves its calls and its push stream, as the client it was.
+// never seen it, takes it back when the client reopens its push stream, as
+// the client it was, and serves its calls and its pushes. A call before then
+// is 404, as it always was, so a client whose push stream has given up starts
+// a new session instead of carrying on without one.
 func TestSession_SurvivesARestart(t *testing.T) {
 	token := mintWorkspaceToken(t, streamWorkspaceID, "access")
 	before := startProcess(t, streamTokens)
@@ -128,12 +139,9 @@ func TestSession_SurvivesARestart(t *testing.T) {
 	before.manager.Remove(streamWorkspace)
 
 	after := startProcess(t, streamTokens)
-	status, _, msg := after.post(t, token, session, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"workspace","arguments":{"action":"get"}}}`)
-	if status != http.StatusOK || msg["error"] != nil {
-		t.Fatalf("after the restart tools/call answered %d: %v", status, msg)
-	}
-	if text := toolText(msg); !strings.Contains(text, "Workspace: name") {
-		t.Errorf("tools/call returned %q, want the workspace", text)
+	call := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"workspace","arguments":{"action":"get"}}}`
+	if status, _, _ := after.post(t, token, session, call); status != http.StatusNotFound {
+		t.Fatalf("a call before the push stream reopened answered %d, want 404", status)
 	}
 
 	pushes := after.open(t, token, session)
@@ -142,6 +150,15 @@ func TestSession_SurvivesARestart(t *testing.T) {
 	if agent := ws.AgentClient(); agent == nil || agent.Name != "claude-code" {
 		t.Errorf("the restored session is attached as %+v, want claude-code", agent)
 	}
+
+	status, _, msg := after.post(t, token, session, call)
+	if status != http.StatusOK || msg["error"] != nil {
+		t.Fatalf("after the restart tools/call answered %d: %v", status, msg)
+	}
+	if text := toolText(msg); !strings.Contains(text, "Workspace: name") {
+		t.Errorf("tools/call returned %q, want the workspace", text)
+	}
+
 	ws.SendChannelNotification(context.Background(), 42, "hello after the restart")
 	select {
 	case line := <-pushes:
@@ -155,15 +172,16 @@ func TestSession_SurvivesARestart(t *testing.T) {
 
 // A session id is not a credential: one that verifies is still refused for a
 // workspace or a user it was not opened for, and so is one that does not
-// verify, each as a session the server does not know.
+// verify, each as a session the server does not know, even by the push
+// stream, which is what rebuilds a session the process does not hold.
 func TestSession_RefusesAnIDItDidNotOpen(t *testing.T) {
 	token := mintWorkspaceToken(t, streamWorkspaceID, "access")
 	p := startProcess(t, streamTokens)
 	session := initialize(t, p, token)
 
-	otherWorkspace, _ := streamTokens.CreateMCPSessionToken(streamUser, monoflake.ID(999).String(), auth.MCPSession{ProtocolVersion: "2025-06-18"})
-	otherUser, _ := streamTokens.CreateMCPSessionToken(monoflake.ID(778).String(), streamWorkspaceID, auth.MCPSession{ProtocolVersion: "2025-06-18"})
-	otherSecret, _ := auth.NewTokenService(auth.TokenConfig{APISecret: "x", MCPSecret: "y"}).CreateMCPSessionToken(streamUser, streamWorkspaceID, auth.MCPSession{})
+	otherWorkspace, _ := streamTokens.CreateMCPSessionToken(context.Background(), streamUser, monoflake.ID(999).String(), auth.MCPSession{ProtocolVersion: "2025-06-18"})
+	otherUser, _ := streamTokens.CreateMCPSessionToken(context.Background(), monoflake.ID(778).String(), streamWorkspaceID, auth.MCPSession{ProtocolVersion: "2025-06-18"})
+	otherSecret, _ := auth.NewTokenService(auth.TokenConfig{APISecret: "x", MCPSecret: "y"}).CreateMCPSessionToken(context.Background(), streamUser, streamWorkspaceID, auth.MCPSession{})
 	accessToken := mintWorkspaceToken(t, streamWorkspaceID, "access")
 	forged := session[:len(session)-4] + "AAAA"
 
@@ -176,6 +194,9 @@ func TestSession_RefusesAnIDItDidNotOpen(t *testing.T) {
 	} {
 		if status, _, _ := p.post(t, token, id, `{"jsonrpc":"2.0","id":3,"method":"ping"}`); status != http.StatusNotFound {
 			t.Errorf("%s session id answered %d, want 404", name, status)
+		}
+		if status := p.get(t, token, id).StatusCode; status != http.StatusNotFound {
+			t.Errorf("%s session id opened a push stream with %d, want 404", name, status)
 		}
 	}
 	if status, _, _ := p.post(t, token, session, `{"jsonrpc":"2.0","id":3,"method":"ping"}`); status != http.StatusOK {
@@ -195,7 +216,8 @@ func TestSession_IDWithoutTokenIsChallenged(t *testing.T) {
 	}
 }
 
-// A deleted session stays deleted on the process that deleted it.
+// A deleted session stays deleted on the process that deleted it, even to
+// its push stream.
 func TestSession_DeletedIsGone(t *testing.T) {
 	token := mintWorkspaceToken(t, streamWorkspaceID, "access")
 	p := startProcess(t, streamTokens)
@@ -214,6 +236,9 @@ func TestSession_DeletedIsGone(t *testing.T) {
 	}
 	if status, _, _ := p.post(t, token, session, `{"jsonrpc":"2.0","id":3,"method":"ping"}`); status != http.StatusNotFound {
 		t.Errorf("the deleted session answered %d, want 404", status)
+	}
+	if status := p.get(t, token, session).StatusCode; status != http.StatusNotFound {
+		t.Errorf("the deleted session opened a push stream with %d, want 404", status)
 	}
 }
 

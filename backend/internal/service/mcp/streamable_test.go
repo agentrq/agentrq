@@ -43,7 +43,6 @@ func (f *shIDs) Issue(_ context.Context, info SessionInfo) (string, error) {
 	}
 	f.n++
 	id := fmt.Sprintf("sid-%d", f.n)
-	info.ExpiresAt = time.Now().Add(time.Hour)
 	f.infos[id] = info
 	return id, nil
 }
@@ -333,10 +332,6 @@ func TestStreamableHandshakeIssuesAnID(t *testing.T) {
 	if got := ids.infos[id]; got.ProtocolVersion != "2025-06-18" || got.ClientName != "claude-code" || got.ClientVersion != "9" {
 		t.Errorf("minted from %+v, want the handshake's version and client", got)
 	}
-	if got := h.sessions[id].expires; got.IsZero() {
-		t.Error("the session does not know when its id expires")
-	}
-
 	w := shDo(h, shReq(http.MethodPost, shCall(2, "echo", "hi"), "Mcp-Session-Id", id, "Mcp-Protocol-Version", "2025-06-18"))
 	msgs := shData(t, w.Body.String())
 	if w.Code != http.StatusOK || len(msgs) != 1 || !strings.Contains(w.Body.String(), "echo:hi") {
@@ -361,9 +356,11 @@ func TestStreamableRandomIDsWithoutSessionIDs(t *testing.T) {
 	}
 }
 
-// A session survives its process: another handler with the same SessionIDs
-// rebuilds it from the id alone, initialized, as the client it was, speaking
-// the version its handshake negotiates.
+// A session survives its process: when its client reopens its push stream,
+// another handler with the same SessionIDs rebuilds it from the id alone,
+// initialized, as the client it was, speaking the version its handshake
+// negotiates. Until then a POST naming it is 404, as it was before ids were
+// signed, so a client that has given up on its push stream starts over.
 func TestStreamableSessionSurvivesARestart(t *testing.T) {
 	ids := newSHIDs()
 	before := shHandler(shServer(nil), &StreamableHTTPOptions{SessionIDs: ids})
@@ -371,9 +368,22 @@ func TestStreamableSessionSurvivesARestart(t *testing.T) {
 
 	srv := shServer(nil)
 	after := shHandler(srv, &StreamableHTTPOptions{SessionIDs: ids})
-	w := shDo(after, shReq(http.MethodPost, shCall(2, "echo", "again"), "Mcp-Session-Id", id, "Mcp-Protocol-Version", "2025-06-18"))
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "echo:again") {
-		t.Fatalf("the restarted server answered %d %s", w.Code, w.Body.String())
+	hs := httptest.NewServer(after)
+	t.Cleanup(hs.Close)
+	call := shCall(2, "echo", "again")
+	for _, method := range []string{http.MethodPost, http.MethodDelete} {
+		if w := shDo(after, shReq(method, call, "Mcp-Session-Id", id, "Mcp-Protocol-Version", "2025-06-18")); w.Code != http.StatusNotFound {
+			t.Fatalf("%s before the push stream reopened answered %d %s", method, w.Code, w.Body.String())
+		}
+	}
+
+	get := shOpen(t, hs.URL, http.MethodGet, "", "Mcp-Session-Id", id, "Accept", "text/event-stream")
+	if line := get.next(t); get.resp.StatusCode != http.StatusOK || line != ": ok" {
+		t.Fatalf("reopening the push stream answered %d %q", get.resp.StatusCode, line)
+	}
+	resp, body := shPost(t, hs.URL, call, "Mcp-Session-Id", id, "Mcp-Protocol-Version", "2025-06-18")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "echo:again") {
+		t.Fatalf("the restarted server answered %d %s", resp.StatusCode, body)
 	}
 
 	ss := shSession(t, srv, id)
@@ -389,7 +399,7 @@ func TestStreamableSessionSurvivesARestart(t *testing.T) {
 	}
 
 	t.Run("a version it no longer speaks negotiates the newest", func(t *testing.T) {
-		ids.infos["old"] = SessionInfo{ProtocolVersion: "2024-11-05", ExpiresAt: time.Now().Add(time.Hour)}
+		ids.infos["old"] = SessionInfo{ProtocolVersion: "2024-11-05"}
 		sess := after.resume(srv, "old", ids.infos["old"])
 		if sess.session.state.negotiated != ProtocolVersion20251125 {
 			t.Errorf("negotiated %q, want %q", sess.session.state.negotiated, ProtocolVersion20251125)
@@ -406,6 +416,26 @@ func TestStreamableSessionSurvivesARestart(t *testing.T) {
 			t.Fatal("the same id was rebuilt into two sessions")
 		}
 	})
+
+	t.Run("an id deleted while it was read stays deleted", func(t *testing.T) {
+		after.ended.add("deleted-meanwhile")
+		if sess := after.resume(srv, "deleted-meanwhile", SessionInfo{}); sess != nil {
+			t.Fatal("a deleted id was rebuilt")
+		}
+	})
+}
+
+// shDeletingIDs reads an id back as if a DELETE of it landed meanwhile.
+type shDeletingIDs struct {
+	*shIDs
+	h *StreamableHTTPHandler
+}
+
+func (d *shDeletingIDs) Resolve(ctx context.Context, id string) (SessionInfo, error) {
+	d.h.mu.Lock()
+	d.h.ended.add(id)
+	d.h.mu.Unlock()
+	return d.shIDs.Resolve(ctx, id)
 }
 
 // An id that cannot be rebuilt is not found, and a request with no server
@@ -414,9 +444,18 @@ func TestStreamableLookupFailures(t *testing.T) {
 	ids := newSHIDs()
 	ids.resolveErr = errors.New("bad signature")
 	h := shHandler(shServer(nil), &StreamableHTTPOptions{SessionIDs: ids})
-	w := shDo(h, shReq(http.MethodPost, `{"jsonrpc":"2.0","id":1,"method":"ping"}`, "Mcp-Session-Id", "forged"))
+	w := shDo(h, shReq(http.MethodGet, "", "Mcp-Session-Id", "forged", "Accept", "text/event-stream"))
 	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "session not found") {
 		t.Fatalf("a forged id answered %d %q", w.Code, w.Body.String())
+	}
+
+	deleting := &shDeletingIDs{shIDs: newSHIDs()}
+	deleting.infos["sid-d"] = SessionInfo{ProtocolVersion: "2025-11-25"}
+	h = shHandler(shServer(nil), &StreamableHTTPOptions{SessionIDs: deleting})
+	deleting.h = h
+	w = shDo(h, shReq(http.MethodGet, "", "Mcp-Session-Id", "sid-d", "Accept", "text/event-stream"))
+	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "session not found") {
+		t.Fatalf("an id deleted while it was read answered %d %q", w.Code, w.Body.String())
 	}
 
 	ids = newSHIDs()
@@ -428,7 +467,7 @@ func TestStreamableLookupFailures(t *testing.T) {
 		}
 		return srv
 	}, &StreamableHTTPOptions{SessionIDs: ids})
-	w = shDo(noServer, shReq(http.MethodPost, `{"jsonrpc":"2.0","id":1,"method":"ping"}`, "Mcp-Session-Id", "sid-x", "X-No-Server", "1"))
+	w = shDo(noServer, shReq(http.MethodGet, "", "Mcp-Session-Id", "sid-x", "X-No-Server", "1", "Accept", "text/event-stream"))
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "no server available") {
 		t.Fatalf("rebuilding with no server answered %d %q", w.Code, w.Body.String())
 	}
@@ -439,21 +478,17 @@ func TestStreamableLookupFailures(t *testing.T) {
 }
 
 // DELETE ends a session, and its id is not rebuilt afterwards while the
-// process runs; ids whose time has passed are forgotten.
+// process runs.
 func TestStreamableDeleteEndsTheSession(t *testing.T) {
 	ids := newSHIDs()
 	srv := shServer(nil)
 	h := shHandler(srv, &StreamableHTTPOptions{SessionIDs: ids})
 	id := shInitialize(t, h, "2025-11-25", "c")
-	h.ended["long-gone"] = time.Now().Add(-time.Minute)
 
 	if w := shDo(h, shReq(http.MethodDelete, "", "Mcp-Session-Id", id)); w.Code != http.StatusNoContent {
 		t.Fatalf("DELETE answered %d %q", w.Code, w.Body.String())
 	}
-	if _, ok := h.ended["long-gone"]; ok {
-		t.Error("an expired deletion was kept")
-	}
-	if _, ok := h.ended[id]; !ok {
+	if !h.ended.has(id) {
 		t.Error("the deleted id was not remembered")
 	}
 	for _, method := range []string{http.MethodPost, http.MethodGet, http.MethodDelete} {
@@ -472,8 +507,20 @@ func TestStreamableDeleteEndsTheSession(t *testing.T) {
 		if w := shDo(h, shReq(http.MethodDelete, "", "Mcp-Session-Id", id)); w.Code != http.StatusNoContent {
 			t.Fatalf("DELETE answered %d", w.Code)
 		}
-		if len(h.ended) != 0 {
-			t.Errorf("remembered %v", h.ended)
+		if len(h.ended.ids) != 0 {
+			t.Errorf("remembered %v", h.ended.ids)
+		}
+	})
+
+	t.Run("only the most recent deletions are remembered", func(t *testing.T) {
+		defer func(n int) { maxEnded = n }(maxEnded)
+		maxEnded = 2
+		var e endedIDs
+		for _, id := range []string{"a", "b", "b", "c", "d"} {
+			e.add(id)
+		}
+		if e.has("a") || e.has("b") || !e.has("c") || !e.has("d") || len(e.ids) != 2 || len(e.ring) != 2 {
+			t.Fatalf("remembered %d ids, a %v b %v c %v d %v", len(e.ids), e.has("a"), e.has("b"), e.has("c"), e.has("d"))
 		}
 	})
 
@@ -588,7 +635,8 @@ func shPost(t *testing.T, url, body string, hdr ...string) (*http.Response, stri
 // refused while it is open; and it ends when the session does.
 func TestStreamableGETStream(t *testing.T) {
 	srv := shServer(nil)
-	h := shHandler(srv, &StreamableHTTPOptions{SessionIDs: newSHIDs()})
+	opened := make(chan string, 1)
+	h := shHandler(srv, &StreamableHTTPOptions{SessionIDs: newSHIDs(), OnStreamOpen: func(_ context.Context, id string) { opened <- id }})
 	hs := httptest.NewServer(h)
 	t.Cleanup(hs.Close)
 
@@ -610,6 +658,9 @@ func TestStreamableGETStream(t *testing.T) {
 	}
 	if line := get.next(t); line != ": ok" {
 		t.Fatalf("the stream opened with %q, want the comment", line)
+	}
+	if got := <-opened; got != id {
+		t.Fatalf("OnStreamOpen was told %q, want %q", got, id)
 	}
 
 	if err := ss.Notify(context.Background(), "notifications/claude/channel", map[string]any{"content": "hello"}); err != nil {
@@ -827,15 +878,6 @@ func TestStreamableHandshakeFailures(t *testing.T) {
 		}
 	})
 
-	t.Run("an id that is minted but cannot be read back", func(t *testing.T) {
-		ids := &shUnreadableIDs{shIDs: newSHIDs()}
-		h := shHandler(srv, &StreamableHTTPOptions{SessionIDs: ids})
-		id := shInitialize(t, h, "2025-11-25", "c")
-		if !h.sessions[id].expires.IsZero() {
-			t.Error("an expiry was invented for an id that cannot be read")
-		}
-	})
-
 	t.Run("a second handshake is refused under the session's id", func(t *testing.T) {
 		h := shHandler(srv, nil)
 		id := shInitialize(t, h, "2025-11-25", "c")
@@ -854,13 +896,6 @@ func TestStreamableHandshakeFailures(t *testing.T) {
 			t.Fatalf("answered %q %s", id, w.Body.String())
 		}
 	})
-}
-
-// shUnreadableIDs mints ids it cannot read back.
-type shUnreadableIDs struct{ *shIDs }
-
-func (*shUnreadableIDs) Resolve(context.Context, string) (SessionInfo, error) {
-	return SessionInfo{}, errors.New("unreadable")
 }
 
 // A call whose id is still in flight on the session is refused, and a call
@@ -1166,7 +1201,7 @@ func TestStreamableProtections(t *testing.T) {
 func TestStreamableSendRouting(t *testing.T) {
 	srv := shServer(nil)
 	h := shHandler(srv, nil)
-	sess := h.newSession(srv, "s", time.Time{})
+	sess := h.newSession(srv, "s")
 	ctx := context.Background()
 
 	t.Run("a message that cannot be encoded", func(t *testing.T) {
@@ -1178,14 +1213,30 @@ func TestStreamableSendRouting(t *testing.T) {
 
 	t.Run("a push for a call that is over", func(t *testing.T) {
 		note, _ := jsonrpc.NewNotification("notifications/x", nil)
-		err := sess.send(withRequestID(ctx, jsonrpc.Int64ID(99)), note)
+		err := sess.send(withRequestID(ctx, sess.session, jsonrpc.Int64ID(99)), note)
 		if err == nil || !strings.Contains(err.Error(), "write to closed stream") {
 			t.Fatalf("got %v", err)
 		}
 	})
 
+	t.Run("a push made in another session's call goes to the push stream", func(t *testing.T) {
+		other := h.newSession(srv, "other")
+		w := httptest.NewRecorder()
+		st := sess.attachStandalone(w)
+		st.open()
+		defer sess.detachStandalone(st)
+		note, _ := jsonrpc.NewNotification("notifications/x", nil)
+		if err := sess.send(withRequestID(ctx, other.session, jsonrpc.Int64ID(99)), note); err != nil {
+			t.Fatalf("got %v", err)
+		}
+		if !strings.Contains(w.Body.String(), `"method":"notifications/x"`) {
+			t.Fatalf("the push stream carried %q", w.Body.String())
+		}
+	})
+
 	t.Run("a stream whose writer fails", func(t *testing.T) {
 		st := sess.attachStandalone(shBrokenWriter{httptest.NewRecorder()})
+		st.open()
 		defer sess.detachStandalone(st)
 		note, _ := jsonrpc.NewNotification("notifications/x", nil)
 		if err := sess.send(ctx, note); err == nil || !strings.Contains(err.Error(), "undelivered message: broken pipe") {
@@ -1206,7 +1257,7 @@ func TestStreamableSendRouting(t *testing.T) {
 	})
 
 	t.Run("forget leaves another session's id alone", func(t *testing.T) {
-		other := h.newSession(srv, "s", time.Time{})
+		other := h.newSession(srv, "s")
 		h.sessions["s"] = other
 		h.forget(sess)
 		if h.sessions["s"] != other {
@@ -1216,7 +1267,7 @@ func TestStreamableSendRouting(t *testing.T) {
 		if _, ok := h.sessions["s"]; ok {
 			t.Fatal("forget kept the session it owns")
 		}
-		h.forget(h.newSession(srv, "", time.Time{}))
+		h.forget(h.newSession(srv, ""))
 	})
 }
 
@@ -1260,6 +1311,26 @@ func TestStreamableStreamUnits(t *testing.T) {
 		case <-st2.done:
 		default:
 			t.Fatal("the answered stream is not done")
+		}
+	})
+
+	t.Run("a push stream holds what it is sent until it is open", func(t *testing.T) {
+		srv := shServer(nil)
+		sess := shHandler(srv, nil).newSession(srv, "s")
+		w := httptest.NewRecorder()
+		st := sess.attachStandalone(w)
+		note, _ := jsonrpc.NewNotification("notifications/x", nil)
+		if err := sess.send(context.Background(), note); err != nil {
+			t.Fatal(err)
+		}
+		if w.Body.Len() != 0 {
+			t.Fatalf("a push went out before the stream opened: %q", w.Body.String())
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		st.open()
+		body := w.Body.String()
+		if !strings.HasPrefix(body, ": ok\n\n") || !strings.Contains(body, `"method":"notifications/x"`) || w.Header().Get("Content-Type") != "text/event-stream" {
+			t.Fatalf("the stream opened %q with %q", w.Header().Get("Content-Type"), body)
 		}
 	})
 

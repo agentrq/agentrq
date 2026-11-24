@@ -7,7 +7,6 @@ package mcp
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/mcp"
@@ -30,9 +29,6 @@ func TestSessionIDs_RecordTheHandshakeForThisWorkspaceOnly(t *testing.T) {
 	}
 	if info.ProtocolVersion != "2025-11-25" || info.ClientName != "claude-code" || info.ClientVersion != "2.1" {
 		t.Errorf("read back %+v, want the handshake", info)
-	}
-	if !info.ExpiresAt.After(time.Now()) {
-		t.Errorf("expires %v, want a time to come", info.ExpiresAt)
 	}
 
 	for name, other := range map[string]sessionIDs{

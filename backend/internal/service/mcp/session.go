@@ -393,7 +393,7 @@ func (ss *ServerSession) handle(ctx context.Context, req *jsonrpc.Request) (Resu
 			ss.setInitialize(meta.initialize)
 		}
 	}
-	ctx = withRequestID(ctx, req.ID)
+	ctx = withRequestID(ctx, ss, req.ID)
 	res, err := ss.receive(ctx, req)
 	if err != nil {
 		return nil, err
@@ -518,14 +518,23 @@ func remarshal(v any, out any) bool {
 
 type requestIDKey struct{}
 
-func withRequestID(ctx context.Context, id jsonrpc.ID) context.Context {
-	return context.WithValue(ctx, requestIDKey{}, id)
+// callOf is the call a context belongs to: its id, on the session it came
+// in on.
+type callOf struct {
+	session *ServerSession
+	id      jsonrpc.ID
 }
 
-// requestIDFrom is the id of the call ctx belongs to.
-func requestIDFrom(ctx context.Context) (jsonrpc.ID, bool) {
-	id, ok := ctx.Value(requestIDKey{}).(jsonrpc.ID)
-	return id, ok && id.IsValid()
+func withRequestID(ctx context.Context, ss *ServerSession, id jsonrpc.ID) context.Context {
+	return context.WithValue(ctx, requestIDKey{}, callOf{session: ss, id: id})
+}
+
+// requestIDFrom is the id of the call ctx belongs to, when that call came in
+// on ss. A context handed on from another session's call, such as a
+// supervisor's into a workspace agent's push, belongs to none of ss's.
+func requestIDFrom(ctx context.Context, ss *ServerSession) (jsonrpc.ID, bool) {
+	call, ok := ctx.Value(requestIDKey{}).(callOf)
+	return call.id, ok && call.session == ss && call.id.IsValid()
 }
 
 // methodInfo is how the server receives one method.
