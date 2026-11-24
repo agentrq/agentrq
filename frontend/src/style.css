@@ -99,11 +99,10 @@
   }
 }
 
-/* With viewport-fit=cover the page runs under the notch and the home indicator;
- * the shell keeps its content out of both. In the base layer so a utility
- * (the macOS title bar's pt-10) still wins where there is nothing to clear.
- * Not the bottom on a phone: pages already end with room for the Menu pill,
- * which clears the home indicator itself, so padding here doubles the gap. */
+/* With viewport-fit=cover the page runs under the notch and the home indicator.
+ * In the base layer so a utility (the macOS title bar's pt-10) still wins.
+ * No bottom inset on a phone: pages already end with room for the Menu pill,
+ * and the inset on top of that doubled the gap. */
 @layer base {
   #app {
     padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
