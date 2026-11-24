@@ -327,6 +327,48 @@ func TestStartFailsForAMissingExecutable(t *testing.T) {
 	}
 }
 
+// A bare command name is found on PATH, not in the working directory (#1342):
+// on Windows go-pty alone would look for <Dir>\<name>.
+func TestStartFindsABareCommandOnPath(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	t.Setenv("PATH", filepath.Dir(exe))
+	spec := helperSpec(t, "hello")
+	spec.Argv = []string{filepath.Base(exe)}
+
+	s, err := Start(t.Context(), spec)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	// Read rather than Wait: on macOS a child does not exit until the output
+	// it wrote to the terminal has been read.
+	if !readUntil(t, s, "hello from the pty") {
+		t.Error("never saw the child's output")
+	}
+}
+
+func TestResolveExecutable(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	t.Setenv("PATH", filepath.Dir(exe))
+
+	if got := resolveExecutable(filepath.Base(exe)); got != exe {
+		t.Errorf("bare name on PATH: got %q, want %q", got, exe)
+	}
+	if got := resolveExecutable("definitely-not-on-path"); got != "definitely-not-on-path" {
+		t.Errorf("bare name not on PATH: got %q, want it unchanged", got)
+	}
+	withDir := filepath.Join("some", "dir", filepath.Base(exe))
+	if got := resolveExecutable(withDir); got != withDir {
+		t.Errorf("name with a directory: got %q, want it unchanged", got)
+	}
+}
+
 // A cancelled context must not leave the process running.
 func TestContextCancellationStopsTheProcess(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())

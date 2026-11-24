@@ -24,6 +24,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sync"
 
 	xpty "github.com/aymanbagabas/go-pty"
@@ -115,7 +117,7 @@ func Start(ctx context.Context, spec Spec) (Session, error) {
 		return nil, fmt.Errorf("pty: initial resize: %w", err)
 	}
 
-	cmd := p.CommandContext(ctx, spec.Argv[0], spec.Argv[1:]...)
+	cmd := p.CommandContext(ctx, resolveExecutable(spec.Argv[0]), spec.Argv[1:]...)
 	cmd.Dir = spec.Dir
 	cmd.Env = spec.Env
 	if err := cmd.Start(); err != nil {
@@ -124,6 +126,21 @@ func Start(ctx context.Context, spec Spec) (Session, error) {
 	}
 
 	return &session{pty: p, cmd: cmd}, nil
+}
+
+// resolveExecutable finds a bare command name such as "npx" on PATH.
+//
+// On Windows go-pty looks for a bare name in the working directory, never on
+// PATH, so an agent started in a repository failed as "<repo>\npx" (#1342). A
+// name with a directory part, or one PATH does not hold, is left as given.
+func resolveExecutable(name string) string {
+	if filepath.Base(name) != name {
+		return name
+	}
+	if path, err := exec.LookPath(name); err == nil {
+		return path
+	}
+	return name
 }
 
 // checkDir reports why a working directory cannot be used, in terms the person
