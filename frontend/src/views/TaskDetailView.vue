@@ -1994,8 +1994,10 @@ async function deliverReply(text, atts, target = null) {
   try {
     const res = await respondToTask(to.workspaceId, to.taskId, 'text', text, atts);
     // Only adopt the reply if that task is still the one being shown; otherwise
-    // this would paint another task's thread over the current one.
-    if (stillViewing()) task.value = res.task;
+    // this would paint another task's thread over the current one. Merged, not
+    // assigned: the answer was built before a turn that ended at once revised
+    // its footer, and assigning it put the working banner back (#1350).
+    if (stillViewing()) task.value = applyTaskUpdate(task.value, res.task);
   } catch(err) {
     notifyError("Failed to deliver message: " + err.message);
     // Putting the text back is only right while its own task is on screen. Into
