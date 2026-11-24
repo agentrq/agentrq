@@ -15,8 +15,8 @@ const TaskToolDescription = "Work on this workspace's tasks and talk to the huma
 	"Run action help for the actions, and help with payload {\"topic\": \"<action>\"} for one's payload. " +
 	"get: a task, or with no taskId the next not started task assigned to the agent. " +
 	"updateStatus: 'ongoing' when you start, 'completed' when you finish, 'blocked' when you need the human. " +
-	"reply: a message to the task; the human sees only these. " +
-	"elicit: asks the human and waits for the answer. getAttachment: a task's attachment. create: a new task. " +
+	"reply: a message (`text`) to the task; the human sees only these. " +
+	"elicit: asks the human (`message`, and `mode` form or url) and waits for the answer. getAttachment: a task's attachment. create: a new task (`title`, `body`). " +
 	"taskId is the chat_id a task arrives with."
 
 // TaskCLIHint points a workspace's agent at agentrq-ws for attachments, which

@@ -75,11 +75,11 @@ Every tool the workspace server offers — seven today, each taking an `action` 
 
 | Tool | Purpose |
 |---|---|
-| `mcp__agentrq__task` | The workspace's tasks: `get` (with no `taskId`, dequeue the next one assigned to this agent), `create`, `updateStatus` (`ongoing`, `completed`, `blocked`, …), `reply` — the only thing the remote human sees — `elicit` (ask and wait for the answer) and `getAttachment` |
-| `mcp__agentrq__memory` | What the workspace remembers: `load` (with no name, `memory.md`, the index), `save` (replaces a memory entirely, given the version `load` showed), `delete` |
-| `mcp__agentrq__skills` | The workspace's skills: `search` (by name or description, with their `skill://` URIs), `load`, `save`, `delete` |
-| `mcp__agentrq__workspace` | `get` (the workspace title and mission) and `publishEvent` (fire a named event so subscriber workspaces spawn their trigger tasks) |
-| `mcp__agentrq__siteTools` | Websites the human shared from the Chrome extension: `search` their WebMCP tools (`q` for BM25, `pattern` for a regex, `limit`/`offset` to page), `getDefinition` (input schema, before calling), `call` (in the human's Chrome; a tool not marked read-only asks the human first) |
+| `mcp__agentrq__task` | The workspace's tasks: `get` (with no `taskId`, dequeue the next one assigned to this agent), `create` (`title`, `body`), `updateStatus` (`ongoing`, `completed`, `blocked`, …), `reply` (`text`) — the only thing the remote human sees — `elicit` (`message`: ask and wait for the answer) and `getAttachment` |
+| `mcp__agentrq__memory` | What the workspace remembers: `load` (by `name`; with no name, `memory.md`, the index), `save` (`name` and `content`; replaces a memory entirely, given the version `load` showed), `delete` |
+| `mcp__agentrq__skills` | The workspace's skills: `search` (`q`, by name or description, with their `skill://` URIs), `load` (`uri`), `save` (`uri`, `content`), `delete` |
+| `mcp__agentrq__workspace` | `get` (the workspace title and mission) and `publishEvent` (`name` and `taskId`: fire a named event so subscriber workspaces spawn their trigger tasks) |
+| `mcp__agentrq__siteTools` | Websites the human shared from the Chrome extension: `search` their WebMCP tools (`q` for BM25, `pattern` for a regex, `limit`/`offset` to page), `getDefinition` (`site` and `tool`: input schema, before calling), `call` (with its `arguments`, in the human's Chrome; a tool not marked read-only asks the human first) |
 | `mcp__agentrq__pano` | Markdown docs every workspace of the account shares: `save`, `read`, `comment`, `attach`, `delete` |
 | `mcp__agentrq__help` | How to call the others: every tool, one tool's actions, or one action's payload with an example (`{"action": "task.create"}`) |
 
