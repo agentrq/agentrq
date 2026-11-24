@@ -14,6 +14,7 @@ import (
 	"gorm.io/datatypes"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
@@ -65,7 +66,10 @@ func (a agentTasks) reply(ctx context.Context, chatID string, text string, attac
 	}
 
 	uid := monoflake.IDFromBase62(a.owner).Int64()
-	if m.Status == "notstarted" {
+	// A usage footer is no sign the task was started: a turn marks its task
+	// ongoing before it prompts, and a delivery stopped before its turn began
+	// still ends with one (#1351), which must leave the task to be sent again.
+	if m.Status == "notstarted" && !isUsageFooter(metadataJSON) {
 		m.Status = "ongoing"
 		_, _ = a.repo.UpdateTask(ctx, m, "Status")
 	}
@@ -108,4 +112,13 @@ func (a agentTasks) reply(ctx context.Context, chatID string, text string, attac
 		})
 	}
 	return msgID, nil
+}
+
+// isUsageFooter is whether a message's metadata makes it the task's usage
+// footer.
+func isUsageFooter(metadata datatypes.JSON) bool {
+	var m struct {
+		Type string `json:"type"`
+	}
+	return len(metadata) > 0 && json.Unmarshal(metadata, &m) == nil && m.Type == mcp.MessageTypeAgentUsage
 }

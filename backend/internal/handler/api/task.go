@@ -993,7 +993,7 @@ func (h *handler) stopTask() fiber.Handler {
 			// An agent that can stop but had nothing to: the dashboard was
 			// wrong to think it was working, and says so (#1347).
 			reason := "the connected agent does not support being stopped"
-			if h.mcpManager.SupportsStop(workspaceID) {
+			if outcome.NothingRunning {
 				reason = errNothingToStop
 			}
 			return c.Status(http.StatusConflict).JSON(fiber.Map{"error": reason})

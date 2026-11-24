@@ -358,11 +358,26 @@ func TestAgentLinks(t *testing.T) {
 
 		out := ps.SendCancelNotification(context.Background(), 5)
 
-		if out.Stopped || out.ApprovalsDenied != 1 {
+		if out.Stopped || out.ApprovalsDenied != 1 || out.NothingRunning {
 			t.Fatalf("SendCancelNotification returned %+v, want one approval denied and nothing stopped", out)
 		}
 		if _, _, verdicts := link.recorded(); len(verdicts) != 1 || verdicts[0] != "r1=deny" {
 			t.Fatalf("link verdicts were %v, want [r1=deny]", verdicts)
+		}
+	})
+
+	// Only links connected, none with the task: nothing was running, and the
+	// dashboard may free its composer. An MCP stream beside them may be
+	// working on it unseen, so with one connected nobody says so (#1351).
+	t.Run("Stop that no link had says nothing was running, unless an MCP stream is connected", func(t *testing.T) {
+		ps, _ := newLinkServer(t)
+		ps.AttachAgentLink(&fakeLink{id: "acp1:a"})
+		if out := ps.SendCancelNotification(context.Background(), 5); !out.NothingRunning || out.Acted() {
+			t.Fatalf("SendCancelNotification returned %+v, want NothingRunning", out)
+		}
+		ps.agentConnections.Add(1)
+		if out := ps.SendCancelNotification(context.Background(), 5); out.NothingRunning {
+			t.Fatalf("with an MCP stream connected SendCancelNotification returned %+v, want no claim", out)
 		}
 	})
 

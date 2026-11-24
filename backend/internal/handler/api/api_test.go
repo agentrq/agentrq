@@ -573,7 +573,8 @@ func TestStopTask_NothingRunningOnAnAgentThatCanStop(t *testing.T) {
 			return true, nil
 		},
 	}
-	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: &mcpctrl.WorkspaceServer{}, supportStop: true}}
+	srv := &fakeWorkspaceServer{stopOutcome: mcpctrl.StopOutcome{NothingRunning: true}}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv, supportStop: true}}
 	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return h.stopTask()(c)

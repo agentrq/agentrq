@@ -444,6 +444,18 @@ describe('a Stop that finds nothing running', () => {
     expect(buttonsSaying('Send Now')).toHaveLength(1)
   })
 
+  // The server said nothing is running: the working line goes too, not only
+  // the composer's lock.
+  it('clears the working line as well', async () => {
+    stopTask.mockRejectedValueOnce(new Error('the agent has nothing running for this task'))
+    const { el, send, click } = await mount()
+    await send('first thought')
+    expect(el.querySelector('[data-testid="agent-working"]')).not.toBeNull()
+    await click('Send Now', 0)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(el.querySelector('[data-testid="agent-working"]')).toBeNull()
+  })
+
   it('keeps the composer when the Stop failed for another reason', async () => {
     stopTask.mockRejectedValueOnce(new Error('the connected agent does not support being stopped'))
     const { send, click, queuedBubbles } = await mount()

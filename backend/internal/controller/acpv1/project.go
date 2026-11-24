@@ -240,18 +240,17 @@ func (p *projector) toolCall(id string) toolCall {
 // runTurn is one delivery: find the task's session, mark the task started,
 // prompt, and post what the turn produced.
 //
-// A turn that comes up once the connection is ending is skipped without a
-// note: it never started, the task is still notstarted, and the poller pushes
-// it again to whichever agent is connected next.
+// However the delivery ends, the footer says so, after everything else it
+// posted (#1347, #1350): a turn that comes up once the connection is ending
+// too, which is skipped without a note. A footer never starts a task, so a
+// notstarted one stays for the poller to push to the next agent.
 func (e *engineV1) runTurn(d delivery) {
 	defer e.q.finish(d.taskID)
+	var s *session
+	defer func() { e.markTurnEnd(d.taskID, s) }()
 	if e.isEnding() {
 		return
 	}
-	// However the delivery ends, the footer says so, after everything else
-	// it posted (#1347, #1350).
-	var s *session
-	defer func() { e.markTurnEnd(d.taskID, s) }()
 	if e.q.cancelledSince(d.taskID, d.seq) {
 		return // stopped before it started
 	}

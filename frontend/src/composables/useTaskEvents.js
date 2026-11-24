@@ -96,7 +96,12 @@ function footerReportedAt(message) {
 function keepNewerMessages(current, incoming) {
   if (!Array.isArray(current) || !Array.isArray(incoming)) return incoming;
   const ids = new Set(incoming.map((m) => m?.id));
-  const newest = Math.max(-Infinity, ...incoming.map((m) => Date.parse(m?.createdAt ?? '')).filter(Number.isFinite));
+  // A loop, not Math.max(...): a long thread overflows the argument list.
+  let newest = -Infinity;
+  for (const m of incoming) {
+    const at = Date.parse(m?.createdAt ?? '');
+    if (at > newest) newest = at;
+  }
   const held = new Map();
   for (const m of current) {
     const at = footerReportedAt(m);

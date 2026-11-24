@@ -1479,9 +1479,14 @@ const threadMessages = computed(() => sortedMessages.value.filter(belongsInThrea
 // The turn a Stop found nothing running for (#1347): the agent ended it
 // without saying so, so the composer is released until somebody speaks again.
 const nothingRunningFor = ref(null);
-const agentWorking = computed(() => {
+// The server said the agent had nothing running for this turn (a Stop that
+// found none): neither the composer nor the banner says it is working.
+const knownIdle = computed(() => {
   const idle = nothingRunningFor.value;
-  if (idle && idle.taskId === taskId.value && idle.at === turnStartedAt(sortedMessages.value)) return false;
+  return !!idle && idle.taskId === taskId.value && idle.at === turnStartedAt(sortedMessages.value);
+});
+const agentWorking = computed(() => {
+  if (knownIdle.value) return false;
   return agentIsWorking({
     task: task.value,
     workspace: workspace.value,
@@ -1492,7 +1497,7 @@ const agentWorking = computed(() => {
 // The sign of life at the foot of the conversation: the agent is connected and
 // on the task, whether or not anything shows in the trajectory yet. The clock
 // counts from the message it is answering, and from now if there is none.
-const agentBusy = computed(() => agentIsBusy({
+const agentBusy = computed(() => !knownIdle.value && agentIsBusy({
   task: task.value,
   workspace: workspace.value,
   messages: sortedMessages.value,

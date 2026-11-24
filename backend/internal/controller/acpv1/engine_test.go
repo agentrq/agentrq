@@ -1532,6 +1532,26 @@ func TestEngine(t *testing.T) {
 		})
 	})
 
+	// Messages from Slack or a second tab can wait behind the turn the
+	// connection cut off; nothing will send them now, so each is marked
+	// ended too, or the composer waits for them for ever.
+	t.Run("deliveries waiting when the connection ends are each marked ended", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"idle-1"}`)
+		l.DeliverTask(context.Background(), 42, "first")
+		a.expect("session/prompt")
+		l.DeliverTask(context.Background(), 42, "second")
+		l.DeliverTask(context.Background(), 42, "third")
+		a.control(`{"agentrqBridge":"bye"}`)
+		rec.wait(t, func() bool { return rec.ends(42) == 3 })
+		rec.read(func() {
+			if want := []string{"42|" + noteGatewayShutDown}; !slices.Equal(rec.replies, want) {
+				t.Fatalf("replies were %q, want %q", rec.replies, want)
+			}
+		})
+	})
+
 	t.Run("the bridge saying goodbye mid-turn posts the shut-down note and ends the turn", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgent(t, rec)
