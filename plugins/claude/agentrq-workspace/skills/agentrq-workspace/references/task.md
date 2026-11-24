@@ -29,7 +29,7 @@ Examples:
 { "action": "elicit", "payload": { "taskId": "0kGogHmaqvZ", "message": "Which branch?", "mode": "form", "requestedSchema": { "type": "object", "properties": { "branch": { "type": "string" } } } } }
 ```
 
-- `create`: `title`, `body`, `assignee` (`human` or `agent`); optional `cronSchedule`, `attachments`, `eventId` (published on completion), `clearContext` (sends `/clear` first).
+- `create`: `title`, `body`, `assignee` (`human` or `agent`); optional `cronSchedule`, `attachments`, `eventId` (published on completion).
 Examples:
 ```json
 { "action": "create", "payload": { "title": "Review the release notes", "body": "Check the v0.9.20 notes before Friday.", "assignee": "human" } }

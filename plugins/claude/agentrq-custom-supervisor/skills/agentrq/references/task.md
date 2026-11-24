@@ -2,7 +2,7 @@
 
 Every action but `listAll` and `changes` takes `workspaceId`. Following tasks up (`changes`, `list`, `listAll`, `messages`) is in `task-follow-up.md`.
 
-- `create` with `title`, `body`, `assignee` (`human`/`agent`), optional `cronSchedule` and `parentId`; the supervisor is its `createdByWorkspaceId`. `clearContext` sends the agent `/clear` first.
+- `create` with `title`, `body`, `assignee` (`human`/`agent`), optional `cronSchedule` and `parentId`; the supervisor is its `createdByWorkspaceId`.
 - `get`: the whole task, too big to poll with; tool calls with `includeToolCalls: true`; `messagesSince` (RFC3339) keeps newer ones.
 - `reply` posts to a task; an agent ignores replies on a task it finished. `followUp` (`text`) asks it for more instead of a new task: the task reopens and the agent reads the follow-up first (now, if still `ongoing`). Not on a human's task.
 - `respond` answers a permission request: `action` `allow`, `allow_all`, `reject`, or `text` (no decision).

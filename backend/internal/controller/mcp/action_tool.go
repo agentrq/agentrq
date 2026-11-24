@@ -215,7 +215,8 @@ func IsAction(actions []ToolAction, name string) bool {
 
 // decodePayload fills out, a struct, from a payload: an unknown field or a
 // missing required one (a field without omitempty) is refused, as the
-// schema refused them when each action was a tool of its own.
+// schema refused them when each action was a tool of its own. An unlisted
+// field is still taken.
 func decodePayload(payload map[string]any, out any) error {
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -239,12 +240,15 @@ type payloadField struct {
 	required         bool
 }
 
+// payloadFields are the fields help and a refusal name. A field tagged
+// mcp:"unlisted" is left out: one no longer advertised, still decoded so that
+// older callers sending it are not refused.
 func payloadFields(t reflect.Type) []payloadField {
 	var out []payloadField
 	for i := range t.NumField() {
 		f := t.Field(i)
 		name, opts, _ := strings.Cut(f.Tag.Get("json"), ",")
-		if name == "" || name == "-" {
+		if name == "" || name == "-" || f.Tag.Get("mcp") == "unlisted" {
 			continue
 		}
 		desc := f.Tag.Get("jsonschema")

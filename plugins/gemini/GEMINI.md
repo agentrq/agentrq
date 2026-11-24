@@ -90,10 +90,7 @@ one action's payload with an example.
     `workspace.mergeFork` moves them back to the parent (`deleteFolder` also removes its folder,
     keeping the git branch).
 
-13. **A clean slate**: `task.create` with `clearContext` sends `/clear` to the agent's
-    terminal first, so the task starts without the previous one's context.
-
-14. **The Pano** is the account's shared markdown docs. `pano.save`
+13. **The Pano** is the account's shared markdown docs. `pano.save`
     creates a doc (no `id`; it returns one) or replaces it; every file sent with a save
     must be linked from the markdown by its filename, while `attach` adds files that need
     no link. `read`, `comment` and `delete` take the doc's `id`. There is no search:
