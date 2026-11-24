@@ -123,3 +123,21 @@ func TestPrometheus_StringersFallBack(t *testing.T) {
 		t.Errorf("mcpTool(\"\") = %q, want empty", got)
 	}
 }
+
+// With storage off every action is still counted, and nothing is queued or
+// written: the controller has no database to write to here.
+func TestPrometheus_SkipStorageStillCounts(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	c := New(Params{Registerer: reg, SkipStorage: true}).(*controller)
+	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionTaskCreate})
+	c.recordMCP(mcp.MCPEvent{Action: mcp.ActionMCPToolCall, ToolName: "getTask", ClientID: 7, ClientName: "claude"})
+	if got := countOf(c, "task_create", ""); got != 1 {
+		t.Errorf("task_create counted %v, want 1", got)
+	}
+	if got := countOf(c, "mcp_tool_call", "getTask"); got != 1 {
+		t.Errorf("mcp_tool_call counted %v, want 1", got)
+	}
+	if got := len(queued(c)); got != 0 {
+		t.Fatalf("queued %d rows, want 0", got)
+	}
+}

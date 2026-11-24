@@ -340,6 +340,25 @@ describe('AdminConfigView', () => {
     }
   })
 
+  it('lists Telemetry under Monitoring, its two switches side by side, and saves one turned off', async () => {
+    const seen = serve({
+      [`GET ${CONFIGS}`]: [[{ configurations: [...blocks(), { key: 'telemetry', value: { database: true, prometheus: true } }] }, 200]],
+      [`PUT ${CONFIGS}/telemetry`]: [[{ key: 'telemetry', value: { database: false, prometheus: true } }, 200]],
+    })
+    const el = await mount()
+    expect(qa(el, 'config-group-name').map((g) => g.textContent.trim()).slice(-2)).toEqual(['Monitoring', 'Other'])
+    expect(q(el, 'config-side-by-side')).toBeNull()
+    await openTab(el, 'telemetry')
+    const cards = q(el, 'config-side-by-side')
+    expect([...cards.querySelectorAll('[role="switch"]')].map((s) => s.dataset.test)).toEqual(['config-telemetry.database', 'config-telemetry.prometheus'])
+    expect(qa(el, 'config-help').map((p) => p.textContent).join(' ')).toContain('never an account or workspace')
+    q(el, 'config-telemetry.database').click()
+    await nextTick()
+    q(el, 'config-save').click()
+    await settle()
+    expect(JSON.parse(seen.at(-1).init.body)).toEqual({ value: { database: false, prometheus: true } })
+  })
+
   it("shows a refused save's reason and keeps the edit", async () => {
     serve({
       [`GET ${CONFIGS}`]: [[{ configurations: blocks() }, 200]],

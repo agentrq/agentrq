@@ -125,7 +125,7 @@ const CATEGORIES = [
   ['Storage', ['storage', 's3', 'artifacts']],
   ['Features', ['skills', 'githubApp', 'memory', 'pano', 'hooks', 'machines', 'teams']],
   ['Protocols', ['mcp', 'pubsub']],
-  ['Monitoring', ['sentry', 'sentryFrontend', 'prometheus']],
+  ['Monitoring', ['sentry', 'sentryFrontend', 'prometheus', 'telemetry']],
 ]
 
 const groups = computed(() => {

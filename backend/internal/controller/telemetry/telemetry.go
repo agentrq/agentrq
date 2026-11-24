@@ -29,6 +29,9 @@ type (
 		// Registerer, when set, also counts every recorded action on
 		// Prometheus, labelled by the action's name rather than its stored ID.
 		Registerer prometheus.Registerer
+		// SkipStorage records nothing in the database, while the Registerer
+		// still counts every action.
+		SkipStorage bool
 	}
 
 	Controller interface {
@@ -47,6 +50,8 @@ type (
 		interval  time.Duration
 		// actions counts recorded actions for Prometheus; nil when it is off.
 		actions *prometheus.CounterVec
+		// skipStorage writes no telemetry or MCP client row.
+		skipStorage bool
 
 		// seenClients caches MCPClient IDs already persisted so recordMCPClient
 		// doesn't hit the DB for every single event from an already-known client.
@@ -71,6 +76,7 @@ func New(p Params) Controller {
 		batchSize:   p.BatchSize,
 		interval:    p.Interval,
 		seenClients: make(map[int64]struct{}),
+		skipStorage: p.SkipStorage,
 	}
 	if p.Registerer != nil {
 		c.actions = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -82,11 +88,14 @@ func New(p Params) Controller {
 	return c
 }
 
-// enqueue queues a telemetry row and counts it on Prometheus under the
-// action's name and, for an MCP call, its tool's.
+// enqueue counts a telemetry row on Prometheus under the action's name and,
+// for an MCP call, its tool's, then queues it unless storage is off.
 func (c *controller) enqueue(t model.Telemetry, action fmt.Stringer, tool mcpTool) {
 	if c.actions != nil {
 		c.actions.WithLabelValues(action.String(), tool.String()).Inc()
+	}
+	if c.skipStorage {
+		return
 	}
 	c.queue <- t
 }
@@ -609,7 +618,7 @@ func (t mcpTool) String() string {
 // name/version on every row. A cache of already-persisted IDs keeps this from
 // hitting the DB on every single event once a client has been seen once.
 func (c *controller) recordMCPClient(id int64, name, version string) {
-	if id == 0 {
+	if id == 0 || c.skipStorage {
 		return
 	}
 

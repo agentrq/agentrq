@@ -7,7 +7,12 @@ makes them self-evidently true. A few happen entirely in the browser and are
 *reported* by it instead — the local-AI features, and interface usage
 (shortcuts, search, copies, the trajectory view).
 
-- **With Prometheus on, every queued row is also counted** as
+- **`telemetry.database` and `telemetry.prometheus` are separate toggles**, read
+  once at start. With the database off, `enqueue` still counts on Prometheus
+  and writes nothing (no `telemetries` or `mcp_clients` row), so the controller
+  and `POST /api/v1/telemetry` keep running: stopping either would silence
+  Prometheus too.
+- **With Prometheus on, every recorded action is also counted** as
   `agentrq_telemetry_actions_total`, labelled by the action's *name*, never its
   stored ID. A stored action without a `String()` name reads `unknown` there,
   and `prometheus_test.go` fails on it. `sub_action` is only ever a name from

@@ -200,7 +200,10 @@ type (
 		SentryFrontend SentryConfig `yaml:"sentryFrontend"`
 		// Prometheus serves the HTTP metrics at /metrics, when it is enabled.
 		Prometheus PrometheusConfig `yaml:"prometheus"`
-		ConfigSvc  config.Service   `yaml:"-"` // injected, not from YAML
+		// Telemetry says where recorded actions go: the database, which the
+		// stats pages read, and Prometheus, when it is enabled.
+		Telemetry TelemetryConfig `yaml:"telemetry"`
+		ConfigSvc config.Service  `yaml:"-"` // injected, not from YAML
 		// DB is the database Load opened and migrated; nil, New opens it.
 		DB dbconn.DBConn `yaml:"-"`
 		// AppConfig is the stored config Load read, for the admin pages; nil,
@@ -404,14 +407,7 @@ func New(cfg Config) (*App, error) {
 	if cfg.Prometheus.Enabled {
 		metricsReg, metricsRegisterer = metricsRegistry(cfg.ConfigSvc.Version())
 	}
-	telemetryParams := telemetry.Params{
-		DB:         db,
-		PubSub:     pubsubSvc,
-		BatchSize:  1000,
-		Interval:   5 * time.Second,
-		Registerer: metricsRegisterer,
-	}
-	telemetryCtrl := telemetry.New(telemetryParams)
+	telemetryCtrl := telemetry.New(telemetryParams(cfg.Telemetry, db, pubsubSvc, metricsRegisterer))
 	if err := telemetryCtrl.Start(appCtx); err != nil {
 		zlog.Error().Err(err).Msg("failed to start telemetry controller")
 	}

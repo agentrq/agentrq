@@ -138,7 +138,7 @@ func TestLoadStoresTheConfigThenPrefersIt(t *testing.T) {
 			for _, r := range rows {
 				keys = append(keys, r.ConfigKey)
 			}
-			want := "app artifacts auth ddos githubApp hooks machines mcp memory network pano prometheus pubsub ratelimit s3 sentry sentryFrontend skills slack smtp ssl storage teams webPush"
+			want := "app artifacts auth ddos githubApp hooks machines mcp memory network pano prometheus pubsub ratelimit s3 sentry sentryFrontend skills slack smtp ssl storage teams telemetry webPush"
 			if got := strings.Join(keys, " "); got != want {
 				t.Fatalf("stored blocks = %s\nwant %s", got, want)
 			}

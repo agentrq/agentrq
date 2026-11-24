@@ -155,6 +155,10 @@ export const CONFIG_HELP = {
   'prometheus.enabled': 'Serves /metrics. Off by default.',
   'prometheus.token': 'The secret a scrape passes as /metrics?prometheus_token=<token>; any other gets 404. Exactly 32 characters. Required when enabled.',
 
+  telemetry: 'Where the actions people and agents take are recorded. Each place turns on or off without the other.',
+  'telemetry.database': 'Stores each action, with its account and workspace, for the stats pages. Off, nothing new is stored and the stats stop growing; what is stored stays. On by default.',
+  'telemetry.prometheus': 'Counts each action on /metrics by its name only, never an account or workspace. Needs Prometheus enabled. On by default.',
+
   pubsub: 'Messages passed between the parts of one instance.',
   'pubsub.maxDurationForSubscriberToReceive': 'How long a message waits for a busy receiver to take it, such as 5s.',
 }

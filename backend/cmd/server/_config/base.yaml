@@ -200,6 +200,13 @@ prometheus:
   enabled: ${AGENTRQ_PROMETHEUS_ENABLED:false}
   token: "${AGENTRQ_PROMETHEUS_TOKEN:}"
 
+# Where recorded actions go. database stores them for the stats pages;
+# prometheus counts them on /metrics, by action name only, when prometheus
+# is enabled. Either can be off without the other.
+telemetry:
+  database: ${AGENTRQ_TELEMETRY_DATABASE:true}
+  prometheus: ${AGENTRQ_TELEMETRY_PROMETHEUS:true}
+
 # Any S3-compatible store. Objects are addressed path-style. With an endpoint
 # and a bucket set, sign-in pictures are kept public in it under avatars/, and
 # sign-in providers' icons under login-icons/.
