@@ -20,6 +20,7 @@ import {
 import { precacheProgressPlugin, precacheTotal } from './composables/usePwaUpdateProgress'
 import { appPath, openNotificationUrl } from './composables/useNotificationClick'
 import { refreshBadge } from './composables/useAppBadge'
+import { shouldShowPush } from './composables/usePushDisplay'
 
 self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting()
@@ -150,7 +151,8 @@ self.addEventListener('push', event => {
     renotify: true,
   }
   event.waitUntil(Promise.all([
-    self.registration.showNotification(title, options),
+    shouldShowPush(self.clients, data.url, self.navigator.userAgent)
+      .then((show) => show && self.registration.showNotification(title, options)),
     refreshBadge(fetch, self.registration.scope, self.navigator),
   ]))
 })
