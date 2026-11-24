@@ -42,7 +42,7 @@ func TestTaskTool_RoutesEachActionToItsHandler(t *testing.T) {
 		{"elicit", map[string]any{"taskId": "", "message": "", "mode": ""}, "taskId and message are required"},
 		{"getAttachment", map[string]any{"taskId": "1", "attachmentId": ""}, "attachmentId is required"},
 		{"create", map[string]any{"title": "t"}, "create: payload needs body; create takes {title, body, "},
-		{"reply", map[string]any{"chatId": "1", "text": "hi"}, `reply: bad payload: unknown field "chatId"; reply takes {taskId, text, attachments?}, like {"taskId": "0kGogHmaqvZ", "text": "Tests pass; opening the pull request."}`},
+		{"reply", map[string]any{"chatId": "1", "text": "hi"}, `reply: bad payload: unknown field "chatId"; reply takes {taskId, text, attachments?, ui?}, like {"taskId": "0kGogHmaqvZ", "text": "Tests pass; opening the pull request."}`},
 		{"updateStatus", map[string]any{"taskId": 1, "status": "ongoing"}, "updateStatus: bad payload: cannot unmarshal number into Go struct field UpdateTaskStatusParams.taskId of type string; updateStatus takes {taskId, status}"},
 		{"list", nil, `unknown action "list": use create, get, updateStatus, reply, elicit, getAttachment or help`},
 	} {

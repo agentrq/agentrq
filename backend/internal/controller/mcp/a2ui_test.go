@@ -1,0 +1,231 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
+
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/golang/mock/gomock"
+	"github.com/mustafaturan/monoflake"
+
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/a2ui"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
+	mock_a2ui "github.com/agentrq/agentrq/backend/internal/service/mocks/a2ui"
+	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
+	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
+	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
+)
+
+const a2uiTestCard = `[
+ {"version":"1.0","createSurface":{"surfaceId":"pr-1","catalogId":"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}},
+ {"version":"1.0","updateComponents":{"surfaceId":"pr-1","components":[
+  {"id":"root","component":"Card","child":"col"},
+  {"id":"col","component":"Column","children":["title","chart"]},
+  {"id":"title","component":"Text","text":"PR opened"},
+  {"id":"chart","component":"Image","url":"attachment:chart.png"}
+ ]}}
+]`
+
+type a2uiReplyEnv struct {
+	ps       *WorkspaceServer
+	store    storage.Service
+	replies  int
+	metadata any
+	events   []entity.CRUDEvent
+	replyErr error
+}
+
+func newA2UIReplyEnv(t *testing.T) *a2uiReplyEnv {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	store, err := storage.NewNestedPublic(t.TempDir(), "https://files.test/storage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := mock_idgen.NewMockService(ctrl)
+	ids.EXPECT().NextID().Return(int64(900)).AnyTimes()
+	bus := mock_pubsub.NewMockService(ctrl)
+	e := &a2uiReplyEnv{store: store}
+	bus.EXPECT().Publish(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(_ context.Context, req pubsub.PublishRequest) (*pubsub.PublishResponse, error) {
+		if ev, ok := req.Event.(entity.CRUDEvent); ok {
+			e.events = append(e.events, ev)
+		}
+		return &pubsub.PublishResponse{}, nil
+	})
+	e.ps = &WorkspaceServer{
+		workspaceID: 100,
+		userID:      monoflake.ID(7).String(),
+		pubsub:      bus,
+		idgen:       ids,
+		storage:     store,
+		reply: func(_ context.Context, _ string, _ string, _ []entity.Attachment, metadata any) (int64, error) {
+			if e.replyErr != nil {
+				return 0, e.replyErr
+			}
+			e.replies++
+			e.metadata = metadata
+			return 555, nil
+		},
+	}
+	return e
+}
+
+func a2uiReplyParams(ui string) ReplyParams {
+	return ReplyParams{
+		TaskID:      monoflake.ID(42).String(),
+		Text:        "PR opened",
+		Attachments: []AttachmentParam{{Filename: "chart.png", MimeType: "image/png", Data: "iVBORw0K"}},
+		UI:          json.RawMessage(ui),
+	}
+}
+
+func TestHandleReply_ACardIsStoredWithItsMediaResolved(t *testing.T) {
+	e := newA2UIReplyEnv(t)
+	res, _, err := e.ps.handleReply(context.Background(), nil, a2uiReplyParams(a2uiTestCard))
+	if err != nil || res.IsError {
+		t.Fatalf("reply = %v, %v", res, err)
+	}
+	card, ok := e.metadata.(*A2UIMetadata)
+	if !ok {
+		t.Fatalf("metadata = %#v, want the card", e.metadata)
+	}
+	b, _ := json.Marshal(card)
+	var stored map[string]any
+	_ = json.Unmarshal(b, &stored)
+	if stored["type"] != "a2ui" || stored["version"] != "1.0" || stored["surfaceId"] != "pr-1" || len(card.Messages) != 2 {
+		t.Errorf("stored metadata = %s", b)
+	}
+	wantURL := "https://files.test/storage/" + storage.AttachmentKey(100, 42, monoflake.ID(900).String())
+	if !strings.Contains(string(card.Messages[1]), `"url":"`+wantURL+`"`) {
+		t.Errorf("the image was not resolved to %s: %s", wantURL, card.Messages[1])
+	}
+	if len(e.events) != 1 || e.events[0].Action != entity.ActionA2UIReply || e.events[0].ResourceID != 555 ||
+		e.events[0].WorkspaceID != 100 || e.events[0].UserID != 7 || e.events[0].Actor != entity.ActorAgent {
+		t.Errorf("events = %+v, want one a2ui_reply for message 555", e.events)
+	}
+}
+
+func TestHandleReply_AnInvalidCardIsRefusedWithTheValidatorsWords(t *testing.T) {
+	e := newA2UIReplyEnv(t)
+	bad := strings.Replace(a2uiTestCard, "attachment:chart.png", "https://example.com/x.png", 1)
+	res, _, _ := e.ps.handleReply(context.Background(), nil, a2uiReplyParams(bad))
+	if !res.IsError {
+		t.Fatal("an invalid card was accepted")
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !strings.HasPrefix(text, "ui is not valid A2UI v1.0: ") || !strings.Contains(text, "media cannot come from a link") {
+		t.Errorf("refusal = %q, want the validator's message", text)
+	}
+	if e.replies != 0 || len(e.events) != 0 {
+		t.Errorf("a refused card was posted (%d) or counted (%v)", e.replies, e.events)
+	}
+	if _, err := storage.LoadAttachment(e.store, 100, 42, monoflake.ID(900).String()); err == nil {
+		t.Error("the refused reply's file is still stored")
+	}
+}
+
+func TestHandleReply_ACardNeedsTheValidator(t *testing.T) {
+	shared := sharedA2UI
+	t.Cleanup(func() { sharedA2UI = shared })
+	sharedA2UI = func() (a2ui.Service, error) { return nil, errors.New("schemas missing") }
+	e := newA2UIReplyEnv(t)
+	res, _, _ := e.ps.handleReply(context.Background(), nil, a2uiReplyParams(a2uiTestCard))
+	if !res.IsError || res.Content[0].(*mcp.TextContent).Text != "ui is not available on this server (schemas missing): send the reply without it" {
+		t.Errorf("reply = %v, want it refused", res)
+	}
+	if e.replies != 0 {
+		t.Error("a card nobody could validate was posted")
+	}
+}
+
+func TestHandleReply_AServersOwnValidatorIsUsed(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	v := mock_a2ui.NewMockService(ctrl)
+	v.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Return(&a2ui.Surface{SurfaceID: "own"}, nil)
+	e := newA2UIReplyEnv(t)
+	e.ps.a2ui = v
+	if res, _, _ := e.ps.handleReply(context.Background(), nil, a2uiReplyParams(a2uiTestCard)); res.IsError {
+		t.Fatalf("reply = %v", res)
+	}
+	if card := e.metadata.(*A2UIMetadata); card.SurfaceID != "own" {
+		t.Errorf("surface = %q, want the server's validator's", card.SurfaceID)
+	}
+}
+
+func TestHandleReply_AFailedPostDeletesItsFiles(t *testing.T) {
+	e := newA2UIReplyEnv(t)
+	e.replyErr = errors.New("task not found")
+	res, _, _ := e.ps.handleReply(context.Background(), nil, a2uiReplyParams(a2uiTestCard))
+	if !res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "failed to deliver reply: task not found") {
+		t.Errorf("reply = %v", res)
+	}
+	if _, err := storage.LoadAttachment(e.store, 100, 42, monoflake.ID(900).String()); err == nil {
+		t.Error("the failed reply's file is still stored")
+	}
+	if len(e.events) != 0 {
+		t.Errorf("a failed reply was counted: %v", e.events)
+	}
+}
+
+func TestHandleReply_AnInvalidTaskIDIsRefusedBeforeAnyFileIsSaved(t *testing.T) {
+	e := newA2UIReplyEnv(t)
+	p := a2uiReplyParams(a2uiTestCard)
+	p.TaskID = "!"
+	res, _, _ := e.ps.handleReply(context.Background(), nil, p)
+	if !res.IsError || res.Content[0].(*mcp.TextContent).Text != "invalid taskId format" {
+		t.Errorf("reply = %v", res)
+	}
+}
+
+func TestAttachmentURLs(t *testing.T) {
+	ps := &WorkspaceServer{workspaceID: 100}
+	got := ps.attachmentURLs(42, []entity.Attachment{
+		{ID: "a1", Filename: "public.png", URL: "https://files.test/a1"},
+		{ID: "a2", Filename: "private.png"},
+		{Filename: "unsaved.png"},
+		{ID: "a4"},
+	})
+	want := map[string]string{
+		"public.png":  "https://files.test/a1",
+		"private.png": "/api/v1/workspaces/" + monoflake.ID(100).String() + "/tasks/" + monoflake.ID(42).String() + "/attachments/a2",
+	}
+	if len(got) != len(want) || got["public.png"] != want["public.png"] || got["private.png"] != want["private.png"] {
+		t.Errorf("urls = %v, want %v", got, want)
+	}
+}
+
+func TestEmitA2UIReply_WithoutPubSubIsQuiet(t *testing.T) {
+	(&WorkspaceServer{}).emitA2UIReply(context.Background(), 1)
+}
+
+func TestBuildConversationJSON_ACardIsFlaggedNotSent(t *testing.T) {
+	task := model.Task{ID: 42, Messages: []model.Message{
+		{ID: 1, Sender: "agent", Text: "PR opened", Metadata: []byte(`{"type":"a2ui","version":"1.0","surfaceId":"pr-1","messages":[{"big":"json"}]}`)},
+		{ID: 2, Sender: "human", Text: "thanks", Metadata: []byte(`{"type":"other"}`)},
+	}}
+	out := buildConversationJSON(task, 0, 10)
+	if strings.Contains(out, "big") {
+		t.Errorf("the card's JSON reached the agent: %s", out)
+	}
+	var got struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil || len(got.Messages) != 2 {
+		t.Fatalf("conversation = %s, %v", out, err)
+	}
+	if got.Messages[0]["ui"] != true || got.Messages[0]["metadata"] != "" || got.Messages[0]["text"] != "PR opened" {
+		t.Errorf("card message = %v", got.Messages[0])
+	}
+	if _, ok := got.Messages[1]["ui"]; ok || got.Messages[1]["metadata"] != `{"type":"other"}` {
+		t.Errorf("plain message = %v", got.Messages[1])
+	}
+}

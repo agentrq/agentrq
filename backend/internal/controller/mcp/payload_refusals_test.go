@@ -62,7 +62,7 @@ func TestBadPayloads_AreRefusedWithFieldsAndExample(t *testing.T) {
 		{"skills", "search", map[string]any{"q": "a", "query": "b"}, `search: send q only: query is another name for it; search takes {q?, limit?, offset?}, like {"q": "release"}`},
 		{"skills", "search", map[string]any{"text": "release"}, `search: bad payload: unknown field "text"; search takes {q?, limit?, offset?}, like {"q": "release"}`},
 		{"skills", "search", map[string]any{"topic": "release"}, `search: bad payload: unknown field "topic"; search takes {q?, `},
-		{"task", "reply", map[string]any{"taskId": "0kGogHmaqvZ", "message": "done"}, `reply: bad payload: unknown field "message"; reply takes {taskId, text, attachments?}, like {"taskId": "0kGogHmaqvZ", "text": "Tests pass; opening the pull request."}`},
+		{"task", "reply", map[string]any{"taskId": "0kGogHmaqvZ", "message": "done"}, `reply: bad payload: unknown field "message"; reply takes {taskId, text, attachments?, ui?}, like {"taskId": "0kGogHmaqvZ", "text": "Tests pass; opening the pull request."}`},
 		{"task", "elicit", map[string]any{"taskId": "0kGogHmaqvZ", "text": "Which branch?"}, `elicit: bad payload: unknown field "text"; elicit takes {taskId, message, mode, requestedSchema?, url?, timeoutSeconds?}, like {"taskId": "0kGogHmaqvZ", "message": "Which branch should I release from?", "mode": "form"`},
 		{"task", "elicit", map[string]any{"taskId": "0kGogHmaqvZ", "message": "Which?", "mode": "form", "options": []any{"a", "b"}}, `elicit: bad payload: unknown field "options"; elicit takes {taskId, message, mode, `},
 		{"memory", "load", map[string]any{"uri": "memory://project-handoff-video.md"}, `load: bad payload: unknown field "uri"; load takes {name?}, like {"name": "deploys.md"}`},
@@ -101,7 +101,7 @@ func TestRunAction_RefusalsNameFields(t *testing.T) {
 	reply := NewToolAction("reply", "Post a message.", func(context.Context, *mcp.CallToolRequest, ReplyParams) (*mcp.CallToolResult, any, error) {
 		return textResult("ok"), nil, nil
 	}).WithExample(`{"taskId": "t", "text": "hi"}`)
-	usage := `reply takes {taskId, text, attachments?}, like {"taskId": "t", "text": "hi"}`
+	usage := `reply takes {taskId, text, attachments?, ui?}, like {"taskId": "t", "text": "hi"}`
 	for want, payload := range map[string]map[string]any{
 		`reply: bad payload: unknown field "body"; ` + usage: {"taskId": "t", "body": "a"},
 		"reply: payload needs text; " + usage:                {"taskId": "t"},

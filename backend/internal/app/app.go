@@ -557,7 +557,7 @@ func New(cfg Config) (*App, error) {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
 				return repo.GetNextTask(ctx, workspaceID, uid)
 			},
-			agentTasks{repo: repo, pubsub: pubsubSvc, bus: bus, storage: storageSvc, ids: ids, workspaceID: workspaceID, contentID: contentID, owner: workspaceOwner}.reply,
+			agentTasks{repo: repo, pubsub: pubsubSvc, bus: bus, ids: ids, workspaceID: workspaceID, owner: workspaceOwner}.reply,
 			func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
 				existingMetadata := make(map[string]any)
 				if m, err := repo.SystemGetMessage(ctx, messageID); err == nil && len(m.Metadata) > 0 {
