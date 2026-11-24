@@ -669,11 +669,18 @@ func TestPush_ToASessionWithNoStream(t *testing.T) {
 	if line := next(); !strings.Contains(line, `"method":"notifications/claude/channel/permission"`) || !strings.Contains(line, `"request_id":"req-1"`) || !strings.Contains(line, `"behavior":"allow"`) {
 		t.Fatalf("the stream opened with %s, want the held verdict", line)
 	}
-	ps.undeliveredVerdictsMu.RLock()
-	_, stillHeld := ps.undeliveredVerdicts["req-1"]
-	ps.undeliveredVerdictsMu.RUnlock()
-	if stillHeld {
-		t.Error("the delivered verdict is still held")
+	// The verdict is let go once it is written, which can be after the line
+	// has arrived here.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		ps.undeliveredVerdictsMu.RLock()
+		_, stillHeld := ps.undeliveredVerdicts["req-1"]
+		ps.undeliveredVerdictsMu.RUnlock()
+		if !stillHeld {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the delivered verdict is still held")
+		}
 	}
 
 	ps.SendChannelNotification(ctx, 7, "delivered")
