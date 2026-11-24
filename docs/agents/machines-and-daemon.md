@@ -343,6 +343,10 @@ should — but by the time it does, three files have been written, so a relative
 or mistyped path has to be refused here or it becomes a new empty directory
 with a token in it.
 
+## A bare command is looked up on PATH before the pty starts it
+
+On Windows go-pty looks for a bare `npx` in the working directory, never on PATH, so `pty.Start` resolves it first; drop that and every Windows launch fails as `<repo>\npx` (#1342).
+
 ## A fork runs in a folder the daemon makes, and only a daemon that says so
 
 A fork's folder is `~/.agentrq/forks/<id>`, a worktree when the parent's folder is in a repository and a copy (no `.mcp.json`) otherwise — never the parent's own folder, or its `.mcp.json` entry would connect the fork as the parent. An agentrqd that predates this ignores `StartSession.Fork` and does exactly that, so the backend refuses a fork launch unless the hello listed `wire.CapabilityFork`, and the daemon refuses one whose folder already names the workspace server.
