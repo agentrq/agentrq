@@ -24,11 +24,11 @@ var manifest = sdk.Manifest{
 	Version:     "1.0.0",
 	Description: "Jira Cloud issues and comments, from an admin webhook (checks X-Hub-Signature) or an Automation rule's Send web request (checks a bearer token).",
 	Inputs: []sdk.Input{
-		{Name: "webhookSecret", Label: "Secret: the webhook's secret, or the Automation rule's Authorization: Bearer token", Type: "string", Secret: true, Required: true},
+		{Name: "webhookSecret", Label: "Secret (the webhook's secret, or the rule's Authorization: Bearer token)", Type: "string", Secret: true, Required: true},
+		{Name: "assignees", Label: "Assignees: Jira account ids; the issue must be assigned to one", Type: "array", Items: "string", Required: true},
+		{Name: "actors", Label: "Actors: Jira account ids; one must have run the rule, changed the issue or commented", Type: "array", Items: "string", Required: true},
 		{Name: "projects", Label: "Project keys, such as ABC (empty is every project)", Type: "array", Items: "string"},
 		{Name: "labels", Label: "Labels; the issue must have one (empty is any issue)", Type: "array", Items: "string"},
-		{Name: "assignees", Label: "Assignees, as Jira account ids or display names; the issue's must be one (empty is anyone, or no one)", Type: "array", Items: "string"},
-		{Name: "actors", Label: "Who acted (ran the rule, changed the issue or commented), as Jira account ids or display names (empty is anyone)", Type: "array", Items: "string"},
 	},
 	Events: []sdk.Event{
 		{Name: "jira.issue.sent", Description: "An Automation rule sent an issue, such as from a manual \"Send to AgentRQ\" action"},
@@ -90,15 +90,18 @@ type payload struct {
 			ToString   string `json:"toString"`
 		} `json:"items"`
 	} `json:"changelog"`
-	// An Automation rule's "Work item data (Automation format)" body is the
-	// issue itself.
-	Key    string          `json:"key"`
-	Fields json.RawMessage `json:"fields"`
 }
 
 func handle(in sdk.In) sdk.Result {
 	if reason := authentic(in); reason != "" {
 		return sdk.Reject(reason)
+	}
+	// The server takes an empty list as set; without them every issue Jira
+	// sends would pass.
+	for _, input := range []string{"assignees", "actors"} {
+		if len(slices.DeleteFunc(in.Strings(input), func(id string) bool { return id == "" })) == 0 {
+			return sdk.Reject("the registration's " + input + " is empty: give at least one Jira account id")
+		}
 	}
 	var p payload
 	if err := json.Unmarshal(in.Request.Body, &p); err != nil {
@@ -107,11 +110,6 @@ func handle(in sdk.In) sdk.Result {
 	name := eventName(p)
 	if name == "" {
 		return sdk.Accept()
-	}
-	if p.Issue == nil {
-		var is issue
-		_ = json.Unmarshal(in.Request.Body, &is)
-		p.Issue = &is
 	}
 	if !wanted(in, p) {
 		return sdk.Accept()
@@ -159,9 +157,9 @@ func eventName(p payload) string {
 			return webhookEvents[p.WebhookEvent]
 		}
 	case "":
-		// An Automation rule: "Work item data (Jira format)" wraps the
-		// issue; "(Automation format)" is the issue.
-		if hasIssue || (p.Issue == nil && p.Key != "" && len(p.Fields) > 0) {
+		// An Automation rule's "Work item data (Jira format)". Not its
+		// "(Automation format)", the bare issue: it names nobody who acted.
+		if hasIssue {
 			return "jira.issue.sent"
 		}
 	}
@@ -181,32 +179,22 @@ func wanted(in sdk.In, p payload) bool {
 		!slices.ContainsFunc(is.Fields.Labels, func(l string) bool { return slices.Contains(labels, l) }) {
 		return false
 	}
-	if want := in.Strings("assignees"); len(want) > 0 && !matches(want, is.Fields.Assignee) {
+	if !matches(in.Strings("assignees"), is.Fields.Assignee) {
 		return false
 	}
-	if want := in.Strings("actors"); len(want) > 0 {
-		var author *person
-		if p.Comment != nil {
-			author = p.Comment.Author
-		}
-		if !matches(want, p.User, author) {
-			return false
-		}
+	var author *person
+	if p.Comment != nil {
+		author = p.Comment.Author
 	}
-	return true
+	return matches(in.Strings("actors"), p.User, author)
 }
 
-// matches reports whether one of the people is named in want, by account id
-// or, ignoring case, by display name.
+// matches reports whether one of the people's account ids is in want. Never
+// a display name: two people can share one, and anybody can change theirs.
 func matches(want []string, people ...*person) bool {
 	for _, u := range people {
-		if u == nil {
-			continue
-		}
-		for _, w := range want {
-			if (u.AccountID != "" && w == u.AccountID) || (u.DisplayName != "" && strings.EqualFold(w, u.DisplayName)) {
-				return true
-			}
+		if u != nil && u.AccountID != "" && slices.Contains(want, u.AccountID) {
+			return true
 		}
 	}
 	return false

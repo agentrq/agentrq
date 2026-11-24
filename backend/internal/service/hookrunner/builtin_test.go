@@ -76,7 +76,7 @@ func TestBuiltInHooksRunOnTheServer(t *testing.T) {
 }
 
 // A Jira Automation rule cannot sign, so it sends the secret as a bearer
-// token, and its body is the issue itself.
+// token.
 func TestBuiltInJiraHookRunsOnTheServer(t *testing.T) {
 	s := newService(t)
 	s.maxPayloadSize = 65536
@@ -91,8 +91,8 @@ func TestBuiltInJiraHookRunsOnTheServer(t *testing.T) {
 			HandleInput{
 				RegistrationID: "0ls4JilchmO",
 				Request: Request{Method: "POST", Headers: map[string][]string{"authorization": {auth}},
-					Body: []byte(`{"self":"https://acme.atlassian.net/rest/api/2/issue/1","key":"ABC-7","fields":{"summary":"Login fails","project":{"key":"ABC"}}}`)},
-				Inputs: map[string]any{"webhookSecret": "s3cret", "projects": []string{"ABC"}},
+					Body: []byte(`{"user":{"accountId":"u-1"},"issue":{"self":"https://acme.atlassian.net/rest/api/2/issue/1","key":"ABC-7","fields":{"summary":"Login fails","project":{"key":"ABC"},"assignee":{"accountId":"a-1"}}}}`)},
+				Inputs: map[string]any{"webhookSecret": "s3cret", "assignees": []string{"a-1"}, "actors": []string{"u-1"}, "projects": []string{"ABC"}},
 				Now:    time.Now(),
 			})
 	}

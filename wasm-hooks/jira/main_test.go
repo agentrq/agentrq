@@ -22,7 +22,7 @@ func webhook(body string) sdk.In {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(body))
 	return sdk.In{
-		Inputs: map[string]json.RawMessage{"webhookSecret": json.RawMessage(`"It's a Secret to Everybody"`)},
+		Inputs: inputs(),
 		Request: sdk.Request{Body: []byte(body), Headers: map[string][]string{
 			"x-hub-signature":                {"sha256=" + hex.EncodeToString(mac.Sum(nil))},
 			"x-atlassian-webhook-identifier": {"w-1"},
@@ -33,10 +33,22 @@ func webhook(body string) sdk.In {
 // automation is an Automation rule's Send web request, with the bearer token.
 func automation(body string) sdk.In {
 	return sdk.In{
-		Inputs:  map[string]json.RawMessage{"webhookSecret": json.RawMessage(`"It's a Secret to Everybody"`)},
+		Inputs:  inputs(),
 		Request: sdk.Request{Body: []byte(body), Headers: map[string][]string{"authorization": {"Bearer " + secret}}},
 	}
 }
+
+// inputs are a registration's: the secret, the assignee and who may act.
+func inputs() map[string]json.RawMessage {
+	return map[string]json.RawMessage{
+		"webhookSecret": json.RawMessage(`"It's a Secret to Everybody"`),
+		"assignees":     json.RawMessage(`["a-1"]`),
+		"actors":        json.RawMessage(`["u-1","c-1"]`),
+	}
+}
+
+// mine is the registration's assignee, for a body's fields.
+const mine = `"assignee":{"accountId":"a-1"}`
 
 func with(in sdk.In, input string, values ...string) sdk.In {
 	in.Inputs[input], _ = json.Marshal(values)
@@ -84,7 +96,7 @@ func TestAtlassiansSignatureExample(t *testing.T) {
 }
 
 func TestTheSecretIsChecked(t *testing.T) {
-	body := `{"webhookEvent":"jira:issue_created","issue":` + issueJSON + `}`
+	body := `{"webhookEvent":"jira:issue_created",` + actor + `,"issue":` + issueJSON + `}`
 
 	in := webhook(body)
 	in.Request.Body = []byte(strings.Replace(body, "Login", "Logout", 1))
@@ -163,7 +175,7 @@ func TestIssueUpdatedSaysWhatChanged(t *testing.T) {
 	for range maxChanges + 3 {
 		items = append(items, `{"field":"x","fromString":"a","toString":"b"}`)
 	}
-	e = one(t, handle(webhook(`{"webhookEvent":"jira:issue_updated","issue":`+issueJSON+`,"changelog":{"items":[`+strings.Join(items, ",")+`]}}`)))
+	e = one(t, handle(webhook(`{"webhookEvent":"jira:issue_updated","user":{"accountId":"u-1"},"issue":`+issueJSON+`,"changelog":{"items":[`+strings.Join(items, ",")+`]}}`)))
 	if p := e.Payload.(string); strings.Count(p, "\n- x: a → b") != maxChanges || !strings.Contains(p, "\n- and 3 more") ||
 		!strings.HasPrefix(p, "Jira issue ABC-7 updated: ") {
 		t.Errorf("long changelog = %q", p)
@@ -179,7 +191,7 @@ func TestCommentCreated(t *testing.T) {
 	if e.Name != "jira.comment.created" || e.Payload != want {
 		t.Errorf("event = %+v\nwant payload %q", e, want)
 	}
-	e = one(t, handle(webhook(`{"webhookEvent":"comment_created","comment":{"body":""},"issue":{"key":"ABC-8","fields":{"summary":"S"}}}`)))
+	e = one(t, handle(webhook(`{"webhookEvent":"comment_created","comment":{"body":"","author":{"accountId":"c-1"}},"issue":{"key":"ABC-8","fields":{"summary":"S",`+mine+`}}}`)))
 	if e.Payload != "Comment on Jira issue ABC-8: S" {
 		t.Errorf("an empty comment = %q", e.Payload)
 	}
@@ -193,6 +205,9 @@ func TestEventsOfNoInterest(t *testing.T) {
 	none(t, handle(automation(`{}`)))
 	none(t, handle(automation(`{"key":"ABC-7"}`)))
 	none(t, handle(automation(`{"issue":{"fields":{"summary":"no key"}}}`)))
+	// "Work item data (Automation format)" is the bare issue, naming nobody
+	// who acted.
+	none(t, handle(automation(issueJSON)))
 }
 
 func TestAutomationSendsAnIssue(t *testing.T) {
@@ -202,12 +217,15 @@ func TestAutomationSendsAnIssue(t *testing.T) {
 		e.DedupKey != "" {
 		t.Errorf("Jira format = %+v", e)
 	}
-	// "Work item data (Automation format)" is the issue itself.
-	e = one(t, handle(automation(issueJSON)))
-	if e.Name != "jira.issue.sent" || !strings.HasPrefix(e.Payload.(string), "Jira issue ABC-7 sent: Login fails\n") ||
-		!strings.HasSuffix(e.Payload.(string), "Description:\nSteps:\n1. open") {
-		t.Errorf("Automation format = %+v", e)
+	if !strings.HasSuffix(e.Payload.(string), "Description:\nSteps:\n1. open") {
+		t.Errorf("Jira format = %+v", e)
 	}
+}
+
+// sent is an Automation rule's request for an issue of these fields, run by
+// the registration's actor.
+func sent(fields string) sdk.In {
+	return automation(`{` + actor + `,"issue":{"key":"ABC-1","fields":{` + fields + `}}}`)
 }
 
 func TestFilters(t *testing.T) {
@@ -217,35 +235,60 @@ func TestFilters(t *testing.T) {
 	one(t, handle(with(created(), "projects", "XYZ", "abc")))
 	none(t, handle(with(created(), "projects", "XYZ")))
 	// Without a project field, the key's prefix is the project.
-	one(t, handle(with(automation(`{"key":"ABC-1","fields":{"summary":"S"}}`), "projects", "ABC")))
-	none(t, handle(with(automation(`{"key":"ABC-1","fields":{"summary":"S"}}`), "projects", "AB")))
+	one(t, handle(with(sent(`"summary":"S",`+mine), "projects", "ABC")))
+	none(t, handle(with(sent(`"summary":"S",`+mine), "projects", "AB")))
 
 	one(t, handle(with(created(), "labels", "ops", "agentrq")))
 	none(t, handle(with(created(), "labels", "AgentRQ")))
-	none(t, handle(with(automation(`{"key":"ABC-1","fields":{}}`), "labels", "agentrq")))
+	none(t, handle(with(sent(mine), "labels", "agentrq")))
 
-	one(t, handle(with(created(), "assignees", "a-1")))
-	one(t, handle(with(created(), "assignees", "ada")))
-	none(t, handle(with(created(), "assignees", "u-1", "Uma"))) // who acted is not the assignee
-	none(t, handle(with(automation(`{"key":"ABC-1","fields":{"assignee":null}}`), "assignees", "a-1")))
-	none(t, handle(with(automation(`{"key":"ABC-1","fields":{"assignee":{"displayName":"Ada"}}}`), "assignees", "")))
+	one(t, handle(with(created(), "assignees", "z-9", "a-1")))
+	none(t, handle(with(created(), "assignees", "Ada"))) // never by name
+	none(t, handle(with(created(), "assignees", "u-1"))) // who acted is not the assignee
+	none(t, handle(with(sent(`"assignee":null`), "assignees", "a-1")))
+	none(t, handle(with(sent(`"assignee":{"displayName":"Ada"}`), "assignees", "a-1")))
 
 	one(t, handle(with(created(), "actors", "u-1")))
-	one(t, handle(with(created(), "actors", "UMA")))
-	none(t, handle(with(created(), "actors", "a-1", "Ada"))) // the assignee did not act
-	comment := `{"webhookEvent":"comment_created","comment":{"body":"hi","author":{"accountId":"c-1","displayName":"Cy"}},"issue":{"key":"ABC-1","fields":{}}}`
+	none(t, handle(with(created(), "actors", "Uma"))) // never by name
+	none(t, handle(with(created(), "actors", "a-1"))) // the assignee did not act
+	comment := `{"webhookEvent":"comment_created","comment":{"body":"hi","author":{"accountId":"c-1","displayName":"Cy"}},"issue":{"key":"ABC-1","fields":{` + mine + `}}}`
 	one(t, handle(with(webhook(comment), "actors", "c-1")))
-	one(t, handle(with(webhook(comment), "actors", "cy")))
-	none(t, handle(with(webhook(`{"webhookEvent":"comment_created","comment":{"body":"hi"},"issue":{"key":"ABC-1","fields":{}}}`), "actors", "c-1")))
-	none(t, handle(with(automation(`{"key":"ABC-1","fields":{}}`), "actors", "u-1")))
+	none(t, handle(with(webhook(`{"webhookEvent":"comment_created","comment":{"body":"hi"},"issue":{"key":"ABC-1","fields":{`+mine+`}}}`), "actors", "c-1")))
+	none(t, handle(with(automation(`{"issue":{"key":"ABC-1","fields":{`+mine+`}}}`), "actors", "u-1")))
 
 	in := with(with(with(created(), "projects", "ABC"), "labels", "web"), "assignees", "a-1")
 	one(t, handle(with(in, "actors", "u-1")))
 	none(t, handle(with(in, "actors", "z-9")))
 }
 
+// The server takes an empty list as set, so the hook refuses one: without
+// assignees and actors, every issue Jira sends would pass.
+func TestAssigneesAndActorsAreRequired(t *testing.T) {
+	body := `{"webhookEvent":"jira:issue_created",` + actor + `,"issue":` + issueJSON + `}`
+	for _, input := range []string{"assignees", "actors"} {
+		for _, value := range []string{`[]`, `[""]`, `null`, ``} {
+			in := webhook(body)
+			in.Inputs[input] = json.RawMessage(value)
+			if value == `` {
+				delete(in.Inputs, input)
+			}
+			res := handle(in)
+			if res.Accept || res.Reason != "the registration's "+input+" is empty: give at least one Jira account id" {
+				t.Errorf("%s %s = %+v", input, value, res)
+			}
+		}
+		required := false
+		for _, in := range manifest.Inputs {
+			required = required || (in.Name == input && in.Required)
+		}
+		if !required {
+			t.Errorf("%s is not required", input)
+		}
+	}
+}
+
 func TestDedupKey(t *testing.T) {
-	in := webhook(`{"webhookEvent":"jira:issue_created","issue":` + issueJSON + `}`)
+	in := webhook(`{"webhookEvent":"jira:issue_created",` + actor + `,"issue":` + issueJSON + `}`)
 	in.Request.Headers["x-atlassian-webhook-identifier"] = []string{strings.Repeat("x", 256)}
 	if e := one(t, handle(in)); e.DedupKey != "" {
 		t.Errorf("an over-long identifier was kept: %q", e.DedupKey)
@@ -268,7 +311,7 @@ func TestTheLinkComesFromSelf(t *testing.T) {
 	if got := browseURL(&issue{Self: "https://acme.atlassian.net/x"}); got != "" {
 		t.Errorf("no key = %q", got)
 	}
-	e := one(t, handle(automation(`{"key":"ABC-1","fields":{"summary":"S"}}`)))
+	e := one(t, handle(automation(`{"user":{"accountId":"u-1"},"issue":{"key":"ABC-1","fields":{"summary":"S",`+mine+`}}}`)))
 	if e.Payload != "Jira issue ABC-1 sent: S" || len(e.FAQ) != 2 {
 		t.Errorf("an issue with no link or details = %+v", e)
 	}
@@ -276,7 +319,8 @@ func TestTheLinkComesFromSelf(t *testing.T) {
 
 func TestLongTextIsCut(t *testing.T) {
 	long := strings.Repeat("é", maxDescription) // two bytes each
-	body, _ := json.Marshal(map[string]any{"key": "ABC-1", "fields": map[string]any{"summary": strings.Repeat("s", 600), "description": long}})
+	body, _ := json.Marshal(map[string]any{"user": map[string]any{"accountId": "u-1"}, "issue": map[string]any{"key": "ABC-1",
+		"fields": map[string]any{"summary": strings.Repeat("s", 600), "description": long, "assignee": map[string]any{"accountId": "a-1"}}}})
 	p := one(t, handle(automation(string(body)))).Payload.(string)
 	desc := p[strings.Index(p, "Description:\n")+len("Description:\n"):]
 	if !strings.HasSuffix(desc, "\n… (cut; the rest is in Jira)") || len(desc) > maxDescription+64 || !strings.Contains(p, strings.Repeat("s", 512)+"\n") ||
@@ -290,7 +334,7 @@ func TestLongTextIsCut(t *testing.T) {
 		t.Errorf("cut that fits = %q", got)
 	}
 	v := strings.Repeat("v", maxValue+1)
-	e := one(t, handle(webhook(`{"webhookEvent":"jira:issue_updated","issue":{"key":"ABC-1","fields":{"status":{"name":"`+v+`"}}},"changelog":{"items":[{"field":"f","fromString":"`+v+`","toString":""}]}}`)))
+	e := one(t, handle(webhook(`{"webhookEvent":"jira:issue_updated",`+actor+`,"issue":{"key":"ABC-1","fields":{`+mine+`,"status":{"name":"`+v+`"}}},"changelog":{"items":[{"field":"f","fromString":"`+v+`","toString":""}]}}`)))
 	if p := e.Payload.(string); !strings.Contains(p, "Status: "+v[:maxValue]+"…") || !strings.Contains(p, "- f: "+v[:maxValue]+"… → (none)") {
 		t.Errorf("long values = %q", p)
 	}
