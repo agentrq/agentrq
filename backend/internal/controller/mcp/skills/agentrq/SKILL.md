@@ -28,5 +28,3 @@ A tool's actions are in `references/<tool>.md` beside this file, not in the `ski
 5. **Progress**: reply at every milestone; never go silent for long.
 6. **Ask**: `task.elicit` waits for the human's answer; or `reply`.
 7. **Complete**: reply a summary, then set `completed`; `blocked` when you need the human.
-
-Worked examples: `references/examples.md`.
