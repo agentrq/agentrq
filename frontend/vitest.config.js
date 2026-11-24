@@ -220,6 +220,7 @@ export default defineConfig({
         'src/views/InvitationAcceptView.vue',
         'src/webmcp/*.js',
         'src/a2ui/*.js',
+        'src/components/a2ui/*.vue',
       ],
       reporter: ['text', 'lcov'],
       thresholds: {

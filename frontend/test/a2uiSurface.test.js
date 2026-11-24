@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 import { describe, expect, it } from 'vitest'
-import { isReactive } from 'vue'
+import { isReactive, reactive } from 'vue'
 
 import { isDynamic, resolveArgs, resolveValue } from '../src/a2ui/resolve.js'
 import {
@@ -59,6 +59,8 @@ describe('a2ui surface', () => {
   it('loads a card from metadata, or null for the text fallback', () => {
     const messages = [create(), update([{ id: 'root', component: 'Text', text: 'hi' }])]
     expect(loadSurface({ type: 'a2ui', messages }).components.get('root').text).toBe('hi')
+    // A thread's message is a reactive proxy, which structuredClone alone refuses.
+    expect(loadSurface(reactive({ type: 'a2ui', messages })).components.get('root').text).toBe('hi')
     expect(loadSurface(null)).toBeNull()
     expect(loadSurface({ type: 'other', messages })).toBeNull()
     expect(loadSurface({ type: 'a2ui' })).toBeNull()
