@@ -35,11 +35,12 @@ func buildHook(t *testing.T, name string) []byte {
 }
 
 // The built-in hooks are what the server runs, so each must pass its own
-// checks, and the GitHub one must turn a signed delivery into an event.
+// checks, and the GitHub and Jira ones must turn a genuine delivery into an
+// event.
 func TestBuiltInHooksRunOnTheServer(t *testing.T) {
 	s := newService(t)
 	s.maxPayloadSize = 65536
-	for _, name := range []string{"generic", "github"} {
+	for _, name := range []string{"generic", "github", "jira"} {
 		if _, _, err := s.Inspect(context.Background(), buildHook(t, name)); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
@@ -71,5 +72,39 @@ func TestBuiltInHooksRunOnTheServer(t *testing.T) {
 	if !res.Accept || len(res.Events) != 1 || res.Events[0].Name != "ci.failed" || res.Events[0].DedupKey != "d-1" ||
 		!strings.HasPrefix(res.Events[0].Payload, "Workflow `test` failed on `main`") {
 		t.Errorf("result = %+v", res)
+	}
+}
+
+// A Jira Automation rule cannot sign, so it sends the secret as a bearer
+// token, and its body is the issue itself.
+func TestBuiltInJiraHookRunsOnTheServer(t *testing.T) {
+	s := newService(t)
+	s.maxPayloadSize = 65536
+	wasm := buildHook(t, "jira")
+	m, sum, err := s.Inspect(context.Background(), wasm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle := func(auth string) (Result, error) {
+		return s.Handle(context.Background(),
+			Module{SHA256: sum, Load: func(context.Context) ([]byte, error) { return wasm, nil }}, m,
+			HandleInput{
+				RegistrationID: "0ls4JilchmO",
+				Request: Request{Method: "POST", Headers: map[string][]string{"authorization": {auth}},
+					Body: []byte(`{"self":"https://acme.atlassian.net/rest/api/2/issue/1","key":"ABC-7","fields":{"summary":"Login fails","project":{"key":"ABC"}}}`)},
+				Inputs: map[string]any{"webhookSecret": "s3cret", "projects": []string{"ABC"}},
+				Now:    time.Now(),
+			})
+	}
+	res, err := handle("Bearer s3cret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Accept || len(res.Events) != 1 || res.Events[0].Name != "jira.issue.sent" ||
+		res.Events[0].Payload != "Jira issue ABC-7 sent: Login fails\nhttps://acme.atlassian.net/browse/ABC-7" {
+		t.Errorf("result = %+v", res)
+	}
+	if res, err := handle("Bearer nope"); err != nil || res.Accept {
+		t.Errorf("a wrong token = %+v, %v", res, err)
 	}
 }

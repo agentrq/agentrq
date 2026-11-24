@@ -138,7 +138,7 @@ plugin-deepseek:
 # into wasm-hooks/dist. Not to be confused with `hooks`, the git hooks above.
 wasm-hooks:
 	@mkdir -p wasm-hooks/dist
-	@cd wasm-hooks && for h in generic github; do \
+	@cd wasm-hooks && for h in generic github jira; do \
 		GOOS=wasip1 GOARCH=wasm go build -trimpath -ldflags "-s -w" -o dist/$$h.wasm ./$$h || exit 1; \
 		echo "wasm-hooks/dist/$$h.wasm"; \
 	done
