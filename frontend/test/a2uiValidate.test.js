@@ -186,7 +186,7 @@ describe('a2ui validate: components', () => {
   })
 
   it('takes media only as a stored link', () => {
-    for (const url of ['attachment:a.png', 'http://example.com/a.png', 'data:image/png;base64,x', 'javascript:x', '//evil/a', '/other/a', 'https:///a']) {
+    for (const url of ['attachment:a.png', 'data:image/png;base64,x', 'javascript:x', '//evil/a', '/other/a', 'https:///a']) {
       refused(card({ id: 'root', component: 'Image', url }), /url must be a stored file/)
     }
     refused(card({ id: 'root', component: 'Image', url: { '@path': '/u' } }), /url must be a stored file/)
@@ -278,7 +278,8 @@ describe('a2ui validate: stored media links', () => {
     expect(isStoredMediaUrl('/storage/w-1/2/3')).toBe(true)
     expect(isStoredMediaUrl('/api/v1/workspaces/a/tasks/b/attachments/c')).toBe(true)
     expect(isStoredMediaUrl('https://bucket.example/k')).toBe(true)
-    expect(isStoredMediaUrl('http://bucket.example/k')).toBe(false)
+    expect(isStoredMediaUrl('http://localhost:3000/storage/w-1/2/3')).toBe(true)
+    expect(isStoredMediaUrl('http:///a')).toBe(false)
     expect(isStoredMediaUrl('/api/v1/other')).toBe(false)
     expect(isStoredMediaUrl(undefined)).toBe(false)
   })
