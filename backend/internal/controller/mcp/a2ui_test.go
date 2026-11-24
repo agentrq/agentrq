@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"strings"
 	"testing"
 
@@ -227,5 +228,55 @@ func TestBuildConversationJSON_ACardIsFlaggedNotSent(t *testing.T) {
 	}
 	if _, ok := got.Messages[1]["ui"]; ok || got.Messages[1]["metadata"] != `{"type":"other"}` {
 		t.Errorf("plain message = %v", got.Messages[1])
+	}
+}
+
+// Every card an agent is shown, in help task.reply and the skill's
+// references, is one the server posts: the agent who copies it is not
+// refused.
+func TestA2UIExamples_EveryCardShownToAnAgentIsPosted(t *testing.T) {
+	var payloads []map[string]any
+	for _, a := range (&WorkspaceServer{}).taskActions() {
+		if a.Name == "reply" {
+			var p map[string]any
+			if err := json.Unmarshal([]byte(a.Example), &p); err != nil {
+				t.Fatal(err)
+			}
+			payloads = append(payloads, p)
+		}
+	}
+	files, err := fs.Glob(builtinSkillFiles, "skills/agentrq/references/*.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		body, err := builtinSkillFiles.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range exampleCalls(t, file, body) {
+			if c.Action == "reply" {
+				payloads = append(payloads, c.Payload)
+			}
+		}
+	}
+	cards := 0
+	for _, p := range payloads {
+		if p["ui"] == nil {
+			continue
+		}
+		cards++
+		var params ReplyParams
+		if err := decodePayload(p, &params); err != nil {
+			t.Fatal(err)
+		}
+		e := newA2UIReplyEnv(t)
+		res, _, _ := e.ps.handleReply(context.Background(), nil, params)
+		if res.IsError || e.metadata == nil {
+			t.Errorf("the card in %q is not posted: %s", p["text"], res.Content[0].(*mcp.TextContent).Text)
+		}
+	}
+	if cards < 2 {
+		t.Errorf("%d cards shown to an agent; want the help example and the a2ui reference's", cards)
 	}
 }
