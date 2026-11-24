@@ -139,6 +139,9 @@ async function flush() {
   await nextTick()
 }
 
+// The upload gzips on Node's threadpool, so no fixed number of ticks covers it.
+const uploaded = (check) => vi.waitFor(check, { timeout: 5000 })
+
 function choose(el, contents) {
   const input = q(el, 'hook-file')
   Object.defineProperty(input, 'files', { configurable: true, value: [new Blob([contents])] })
@@ -190,10 +193,10 @@ describe('AdminHooksView', () => {
     q(el, 'hook-add').click()
     expect(click).toHaveBeenCalled()
     choose(el, '\0asm')
-    await flush()
+    await uploaded(() => expect(toastMessages()).toEqual(['Added github 1.0.0.']))
+    await nextTick()
     expect(seen.map((s) => `${s.init.method || 'GET'} ${s.url}`)).toEqual([`GET ${HOOKS}`, `POST ${HOOKS}`, `GET ${HOOKS}`])
     expect(qa(el, 'hook-row')).toHaveLength(1)
-    expect(toastMessages()).toEqual(['Added github 1.0.0.'])
   })
 
   it('upgrades a hook, and shows a refused upgrade', async () => {
@@ -205,14 +208,13 @@ describe('AdminHooksView', () => {
     vi.spyOn(q(el, 'hook-file'), 'click').mockImplementation(() => {})
     q(el, 'hook-upgrade').click()
     choose(el, 'v2')
-    await flush()
-    expect(toastMessages()).toEqual(['Upgraded github to 2.0.0.'])
+    await uploaded(() => expect(toastMessages()).toEqual(['Upgraded github to 2.0.0.']))
+    await nextTick()
     expect(el.textContent).toContain('2.0.0')
 
     q(el, 'hook-upgrade').click()
     choose(el, 'v3')
-    await flush()
-    expect(q(el, 'hook-error').textContent).toContain('no longer writes the event "push"')
+    await uploaded(() => expect(q(el, 'hook-error')?.textContent).toContain('no longer writes the event "push"'))
   })
 
   it('ignores a pick of no file', async () => {
