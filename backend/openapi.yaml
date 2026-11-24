@@ -2141,6 +2141,58 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SimpleError' }
 
+  /workspaces/{id}/tasks/{taskID}/a2ui/actions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      summary: Answer an agent's card by clicking one of its Buttons
+      description: |
+        Posts the click as the person's reply, as `/reply` does, and hands it
+        to the agent the same way. The reply's text is `userMessage`, else the
+        Button's own `userMessage`, else its label, else `name`; its metadata
+        is `{"a2uiAction": {messageId, surfaceId, name, context}}`. The card's
+        message is marked `answered: {name, at}`: a card is answered once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messageId, surfaceId, name, sourceComponentId]
+              properties:
+                messageId: { type: string, description: The agent's message that carries the card }
+                surfaceId: { type: string }
+                name: { type: string, description: "The Button's `action.event.name`" }
+                sourceComponentId: { type: string, description: The Button's component id }
+                context:
+                  type: object
+                  additionalProperties: true
+                  description: "The Button's `action.event.context`, its bindings resolved"
+                userMessage: { type: string, description: "The Button's `action.event.userMessage`, resolved" }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '404':
+          description: No such task, or no such message in it
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: The card is already answered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          description: A request it cannot read, a message with no card, or no Button with that action on it
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
   /workspaces/{id}/tasks/{taskID}/stop:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'

@@ -1027,6 +1027,25 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         api.respondToElicitation(workspaceId, taskId, requestId, action, content),
     }),
     tool({
+      name: 'sendA2uiAction',
+      description:
+        "Click a Button on a card an agent drew in a task: posts the click as the user's reply. " +
+        'A card is answered once.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        taskId: TASK_ID,
+        messageId: str('The agent message that carries the card.'),
+        surfaceId: str("The card's surfaceId."),
+        name: str("The Button's action.event.name."),
+        sourceComponentId: str("The Button's component id."),
+        context: { type: 'object', description: "The Button's action.event.context, if it has one." },
+        userMessage: str("The reply's text; leave it out for the Button's own."),
+      },
+      required: ['workspaceId', 'taskId', 'messageId', 'surfaceId', 'name', 'sourceComponentId'],
+      screen: before(taskPage),
+      run: ({ workspaceId, taskId, ...action }) => api.sendA2uiAction(workspaceId, taskId, action),
+    }),
+    tool({
       name: 'updateScheduledTask',
       description:
         'Change the template of a recurring task — what each future run will be given. ' +

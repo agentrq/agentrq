@@ -603,6 +603,34 @@ func FromReplyToTaskResponseEntityToHTTPResponse(rs *entity.ReplyToTaskResponse)
 	return payload
 }
 
+func FromHTTPRequestToSendA2uiActionRequestEntity(c fiber.Ctx) *entity.SendA2uiActionRequest {
+	var payload view.A2uiActionRequest
+	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
+		return nil
+	}
+	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
+	messageID := monoflake.IDFromBase62(payload.MessageID).Int64()
+	if workspaceID == 0 || taskID == 0 || messageID == 0 || payload.SurfaceID == "" || payload.Name == "" || payload.SourceComponentID == "" {
+		return nil
+	}
+	return &entity.SendA2uiActionRequest{
+		WorkspaceID:       workspaceID,
+		TaskID:            taskID,
+		MessageID:         messageID,
+		SurfaceID:         payload.SurfaceID,
+		Name:              payload.Name,
+		SourceComponentID: payload.SourceComponentID,
+		Context:           payload.Context,
+		UserMessage:       payload.UserMessage,
+	}
+}
+
+func FromSendA2uiActionResponseEntityToHTTPResponse(rs *entity.SendA2uiActionResponse) []byte {
+	payload, _ := json.Marshal(view.A2uiActionResponse{Task: FromEntityTaskToView(rs.Task)})
+	return payload
+}
+
 func FromHTTPRequestToDeleteTaskRequestEntity(c fiber.Ctx) *entity.DeleteTaskRequest {
 	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()

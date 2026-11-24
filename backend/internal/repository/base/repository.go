@@ -86,6 +86,10 @@ type Repository interface {
 	CreateMessage(ctx context.Context, m model.Message) error
 	ListMessages(ctx context.Context, taskID int64) ([]model.Message, error)
 	UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error
+	// AnswerMessage replaces a message's metadata only while it has no
+	// "answered" key, and reports whether it did: of two clicks on one card,
+	// one wins.
+	AnswerMessage(ctx context.Context, taskID int64, messageID int64, metadata []byte) (bool, error)
 	GetWorkspaceAttachments(ctx context.Context, workspaceID int64) ([]entity.TaskAttachment, error)
 
 	// Memory — the workspace's own notes, written by agents through the MCP
@@ -1191,6 +1195,24 @@ func (r *repository) UpdateMessageMetadata(ctx context.Context, taskID int64, me
 		return syncNeedsInput(tx, taskID)
 	})
 }
+
+func (r *repository) AnswerMessage(ctx context.Context, taskID int64, messageID int64, metadata []byte) (bool, error) {
+	db := r.conn(ctx)
+	res := db.Model(&model.Message{}).Where("id = ? AND task_id = ?", messageID, taskID).Where(unansweredClause(db)).Update("metadata", metadata)
+	return res.RowsAffected == 1, res.Error
+}
+
+func unansweredClause(db *gorm.DB) string {
+	if db.Dialector.Name() == "postgres" {
+		return pgUnanswered
+	}
+	return sqliteUnanswered
+}
+
+const (
+	pgUnanswered     = "metadata->'answered' IS NULL"
+	sqliteUnanswered = "json_extract(metadata, '$.answered') IS NULL"
+)
 
 // CreateToolCall records a tool call on a task of the call's workspace that
 // userID owns, ErrNotFound for any other task. The check and the insert are
