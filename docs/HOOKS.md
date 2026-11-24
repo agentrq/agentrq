@@ -52,13 +52,14 @@ This example gives an agent a task whenever an issue is opened in a repository.
 
 1. A name.
 2. The **github** hook.
-3. **Generate** a webhook secret, and copy it now: it is never shown again.
-4. Route `issue.opened` to `github_issue_opened`. Leave the others **Not routed**.
-5. **Create**.
+3. **Generate** a webhook secret.
+4. Copy the secret shown under the field: GitHub needs it, and it is never shown again.
+5. Route `issue.opened` to `github_issue_opened`. Leave the others **Not routed**.
+6. **Create**.
 
 ![The registration's payload URL, with the Copy button](assets/hooks/github-5-payload-url.png)
 
-6. **Copy** the payload URL, which ends in `?agentrq_hook_token=…`. Copy all of it, token included: it is shown only once.
+7. **Copy** the payload URL, which ends in `?agentrq_hook_token=…`. Copy all of it, token included: it is shown only once.
 
 **4. Add the webhook in GitHub.** In the repository, open **Settings → Webhooks → Add webhook**:
 
