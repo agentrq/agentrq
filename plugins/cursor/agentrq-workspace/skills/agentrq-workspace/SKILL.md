@@ -1,6 +1,6 @@
 ---
 name: agentrq
-description: Execute tasks assigned by humans or supervisor agents within a specific AgentRQ workspace. Use when you receive channel messages or need to report progress on tasks.
+description: Work as the agent of an AgentRQ workspace through its MCP tools. Take tasks from humans or supervisor agents as channel messages, report progress, ask questions and create tasks (task); keep notes that outlive a task (memory); find, load and improve playbooks (skills); share markdown docs with every workspace of the account (pano); call the tools of websites the human shared (siteTools); and publish events that start tasks in other workspaces (workspace). Use when a task arrives or you need to report progress on one.
 ---
 
 # AgentRQ Workspace Agent Guidelines
