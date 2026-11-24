@@ -288,18 +288,28 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	defer ctrl.Finish()
 
 	var got []entity.Attachment
+	var gotMetadata any
 	mockPS := mock_pubsub.NewMockService(ctrl)
+	ids := mock_idgen.NewMockService(ctrl)
+	store, err := storage.NewNested(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	ps := &WorkspaceServer{
 		workspaceID: 100,
 		userID:      monoflake.ID(15264777).String(),
 		pubsub:      mockPS,
+		idgen:       ids,
+		storage:     store,
 		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
-			got = attachments
+			got, gotMetadata = attachments, metadata
 			return 1, nil
 		},
 	}
 
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+	ids.EXPECT().NextID().Return(int64(900))
+	ids.EXPECT().NextID().Return(int64(901))
 
 	params := ReplyParams{
 		TaskID: monoflake.ID(42).String(),
@@ -316,13 +326,20 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	if res.IsError {
 		t.Fatal("expected no error")
 	}
-	// Plain text is stored as if it had come in base64.
+	// The server saves the files, under ids of its own, before posting.
 	want := []entity.Attachment{
-		{ID: "a", Filename: "f.txt", MimeType: "text/plain", Data: "aGk="},
-		{ID: "b", Filename: "n.md", MimeType: "text/markdown", Data: "IyBoaQ=="},
+		{ID: monoflake.ID(900).String(), Filename: "f.txt", MimeType: "text/plain"},
+		{ID: monoflake.ID(901).String(), Filename: "n.md", MimeType: "text/markdown"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("reply got attachments %#v", got)
+	}
+	if gotMetadata != nil {
+		t.Errorf("a reply without ui has metadata %#v", gotMetadata)
+	}
+	// Plain text is stored as if it had come in base64.
+	if b, err := storage.LoadAttachment(store, 100, 42, monoflake.ID(901).String()); err != nil || string(b) != "# hi" {
+		t.Errorf("stored text = %q, %v", b, err)
 	}
 }
 

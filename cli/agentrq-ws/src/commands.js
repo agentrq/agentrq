@@ -322,25 +322,37 @@ export const COMMANDS = [
   },
   {
     path: ['reply'],
-    summary: 'Send a message to a task, optionally with files attached',
-    usage: 'agentrq-ws reply <taskId> <text|@file|-> [--attach PATH]...',
+    summary: 'Send a message to a task, optionally with files attached and an A2UI card',
+    usage: 'agentrq-ws reply <taskId> <text|@file|-> [--attach PATH]... [--ui JSON|@file|-]',
     options: {
       attach: { type: 'string', multiple: true, description: 'File to attach (repeatable)' },
+      ui: {
+        type: 'string',
+        description: "A2UI v1.0 messages as a JSON array (@file supported): a card shown with the text as its fallback; its media name attached files as attachment:<filename>",
+      },
     },
     async run(ctx) {
       const taskId = requirePositional(ctx.positionals, 0, 'taskId')
       const raw = requirePositional(ctx.positionals, 1, 'text')
       const text = await resolveText(raw, { stdin: ctx.stdin, what: 'the reply text' })
+      const ui = await readUI(ctx)
+      const card = ui === undefined ? {} : { ui }
       const attachments = collectAttachments(ctx.values)
-      if (!attachments) return ctx.client.callAction('task', 'reply', { taskId, text }, ['reply', { chatId: taskId, text }])
+      if (!attachments) {
+        return ctx.client.callAction('task', 'reply', { taskId, text, ...card }, ['reply', { chatId: taskId, text, ...card }])
+      }
       // Files too large to share one request go one reply per group, the text
       // with the first and the rest labelled by their position.
-      const batches = batchAttachments(attachments, Buffer.byteLength(JSON.stringify(text)))
+      const batches = batchAttachments(attachments, Buffer.byteLength(JSON.stringify({ text, ui })))
+      // A card names its files, so they must arrive in the same reply.
+      if (ui !== undefined && batches.length > 1) {
+        throw new UserError('the attachments do not fit one request together, and a card needs its files in its own reply: attach fewer')
+      }
       const outcomes = []
       for (const [i, group] of batches.entries()) {
         const body = i === 0 ? text : `Attachments ${i + 1}/${batches.length}: ${group.map((a) => a.filename).join(', ')}`
-        const payload = { taskId, text: body, attachments: group }
-        outcomes.push(await ctx.client.callAction('task', 'reply', payload, ['reply', { chatId: taskId, text: body, attachments: group }]))
+        const payload = { taskId, text: body, attachments: group, ...card }
+        outcomes.push(await ctx.client.callAction('task', 'reply', payload, ['reply', { chatId: taskId, text: body, attachments: group, ...card }]))
       }
       if (outcomes.length === 1) return outcomes[0]
       return { text: outcomes.map((o) => o.text).join('\n'), result: outcomes.at(-1).result }
@@ -723,6 +735,17 @@ function actionHelp(ctx, tool) {
 /** One pano call; a server from before payloads takes its fields beside action. */
 function pano(ctx, action, payload) {
   return ctx.client.callAction('pano', action, payload, ['pano', { action, ...payload }])
+}
+
+/** --ui as JSON, from inline, @file or stdin; not given is undefined. */
+async function readUI(ctx) {
+  if (ctx.values.ui === undefined) return undefined
+  const raw = await resolveText(ctx.values.ui, { stdin: ctx.stdin, what: 'the ui' })
+  try {
+    return JSON.parse(raw)
+  } catch (err) {
+    throw new UserError(`--ui is not valid JSON: ${err.message}`)
+  }
 }
 
 /** --args as JSON, from inline, @file or stdin; nothing given is {}. */

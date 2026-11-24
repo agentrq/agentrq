@@ -43,7 +43,7 @@ func (ps *WorkspaceServer) taskActions() []ToolAction {
 			WithExample(`{"taskId": "0kGogHmaqvZ", "includeConversation": true, "limit": 10}`),
 		NewToolAction("updateStatus", "Set a task's status: ongoing when you start, completed when you finish, blocked when you need the human.", ps.handleUpdateTaskStatus).
 			WithExample(`{"taskId": "0kGogHmaqvZ", "status": "ongoing"}`),
-		NewToolAction("reply", "Post a message to the task, optionally with attachments. The human sees only these.", ps.handleReply).
+		NewToolAction("reply", "Post a message to the task, optionally with attachments and an A2UI card. The human sees only these.", ps.handleReply).
 			WithExample(`{"taskId": "0kGogHmaqvZ", "text": "Tests pass; opening the pull request."}`),
 		NewToolAction("elicit", "Ask the human a question and wait for the answer: {action, content}, action being accept, decline or cancel.", ps.handleElicit).
 			WithExample(`{"taskId": "0kGogHmaqvZ", "message": "Which branch should I release from?", "mode": "form", "requestedSchema": {"type": "object", "properties": {"branch": {"type": "string", "enum": ["main", "release"]}}, "required": ["branch"]}}`),

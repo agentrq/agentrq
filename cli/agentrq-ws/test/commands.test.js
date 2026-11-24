@@ -330,6 +330,53 @@ test('task create refuses attachments that do not fit one request', async () => 
   assert.deepEqual(client.calls, [])
 })
 
+test('reply sends an A2UI card from a file, beside its text and files', async () => {
+  const dir = scratch()
+  const card = join(dir, 'card.json')
+  const ui = [{ version: '1.0', createSurface: { surfaceId: 'pr-1', catalogId: 'basic' } }]
+  writeFileSync(card, JSON.stringify(ui))
+  const chart = join(dir, 'chart.png')
+  writeFileSync(chart, 'png')
+  const client = stubClient()
+
+  await invoke('reply', { positionals: ['0isnjTCkpW5', 'PR opened'], values: { ui: `@${card}`, attach: [chart] }, client })
+
+  const { args } = client.calls[0]
+  assert.equal(args.text, 'PR opened')
+  assert.deepEqual(args.ui, ui)
+  assert.equal(args.attachments[0].filename, 'chart.png')
+  assert.deepEqual(client.legacy[0][1].ui, ui)
+})
+
+test('reply sends an inline A2UI card without files', async () => {
+  const client = stubClient()
+  await invoke('reply', { positionals: ['0isnjTCkpW5', 'Done'], values: { ui: '[]' }, client })
+  assert.deepEqual(client.calls[0].args.ui, [])
+  assert.deepEqual(client.legacy[0], ['reply', { chatId: '0isnjTCkpW5', text: 'Done', ui: [] }])
+})
+
+test('reply refuses a --ui that is not JSON', async () => {
+  await assert.rejects(
+    () => invoke('reply', { positionals: ['0isnjTCkpW5', 'Done'], values: { ui: '{nope' }, client: stubClient() }),
+    /--ui is not valid JSON/,
+  )
+})
+
+test('reply refuses a card whose files do not fit one request', async () => {
+  const dir = scratch()
+  const paths = ['a.wasm', 'b.wasm'].map((name) => {
+    const path = join(dir, name)
+    writeFileSync(path, Buffer.alloc(2 << 20))
+    return path
+  })
+  const client = stubClient()
+  await assert.rejects(
+    () => invoke('reply', { positionals: ['0isnjTCkpW5', 'built'], values: { ui: '[]', attach: paths }, client }),
+    /a card needs its files in its own reply/,
+  )
+  assert.equal(client.calls.length, 0)
+})
+
 test('reply reads its text from a file', async () => {
   const dir = scratch()
   const path = join(dir, 'msg.md')
