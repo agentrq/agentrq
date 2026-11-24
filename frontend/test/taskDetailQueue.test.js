@@ -30,7 +30,7 @@ vi.mock('vue-router', () => ({
 // and a real EventSource in jsdom is a connection that never resolves.
 const events = ref([])
 vi.mock('../src/useEventBus', () => ({
-  useEventBus: () => ({ connect() {}, disconnect() {}, events }),
+  useEventBus: () => ({ connect() {}, disconnect() {}, events, isConnected: ref(false) }),
 }))
 
 // Transformers.js behind the mic is a model download, and nothing here is

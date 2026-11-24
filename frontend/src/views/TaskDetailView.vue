@@ -1448,7 +1448,17 @@ const { isMobile } = useViewport();
 const showHeader = ref(true);
 
 // A teammate's task's events come on your account stream, as team.<type>.
-const { connect, disconnect, events } = useEventBus(computed(() => (isTeamMode.value ? '' : workspaceId.value)));
+const { connect, disconnect, events, isConnected } = useEventBus(computed(() => (isTeamMode.value ? '' : workspaceId.value)));
+
+// The stream reopening (a drop, or the app back from the background) means
+// events may have been missed, and nothing replays them: re-read the task. Not
+// on a task's first open, which follows the load that just read it.
+let streamOpenedFor = '';
+watch(isConnected, (now) => {
+  if (!now) return;
+  if (streamOpenedFor === taskId.value) load();
+  streamOpenedFor = taskId.value;
+});
 
 const sortedMessages = computed(() => {
   if (!task.value || !task.value.messages) return [];
