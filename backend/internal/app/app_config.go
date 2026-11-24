@@ -30,7 +30,7 @@ func LoadConfig(cfgSvc config.Service) (Config, error) {
 		"skills": &cfg.Skills, "pano": &cfg.Pano, "hooks": &cfg.Hooks, "machines": &cfg.Machines, "teams": &cfg.Teams, "mcp": &cfg.MCP,
 		"idgen": &cfg.Idgen, "ddos": &cfg.Ddos, "ratelimit": &cfg.Ratelimit, "sentry": &cfg.Sentry,
 		"sentryFrontend": &cfg.SentryFrontend,
-		"prometheus":     &cfg.Prometheus,
+		"prometheus":     &cfg.Prometheus, "telemetry": &cfg.Telemetry,
 	} {
 		if err := cfgSvc.Populate(key, dst); err != nil {
 			return Config{}, fmt.Errorf("%s: %w", key, err)
