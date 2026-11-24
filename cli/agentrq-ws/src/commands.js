@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
-import { readAttachment, resolveOutputPath, writeAttachment } from './attachments.js'
+import { batchAttachments, readAttachment, resolveOutputPath, writeAttachment } from './attachments.js'
 import { UserError } from './errors.js'
 
 /** Statuses the workspace accepts, mirrored from isValidTaskStatus on the backend. */
@@ -300,6 +300,10 @@ export const COMMANDS = [
         clearContext: ctx.values['clear-context'] || undefined,
         attachments: collectAttachments(ctx.values),
       }
+      const others = Buffer.byteLength(JSON.stringify({ ...payload, attachments: undefined }))
+      if (payload.attachments && batchAttachments(payload.attachments, others).length > 1) {
+        throw new UserError('the attachments do not fit one request together: attach fewer here and send the rest with reply')
+      }
       return ctx.client.callAction('task', 'create', payload, ['createTask', payload])
     },
   },
@@ -328,7 +332,18 @@ export const COMMANDS = [
       const raw = requirePositional(ctx.positionals, 1, 'text')
       const text = await resolveText(raw, { stdin: ctx.stdin, what: 'the reply text' })
       const attachments = collectAttachments(ctx.values)
-      return ctx.client.callAction('task', 'reply', { taskId, text, attachments }, ['reply', { chatId: taskId, text, attachments }])
+      if (!attachments) return ctx.client.callAction('task', 'reply', { taskId, text }, ['reply', { chatId: taskId, text }])
+      // Files too large to share one request go one reply per group, the text
+      // with the first and the rest labelled by their position.
+      const batches = batchAttachments(attachments, Buffer.byteLength(JSON.stringify(text)))
+      const outcomes = []
+      for (const [i, group] of batches.entries()) {
+        const body = i === 0 ? text : `Attachments ${i + 1}/${batches.length}: ${group.map((a) => a.filename).join(', ')}`
+        const payload = { taskId, text: body, attachments: group }
+        outcomes.push(await ctx.client.callAction('task', 'reply', payload, ['reply', { chatId: taskId, text: body, attachments: group }]))
+      }
+      if (outcomes.length === 1) return outcomes[0]
+      return { text: outcomes.map((o) => o.text).join('\n'), result: outcomes.at(-1).result }
     },
   },
   {

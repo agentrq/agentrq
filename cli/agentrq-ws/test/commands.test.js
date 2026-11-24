@@ -278,6 +278,58 @@ test('reply sends text and attachments by path', async () => {
   assert.equal(Buffer.from(args.attachments[0].data, 'base64').toString(), 'log line')
 })
 
+test('reply sends files too large to go together one reply each', async () => {
+  const dir = scratch()
+  const paths = ['a.wasm', 'b.wasm', 'c.wasm'].map((name) => {
+    const path = join(dir, name)
+    writeFileSync(path, Buffer.alloc(2 << 20))
+    return path
+  })
+  const client = stubClient({ reply: (args) => `sent ${args.attachments.length}` })
+
+  const result = await invoke('reply', { positionals: ['0isnjTCkpW5', 'built'], values: { attach: paths }, client })
+
+  assert.deepEqual(
+    client.calls.map(({ args }) => [args.text, args.attachments.map((a) => a.filename)]),
+    [
+      ['built', ['a.wasm']],
+      ['Attachments 2/3: b.wasm', ['b.wasm']],
+      ['Attachments 3/3: c.wasm', ['c.wasm']],
+    ],
+  )
+  assert.deepEqual(client.legacy[1], ['reply', { chatId: '0isnjTCkpW5', text: 'Attachments 2/3: b.wasm', attachments: client.calls[1].args.attachments }])
+  assert.equal(result.text, 'sent 1\nsent 1\nsent 1')
+})
+
+test('reply refuses a file too large for any request before sending', async () => {
+  const dir = scratch()
+  const path = join(dir, 'jira.wasm')
+  writeFileSync(path, Buffer.alloc(5 << 20))
+  const client = stubClient()
+  await assert.rejects(
+    () => invoke('reply', { positionals: ['0isnjTCkpW5', 'built'], values: { attach: [path] }, client }),
+    (err) =>
+      err instanceof UserError &&
+      /cannot attach jira\.wasm: 5\.0 MiB is 6\.7 MiB once base64-encoded, over the workspace server's 4\.0 MiB request limit; compress it \(gzip\)/.test(err.message),
+  )
+  assert.deepEqual(client.calls, [])
+})
+
+test('task create refuses attachments that do not fit one request', async () => {
+  const dir = scratch()
+  const paths = ['a.bin', 'b.bin'].map((name) => {
+    const path = join(dir, name)
+    writeFileSync(path, Buffer.alloc(2 << 20))
+    return path
+  })
+  const client = stubClient()
+  await assert.rejects(
+    () => invoke('task create', { positionals: ['Big'], values: { attach: paths }, client }),
+    /attach fewer here and send the rest with reply/,
+  )
+  assert.deepEqual(client.calls, [])
+})
+
 test('reply reads its text from a file', async () => {
   const dir = scratch()
   const path = join(dir, 'msg.md')

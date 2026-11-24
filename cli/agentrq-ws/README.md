@@ -95,6 +95,10 @@ agentrq-ws reply 0isnjTCkpW5 "Build is green — log attached" --attach ./run.lo
 agentrq-ws task create "Review the design" --body @brief.md --attach ./mock.png
 ```
 
+The server takes at most 4 MiB per request, and base64 adds a third, so a file
+over about 3 MiB is refused before anything is sent: gzip it first. Files that
+fit only on their own go one `reply` each.
+
 **Downloading** writes a file and prints where it went. With no `--out` it lands
 in the OS temp directory:
 
