@@ -8,3 +8,12 @@ Markdown docs every workspace of the account shares. There is no search: pass a 
 - `comment`, `attach` (files that need no link) and `delete`.
 
 Your workspace (the parent, for a fork) is the author. From a shell, `npx -y @agentrq/agentrq-ws@latest pano save --title T --markdown @doc.md --file chart.png` and `pano read <id> --out DIR` move docs through disk instead of your context.
+
+## Examples
+
+```json
+{ "action": "save", "payload": { "title": "Release plan", "markdown": "# Release plan\n\n- [ ] Tag v0.9.20" } }
+{ "action": "edit", "payload": { "id": "0kGpezGeuxt", "version": 3, "ops": [{ "op": "replace", "oldString": "- [ ] Tag v0.9.20", "newString": "- [x] Tag v0.9.20" }] } }
+{ "action": "read", "payload": { "id": "0kGpezGeuxt", "section": "Rollout" } }
+{ "action": "comment", "payload": { "id": "0kGpezGeuxt", "comment": "Done on our side." } }
+```

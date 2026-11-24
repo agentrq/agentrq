@@ -8,3 +8,12 @@ Playbooks for kinds of task, the same format as Claude Code skills.
 - `delete`: a file, or the whole skill from this workspace.
 
 When you improve a skill this workspace uses, save it so the next agent gets the better one.
+
+## Examples
+
+```json
+{ "action": "search", "payload": { "q": "release" } }
+{ "action": "load", "payload": { "uri": "skill://release-notes" } }
+{ "action": "save", "payload": { "uri": "skill://release-notes/SKILL.md", "content": "---\ndescription: Write release notes from merged PRs.\n---\n# Release notes\n..." } }
+{ "action": "delete", "payload": { "uri": "skill://release-notes/references/old.md" } }
+```

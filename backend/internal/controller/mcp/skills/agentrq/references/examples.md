@@ -1,36 +1,37 @@
 # Examples
 
-Starting a task (`task`, then `workspace`, `memory`, `skills`):
+One task from start to finish, across the tools. Each call is the tool's `action` and `payload`; each tool's file has more.
+
+1. Claim the task (`task`), read the mission (`workspace`), what the workspace remembers (`memory`) and the account's playbooks (`skills`):
 ```json
-{ "action": "updateStatus", "payload": { "taskId": "zX9vW7tS5rQ", "status": "ongoing" } }
+{ "action": "updateStatus", "payload": { "taskId": "0kGogHmaqvZ", "status": "ongoing" } }
 { "action": "get" }
 { "action": "load" }
 { "action": "search", "payload": { "q": "release" } }
 ```
 
-Reading the task with its conversation (`task`):
+2. Follow a matching playbook (`skills`):
 ```json
-{ "action": "get", "payload": { "taskId": "zX9vW7tS5rQ", "includeConversation": true, "limit": 10 } }
+{ "action": "load", "payload": { "uri": "skill://release-notes" } }
 ```
 
-A progress update (`task`):
+3. Report progress as you go (`task`):
 ```json
-{ "action": "reply", "payload": { "taskId": "zX9vW7tS5rQ", "text": "Found the bug: the nil check in handler.go:42 is missing. Fixing now." } }
+{ "action": "reply", "payload": { "taskId": "0kGogHmaqvZ", "text": "Found the bug: the nil check in handler.go:42 is missing. Fixing now." } }
 ```
 
-A task for the human, and a scheduled one (`task`):
+4. Hand a document to other workspaces (`pano`), passing on its `id`:
 ```json
-{ "action": "create", "payload": { "title": "Review the migration", "body": "db/migrations/003_add_index.sql is ready; approve before I apply it.", "assignee": "human" } }
-{ "action": "create", "payload": { "title": "Daily health check", "body": "Run the health checks and report issues.", "assignee": "agent", "cronSchedule": "30 9 * * *" } }
+{ "action": "save", "payload": { "title": "Release plan", "markdown": "# Release plan\n\n- [ ] Tag v0.9.20" } }
 ```
 
-Finishing (`task`): summary first, then the status.
+5. Keep the lesson for the next agent (`memory`), with the `version` load showed:
 ```json
-{ "action": "reply", "payload": { "taskId": "zX9vW7tS5rQ", "text": "Done: fixed the nil check in handler.go:42, added a test; all tests pass." } }
-{ "action": "updateStatus", "payload": { "taskId": "zX9vW7tS5rQ", "status": "completed" } }
+{ "action": "save", "payload": { "name": "deploys.md", "content": "# How we ship\n\nTag main, then ...", "version": 3 } }
 ```
 
-An attachment (`task`):
+6. Finish (`task`): the summary first, then the status.
 ```json
-{ "action": "getAttachment", "payload": { "attachmentId": "att_abc123", "taskId": "zX9vW7tS5rQ" } }
+{ "action": "reply", "payload": { "taskId": "0kGogHmaqvZ", "text": "Done: fixed the nil check in handler.go:42 and added a test; all tests pass." } }
+{ "action": "updateStatus", "payload": { "taskId": "0kGogHmaqvZ", "status": "completed" } }
 ```

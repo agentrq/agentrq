@@ -6,8 +6,14 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"path"
 	"reflect"
 	"regexp"
+	"slices"
+	"strings"
 	"testing"
 	"unicode/utf8"
 
@@ -117,6 +123,86 @@ func TestBuiltinSkills_SKILLmdNamesOnlyServedFiles(t *testing.T) {
 	for _, name := range named {
 		if _, ok := builtinSkills.Files()["skill://agentrq/references/"+name]; !ok {
 			t.Errorf("the SKILL.md sends an agent to references/%s, which is not served", name)
+		}
+	}
+}
+
+// exampleCall is one call in a skill file's examples.
+type exampleCall struct {
+	Action  string         `json:"action"`
+	Payload map[string]any `json:"payload"`
+}
+
+// exampleCalls are the calls in a skill file's json blocks, one per line.
+func exampleCalls(t *testing.T, name string, body []byte) []exampleCall {
+	t.Helper()
+	var calls []exampleCall
+	for _, block := range regexp.MustCompile("(?s)```json\\n(.*?)```").FindAllSubmatch(body, -1) {
+		for _, line := range strings.Split(strings.TrimSpace(string(block[1])), "\n") {
+			var c exampleCall
+			if err := json.Unmarshal([]byte(line), &c); err != nil {
+				t.Fatalf("%s: %q is not a call: %v", name, line, err)
+			}
+			calls = append(calls, c)
+		}
+	}
+	return calls
+}
+
+// exampleFits says whether a call is one an action accepts: a payload it
+// decodes strictly, or none for an action that takes none.
+func exampleFits(a ToolAction, payload map[string]any) error {
+	if a.payload == nil {
+		if len(payload) != 0 {
+			return errors.New("the action takes no payload")
+		}
+		return nil
+	}
+	return decodePayload(payload, reflect.New(a.payload).Interface())
+}
+
+// Every example in the workspace skill is a call the server accepts: in
+// references/<tool>.md, one of that tool's actions with its real payload
+// fields; in examples.md, one of any tool's.
+func TestBuiltinSkills_ExamplesAreRealCalls(t *testing.T) {
+	tools := map[string][]ToolAction{}
+	for _, tool := range (&WorkspaceServer{}).tools() {
+		tools[tool.Name] = tool.Actions
+	}
+	files, err := fs.Glob(builtinSkillFiles, "skills/agentrq/references/*.md")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no reference files: %v", err)
+	}
+	for _, file := range files {
+		body, err := builtinSkillFiles.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		calls := exampleCalls(t, file, body)
+		if len(calls) == 0 {
+			t.Errorf("%s has no examples", file)
+		}
+		candidates := tools[strings.TrimSuffix(path.Base(file), ".md")]
+		if candidates == nil {
+			for _, actions := range tools {
+				candidates = append(candidates, actions...)
+			}
+		}
+		for _, c := range calls {
+			var errs []string
+			for _, a := range candidates {
+				if a.Name == c.Action {
+					if err := exampleFits(a, c.Payload); err != nil {
+						errs = append(errs, err.Error())
+					} else {
+						errs = nil
+						break
+					}
+				}
+			}
+			if errs != nil || !slices.ContainsFunc(candidates, func(a ToolAction) bool { return a.Name == c.Action }) {
+				t.Errorf("%s: %s %v is not a call the server accepts: %v", file, c.Action, c.Payload, errs)
+			}
 		}
 	}
 }

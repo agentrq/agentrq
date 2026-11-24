@@ -7,3 +7,12 @@ The workspace's memory: notes that outlive a task, shared by every agent working
 - `delete`: removes one.
 
 Save what would save the next agent the same detour, and link it from the index. Keep entries short: one fact or rule each.
+
+## Examples
+
+```json
+{ "action": "load" }
+{ "action": "load", "payload": { "name": "deploys.md" } }
+{ "action": "save", "payload": { "name": "deploys.md", "content": "# How we ship\n\nTag main, then ...", "version": 3 } }
+{ "action": "delete", "payload": { "name": "deploys.md" } }
+```
