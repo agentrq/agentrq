@@ -23,16 +23,49 @@ A route to an event whose trigger has **Allow all commands** on is marked with a
 
 ### `github`
 
-In the repository (or organization), open **Settings → Webhooks → Add webhook**:
+This example gives an agent a task whenever an issue is opened in a repository.
 
-| GitHub field | Value |
-|---|---|
-| Payload URL | the registration's payload URL |
-| Content type | `application/json` |
-| Secret | the registration's **Webhook secret** |
-| Events | the ones you routed: **Workflow runs**, **Pull requests**, **Issues**, **Releases**, **Pushes** |
+**1. Create the event.** In **Events**, choose **New event** and name it, such as `github_issue_opened`.
 
-The hook checks the `X-Hub-Signature-256` signature, and fires `ci.failed`, `ci.succeeded`, `pr.opened`, `pr.review_requested`, `issue.opened`, `release.published` and `push`. **Branches** limits the hook to branches matching one of its globs, such as `main` or `release/*`; left empty, every branch counts.
+**2. Add a trigger to it.** Choose **+ Add trigger**:
+
+![The New Trigger form, with the workspace, title and instructions filled in](assets/hooks/github-1-trigger.png)
+
+1. The workspace that gets the task.
+2. A task title.
+3. `{{EVENT_PAYLOAD}}` in the instructions, which brings in the issue's details.
+4. **Create Trigger**.
+
+**3. Register the hook.** In **Events → Hooks**, choose **New registration**:
+
+![The New registration form, with the github hook picked and issue.opened routed](assets/hooks/github-2-registration.png)
+
+1. A name.
+2. The **github** hook.
+3. **Generate** a webhook secret, and copy it now: it is never shown again.
+4. Route `issue.opened` to your event. Leave the others **Not routed**.
+5. **Create**.
+
+The page then shows the **payload URL**, ending in `?agentrq_hook_token=…`. Copy all of it, token included: it is shown only once.
+
+**4. Add the webhook in GitHub.** In the repository, open **Settings → Webhooks → Add webhook**:
+
+![GitHub's Add webhook form, with the payload URL, application/json and the secret](assets/hooks/github-3-webhook.png)
+
+1. **Payload URL**: the payload URL from step 3, with its `agentrq_hook_token`.
+2. **Content type**: `application/json`. GitHub's default, `application/x-www-form-urlencoded`, is rejected.
+3. **Secret**: the webhook secret from step 3. It is not the hook token.
+4. **Let me select individual events**.
+
+![The Issues event ticked](assets/hooks/github-4-events.png)
+
+5. Tick the GitHub event for each route: **Issues** here. The others are **Workflow runs** (`ci.failed`, `ci.succeeded`), **Pull requests** (`pr.opened`, `pr.review_requested`), **Releases** (`release.published`) and **Pushes** (`push`).
+
+![The Add webhook button](assets/hooks/github-5-add.png)
+
+6. **Add webhook**.
+
+Open an issue to try it, and look in the registration's **Deliveries** if no task appears. **Branches** limits CI runs, pull requests and pushes to branches matching one of its globs, such as `main` or `release/*`; left empty, every branch counts.
 
 ### `jira`
 
