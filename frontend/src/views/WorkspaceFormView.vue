@@ -160,13 +160,7 @@ import {
   canCreateWorkspace,
   emptyWorkspaceForm,
 } from '../utils/workspaceForm';
-
-/** One look for every field on the page. */
-const FIELD =
-  'w-full bg-white dark:bg-zinc-950 border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2.5 ' +
-  'text-sm text-gray-900 dark:text-zinc-100 placeholder:text-gray-400 dark:placeholder:text-zinc-600 ' +
-  'outline-none transition-shadow focus:border-gray-900 dark:focus:border-zinc-300 ' +
-  'focus:ring-2 focus:ring-gray-900/10 dark:focus:ring-white/10';
+import { FIELD } from '../utils/formStyles';
 
 const router = useRouter();
 const { notifyError } = useToasts();
