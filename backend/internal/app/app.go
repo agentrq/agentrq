@@ -227,7 +227,10 @@ type (
 		// probes is told on shutdown, so readiness fails while it drains.
 		probes *health.Handler
 		// memq holds the queued emails, sent before shutdown returns.
-		memq       memq.Service
+		memq memq.Service
+		// db is closed last on shutdown, when New opened it: closing waits
+		// for the background sweeps' queries in flight.
+		db         dbconn.DBConn
 		drainDelay time.Duration
 		cancel     context.CancelFunc
 	}
@@ -299,10 +302,12 @@ func New(cfg Config) (*App, error) {
 
 	// ── Database (config-driven) ──────────────────────────────────────────
 	db := cfg.DB
+	var ownDB dbconn.DBConn
 	if db == nil {
 		if db, err = openMigratedDatabase(cfg.ConfigSvc); err != nil {
 			return nil, err
 		}
+		ownDB = db
 	}
 
 	// ── Core Services ──────────────────────────────────────────────────────────
@@ -1019,7 +1024,7 @@ func New(cfg Config) (*App, error) {
 	}
 
 	cancelOnErr = nil // App takes ownership; defer must not cancel.
-	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, taskAgents: taskAgentCtrl, acpV1Hub: acpV1Hub, taskListeners: taskListeners, probes: probes, memq: mqSvc, drainDelay: cfg.App.DrainDelay, cancel: appCancel}, nil
+	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, taskAgents: taskAgentCtrl, acpV1Hub: acpV1Hub, taskListeners: taskListeners, probes: probes, memq: mqSvc, db: ownDB, drainDelay: cfg.App.DrainDelay, cancel: appCancel}, nil
 }
 
 // instanceID names this backend process for the (machineId, instanceId)
@@ -1474,6 +1479,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 		a.taskAgents.Close()
 	}
 	sentry.Flush(sentryFlushTimeout)
+	if a.db != nil {
+		a.db.Close(ctx)
+	}
 	return err
 }
 
