@@ -20,6 +20,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
+	"github.com/agentrq/agentrq/backend/internal/service/mcpskill"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
 	"github.com/mustafaturan/monoflake"
@@ -37,7 +38,7 @@ type WorkspaceServer struct {
 	baseURL      string
 	pubsub       pubsub.Service
 	listeners    *TaskListeners
-	skills       *skillSet
+	skills       *mcpskill.Set
 }
 
 // ForkMerger is forkmerge.Merger: the merge REST runs too, so mergeFork stops

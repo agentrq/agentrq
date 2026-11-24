@@ -36,6 +36,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
+	"github.com/agentrq/agentrq/backend/internal/service/mcpskill"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
@@ -531,6 +532,13 @@ func NewWorkspaceServer(
 	}
 
 	workspaceIDStr := monoflake.ID(workspaceID).String()
+	caps := &mcp.ServerCapabilities{
+		Experimental: map[string]any{
+			"claude/channel":            map[string]any{},
+			"claude/channel/permission": map[string]any{},
+		},
+	}
+	mcpskill.AddCapability(caps)
 	mcpSrv := mcp.NewServer(
 		&mcp.Implementation{
 			Name:        fmt.Sprintf("agentrq-workspace-%s", workspaceIDStr),
@@ -541,12 +549,7 @@ func NewWorkspaceServer(
 			Icons:       workspaceIcons(icon, baseURL),
 		},
 		&mcp.ServerOptions{
-			Capabilities: &mcp.ServerCapabilities{
-				Experimental: map[string]any{
-					"claude/channel":            map[string]any{},
-					"claude/channel/permission": map[string]any{},
-				},
-			},
+			Capabilities: caps,
 			Instructions: fmt.Sprintf(
 				"AgentRQ workspace %s. The human sees only `task` replies, never your text. "+
 					"Tasks arrive as <channel chat_id=\"...\">: the taskId. Tools take {action, payload}; `help` explains them.\n\n"+
@@ -612,6 +615,8 @@ func NewWorkspaceServer(
 		Description: HelpToolDescription,
 		Annotations: mcphint.Read("How to call these tools"),
 	}, ps.handleHelp)
+
+	ps.serveBuiltinSkills(mcpSrv)
 
 	// Add middleware to handle incoming notifications (like permission_request)
 	mcpSrv.AddReceivingMiddleware(ps.notificationMiddleware, ps.discoverCacheMiddleware, ActionToolsMiddleware(actionToolNames, legacyTools))

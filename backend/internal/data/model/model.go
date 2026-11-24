@@ -1031,7 +1031,8 @@ const (
 	SubActionIDMCPResourceWorkspaceTasks
 	SubActionIDMCPResourceDelegatedTasks
 	SubActionIDMCPSubscriptionsListen
-	// CoreMCP's agentrq skill and the Skills extension's methods.
+	// The agentrq skill each server serves (CoreMCP's supervisor one, the
+	// workspace server's workspace one) and the Skills extension's methods.
 	SubActionIDMCPResourceAgentrqSkill
 	SubActionIDMCPSkillsList
 	SubActionIDMCPSkillsGet

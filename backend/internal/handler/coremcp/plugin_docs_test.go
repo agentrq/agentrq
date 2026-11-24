@@ -325,6 +325,13 @@ func TestPluginDocsCustomSupervisorSkillMatchesTheHostedOne(t *testing.T) {
 	}
 }
 
+// Every workspace server serves the agentrq-workspace plugins' skill over MCP,
+// as skill://agentrq since that is the name its SKILL.md gives, so the copy
+// built into it may not drift from the plugin's.
+func TestPluginDocsWorkspaceSkillMatchesTheServedOne(t *testing.T) {
+	checkSameSkill(t, repoRoot(t), "backend/internal/controller/mcp/skills/agentrq", "plugins/claude/agentrq-workspace/skills/agentrq-workspace")
+}
+
 // The Cursor plugins are the Claude plugins packaged for Cursor, so their skills
 // must not drift from the Claude plugins' copies either.
 func TestPluginDocsCursorSkillsMatchTheClaudeOnes(t *testing.T) {
