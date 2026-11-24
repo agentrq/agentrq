@@ -911,6 +911,11 @@ const (
 	ActionIDAgentToolCallFail
 	// Autoscroll paused for a task from its chat minimap.
 	ActionIDUIAutoscrollPause
+	// A new MCP session (a successful initialize), and a session rebuilt from
+	// its signed id when its client reopened its push stream; emitted by the
+	// backend.
+	ActionIDMCPInitialize
+	ActionIDMCPReconnect
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

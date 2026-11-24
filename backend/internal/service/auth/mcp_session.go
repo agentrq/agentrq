@@ -35,16 +35,16 @@ func deriveKey(secret []byte, label string) []byte {
 }
 
 // CreateMCPSessionToken mints the id of userID's MCP session with
-// workspaceID.
+// workspaceID. It never expires: it is no credential, every request is
+// authenticated on its own, and a session ends by DELETE.
 func (s *tokenService) CreateMCPSessionToken(_ context.Context, userID, workspaceID string, session MCPSession) (string, error) {
 	now := time.Now()
 	claims := mcpSessionClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        rand.Text(),
-			Subject:   userID,
-			Audience:  jwt.ClaimStrings{workspaceID},
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(MCPSessionTTL)),
+			ID:       rand.Text(),
+			Subject:  userID,
+			Audience: jwt.ClaimStrings{workspaceID},
+			IssuedAt: jwt.NewNumericDate(now),
 		},
 		ProtocolVersion: session.ProtocolVersion,
 		ClientName:      session.ClientName,
@@ -54,15 +54,14 @@ func (s *tokenService) CreateMCPSessionToken(_ context.Context, userID, workspac
 }
 
 // ValidateMCPSessionToken reads back an id CreateMCPSessionToken minted for
-// userID's session with workspaceID. Any other id, an expired one included,
-// is an error.
+// userID's session with workspaceID. Any other id is an error, and so is one
+// minted when ids still expired, once it has.
 func (s *tokenService) ValidateMCPSessionToken(_ context.Context, tokenStr, userID, workspaceID string) (*MCPSession, error) {
 	claims := &mcpSessionClaims{}
 	_, err := jwt.ParseWithClaims(tokenStr, claims, func(*jwt.Token) (any, error) {
 		return s.sessionKey, nil
 	},
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
-		jwt.WithExpirationRequired(),
 		jwt.WithSubject(userID),
 		jwt.WithAudience(workspaceID),
 	)
@@ -73,6 +72,5 @@ func (s *tokenService) ValidateMCPSessionToken(_ context.Context, tokenStr, user
 		ProtocolVersion: claims.ProtocolVersion,
 		ClientName:      claims.ClientName,
 		ClientVersion:   claims.ClientVersion,
-		ExpiresAt:       claims.ExpiresAt.Time,
 	}, nil
 }

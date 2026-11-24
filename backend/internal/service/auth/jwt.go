@@ -139,11 +139,6 @@ type OAuthConsentClaims struct {
 	OAuthConsent
 }
 
-// MCPSessionTTL is how long an MCP session id is honoured. The id is not a
-// credential, and every request is authenticated on its own, so it outlives
-// the access tokens it is used with: a session ends sooner only by DELETE.
-const MCPSessionTTL = 30 * 24 * time.Hour
-
 // MCPSession is what an MCP session id records: the revision the client asked
 // for in its handshake and the name it gave, so the session can be served
 // after the process that opened it is gone.
@@ -151,7 +146,6 @@ type MCPSession struct {
 	ProtocolVersion string
 	ClientName      string
 	ClientVersion   string
-	ExpiresAt       time.Time
 }
 
 type TokenService interface {

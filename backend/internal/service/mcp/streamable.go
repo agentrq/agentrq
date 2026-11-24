@@ -67,6 +67,10 @@ type StreamableHTTPOptions struct {
 	// push stream, once the stream carries messages: what the session could
 	// not be sent while it had none can go out then.
 	OnStreamOpen func(ctx context.Context, sessionID string)
+	// OnResume, when set, runs each time a session this process did not hold
+	// is rebuilt from its id: its client reopened its push stream after a
+	// restart, a redeploy or an eviction. r is the request that reopened it.
+	OnResume func(r *http.Request, session *ServerSession)
 }
 
 // SessionInfo is what a stateful session's id records about it: enough to
@@ -325,24 +329,30 @@ func (h *StreamableHTTPHandler) lookup(w http.ResponseWriter, req *http.Request,
 		http.Error(w, "no server available", http.StatusBadRequest)
 		return nil, false
 	}
-	if sess = h.resume(server, id, info); sess == nil {
+	sess, rebuilt := h.resume(server, id, info)
+	if sess == nil {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return nil, false
+	}
+	if rebuilt && h.opts.OnResume != nil {
+		h.opts.OnResume(req, sess.session)
 	}
 	return sess, true
 }
 
 // resume rebuilds a session from what its id records: initialized, speaking
-// the revision it negotiated, as the client it said it was. Nil when the id
-// was deleted while it was being read.
-func (h *StreamableHTTPHandler) resume(server *Server, id string, info SessionInfo) *httpSession {
+// the revision it negotiated, as the client it said it was, and reports
+// whether it did. Another request may have rebuilt it first, and then that
+// session is the one returned; nil when the id was deleted while it was being
+// read.
+func (h *StreamableHTTPHandler) resume(server *Server, id string, info SessionInfo) (*httpSession, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if sess := h.sessions[id]; sess != nil {
-		return sess
+		return sess, false
 	}
 	if h.ended.has(id) {
-		return nil
+		return nil, false
 	}
 	sess := h.newSession(server, id)
 	p := &InitializeParams{ProtocolVersion: info.ProtocolVersion, Capabilities: &ClientCapabilities{}}
@@ -356,7 +366,7 @@ func (h *StreamableHTTPHandler) resume(server *Server, id string, info SessionIn
 	}
 	h.sessions[id] = sess
 	server.addSession(sess.session)
-	return sess
+	return sess, true
 }
 
 // newSession is a session of server with no streams yet. h.mu is held when

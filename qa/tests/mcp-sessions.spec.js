@@ -27,11 +27,10 @@ test('a session id records the handshake and nothing that grants access', async 
   const session = await openSession(origin, workspace.id, token)
 
   const claims = claimsOf(session)
-  expect(Object.keys(claims).sort(), 'the claims').toEqual(['aud', 'cn', 'cv', 'exp', 'iat', 'jti', 'pv', 'sub'])
+  expect(Object.keys(claims).sort(), 'the claims, with no expiry').toEqual(['aud', 'cn', 'cv', 'iat', 'jti', 'pv', 'sub'])
   expect(claims.aud, 'bound to the workspace').toEqual([workspace.id])
   expect(claims.pv, 'the revision asked for').toBe('2025-06-18')
   expect([claims.cn, claims.cv], 'the client').toEqual(['agentrq-qa', '0'])
-  expect(claims.exp - claims.iat, 'honoured for 30 days').toBe(30 * 24 * 3600)
 
   // It opens nothing on its own: the token is still required.
   const res = await fetch(`${origin}/mcp/${workspace.id}`, {
