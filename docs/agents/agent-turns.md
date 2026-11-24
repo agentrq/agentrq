@@ -33,7 +33,9 @@ revision came after the person's last message.
 A turn stopped before the agent reported any usage has no footer to flush:
 its end is the stop-reason note ("⚠️ The turn was cancelled…",
 `stopNote`), sent by `endTurn`. Miss it and an early stop leaves
-the queue unsent and the composer locked.
+the queue unsent and the composer locked. **Every way a turn ends must post
+something that ends it**: a turn with no reply, usage or stop reason posts
+`noteNoReply`, and a turn skipped by a Stop posts the cancelled note (#1347).
 
 **Send Now on a queued message never posts it mid-turn.** It moves the message
 to the head and stops the turn, and the turn's end sends it. Posted at once, the

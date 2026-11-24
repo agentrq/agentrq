@@ -2105,7 +2105,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SimpleError' }
         '409':
-          description: The connected agent does not support being stopped
+          description: Nothing was stopped, either because the connected agent cannot be stopped or because it has nothing running for this task
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SimpleError' }

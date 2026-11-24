@@ -1055,7 +1055,7 @@ import {
   telemetryText,
 } from '../composables/useAgentTelemetry';
 import { belongsInThread, messagesSince, recentToolCalls } from '../composables/useTrajectory';
-import { agentIsWorking, agentIsBusy, turnStartedAt, activitySince, formatElapsed, workDurations, workingPlaceholder } from '../composables/useAgentTurn';
+import { agentIsWorking, agentIsBusy, turnStartedAt, NOTHING_TO_STOP, activitySince, formatElapsed, workDurations, workingPlaceholder } from '../composables/useAgentTurn';
 import { recordUiAction } from '../composables/useUiTelemetry';
 import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate, upsertToolCall } from '../composables/useTaskEvents';
@@ -1476,11 +1476,18 @@ const threadMessages = computed(() => sortedMessages.value.filter(belongsInThrea
 // The ACP gateway does not interrupt: a message sent now is queued behind the
 // turn rather than reaching the agent, so offering Send would be offering
 // something that does not do what it looks like it does.
-const agentWorking = computed(() => agentIsWorking({
-  task: task.value,
-  workspace: workspace.value,
-  messages: sortedMessages.value,
-}));
+// The turn a Stop found nothing running for (#1347): the agent ended it
+// without saying so, so the composer is released until somebody speaks again.
+const nothingRunningFor = ref(null);
+const agentWorking = computed(() => {
+  const idle = nothingRunningFor.value;
+  if (idle && idle.taskId === taskId.value && idle.at === turnStartedAt(sortedMessages.value)) return false;
+  return agentIsWorking({
+    task: task.value,
+    workspace: workspace.value,
+    messages: sortedMessages.value,
+  });
+});
 
 // The sign of life at the foot of the conversation: the agent is connected and
 // on the task, whether or not anything shows in the trajectory yet. The clock
@@ -1954,6 +1961,12 @@ const stopRunningTask = async () => {
       notifySuccess("This agent cannot be stopped, so the command it was waiting on was refused.");
     }
   } catch (err) {
+    if (err.message === NOTHING_TO_STOP && agentWorking.value) {
+      // Releasing the composer sends the next queued message.
+      nothingRunningFor.value = { taskId: taskId.value, at: turnStartedAt(sortedMessages.value) };
+      notifySuccess("The agent had nothing running, so the composer is free again.");
+      return;
+    }
     notifyError("Failed to stop the task: " + err.message);
   }
 };

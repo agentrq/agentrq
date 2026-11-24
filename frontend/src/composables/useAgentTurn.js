@@ -71,6 +71,13 @@ function isFromAPerson(message) {
   return message?.sender === 'human' || message?.sender === 'slack'
 }
 
+/**
+ * The server's refusal of a Stop when the agent can stop but has no turn
+ * running for the task (backend `errNothingToStop`): the composer was wrong to
+ * think it was working.
+ */
+export const NOTHING_TO_STOP = 'the agent has nothing running for this task'
+
 /** The footer the gateway sends when a turn finishes. */
 function isUsageFooter(message) {
   return agentTelemetryKind(message) === 'usage'
@@ -78,11 +85,11 @@ function isUsageFooter(message) {
 
 /**
  * The gateway's notes on a turn that ended before the agent finished, in
- * `STOP_REASON_NOTES` and the fallback for a reason it does not know, plus the
- * one a /logout ends with. Matched on the text because that is all a reply
+ * `STOP_REASON_NOTES` and the fallback for a reason it does not know, plus
+ * AgentRQ's own for a /logout and for a turn that ended without a reply. Matched on the text because that is all a reply
  * carries.
  */
-const STOP_REASON_NOTE = /^⚠️ (The turn was cancelled before the agent finished\.|The agent refused to continue this turn\.|The agent stopped (mid-turn: |for a reason this gateway does not recognise: )|The agent logged out: )/u
+const STOP_REASON_NOTE = /^⚠️ (The turn was cancelled before the agent finished\.|The agent refused to continue this turn\.|The agent stopped (mid-turn: |for a reason this gateway does not recognise: )|The agent logged out: |The agent ended its turn without replying\.)/u
 
 /** The note the gateway sends when a turn ends early, stopped or otherwise. */
 function isStopReasonNote(message) {

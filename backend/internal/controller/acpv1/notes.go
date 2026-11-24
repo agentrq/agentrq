@@ -25,6 +25,9 @@ const (
 	noteProcessExited   = "⚠️ The agent stopped mid-turn: its process exited."
 	noteConnectionLost  = "⚠️ The agent stopped mid-turn: the connection to its machine was lost."
 	noteErrorPrefix     = "⚠️ The agent stopped mid-turn: it answered with an error ("
+	// noteNoReply is AgentRQ's own, for a turn that ended with nothing to show
+	// for it: no reply, no usage and no stop reason, so nothing else ends it.
+	noteNoReply = "⚠️ The agent ended its turn without replying."
 	// noteLoggedOut is AgentRQ's own, for a /logout the agent accepted.
 	noteLoggedOut = "⚠️ The agent logged out: its next session asks for a login again."
 )

@@ -106,15 +106,17 @@ func (p *projector) appendThought(text string) {
 	p.thought.add(text, p.thoughtCap)
 }
 
-// takeReply returns the turn's answer, and whether it is exactly what the
-// agent already sent through the reply tool; the next turn starts afresh.
-func (p *projector) takeReply() (reply string, duplicate bool) {
+// takeReply returns the turn's answer, whether it is exactly what the agent
+// already sent through the reply tool, and whether it sent one at all; the
+// next turn starts afresh.
+func (p *projector) takeReply() (reply string, duplicate, toolReplied bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	reply = p.reply.take()
-	duplicate = p.toolReply != nil && *p.toolReply == reply
+	toolReplied = p.toolReply != nil
+	duplicate = toolReplied && *p.toolReply == reply
 	p.toolReply = nil
-	return reply, duplicate
+	return reply, duplicate, toolReplied
 }
 
 func (p *projector) takeThought() string {
@@ -243,7 +245,13 @@ func (p *projector) toolCall(id string) toolCall {
 // it again to whichever agent is connected next.
 func (e *engineV1) runTurn(d delivery) {
 	defer e.q.finish(d.taskID)
-	if e.q.cancelledSince(d.taskID, d.seq) || e.isEnding() {
+	if e.isEnding() {
+		return
+	}
+	if e.q.cancelledSince(d.taskID, d.seq) {
+		// Stopped before it started: the note still ends the turn the human
+		// is waiting on (#1347).
+		e.note(d.taskID, noteCancelled)
 		return
 	}
 	if isLogout(d.content) && supported(e.caps.Auth.Logout) {
@@ -263,6 +271,7 @@ func (e *engineV1) runTurn(d delivery) {
 	}
 	if e.q.cancelledSince(d.taskID, d.seq) {
 		e.setIdle(s)
+		e.note(d.taskID, noteCancelled)
 		return
 	}
 	if err := e.ws.MarkTaskOngoing(e.ctx, e.linkID, d.taskID); err != nil {
@@ -341,19 +350,25 @@ func (e *engineV1) endTurn(s *session, taskID int64, stopReason string, err erro
 		return
 	}
 	e.flushThought(s)
-	if reply, duplicate := s.proj.takeReply(); reply != "" && !duplicate {
+	reply, duplicate, toolReplied := s.proj.takeReply()
+	if reply != "" && !duplicate {
 		if _, perr := e.ws.PostAgentReply(e.ctx, e.linkID, taskID, reply); perr != nil {
 			zlog.Error().Err(perr).Int64("task_id", taskID).Msg("acp v1: could not post the agent's reply")
 		}
 	}
-	if u, ok := s.proj.usageForTurnEnd(); ok {
+	u, usage := s.proj.usageForTurnEnd()
+	if usage {
 		e.ws.HandleAgentTelemetry(e.ctx, e.linkID, agentlink.TelemetryReport{
 			TaskID: b62(taskID), SessionID: s.id, Kind: "usage", Text: formatUsage(u), Data: usageData(u)})
 	}
-	if err != nil {
+	switch {
+	case err != nil:
 		e.note(taskID, noteAnsweredWithError(errorText(err)))
-	} else if note := stopNote(stopReason); note != "" {
-		e.note(taskID, note)
+	case stopNote(stopReason) != "":
+		e.note(taskID, stopNote(stopReason))
+	case reply == "" && !toolReplied && !usage:
+		// Nothing else would tell the composer the turn is over (#1347).
+		e.note(taskID, noteNoReply)
 	}
 }
 

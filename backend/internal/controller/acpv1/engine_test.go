@@ -1003,6 +1003,12 @@ func TestEngine(t *testing.T) {
 		a.answer(p, `{"stopReason":"end_turn"}`)
 		rec.wait(t, func() bool { return rec.offers >= 2 })
 		a.quiet()
+		// The skipped turn still ends with a note, or its composer waits.
+		rec.read(func() {
+			if !slices.Contains(rec.replies, "43|"+noteCancelled) {
+				t.Fatalf("replies were %q, want the cancelled note for 43", rec.replies)
+			}
+		})
 	})
 
 	t.Run("a Stop while the task's session is opening skips the prompt", func(t *testing.T) {
@@ -1020,6 +1026,11 @@ func TestEngine(t *testing.T) {
 		if l.CancelTask(context.Background(), 42) {
 			t.Fatal("the skipped turn's session was left busy")
 		}
+		rec.read(func() {
+			if want := []string{"42|" + noteCancelled}; !slices.Equal(rec.replies, want) {
+				t.Fatalf("replies were %q, want %q", rec.replies, want)
+			}
+		})
 	})
 
 	t.Run("a finished turn asks the workspace for the next task", func(t *testing.T) {
@@ -1150,10 +1161,43 @@ func TestEngine(t *testing.T) {
 			if len(rec.telemetry) != 2 {
 				t.Fatalf("telemetry was %+v, want two usage reports", rec.telemetry)
 			}
+			if len(rec.replies) != 0 {
+				t.Fatalf("replies were %q, want none: the footer ends the turn", rec.replies)
+			}
 			for _, u := range rec.telemetry {
 				if u.Kind != "usage" || u.Text != "Context 53,000 / 200,000 tokens (27%) · 0.0042 USD" || u.TaskID != b62(42) {
 					t.Fatalf("usage report was %+v, want the same footer for task 42", u)
 				}
+			}
+		})
+	})
+
+	// Kilo did this in #1347: with no reply, no usage and no stop reason,
+	// nothing told the composer the turn was over, and it waited for ever.
+	t.Run("a turn that ends with nothing to show posts the no-reply note", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"sess-1"}`)
+		a.turn(rec, l, 42, "sess-1", "end_turn")
+		a.turn(rec, l, 42, "sess-1", "end_turn", func() { a.chunk("sess-1", "agent_message_chunk", "Done.") })
+		rec.read(func() {
+			if want := []string{"42|" + noteNoReply, "42|Done."}; !slices.Equal(rec.replies, want) {
+				t.Fatalf("replies were %q, want %q", rec.replies, want)
+			}
+		})
+	})
+
+	t.Run("a turn that replied only through the reply tool posts no note", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"sess-1"}`)
+		task := monoflake.IDFromBase62(taskReplyID).Int64()
+		a.turn(rec, l, task, "sess-1", "end_turn", func() {
+			a.update("sess-1", `{"sessionUpdate":"tool_call","toolCallId":"c1","title":"Replying to task","name":"mcp__agentrq-workspace__task","status":"completed","rawInput":{"action":"reply","payload":{"taskId":"`+taskReplyID+`","text":"Sent."}}}`)
+		})
+		rec.read(func() {
+			if len(rec.replies) != 0 {
+				t.Fatalf("replies were %q, want none: the reply tool already answered", rec.replies)
 			}
 		})
 	})
@@ -1244,7 +1288,7 @@ func TestEngine(t *testing.T) {
 		l := a.ready(rec, `{"sessionId":"idle-1"}`)
 		a.turn(rec, l, 42, "idle-1", "end_turn", func() { a.chunk("idle-1", "agent_thought_chunk", "abcdef") })
 		rec.read(func() {
-			if want := []string{"thought:abcd" + truncatedMarker}; !slices.Equal(rec.log, want) {
+			if want := []string{"thought:abcd" + truncatedMarker, "reply:" + noteNoReply}; !slices.Equal(rec.log, want) {
 				t.Fatalf("the human read %q, want %q", rec.log, want)
 			}
 		})
@@ -1261,7 +1305,7 @@ func TestEngine(t *testing.T) {
 			a.update("sess-1", `{"sessionUpdate":"plan","entries":[{"content":"Old style","priority":"low","status":"pending"}]}`)
 		})
 		rec.read(func() {
-			want := []string{"plan:- [x] Read the code\n- [ ] Write the fix", "plan:# Revised", "plan:Plan withdrawn.", "plan:- [ ] Old style"}
+			want := []string{"plan:- [x] Read the code\n- [ ] Write the fix", "plan:# Revised", "plan:Plan withdrawn.", "plan:- [ ] Old style", "reply:" + noteNoReply}
 			if !slices.Equal(rec.log, want) {
 				t.Fatalf("the human read %q, want %q", rec.log, want)
 			}
@@ -1284,7 +1328,7 @@ func TestEngine(t *testing.T) {
 			a.update("sess-1", `{"sessionUpdate":"notice","severity":"error","title":"  "}`)
 		})
 		rec.read(func() {
-			want := []string{"notice:MCP server unavailable\n\nContinuing without it.", "notice:Model rerouted"}
+			want := []string{"notice:MCP server unavailable\n\nContinuing without it.", "notice:Model rerouted", "reply:" + noteNoReply}
 			if !slices.Equal(rec.log, want) {
 				t.Fatalf("the human read %q, want %q", rec.log, want)
 			}
@@ -1354,8 +1398,9 @@ func TestEngine(t *testing.T) {
 		a.write(`{"jsonrpc":"2.0","method":"something/else","params":{}}`)
 		a.turn(rec, l, 42, "idle-1", "end_turn")
 		rec.read(func() {
-			if len(rec.replies)+len(rec.telemetry) != 0 {
-				t.Fatalf("recorded replies %q and telemetry %+v, want nothing", rec.replies, rec.telemetry)
+			// Only the note that a turn with nothing to show posts.
+			if !slices.Equal(rec.replies, []string{"42|" + noteNoReply}) || len(rec.telemetry) != 0 {
+				t.Fatalf("recorded replies %q and telemetry %+v, want only the no-reply note", rec.replies, rec.telemetry)
 			}
 		})
 		a.quiet()
