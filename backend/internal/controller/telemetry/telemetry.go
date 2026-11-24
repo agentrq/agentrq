@@ -395,6 +395,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUIAutoscrollPause
 	case entity.ActionA2UIReply:
 		action = model.ActionIDA2UIReply
+	case entity.ActionA2UIAction:
+		action = model.ActionIDA2UIAction
 	default:
 		return
 	}

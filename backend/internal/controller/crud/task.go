@@ -887,12 +887,22 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 		Attachments: datatypes.JSON(attsData),
 		Metadata:    metadataJSON,
 	}
-	if err := c.repository.CreateMessage(ctx, msg); err != nil {
+	t, err := c.postHumanMessage(ctx, req.WorkspaceID, m, msg)
+	if err != nil {
 		return nil, err
+	}
+	return &entity.ReplyToTaskResponse{Task: t, MessageID: msg.ID}, nil
+}
+
+// postHumanMessage stores a person's message on task m, which it resumes, and
+// returns the task with its messages.
+func (c *controller) postHumanMessage(ctx context.Context, workspaceID int64, m model.Task, msg model.Message) (entity.Task, error) {
+	if err := c.repository.CreateMessage(ctx, msg); err != nil {
+		return entity.Task{}, err
 	}
 	c.emitEvent(ctx, entity.CRUDEvent{
 		Action:       entity.ActionMessageCreate,
-		WorkspaceID:  req.WorkspaceID,
+		WorkspaceID:  workspaceID,
 		UserID:       msg.UserID,
 		ResourceType: entity.ResourceMessage,
 		ResourceID:   msg.ID,
@@ -902,7 +912,7 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	m.UpdatedAt = time.Now()
 	updated, err := c.repository.UpdateTask(ctx, m, resumedByMessage(&m)...)
 	if err != nil {
-		return nil, err
+		return entity.Task{}, err
 	}
 	c.emitEvent(ctx, entity.CRUDEvent{
 		Action:       entity.ActionTaskUpdate,
@@ -914,12 +924,11 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	})
 
 	// Fetch latest state with messages
-	uid = monoflake.IDFromBase62(req.UserID).Int64()
-	latest, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	latest, err := c.repository.GetTask(ctx, workspaceID, m.ID, msg.UserID)
 	if err != nil {
-		return &entity.ReplyToTaskResponse{Task: c.fromModelTaskToEntity(updated), MessageID: msg.ID}, nil
+		return c.fromModelTaskToEntity(updated), nil
 	}
-	return &entity.ReplyToTaskResponse{Task: c.fromModelTaskToEntity(latest), MessageID: msg.ID}, nil
+	return c.fromModelTaskToEntity(latest), nil
 }
 
 func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskRequest) (*entity.DeleteTaskResponse, error) {

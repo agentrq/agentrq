@@ -198,6 +198,7 @@ type TaskController interface {
 	UpdateScheduledTask(ctx context.Context, req entity.UpdateScheduledTaskRequest) (*entity.UpdateScheduledTaskResponse, error)
 	UpdateMessageMetadata(ctx context.Context, req entity.UpdateMessageMetadataRequest) error
 	CloseExpiredElicitation(ctx context.Context, req entity.CloseExpiredElicitationRequest) (*entity.CloseExpiredElicitationResponse, error)
+	SendA2uiAction(ctx context.Context, req entity.SendA2uiActionRequest) (*entity.SendA2uiActionResponse, error)
 	GetGlobalTaskStats(ctx context.Context, userID string) (*entity.GlobalTaskStatsResponse, error)
 	GetTaskOverview(ctx context.Context, userID string) (*entity.GetTaskOverviewResponse, error)
 	DeleteTask(ctx context.Context, req entity.DeleteTaskRequest) (*entity.DeleteTaskResponse, error)

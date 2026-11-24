@@ -1928,6 +1928,9 @@ const (
 	// An agent's reply that carried a card drawn with A2UI. Backend-emitted:
 	// the server validated and stored it.
 	ActionA2UIReply Action = 143
+	// A person's click on a card's Button, posted as their reply.
+	// Backend-emitted: the server checked the card and stored the reply.
+	ActionA2UIAction Action = 144
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2218,6 +2221,8 @@ func (a Action) String() string {
 		return "ui_autoscroll_pause"
 	case ActionA2UIReply:
 		return "a2ui_reply"
+	case ActionA2UIAction:
+		return "a2ui_action"
 	}
 	return "unknown"
 }

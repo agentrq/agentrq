@@ -693,6 +693,23 @@ export async function respondToElicitation(workspaceId, taskId, requestId, actio
   }
   return res;
 }
+// sendA2uiAction answers an agent's card with a click on one of its Buttons:
+// {messageId, surfaceId, name, sourceComponentId, context, userMessage}. The
+// server posts it as the person's reply; a card already answered is refused
+// with 409, which the error's status carries.
+export async function sendA2uiAction(workspaceId, taskId, action) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/a2ui/actions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(action),
+  });
+  if (!res.ok) {
+    const err = await refusal(res, 'Failed to send the answer');
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
 export async function updateScheduledTask(workspaceId, taskId, title, body, assignee, cronSchedule, allowAllCommands, clearContext = false) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/scheduled`, {
     method: 'PUT',

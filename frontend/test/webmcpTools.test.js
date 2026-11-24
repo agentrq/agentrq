@@ -508,6 +508,12 @@ describe('each tool calls the interface the way the UI does', () => {
       ['ws1', 't1', 'r1', 'decline', {}],
     ],
     [
+      'sendA2uiAction',
+      { workspaceId: 'ws1', taskId: 't1', messageId: 'm1', surfaceId: 's1', name: 'approve', sourceComponentId: 'ok', context: { env: 'prod' } },
+      'sendA2uiAction',
+      ['ws1', 't1', { messageId: 'm1', surfaceId: 's1', name: 'approve', sourceComponentId: 'ok', context: { env: 'prod' } }],
+    ],
+    [
       'updateScheduledTask',
       { workspaceId: 'ws1', taskId: 't1', title: 'T', body: 'B', assignee: 'agent', cronSchedule: '0 9 * * *' },
       'updateScheduledTask',

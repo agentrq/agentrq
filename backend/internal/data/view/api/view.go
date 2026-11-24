@@ -633,6 +633,21 @@ type (
 		Effort string `json:"effort"`
 	}
 
+	// A2uiActionRequest is a click on a Button of an agent's card, sent as
+	// the person's reply.
+	A2uiActionRequest struct {
+		MessageID         string         `json:"messageId"`
+		SurfaceID         string         `json:"surfaceId"`
+		Name              string         `json:"name"`
+		SourceComponentID string         `json:"sourceComponentId"`
+		Context           map[string]any `json:"context,omitempty"`
+		UserMessage       string         `json:"userMessage,omitempty"`
+	}
+
+	A2uiActionResponse struct {
+		Task Task `json:"task"`
+	}
+
 	RespondToElicitationRequest struct {
 		RequestID string         `json:"requestId"`
 		Action    string         `json:"action"` // "accept" | "decline" | "cancel"
