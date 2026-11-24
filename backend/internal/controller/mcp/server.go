@@ -30,6 +30,7 @@ import (
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/a2ui"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
@@ -112,16 +113,18 @@ type TaskPlanStore interface {
 
 // WorkspaceServer is a per-workspace MCP server that exposes the Claude Channels protocol.
 type WorkspaceServer struct {
-	workspaceID           int64
-	contentWorkspaceID    int64
-	userID                string
-	mcpServer             *mcp.Server
-	streamServer          *mcp.StreamableHTTPHandler
-	createTask            CreateTaskFunc
-	updateStatus          UpdateTaskStatusFunc
-	registerTaskAgent     RegisterTaskAgentFunc
-	getTask               GetTaskFunc
-	workspaceNotes        WorkspaceNotesFunc
+	workspaceID        int64
+	contentWorkspaceID int64
+	userID             string
+	mcpServer          *mcp.Server
+	streamServer       *mcp.StreamableHTTPHandler
+	createTask         CreateTaskFunc
+	updateStatus       UpdateTaskStatusFunc
+	registerTaskAgent  RegisterTaskAgentFunc
+	getTask            GetTaskFunc
+	workspaceNotes     WorkspaceNotesFunc
+	// a2ui validates cards; nil uses sharedA2UI.
+	a2ui                  a2ui.Service
 	recordAgentNote       AgentNoteRecorder
 	listTasks             ListTasksFunc
 	getNextTask           GetNextTaskFunc
@@ -293,6 +296,7 @@ type ReplyParams struct {
 	TaskID      string            `json:"taskId" jsonschema:"The task to reply in (base62): the chat_id it arrived with."`
 	Text        string            `json:"text" jsonschema:"The message text to send"`
 	Attachments []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments to include in the reply: {id, filename, mimeType, data (base64) or textContent (plain text)}."`
+	UI          json.RawMessage   `json:"ui,omitempty" jsonschema:"Optional card: a JSON array of A2UI v1.0 messages (basic catalog, one surface): createSurface, then updateComponents with a component whose id is root. text stays required, the fallback wherever cards are not shown. Media (Image, Video, AudioPlayer) only as attachment:<filename> of a file in attachments."`
 }
 
 // AttachmentParam is an attachment as a tool receives it. It is not
@@ -1516,18 +1520,49 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 		}, nil, nil
 	}
 
-	if _, err := ps.reply(ctx, params.TaskID, params.Text, toEntityAttachments(params.Attachments), nil); err != nil {
+	taskID := monoflake.IDFromBase62(params.TaskID).Int64()
+	if taskID == 0 {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
+		}, nil, nil
+	}
+
+	// The files are saved first: a card's media names them by their stored
+	// links.
+	atts := toEntityAttachments(params.Attachments)
+	crud.SaveAttachments(ps.storage, ps.idgen, ps.contentID(), taskID, atts)
+
+	var metadata any
+	if len(params.UI) > 0 {
+		card, err := ps.replyCard(ctx, taskID, params.UI, atts)
+		if err != nil {
+			ps.deleteAttachments(taskID, atts)
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+			}, nil, nil
+		}
+		metadata = card
+	}
+
+	msgID, err := ps.reply(ctx, params.TaskID, params.Text, atts, metadata)
+	if err != nil {
+		ps.deleteAttachments(taskID, atts)
 		return &mcp.CallToolResult{
 			IsError: true,
 			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to deliver reply: %v", err)}},
 		}, nil, nil
 	}
+	if metadata != nil {
+		ps.emitA2UIReply(ctx, msgID)
+	}
 
 	// Update session-to-task mapping for context-aware routing (like permissions)
-	if tid := monoflake.IDFromBase62(params.TaskID).Int64(); tid != 0 && req != nil && req.GetSession() != nil {
+	if req != nil && req.GetSession() != nil {
 		sessID := req.GetSession().ID()
 		ps.sessionTasksMu.Lock()
-		ps.sessionTasks[sessID] = tid
+		ps.sessionTasks[sessID] = taskID
 		ps.sessionTasksMu.Unlock()
 	}
 
@@ -2089,14 +2124,21 @@ func buildConversationJSON(task model.Task, cursor, limit int) string {
 				}
 			}
 		}
-		output = append(output, map[string]any{
+		item := map[string]any{
 			"id":          monoflake.ID(m.ID).String(),
 			"sender":      m.Sender,
 			"text":        m.Text,
 			"created_at":  m.CreatedAt,
 			"attachments": attachments,
 			"metadata":    string(m.Metadata),
-		})
+		}
+		// A card is for the page: its text says the same, and its JSON
+		// would only fill the agent's context.
+		if isA2UIMessage(m.Metadata) {
+			item["metadata"] = ""
+			item["ui"] = true
+		}
+		output = append(output, item)
 	}
 
 	b, _ := json.Marshal(map[string]any{

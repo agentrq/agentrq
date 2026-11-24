@@ -916,6 +916,8 @@ const (
 	// backend.
 	ActionIDMCPInitialize
 	ActionIDMCPReconnect
+	// An agent's reply that carried an A2UI card; emitted by the backend.
+	ActionIDA2UIReply
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

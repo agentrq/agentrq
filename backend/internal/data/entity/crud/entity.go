@@ -1925,6 +1925,9 @@ const (
 	// Autoscroll paused for a task from its chat minimap. Browser-reported:
 	// the pause lives only in the tab.
 	ActionUIAutoscrollPause Action = 142
+	// An agent's reply that carried a card drawn with A2UI. Backend-emitted:
+	// the server validated and stored it.
+	ActionA2UIReply Action = 143
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2213,6 +2216,8 @@ func (a Action) String() string {
 		return "team_invite_expire"
 	case ActionUIAutoscrollPause:
 		return "ui_autoscroll_pause"
+	case ActionA2UIReply:
+		return "a2ui_reply"
 	}
 	return "unknown"
 }

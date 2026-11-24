@@ -14,7 +14,7 @@ Examples:
 { "action": "updateStatus", "payload": { "taskId": "0kGogHmaqvZ", "status": "ongoing" } }
 ```
 
-- `reply`: `text` and optional `attachments`. The human sees only these.
+- `reply`: `text`, optional `attachments` and `ui` (an A2UI v1.0 card: `help task.reply`; `text` is its fallback). The human sees only these.
 Examples:
 ```json
 { "action": "reply", "payload": { "taskId": "0kGogHmaqvZ", "text": "Tests pass; opening a PR." } }
@@ -32,7 +32,7 @@ Examples:
 - `create`: `title`, `body`, `assignee` (`human` or `agent`); optional `cronSchedule`, `attachments`, `eventId` (published on completion).
 Examples:
 ```json
-{ "action": "create", "payload": { "title": "Review the release notes", "body": "Check the v0.9.20 notes before Friday.", "assignee": "human" } }
+{ "action": "create", "payload": { "title": "Review the release notes", "body": "Before Friday.", "assignee": "human" } }
 ```
 
 - `getAttachment`: its public link, or its content (`format`: `base64`, `textContent`).

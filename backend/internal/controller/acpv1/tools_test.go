@@ -64,6 +64,7 @@ func TestAgentReply(t *testing.T) {
 	}{
 		{"the old reply tool carries chatId and text", "reply", `{"chatId":"0kA","text":"Done."}`, "0kA", "Done.", true},
 		{"the task tool's reply carries its payload", "task", `{"action":"reply","payload":{"taskId":"0kB","text":"Hi"}}`, "0kB", "Hi", true},
+		{"a reply with a ui card is still a reply, by its text", "task", `{"action":"reply","payload":{"taskId":"0kD","text":"Card","ui":[{"version":"1.0","createSurface":{"surfaceId":"s","catalogId":"c"}}]}}`, "0kD", "Card", true},
 		{"the task tool's flat reply carries taskId and text", "task", `{"action":"reply","taskId":"0kC","text":"Yo"}`, "0kC", "Yo", true},
 		{"a payload with no taskId is no reply", "task", `{"action":"reply","payload":{"text":"Hi"}}`, "", "", false},
 		{"another action of the task tool is no reply", "task", `{"action":"get","taskId":"0kC"}`, "", "", false},
