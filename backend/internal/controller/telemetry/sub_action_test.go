@@ -12,6 +12,7 @@ import (
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/handler/coremcp"
 	sdkmcp "github.com/agentrq/agentrq/backend/internal/service/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcpskill"
 )
 
 // listedNames connects an in-process client to srv and returns every name
@@ -54,7 +55,7 @@ func listedNames(t *testing.T, srv *sdkmcp.Server) []string {
 	for _, r := range resources.Resources {
 		// A skill's files are all counted as the skill.
 		if strings.HasPrefix(r.URI, "skill://") {
-			names = append(names, coremcp.SkillTelemetryName(r.URI))
+			names = append(names, mcpskill.TelemetryName(r.URI))
 			continue
 		}
 		names = append(names, "resource:"+r.Name)

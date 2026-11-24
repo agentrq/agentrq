@@ -211,15 +211,17 @@ func TestPluginDocsDoNotNameInvalidStatuses(t *testing.T) {
 		"plugins/gemini/README.md",
 		"plugins/gemini/GEMINI.md",
 	}
-	// The supervisor skill's reference files; its other copies are held
-	// identical to this one.
-	references, err := filepath.Glob(filepath.Join(root, "plugins/claude/agentrq/skills/agentrq/references/*.md"))
-	if err != nil || len(references) == 0 {
-		t.Fatalf("found no reference files for the agentrq skill: %v", err)
-	}
-	for _, ref := range references {
-		rel, _ := filepath.Rel(root, ref)
-		docs = append(docs, rel)
+	// The skills' reference files; their other copies are held identical to
+	// these.
+	for _, skill := range []string{"agentrq/skills/agentrq", "agentrq-workspace/skills/agentrq-workspace"} {
+		references, err := filepath.Glob(filepath.Join(root, "plugins/claude", skill, "references/*.md"))
+		if err != nil || len(references) == 0 {
+			t.Fatalf("found no reference files for the %s skill: %v", skill, err)
+		}
+		for _, ref := range references {
+			rel, _ := filepath.Rel(root, ref)
+			docs = append(docs, rel)
+		}
 	}
 
 	for _, doc := range docs {
@@ -323,6 +325,13 @@ func TestPluginDocsCustomSupervisorSkillMatchesTheHostedOne(t *testing.T) {
 	} {
 		checkSameSkill(t, root, copied, hosted)
 	}
+}
+
+// Every workspace server serves the agentrq-workspace plugins' skill over MCP,
+// as skill://agentrq since that is the name its SKILL.md gives, so the copy
+// built into it may not drift from the plugin's.
+func TestPluginDocsWorkspaceSkillMatchesTheServedOne(t *testing.T) {
+	checkSameSkill(t, repoRoot(t), "backend/internal/controller/mcp/skills/agentrq", "plugins/claude/agentrq-workspace/skills/agentrq-workspace")
 }
 
 // The Cursor plugins are the Claude plugins packaged for Cursor, so their skills

@@ -45,7 +45,8 @@ do; nothing else needs to be told it exists.
 
 **The `agentrq` skill this server serves (`skills/`, MCP Skills extension) is
 a copy of the plugins' skill folder**: edit the plugin one and copy the folder
-over, or `plugin_docs_test.go` fails. Every file in it stays within 2000
+over, or `plugin_docs_test.go` fails. `service/mcpskill` serves it, and the
+workspace server's skill too. Every file in it stays within 2000
 characters, a short SKILL.md and `references/`: split rather than grow one. Setting `Capabilities` drops the mcp package's
 default `logging`, so `skillsCapabilities` keeps it.
 
