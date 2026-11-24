@@ -187,7 +187,6 @@ func TestProcessEvent_TaskEvents(t *testing.T) {
 		body    string
 	}{
 		{entity.ActionTaskUpdate, false, "Task Status Updated: Deploy [Ops]", "updated to: ongoing"},
-		{entity.ActionTaskComplete, false, "Task Status Updated: Deploy [Ops]", "updated to: ongoing"},
 		{entity.ActionTaskAllowAllCommandsToggle, true, "Auto-Allow Commands Toggled: Deploy [Ops]", "has been turned ON"},
 		{entity.ActionTaskAllowAllCommandsToggle, false, "Auto-Allow Commands Toggled: Deploy [Ops]", "has been turned OFF"},
 	}
@@ -205,6 +204,17 @@ func TestProcessEvent_TaskEvents(t *testing.T) {
 			}
 		})
 	}
+
+	// A completion raises ActionTaskUpdate as well, which already emails.
+	t.Run("a completion alone sends nothing", func(t *testing.T) {
+		h := newHarness(t)
+		h.repo.EXPECT().SystemGetTask(gomock.Any(), int64(42)).Return(model.Task{ID: 42, WorkspaceID: 1, Status: "completed"}, nil)
+		h.repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(1)).Return(workspaceModel(false), nil)
+		h.c.processEvent(context.Background(), entity.CRUDEvent{Action: entity.ActionTaskComplete, ResourceType: entity.ResourceTask, ResourceID: 42})
+		if len(h.queued) != 0 {
+			t.Errorf("queued %+v", h.queued)
+		}
+	})
 
 	t.Run("an action without an email sends nothing", func(t *testing.T) {
 		h := newHarness(t)

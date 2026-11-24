@@ -143,7 +143,9 @@ func (c *controller) handleTaskEvent(ctx context.Context, event entity.CRUDEvent
 	switch event.Action {
 	case entity.ActionTaskCreate:
 		c.NotifyTaskCreated(workspace, task)
-	case entity.ActionTaskUpdate, entity.ActionTaskComplete:
+	// Not ActionTaskComplete: a completion raises ActionTaskUpdate too, and
+	// would email twice.
+	case entity.ActionTaskUpdate:
 		c.NotifyTaskStatusUpdated(workspace, task)
 	case entity.ActionTaskAllowAllCommandsToggle:
 		c.NotifyTaskAllowAllCommandsToggled(workspace, task)
