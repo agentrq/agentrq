@@ -5,13 +5,16 @@
 package push
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -20,6 +23,8 @@ import (
 	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
 	mock_repo "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 	"github.com/golang/mock/gomock"
+	"github.com/rs/zerolog"
+	zlog "github.com/rs/zerolog/log"
 )
 
 func newTestController(t *testing.T, cfg Config) (*controller, *mock_repo.MockRepository, *mock_idgen.MockService) {
@@ -404,6 +409,93 @@ func TestSendToUser_KeepsSubscriptionOnSuccess(t *testing.T) {
 		}, nil)
 
 	c.sendToUser(context.Background(), 7, 3, 0, PushTypeTaskCreate, pushPayload{Title: "hi", Body: "body"})
+}
+
+// vapidSub returns the sub claim of the VAPID JWT in an Authorization header.
+func vapidSub(t *testing.T, header string) string {
+	t.Helper()
+	token := strings.TrimPrefix(strings.SplitN(header, ",", 2)[0], "vapid t=")
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		t.Fatalf("authorization header %q carries no JWT", header)
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatalf("decode JWT claims: %v", err)
+	}
+	var claims struct {
+		Sub string `json:"sub"`
+	}
+	if err := json.Unmarshal(raw, &claims); err != nil {
+		t.Fatalf("parse JWT claims: %v", err)
+	}
+	return claims.Sub
+}
+
+// Apple's push service refuses a sub that is not a mailto: or https URL, so the
+// configured subscriber must reach the JWT exactly once prefixed, never as
+// "mailto:mailto:…".
+func TestSendToUser_VAPIDSubClaim(t *testing.T) {
+	tests := []struct{ subscriber, want string }{
+		{"mailto:ops@agentrq.com", "mailto:ops@agentrq.com"},
+		{"MAILTO: ops@agentrq.com ", "mailto:ops@agentrq.com"},
+		{"ops@agentrq.com", "mailto:ops@agentrq.com"},
+		{"https://agentrq.com", "https://agentrq.com"},
+		{"", "mailto:hi@example.com"},
+		{"mailto:", "mailto:hi@example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.subscriber, func(t *testing.T) {
+			var got string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = vapidSub(t, r.Header.Get("Authorization"))
+				w.WriteHeader(http.StatusCreated)
+			}))
+			defer srv.Close()
+
+			c, mockRepo := newPushTestController(t)
+			c.cfg.Subscriber = tt.subscriber
+			p256dh, auth := newTestSubscriptionKeys(t)
+			mockRepo.EXPECT().
+				ListPushSubscriptionsByUserAndWorkspace(gomock.Any(), int64(7), int64(3)).
+				Return([]model.PushSubscription{{Endpoint: srv.URL, P256dh: p256dh, Auth: auth}}, nil)
+
+			c.sendToUser(context.Background(), 7, 3, 0, PushTypeTaskCreate, pushPayload{Title: "hi"})
+			if got != tt.want {
+				t.Errorf("sub = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A refusal other than 404/410 keeps the subscription and is logged with the
+// push service's reason, or a broken setup fails without a trace.
+func TestSendToUser_LogsRefusal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"reason":"BadJwtToken"}`))
+	}))
+	defer srv.Close()
+
+	var logs bytes.Buffer
+	prev := zlog.Logger
+	zlog.Logger = zerolog.New(&logs)
+	defer func() { zlog.Logger = prev }()
+
+	c, mockRepo := newPushTestController(t)
+	p256dh, auth := newTestSubscriptionKeys(t)
+	mockRepo.EXPECT().
+		ListPushSubscriptionsByUserAndWorkspace(gomock.Any(), int64(7), int64(3)).
+		Return([]model.PushSubscription{{Endpoint: srv.URL, P256dh: p256dh, Auth: auth}}, nil)
+
+	c.sendToUser(context.Background(), 7, 3, 0, PushTypeTaskCreate, pushPayload{Title: "hi"})
+
+	out := logs.String()
+	for _, want := range []string{`"status":403`, `BadJwtToken`, "push service refused notification"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log %q does not contain %q", out, want)
+		}
+	}
 }
 
 // ── processEvent ─────────────────────────────────────────────────────────────

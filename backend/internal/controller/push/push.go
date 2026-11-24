@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -287,10 +288,7 @@ func (c *controller) sendToUser(ctx context.Context, userID int64, workspaceID, 
 		return
 	}
 
-	subscriber := c.cfg.Subscriber
-	if subscriber == "" {
-		subscriber = "mailto:hi@example.com"
-	}
+	subscriber := vapidSubscriber(c.cfg.Subscriber)
 
 	for _, sub := range subs {
 		if !subscriptionAllowsType(sub.Types, eventType) {
@@ -313,6 +311,7 @@ func (c *controller) sendToUser(ctx context.Context, userID int64, workspaceID, 
 			zlog.Warn().Err(err).Str("endpoint", sub.Endpoint).Msg("[push] failed to send notification")
 			continue
 		}
+		reason, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		resp.Body.Close()
 
 		// webpush.SendNotification only returns a non-nil error for transport-level
@@ -321,10 +320,33 @@ func (c *controller) sendToUser(ctx context.Context, userID int64, workspaceID, 
 		// returns 404 Not Found or 410 Gone once a subscription no longer exists, so
 		// prune it — otherwise it lingers in the DB and every future event re-attempts
 		// delivery to a dead endpoint.
-		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
+		switch {
+		case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone:
 			_ = c.repo.DeletePushSubscription(ctx, userID, sub.Endpoint)
+		case resp.StatusCode >= 300:
+			// Any other refusal is ours to fix, such as Apple's 403 BadJwtToken.
+			zlog.Warn().Int("status", resp.StatusCode).Str("reason", string(reason)).
+				Str("endpoint", sub.Endpoint).Msg("[push] push service refused notification")
 		}
 	}
+}
+
+// defaultSubscriber is the VAPID contact used when none is configured.
+const defaultSubscriber = "hi@example.com"
+
+// vapidSubscriber is the subscriber as webpush-go wants it. The library adds
+// "mailto:" to anything that is not an https URL, so a configured "mailto:"
+// must go or the JWT's sub reads "mailto:mailto:…", which Apple's push service
+// refuses with 403 BadJwtToken (Chrome's and Firefox's accept it).
+func vapidSubscriber(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) >= len("mailto:") && strings.EqualFold(s[:len("mailto:")], "mailto:") {
+		s = strings.TrimSpace(s[len("mailto:"):])
+	}
+	if s == "" {
+		return defaultSubscriber
+	}
+	return s
 }
 
 func truncate(s string, n int) string {
