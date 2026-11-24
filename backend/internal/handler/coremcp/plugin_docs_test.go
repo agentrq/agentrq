@@ -211,15 +211,17 @@ func TestPluginDocsDoNotNameInvalidStatuses(t *testing.T) {
 		"plugins/gemini/README.md",
 		"plugins/gemini/GEMINI.md",
 	}
-	// The supervisor skill's reference files; its other copies are held
-	// identical to this one.
-	references, err := filepath.Glob(filepath.Join(root, "plugins/claude/agentrq/skills/agentrq/references/*.md"))
-	if err != nil || len(references) == 0 {
-		t.Fatalf("found no reference files for the agentrq skill: %v", err)
-	}
-	for _, ref := range references {
-		rel, _ := filepath.Rel(root, ref)
-		docs = append(docs, rel)
+	// The skills' reference files; their other copies are held identical to
+	// these.
+	for _, skill := range []string{"agentrq/skills/agentrq", "agentrq-workspace/skills/agentrq-workspace"} {
+		references, err := filepath.Glob(filepath.Join(root, "plugins/claude", skill, "references/*.md"))
+		if err != nil || len(references) == 0 {
+			t.Fatalf("found no reference files for the %s skill: %v", skill, err)
+		}
+		for _, ref := range references {
+			rel, _ := filepath.Rel(root, ref)
+			docs = append(docs, rel)
+		}
 	}
 
 	for _, doc := range docs {

@@ -7,7 +7,9 @@ package mcp
 import (
 	"context"
 	"reflect"
+	"regexp"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/mcp"
@@ -77,5 +79,44 @@ func TestWorkspaceServer_ServesTheWorkspaceSkill(t *testing.T) {
 
 	if len(counted) != 1 || counted[0].ToolName != "resource:agentrq" || counted[0].WorkspaceID != 100 {
 		t.Errorf("counted %+v, want one read of the agentrq skill in workspace 100", counted)
+	}
+}
+
+// Every file of the workspace skill stays small enough to read whole, so an
+// agent loads only the parts it needs.
+func TestBuiltinSkills_EveryFileFitsIn2000Characters(t *testing.T) {
+	if len(builtinSkills.Files()) < 2 {
+		t.Fatalf("the workspace skill has %d files; it is meant to be split into a short SKILL.md and references", len(builtinSkills.Files()))
+	}
+	for uri, body := range builtinSkills.Files() {
+		if n := utf8.RuneCount(body); n > 2000 {
+			t.Errorf("%s is %d characters; keep each skill file within 2000 and split it", uri, n)
+		}
+	}
+}
+
+// Every reference file the SKILL.md sends an agent to is served: the ones it
+// names, and references/<tool>.md for each tool in its table but help.
+func TestBuiltinSkills_SKILLmdNamesOnlyServedFiles(t *testing.T) {
+	body, err := builtinSkillFiles.ReadFile("skills/agentrq/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var named []string
+	for _, m := range regexp.MustCompile("`references/([a-zA-Z-]+\\.md)`").FindAllSubmatch(body, -1) {
+		named = append(named, string(m[1]))
+	}
+	for _, m := range regexp.MustCompile("(?m)^\\| `([a-zA-Z]+)`").FindAllSubmatch(body, -1) {
+		if tool := string(m[1]); tool != "help" {
+			named = append(named, tool+".md")
+		}
+	}
+	if len(named) < 2 {
+		t.Fatalf("the SKILL.md names %v; want its table's tools and its examples", named)
+	}
+	for _, name := range named {
+		if _, ok := builtinSkills.Files()["skill://agentrq/references/"+name]; !ok {
+			t.Errorf("the SKILL.md sends an agent to references/%s, which is not served", name)
+		}
 	}
 }
