@@ -38,4 +38,4 @@ Examples:
 { "action": "delete", "payload": { "id": "0kGpezGeuxt" } }
 ```
 
-From a shell, `npx -y @agentrq/agentrq-ws@latest pano save --title T --markdown @doc.md --file chart.png` and `pano read <id> --out DIR` move docs through disk instead of your context.
+**When a doc has files, upload and download them with `npx`**, not base64 `data`, so they never bloat your context: `npx -y @agentrq/agentrq-ws@latest pano save --title T --markdown @doc.md --file chart.png` and `pano read <id> --out DIR` move them through disk.
