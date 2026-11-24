@@ -1,6 +1,6 @@
 ---
 name: agentrq
-description: Work on the tasks of an AgentRQ workspace, reporting to a remote human. Covers tasks from humans and supervisor agents, distributed memory every agent of the workspace shares, reusable skills, Pano docs shared across workspaces, the websites the human shared, and events that start tasks in other workspaces. Use when a task arrives as a channel message or you need to report progress on one.
+description: Work on the tasks of an AgentRQ workspace, reporting to a remote human. Covers tasks from humans and supervisor agents, distributed memory every agent of the workspace shares, reusable skills, and Pano docs shared across workspaces. Use when a task arrives as a channel message or you need to report progress on one.
 ---
 
 # AgentRQ Workspace Agent
