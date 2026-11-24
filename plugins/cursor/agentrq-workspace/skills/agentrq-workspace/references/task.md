@@ -1,41 +1,47 @@
 # task
 
-This workspace's tasks, and the only way to reach the human. `taskId` is the `chat_id` a task arrives with.
+Tasks, and the only way to reach the human. `taskId` is a task's `chat_id`.
 
-- `get`: a task by `taskId`; `includeConversation` adds its messages (`cursor`, `limit` page them). With no `taskId`, takes the next not started task assigned to you.
+- `get`: a task; `includeConversation` adds its messages (`cursor`, `limit` page them). With no `taskId`, takes your next not started task.
 Examples:
 ```json
 { "action": "get", "payload": { "taskId": "0kGogHmaqvZ", "includeConversation": true, "limit": 10 } }
 ```
 
-- `updateStatus`: `ongoing` when you start, `completed` when you finish, `blocked` when you need the human; also `rejected`, `notstarted`.
+- `updateStatus`: `ongoing` to start, `completed` when done, `blocked` to need the human; also `rejected`, `notstarted`.
 Examples:
 ```json
 { "action": "updateStatus", "payload": { "taskId": "0kGogHmaqvZ", "status": "ongoing" } }
 ```
 
-- `reply`: `text`, with optional `attachments` (base64 `data`, or `textContent` for a text file). The human sees only these.
+- `reply`: `text` and optional `attachments`. The human sees only these.
 Examples:
 ```json
-{ "action": "reply", "payload": { "taskId": "0kGogHmaqvZ", "text": "Tests pass; opening the pull request." } }
+{ "action": "reply", "payload": { "taskId": "0kGogHmaqvZ", "text": "Tests pass; opening a PR." } }
+```
+```sh
+npx -y @agentrq/agentrq-ws@latest reply 0kGogHmaqvZ "Screenshot attached." --attach shot.png
 ```
 
-- `elicit`: asks the human and waits: a form (`requestedSchema`) or a link to confirm (`url`).
+- `elicit`: asks the human and waits: a form (`requestedSchema`) or a link (`url`).
 Examples:
 ```json
-{ "action": "elicit", "payload": { "taskId": "0kGogHmaqvZ", "message": "Which branch?", "mode": "form", "requestedSchema": { "type": "object", "properties": { "branch": { "type": "string", "enum": ["main", "release"] } } } } }
+{ "action": "elicit", "payload": { "taskId": "0kGogHmaqvZ", "message": "Which branch?", "mode": "form", "requestedSchema": { "type": "object", "properties": { "branch": { "type": "string" } } } } }
 ```
 
-- `create`: a task with `title`, `body`, `assignee` (`human` or `agent`); optional `cronSchedule`, `attachments`, `eventId` (published when it completes), `clearContext` (sends `/clear` first).
+- `create`: `title`, `body`, `assignee` (`human` or `agent`); optional `cronSchedule`, `attachments`, `eventId` (published on completion), `clearContext` (sends `/clear` first).
 Examples:
 ```json
 { "action": "create", "payload": { "title": "Review the release notes", "body": "Check the v0.9.20 notes before Friday.", "assignee": "human" } }
 ```
 
-- `getAttachment`: its public link, or its content with `format` `base64` or `textContent`.
+- `getAttachment`: its public link, or its content (`format`: `base64`, `textContent`).
 Examples:
 ```json
 { "action": "getAttachment", "payload": { "taskId": "0kGogHmaqvZ", "attachmentId": "att_1" } }
 ```
+```sh
+npx -y @agentrq/agentrq-ws@latest attachment get att_1 --task 0kGogHmaqvZ --out ./downloads
+```
 
-From a shell, `npx -y @agentrq/agentrq-ws@latest reply <taskId> "text" --attach a.png` uploads files from disk.
+**Upload and download files with the `npx` lines**, not `data` or `format` `base64`: they move a file through disk, so it never bloats your context.
