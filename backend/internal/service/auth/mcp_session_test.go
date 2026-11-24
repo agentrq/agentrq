@@ -18,10 +18,9 @@ func sessionTokens() *tokenService {
 }
 
 // An MCP session id reads back as what it recorded, for the user and
-// workspace it was minted for, until it expires.
+// workspace it was minted for, and it never expires.
 func TestMCPSessionToken_RoundTrips(t *testing.T) {
 	svc := sessionTokens()
-	before := time.Now()
 	tok, err := svc.CreateMCPSessionToken(context.Background(), "user-1", "ws-1", MCPSession{ProtocolVersion: "2025-06-18", ClientName: "claude-code", ClientVersion: "2.1.0"})
 	if err != nil {
 		t.Fatal(err)
@@ -37,8 +36,9 @@ func TestMCPSessionToken_RoundTrips(t *testing.T) {
 	if got.ProtocolVersion != "2025-06-18" || got.ClientName != "claude-code" || got.ClientVersion != "2.1.0" {
 		t.Errorf("read back %+v, want what was recorded", got)
 	}
-	if want := before.Add(MCPSessionTTL); got.ExpiresAt.Before(want.Add(-time.Second)) || got.ExpiresAt.After(want.Add(time.Minute)) {
-		t.Errorf("expires %v, want about %v", got.ExpiresAt, want)
+	claims := &mcpSessionClaims{}
+	if _, _, err := jwt.NewParser().ParseUnverified(tok, claims); err != nil || claims.ExpiresAt != nil || claims.IssuedAt == nil {
+		t.Errorf("minted exp %v, iat %v (%v); want no expiry and an issue time", claims.ExpiresAt, claims.IssuedAt, err)
 	}
 }
 
@@ -92,8 +92,8 @@ func TestMCPSessionToken_NeverATokenNorTheReverse(t *testing.T) {
 	}
 }
 
-// An id that has expired, never expires, or is not signed as one is
-// refused.
+// An id that has expired, minted when ids still expired, or not signed as
+// one is refused; one that never expires is a session id.
 func TestMCPSessionToken_RefusesBadIDs(t *testing.T) {
 	svc := sessionTokens()
 	sign := func(claims mcpSessionClaims, method jwt.SigningMethod) string {
@@ -104,25 +104,26 @@ func TestMCPSessionToken_RefusesBadIDs(t *testing.T) {
 		}
 		return tok
 	}
-	valid := jwt.RegisteredClaims{Subject: "user-1", Audience: jwt.ClaimStrings{"ws-1"}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}
+	valid := jwt.RegisteredClaims{Subject: "user-1", Audience: jwt.ClaimStrings{"ws-1"}}
 
 	expired := valid
 	expired.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-time.Minute))
-	forever := valid
-	forever.ExpiresAt = nil
+	notYet := valid
+	notYet.ExpiresAt = jwt.NewNumericDate(time.Now().Add(time.Hour))
 
 	for name, tok := range map[string]string{
-		"expired":        sign(mcpSessionClaims{RegisteredClaims: expired}, jwt.SigningMethodHS256),
-		"without expiry": sign(mcpSessionClaims{RegisteredClaims: forever}, jwt.SigningMethodHS256),
-		"HS512":          sign(mcpSessionClaims{RegisteredClaims: valid}, jwt.SigningMethodHS512),
-		"unsigned":       unsignedToken(t, mcpSessionClaims{RegisteredClaims: valid}),
-		"not a JWT":      "not-a-session",
+		"expired":   sign(mcpSessionClaims{RegisteredClaims: expired}, jwt.SigningMethodHS256),
+		"HS512":     sign(mcpSessionClaims{RegisteredClaims: valid}, jwt.SigningMethodHS512),
+		"unsigned":  unsignedToken(t, mcpSessionClaims{RegisteredClaims: valid}),
+		"not a JWT": "not-a-session",
 	} {
 		if _, err := svc.ValidateMCPSessionToken(context.Background(), tok, "user-1", "ws-1"); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	if _, err := svc.ValidateMCPSessionToken(context.Background(), sign(mcpSessionClaims{RegisteredClaims: valid}, jwt.SigningMethodHS256), "user-1", "ws-1"); err != nil {
-		t.Errorf("the control id was refused: %v", err)
+	for name, claims := range map[string]jwt.RegisteredClaims{"without expiry": valid, "not yet expired": notYet} {
+		if _, err := svc.ValidateMCPSessionToken(context.Background(), sign(mcpSessionClaims{RegisteredClaims: claims}, jwt.SigningMethodHS256), "user-1", "ws-1"); err != nil {
+			t.Errorf("%s: refused: %v", name, err)
+		}
 	}
 }

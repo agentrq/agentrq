@@ -68,6 +68,8 @@ func TestAction_String(t *testing.T) {
 		ActionMCPPlanUpdate:        "plan_update",
 		ActionMCPToolCallError:     "tool_call_error",
 		ActionMCPAgentToolCallFail: "agent_tool_call_fail",
+		ActionMCPInitialize:        "initialize",
+		ActionMCPReconnect:         "reconnect",
 		Action(250):                "unknown",
 	} {
 		if got := action.String(); got != want {

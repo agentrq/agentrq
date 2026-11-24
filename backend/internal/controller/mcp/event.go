@@ -31,6 +31,11 @@ const (
 	// A call of one of the agent's own tools that failed, as a native agent
 	// reported it. Never named: those names are the agent's, not a set we own.
 	ActionMCPAgentToolCallFail
+	// A new MCP session: a successful initialize.
+	ActionMCPInitialize
+	// A session rebuilt from its signed id when its client reopened its push
+	// stream, after a restart, a redeploy or an eviction.
+	ActionMCPReconnect
 )
 
 func (a Action) String() string {
@@ -51,6 +56,10 @@ func (a Action) String() string {
 		return "tool_call_error"
 	case ActionMCPAgentToolCallFail:
 		return "agent_tool_call_fail"
+	case ActionMCPInitialize:
+		return "initialize"
+	case ActionMCPReconnect:
+		return "reconnect"
 	}
 	return "unknown"
 }

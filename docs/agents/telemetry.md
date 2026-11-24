@@ -56,6 +56,10 @@ makes them self-evidently true. A few happen entirely in the browser and are
   one workspace (`listWorkspaces`, `createEnrolmentCode`, `listMachines`, defining an
   event/workflow) store workspace `0`, same convention as the machine actions
   above.
+- **Three MCP session events, kept apart:** `mcp_connect` is a workspace's
+  agent coming online (its first push stream), `mcp_initialize` each new
+  session, `mcp_reconnect` a session rebuilt from its signed id after a
+  restart. Folding one into another loses what the others count.
 - **A failed tool call is a second row, `mcp_tool_call_error`**, under the
   name the call was counted as: `ToolErrorsMiddleware` reads it from the
   `NoteToolCall` that each server's `emitTelemetry` makes. Keep the middleware

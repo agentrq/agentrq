@@ -367,7 +367,13 @@ func TestStreamableSessionSurvivesARestart(t *testing.T) {
 	id := shInitialize(t, before, "2025-06-18", "claude-code")
 
 	srv := shServer(nil)
-	after := shHandler(srv, &StreamableHTTPOptions{SessionIDs: ids})
+	resumed := make(chan string, 4)
+	after := shHandler(srv, &StreamableHTTPOptions{SessionIDs: ids, OnResume: func(r *http.Request, ss *ServerSession) {
+		if r.Method != http.MethodGet {
+			t.Errorf("OnResume ran for a %s", r.Method)
+		}
+		resumed <- ss.ID()
+	}})
 	hs := httptest.NewServer(after)
 	t.Cleanup(hs.Close)
 	call := shCall(2, "echo", "again")
@@ -385,6 +391,9 @@ func TestStreamableSessionSurvivesARestart(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "echo:again") {
 		t.Fatalf("the restarted server answered %d %s", resp.StatusCode, body)
 	}
+	if got := <-resumed; got != id || len(resumed) != 0 {
+		t.Fatalf("OnResume was told %q, and %d more times; want %q once", got, len(resumed), id)
+	}
 
 	ss := shSession(t, srv, id)
 	p := ss.InitializeParams()
@@ -400,7 +409,10 @@ func TestStreamableSessionSurvivesARestart(t *testing.T) {
 
 	t.Run("a version it no longer speaks negotiates the newest", func(t *testing.T) {
 		ids.infos["old"] = SessionInfo{ProtocolVersion: "2024-11-05"}
-		sess := after.resume(srv, "old", ids.infos["old"])
+		sess, rebuilt := after.resume(srv, "old", ids.infos["old"])
+		if !rebuilt {
+			t.Error("a new session was not reported rebuilt")
+		}
 		if sess.session.state.negotiated != ProtocolVersion20251125 {
 			t.Errorf("negotiated %q, want %q", sess.session.state.negotiated, ProtocolVersion20251125)
 		}
@@ -410,16 +422,16 @@ func TestStreamableSessionSurvivesARestart(t *testing.T) {
 	})
 
 	t.Run("two requests rebuilding one session share it", func(t *testing.T) {
-		first := after.resume(srv, "twice", SessionInfo{ProtocolVersion: "2025-11-25"})
-		second := after.resume(srv, "twice", SessionInfo{ProtocolVersion: "2025-06-18"})
-		if first != second {
-			t.Fatal("the same id was rebuilt into two sessions")
+		first, _ := after.resume(srv, "twice", SessionInfo{ProtocolVersion: "2025-11-25"})
+		second, rebuilt := after.resume(srv, "twice", SessionInfo{ProtocolVersion: "2025-06-18"})
+		if first != second || rebuilt {
+			t.Fatalf("the same id was rebuilt twice: %v", rebuilt)
 		}
 	})
 
 	t.Run("an id deleted while it was read stays deleted", func(t *testing.T) {
 		after.ended.add("deleted-meanwhile")
-		if sess := after.resume(srv, "deleted-meanwhile", SessionInfo{}); sess != nil {
+		if sess, rebuilt := after.resume(srv, "deleted-meanwhile", SessionInfo{}); sess != nil || rebuilt {
 			t.Fatal("a deleted id was rebuilt")
 		}
 	})
@@ -817,7 +829,7 @@ func TestStreamableNotificationsAndBatches(t *testing.T) {
 	}
 
 	t.Run("a session closing under a notification", func(t *testing.T) {
-		sess := h.resume(srv, "closing", SessionInfo{ProtocolVersion: "2025-11-25"})
+		sess, _ := h.resume(srv, "closing", SessionInfo{ProtocolVersion: "2025-11-25"})
 		_ = sess.session.Close()
 		w := httptest.NewRecorder()
 		h.servePOST(w, shReq(http.MethodPost, `{"jsonrpc":"2.0","method":"notifications/initialized"}`), srv, sess)

@@ -621,7 +621,13 @@ func NewWorkspaceServer(
 	// Allow all origins for the MCP server in development (same syntax as ServeMux)
 	cp.AddInsecureBypassPattern("/")
 
-	streamOpts := &mcp.StreamableHTTPOptions{CrossOriginProtection: cp, OnStreamOpen: ps.deliverHeldVerdicts}
+	streamOpts := &mcp.StreamableHTTPOptions{
+		CrossOriginProtection: cp,
+		OnStreamOpen:          ps.deliverHeldVerdicts,
+		OnResume: func(r *http.Request, _ *mcp.ServerSession) {
+			ps.emitTelemetry(r.Context(), ActionMCPReconnect, "reconnect", clientIdentityFromHTTPRequest(r))
+		},
+	}
 	if tokenSvc != nil {
 		// A session's id is a signed record of its handshake, so a client
 		// that reopens its push stream after a restart, a redeploy or on
@@ -2241,7 +2247,11 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 			}
 			return nil, nil // Notifications must return nil, nil
 		}
-		return next(ctx, method, req)
+		res, err := next(ctx, method, req)
+		if method == "initialize" && err == nil {
+			ps.emitTelemetry(ctx, ActionMCPInitialize, "initialize", clientIdentityFromRequest(req))
+		}
+		return res, err
 	}
 }
 

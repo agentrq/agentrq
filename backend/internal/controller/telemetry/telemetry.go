@@ -513,6 +513,10 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 		action = mcpAction(model.ActionIDAgentToolCallFail)
 	case mcp.ActionMCPConnect:
 		action = mcpAction(model.ActionIDMCPConnect)
+	case mcp.ActionMCPInitialize:
+		action = mcpAction(model.ActionIDMCPInitialize)
+	case mcp.ActionMCPReconnect:
+		action = mcpAction(model.ActionIDMCPReconnect)
 	case mcp.ActionMCPClearContext:
 		action = mcpAction(model.ActionIDMCPClearContext)
 	case mcp.ActionMCPPlanUpdate:
@@ -561,6 +565,10 @@ func (a mcpAction) String() string {
 		return "mcp_method_call"
 	case model.ActionIDMCPConnect:
 		return "mcp_connect"
+	case model.ActionIDMCPInitialize:
+		return "mcp_initialize"
+	case model.ActionIDMCPReconnect:
+		return "mcp_reconnect"
 	case model.ActionIDMCPClearContext:
 		return "mcp_clear_context"
 	case model.ActionIDMCPPlanUpdate:
