@@ -391,6 +391,7 @@ func TestOnMessageCreatedSkipsAnEmptyTurnEnd(t *testing.T) {
 		{Sender: "agent", Metadata: map[string]any{"type": "permission_request"}},
 		{Sender: "human", Attachments: []entity.Attachment{{}}},
 		{Sender: "agent"},
+		{Sender: "agent", Metadata: make(chan int)}, // not JSON: not a footer
 	} {
 		if isEmptyTurnEnd(msg) {
 			t.Errorf("isEmptyTurnEnd(%+v) = true, want it mirrored", msg)
