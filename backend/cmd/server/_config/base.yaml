@@ -77,6 +77,20 @@ slack:
   clientId: "${AGENTRQ_SLACK_CLIENT_ID:}"
   clientSecret: "${AGENTRQ_SLACK_CLIENT_SECRET:}"
 
+# A GitHub App of the server's own, so skills can be imported from private
+# repositories: each account installs it on the repositories it picks. On the
+# app's settings page on GitHub set the callback URL to <baseUrl>/github/callback,
+# turn on "Request user authorization (OAuth) during installation", and give
+# it read-only Contents permission. slug is the name in github.com/apps/<slug>;
+# privateKey is the app's whole PEM key, pasted as it is.
+githubApp:
+  enabled: ${AGENTRQ_GITHUB_APP_ENABLED:false}
+  appId: "${AGENTRQ_GITHUB_APP_ID:}"
+  slug: "${AGENTRQ_GITHUB_APP_SLUG:}"
+  clientId: "${AGENTRQ_GITHUB_APP_CLIENT_ID:}"
+  clientSecret: "${AGENTRQ_GITHUB_APP_CLIENT_SECRET:}"
+  privateKey: "${AGENTRQ_GITHUB_APP_PRIVATE_KEY:}"
+
 webPush:
   vapidPublicKey: ${AGENTRQ_WEBPUSH_VAPID_PUBLIC_KEY:}
   vapidPrivateKey: ${AGENTRQ_WEBPUSH_VAPID_PRIVATE_KEY:}

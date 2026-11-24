@@ -96,6 +96,10 @@ type Repository interface {
 	ListPresets(ctx context.Context, userID, workspaceID int64) ([]model.Preset, error)
 	CreatePreset(ctx context.Context, p model.Preset) (model.Preset, error)
 	DeletePreset(ctx context.Context, userID, workspaceID int64, name string) error
+	// GitHub App installations an account imports private skills through.
+	ListGitHubInstallations(ctx context.Context, userID int64) ([]model.GitHubInstallation, error)
+	ReplaceGitHubInstallations(ctx context.Context, userID int64, rows []model.GitHubInstallation) error
+	DeleteGitHubInstallation(ctx context.Context, userID, installationID int64) error
 	DeleteMemory(ctx context.Context, userID, workspaceID int64, name string) error
 
 	// Hook — WebAssembly modules that turn outside requests into events.

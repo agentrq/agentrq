@@ -121,6 +121,8 @@ export const routes = [
   // reached it from.
   { path: '/sessions/:id', component: () => import('./views/SessionTerminalView.vue'), meta: { remount: true } },
 
+  // GitHub's return from installing the GitHub App, for private skill imports.
+  { path: '/github/callback', component: () => import('./views/GitHubCallbackView.vue') },
   { path: '/workflows', component: () => import('./views/WorkflowsView.vue') },
   { path: '/workflows/:id', component: () => import('./views/WorkflowDetailView.vue'), meta: { remount: true } },
 

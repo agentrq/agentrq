@@ -3,10 +3,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 import { defineConfig } from '@playwright/test'
+import { generateKeyPairSync } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { apiPort, jwtSecret, rootToken, webPort } from './lib/settings.js'
+import { apiPort, githubAppSlug, jwtSecret, rootToken, webPort } from './lib/settings.js'
 
 // The suite runs its own backend and frontend, on ports of their own, so it
 // never talks to (or kills) the dev server somebody is already using on
@@ -76,6 +77,20 @@ export default defineConfig({
         // The admin sign-in allows one try per client every ten minutes; each
         // test names a client of its own with X-Real-IP, believed from here.
         AGENTRQ_TRUSTED_PROXIES: '127.0.0.1,::1',
+        // A GitHub App the server offers private skill imports through. No
+        // install reaches GitHub in a run: github-connect.spec.js stops at
+        // the link to it, and at the return that is not the account's.
+        AGENTRQ_GITHUB_APP_ENABLED: 'true',
+        AGENTRQ_GITHUB_APP_ID: '1',
+        AGENTRQ_GITHUB_APP_SLUG: githubAppSlug,
+        AGENTRQ_GITHUB_APP_CLIENT_ID: 'Iv1.agentrqqa',
+        AGENTRQ_GITHUB_APP_CLIENT_SECRET: 'agentrq-qa-github-secret',
+        // Its lines break as a pasted key's do: the server must take it.
+        AGENTRQ_GITHUB_APP_PRIVATE_KEY: generateKeyPairSync('rsa', {
+          modulusLength: 2048,
+          privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+          publicKeyEncoding: { type: 'spki', format: 'pem' },
+        }).privateKey,
         // Public file links are made from it, so they point at this server.
         AGENTRQ_BASE_URL: `http://localhost:${apiPort}`,
         // QA_POSTGRES_HOST runs the server on Postgres instead of SQLite.

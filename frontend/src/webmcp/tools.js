@@ -584,6 +584,26 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ url, overwrite, skills, workspaceIds }) => api.importSkills(url, overwrite, skills, workspaceIds),
     }),
     tool({
+      name: 'getGitHubConnection',
+      description:
+        'Whether this server can import skills from private GitHub repositories, and the GitHub accounts this account ' +
+        'imports them from. Connecting one is done by a person on GitHub, from installUrl.',
+      properties: {},
+      readOnly: true,
+      run: () => api.getGitHubConnection(),
+    }),
+    tool({
+      name: 'disconnectGitHub',
+      description:
+        'Stop importing skills through one GitHub account\'s installation of the GitHub App; its private repositories can no longer be imported. ' +
+        'The app stays installed on GitHub.',
+      properties: { installationId: int('The installationId getGitHubConnection reports.') },
+      required: ['installationId'],
+      destructive: true,
+      screen: before(accountSkillsPage),
+      run: ({ installationId }) => api.disconnectGitHub(installationId),
+    }),
+    tool({
       name: 'deleteSkill',
       description: 'Delete a skill from the account, with all its files; every workspace loses it. Cannot be undone.',
       properties: { name: str('The skill\'s name.') },

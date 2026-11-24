@@ -45,6 +45,7 @@
           Expected https://github.com/owner/repo, optionally /tree/&lt;ref&gt;/&lt;path&gt;
         </span>
       </div>
+      <GitHubConnection />
       <!-- Where the imported skills are turned on: chosen on the Skills page;
            in a workspace, that workspace alone. -->
       <SkillWorkspaceChoices v-if="!workspaceId" v-model="importWorkspaceIds" :workspaces="workspaceChoices"
@@ -208,6 +209,7 @@ import { useToasts } from '../composables/useToasts';
 import { onWebMCPChange } from '../composables/useWebMCPChanges';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useEventBus } from '../useEventBus';
+import GitHubConnection from './GitHubConnection.vue';
 import GiveSkillModal from './GiveSkillModal.vue';
 import SkillCard from './SkillCard.vue';
 import SkillWorkspaceChoices from './SkillWorkspaceChoices.vue';

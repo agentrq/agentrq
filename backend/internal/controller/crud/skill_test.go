@@ -45,14 +45,15 @@ const (
 var skUserStr = monoflake.ID(skUser).String()
 
 type fakeImporter struct {
-	res  *skillimport.Result
-	err  error
-	url  string
-	only []string
+	res   *skillimport.Result
+	err   error
+	url   string
+	only  []string
+	token string
 }
 
-func (f *fakeImporter) Fetch(ctx context.Context, rawURL string, only []string) (*skillimport.Result, error) {
-	f.url, f.only = rawURL, only
+func (f *fakeImporter) Fetch(ctx context.Context, rawURL string, only []string, token string) (*skillimport.Result, error) {
+	f.url, f.only, f.token = rawURL, only, token
 	return f.res, f.err
 }
 
@@ -70,7 +71,7 @@ func newSkillEnv(t *testing.T) *skillEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.TeamSkillChoice{}, &model.SkillShare{}, &model.WorkspaceSkill{}, &model.WorkspaceShare{}, &model.TeamMember{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.TeamSkillChoice{}, &model.SkillShare{}, &model.WorkspaceSkill{}, &model.WorkspaceShare{}, &model.TeamMember{}, &model.GitHubInstallation{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, ws := range []model.Workspace{

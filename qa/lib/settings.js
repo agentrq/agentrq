@@ -12,3 +12,5 @@ export const rootToken = process.env.QA_ROOT_TOKEN || 'agentrq-qa'
 export const dataDir = process.env.QA_DATA_DIR || ''
 // What the run's server signs sessions with.
 export const jwtSecret = process.env.AGENTRQ_AUTH_JWT_SECRET || 'agentrq-qa-jwt-secret'
+// The name of the run's GitHub App, in its github.com/apps/<slug> link.
+export const githubAppSlug = 'agentrq-qa'

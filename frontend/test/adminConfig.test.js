@@ -488,6 +488,17 @@ describe('AdminConfigView sign-in providers', () => {
     expect(qa(el, 'config-callback-copy').every((b) => !b.disabled)).toBe(true)
   })
 
+  it("shows the GitHub App's callback URL, under Features", async () => {
+    const configs = [withProviders([])[0], { key: 'githubApp', value: { enabled: false, appId: '', slug: '', clientId: '', clientSecret: MASK, privateKey: MASK } }]
+    const { el } = await openAuth({ [`GET ${CONFIGS}`]: [[{ configurations: configs }, 200]] })
+    await openTab(el, 'githubApp')
+    const urls = qa(el, 'config-callback-url')
+    expect(urls.map((u) => [u.querySelector('p').textContent, u.querySelector('code').textContent])).toEqual([
+      ['Callback URL', 'https://app.example/github/callback'],
+    ])
+    expect(el.textContent).toContain('GitHub App')
+  })
+
   it("shows the Slack app's redirect and request URLs, and copies one", async () => {
     const configs = [withProviders([])[0], { key: 'slack', value: { appId: '', clientId: '', clientSecret: MASK, enabled: false, signingSecret: MASK } }]
     const { el } = await openAuth({ [`GET ${CONFIGS}`]: [[{ configurations: configs }, 200]] })

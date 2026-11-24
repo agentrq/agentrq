@@ -69,6 +69,20 @@ Every skill in obra/superpowers fits these limits, so importing it brings in all
 
 **Overwrite existing** replaces the account's skill of the same name. It stays on in the workspaces it was on in, and is turned on in the ones ticked now.
 
+### Private repositories
+
+When your server's admin has set up a GitHub App (see below), the import shows **Private repositories** with a **Connect GitHub** link. It opens GitHub, where you install the app on your account or an organization and pick the repositories it may read. GitHub then brings you back, and the account is listed beside the import. From then on, a link to one of those repositories imports like a public one. The same connection is used when you import into a team workspace, so each member imports only what they have connected themselves.
+
+- AgentRQ keeps no GitHub token. Each import gets a token from GitHub that reads that one repository, and only its contents, and expires within the hour.
+- **Add or change on GitHub** changes which repositories the app reads. **×** beside an account stops importing through it. The app stays installed on GitHub until you uninstall it there.
+- If an organization needs its owners' approval, GitHub sends them your request. Connect again once they have approved it.
+
+**Setting up the GitHub App (admins).** Create a GitHub App under your organization's or your own developer settings:
+1. **Callback URL**: `<your AgentRQ URL>/github/callback`. Tick **Request user authorization (OAuth) during installation**; without it AgentRQ cannot check who installed the app, and refuses the connect.
+2. **Repository permissions**: Contents, read-only. Nothing else is needed, and webhooks can stay off.
+3. Generate a client secret and a private key.
+4. On **/admin/config → GitHub App**, fill in the App ID, the slug (the name in `github.com/apps/<slug>`), the client ID and secret, and paste the private key. Then turn on **enabled**. The same settings can come from the `AGENTRQ_GITHUB_APP_*` environment variables on first start.
+
 ## Turning a skill on and off
 
 A skill has two kinds of switch:

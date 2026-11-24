@@ -46,6 +46,7 @@ Postgres one, on a fresh database each run.
 | `app-badge.spec.js` | The installed app's icon badge counts the tasks waiting on the person, live: one more when a task is blocked, back again when it completes. |
 | `mcp-sessions.spec.js` | A workspace's MCP session id is a signed token holding only the handshake, and opens nothing without the bearer token. After the backend restarts, a call is 404 until the client reopens its push stream; then the session carries on: calls, the stream, and a task pushed to it. Forged, foreign and deleted ids are 404. The server speaks 2025-11-25 and 2025-06-18, and refuses 2026-07-28 with the versions to fall back to. |
 | `skills.spec.js` | The skills tab lists the account's skills, with the workspace ticked for an import. An import the server refuses shows the server's own reason. The sidebar's Skills link opens the account's Skills page. |
+| `github-connect.spec.js` | With the server's GitHub App set up, the Skills tab offers Connect GitHub, linking to the app's install page with a state for the return. A return whose state was made for another account is refused (422), and the callback page says so. |
 
 Every test also fails if the page made an API call that failed, or logged a
 console error, other than the failures it causes on purpose.

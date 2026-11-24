@@ -10,6 +10,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/avatar"
+	"github.com/agentrq/agentrq/backend/internal/service/githubapp"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/image"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
@@ -38,6 +39,9 @@ type (
 		Limiter ratelimit.Limiter
 		// SkillImport reads skills from GitHub. Nil turns importing off.
 		SkillImport skillimport.Service
+		// GitHubApp lets an import read private repositories. Nil, or not
+		// configured, reads public ones only.
+		GitHubApp githubapp.Service
 		// TaskAgents names the agents in a task's history. Nil leaves them
 		// unnamed.
 		TaskAgents TaskAgentNames
@@ -57,6 +61,7 @@ type (
 		MemoryController
 		PresetController
 		SkillController
+		GitHubController
 		PanoController
 		SiteShareController
 		ACPController
@@ -89,6 +94,7 @@ type (
 		// admin page writes it through the loginicon controller.
 		loginIconStorage storage.Service
 		skillImport      skillimport.Service
+		githubApp        githubapp.Service
 		taskAgents       TaskAgentNames
 	}
 )
@@ -115,6 +121,7 @@ func New(p Params) Controller {
 		panoStorage:      panoStorage,
 		loginIconStorage: p.LoginIconStorage,
 		skillImport:      p.SkillImport,
+		githubApp:        p.GitHubApp,
 		taskAgents:       p.TaskAgents,
 	}
 }

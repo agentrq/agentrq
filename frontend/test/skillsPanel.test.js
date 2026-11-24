@@ -48,6 +48,9 @@ const api = vi.hoisted(() => ({
   listWorkspaceTeamSkills: vi.fn(() => Promise.resolve({ skills: [], teamWorkspaces: [] })),
   setWorkspaceTeamSkill: vi.fn(),
   giveSkillToTeam: vi.fn(),
+  // The server has no GitHub App: the import offers public repositories only.
+  getGitHubConnection: vi.fn(() => Promise.resolve({ enabled: false, installations: [] })),
+  disconnectGitHub: vi.fn(),
 }));
 vi.mock('../src/api', () => api);
 vi.mock('../src/useEventBus', () => ({

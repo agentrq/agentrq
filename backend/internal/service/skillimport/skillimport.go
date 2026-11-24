@@ -2,13 +2,15 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
-// Package skillimport reads skills out of a public GitHub repository.
+// Package skillimport reads skills out of a GitHub repository: a public one,
+// or a private one given a token that reads it.
 //
 // It fetches one tarball rather than walking the contents API: unauthenticated
 // API calls are limited to 60 an hour per IP, which one repository of skills
 // can exhaust on its own. And it never fetches a URL it was given — it parses
 // the owner, repository and ref out of it and builds the codeload and API URLs
-// itself, so an import cannot be pointed at anything but GitHub.
+// itself, so an import cannot be pointed at anything but GitHub. A token goes
+// to the API alone, which serves a private repository's archive and files too.
 package skillimport
 
 import (
@@ -126,8 +128,9 @@ type (
 	// Service imports skills from GitHub.
 	Service interface {
 		// Fetch imports the skills a link names; only, when not empty, is the
-		// directories of the skills wanted.
-		Fetch(ctx context.Context, rawURL string, only []string) (*Result, error)
+		// directories of the skills wanted. token, when set, reads the
+		// repository through GitHub's API: a private one needs it.
+		Fetch(ctx context.Context, rawURL string, only []string, token string) (*Result, error)
 	}
 
 	service struct {
@@ -135,6 +138,8 @@ type (
 		apiBase      string
 		codeloadBase string
 		rawBase      string
+		// token is sent to apiBase, and nowhere else.
+		token string
 		// Byte budgets for one download: compressed, extracted, and held in
 		// memory. Fields rather than constants so tests can reach them.
 		maxDownload, maxExtracted, maxCollected int64
@@ -212,10 +217,15 @@ func ParseURL(raw string) (Source, error) {
 
 func (e tooLargeError) Error() string { return e.msg }
 
-func (s *service) Fetch(ctx context.Context, rawURL string, only []string) (*Result, error) {
+func (s *service) Fetch(ctx context.Context, rawURL string, only []string, token string) (*Result, error) {
 	src, err := ParseURL(rawURL)
 	if err != nil {
 		return nil, err
+	}
+	if token != "" {
+		withToken := *s
+		withToken.token = token
+		s = &withToken
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*requestTimeout)
 	defer cancel()
@@ -278,6 +288,11 @@ func (s *service) get(ctx context.Context, u, accept string) (*http.Response, er
 		req.Header.Set("Accept", accept)
 	}
 	req.Header.Set("User-Agent", "agentrq-skill-import")
+	// Go drops the header on a redirect to another host, as from the API's
+	// tarball to codeload, which is sent a token of its own in the URL.
+	if s.token != "" && strings.HasPrefix(u, s.apiBase+"/") {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
 	return s.client.Do(req)
 }
 
@@ -288,6 +303,9 @@ func (s *service) defaultBranch(ctx context.Context, repo string) (string, error
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
+		if s.token != "" {
+			return "", fmt.Errorf("%w: repository %s does not exist, or the GitHub App was not given it", ErrNotFound, repo)
+		}
 		return "", fmt.Errorf("%w: repository %s does not exist or is not public", ErrNotFound, repo)
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -342,7 +360,11 @@ func (l *limitedReader) Read(p []byte) (int, error) {
 // download reads the files under subPath out of the repository's tarball,
 // and the plugin manifests at its root, wherever subPath points.
 func (s *service) download(ctx context.Context, repo, ref, subPath string) ([]entry, map[string][]byte, error) {
-	resp, err := s.get(ctx, s.codeloadBase+"/"+repo+"/tar.gz/"+ref, "")
+	archive := s.codeloadBase + "/" + repo + "/tar.gz/" + ref
+	if s.token != "" {
+		archive = s.apiBase + "/repos/" + repo + "/tarball/" + ref
+	}
+	resp, err := s.get(ctx, archive, "")
 	if err != nil {
 		return nil, nil, fmt.Errorf("download from GitHub: %w", err)
 	}
@@ -678,7 +700,11 @@ func (s *service) readRaw(ctx context.Context, repo, ref, p string) ([]byte, err
 	for i := range segs {
 		segs[i] = url.PathEscape(segs[i])
 	}
-	resp, err := s.get(ctx, s.rawBase+"/"+repo+"/"+ref+"/"+strings.Join(segs, "/"), "")
+	u, accept := s.rawBase+"/"+repo+"/"+ref+"/"+strings.Join(segs, "/"), ""
+	if s.token != "" {
+		u, accept = s.apiBase+"/repos/"+repo+"/contents/"+strings.Join(segs, "/")+"?ref="+url.QueryEscape(ref), "application/vnd.github.raw"
+	}
+	resp, err := s.get(ctx, u, accept)
 	if err != nil {
 		return nil, fmt.Errorf("download from GitHub: %w", err)
 	}
