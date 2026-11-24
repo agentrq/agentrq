@@ -125,10 +125,11 @@ const MEDIA = { Image: ['url'], Video: ['url', 'posterUrl'], AudioPlayer: ['url'
 
 /**
  * Whether url is a link the server resolved an attachment to: the public
- * /storage/ route, the task's attachment route, or a bucket's https link.
+ * /storage/ route, the task's attachment route, or an absolute public link,
+ * a bucket's or the server's own, which is http on a server without TLS.
  */
 export function isStoredMediaUrl(url) {
-  return typeof url === 'string' && (/^\/(storage|api\/v1\/workspaces)\//.test(url) || /^https:\/\/[^/]/.test(url))
+  return typeof url === 'string' && (/^\/(storage|api\/v1\/workspaces)\//.test(url) || /^https?:\/\/[^/]/.test(url))
 }
 
 const MESSAGES = {
