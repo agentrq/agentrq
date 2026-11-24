@@ -224,16 +224,24 @@ func TestFilters(t *testing.T) {
 	none(t, handle(with(created(), "labels", "AgentRQ")))
 	none(t, handle(with(automation(`{"key":"ABC-1","fields":{}}`), "labels", "agentrq")))
 
-	one(t, handle(with(created(), "accountIds", "a-1"))) // the assignee
-	one(t, handle(with(created(), "accountIds", "u-1"))) // who acted
-	none(t, handle(with(created(), "accountIds", "r-1")))
-	comment := webhook(`{"webhookEvent":"comment_created","comment":{"body":"hi","author":{"accountId":"c-1"}},"issue":{"key":"ABC-1","fields":{}}}`)
-	one(t, handle(with(comment, "accountIds", "c-1")))
-	none(t, handle(with(automation(`{"key":"ABC-1","fields":{"assignee":null}}`), "accountIds", "a-1")))
+	one(t, handle(with(created(), "assignees", "a-1")))
+	one(t, handle(with(created(), "assignees", "ada")))
+	none(t, handle(with(created(), "assignees", "u-1", "Uma"))) // who acted is not the assignee
+	none(t, handle(with(automation(`{"key":"ABC-1","fields":{"assignee":null}}`), "assignees", "a-1")))
+	none(t, handle(with(automation(`{"key":"ABC-1","fields":{"assignee":{"displayName":"Ada"}}}`), "assignees", "")))
 
-	in := with(with(created(), "projects", "ABC"), "labels", "web")
-	one(t, handle(with(in, "accountIds", "a-1")))
-	none(t, handle(with(in, "accountIds", "z-9")))
+	one(t, handle(with(created(), "actors", "u-1")))
+	one(t, handle(with(created(), "actors", "UMA")))
+	none(t, handle(with(created(), "actors", "a-1", "Ada"))) // the assignee did not act
+	comment := `{"webhookEvent":"comment_created","comment":{"body":"hi","author":{"accountId":"c-1","displayName":"Cy"}},"issue":{"key":"ABC-1","fields":{}}}`
+	one(t, handle(with(webhook(comment), "actors", "c-1")))
+	one(t, handle(with(webhook(comment), "actors", "cy")))
+	none(t, handle(with(webhook(`{"webhookEvent":"comment_created","comment":{"body":"hi"},"issue":{"key":"ABC-1","fields":{}}}`), "actors", "c-1")))
+	none(t, handle(with(automation(`{"key":"ABC-1","fields":{}}`), "actors", "u-1")))
+
+	in := with(with(with(created(), "projects", "ABC"), "labels", "web"), "assignees", "a-1")
+	one(t, handle(with(in, "actors", "u-1")))
+	none(t, handle(with(in, "actors", "z-9")))
 }
 
 func TestDedupKey(t *testing.T) {

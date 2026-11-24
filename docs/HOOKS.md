@@ -61,7 +61,10 @@ Filter in Jira first: a manual rule sends only the issues somebody chooses, and 
 
 - **Projects**: project keys, such as `ABC`.
 - **Labels**: the issue must have one of them, such as `agentrq`.
-- **Jira account ids**: one must be the issue's assignee or the person who acted (who ran the rule, changed the issue or commented). Your account id is the last part of your Jira profile's URL, `…/jira/people/<account id>`.
+- **Assignees**: the issue's assignee must be one of them.
+- **Actors**: the person who ran the rule, changed the issue or commented must be one of them.
+
+Assignees and actors are Jira account ids or display names, the names matched ignoring case. Prefer the id: a name can change, and two people can share one. Your account id is the last part of your Jira profile's URL, `…/jira/people/<account id>`. Jira Cloud does not send email addresses, so they cannot be used.
 
 A request that does not pass is recorded as `ignored`. The hook only reads from Jira: for the agent to comment on or move the issue, give its workspace a way to reach Jira, such as the Atlassian MCP server.
 

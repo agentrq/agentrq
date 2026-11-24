@@ -27,7 +27,8 @@ var manifest = sdk.Manifest{
 		{Name: "webhookSecret", Label: "Secret: the webhook's secret, or the Automation rule's Authorization: Bearer token", Type: "string", Secret: true, Required: true},
 		{Name: "projects", Label: "Project keys, such as ABC (empty is every project)", Type: "array", Items: "string"},
 		{Name: "labels", Label: "Labels; the issue must have one (empty is any issue)", Type: "array", Items: "string"},
-		{Name: "accountIds", Label: "Jira account ids; one must be the assignee or the person who acted (empty is anyone)", Type: "array", Items: "string"},
+		{Name: "assignees", Label: "Assignees, as Jira account ids or display names; the issue's must be one (empty is anyone, or no one)", Type: "array", Items: "string"},
+		{Name: "actors", Label: "Who acted (ran the rule, changed the issue or commented), as Jira account ids or display names (empty is anyone)", Type: "array", Items: "string"},
 	},
 	Events: []sdk.Event{
 		{Name: "jira.issue.sent", Description: "An Automation rule sent an issue, such as from a manual \"Send to AgentRQ\" action"},
@@ -180,21 +181,35 @@ func wanted(in sdk.In, p payload) bool {
 		!slices.ContainsFunc(is.Fields.Labels, func(l string) bool { return slices.Contains(labels, l) }) {
 		return false
 	}
-	if ids := in.Strings("accountIds"); len(ids) > 0 {
-		var who []string
-		for _, u := range []*person{is.Fields.Assignee, p.User} {
-			if u != nil && u.AccountID != "" {
-				who = append(who, u.AccountID)
-			}
+	if want := in.Strings("assignees"); len(want) > 0 && !matches(want, is.Fields.Assignee) {
+		return false
+	}
+	if want := in.Strings("actors"); len(want) > 0 {
+		var author *person
+		if p.Comment != nil {
+			author = p.Comment.Author
 		}
-		if p.Comment != nil && p.Comment.Author != nil {
-			who = append(who, p.Comment.Author.AccountID)
-		}
-		if !slices.ContainsFunc(who, func(id string) bool { return slices.Contains(ids, id) }) {
+		if !matches(want, p.User, author) {
 			return false
 		}
 	}
 	return true
+}
+
+// matches reports whether one of the people is named in want, by account id
+// or, ignoring case, by display name.
+func matches(want []string, people ...*person) bool {
+	for _, u := range people {
+		if u == nil {
+			continue
+		}
+		for _, w := range want {
+			if (u.AccountID != "" && w == u.AccountID) || (u.DisplayName != "" && strings.EqualFold(w, u.DisplayName)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // projectKey is the issue's project key, from its fields or else its key.
