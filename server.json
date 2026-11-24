@@ -15,7 +15,7 @@
       "sizes": ["any"]
     }
   ],
-  "version": "0.17.5",
+  "version": "0.18.0",
   "remotes": [
     {
       "type": "streamable-http",
