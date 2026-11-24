@@ -21,7 +21,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('../src/useEventBus', () => ({
-  useEventBus: () => ({ connect() {}, disconnect() {}, events: ref([]) }),
+  useEventBus: () => ({ connect() {}, disconnect() {}, events: ref([]), isConnected: ref(false) }),
 }))
 
 vi.mock('../src/composables/useSpeechToText', () => ({

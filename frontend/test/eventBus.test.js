@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createApp, defineComponent, h, ref } from 'vue'
 
-import { useEventBus } from '../src/useEventBus'
+import { RESUME_RECONNECT_MS, useEventBus } from '../src/useEventBus'
 import { apiBreaker } from '../src/utils/circuitBreaker'
 
 /**
@@ -533,6 +533,86 @@ describe('useEventBus', () => {
 
       resolveAuth({ status: 200 })
       await vi.advanceTimersByTimeAsync(1000)
+    })
+  })
+
+  // iOS suspends a backgrounded Home Screen app, and its stream often dies with
+  // no error: back from the background, the stream is reopened, which is the
+  // reconnect the views re-read on. Earlier tests leave their buses connected,
+  // so each test here names a workspace of its own and counts only its streams.
+  describe('coming back from the background', () => {
+    let visibility
+    beforeEach(() => {
+      visibility = 'visible'
+      vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+    })
+
+    const streams = (id) => FakeEventSource.instances.filter((s) => s.url.endsWith(`/${id}/events`))
+    const away = (ms) => {
+      visibility = 'hidden'
+      document.dispatchEvent(new Event('visibilitychange'))
+      vi.advanceTimersByTime(ms)
+      visibility = 'visible'
+      document.dispatchEvent(new Event('visibilitychange'))
+    }
+
+    it('reopens the stream after a while away', () => {
+      const bus = useEventBus('resume-long')
+      bus.connect()
+      streams('resume-long')[0].open()
+
+      away(RESUME_RECONNECT_MS)
+
+      const [old, fresh] = streams('resume-long')
+      expect(old.closed).toBe(true)
+      expect(fresh).toBeDefined()
+      expect(bus.isConnected.value).toBe(false)
+      fresh.open()
+      expect(bus.isConnected.value).toBe(true)
+    })
+
+    it('keeps the stream through a short absence', () => {
+      const bus = useEventBus('resume-short')
+      bus.connect()
+
+      away(RESUME_RECONNECT_MS - 1)
+
+      expect(streams('resume-short')).toHaveLength(1)
+      expect(streams('resume-short')[0].closed).toBe(false)
+    })
+
+    // A failed stream waits out its backoff, up to 30 s; coming back is when
+    // the person wants it now.
+    it('reconnects at once when the stream had failed and was waiting', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(apiBreaker, 'retryIn').mockReturnValue(30000)
+      const bus = useEventBus('resume-failed')
+      bus.connect()
+      streams('resume-failed')[0].fail()
+      await vi.advanceTimersByTimeAsync(0)
+
+      away(RESUME_RECONNECT_MS)
+
+      expect(streams('resume-failed')).toHaveLength(2)
+    })
+
+    it('does nothing once disconnected', () => {
+      const bus = useEventBus('resume-off')
+      bus.connect()
+      bus.disconnect()
+
+      away(RESUME_RECONNECT_MS)
+
+      expect(streams('resume-off')).toHaveLength(1)
+    })
+
+    it('does nothing when it was never hidden', () => {
+      const bus = useEventBus('resume-never')
+      bus.connect()
+
+      document.dispatchEvent(new Event('visibilitychange'))
+
+      expect(streams('resume-never')).toHaveLength(1)
     })
   })
 })

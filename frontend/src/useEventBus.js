@@ -10,6 +10,14 @@ import { apiBreaker } from './utils/circuitBreaker';
 // regardless of how many SSE connections error simultaneously.
 let sharedAuthCheckPromise = null;
 
+/**
+ * How long the page must have been hidden for its return to reopen the stream.
+ * iOS suspends a backgrounded Home Screen app within seconds, and its stream
+ * often dies without an error: the socket still looks open and carries
+ * nothing, so nothing would ever reconnect or re-read what was missed.
+ */
+export const RESUME_RECONNECT_MS = 5000;
+
 async function checkAuth() {
   if (sharedAuthCheckPromise) return sharedAuthCheckPromise;
   sharedAuthCheckPromise = fetch(`${API_BASE_URL}/auth/user`)
@@ -53,6 +61,26 @@ export function useEventBus(workspaceId, { buffer = true, isPublicPage = () => f
   // and a scheduled one only kept, while the caller still wants the stream.
   let wanted = false;
   let reconnectTimer = null;
+  let hiddenAt = 0;
+
+  // Back after a while: a fresh stream, whose open is the reconnect every
+  // `isConnected` watcher already re-reads on.
+  function onVisibilityChange() {
+    if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
+      return;
+    }
+    const away = hiddenAt ? Date.now() - hiddenAt : 0;
+    hiddenAt = 0;
+    if (!wanted || away < RESUME_RECONNECT_MS) return;
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+      isConnected.value = false;
+    }
+    reconnectDelay = 1000;
+    connect();
+  }
 
   function reconnectIn(ms) {
     if (!wanted) return;
@@ -75,6 +103,7 @@ export function useEventBus(workspaceId, { buffer = true, isPublicPage = () => f
   }
 
   function connect() {
+    if (!wanted) document.addEventListener('visibilitychange', onVisibilityChange);
     wanted = true;
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -140,6 +169,8 @@ export function useEventBus(workspaceId, { buffer = true, isPublicPage = () => f
   }
 
   function disconnect() {
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    hiddenAt = 0;
     wanted = false;
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
