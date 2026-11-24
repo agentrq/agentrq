@@ -58,6 +58,7 @@ type (
 		pubsub   pubsub.Service
 		ids      idgen.Service
 		basePath string
+		vapid    *vapidTokens
 	}
 
 	pushPayload struct {
@@ -81,6 +82,7 @@ func New(p Params) Controller {
 		pubsub:   p.PubSub,
 		ids:      p.IDGen,
 		basePath: p.BasePath,
+		vapid:    newVAPIDTokens(&http.Client{}),
 	}
 }
 
@@ -308,6 +310,7 @@ func (c *controller) sendToUser(ctx context.Context, userID int64, workspaceID, 
 			VAPIDPrivateKey: c.cfg.VAPIDPrivateKey,
 			Subscriber:      subscriber,
 			TTL:             3600,
+			HTTPClient:      c.vapid,
 		})
 		if err != nil {
 			zlog.Warn().Err(err).Str("endpoint", sub.Endpoint).Msg("[push] failed to send notification")

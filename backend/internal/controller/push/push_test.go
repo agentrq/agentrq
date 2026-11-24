@@ -33,9 +33,10 @@ func newTestController(t *testing.T, cfg Config) (*controller, *mock_repo.MockRe
 	mockRepo := mock_repo.NewMockRepository(ctrl)
 	mockIDGen := mock_idgen.NewMockService(ctrl)
 	c := &controller{
-		cfg:  cfg,
-		repo: mockRepo,
-		ids:  mockIDGen,
+		cfg:   cfg,
+		repo:  mockRepo,
+		ids:   mockIDGen,
+		vapid: newVAPIDTokens(&http.Client{}),
 	}
 	return c, mockRepo, mockIDGen
 }
