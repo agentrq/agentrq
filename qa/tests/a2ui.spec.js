@@ -4,7 +4,7 @@
 
 import { crc32, deflateSync } from 'node:zlib'
 import { test, expect } from '../lib/fixtures.js'
-import { agentSession, createTask, getTask, unique, watchTraffic } from '../lib/app.js'
+import { agentSession, createTask, finishOngoingTasks, getTask, setTaskStatus, unique, watchTraffic } from '../lib/app.js'
 
 const CATALOG = 'https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json'
 
@@ -84,6 +84,7 @@ function buildCard(surfaceId) {
 // draws the card, with the chart loaded from the reply's stored file.
 test('an agent\'s reply with an A2UI card and an attached image is drawn as a card', async ({ page, workspace }) => {
   const traffic = watchTraffic(page)
+  await finishOngoingTasks(page, workspace.id)
   const task = await createTask(page, workspace.id, unique('a task answered with a card'), 'ongoing', { assignee: 'human' })
   const call = await agentSession(page, workspace.id)
 
@@ -122,11 +123,13 @@ test('an agent\'s reply with an A2UI card and an attached image is drawn as a ca
   await surface.scrollIntoViewIfNeeded()
   await page.screenshot({ path: test.info().outputPath('a2ui-card-phone.png'), animations: 'disabled' })
   traffic.expectClean({ allow: ['404 /plan'] })
+  await setTaskStatus(page, workspace.id, task.id, 'completed')
 })
 
 // A card the validator refuses posts nothing, and the agent is told why in
 // the validator's own words, so it can fix the card and send it again.
 test('an invalid A2UI card is refused with the validator\'s message and posts nothing', async ({ page, workspace }) => {
+  await finishOngoingTasks(page, workspace.id)
   const task = await createTask(page, workspace.id, unique('a task with a refused card'), 'ongoing', { assignee: 'human' })
   const call = await agentSession(page, workspace.id)
   const before = await messageCount(page, workspace.id, task.id)
@@ -152,4 +155,5 @@ test('an invalid A2UI card is refused with the validator\'s message and posts no
   await expect(page.getByText(task.title).first(), 'the task').toBeVisible()
   await expect(page.locator('[data-test="a2ui-surface"]'), 'a card in the thread').toHaveCount(0)
   await expect(page.getByText('Build passed.'), 'the refused reply\'s text').toHaveCount(0)
+  await setTaskStatus(page, workspace.id, task.id, 'completed')
 })
