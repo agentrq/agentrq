@@ -71,13 +71,14 @@ func TestTaskTool_RefusesABadCall(t *testing.T) {
 		payload map[string]any
 		want    string
 	}{
-		{"create", map[string]any{"title": "t"}, "create: payload needs workspaceId"},
-		{"respond", map[string]any{"workspaceId": "a", "taskId": "b", "decision": "allow"}, `respond: bad payload: unknown field "decision"`},
+		{"create", map[string]any{"title": "t"}, "create: payload needs workspaceId; create takes {workspaceId, title, body?"},
+		{"respond", map[string]any{"workspaceId": "a", "taskId": "b", "decision": "allow"}, `respond: bad payload: unknown field "decision"; respond takes {workspaceId, taskId, action, text?, verbose?}, like {"workspaceId"`},
 		{"archive", nil, `unknown action "archive": use list, listAll, create, get, messages, changes, reply, followUp, respond, updateStatus, updateSortingOrder, updateAssignee, updateAllowAll, updateSchedule, delete, getAttachment or help`},
 	} {
 		res := toolResult(srv.handleTask(authedContext(), nil, TaskParams{Action: tc.action, Payload: tc.payload}))
-		if !res.isError || res.text != tc.want {
-			t.Errorf("%s %v answered %q (error %v), want the error %q", tc.action, tc.payload, res.text, res.isError, tc.want)
+		// A refused payload goes on to list the fields and an example.
+		if !res.isError || !strings.HasPrefix(res.text, tc.want) {
+			t.Errorf("%s %v answered %q (error %v), want an error starting %q", tc.action, tc.payload, res.text, res.isError, tc.want)
 		}
 	}
 }

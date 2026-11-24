@@ -128,11 +128,15 @@ func resolveMemoryName(name string) (string, error) {
 		if !workspaceIDPattern.MatchString(id) {
 			return "", fmt.Errorf("memory name %q is not usable; a name may start with a workspace id and a slash, like %q", name, "0ZzhYQG2qtl/"+DefaultMemoryName)
 		}
-		rest, err := resolvePlainMemoryName(rest)
+		resolved, err := resolvePlainMemoryName(rest)
 		if err != nil {
+			// The example keeps the workspace, or a retry would use our own.
+			if withMD := strings.ToLower(strings.TrimSpace(rest)) + ".md"; memoryNamePattern.MatchString(withMD) {
+				return "", memoryNameError(trimmed, id+"/"+withMD)
+			}
 			return "", err
 		}
-		return id + "/" + rest, nil
+		return id + "/" + resolved, nil
 	}
 	return resolvePlainMemoryName(trimmed)
 }
@@ -149,12 +153,18 @@ func resolvePlainMemoryName(trimmed string) (string, error) {
 		return "", fmt.Errorf("memory name is %d characters; the limit is %d", n, MaxMemoryNameLength)
 	}
 	if !memoryNamePattern.MatchString(canonical) {
-		return "", fmt.Errorf(
-			"memory name %q is not usable; names are lowercase words joined by single hyphens and ending in .md, like %q or %q",
-			trimmed, DefaultMemoryName, "release-notes.md",
-		)
+		// The name left without .md is refused too, with itself as the example.
+		if memoryNamePattern.MatchString(canonical + ".md") {
+			return "", memoryNameError(trimmed, canonical+".md")
+		}
+		return "", memoryNameError(trimmed, "release-notes.md")
 	}
 	return canonical, nil
+}
+
+// memoryNameError refuses name, with example as the one to send instead.
+func memoryNameError(name, example string) error {
+	return fmt.Errorf("memory name %q is not usable; names are lowercase words joined by single hyphens and ending in .md, like %q", name, example)
 }
 
 // validateMemoryContent refuses a memory that is over the cap.

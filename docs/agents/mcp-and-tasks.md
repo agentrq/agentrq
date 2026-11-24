@@ -58,6 +58,8 @@ accepted. A retired tool name is answered, unlisted, by `ActionToolsMiddleware`
 from `legacyTools` in each server's `tools.go`: never drop an entry while a
 gateway, CLI or extension installed before the merge may still call it.
 
+Payloads are strict: a wrong field name is refused, and the refusal ends with the action's fields and its example. The one alias, skills.search `query` for `q`, was a human decision (sent with `q`, refused); add no other without one.
+
 ## What an agent reports leaves with its link
 
 Models, commands and the usage ring come only from native ACP

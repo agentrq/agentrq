@@ -13,10 +13,10 @@ import (
 // TaskToolDescription is the workspace server's task tool's description.
 const TaskToolDescription = "Work on this workspace's tasks and talk to the human in them. Two inputs: action, and payload, the action's fields. " +
 	"Run action help for the actions, and help with payload {\"topic\": \"<action>\"} for one's payload. " +
-	"get: a task, or with no taskId the next not started task assigned to the agent. " +
-	"updateStatus: 'ongoing' when you start, 'completed' when you finish, 'blocked' when you need the human. " +
-	"reply: a message (`text`) to the task; the human sees only these. " +
-	"elicit: asks the human (`message`, and `mode` form or url) and waits for the answer. getAttachment: a task's attachment. create: a new task (`title`, `body`). " +
+	"get {taskId}: a task, or with no taskId the next not started task assigned to the agent. " +
+	"updateStatus {taskId, status}: 'ongoing' when you start, 'completed' when you finish, 'blocked' when you need the human. " +
+	"reply {taskId, text}: a message to the task; the human sees only these. " +
+	"elicit {taskId, message, mode}: asks the human and waits for the answer. getAttachment {taskId, attachmentId}: a task's attachment. create {title, body}: a new task. " +
 	"taskId is the chat_id a task arrives with."
 
 // TaskCLIHint points a workspace's agent at agentrq-ws for attachments, which

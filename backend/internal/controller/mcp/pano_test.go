@@ -184,7 +184,7 @@ func TestRunPano_Refusals(t *testing.T) {
 		params PanoParams
 		want   string
 	}{
-		{"read with no id is refused", PanoParams{Action: "read"}, "read: payload needs id"},
+		{"read with no id is refused", PanoParams{Action: "read"}, "read: payload needs id; read takes {id, "},
 		{"delete with an id that is not one is not found", PanoParams{Action: "delete", Payload: map[string]any{"id": "00000000000"}}, "Pano doc not found"},
 		{"read with an id that is not one is not found", PanoParams{Action: "read", Payload: map[string]any{"id": "00000000000"}}, "Pano doc not found"},
 		{"comment with an id that is not one is not found", PanoParams{Action: "comment", Payload: map[string]any{"id": "00000000000", "comment": "c"}}, "Pano doc not found"},
@@ -197,8 +197,8 @@ func TestRunPano_Refusals(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &fakePano{}
 			text, isErr := call(RunPano(context.Background(), f, "user-1", 100, tc.params), nil, nil)
-			if !isErr || text != tc.want {
-				t.Errorf("RunPano answered %q (error %v), want the error %q", text, isErr, tc.want)
+			if !isErr || !strings.HasPrefix(text, tc.want) {
+				t.Errorf("RunPano answered %q (error %v), want an error starting %q", text, isErr, tc.want)
 			}
 			if f.saw != nil {
 				t.Errorf("the controller was asked %+v, want no call", f.saw)
