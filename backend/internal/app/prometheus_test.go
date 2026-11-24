@@ -14,10 +14,10 @@ import (
 	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 const testMetricsToken = "0123456789abcdef0123456789abcdef"
@@ -49,7 +49,8 @@ func TestCheckPrometheus(t *testing.T) {
 // metricsApp is a Fiber app with the metrics in front of one route.
 func metricsApp(token string) *fiber.App {
 	app := fiber.New()
-	app.Use(prometheusFiber(PrometheusConfig{Enabled: true, Token: token}, prometheus.NewRegistry())...)
+	reg, registerer := metricsRegistry("v1.2.3")
+	app.Use(prometheusFiber(PrometheusConfig{Enabled: true, Token: token}, reg, registerer)...)
 	app.Get("/api/v1/ping", func(c fiber.Ctx) error { return c.SendString("pong") })
 	return app
 }
@@ -94,7 +95,7 @@ func TestMetricsCountRequestsAndAnswerAScrapeWithTheToken(t *testing.T) {
 		if status != fiber.StatusOK {
 			t.Fatalf("%s = %d %q", target, status, body)
 		}
-		want := `http_requests_total{method="GET",path="/api/v1/ping",service="agentrq",status_code="200"} 1`
+		want := `http_requests_total{app_version="v1.2.3",method="GET",path="/api/v1/ping",service="agentrq",status_code="200"} 1`
 		if !strings.Contains(body, want) {
 			t.Fatalf("%s has no %s:\n%s", target, want, body)
 		}
@@ -136,7 +137,7 @@ func TestTheAppServesTelemetryActionsWithPrometheus(t *testing.T) {
 	a.pubsub.Publish(context.Background(), pubsub.PublishRequest{PubSubID: entity.PubSubTopicCRUD, Event: entity.CRUDEvent{
 		Action: entity.ActionTaskCreate, UserID: 1, WorkspaceID: 1,
 	}})
-	want := `agentrq_telemetry_actions_total{action="task_create",sub_action=""} 1`
+	want := `agentrq_telemetry_actions_total{action="task_create",app_version="` + appVersion(t) + `",sub_action=""} 1`
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		rr := httptest.NewRecorder()
@@ -149,4 +150,57 @@ func TestTheAppServesTelemetryActionsWithPrometheus(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// Every metric the app exports carries the running build's app_version, Go's
+// runtime and process ones too, and agentrq_build_info names it once.
+func TestEveryAppMetricCarriesTheAppVersion(t *testing.T) {
+	t.Setenv("AGENTRQ_PROMETHEUS_ENABLED", "true")
+	t.Setenv("AGENTRQ_PROMETHEUS_TOKEN", testMetricsToken)
+	a := newTestApp(t)
+	version := appVersion(t)
+	label := `app_version="` + version + `"`
+	a.pubsub.Publish(context.Background(), pubsub.PublishRequest{PubSubID: entity.PubSubTopicCRUD, Event: entity.CRUDEvent{
+		Action: entity.ActionTaskCreate, UserID: 1, WorkspaceID: 1,
+	}})
+	serve := func(target string) string {
+		rr := httptest.NewRecorder()
+		a.server.(http.Handler).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "http://localhost"+target, nil))
+		return rr.Body.String()
+	}
+	scrape := func() string { return serve("/metrics?prometheus_token=" + testMetricsToken) }
+	serve("/") // an HTTP request to count
+	body := scrape()
+	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(body, "agentrq_telemetry_actions_total{") || !strings.Contains(body, "http_requests_total{"); body = scrape() {
+		if time.Now().After(deadline) {
+			t.Fatalf("no telemetry or HTTP metrics in:\n%s", body)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if want := `agentrq_build_info{` + label + `} 1`; !strings.Contains(body, want) {
+		t.Fatalf("no %s in:\n%s", want, body)
+	}
+	checked := 0
+	for _, line := range strings.Split(body, "\n") {
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		checked++
+		if !strings.Contains(line, label) {
+			t.Errorf("no %s on %s", label, line)
+		}
+	}
+	if checked == 0 {
+		t.Fatalf("no app metrics in:\n%s", body)
+	}
+}
+
+// appVersion is the version the running build reports, as config.go sets it.
+func appVersion(t *testing.T) string {
+	t.Helper()
+	svc, err := config.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return svc.Version()
 }
