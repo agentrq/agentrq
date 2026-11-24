@@ -296,6 +296,10 @@ func (e *engineV1) runTurn(d delivery) {
 		resp.StopReason, err = "cancelled", nil
 	}
 	e.barrier() // every update that came before the answer is applied now
+	if err != nil && e.q.cancelledSince(d.taskID, d.seq) {
+		// The human's Stop, answered with an error: still their own Stop.
+		resp.StopReason, err = "cancelled", nil
+	}
 	e.endTurn(s, d.taskID, resp.StopReason, err)
 	if e.deps.OnTurn != nil {
 		e.deps.OnTurn(e.ctx, e.c.WorkspaceID(), e.c.UserID())
@@ -374,7 +378,12 @@ func (e *engineV1) endTurn(s *session, taskID int64, stopReason string, err erro
 // when the agent never reported any, which the composer draws no ring for.
 // Every delivery ends with it, whatever else it posted (#1347, #1350).
 func (e *engineV1) markTurnEnd(taskID int64, s *session) {
-	if !e.isEnding() { // teardown marks the turns it cut off
+	e.mu.Lock()
+	// Teardown marks the turns it cut off: a session still busy once the
+	// connection is ending. Every other delivery is marked here, ending or not.
+	cut := e.cause != nil && s != nil && s.busy
+	e.mu.Unlock()
+	if !cut {
 		e.postTurnEnd(taskID, s)
 	}
 }

@@ -985,6 +985,23 @@ func TestEngine(t *testing.T) {
 		}
 	})
 
+	t.Run("a Stop the agent answers with an error posts no note", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"idle-1"}`)
+		l.DeliverTask(context.Background(), 42, "go")
+		p := a.expect("session/prompt")
+		l.CancelTask(context.Background(), 42)
+		a.expectParams("session/cancel", `{"sessionId":"idle-1"}`)
+		a.fail(p, codeInternalError, "request cancelled")
+		rec.wait(t, func() bool { return rec.ends(42) == 1 })
+		rec.read(func() {
+			if len(rec.replies) != 0 {
+				t.Fatalf("replies were %q, want none after the human's own Stop", rec.replies)
+			}
+		})
+	})
+
 	t.Run("a Stop the agent never answers ends the turn after the settle wait", func(t *testing.T) {
 		shrink(t, &cancelSettleWait, 50*time.Millisecond)
 		rec := &recorder{}
