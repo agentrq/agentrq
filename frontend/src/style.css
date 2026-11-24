@@ -100,15 +100,16 @@
 }
 
 /* With viewport-fit=cover the page runs under the notch and the home indicator.
- * In the base layer so a utility (the macOS title bar's pt-10) still wins.
- * No bottom inset on a phone: pages already end with room for the Menu pill,
- * and the inset on top of that doubled the gap. */
+ * `#app #app`: App.vue's root reuses the mount point's id, and padding both
+ * counted every inset twice. In the base layer so a utility (the macOS title
+ * bar's pt-10) still wins. No bottom inset on a phone: pages already end with
+ * room for the Menu pill. */
 @layer base {
-  #app {
+  #app #app {
     padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
   }
   @media (min-width: 768px) {
-    #app {
+    #app #app {
       padding-bottom: env(safe-area-inset-bottom);
     }
   }
