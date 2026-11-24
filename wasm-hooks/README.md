@@ -4,6 +4,7 @@ An AgentRQ hook turns a request from an outside service, such as a failed CI run
 
 - `generic/` checks a shared token in a header and passes the body through as the event's payload.
 - `github/` checks `X-Hub-Signature-256` and writes `ci.failed`, `ci.succeeded`, `pr.opened`, `pr.review_requested`, `issue.opened`, `release.published` and `push` events.
+- `jira/` takes a Jira Cloud admin webhook (it checks `X-Hub-Signature`) or an Automation rule's Send web request (it checks `Authorization: Bearer`), and writes `jira.issue.sent`, `jira.issue.created`, `jira.issue.updated` and `jira.comment.created` events. They can be filtered by project, label, assignee and who acted.
 - `sdk/` is the contract for hooks written in Go.
 
 `make wasm-hooks` builds them into `wasm-hooks/dist/`. Each release also ships them as `agentrq-hook-<name>_<version>.wasm`, for the root user to register.

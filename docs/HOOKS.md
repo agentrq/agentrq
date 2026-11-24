@@ -2,7 +2,7 @@
 
 A hook turns a request from an outside service into one of your account's events, and so into a task. For example, when a GitHub Actions run fails, GitHub calls a hook URL and an agent gets a task to look at the failure.
 
-- A **hook** is a small WebAssembly program that checks that a request is genuine and decides which events it fires. AgentRQ ships two built-in hooks, `github` and `generic`, and you can write your own.
+- A **hook** is a small WebAssembly program that checks that a request is genuine and decides which events it fires. AgentRQ ships three built-in hooks, `github`, `jira` and `generic`, and you can write your own.
 - A **registration** is one use of a hook in your account. It has a name, its own URL, the hook's inputs (such as the webhook secret), and **routes** that map each of the hook's events to one of your events.
 
 An event fires the tasks its triggers describe, so set up the event and its trigger first: **Events → New event**, then add a trigger that creates a task in a workspace. A trigger's body can include `{{EVENT_PAYLOAD}}`, the request's details.
@@ -33,6 +33,40 @@ In the repository (or organization), open **Settings → Webhooks → Add webhoo
 | Events | the ones you routed: **Workflow runs**, **Pull requests**, **Issues**, **Releases**, **Pushes** |
 
 The hook checks the `X-Hub-Signature-256` signature, and fires `ci.failed`, `ci.succeeded`, `pr.opened`, `pr.review_requested`, `issue.opened`, `release.published` and `push`. **Branches** limits the hook to branches matching one of its globs, such as `main` or `release/*`; left empty, every branch counts.
+
+### `jira`
+
+For Jira Cloud. It takes two kinds of request, and the **Secret** input is shared by both.
+
+**A "Send to AgentRQ" action on an issue** (a Jira Automation rule; a project admin sets it up once):
+
+1. In the project, open **Project settings → Automation → Create rule**.
+2. Trigger: **Manual trigger from work item**. It shows under the issue's **Actions** menu. Use **Groups that can run trigger** to limit who sees it.
+3. Action: **Send web request**.
+
+| Field | Value |
+|---|---|
+| Web request URL | the registration's payload URL |
+| HTTP method | `POST` |
+| Web request body | **Work item data (Jira format)**, or **(Automation format)** |
+| Headers | `Authorization`: `Bearer <Secret>`, marked **Hidden** |
+
+The rule fires `jira.issue.sent`. Any other trigger works the same, such as a label being added or an issue moving to a status.
+
+**An admin webhook** (a Jira admin sets it up in **Jira settings → System → WebHooks**): the payload URL, the registration's **Secret**, a JQL filter if you like, and the events **Issue created**, **Issue updated** and **Comment created**. Jira signs each request in `X-Hub-Signature`, and the hook fires `jira.issue.created`, `jira.issue.updated` (with what changed) and `jira.comment.created`.
+
+Each event's payload is the issue's key, summary and link, its type, priority, status, reporter, assignee and labels, and its description (or the new comment) as plain text, shortened past 8 KB. A retry has the same `X-Atlassian-Webhook-Identifier`, so it is recorded as a duplicate.
+
+Filter in Jira first: a manual rule sends only the issues somebody chooses, and a webhook should have a JQL filter, such as `project = ABC AND labels = agentrq`. Jira sends every request that passes, and each one is stored and run through the hook. The registration's own filters then narrow what Jira sends, without asking a Jira admin to change the rule:
+
+- **Projects**: project keys, such as `ABC`.
+- **Labels**: the issue must have one of them, such as `agentrq`.
+- **Assignees**: the issue's assignee must be one of them.
+- **Actors**: the person who ran the rule, changed the issue or commented must be one of them.
+
+Assignees and actors are Jira account ids or display names, the names matched ignoring case. Prefer the id: a name can change, and two people can share one. Your account id is the last part of your Jira profile's URL, `…/jira/people/<account id>`. Jira Cloud does not send email addresses, so they cannot be used.
+
+A request that does not pass is recorded as `ignored`. The hook only reads from Jira: for the agent to comment on or move the issue, give its workspace a way to reach Jira, such as the Atlassian MCP server.
 
 ### `generic`
 
@@ -113,6 +147,6 @@ GOOS=wasip1 GOARCH=wasm go build -o deploys.wasm .
 - Compare secrets with `sdk.Equal`, which takes the same time whatever the input.
 - Return `sdk.Reject` for a request that is not genuine, and `sdk.Accept` with no events for a genuine one with nothing to do.
 - Inputs are `string`, `number`, `boolean` or `array` (with `Items` naming the element type).
-- [`wasm-hooks/generic`](../wasm-hooks/generic/main.go) and [`wasm-hooks/github`](../wasm-hooks/github/main.go) are complete examples, with tests that run the built module.
+- [`wasm-hooks/generic`](../wasm-hooks/generic/main.go), [`wasm-hooks/github`](../wasm-hooks/github/main.go) and [`wasm-hooks/jira`](../wasm-hooks/jira/main.go) are complete examples, with tests that run the built module.
 
 Uploading a new version of a hook keeps its registrations, unless it would break one: an event someone routes is gone, an input becomes required, or an input changes type or stops being secret. Such an upgrade is refused. An input the new version drops is no longer given to it, and is cleared the next time the registration is saved.
