@@ -79,8 +79,8 @@ export function mergeTaskUpdate(current, incoming) {
 
 /** When a usage footer was last revised, or null for any other message. */
 function footerReportedAt(message) {
-  if (message?.metadata?.type !== 'agent_usage') return null;
-  const at = Date.parse(message.metadata.reportedAt ?? '');
+  if (message.metadata?.type !== 'agent_usage') return null;
+  const at = Date.parse(message.metadata.reportedAt);
   return Number.isFinite(at) ? at : null;
 }
 
@@ -95,13 +95,10 @@ function footerReportedAt(message) {
  */
 function keepNewerMessages(current, incoming) {
   if (!Array.isArray(current) || !Array.isArray(incoming)) return incoming;
-  const ids = new Set(incoming.map((m) => m?.id));
+  const ids = new Set(incoming.map((m) => m.id));
   // A loop, not Math.max(...): a long thread overflows the argument list.
   let newest = -Infinity;
-  for (const m of incoming) {
-    const at = Date.parse(m?.createdAt ?? '');
-    if (at > newest) newest = at;
-  }
+  for (const m of incoming) newest = Math.max(newest, Date.parse(m.createdAt) || -Infinity);
   const held = new Map();
   for (const m of current) {
     const at = footerReportedAt(m);
@@ -109,13 +106,13 @@ function keepNewerMessages(current, incoming) {
   }
   let kept = false;
   const out = incoming.map((m) => {
-    const h = held.get(m?.id);
-    if (!h || (footerReportedAt(m) ?? -Infinity) >= h.at) return m;
+    const h = held.get(m.id);
+    if (!h || footerReportedAt(m) >= h.at) return m;
     kept = true;
     return h.m;
   });
   for (const m of current) {
-    if (m?._pending || ids.has(m?.id) || !(Date.parse(m?.createdAt ?? '') > newest)) continue;
+    if (m._pending || ids.has(m.id) || !(Date.parse(m.createdAt) > newest)) continue;
     out.push(m);
     kept = true;
   }

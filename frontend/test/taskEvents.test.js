@@ -36,6 +36,17 @@ describe('mergeTaskUpdate', () => {
     const pending = { id: 'p1', sender: 'human', _pending: true, createdAt: '2026-11-24T18:19:00.000Z' }
     expect(mergeTaskUpdate({ id: 't1', messages: [withHuman, pending] }, { id: 't1', messages: [withHuman] }).messages.map((m) => m.id)).toEqual(['h1'])
 
+    // A footer whose time cannot be read is no later than any; an incoming
+    // one without a time does not undo a held revision; a message with no
+    // time is never newer than the snapshot.
+    const blind = { id: 'u1', sender: 'agent', metadata: { type: 'agent_usage' } }
+    expect(mergeTaskUpdate({ id: 't1', messages: [blind] }, stale).messages).toBe(stale.messages)
+    expect(mergeTaskUpdate(current, { id: 't1', messages: [blind, human] }).messages[0]).toBe(current.messages[0])
+    const untimed = { id: 'x1', sender: 'agent', text: 'when?' }
+    const snap = { id: 't1', messages: [{ id: 'h2', sender: 'human' }] }
+    expect(mergeTaskUpdate({ id: 't1', messages: [untimed] }, snap).messages).toBe(snap.messages)
+    expect(mergeTaskUpdate({ id: 't1', messages: 'oops' }, snap).messages).toBe(snap.messages)
+
     const plain = { id: 't1', messages: [human] }
     expect(mergeTaskUpdate({ id: 't1', messages: [human] }, plain).messages).toBe(plain.messages)
   })
