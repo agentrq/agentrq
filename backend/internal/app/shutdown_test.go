@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/service/memq"
@@ -65,5 +66,18 @@ func TestShutdownDrainsRequestsBeforeCancellingTheApp(t *testing.T) {
 				t.Errorf("shutdown did %v, want %v", got, want)
 			}
 		})
+	}
+}
+
+// Shutdown closes the database New opened, last: a background sweep still
+// querying it would otherwise outlive the app.
+func TestShutdownClosesTheDatabaseItOpened(t *testing.T) {
+	a := newTestApp(t)
+	ctx := context.Background()
+	if err := a.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown returned %v", err)
+	}
+	if err := a.db.Conn(ctx).Exec("SELECT 1").Error; err == nil || !strings.Contains(err.Error(), "database is closed") {
+		t.Fatalf("a query after shutdown returned %v, want the database closed", err)
 	}
 }
