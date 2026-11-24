@@ -250,8 +250,10 @@ func (e *engineV1) runTurn(d delivery) {
 	}
 	if e.q.cancelledSince(d.taskID, d.seq) {
 		// Stopped before it started: the note still ends the turn the human
-		// is waiting on (#1347).
-		e.note(d.taskID, noteCancelled)
+		// is waiting on (#1347), once per Stop.
+		if e.q.noteCancel(d.taskID) {
+			e.note(d.taskID, noteCancelled)
+		}
 		return
 	}
 	if isLogout(d.content) && supported(e.caps.Auth.Logout) {
@@ -271,7 +273,9 @@ func (e *engineV1) runTurn(d delivery) {
 	}
 	if e.q.cancelledSince(d.taskID, d.seq) {
 		e.setIdle(s)
-		e.note(d.taskID, noteCancelled)
+		if !e.isEnding() && e.q.noteCancel(d.taskID) {
+			e.note(d.taskID, noteCancelled)
+		}
 		return
 	}
 	if err := e.ws.MarkTaskOngoing(e.ctx, e.linkID, d.taskID); err != nil {
@@ -296,6 +300,9 @@ func (e *engineV1) runTurn(d delivery) {
 		resp.StopReason, err = "cancelled", nil
 	}
 	e.barrier() // every update that came before the answer is applied now
+	if err == nil && resp.StopReason == "cancelled" {
+		e.q.noteCancel(d.taskID) // endTurn posts it; the turns this Stop skips do not
+	}
 	e.endTurn(s, d.taskID, resp.StopReason, err)
 	if e.deps.OnTurn != nil {
 		e.deps.OnTurn(e.ctx, e.c.WorkspaceID(), e.c.UserID())

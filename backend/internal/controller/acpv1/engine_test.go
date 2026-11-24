@@ -1011,6 +1011,28 @@ func TestEngine(t *testing.T) {
 		})
 	})
 
+	// Messages from Slack or a second tab can wait behind a running turn; one
+	// Stop ends them all, and the human reads its note once.
+	t.Run("a Stop that ends a turn and skips the ones behind it posts one note", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"idle-1"}`)
+		l.DeliverTask(context.Background(), 42, "first")
+		p := a.expect("session/prompt")
+		l.DeliverTask(context.Background(), 42, "second")
+		l.DeliverTask(context.Background(), 42, "third")
+		l.CancelTask(context.Background(), 42)
+		a.expectParams("session/cancel", `{"sessionId":"idle-1"}`)
+		a.answer(p, `{"stopReason":"cancelled"}`)
+		rec.wait(t, func() bool { return !l.(*link).e.q.owns(42) })
+		a.quiet()
+		rec.read(func() {
+			if want := []string{"42|" + noteCancelled}; !slices.Equal(rec.replies, want) {
+				t.Fatalf("replies were %q, want one cancelled note", rec.replies)
+			}
+		})
+	})
+
 	t.Run("a Stop while the task's session is opening skips the prompt", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgent(t, rec)
