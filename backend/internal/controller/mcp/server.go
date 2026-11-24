@@ -954,12 +954,22 @@ func (ps *WorkspaceServer) closeRequest(ctx context.Context, taskID int64, reque
 	ps.cleanupRequest(requestID)
 }
 
+// pingEvery is how often StartPing pings each session. The ping is the only
+// traffic on an idle push stream, so it must stay under proxies' idle timeouts
+// (60s on nginx and AWS ALBs), or idle agents lose their stream.
+var pingEvery = 60 * time.Second
+
+// pingDeadline is how long a session has to answer before it is evicted. 3s
+// evicted clients that were merely slow; a dead one still goes within the minute.
+var pingDeadline = 10 * time.Second
+
 // StartPing pings all connected MCP client sessions every minute to keep connections alive.
 // If a session's underlying stream is already closed or times out, it is explicitly closed
 // so it leaves the server's session registry, preventing repeated errors.
 func (ps *WorkspaceServer) StartPing() {
+	every, deadline := pingEvery, pingDeadline
 	go func() {
-		ticker := time.NewTicker(60 * time.Second)
+		ticker := time.NewTicker(every)
 		defer ticker.Stop()
 		for {
 			select {
@@ -970,7 +980,7 @@ func (ps *WorkspaceServer) StartPing() {
 			for sess := range ps.mcpServer.Sessions() {
 				sess := sess // shadow for closure capture
 				go func() {
-					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					ctx, cancel := context.WithTimeout(context.Background(), deadline)
 					defer cancel()
 					if err := sess.Ping(ctx, nil); err != nil {
 						errStr := err.Error()
