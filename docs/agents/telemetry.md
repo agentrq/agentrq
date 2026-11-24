@@ -12,6 +12,12 @@ makes them self-evidently true. A few happen entirely in the browser and are
   stored ID. A stored action without a `String()` name reads `unknown` there,
   and `prometheus_test.go` fails on it. `sub_action` is only ever a name from
   `subActionIDByToolName`, so a caller cannot grow the label set.
+- **Every metric on `/metrics` carries `app_version`** (`v0.18.4`, never a
+  sha), and `agentrq_build_info{app_version} 1` names the build for deploy
+  annotations. It comes from registering through the `Registerer` that
+  `metricsRegistry` returns, never the `*prometheus.Registry` itself: a metric
+  registered on the registry has no version, and `prometheus_test.go` fails on
+  it. Not `version`, which `go_info` already uses.
 - The allowlist in `entity.ClientReportableAction` is the security boundary for
   `POST /api/v1/telemetry`: only names in it may be reported, and the controller
   additionally checks the caller owns the workspace.
