@@ -388,20 +388,20 @@ func New(cfg Config) (*App, error) {
 	}
 
 	// ── Controllers ────────────────────────────────────────────────────────────
-	// One registry for /metrics: the HTTP metrics and the telemetry actions.
-	// Nil when prometheus is off, so nothing is counted at all.
-	var metricsRegistry *prometheus.Registry
+	// One registry for /metrics: the HTTP metrics and the telemetry actions,
+	// all labelled with app_version. Nil when prometheus is off, so nothing is
+	// counted at all.
+	var metricsReg *prometheus.Registry
+	var metricsRegisterer prometheus.Registerer
 	if cfg.Prometheus.Enabled {
-		metricsRegistry = prometheus.NewRegistry()
+		metricsReg, metricsRegisterer = metricsRegistry(cfg.ConfigSvc.Version())
 	}
 	telemetryParams := telemetry.Params{
-		DB:        db,
-		PubSub:    pubsubSvc,
-		BatchSize: 1000,
-		Interval:  5 * time.Second,
-	}
-	if metricsRegistry != nil {
-		telemetryParams.Registerer = metricsRegistry
+		DB:         db,
+		PubSub:     pubsubSvc,
+		BatchSize:  1000,
+		Interval:   5 * time.Second,
+		Registerer: metricsRegisterer,
 	}
 	telemetryCtrl := telemetry.New(telemetryParams)
 	if err := telemetryCtrl.Start(appCtx); err != nil {
@@ -762,7 +762,7 @@ func New(cfg Config) (*App, error) {
 		fiberApp.Use(sentryFiber()...)
 	}
 	if cfg.Prometheus.Enabled {
-		fiberApp.Use(prometheusFiber(cfg.Prometheus, metricsRegistry)...)
+		fiberApp.Use(prometheusFiber(cfg.Prometheus, metricsReg, metricsRegisterer)...)
 	}
 	fiberApp.Use(cors.New(cors.Config{
 		AllowOrigins:  []string{"*"},
