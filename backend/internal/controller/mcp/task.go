@@ -13,10 +13,10 @@ import (
 // TaskToolDescription is the workspace server's task tool's description.
 const TaskToolDescription = "Work on this workspace's tasks and talk to the human in them. Two inputs: action, and payload, the action's fields. " +
 	"Run action help for the actions, and help with payload {\"topic\": \"<action>\"} for one's payload. " +
-	"get: a task, or with no taskId the next not started task assigned to the agent. " +
-	"updateStatus: 'ongoing' when you start, 'completed' when you finish, 'blocked' when you need the human. " +
-	"reply: a message (`text`) to the task; the human sees only these. " +
-	"elicit: asks the human (`message`, and `mode` form or url) and waits for the answer. getAttachment: a task's attachment. create: a new task (`title`, `body`). " +
+	"get {taskId}: a task, or with no taskId the next not started task assigned to the agent. " +
+	"updateStatus {taskId, status}: 'ongoing' when you start, 'completed' when you finish, 'blocked' when you need the human. " +
+	"reply {taskId, text}: a message to the task; the human sees only these. " +
+	"elicit {taskId, message, mode}: asks the human and waits for the answer. getAttachment {taskId, attachmentId}: a task's attachment. create {title, body}: a new task. " +
 	"taskId is the chat_id a task arrives with."
 
 // TaskCLIHint points a workspace's agent at agentrq-ws for attachments, which
@@ -44,8 +44,10 @@ func (ps *WorkspaceServer) taskActions() []ToolAction {
 		NewToolAction("updateStatus", "Set a task's status: ongoing when you start, completed when you finish, blocked when you need the human.", ps.handleUpdateTaskStatus).
 			WithExample(`{"taskId": "0kGogHmaqvZ", "status": "ongoing"}`),
 		NewToolAction("reply", "Post a message to the task, optionally with attachments. The human sees only these.", ps.handleReply).
+			WithAliases(aliasField("text", "message")).
 			WithExample(`{"taskId": "0kGogHmaqvZ", "text": "Tests pass; opening the pull request."}`),
 		NewToolAction("elicit", "Ask the human a question and wait for the answer: {action, content}, action being accept, decline or cancel.", ps.handleElicit).
+			WithAliases(aliasField("message", "text")).
 			WithExample(`{"taskId": "0kGogHmaqvZ", "message": "Which branch should I release from?", "mode": "form", "requestedSchema": {"type": "object", "properties": {"branch": {"type": "string", "enum": ["main", "release"]}}, "required": ["branch"]}}`),
 		NewToolAction("getAttachment", "Get an attachment of a task: its name, type and public link, or its content as base64 or plain text.", ps.handleGetAttachment).
 			WithExample(`{"taskId": "0kGogHmaqvZ", "attachmentId": "att_1"}`),

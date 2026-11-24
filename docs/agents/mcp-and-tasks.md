@@ -58,6 +58,8 @@ accepted. A retired tool name is answered, unlisted, by `ActionToolsMiddleware`
 from `legacyTools` in each server's `tools.go`: never drop an entry while a
 gateway, CLI or extension installed before the merge may still call it.
 
+Payloads stay strict; `WithAliases` renames only the field names agents really guess, and only when the real field is absent: both sent is refused, never guessed. `memory://` alone is refused, as no name means `memory.md` and a delete would remove the index.
+
 ## What an agent reports leaves with its link
 
 Models, commands and the usage ring come only from native ACP

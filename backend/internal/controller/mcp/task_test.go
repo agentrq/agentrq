@@ -41,17 +41,17 @@ func TestTaskTool_RoutesEachActionToItsHandler(t *testing.T) {
 		{"reply", map[string]any{"taskId": "", "text": "hi"}, "taskId and text are required"},
 		{"elicit", map[string]any{"taskId": "", "message": "", "mode": ""}, "taskId and message are required"},
 		{"getAttachment", map[string]any{"taskId": "1", "attachmentId": ""}, "attachmentId is required"},
-		{"create", map[string]any{"title": "t"}, "create: payload needs body"},
-		{"reply", map[string]any{"chatId": "1", "text": "hi"}, `reply: bad payload: unknown field "chatId"`},
-		{"updateStatus", map[string]any{"taskId": 1, "status": "ongoing"}, "updateStatus: bad payload: cannot unmarshal number into Go struct field UpdateTaskStatusParams.taskId of type string"},
+		{"create", map[string]any{"title": "t"}, "create: payload needs body; create takes {title, body, "},
+		{"reply", map[string]any{"chatId": "1", "text": "hi"}, `reply: bad payload: unknown field "chatId"; reply takes {taskId, text, attachments?}, like {"taskId": "0kGogHmaqvZ", "text": "Tests pass; opening the pull request."}`},
+		{"updateStatus", map[string]any{"taskId": 1, "status": "ongoing"}, "updateStatus: bad payload: cannot unmarshal number into Go struct field UpdateTaskStatusParams.taskId of type string; updateStatus takes {taskId, status}"},
 		{"list", nil, `unknown action "list": use create, get, updateStatus, reply, elicit, getAttachment or help`},
 	} {
 		res, _, err := ps.handleTask(context.Background(), nil, TaskParams{Action: tc.action, Payload: tc.payload})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if text, isErr := taskResult(t, res); !isErr || text != tc.want {
-			t.Errorf("%s %v answered %q (error %v), want the error %q", tc.action, tc.payload, text, isErr, tc.want)
+		if text, isErr := taskResult(t, res); !isErr || !strings.HasPrefix(text, tc.want) {
+			t.Errorf("%s %v answered %q (error %v), want an error starting %q", tc.action, tc.payload, text, isErr, tc.want)
 		}
 	}
 }
@@ -228,7 +228,7 @@ func TestTaskTool_OlderCallsStillAnswer(t *testing.T) {
 		{"updateTaskStatus", map[string]any{"taskId": "", "status": ""}, "taskId is required"},
 		{"reply", map[string]any{"chatId": "", "text": "hi"}, "taskId and text are required"},
 		{"getAttachment", map[string]any{"taskId": "1", "attachmentId": ""}, "attachmentId is required"},
-		{"createTask", nil, "create: payload needs title"},
+		{"createTask", nil, "create: payload needs title; create takes {"},
 		{"task", map[string]any{"action": "updateStatus", "taskId": "", "status": ""}, "taskId is required"},
 		{"task", map[string]any{"action": "reply", "payload": map[string]any{"taskId": ""}, "text": "hi"}, "taskId and text are required"},
 		// Past the schema, which a flat call would fail: this server has no Pano.
@@ -238,8 +238,8 @@ func TestTaskTool_OlderCallsStillAnswer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
-		if text, isErr := taskResult(t, res); !isErr || text != tc.want {
-			t.Errorf("%s %v answered %q (error %v), want the error %q", tc.name, tc.args, text, isErr, tc.want)
+		if text, isErr := taskResult(t, res); !isErr || !strings.HasPrefix(text, tc.want) {
+			t.Errorf("%s %v answered %q (error %v), want an error starting %q", tc.name, tc.args, text, isErr, tc.want)
 		}
 	}
 }

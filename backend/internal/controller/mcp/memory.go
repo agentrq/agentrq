@@ -112,7 +112,9 @@ var workspaceIDPattern = regexp.MustCompile(`^[0-9A-Za-z]{11}$`)
 // one memory rather than three that each look like the only one. Anything that
 // is still not a valid name after that is refused rather than repaired — a name
 // bent into shape files the memory somewhere the agent did not choose, and its
-// next load will miss.
+// next load will miss. The one repair, a missing .md, is made before this by
+// memoryNameAliases for load, save and delete alike, so a load still finds
+// what a save filed.
 //
 // Folding here rather than in a query is deliberate. AgentRQ runs on SQLite and
 // Postgres, `=` is case-sensitive by default in both, and a NOCASE collation

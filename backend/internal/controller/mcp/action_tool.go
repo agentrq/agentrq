@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -35,19 +36,55 @@ type ToolAction struct {
 	Reads bool
 	// payload is the type the payload decodes into, nil when it takes none.
 	payload reflect.Type
-	run     func(ctx context.Context, req *mcp.CallToolRequest, payload map[string]any) (*mcp.CallToolResult, any, error)
+	// aliases rewrites the field names agents commonly guess to the ones the
+	// payload takes, before it is decoded; see WithAliases.
+	aliases func(payload map[string]any) error
+	run     func(ctx context.Context, req *mcp.CallToolRequest, a ToolAction, payload map[string]any) (*mcp.CallToolResult, any, error)
 }
 
 // NewToolAction is an action whose payload decodes into T, the parameter type of
 // the handler that runs it.
 func NewToolAction[T any](name, summary string, handler func(context.Context, *mcp.CallToolRequest, T) (*mcp.CallToolResult, any, error)) ToolAction {
-	return ToolAction{Name: name, Summary: summary, payload: reflect.TypeFor[T](), run: func(ctx context.Context, req *mcp.CallToolRequest, payload map[string]any) (*mcp.CallToolResult, any, error) {
+	return ToolAction{Name: name, Summary: summary, payload: reflect.TypeFor[T](), run: func(ctx context.Context, req *mcp.CallToolRequest, a ToolAction, payload map[string]any) (*mcp.CallToolResult, any, error) {
 		var p T
+		if a.aliases != nil && payload != nil {
+			payload = maps.Clone(payload)
+			if err := a.aliases(payload); err != nil {
+				return toolError("%s: %v; %s", name, err, a.usage()), nil, nil
+			}
+		}
 		if err := decodePayload(payload, &p); err != nil {
-			return toolError("%s: %v", name, err), nil, nil
+			return toolError("%s: %v; %s", name, err, a.usage()), nil, nil
 		}
 		return handler(ctx, req, p)
 	}}
+}
+
+// usage is what a refused payload's message ends with, so that one retry
+// gets it right: the fields the action takes, optional ones marked with a ?,
+// and its example.
+func (a ToolAction) usage() string {
+	var names []string
+	for _, f := range payloadFields(a.payload) {
+		if f.required {
+			names = append(names, f.name)
+		} else {
+			names = append(names, f.name+"?")
+		}
+	}
+	u := fmt.Sprintf("%s takes {%s}", a.Name, strings.Join(names, ", "))
+	if a.Example != "" {
+		u += ", like " + a.Example
+	}
+	return u
+}
+
+// WithAliases is the action with fix run on each payload before it is
+// decoded, to rename the fields agents commonly guess to the ones it takes.
+// fix sees a copy of the payload, and its error refuses the call.
+func (a ToolAction) WithAliases(fix func(payload map[string]any) error) ToolAction {
+	a.aliases = fix
+	return a
 }
 
 // WithExample is the action with an example payload, as JSON.
@@ -151,7 +188,7 @@ func RunAction(ctx context.Context, req *mcp.CallToolRequest, tool string, actio
 			if !a.Reads && IsReadOnly(ctx) {
 				return toolError("%s.%s changes something, and this connection is read-only: connect again and choose Read and write to run it", tool, action), nil, nil
 			}
-			return a.run(ctx, req, payload)
+			return a.run(ctx, req, a, payload)
 		}
 		names = append(names, a.Name)
 	}

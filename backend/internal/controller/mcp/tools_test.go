@@ -222,15 +222,15 @@ func TestTools_RetiredNamesStillAnswer(t *testing.T) {
 	}{
 		{"loadMemory", map[string]any{"name": "memory.md"}, "memory is not available on this server"},
 		{"searchSkills", nil, "skills are not available on this server"},
-		{"saveSkill", map[string]any{"uri": "skill://x"}, "save: payload needs content"},
+		{"saveSkill", map[string]any{"uri": "skill://x"}, "save: payload needs content; save takes {uri, content, "},
 		{"memory", map[string]any{"action": "delete", "name": "x.md"}, "memory is not available on this server"},
 	} {
 		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: tc.name, Arguments: tc.args})
 		if err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
-		if text, isErr := taskResult(t, res); !isErr || text != tc.want {
-			t.Errorf("%s %v answered %q (error %v), want the error %q", tc.name, tc.args, text, isErr, tc.want)
+		if text, isErr := taskResult(t, res); !isErr || !strings.HasPrefix(text, tc.want) {
+			t.Errorf("%s %v answered %q (error %v), want an error starting %q", tc.name, tc.args, text, isErr, tc.want)
 		}
 	}
 }
