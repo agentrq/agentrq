@@ -65,6 +65,7 @@ export default defineConfig({
         'src/composables/useAgentTelemetry.js',
         'src/composables/useAgentModelPicker.js',
         'src/composables/useAgentEffortPicker.js',
+        'src/composables/useMenuKeyboard.js',
         'src/composables/useAcpRegistry.js',
         'src/composables/useExtensionCatalogue.js',
         'src/composables/useExtensionGrant.js',

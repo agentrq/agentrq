@@ -211,8 +211,51 @@ describe('AgentEffortPicker', () => {
     expect(menu()).toBeNull();
 
     await click(trigger);
+    window.dispatchEvent(new Event('resize'));
+    await settle();
+    expect(menu()).toBeNull();
+
+    await click(trigger);
     await click(trigger);
     expect(menu()).toBeNull();
+  });
+
+  // #1346: the capturing scroll listener saw the menu's own scroll, so the
+  // wheel or scrollbar closed a long list instead of scrolling it.
+  it('stays open while its own list is scrolled', async () => {
+    mount(ref(connected()));
+    await settle();
+    await click(host.querySelector('button'));
+    menu().dispatchEvent(new Event('scroll'));
+    await settle();
+    expect(menu()).not.toBeNull();
+  });
+
+  it('is driven by the keyboard: focus on the current level, arrows, Escape back to the button', async () => {
+    mount(ref(connected()));
+    await settle();
+    const trigger = host.querySelector('button');
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    await settle();
+    const items = () => [...menu().querySelectorAll('[role="menuitemradio"]')];
+    expect(document.activeElement).toBe(items()[1]);
+
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }));
+    await settle();
+    expect(menu()).not.toBeNull();
+
+    menu().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    expect(document.activeElement).toBe(items()[0]);
+
+    menu().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await settle();
+    expect(menu()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    await click(trigger);
+    await click(items()[0]);
+    expect(api.setAgentEffort).toHaveBeenCalledWith('ws1', 'low');
+    expect(document.activeElement).toBe(trigger);
   });
 
   it('draws as plain text on a workspace card', async () => {

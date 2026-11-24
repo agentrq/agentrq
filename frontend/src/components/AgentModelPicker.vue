@@ -12,6 +12,8 @@
     <button ref="trigger"
             type="button"
             @click.stop="toggle"
+            @keydown.down.prevent="openFromKeys"
+            @keydown.up.prevent="openFromKeys"
             :disabled="picker.sending.value"
             :class="compact
               ? 'text-[9px] font-medium text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-100 max-w-[140px]'
@@ -44,7 +46,9 @@
       <div v-if="open"
            ref="menu"
            :style="{ top: `${position.top}px`, left: `${position.left}px`, maxHeight: `${position.maxHeight}px` }"
+           role="menu"
            class="fixed w-[240px] overflow-y-auto bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-2xl z-50 p-2"
+           @keydown="keys.onKeydown"
            @click.stop>
         <h3 class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400 px-2 py-1.5">Model</h3>
 
@@ -54,11 +58,13 @@
           </p>
           <button v-for="model in group.models" :key="model.id"
                   type="button"
+                  role="menuitemradio"
+                  :aria-checked="model.id === picker.selectedId.value"
                   @click="pick(model.id)"
                   :class="model.id === picker.selectedId.value
                     ? 'bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-white'
                     : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800/60'"
-                  class="w-full text-left px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-2">
+                  class="w-full text-left px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-2 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-gray-400 dark:focus-visible:ring-zinc-500">
             <span class="truncate grow">{{ model.name || model.id }}</span>
             <span v-if="model.id === picker.selectedId.value" class="shrink-0 text-[9px]">●</span>
           </button>
@@ -85,6 +91,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { MAX_POPOVER_HEIGHT, popoverPosition, useAgentModelPicker } from '../composables/useAgentModelPicker';
+import { useMenuKeyboard } from '../composables/useMenuKeyboard';
 import { useToasts } from '../composables/useToasts';
 import { setAgentModel } from '../api';
 
@@ -127,7 +134,22 @@ async function place() {
 
 async function toggle() {
   open.value = !open.value;
-  if (open.value) await place();
+  if (!open.value) return;
+  await place();
+  keys.focusChecked();
+}
+
+const keys = useMenuKeyboard({
+  menu,
+  close: () => {
+    open.value = false;
+    trigger.value?.focus();
+  },
+});
+
+// Up or Down on the closed trigger opens the menu, as in a native select.
+function openFromKeys() {
+  if (!open.value) toggle();
 }
 
 /**
@@ -136,8 +158,11 @@ async function toggle() {
  * A fixed menu does not move with the container it was opened from, so it would
  * otherwise hang in place while the card slid away beneath it. Closing is both
  * simpler and what a person expects from a menu they have scrolled away from.
+ * Except the menu's own scroll: the listener captures it too, and closing on it
+ * left a long list impossible to scroll (#1346).
  */
-function closeOnScroll() {
+function closeOnScroll(event) {
+  if (event?.target instanceof Node && menu.value?.contains(event.target)) return;
   open.value = false;
 }
 
@@ -162,6 +187,7 @@ watch(picker.error, (message) => {
 
 async function pick(modelId) {
   open.value = false;
+  trigger.value?.focus();
   await picker.choose(modelId);
 }
 
