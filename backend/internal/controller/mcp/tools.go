@@ -60,17 +60,14 @@ const (
 func (ps *WorkspaceServer) memoryActions() []ToolAction {
 	return []ToolAction{
 		NewToolAction("load", "Read a memory and its version; with no name, "+DefaultMemoryName+", the index.", ps.handleLoadMemory).
-			WithAliases(memoryNameAliases).
 			WithDetails("Call it at the start of a task, before asking the human something they may already have told you. The index links the other memories as memory://<name>: load the ones that look relevant. A name never written is not an error.").
 			WithExample(`{"name": "deploys.md"}`),
 		NewToolAction("save", "Write a memory, replacing it completely; changing one needs the version you loaded.", ps.handleSaveMemory).
-			WithAliases(memoryNameAliases).
 			WithDetails("There is no append: pass the full new content. Send the version load showed; leave it out only to create a memory. If another agent saved it since, the save is refused: load it again, merge your change in, and retry with the new version, so neither agent's learnings are lost. With no name it writes " + DefaultMemoryName + ", which should stay an index linking named memories as [title](memory://<name>). " +
 				"Names are lowercase words joined by single hyphens and ending in .md. " +
 				fmt.Sprintf("A memory holds at most %d KiB; a larger one is refused rather than truncated, so split it and index the parts.", MaxMemoryBytes/1024)).
 			WithExample(`{"name": "deploys.md", "content": "# How we ship\n\nTag main, then ...", "version": 3}`),
 		NewToolAction("delete", "Delete a memory; with no name, "+DefaultMemoryName+" itself.", ps.handleDeleteMemory).
-			WithAliases(memoryNameAliases).
 			WithDetails("Think before deleting " + DefaultMemoryName + ": the other memories are linked from it. Deleting a name nobody wrote under is not an error.").
 			WithExample(`{"name": "deploys.md"}`),
 	}
@@ -79,11 +76,10 @@ func (ps *WorkspaceServer) memoryActions() []ToolAction {
 func (ps *WorkspaceServer) skillsActions() []ToolAction {
 	return []ToolAction{
 		NewToolAction("search", "Find skills by name or description, with the skill:// URI of each one's SKILL.md.", ps.handleSearchSkills).
-			WithAliases(aliasField("q", "query", "text", "topic")).
+			WithAlias("query", "q").
 			WithDetails("Call it at the start of a task, then load the SKILL.md of a skill only when its description matches the work; never load every skill up front. Bodies are not included, and skills the human turned off are not listed.").
 			WithExample(`{"q": "release"}`),
 		NewToolAction("load", "Read one file of a skill; skill://<name> alone reads its SKILL.md.", ps.handleLoadSkill).
-			WithAliases(skillURIAliases).
 			WithDetails("A SKILL.md comes with the URIs of the skill's other files: load those only when it points you to them. A skill or file that does not exist, or one turned off, is not an error.").
 			WithExample(`{"uri": "skill://release-notes"}`),
 		NewToolAction("save", "Write one file of a skill, replacing it completely.", ps.handleSaveSkill).

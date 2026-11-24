@@ -36,10 +36,9 @@ type ToolAction struct {
 	Reads bool
 	// payload is the type the payload decodes into, nil when it takes none.
 	payload reflect.Type
-	// aliases rewrites the field names agents commonly guess to the ones the
-	// payload takes, before it is decoded; see WithAliases.
-	aliases func(payload map[string]any) error
-	run     func(ctx context.Context, req *mcp.CallToolRequest, a ToolAction, payload map[string]any) (*mcp.CallToolResult, any, error)
+	// alias is the one other name the payload takes for a field; see WithAlias.
+	alias, aliasOf string
+	run            func(ctx context.Context, req *mcp.CallToolRequest, a ToolAction, payload map[string]any) (*mcp.CallToolResult, any, error)
 }
 
 // NewToolAction is an action whose payload decodes into T, the parameter type of
@@ -47,11 +46,9 @@ type ToolAction struct {
 func NewToolAction[T any](name, summary string, handler func(context.Context, *mcp.CallToolRequest, T) (*mcp.CallToolResult, any, error)) ToolAction {
 	return ToolAction{Name: name, Summary: summary, payload: reflect.TypeFor[T](), run: func(ctx context.Context, req *mcp.CallToolRequest, a ToolAction, payload map[string]any) (*mcp.CallToolResult, any, error) {
 		var p T
-		if a.aliases != nil && payload != nil {
-			payload = maps.Clone(payload)
-			if err := a.aliases(payload); err != nil {
-				return toolError("%s: %v; %s", name, err, a.usage()), nil, nil
-			}
+		payload, err := a.unalias(payload)
+		if err != nil {
+			return toolError("%s: %v; %s", name, err, a.usage()), nil, nil
 		}
 		if err := decodePayload(payload, &p); err != nil {
 			return toolError("%s: %v; %s", name, err, a.usage()), nil, nil
@@ -79,12 +76,27 @@ func (a ToolAction) usage() string {
 	return u
 }
 
-// WithAliases is the action with fix run on each payload before it is
-// decoded, to rename the fields agents commonly guess to the ones it takes.
-// fix sees a copy of the payload, and its error refuses the call.
-func (a ToolAction) WithAliases(fix func(payload map[string]any) error) ToolAction {
-	a.aliases = fix
+// WithAlias is the action taking alias as another name for field, used only
+// when field is absent; both sent is refused. Payloads are strict: an alias
+// needs a human decision, and there is one, skills.search's query.
+func (a ToolAction) WithAlias(alias, field string) ToolAction {
+	a.alias, a.aliasOf = alias, field
 	return a
+}
+
+// unalias is payload with the action's alias renamed to its field, on a copy.
+func (a ToolAction) unalias(payload map[string]any) (map[string]any, error) {
+	v, ok := payload[a.alias]
+	if a.alias == "" || !ok {
+		return payload, nil
+	}
+	if _, both := payload[a.aliasOf]; both {
+		return nil, fmt.Errorf("send %s only: %s is another name for it", a.aliasOf, a.alias)
+	}
+	payload = maps.Clone(payload)
+	delete(payload, a.alias)
+	payload[a.aliasOf] = v
+	return payload, nil
 }
 
 // WithExample is the action with an example payload, as JSON.
