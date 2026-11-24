@@ -11,6 +11,7 @@ import {
   matchCommands,
   mergeCommands,
   skillCommands,
+  teamSkillCommands,
   useSkillCommands,
   useSlashCommands,
 } from '../src/composables/useSlashCommands'
@@ -280,6 +281,14 @@ describe('useSlashCommands', () => {
 })
 
 describe('skills in the menu', () => {
+  const TEAM = [
+    { name: 'deploy', description: 'Ship it', on: true, clash: false },
+    { name: 'opted-out', on: false, clash: false },
+    { name: 'clashing', on: true, clash: true },
+    { name: 'bare', on: true },
+    { name: '', on: true },
+    null,
+  ]
   const SKILLS = [
     { name: 'release', description: 'Cut a release', workspaceEnabled: true },
     { name: 'off-here', workspaceEnabled: false },
@@ -314,7 +323,7 @@ describe('skills in the menu', () => {
     const id = ref('ws1')
     const resolvers = {}
     const load = (ws) => new Promise((r) => { resolvers[ws] = r })
-    const commands = useSkillCommands(id, { load })
+    const commands = useSkillCommands(id, { load, loadTeam: () => ({ skills: [] }) })
     id.value = 'ws2'
     await nextTick()
     // The older answer arrives last and must not replace the newer one.
@@ -327,9 +336,11 @@ describe('skills in the menu', () => {
 
   it('has no skills without a workspace, or when the load fails', async () => {
     const load = vi.fn().mockRejectedValue(new Error('down'))
-    expect(useSkillCommands(ref(''), { load }).value).toEqual([])
+    const loadTeam = vi.fn().mockResolvedValue({ skills: [TEAM[0]] })
+    expect(useSkillCommands(ref(''), { load, loadTeam }).value).toEqual([])
     expect(load).not.toHaveBeenCalled()
-    const failed = useSkillCommands('ws1', { load })
+    expect(loadTeam).not.toHaveBeenCalled()
+    const failed = useSkillCommands('ws1', { load, loadTeam })
     await new Promise((r) => setTimeout(r))
     expect(failed.value).toEqual([])
   })
@@ -337,10 +348,42 @@ describe('skills in the menu', () => {
   it('reads them through the workspace by default', async () => {
     const api = await import('../src/api')
     const spy = vi.spyOn(api, 'searchWorkspaceSkills').mockResolvedValue({ skills: [{ name: 'x', workspaceEnabled: true }] })
+    const teamSpy = vi.spyOn(api, 'listWorkspaceTeamSkills').mockResolvedValue({ skills: [{ name: 'y', on: true, clash: false }] })
     const commands = useSkillCommands('ws9')
     await new Promise((r) => setTimeout(r))
     expect(spy).toHaveBeenCalledWith('ws9')
-    expect(commands.value.map((c) => c.name)).toEqual(['x'])
+    expect(teamSpy).toHaveBeenCalledWith('ws9')
+    expect(commands.value.map((c) => c.name)).toEqual(['x', 'y'])
     spy.mockRestore()
+    teamSpy.mockRestore()
+  })
+
+  it('offers the team skills the workspace is opted into, not those it is out of or that clash', () => {
+    expect(teamSkillCommands(TEAM)).toEqual([
+      { name: 'deploy', description: 'Ship it', skill: true },
+      { name: 'bare', description: '', skill: true },
+    ])
+    expect(teamSkillCommands(undefined)).toEqual([])
+  })
+
+  it('adds the team skills after the workspace\'s own, the own one winning a shared name', async () => {
+    const load = vi.fn().mockResolvedValue({ skills: [{ name: 'bare', description: 'mine', workspaceEnabled: true }] })
+    const loadTeam = vi.fn().mockResolvedValue({ skills: TEAM })
+    const commands = useSkillCommands('ws1', { load, loadTeam })
+    await new Promise((r) => setTimeout(r))
+    expect(loadTeam).toHaveBeenCalledWith('ws1')
+    expect(commands.value).toEqual([
+      { name: 'bare', description: 'mine', skill: true },
+      { name: 'deploy', description: 'Ship it', skill: true },
+    ])
+  })
+
+  it('keeps the own skills when the team skills cannot be read', async () => {
+    const load = vi.fn().mockResolvedValue({ skills: [{ name: 'x', workspaceEnabled: true }] })
+    const rejected = useSkillCommands('ws1', { load, loadTeam: vi.fn().mockRejectedValue(new Error('down')) })
+    const thrown = useSkillCommands('ws1', { load, loadTeam: () => { throw new Error('no team') } })
+    await new Promise((r) => setTimeout(r))
+    expect(rejected.value.map((c) => c.name)).toEqual(['x'])
+    expect(thrown.value.map((c) => c.name)).toEqual(['x'])
   })
 })

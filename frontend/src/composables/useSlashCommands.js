@@ -92,6 +92,18 @@ export function skillCommands(skills, workspaceId) {
 }
 
 /**
+ * The team skills the workspace is opted into as menu entries: those `on` and
+ * not losing to an account skill of the same name (`clash`), the ones its
+ * agents load.
+ */
+export function teamSkillCommands(skills) {
+  if (!Array.isArray(skills)) return [];
+  return skills
+    .filter((s) => s && typeof s.name === 'string' && s.name !== '' && s.on === true && !s.clash)
+    .map((s) => ({ name: s.name, description: s.description || '', skill: true }));
+}
+
+/**
  * Two lists as one menu, the first winning a name both have: an agent's own
  * command and a skill of the same name are one `/name` to type.
  */
@@ -109,12 +121,17 @@ export function mergeCommands(...lists) {
 }
 
 /**
- * The workspace's skills as menu entries, loaded again whenever the workspace
- * changes. Only the newest load may write, so a quick switch cannot leave the
- * previous workspace's skills behind. A failed load leaves the menu without
- * skills rather than reporting it: the composer still works without them.
+ * The workspace's skills as menu entries, its own and then its team skills,
+ * loaded again whenever the workspace changes. Only the newest load may write,
+ * so a quick switch cannot leave the previous workspace's skills behind. A
+ * failed load leaves the menu without skills rather than reporting it: the
+ * composer still works without them. A failed team load leaves only the team
+ * skills out.
  */
-export function useSkillCommands(workspaceId, { load = (id) => api.searchWorkspaceSkills(id) } = {}) {
+export function useSkillCommands(
+  workspaceId,
+  { load = (id) => api.searchWorkspaceSkills(id), loadTeam = (id) => api.listWorkspaceTeamSkills(id) } = {}
+) {
   const commands = ref([]);
   let seq = 0;
   watch(
@@ -124,8 +141,11 @@ export function useSkillCommands(workspaceId, { load = (id) => api.searchWorkspa
       commands.value = [];
       if (!id) return;
       try {
-        const res = await load(id);
-        if (mine === seq) commands.value = skillCommands(res?.skills, id);
+        const team = Promise.resolve()
+          .then(() => loadTeam(id))
+          .catch(() => null);
+        const [res, teamRes] = await Promise.all([load(id), team]);
+        if (mine === seq) commands.value = mergeCommands(skillCommands(res?.skills, id), teamSkillCommands(teamRes?.skills));
       } catch {
         // Already empty.
       }
@@ -187,7 +207,7 @@ const CARET_EVENTS = ['input', 'keyup', 'click', 'focus'];
  * @param {import('vue').Ref<string>|(() => string)} options.workspaceId
  * @param {import('vue').Ref<HTMLTextAreaElement|null>} options.el  the textarea
  */
-export function useInlineSkillMenu({ text, workspaceId, el, load }) {
+export function useInlineSkillMenu({ text, workspaceId, el, load, loadTeam }) {
   const caret = ref(null);
   const sync = () => {
     const node = toValue(el);
@@ -209,7 +229,7 @@ export function useInlineSkillMenu({ text, workspaceId, el, load }) {
   let placed = null;
   const menu = useSlashCommands({
     text,
-    commands: useSkillCommands(workspaceId, load ? { load } : undefined),
+    commands: useSkillCommands(workspaceId, { ...(load && { load }), ...(loadTeam && { loadTeam }) }),
     query: (current) => skillTokenAt(current, caret.value)?.query ?? null,
     apply: (command, current) => {
       const next = applyInlineSkill(command, current, caret.value);
