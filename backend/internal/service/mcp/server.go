@@ -8,8 +8,8 @@
 //
 // A stateful server's session id is a signed token that records how the
 // session was initialized (see SessionIDs), so a session outlives the process
-// that created it: after a restart, or on another instance, the next request
-// carrying the id rebuilds it.
+// that created it: after a restart, or on another instance, its client
+// reopening its push stream rebuilds it.
 package mcp
 
 import (
@@ -19,12 +19,12 @@ import (
 	"iter"
 	"maps"
 	"net/url"
+	"regexp"
 	"slices"
 	"sync"
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/service/mcp/jsonrpc"
-	"github.com/yosida95/uritemplate/v3"
 )
 
 // MethodHandler handles one received request or notification. A call
@@ -93,7 +93,7 @@ type serverResource struct {
 
 type serverResourceTemplate struct {
 	template *ResourceTemplate
-	re       *uritemplate.Template
+	re       *regexp.Regexp
 	handler  ResourceHandler
 }
 
@@ -190,7 +190,7 @@ func (s *Server) AddResource(r *Resource, h ResourceHandler) {
 // AddResourceTemplate adds a resource template, or replaces the one with its
 // URI template.
 func (s *Server) AddResourceTemplate(t *ResourceTemplate, h ResourceHandler) {
-	re, err := uritemplate.New(t.URITemplate)
+	re, err := compileURITemplate(t.URITemplate)
 	if err != nil {
 		panic(fmt.Errorf("URI template %q is invalid: %w", t.URITemplate, err))
 	}
@@ -434,7 +434,7 @@ func (s *Server) lookupResource(uri string) (ResourceHandler, string, bool) {
 	}
 	for _, key := range slices.Sorted(maps.Keys(s.templates)) {
 		t := s.templates[key]
-		if t.re.Regexp().MatchString(uri) {
+		if t.re.MatchString(uri) {
 			return t.handler, t.template.MIMEType, true
 		}
 	}
