@@ -35,8 +35,7 @@ const (
 - Load this workspace's memory before starting work — it may already answer something you'd otherwise ask the human.
 - If you hit a problem and find a fix or a lesson worth keeping, save it to memory so you (or another agent) don't repeat it. Keep entries short and specific.
 - When you create a task for another agent (or relay one from the human), follow up on it until it's resolved — don't fire-and-forget.
-- Sign every message you post into another workspace's task with "[sent by supervisor]", so it's clear the message is relayed, not written by that workspace's own agent.
-- When creating a task for another agent, request a clean-slate context (clearContext=true) if the tool in use supports it, since you'll already have written full context into the task body.`
+- Sign every message you post into another workspace's task with "[sent by supervisor]", so it's clear the message is relayed, not written by that workspace's own agent.`
 )
 
 func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCreateUserRequest) (*entity.FindOrCreateUserResponse, error) {

@@ -23,7 +23,7 @@ type TaskNotifier interface {
 // taskFollowUpHelp is what followUp does, as help tells it.
 const taskFollowUpHelp = "Use it instead of creating a new task that repeats a finished one's context: an agent ignores replies on a task it completed, and a reopened task restarts from its body. " +
 	"Posts text to the task and hands it back to its agent: a finished, blocked or rejected task becomes notstarted, and the agent is handed it again with every follow-up before its body; " +
-	"an ongoing one stays ongoing and its agent is sent the text now. clearContext is honoured as for a new task. Refused on a task assigned to the human (reply instead) and on a scheduled template. " +
+	"an ongoing one stays ongoing and its agent is sent the text now. Refused on a task assigned to the human (reply instead) and on a scheduled template. " +
 	"Answers as reply does."
 
 // FollowUpTaskParams is the payload of the task tool's followUp action.
@@ -32,6 +32,9 @@ type FollowUpTaskParams struct {
 	TaskID      string `json:"taskId" jsonschema:"The task's ID (base62)."`
 	Text        string `json:"text" jsonschema:"What the agent should do next on the task: write it whole, the agent may have cleared its context."`
 	Verbose     bool   `json:"verbose,omitempty" jsonschema:"true answers with the whole task, its body, messages and tool calls included; by default only its id, workspaceId, title, status, assignee and updatedAt."`
+	// ClearContext is unlisted and ignored: help once said followUp took it,
+	// so supervisors send it, and refusing it would fail their follow-up.
+	ClearContext bool `json:"clearContext,omitempty" mcp:"unlisted"`
 }
 
 // followUpPushContent is how an agent working on a task is sent a follow-up.

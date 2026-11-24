@@ -297,8 +297,10 @@ type CreateTaskParams struct {
 	Assignee     string `json:"assignee,omitempty" jsonschema:"enum: human, agent"`
 	CronSchedule string `json:"cronSchedule,omitempty" jsonschema:"A 5-field cron schedule (minute hour dom month dow) to run the task on. A recurring task is at most hourly: a single minute 0-59, e.g. '30 * * * *'. A one-time task fixes dom and month, e.g. '30 14 25 4 *'."`
 	ParentID     string `json:"parentId,omitempty" jsonschema:"The task this one belongs under (base62)."`
-	ClearContext bool   `json:"clearContext,omitempty" jsonschema:"Ask for a clean slate: /clear is sent to the agent's terminal before this task is handed over, so it starts without the previous task's context. Ignored when the target workspace has no running Claude Code session. Defaults to the target workspace's own setting."`
-	Verbose      bool   `json:"verbose,omitempty" jsonschema:"true answers with the whole task, its body, messages and tool calls included; by default only its id, workspaceId, title, status, assignee and updatedAt."`
+	// ClearContext is unlisted: workspaces start tasks on a clean slate by
+	// default, and older supervisors still send it.
+	ClearContext bool `json:"clearContext,omitempty" mcp:"unlisted"`
+	Verbose      bool `json:"verbose,omitempty" jsonschema:"true answers with the whole task, its body, messages and tool calls included; by default only its id, workspaceId, title, status, assignee and updatedAt."`
 }
 
 type GetTaskParams struct {

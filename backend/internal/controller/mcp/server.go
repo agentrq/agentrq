@@ -259,7 +259,9 @@ type CreateTaskParams struct {
 	Attachments  []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments: {id, filename, mimeType, data (base64) or textContent (plain text)}."`
 	CronSchedule string            `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
 	EventID      string            `json:"eventId,omitempty" jsonschema:"Optional event ID (base62) — when this task completes the named event is published automatically."`
-	ClearContext bool              `json:"clearContext,omitempty" jsonschema:"Ask for a clean slate: /clear is sent to the agent's terminal before this task is handed over, so it starts without the previous task's context. Ignored when the workspace has no running Claude Code session. Defaults to the workspace's own setting."`
+	// ClearContext is unlisted: workspaces start tasks on a clean slate by
+	// default, and older agents still send it.
+	ClearContext bool `json:"clearContext,omitempty" mcp:"unlisted"`
 }
 
 // PublishEventParams is the input to the publishEvent tool.
