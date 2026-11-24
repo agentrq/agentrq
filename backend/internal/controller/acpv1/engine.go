@@ -324,10 +324,10 @@ func (e *engineV1) teardown() {
 	e.ending(e.c.Err())
 	e.mu.Lock()
 	cause, attached := e.cause, e.attached
-	var cut []int64
+	cut := map[int64]*session{}
 	for _, s := range e.sessions.byID {
 		if s.busy {
-			cut = append(cut, s.taskID)
+			cut[s.taskID] = s
 		}
 	}
 	e.mu.Unlock()
@@ -336,10 +336,11 @@ func (e *engineV1) teardown() {
 	case errors.Is(cause, errProcessExited):
 		note = noteProcessExited
 	case errors.Is(cause, errBridgeBye):
-		note = noteCancelled
+		note = noteGatewayShutDown
 	}
-	for _, taskID := range cut {
+	for taskID, s := range cut {
 		e.note(taskID, note)
+		e.postTurnEnd(taskID, s)
 	}
 	for _, requestID := range e.settlePermissions("") {
 		e.ws.ClosePermissionRequest(context.Background(), requestID)

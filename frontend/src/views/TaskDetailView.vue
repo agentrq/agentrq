@@ -1964,7 +1964,7 @@ const stopRunningTask = async () => {
     if (err.message === NOTHING_TO_STOP && agentWorking.value) {
       // Releasing the composer sends the next queued message.
       nothingRunningFor.value = { taskId: taskId.value, at: turnStartedAt(sortedMessages.value) };
-      notifySuccess("The agent had nothing running, so the composer is free again.");
+      notifySuccess("Stopped.");
       return;
     }
     notifyError("Failed to stop the task: " + err.message);

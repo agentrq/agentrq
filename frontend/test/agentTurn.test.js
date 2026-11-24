@@ -277,6 +277,28 @@ describe('agentIsBusy', () => {
     expect(agentIsBusy({ task: ongoing, workspace: gateway, messages })).toBe(true)
   })
 
+  // #1350: an agent that reports no usage (a local model) answered, and the
+  // working banner stayed on. The native engine ends every turn with a
+  // footer, empty when there is no usage, and that is what clears it.
+  it('ends at an empty footer from an agent that reports no usage', () => {
+    const empty = { id: 'u1', sender: 'agent', text: '', metadata: { type: 'agent_usage', text: '' } }
+    const messages = [fromHuman(), fromAgent(), empty]
+    expect(agentIsBusy({ task: ongoing, workspace: gateway, messages })).toBe(false)
+    expect(agentIsWorking({ task: ongoing, workspace: gateway, messages })).toBe(false)
+  })
+
+  it('ends at the native engine\'s plainer notes too', () => {
+    for (const text of [
+      '⚠️ The agent hit an error: model overloaded',
+      '⚠️ The agent stopped: its process exited.',
+      '⚠️ The agent stopped early: tea_break.',
+      '⚠️ The agent declined to continue.',
+    ]) {
+      const note = { id: 'n1', sender: 'agent', text }
+      expect(agentIsBusy({ task: ongoing, workspace: gateway, messages: [fromHuman(), note] })).toBe(false)
+    }
+  })
+
   it('ends at a turn\'s stop-reason note where the agent can be stopped', () => {
     const note = { id: 'n1', sender: 'agent', text: '⚠️ The turn was cancelled before the agent finished.' }
     expect(agentIsBusy({ task: ongoing, workspace: gateway, messages: [fromHuman(), fromAgent(), note] })).toBe(false)

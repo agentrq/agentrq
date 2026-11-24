@@ -30,7 +30,6 @@ type chain struct {
 	parked    []delivery
 	last      string // the content of the task's last delivery
 	cancelled uint64 // seq of the task's last cancel, 0 for none
-	noted     uint64 // seq of the last cancel the cancelled note was posted for
 }
 
 // turnQueue decides which turn runs when: one at a time, since a workspace's
@@ -120,20 +119,6 @@ func (q *turnQueue) cancelledSince(taskID int64, seq uint64) bool {
 	defer q.mu.Unlock()
 	ch := q.chains[taskID]
 	return ch != nil && ch.cancelled > seq
-}
-
-// noteCancel reports whether the task's last cancel still needs its
-// cancelled note, and marks it posted: one note per Stop, however many turns
-// it ended or skipped.
-func (q *turnQueue) noteCancel(taskID int64) bool {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	ch := q.chains[taskID]
-	if ch == nil || ch.cancelled == ch.noted {
-		return false
-	}
-	ch.noted = ch.cancelled
-	return true
 }
 
 // free reports whether the slot is free with nothing waiting for it.

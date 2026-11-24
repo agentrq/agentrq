@@ -20,32 +20,27 @@ end a turn.** The server's own instructions tell agents to report progress with
 it works; taking one as the end posts a queued message into the running turn,
 which is the bug this exists to fix.
 
-What ends a turn is the **usage footer**. The engine writes it from
-`endTurn`, which runs when the ACP prompt resolves — "the last usage
-snapshot of the turn", one per turn, including a turn cancelled by the Stop
-button, since a cancel resolves the prompt too. That is what drains the queue
-on its own after a stop.
+What ends a turn is the **usage footer**. The native engine posts it at the
+end of every delivery (`markTurnEnd` in `controller/acpv1`), after the reply
+and any note — a turn cancelled by Stop, or skipped by one, included — and
+empty when the agent reports no usage, which draws no ring. **Every way a turn
+ends must post it**: a turn with nothing to end it locked the composer (#1347)
+and left the working banner on (#1350).
 
 The server keeps one footer per task and revises it in place, so its place in
 the list is where it was first written. Its `reportedAt` is what says a
 revision came after the person's last message.
-
-A turn stopped before the agent reported any usage has no footer to flush:
-its end is the stop-reason note ("⚠️ The turn was cancelled…",
-`stopNote`), sent by `endTurn`. Miss it and an early stop leaves
-the queue unsent and the composer locked. **Every way a turn ends must post
-something that ends it**: a turn with no reply, usage or stop reason posts
-`noteNoReply`, and a turn skipped by a Stop posts the cancelled note (#1347).
 
 **Send Now on a queued message never posts it mid-turn.** It moves the message
 to the head and stops the turn, and the turn's end sends it. Posted at once, the
 engine chains it behind the cancelled turn, and that turn's end then sends the
 next queued message into it.
 
-The footer is only sent when the agent reported usage at all, so for a task
-that has never seen one — and only then — a plain reply is taken as the end
-instead. Worse, but the old behaviour rather than a queue that is never sent.
-The rule lives in `useAgentTurn.js`, with the cases as tests.
+The classic gateway sends the footer only when the agent reported usage, and
+ends an early stop with a note instead, so its notes end a turn too
+(`STOP_REASON_NOTE`). For a task that has never seen a footer — and only then
+— a plain reply is taken as the end. The rule lives in `useAgentTurn.js`, with
+the cases as tests.
 
 A queue also has no turn-end to wait for if the turn finished while the page
 was closed, so the task view sends its head once after loading too; that send

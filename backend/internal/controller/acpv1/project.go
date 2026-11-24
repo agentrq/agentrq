@@ -248,13 +248,12 @@ func (e *engineV1) runTurn(d delivery) {
 	if e.isEnding() {
 		return
 	}
+	// However the delivery ends, the footer says so, after everything else
+	// it posted (#1347, #1350).
+	var s *session
+	defer func() { e.markTurnEnd(d.taskID, s) }()
 	if e.q.cancelledSince(d.taskID, d.seq) {
-		// Stopped before it started: the note still ends the turn the human
-		// is waiting on (#1347), once per Stop.
-		if e.q.noteCancel(d.taskID) {
-			e.note(d.taskID, noteCancelled)
-		}
-		return
+		return // stopped before it started
 	}
 	if isLogout(d.content) && supported(e.caps.Auth.Logout) {
 		e.logout(d.taskID)
@@ -273,9 +272,6 @@ func (e *engineV1) runTurn(d delivery) {
 	}
 	if e.q.cancelledSince(d.taskID, d.seq) {
 		e.setIdle(s)
-		if !e.isEnding() && e.q.noteCancel(d.taskID) {
-			e.note(d.taskID, noteCancelled)
-		}
 		return
 	}
 	if err := e.ws.MarkTaskOngoing(e.ctx, e.linkID, d.taskID); err != nil {
@@ -300,9 +296,6 @@ func (e *engineV1) runTurn(d delivery) {
 		resp.StopReason, err = "cancelled", nil
 	}
 	e.barrier() // every update that came before the answer is applied now
-	if err == nil && resp.StopReason == "cancelled" {
-		e.q.noteCancel(d.taskID) // endTurn posts it; the turns this Stop skips do not
-	}
 	e.endTurn(s, d.taskID, resp.StopReason, err)
 	if e.deps.OnTurn != nil {
 		e.deps.OnTurn(e.ctx, e.c.WorkspaceID(), e.c.UserID())
@@ -363,20 +356,43 @@ func (e *engineV1) endTurn(s *session, taskID int64, stopReason string, err erro
 			zlog.Error().Err(perr).Int64("task_id", taskID).Msg("acp v1: could not post the agent's reply")
 		}
 	}
-	u, usage := s.proj.usageForTurnEnd()
-	if usage {
-		e.ws.HandleAgentTelemetry(e.ctx, e.linkID, agentlink.TelemetryReport{
-			TaskID: b62(taskID), SessionID: s.id, Kind: "usage", Text: formatUsage(u), Data: usageData(u)})
-	}
 	switch {
+	case err != nil && (reply != "" || toolReplied):
+		detail := errorText(err)
+		// The work is answered; the error after it is a detail for the
+		// trajectory, not a warning in the thread.
+		e.sendNotice(s, notice{Severity: "warning", Title: "The agent hit an error after replying", Description: &detail})
 	case err != nil:
 		e.note(taskID, noteAnsweredWithError(errorText(err)))
 	case stopNote(stopReason) != "":
 		e.note(taskID, stopNote(stopReason))
-	case reply == "" && !toolReplied && !usage:
-		// Nothing else would tell the composer the turn is over (#1347).
-		e.note(taskID, noteNoReply)
 	}
+}
+
+// markTurnEnd revises the task's usage footer, whose reportedAt is what tells
+// the composer a turn is over: with the session's latest usage, or with none
+// when the agent never reported any, which the composer draws no ring for.
+// Every delivery ends with it, whatever else it posted (#1347, #1350).
+func (e *engineV1) markTurnEnd(taskID int64, s *session) {
+	if !e.isEnding() { // teardown marks the turns it cut off
+		e.postTurnEnd(taskID, s)
+	}
+}
+
+func (e *engineV1) postTurnEnd(taskID int64, s *session) {
+	if s == nil {
+		e.mu.Lock()
+		s = e.sessions.byTask[taskID]
+		e.mu.Unlock()
+	}
+	r := agentlink.TelemetryReport{TaskID: b62(taskID), Kind: "usage", Data: map[string]any{}}
+	if s != nil {
+		r.SessionID = s.id
+		if u, ok := s.proj.usageForTurnEnd(); ok {
+			r.Text, r.Data = formatUsage(u), usageData(u)
+		}
+	}
+	e.ws.HandleAgentTelemetry(e.ctx, e.linkID, r)
 }
 
 // taskOf is the session's task, 0 while it is idle.

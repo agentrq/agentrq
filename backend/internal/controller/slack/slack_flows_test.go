@@ -370,6 +370,34 @@ func TestOnMessageCreatedSkipsWithoutAThreadOrToken(t *testing.T) {
 	})
 }
 
+// The native ACP engine ends a turn with an empty usage footer when the agent
+// reports no usage (#1347, #1350); the thread gets nothing for it. A filled
+// footer is a message like any other, and still goes.
+func TestOnMessageCreatedSkipsAnEmptyTurnEnd(t *testing.T) {
+	f := newFlowFixture(t) // no thread lookup expected: nothing is posted
+	for _, md := range []any{map[string]any{"type": "agent_usage", "text": ""}, struct {
+		Type string `json:"type"`
+	}{"agent_usage"}} {
+		msg := entity.Message{ID: 1, Sender: "agent", Metadata: md}
+		if err := f.controller().OnMessageCreated(context.Background(), msg, entity.Task{ID: 9, WorkspaceID: 42}); err != nil {
+			t.Fatalf("OnMessageCreated: %v", err)
+		}
+	}
+	if len(f.slack.replies) != 0 {
+		t.Fatalf("posted %q, want nothing", f.slack.replies)
+	}
+	for _, msg := range []entity.Message{
+		{Sender: "agent", Text: "Context 1 / 2 tokens", Metadata: map[string]any{"type": "agent_usage"}},
+		{Sender: "agent", Metadata: map[string]any{"type": "permission_request"}},
+		{Sender: "human", Attachments: []entity.Attachment{{}}},
+		{Sender: "agent"},
+	} {
+		if isEmptyTurnEnd(msg) {
+			t.Errorf("isEmptyTurnEnd(%+v) = true, want it mirrored", msg)
+		}
+	}
+}
+
 func (f *flowFixture) expectThreadAndLink(t *testing.T) {
 	t.Helper()
 	f.repo.EXPECT().GetSlackTaskThreadByTask(gomock.Any(), int64(9)).
