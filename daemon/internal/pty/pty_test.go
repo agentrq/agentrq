@@ -342,9 +342,11 @@ func TestStartFindsABareCommandOnPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	defer func() { _ = s.Close() }()
-	if code, err := s.Wait(); err != nil || code != 0 {
-		t.Fatalf("Wait = %d, %v; want 0, nil", code, err)
+	t.Cleanup(func() { _ = s.Close() })
+	// Read rather than Wait: on macOS a child does not exit until the output
+	// it wrote to the terminal has been read.
+	if !readUntil(t, s, "hello from the pty") {
+		t.Error("never saw the child's output")
 	}
 }
 
