@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net/url"
 	"path"
 	"reflect"
 	"regexp"
@@ -207,6 +208,32 @@ func TestBuiltinSkills_ExamplesAreRealCalls(t *testing.T) {
 			if errs != nil || !slices.ContainsFunc(candidates, func(a ToolAction) bool { return a.Name == c.Action }) {
 				t.Errorf("%s: %s %v is not a call the server accepts: %v", file, c.Action, c.Payload, errs)
 			}
+		}
+	}
+}
+
+// SKILL.md links its references relatively, so the one link works from the
+// plugin's files on disk and from the server's skill:// resources: resolved
+// against the SKILL.md's URI, as a client resolves a relative link, each is
+// a file the server serves.
+func TestBuiltinSkills_LinksResolveToServedFiles(t *testing.T) {
+	base, err := url.Parse(workspaceSkillURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := builtinSkills.Files()[workspaceSkillURI]
+	links := regexp.MustCompile(`\]\(([^)]+)\)`).FindAllSubmatch(body, -1)
+	if len(links) == 0 {
+		t.Fatal("the SKILL.md links no files")
+	}
+	for _, m := range links {
+		ref, err := url.Parse(string(m[1]))
+		if err != nil {
+			t.Fatalf("link %q: %v", m[1], err)
+		}
+		uri := base.ResolveReference(ref).String()
+		if _, ok := builtinSkills.Files()[uri]; !ok {
+			t.Errorf("the link %s resolves to %s, which the server does not serve", m[1], uri)
 		}
 	}
 }
