@@ -890,6 +890,32 @@ export async function importSkills(url, overwrite = false, skills = [], workspac
   return res.json();
 }
 
+// Whether the server's GitHub App is offered, where to install it, and the
+// GitHub accounts this account imports private skills from through it.
+export async function getGitHubConnection() {
+  const res = await apiFetch(`${API_BASE_URL}/github`);
+  if (!res.ok) throw await skillError(res, 'Failed to fetch the GitHub connection');
+  return res.json();
+}
+
+// Finishes a connect with what GitHub sent back to /github/callback.
+export async function connectGitHub(code, state) {
+  const res = await apiFetch(`${API_BASE_URL}/github/installations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, state }),
+  });
+  if (!res.ok) throw await skillError(res, 'Failed to connect GitHub');
+  return res.json();
+}
+
+// Stops importing through one installation; the app stays installed on GitHub.
+export async function disconnectGitHub(installationId) {
+  const res = await apiFetch(`${API_BASE_URL}/github/installations/${encodeURIComponent(installationId)}`, { method: 'DELETE' });
+  if (!res.ok) throw await skillError(res, 'Failed to disconnect GitHub');
+  return true;
+}
+
 // Deletes it from the account, so every workspace loses it.
 export async function deleteSkill(name) {
   const res = await apiFetch(accountSkillPath(name), { method: 'DELETE' });

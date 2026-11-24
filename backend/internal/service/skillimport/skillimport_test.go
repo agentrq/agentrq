@@ -217,7 +217,7 @@ func TestFetch_SuperpowersShapedRepository(t *testing.T) {
 	s, done := gh.server(t)
 	defer done()
 
-	res, err := s.Fetch(context.Background(), "https://github.com/obra/superpowers", nil)
+	res, err := s.Fetch(context.Background(), "https://github.com/obra/superpowers", nil, "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestFetch_SubPathAndRootSkill(t *testing.T) {
 	s, done := gh.server(t)
 	defer done()
 
-	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main/skills/pr-reviewer", nil)
+	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main/skills/pr-reviewer", nil, "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -329,7 +329,7 @@ func TestFetch_RepositoryRootSkillIsNamedAfterTheRepository(t *testing.T) {
 	s, done := gh.server(t)
 	defer done()
 
-	res, err := s.Fetch(context.Background(), "https://github.com/acme/my-skill", nil)
+	res, err := s.Fetch(context.Background(), "https://github.com/acme/my-skill", nil, "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestFetch_Limits(t *testing.T) {
 	s, done := gh.server(t)
 	defer done()
 
-	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main", nil)
+	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main", nil, "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -407,7 +407,7 @@ func TestFetch_Errors(t *testing.T) {
 			gh := tc.gh
 			s, done := gh.server(t)
 			defer done()
-			res, err := s.Fetch(context.Background(), tc.url, nil)
+			res, err := s.Fetch(context.Background(), tc.url, nil, "")
 			if tc.want == "" && tc.is == nil {
 				// An empty archive is not an error, just an import of nothing.
 				if err != nil || len(res.Skills) != 0 {
@@ -446,7 +446,7 @@ func TestFetch_TruncatedFileBody(t *testing.T) {
 	gh := &fakeGitHub{commitStatus: 404, tarball: gzipped(raw.Bytes())}
 	s, done := gh.server(t)
 	defer done()
-	if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil); err == nil || !strings.Contains(err.Error(), "could not be read") {
+	if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil, ""); err == nil || !strings.Contains(err.Error(), "could not be read") {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -455,10 +455,10 @@ func TestFetch_NetworkError(t *testing.T) {
 	gh := &fakeGitHub{}
 	s, done := gh.server(t)
 	done() // nothing is listening any more
-	if _, err := s.Fetch(context.Background(), "https://github.com/a/b", nil); err == nil || !strings.Contains(err.Error(), "reach GitHub") {
+	if _, err := s.Fetch(context.Background(), "https://github.com/a/b", nil, ""); err == nil || !strings.Contains(err.Error(), "reach GitHub") {
 		t.Errorf("repo lookup: %v", err)
 	}
-	if _, err := s.Fetch(context.Background(), "https://github.com/a/b/tree/main", nil); err == nil || !strings.Contains(err.Error(), "download from GitHub") {
+	if _, err := s.Fetch(context.Background(), "https://github.com/a/b/tree/main", nil, ""); err == nil || !strings.Contains(err.Error(), "download from GitHub") {
 		t.Errorf("download: %v", err)
 	}
 }
@@ -493,7 +493,7 @@ func TestFetch_TooLarge(t *testing.T) {
 			s, done := gh.server(t)
 			defer done()
 			tc.limit(s)
-			_, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil)
+			_, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil, "")
 			if err == nil || !strings.Contains(err.Error(), "too large to import:") {
 				t.Fatalf("got %v", err)
 			}
@@ -504,7 +504,7 @@ func TestFetch_TooLarge(t *testing.T) {
 		s, done := gh.server(t)
 		defer done()
 		s.maxExtracted = 3000
-		if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil); err == nil || !strings.Contains(err.Error(), "too large to import:") {
+		if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil, ""); err == nil || !strings.Contains(err.Error(), "too large to import:") {
 			t.Fatalf("got %v", err)
 		}
 	})
@@ -540,7 +540,7 @@ func TestFetch_PluginManifest(t *testing.T) {
 		gh := &fakeGitHub{commitStatus: 404, tarball: buildTarball(t, entries)}
 		s, done := gh.server(t)
 		defer done()
-		res, err := s.Fetch(context.Background(), url, nil)
+		res, err := s.Fetch(context.Background(), url, nil, "")
 		if err != nil {
 			t.Fatalf("Fetch: %v", err)
 		}
@@ -594,7 +594,7 @@ func TestFetch_PluginManifest(t *testing.T) {
 		gh := &fakeGitHub{commitStatus: 404, tarball: gzipped(raw.Bytes())}
 		s, done := gh.server(t)
 		defer done()
-		if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil); err == nil || !strings.Contains(err.Error(), "could not be read") {
+		if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil, ""); err == nil || !strings.Contains(err.Error(), "could not be read") {
 			t.Fatalf("got %v", err)
 		}
 	})
@@ -648,7 +648,7 @@ func TestFetch_KeepsFilesNamedByTheirRepositoryPath(t *testing.T) {
 	})}
 	s, done := gh.server(t)
 	defer done()
-	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main", nil)
+	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -668,7 +668,7 @@ func TestFetch_ManifestWithNothingUnderTheLinkFallsBackToLooking(t *testing.T) {
 	})}
 	s, done := gh.server(t)
 	defer done()
-	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main/extra", nil)
+	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main/extra", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -684,7 +684,7 @@ func TestFetch_OversizedSkillFileQuotesItsOwnLimit(t *testing.T) {
 	})}
 	s, done := gh.server(t)
 	defer done()
-	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main", nil)
+	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -710,7 +710,7 @@ func TestFetch_KeepsUnreferencedMarkdownButNotRepoMetaFiles(t *testing.T) {
 	})}
 	s, done := gh.server(t)
 	defer done()
-	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main", nil)
+	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -742,7 +742,7 @@ func TestFetch_KeepsAMetaFileSkillMDReferences(t *testing.T) {
 	})}
 	s, done := gh.server(t)
 	defer done()
-	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main", nil)
+	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -768,7 +768,7 @@ func TestFetch_ConfiguredLimits(t *testing.T) {
 	s, done := gh.server(t)
 	defer done()
 
-	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main", nil)
+	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main", nil, "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}

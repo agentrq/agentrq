@@ -15,6 +15,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/cleanup"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
+	"github.com/agentrq/agentrq/backend/internal/service/githubapp"
 	"github.com/agentrq/agentrq/backend/internal/service/s3"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 )
@@ -24,7 +25,7 @@ import (
 func LoadConfig(cfgSvc config.Service) (Config, error) {
 	var cfg Config
 	for key, dst := range map[string]any{
-		"app": &cfg.App, "auth": &cfg.Auth, "smtp": &cfg.SMTP, "ssl": &cfg.SSL, "slack": &cfg.Slack,
+		"app": &cfg.App, "auth": &cfg.Auth, "smtp": &cfg.SMTP, "ssl": &cfg.SSL, "slack": &cfg.Slack, "githubApp": &cfg.GitHubApp,
 		"webPush": &cfg.WebPush, "network": &cfg.Network, "storage": &cfg.Storage, "memory": &cfg.Memory,
 		"skills": &cfg.Skills, "pano": &cfg.Pano, "hooks": &cfg.Hooks, "machines": &cfg.Machines, "teams": &cfg.Teams, "mcp": &cfg.MCP,
 		"idgen": &cfg.Idgen, "ddos": &cfg.Ddos, "ratelimit": &cfg.Ratelimit, "sentry": &cfg.Sentry,
@@ -104,6 +105,9 @@ func checkConfig(c config.Service) error {
 		return err
 	}
 	if _, err := cfg.Hooks.Settings(); err != nil {
+		return err
+	}
+	if err := githubapp.Check(cfg.GitHubApp); err != nil {
 		return err
 	}
 	if cfg.App.DrainDelay < 0 {

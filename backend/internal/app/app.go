@@ -59,6 +59,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/cleanup"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/githubapp"
 	"github.com/agentrq/agentrq/backend/internal/service/hookrunner"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/image"
@@ -137,10 +138,12 @@ type (
 			Node uint16 `yaml:"node"`
 		} `yaml:"idgen"`
 
-		SMTP    smtp.Config     `yaml:"smtp"`
-		Slack   slacksvc.Config `yaml:"slack"`
-		WebPush pushctrl.Config `yaml:"webPush"`
-		Ddos    struct {
+		SMTP  smtp.Config     `yaml:"smtp"`
+		Slack slacksvc.Config `yaml:"slack"`
+		// GitHubApp lets skills be imported from private repositories.
+		GitHubApp githubapp.Config `yaml:"githubApp"`
+		WebPush   pushctrl.Config  `yaml:"webPush"`
+		Ddos      struct {
 			Enabled              bool          `yaml:"enabled"`
 			MaxRequestsPerSecond int           `yaml:"maxRequestsPerSecond"`
 			BlockDuration        time.Duration `yaml:"blockDuration"`
@@ -427,6 +430,7 @@ func New(cfg Config) (*App, error) {
 		PubSub:           pubsubSvc,
 		Limiter:          rateLimiter,
 		SkillImport:      skillimport.New(),
+		GitHubApp:        githubapp.New(cfg.GitHubApp),
 		TaskAgents:       taskAgentCtrl,
 	})
 	hookCtrl := hook.New(hook.Params{
@@ -1533,6 +1537,7 @@ func migratedModels() []any {
 		&model.TaskStateTransition{},
 		&model.Memory{},
 		&model.Preset{},
+		&model.GitHubInstallation{},
 		&model.Skill{},
 		&model.SkillFile{},
 		&model.SkillShare{},

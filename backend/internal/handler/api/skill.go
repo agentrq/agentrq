@@ -31,6 +31,7 @@ func (h *handler) registerSkillRoutes(workspaces fiber.Router) {
 	workspaces.Patch("/:id/skills/:name", h.setSkillEnabled())
 	workspaces.Get("/:id/skills/:name/files/*", h.getSkillFile())
 	h.registerTeamSkillRoutes(workspaces)
+	h.registerGitHubRoutes()
 }
 
 // skillStatus is the status a skill refusal is answered with. Its message is

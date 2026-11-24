@@ -241,6 +241,9 @@ const URLS = {
   'auth.oauth2Providers': (item) => [
     { label: 'Callback URL', hint: 'Register this as the redirect (callback) URL of the OAuth app at the provider.', url: at(`/api/v1/auth/oauth2/${item.id || '<id>'}/callback`) },
   ],
+  githubApp: () => [
+    { label: 'Callback URL', hint: 'Set this as the GitHub App\'s callback URL, and turn on "Request user authorization (OAuth) during installation". Give the app read-only Contents permission.', url: at('/github/callback') },
+  ],
   slack: () => [
     { label: 'Redirect URL', hint: 'Add this under OAuth & Permissions, Redirect URLs, in the Slack app.', url: at('/slack/oauth/callback') },
     { label: 'Events request URL', hint: 'The Request URL under Event Subscriptions.', url: at('/slack/events') },

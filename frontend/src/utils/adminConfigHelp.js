@@ -87,6 +87,14 @@ export const CONFIG_HELP = {
   'slack.clientId': 'The Slack app\'s OAuth client ID.',
   'slack.clientSecret': 'The Slack app\'s OAuth client secret.',
 
+  githubApp: 'A GitHub App of this server\'s own, so people can import skills from their private repositories. Each person installs it on the repositories they choose; nothing else can be read.',
+  'githubApp.enabled': 'Offers "Connect GitHub" beside skill imports.',
+  'githubApp.appId': 'The App ID, on the GitHub App\'s General page.',
+  'githubApp.slug': 'The app\'s name in its public link, github.com/apps/<slug>.',
+  'githubApp.clientId': 'The GitHub App\'s client ID.',
+  'githubApp.clientSecret': 'A client secret generated on the GitHub App\'s General page.',
+  'githubApp.privateKey': 'A private key generated on that page: paste the whole .pem file.',
+
   webPush: 'Notifications sent to people\'s browsers and phones.',
   'webPush.vapidPublicKey': 'The public key of the VAPID key pair browsers subscribe with.',
   'webPush.vapidPrivateKey': 'The private key of that pair.',

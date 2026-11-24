@@ -70,6 +70,8 @@ describe('routes', () => {
       '/invitations',
       '/invite',
       '/sessions/:id',
+      // GitHub's return from installing the GitHub App.
+      '/github/callback',
       '/workflows',
       '/workflows/:id',
       '/login',

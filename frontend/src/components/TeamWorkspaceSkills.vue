@@ -145,6 +145,8 @@
               Expected https://github.com/owner/repo, optionally /tree/&lt;ref&gt;/&lt;path&gt;
             </span>
           </div>
+          <!-- A private repository is read through the importing member's own connection. -->
+          <GitHubConnection />
           <p v-if="importError" data-test="tws-import-error" class="text-[11px] font-bold text-red-600 dark:text-red-400 break-words">{{ importError }}</p>
           <div v-if="choice" data-test="tws-import-choice" class="space-y-2 text-[11px] text-gray-700 dark:text-zinc-300">
             <p class="font-bold break-words">{{ choice.repo }} is too large to import whole. Choose the skills to import:</p>
@@ -231,6 +233,7 @@ import {
   saveTeamWorkspaceSkillFile,
 } from '../api';
 import DeleteModal from './DeleteModal.vue';
+import GitHubConnection from './GitHubConnection.vue';
 import { SKILL_FILE, choosablePaths, formatSkillSize, githubImportUrlValid, orderCandidates } from '../composables/useSkills';
 import { lostTeam, sameSharedName, sharedNameOf, useTeamMode } from '../composables/useTeamMode';
 import { useToasts } from '../composables/useToasts';

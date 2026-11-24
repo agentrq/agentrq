@@ -306,7 +306,9 @@ describe('the navigate tool\'s map of the interface', () => {
 
   it('covers every page except sign-in', () => {
     const reached = new Set(DESCRIBED.map((path) => router.resolve(path).matched.at(-1).path));
-    const pages = router.getRoutes().filter((r) => !r.meta?.public && r.components).map((r) => r.path);
+    // Where GitHub returns after an install, with a one-time code: no page to send anyone to.
+    const NOT_DESTINATIONS = ['/github/callback'];
+    const pages = router.getRoutes().filter((r) => !r.meta?.public && r.components && !NOT_DESTINATIONS.includes(r.path)).map((r) => r.path);
 
     expect(pages.filter((p) => !reached.has(p))).toEqual([]);
   });

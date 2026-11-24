@@ -577,12 +577,10 @@ func (c *controller) ImportSkills(ctx context.Context, req entity.ImportSkillsRe
 	if c.limiter != nil && !c.limiter.AllowSkillImport(uid) {
 		return nil, fmt.Errorf("rate limit exceeded")
 	}
-	res, err := c.skillImport.Fetch(ctx, req.URL, req.Skills)
+	token := c.importToken(ctx, uid, req.URL)
+	res, err := c.skillImport.Fetch(ctx, req.URL, req.Skills, token)
 	if err != nil {
-		if errors.Is(err, skillimport.ErrInvalidURL) || errors.Is(err, skillimport.ErrNotFound) {
-			return nil, skillErr(SkillInvalid, "%v", err)
-		}
-		return nil, skillErr(SkillUpstream, "%v", err)
+		return nil, c.importFetchErr(err, token)
 	}
 
 	own, _, err := c.repository.SearchSkills(ctx, uid, "", base.SkillFilter{}, 0, 0)

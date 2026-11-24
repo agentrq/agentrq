@@ -1166,7 +1166,7 @@ paths:
   /skills/import:
     post:
       tags: [Skills]
-      summary: Import skills from a public GitHub repository
+      summary: Import skills from a GitHub repository
       description: >
         Downloads the repository once and imports every skill in it. A plugin
         manifest, `.agentrq/plugin.json` or else `.muse-plugin/plugin.json`,
@@ -1179,7 +1179,9 @@ paths:
         come back in `candidates`, and the import is asked again with the
         wanted ones in `skills`, which are then read file by file. Every
         skill imported belongs to the account, and is turned on in each
-        workspace of `workspaceIds`.
+        workspace of `workspaceIds`. A private repository is read through the
+        account's connection to the server's GitHub App (`/github`), when it
+        has one on the repository's owner.
       requestBody:
         required: true
         content:
@@ -1222,7 +1224,7 @@ paths:
               schema: { $ref: '#/components/schemas/SkillImportReport' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422':
-          description: Not a GitHub repository link, or one GitHub does not serve publicly
+          description: Not a GitHub repository link, or one GitHub does not serve to the account
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1231,6 +1233,76 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /github:
+    get:
+      tags: [Skills]
+      summary: The account's connection to the server's GitHub App
+      description: >
+        Whether the server offers private skill imports through a GitHub App
+        its admin configured, the link to install the app on a GitHub account
+        (or change which repositories it reads), and the installations the
+        account imports through. GitHub returns from that link to
+        `<baseUrl>/github/callback` in the web app, which posts what it sent to
+        `/github/installations`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitHubConnection' }
+
+  /github/installations:
+    post:
+      tags: [Skills]
+      summary: Finish connecting GitHub
+      description: >
+        Takes the code and state GitHub returned with, and stores the app's
+        installations GitHub lists for the person who authorised the code, in
+        place of the account's earlier ones. The state must have been made for
+        this account, within the last 30 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, state]
+              properties:
+                code: { type: string }
+                state: { type: string }
+      responses:
+        '200':
+          description: The connection, as `/github` answers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitHubConnection' }
+        '422':
+          description: The app is not configured, the state is not this account's or has expired, or a field is missing
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '502':
+          description: GitHub refused the code, or could not be reached
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /github/installations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: GitHub's number for the installation.
+        schema: { type: integer, format: int64 }
+    delete:
+      tags: [Skills]
+      summary: Stop importing through one installation
+      description: The app stays installed on GitHub, where only its owner can uninstall it.
+      responses:
+        '204': { description: Disconnected }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
 
   /skills/{name}:
     parameters:
@@ -3928,8 +4000,8 @@ paths:
       - $ref: '#/components/parameters/TeamWorkspaceId'
     post:
       tags: [Team mode]
-      summary: Import skills from a public GitHub repository into a team workspace
-      description: As `/skills/import` does into the account. A name the team workspace has already is skipped unless `overwrite`; one over its cap is skipped with the reason.
+      summary: Import skills from a GitHub repository into a team workspace
+      description: As `/skills/import` does into the account, a private repository through the importing member's own GitHub connection. A name the team workspace has already is skipped unless `overwrite`; one over its cap is skipped with the reason.
       requestBody:
         required: true
         content:
@@ -4211,6 +4283,24 @@ components:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
 
   schemas:
+    GitHubConnection:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          description: Whether the server has a GitHub App; false, nothing else is set.
+        installUrl:
+          type: string
+          description: Where to install the app, or change which repositories it reads.
+        installations:
+          type: array
+          items:
+            type: object
+            properties:
+              installationId: { type: integer, format: int64 }
+              account: { type: string, example: acme }
+              accountType: { type: string, enum: [User, Organization] }
+              createdAt: { type: string, format: date-time }
     TeamOwner:
       type: object
       properties:

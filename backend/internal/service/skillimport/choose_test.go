@@ -74,7 +74,7 @@ func TestFetch_TooLargeOffersItsSkills(t *testing.T) {
 	defer done()
 	s.maxDownload = 5
 
-	res, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil)
+	res, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil, "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestFetch_ChosenSkillsAreReadFileByFile(t *testing.T) {
 	s, done := gh.server(t)
 	defer done()
 
-	res, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main/skills", []string{"skills/pick", "skills/missing"})
+	res, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main/skills", []string{"skills/pick", "skills/missing"}, "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestFetch_ChosenLargeSkillFileIsReadWhole(t *testing.T) {
 	gh := &fakeGitHub{commitStatus: http.StatusNotFound, raw: files, treeBody: treeOf(t, files)}
 	s, done := gh.server(t)
 	defer done()
-	res, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"big"})
+	res, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"big"}, "")
 	if err != nil || len(res.Skills) != 1 || string(res.Skills[0].Files[0].Content) != body {
 		t.Fatalf("got %+v, %v", res, err)
 	}
@@ -203,14 +203,14 @@ func TestFetch_ChosenSkillsFollowTheManifest(t *testing.T) {
 	defer done()
 	s.maxDownload = 5
 
-	res, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil)
+	res, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(res.Candidates) != 1 || res.Candidates[0] != (Candidate{Name: "listed", Path: "tools/one", SkillBytes: int64(len(files["tools/one/SKILL.md"]))}) {
 		t.Fatalf("candidates: %+v", res.Candidates)
 	}
-	res, err = s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"tools/one"})
+	res, err = s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"tools/one"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestFetch_TooLargeAndUnlisted(t *testing.T) {
 	s, done := gh.server(t)
 	defer done()
 	s.maxDownload = 5
-	_, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil)
+	_, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil, "")
 	if err == nil || !strings.Contains(err.Error(), "too large to import:") || !strings.Contains(err.Error(), "would not list its files") || !strings.Contains(err.Error(), "answered 403") {
 		t.Fatalf("got %v", err)
 	}
@@ -261,7 +261,7 @@ func TestFetch_ChosenErrors(t *testing.T) {
 			if tc.tune != nil {
 				tc.tune(s)
 			}
-			_, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"s"})
+			_, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"s"}, "")
 			if err == nil || !strings.Contains(err.Error(), tc.want) || (tc.is != nil && !errors.Is(err, tc.is)) {
 				t.Fatalf("got %v, want %q", err, tc.want)
 			}
@@ -278,7 +278,7 @@ func TestFetch_ChosenFileCountIsCapped(t *testing.T) {
 	gh := &fakeGitHub{commitStatus: http.StatusNotFound, treeBody: treeOf(t, files), rawStatus: http.StatusOK}
 	s, done := gh.server(t)
 	defer done()
-	_, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"s"})
+	_, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"s"}, "")
 	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("more than %d files", maxRawFiles)) {
 		t.Fatalf("got %v", err)
 	}
@@ -291,7 +291,7 @@ func TestFetch_ChosenNetworkErrors(t *testing.T) {
 	gh := &fakeGitHub{}
 	s, done := gh.server(t)
 	done()
-	if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"s"}); err == nil || !strings.Contains(err.Error(), "reach GitHub") {
+	if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"s"}, ""); err == nil || !strings.Contains(err.Error(), "reach GitHub") {
 		t.Errorf("listing: %v", err)
 	}
 
@@ -309,11 +309,11 @@ func TestFetch_ChosenNetworkErrors(t *testing.T) {
 	}))
 	defer srv.Close()
 	s = &service{client: srv.Client(), apiBase: srv.URL + "/api", rawBase: srv.URL + "/raw", maxCollected: maxCollectedBytes}
-	if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"s"}); err == nil || !strings.Contains(err.Error(), "download s/SKILL.md from a/r") {
+	if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"s"}, ""); err == nil || !strings.Contains(err.Error(), "download s/SKILL.md from a/r") {
 		t.Errorf("truncated file: %v", err)
 	}
 	s.rawBase = "http://bad host"
-	if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"s"}); err == nil || !strings.Contains(err.Error(), "download from GitHub") {
+	if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", []string{"s"}, ""); err == nil || !strings.Contains(err.Error(), "download from GitHub") {
 		t.Errorf("unreachable file: %v", err)
 	}
 }
