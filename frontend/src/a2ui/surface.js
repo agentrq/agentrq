@@ -5,14 +5,15 @@
 // A surface: the stored A2UI messages of one message's card, applied in
 // order into reactive state a renderer draws from its "root" component.
 
-import { reactive } from 'vue'
+import { reactive, toRaw } from 'vue'
 
 import { getPointer, parsePointer, resolvePath, setPointer } from './pointer.js'
 import { validateMessages } from './validate.js'
 
 export const ROOT_ID = 'root'
 
-const clone = (v) => (v === undefined ? v : structuredClone(v))
+// A message from the view is a reactive proxy, which structuredClone refuses.
+const clone = (v) => (v === undefined ? v : structuredClone(toRaw(v)))
 
 /** An empty surface. */
 export function createSurfaceState() {
