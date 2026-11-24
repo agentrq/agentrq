@@ -850,6 +850,11 @@ type StopOutcome struct {
 	// ApprovalsDenied counts the approvals refused on the human's behalf when
 	// the agent itself could not be stopped.
 	ApprovalsDenied int
+	// NothingRunning is true when every connected agent is a native link that
+	// can be stopped, and none had a turn for the task: the dashboard was
+	// wrong to think the agent was working (#1347). Never with an MCP stream
+	// connected, which may be working on the task without saying so.
+	NothingRunning bool
 }
 
 // Acted reports whether the stop request changed anything at all.
@@ -876,7 +881,8 @@ func (ps *WorkspaceServer) SendCancelNotification(ctx context.Context, taskID in
 		denied := ps.denyOutstandingRequests(ctx, taskID)
 		zlog.Info().Int64("workspace_id", ps.workspaceID).Int64("task_id", taskID).Int("approvals_denied", denied).
 			Msg("nothing connected can stop a task; refused what it was waiting on instead")
-		return StopOutcome{ApprovalsDenied: denied}
+		idle := denied == 0 && ps.hasAgentLinks() && ps.agentConnections.Load() == 0
+		return StopOutcome{ApprovalsDenied: denied, NothingRunning: idle}
 	}
 	zlog.Info().Int64("workspace_id", ps.workspaceID).Int64("task_id", taskID).Int("sessions", sent).
 		Msg("asked connected agents to stop a task")

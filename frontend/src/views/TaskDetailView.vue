@@ -1055,7 +1055,7 @@ import {
   telemetryText,
 } from '../composables/useAgentTelemetry';
 import { belongsInThread, messagesSince, recentToolCalls } from '../composables/useTrajectory';
-import { agentIsWorking, agentIsBusy, turnStartedAt, activitySince, formatElapsed, workDurations, workingPlaceholder } from '../composables/useAgentTurn';
+import { agentIsWorking, agentIsBusy, turnStartedAt, NOTHING_TO_STOP, activitySince, formatElapsed, workDurations, workingPlaceholder } from '../composables/useAgentTurn';
 import { recordUiAction } from '../composables/useUiTelemetry';
 import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate, upsertToolCall } from '../composables/useTaskEvents';
@@ -1476,16 +1476,28 @@ const threadMessages = computed(() => sortedMessages.value.filter(belongsInThrea
 // The ACP gateway does not interrupt: a message sent now is queued behind the
 // turn rather than reaching the agent, so offering Send would be offering
 // something that does not do what it looks like it does.
-const agentWorking = computed(() => agentIsWorking({
-  task: task.value,
-  workspace: workspace.value,
-  messages: sortedMessages.value,
-}));
+// The turn a Stop found nothing running for (#1347): the agent ended it
+// without saying so, so the composer is released until somebody speaks again.
+const nothingRunningFor = ref(null);
+// The server said the agent had nothing running for this turn (a Stop that
+// found none): neither the composer nor the banner says it is working.
+const knownIdle = computed(() => {
+  const idle = nothingRunningFor.value;
+  return !!idle && idle.taskId === taskId.value && idle.at === turnStartedAt(sortedMessages.value);
+});
+const agentWorking = computed(() => {
+  if (knownIdle.value) return false;
+  return agentIsWorking({
+    task: task.value,
+    workspace: workspace.value,
+    messages: sortedMessages.value,
+  });
+});
 
 // The sign of life at the foot of the conversation: the agent is connected and
 // on the task, whether or not anything shows in the trajectory yet. The clock
 // counts from the message it is answering, and from now if there is none.
-const agentBusy = computed(() => agentIsBusy({
+const agentBusy = computed(() => !knownIdle.value && agentIsBusy({
   task: task.value,
   workspace: workspace.value,
   messages: sortedMessages.value,
@@ -1954,6 +1966,12 @@ const stopRunningTask = async () => {
       notifySuccess("This agent cannot be stopped, so the command it was waiting on was refused.");
     }
   } catch (err) {
+    if (err.message === NOTHING_TO_STOP && agentWorking.value) {
+      // Releasing the composer sends the next queued message.
+      nothingRunningFor.value = { taskId: taskId.value, at: turnStartedAt(sortedMessages.value) };
+      notifySuccess("Stopped.");
+      return;
+    }
     notifyError("Failed to stop the task: " + err.message);
   }
 };
@@ -1981,8 +1999,10 @@ async function deliverReply(text, atts, target = null) {
   try {
     const res = await respondToTask(to.workspaceId, to.taskId, 'text', text, atts);
     // Only adopt the reply if that task is still the one being shown; otherwise
-    // this would paint another task's thread over the current one.
-    if (stillViewing()) task.value = res.task;
+    // this would paint another task's thread over the current one. Merged, not
+    // assigned: the answer was built before a turn that ended at once revised
+    // its footer, and assigning it put the working banner back (#1350).
+    if (stillViewing()) task.value = applyTaskUpdate(task.value, res.task);
   } catch(err) {
     notifyError("Failed to deliver message: " + err.message);
     // Putting the text back is only right while its own task is on screen. Into

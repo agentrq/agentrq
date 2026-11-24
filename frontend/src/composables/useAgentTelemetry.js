@@ -282,6 +282,9 @@ export function usageSessionEnded(message) {
 export function contextGauge(message, radius = 8) {
   if (agentTelemetryKind(message) !== 'usage' || usageSessionEnded(message)) return null;
   const detail = usageDetail(message);
+  // A footer with nothing in it only marks a turn's end, for an agent that
+  // reports no usage (#1347, #1350): there is nothing to draw.
+  if (detail.used === null && detail.size === null && !detail.text.trim() && message?.metadata?.cost == null) return null;
   const circumference = 2 * Math.PI * radius;
   return {
     percent: detail.percent,

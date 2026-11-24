@@ -67,12 +67,56 @@ export function mergeTaskUpdate(current, incoming) {
       merged[relation] = current[relation];
     }
   }
+  const messages = keepNewerMessages(current.messages, merged.messages);
+  if (messages !== merged.messages) merged.messages = messages;
   if (merged.agentNote === undefined && current.agentNote !== undefined) merged.agentNote = current.agentNote;
   const toolCalls = unionToolCalls(current.toolCalls, incoming.toolCalls);
   if (toolCalls !== undefined) merged.toolCalls = toolCalls;
   const count = Math.max(current.toolCallCount || 0, incoming.toolCallCount || 0, toolCalls?.length || 0);
   if (count) merged.toolCallCount = count;
   return merged;
+}
+
+/** When a usage footer was last revised, or null for any other message. */
+function footerReportedAt(message) {
+  if (message.metadata?.type !== 'agent_usage') return null;
+  const at = Date.parse(message.metadata.reportedAt);
+  return Number.isFinite(at) ? at : null;
+}
+
+/**
+ * The incoming messages, kept from going back in time. The answer to a send is
+ * built before a turn that ends at once has run, and can arrive after the
+ * events that turn sent: taken as given, it put back the footer that said the
+ * agent was working, and dropped the agent's reply (#1350). So a footer keeps
+ * its later revision, and a message the view holds that is newer than all of
+ * the snapshot's stays. One older than them is not kept: the snapshot may be
+ * one page of a longer thread.
+ */
+function keepNewerMessages(current, incoming) {
+  if (!Array.isArray(current) || !Array.isArray(incoming)) return incoming;
+  const ids = new Set(incoming.map((m) => m.id));
+  // A loop, not Math.max(...): a long thread overflows the argument list.
+  let newest = -Infinity;
+  for (const m of incoming) newest = Math.max(newest, Date.parse(m.createdAt) || -Infinity);
+  const held = new Map();
+  for (const m of current) {
+    const at = footerReportedAt(m);
+    if (at !== null) held.set(m.id, { at, m });
+  }
+  let kept = false;
+  const out = incoming.map((m) => {
+    const h = held.get(m.id);
+    if (!h || footerReportedAt(m) >= h.at) return m;
+    kept = true;
+    return h.m;
+  });
+  for (const m of current) {
+    if (m._pending || ids.has(m.id) || !(Date.parse(m.createdAt) > newest)) continue;
+    out.push(m);
+    kept = true;
+  }
+  return kept ? out : incoming;
 }
 
 /**

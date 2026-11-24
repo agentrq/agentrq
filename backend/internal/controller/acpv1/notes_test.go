@@ -13,39 +13,35 @@ import (
 
 func TestNotes(t *testing.T) {
 	cases := []struct{ reason, want string }{
-		{"refusal", "⚠️ The agent refused to continue this turn."},
-		{"max_tokens", "⚠️ The agent stopped mid-turn: it ran out of output tokens."},
-		{"max_turn_requests", "⚠️ The agent stopped mid-turn: it reached its limit on model requests for a single turn."},
-		{"cancelled", "⚠️ The turn was cancelled before the agent finished."},
-		{"tea_break", "⚠️ The agent stopped for a reason this gateway does not recognise: tea_break."},
+		{"refusal", "⚠️ The agent declined to continue."},
+		{"max_tokens", "⚠️ The agent stopped: its answer reached the model's output limit."},
+		{"max_turn_requests", "⚠️ The agent stopped: it reached its limit of model requests for one turn."},
+		{"tea_break", "⚠️ The agent stopped early: tea_break."},
 	}
 	for _, c := range cases {
-		t.Run("the "+c.reason+" note is the gateway's own text", func(t *testing.T) {
+		t.Run("the "+c.reason+" note says why in plain words", func(t *testing.T) {
 			if got := stopNote(c.reason); got != c.want {
 				t.Errorf("stopNote(%q) was %q, want %q", c.reason, got, c.want)
 			}
 		})
 	}
-	t.Run("end_turn has no note", func(t *testing.T) {
-		if got := stopNote("end_turn"); got != "" {
-			t.Errorf("stopNote(end_turn) was %q, want none", got)
-		}
-	})
-	t.Run("the process-exited and connection-lost notes start the way the composer expects", func(t *testing.T) {
-		for _, n := range []string{noteProcessExited, noteConnectionLost} {
-			if !strings.HasPrefix(n, "⚠️ The agent stopped mid-turn: ") {
-				t.Errorf("note %q does not start with the mid-turn prefix the composer matches", n)
+	// end_turn is the agent finishing; cancelled is the human's own Stop,
+	// which the Stop button's toast already confirmed.
+	for _, reason := range []string{"end_turn", "cancelled"} {
+		t.Run(reason+" has no note", func(t *testing.T) {
+			if got := stopNote(reason); got != "" {
+				t.Errorf("stopNote(%s) was %q, want none", reason, got)
 			}
-		}
-	})
+		})
+	}
 	t.Run("an error note quotes at most 200 characters of the agent's message", func(t *testing.T) {
 		long := "boom" + strings.Repeat("é", 296)
 		got := noteAnsweredWithError(long)
-		quoted := strings.TrimSuffix(strings.TrimPrefix(got, noteErrorPrefix), ").")
+		quoted := strings.TrimPrefix(got, noteErrorPrefix)
 		if n := utf8.RuneCountInString(quoted); n != 200 {
 			t.Errorf("the note quoted %d characters, want 200", n)
 		}
-		if got := noteAnsweredWithError("model overloaded"); got != "⚠️ The agent stopped mid-turn: it answered with an error (model overloaded)." {
+		if got := noteAnsweredWithError("model overloaded"); got != "⚠️ The agent hit an error: model overloaded" {
 			t.Errorf("a short message read %q, want it quoted whole", got)
 		}
 	})

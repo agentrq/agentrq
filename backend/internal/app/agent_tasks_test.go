@@ -103,6 +103,20 @@ func TestAgentTasksReply(t *testing.T) {
 		}
 	})
 
+	// A delivery stopped before its turn began still ends with the footer; the
+	// task was never started, and must stay where the poller sends it again.
+	t.Run("a usage footer does not start the task", func(t *testing.T) {
+		e := newAgentTasks(t)
+		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(row("notstarted"), nil)
+		e.ids.EXPECT().NextID().Return(int64(8))
+		e.repo.EXPECT().CreateMessage(ctx, gomock.Any()).Return(nil)
+		e.repo.EXPECT().GetTask(ctx, memParent, int64(101), memUser).Return(row("notstarted"), nil)
+
+		if _, err := e.a.reply(call, chatID, "", nil, map[string]any{"type": "agent_usage"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	t.Run("a started task keeps its status", func(t *testing.T) {
 		e := newAgentTasks(t)
 		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(row("ongoing"), nil)

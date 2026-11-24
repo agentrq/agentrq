@@ -48,7 +48,10 @@
  * of a turn as well. Without it, a stop pressed early left the composer locked
  * and the queue unsent.
  *
- * An agent that reports no usage at all would leave the composer locked for
+ * The native engine (`acpv1`) sends the footer at the end of every turn, empty
+ * when the agent reports no usage, so for it the footer is the whole answer.
+ * The classic gateway sends one only when there is usage: an agent that
+ * reports none would leave the composer locked for
  * good. For that case, and
  * only that case, a plain reply is taken as the end of a turn: worse, but the
  * old behaviour rather than a dead end. A task that has seen a usage footer has
@@ -71,18 +74,26 @@ function isFromAPerson(message) {
   return message?.sender === 'human' || message?.sender === 'slack'
 }
 
+/**
+ * The server's refusal of a Stop when the agent can stop but has no turn
+ * running for the task (backend `errNothingToStop`): the composer was wrong to
+ * think it was working.
+ */
+export const NOTHING_TO_STOP = 'the agent has nothing running for this task'
+
 /** The footer the gateway sends when a turn finishes. */
 function isUsageFooter(message) {
   return agentTelemetryKind(message) === 'usage'
 }
 
 /**
- * The gateway's notes on a turn that ended before the agent finished, in
- * `STOP_REASON_NOTES` and the fallback for a reason it does not know, plus the
- * one a /logout ends with. Matched on the text because that is all a reply
- * carries.
+ * The notes on a turn that ended before the agent finished: the classic
+ * gateway's, which it still sends and old tasks still hold, and the native
+ * engine's (backend `acpv1/notes.go`), plus /logout's. The native engine also
+ * ends every turn with the footer, so for it a note is a backstop. Matched on
+ * the text because that is all a reply carries.
  */
-const STOP_REASON_NOTE = /^⚠️ (The turn was cancelled before the agent finished\.|The agent refused to continue this turn\.|The agent stopped (mid-turn: |for a reason this gateway does not recognise: )|The agent logged out: )/u
+const STOP_REASON_NOTE = /^⚠️ (The turn was cancelled before the agent finished\.|The agent refused to continue this turn\.|The agent declined to continue\.|The agent stopped(: | mid-turn: | early: | for a reason this gateway does not recognise: )|The agent hit an error: |The agent logged out: |The agent ended its turn without replying\.)/u
 
 /** The note the gateway sends when a turn ends early, stopped or otherwise. */
 function isStopReasonNote(message) {

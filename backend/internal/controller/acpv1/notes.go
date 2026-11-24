@@ -12,21 +12,19 @@ import (
 	"unicode/utf8"
 )
 
-// The notes a turn can end with. The composer matches them word for word
-// (frontend/src/composables/useAgentTurn.js, STOP_REASON_NOTE), so these are
-// the gateway's texts exactly, "this gateway" included, plus AgentRQ's own
-// for /logout.
+// The notes a turn can end with, for the human: why the agent stopped before
+// it was done. They do not end the turn; the usage footer does (markTurnEnd),
+// so the wording is free to change. A Stop the human pressed gets no note.
 const (
-	noteRefusal         = "⚠️ The agent refused to continue this turn."
-	noteMaxTokens       = "⚠️ The agent stopped mid-turn: it ran out of output tokens."
-	noteMaxTurnRequests = "⚠️ The agent stopped mid-turn: it reached its limit on model requests for a single turn."
-	noteCancelled       = "⚠️ The turn was cancelled before the agent finished."
-	noteUnknownPrefix   = "⚠️ The agent stopped for a reason this gateway does not recognise: "
-	noteProcessExited   = "⚠️ The agent stopped mid-turn: its process exited."
-	noteConnectionLost  = "⚠️ The agent stopped mid-turn: the connection to its machine was lost."
-	noteErrorPrefix     = "⚠️ The agent stopped mid-turn: it answered with an error ("
-	// noteLoggedOut is AgentRQ's own, for a /logout the agent accepted.
-	noteLoggedOut = "⚠️ The agent logged out: its next session asks for a login again."
+	noteRefusal         = "⚠️ The agent declined to continue."
+	noteMaxTokens       = "⚠️ The agent stopped: its answer reached the model's output limit."
+	noteMaxTurnRequests = "⚠️ The agent stopped: it reached its limit of model requests for one turn."
+	noteUnknownPrefix   = "⚠️ The agent stopped early: "
+	noteProcessExited   = "⚠️ The agent stopped: its process exited."
+	noteConnectionLost  = "⚠️ The agent stopped: the connection to its machine was lost."
+	noteGatewayShutDown = "⚠️ The agent stopped: its gateway was shut down."
+	noteErrorPrefix     = "⚠️ The agent hit an error: "
+	noteLoggedOut       = "⚠️ The agent logged out: its next session asks for a login again."
 )
 
 // maxNoteErrorRunes is how much of an agent's error message a note quotes.
@@ -44,7 +42,7 @@ func stopNote(reason string) string {
 	case "max_turn_requests":
 		return noteMaxTurnRequests
 	case "cancelled":
-		return noteCancelled
+		return "" // the human's own Stop: the toast already said so
 	}
 	return noteUnknownPrefix + reason + "."
 }
@@ -53,7 +51,7 @@ func noteAnsweredWithError(message string) string {
 	if utf8.RuneCountInString(message) > maxNoteErrorRunes {
 		message = string([]rune(message)[:maxNoteErrorRunes])
 	}
-	return noteErrorPrefix + message + ")."
+	return noteErrorPrefix + message
 }
 
 // groupThousands writes n the way the gateway's toLocaleString("en-US") does.

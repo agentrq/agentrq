@@ -8,9 +8,9 @@ import { resolve } from 'node:path'
 
 import { agentIsWorking } from '../src/composables/useAgentTurn'
 
-// The native ACP engine posts these notes itself, and the composer knows a
-// turn has ended by their exact words. Read from the Go source, so the two
-// cannot drift.
+// The native ACP engine posts these notes itself. Its footer ends every turn,
+// but a note still ends one too, as a backstop. Read from the Go source, so
+// the two cannot drift.
 const source = readFileSync(resolve(__dirname, '../../backend/internal/controller/acpv1/notes.go'), 'utf8')
 const notes = [...source.matchAll(/note[A-Za-z]+\s*=\s*"(⚠️[^"]*)"/gu)].map((m) => m[1])
 

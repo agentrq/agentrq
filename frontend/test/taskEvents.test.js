@@ -15,6 +15,42 @@ const task = (overrides = {}) => ({
 })
 
 describe('mergeTaskUpdate', () => {
+  // #1350: the answer to a send was built before the turn's footer was
+  // revised and arrived after it; taken as given, the banner stayed on.
+  it('keeps the later revision of a usage footer over a stale snapshot', () => {
+    const footer = (at) => ({ id: 'u1', sender: 'agent', text: '', metadata: { type: 'agent_usage', reportedAt: at } })
+    const human = { id: 'h1', sender: 'human', text: 'hi' }
+    const current = { id: 't1', messages: [footer('2026-11-24T18:18:28.780Z'), human] }
+    const stale = { id: 't1', messages: [footer('2026-11-24T18:18:17.085Z'), human] }
+    expect(mergeTaskUpdate(current, stale).messages[0].metadata.reportedAt).toBe('2026-11-24T18:18:28.780Z')
+
+    const newer = { id: 't1', messages: [footer('2026-11-24T18:19:00.000Z'), human] }
+    expect(mergeTaskUpdate(current, newer).messages).toBe(newer.messages)
+    // The reply that event brought, newer than everything the snapshot has,
+    // stays; an older message the snapshot lacks is a page it did not carry.
+    const reply = { id: 'a2', sender: 'agent', text: 'ok', createdAt: '2026-11-24T18:18:28.790Z' }
+    const old = { id: 'a0', sender: 'agent', text: 'earlier', createdAt: '2026-11-24T18:00:00.000Z' }
+    const withHuman = { ...human, createdAt: '2026-11-24T18:18:28.761Z' }
+    const held = { id: 't1', messages: [old, withHuman, reply] }
+    expect(mergeTaskUpdate(held, { id: 't1', messages: [withHuman] }).messages.map((m) => m.id)).toEqual(['h1', 'a2'])
+    const pending = { id: 'p1', sender: 'human', _pending: true, createdAt: '2026-11-24T18:19:00.000Z' }
+    expect(mergeTaskUpdate({ id: 't1', messages: [withHuman, pending] }, { id: 't1', messages: [withHuman] }).messages.map((m) => m.id)).toEqual(['h1'])
+
+    // A footer whose time cannot be read is no later than any; an incoming
+    // one without a time does not undo a held revision; a message with no
+    // time is never newer than the snapshot.
+    const blind = { id: 'u1', sender: 'agent', metadata: { type: 'agent_usage' } }
+    expect(mergeTaskUpdate({ id: 't1', messages: [blind] }, stale).messages).toBe(stale.messages)
+    expect(mergeTaskUpdate(current, { id: 't1', messages: [blind, human] }).messages[0]).toBe(current.messages[0])
+    const untimed = { id: 'x1', sender: 'agent', text: 'when?' }
+    const snap = { id: 't1', messages: [{ id: 'h2', sender: 'human' }] }
+    expect(mergeTaskUpdate({ id: 't1', messages: [untimed] }, snap).messages).toBe(snap.messages)
+    expect(mergeTaskUpdate({ id: 't1', messages: 'oops' }, snap).messages).toBe(snap.messages)
+
+    const plain = { id: 't1', messages: [human] }
+    expect(mergeTaskUpdate({ id: 't1', messages: [human] }, plain).messages).toBe(plain.messages)
+  })
+
   it('takes the scalar fields from the event', () => {
     const merged = mergeTaskUpdate(task(), task({ status: 'completed', title: 'Renamed' }))
     expect(merged.status).toBe('completed')

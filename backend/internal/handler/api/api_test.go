@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -557,6 +558,35 @@ func TestStopTask_RefusesWhenTheAgentCannotBeStopped(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusConflict {
 		t.Errorf("expected 409, got %d", resp.StatusCode)
+	}
+	if body, _ := io.ReadAll(resp.Body); !strings.Contains(string(body), "does not support being stopped") {
+		t.Errorf("body was %s, want that the agent cannot be stopped", body)
+	}
+}
+
+// An agent that can stop, with no turn running for the task, is not refused
+// as one that cannot (#1347): the dashboard was out of step with it.
+func TestStopTask_NothingRunningOnAnAgentThatCanStop(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return true, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{stopOutcome: mcpctrl.StopOutcome{NothingRunning: true}}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv, supportStop: true}}
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.stopTask()(c)
+	})
+	resp, err := app.Test(httptest.NewRequest(http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks/"+monoflake.ID(2).String()+"/stop", nil))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(string(body), errNothingToStop) {
+		t.Errorf("answered %d %s, want 409 %q", resp.StatusCode, body, errNothingToStop)
 	}
 }
 

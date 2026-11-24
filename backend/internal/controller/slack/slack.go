@@ -204,7 +204,7 @@ func (c *controller) OnTaskCreated(ctx context.Context, task entity.Task) error 
 // OnMessageCreated posts all messages to the Slack thread for the task using the workspace bot token.
 // For pending MCP permission_request messages, it also posts interactive Allow/Deny buttons.
 func (c *controller) OnMessageCreated(ctx context.Context, msg entity.Message, task entity.Task) error {
-	if !c.slack.IsEnabled() {
+	if !c.slack.IsEnabled() || isEmptyTurnEnd(msg) {
 		return nil
 	}
 	thread, err := c.repo.GetSlackTaskThreadByTask(ctx, task.ID)
@@ -856,6 +856,23 @@ func downloadSlackFile(ctx context.Context, token string, url string) (string, e
 	}
 
 	return base64.StdEncoding.EncodeToString(b), nil
+}
+
+// isEmptyTurnEnd is a usage footer with nothing in it: how the native ACP
+// engine marks a turn's end for an agent that reports no usage. It has
+// nothing to say in a Slack thread.
+func isEmptyTurnEnd(msg entity.Message) bool {
+	if strings.TrimSpace(msg.Text) != "" || len(msg.Attachments) > 0 || msg.Metadata == nil {
+		return false
+	}
+	b, err := json.Marshal(msg.Metadata)
+	if err != nil {
+		return false
+	}
+	var m struct {
+		Type string `json:"type"`
+	}
+	return json.Unmarshal(b, &m) == nil && m.Type == "agent_usage"
 }
 
 // isPermissionRequest returns true if the message metadata indicates a pending MCP permission request.

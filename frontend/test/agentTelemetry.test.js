@@ -344,6 +344,13 @@ describe('contextGauge', () => {
     expect(contextGauge(message({ type: 'agent_usage', used: 10, size: 100, sessionEnded: true }))).toBeNull()
   })
 
+  // The native engine marks every turn's end with a footer, empty for an
+  // agent that reports no usage: it ends the turn but has nothing to draw.
+  it('draws nothing for a footer with no usage in it', () => {
+    expect(contextGauge(message({ type: 'agent_usage', text: '' }))).toBeNull()
+    expect(contextGauge(message({ type: 'agent_usage', text: '', cost: { amount: 1, currency: 'USD' } }))).not.toBeNull()
+  })
+
   it('scales the ring to whatever radius the icon uses', () => {
     expect(contextGauge(usage, 20).dashArray).toBeCloseTo(2 * Math.PI * 20, 5)
   })

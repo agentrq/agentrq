@@ -949,6 +949,10 @@ func (h *handler) sendPermissionVerdict() fiber.Handler {
 	}
 }
 
+// errNothingToStop is the stop refusal for an agent that can stop but has no
+// turn running for the task; the dashboard knows it by these words.
+const errNothingToStop = "the agent has nothing running for this task"
+
 // stopTask asks whatever agent is working on a task to stop.
 //
 // Nothing about the task itself changes: this is a message to the agent, and
@@ -986,9 +990,13 @@ func (h *handler) stopTask() fiber.Handler {
 		// ended while it is still running.
 		outcome := srv.SendCancelNotification(c.RequestCtx(), taskID)
 		if !outcome.Acted() {
-			return c.Status(http.StatusConflict).JSON(fiber.Map{
-				"error": "the connected agent does not support being stopped",
-			})
+			// An agent that can stop but had nothing to: the dashboard was
+			// wrong to think it was working, and says so (#1347).
+			reason := "the connected agent does not support being stopped"
+			if outcome.NothingRunning {
+				reason = errNothingToStop
+			}
+			return c.Status(http.StatusConflict).JSON(fiber.Map{"error": reason})
 		}
 		return c.Status(http.StatusOK).JSON(fiber.Map{
 			"stopped":         outcome.Stopped,

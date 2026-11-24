@@ -109,6 +109,24 @@ func (r *recorder) HandleAgentCommands(_ context.Context, _ string, p agentlink.
 	r.commands = append(r.commands, p)
 }
 
+// turnEnds is the usage footers posted for a task: one marks each turn's end.
+func (r *recorder) turnEnds(taskID int64) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ends(taskID)
+}
+
+// ends is turnEnds for a caller holding the lock, as wait's condition does.
+func (r *recorder) ends(taskID int64) int {
+	n := 0
+	for _, u := range r.telemetry {
+		if u.Kind == "usage" && u.TaskID == b62(taskID) {
+			n++
+		}
+	}
+	return n
+}
+
 func (r *recorder) HandleAgentTelemetry(_ context.Context, _ string, p agentlink.TelemetryReport) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -955,15 +973,33 @@ func TestEngine(t *testing.T) {
 		}
 		a.expectParams("session/cancel", `{"sessionId":"idle-1"}`)
 		a.answer(p, `{"stopReason":"cancelled"}`)
-		rec.wait(t, func() bool { return len(rec.replies) == 1 })
+		// The human pressed Stop: the footer ends the turn, and no note.
+		rec.wait(t, func() bool { return rec.ends(42) == 1 })
 		rec.read(func() {
-			if rec.replies[0] != "42|"+noteCancelled {
-				t.Fatalf("reply was %q, want the cancelled note", rec.replies[0])
+			if len(rec.replies) != 0 {
+				t.Fatalf("replies were %q, want none after the human's own Stop", rec.replies)
 			}
 		})
 		if l.CancelTask(context.Background(), 99) {
 			t.Fatal("CancelTask reported a turn for a task the link never had")
 		}
+	})
+
+	t.Run("a Stop the agent answers with an error posts no note", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"idle-1"}`)
+		l.DeliverTask(context.Background(), 42, "go")
+		p := a.expect("session/prompt")
+		l.CancelTask(context.Background(), 42)
+		a.expectParams("session/cancel", `{"sessionId":"idle-1"}`)
+		a.fail(p, codeInternalError, "request cancelled")
+		rec.wait(t, func() bool { return rec.ends(42) == 1 })
+		rec.read(func() {
+			if len(rec.replies) != 0 {
+				t.Fatalf("replies were %q, want none after the human's own Stop", rec.replies)
+			}
+		})
 	})
 
 	t.Run("a Stop the agent never answers ends the turn after the settle wait", func(t *testing.T) {
@@ -978,13 +1014,11 @@ func TestEngine(t *testing.T) {
 		}
 		a.expectParams("session/cancel", `{"sessionId":"idle-1"}`)
 		a.expect(methodCancelRequest) // the prompt is given up on
-		// The turn posts its note before it releases the queue's slot.
-		rec.wait(t, func() bool { return len(rec.replies) == 1 && !l.(*link).e.q.owns(42) })
-		rec.read(func() {
-			if rec.replies[0] != "42|"+noteCancelled {
-				t.Fatalf("reply was %q, want the cancelled note", rec.replies[0])
-			}
-		})
+		// The turn marks its end before it releases the queue's slot.
+		rec.wait(t, func() bool { return !l.(*link).e.q.owns(42) })
+		if n := rec.turnEnds(42); n != 1 {
+			t.Fatalf("the given-up turn posted %d footers, want 1", n)
+		}
 		if l.CancelTask(context.Background(), 42) {
 			t.Fatal("the given-up turn left its task running")
 		}
@@ -1003,6 +1037,40 @@ func TestEngine(t *testing.T) {
 		a.answer(p, `{"stopReason":"end_turn"}`)
 		rec.wait(t, func() bool { return rec.offers >= 2 })
 		a.quiet()
+		// The skipped turn still marks its end, or its composer waits (#1347).
+		if n := rec.turnEnds(43); n != 1 {
+			t.Fatalf("the skipped turn posted %d footers, want 1", n)
+		}
+		rec.read(func() {
+			if len(rec.replies) != 0 {
+				t.Fatalf("replies were %q, want none", rec.replies)
+			}
+		})
+	})
+
+	// Messages from Slack or a second tab can wait behind a running turn; one
+	// Stop ends them all, each marked ended, with no note to read.
+	t.Run("a Stop that ends a turn and skips the ones behind it marks each one ended", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"idle-1"}`)
+		l.DeliverTask(context.Background(), 42, "first")
+		p := a.expect("session/prompt")
+		l.DeliverTask(context.Background(), 42, "second")
+		l.DeliverTask(context.Background(), 42, "third")
+		l.CancelTask(context.Background(), 42)
+		a.expectParams("session/cancel", `{"sessionId":"idle-1"}`)
+		a.answer(p, `{"stopReason":"cancelled"}`)
+		rec.wait(t, func() bool { return !l.(*link).e.q.owns(42) })
+		a.quiet()
+		if n := rec.turnEnds(42); n != 3 {
+			t.Fatalf("posted %d footers, want one per delivery", n)
+		}
+		rec.read(func() {
+			if len(rec.replies) != 0 {
+				t.Fatalf("replies were %q, want none", rec.replies)
+			}
+		})
 	})
 
 	t.Run("a Stop while the task's session is opening skips the prompt", func(t *testing.T) {
@@ -1020,6 +1088,14 @@ func TestEngine(t *testing.T) {
 		if l.CancelTask(context.Background(), 42) {
 			t.Fatal("the skipped turn's session was left busy")
 		}
+		if n := rec.turnEnds(42); n != 1 {
+			t.Fatalf("the skipped turn posted %d footers, want 1", n)
+		}
+		rec.read(func() {
+			if len(rec.replies) != 0 {
+				t.Fatalf("replies were %q, want none", rec.replies)
+			}
+		})
 	})
 
 	t.Run("a finished turn asks the workspace for the next task", func(t *testing.T) {
@@ -1072,7 +1148,7 @@ func TestEngine(t *testing.T) {
 			a.update("idle-1", `{"sessionUpdate":"agent_message_chunk","content":{"type":"image","data":"x"}}`)
 		})
 		rec.read(func() {
-			want := []string{"thought:Think A", "thought:Think B", "thought:Think C", "reply:Answer"}
+			want := []string{"thought:Think A", "thought:Think B", "thought:Think C", "reply:Answer", "usage:"}
 			if !slices.Equal(rec.log, want) {
 				t.Fatalf("the human read %q, want %q", rec.log, want)
 			}
@@ -1090,7 +1166,7 @@ func TestEngine(t *testing.T) {
 		a.sync(l)
 		a.turn(rec, l, 42, "idle-1", "end_turn")
 		rec.read(func() {
-			if want := []string{"reply:hello"}; !slices.Equal(rec.log, want) {
+			if want := []string{"reply:hello", "usage:"}; !slices.Equal(rec.log, want) {
 				t.Fatalf("the human read %q, want %q", rec.log, want)
 			}
 		})
@@ -1150,6 +1226,9 @@ func TestEngine(t *testing.T) {
 			if len(rec.telemetry) != 2 {
 				t.Fatalf("telemetry was %+v, want two usage reports", rec.telemetry)
 			}
+			if len(rec.replies) != 0 {
+				t.Fatalf("replies were %q, want none: the footer ends the turn", rec.replies)
+			}
 			for _, u := range rec.telemetry {
 				if u.Kind != "usage" || u.Text != "Context 53,000 / 200,000 tokens (27%) · 0.0042 USD" || u.TaskID != b62(42) {
 					t.Fatalf("usage report was %+v, want the same footer for task 42", u)
@@ -1158,7 +1237,43 @@ func TestEngine(t *testing.T) {
 		})
 	})
 
-	t.Run("every stop reason posts the gateway's exact note", func(t *testing.T) {
+	// #1347 and #1350: an agent that never reports usage left nothing to
+	// say a turn was over, and the composer waited for ever. Every turn now
+	// ends with the footer, empty when there is no usage, and no note.
+	t.Run("a turn with no usage still ends with a footer, empty, and no note", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"sess-1"}`)
+		a.turn(rec, l, 42, "sess-1", "end_turn")
+		a.turn(rec, l, 42, "sess-1", "end_turn", func() { a.chunk("sess-1", "agent_message_chunk", "Done.") })
+		rec.read(func() {
+			if want := []string{"usage:", "reply:Done.", "usage:"}; !slices.Equal(rec.log, want) {
+				t.Fatalf("the human read %q, want %q", rec.log, want)
+			}
+			for _, u := range rec.telemetry {
+				if u.TaskID != b62(42) || u.SessionID != "sess-1" || len(u.Data) != 0 {
+					t.Fatalf("footer was %+v, want an empty one for task 42's session", u)
+				}
+			}
+		})
+	})
+
+	t.Run("a turn that replied only through the reply tool posts no note", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"sess-1"}`)
+		task := monoflake.IDFromBase62(taskReplyID).Int64()
+		a.turn(rec, l, task, "sess-1", "end_turn", func() {
+			a.update("sess-1", `{"sessionUpdate":"tool_call","toolCallId":"c1","title":"Replying to task","name":"mcp__agentrq-workspace__task","status":"completed","rawInput":{"action":"reply","payload":{"taskId":"`+taskReplyID+`","text":"Sent."}}}`)
+		})
+		rec.read(func() {
+			if len(rec.replies) != 0 {
+				t.Fatalf("replies were %q, want none: the reply tool already answered", rec.replies)
+			}
+		})
+	})
+
+	t.Run("every stop reason but the human's own Stop posts its note", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgent(t, rec)
 		l := a.ready(rec, `{"sessionId":"idle-1"}`)
@@ -1166,7 +1281,9 @@ func TestEngine(t *testing.T) {
 		var want []string
 		for _, r := range reasons {
 			a.turn(rec, l, 42, "idle-1", r)
-			want = append(want, "42|"+stopNote(r))
+			if note := stopNote(r); note != "" {
+				want = append(want, "42|"+note)
+			}
 		}
 		rec.read(func() {
 			if !slices.Equal(rec.replies, want) {
@@ -1185,6 +1302,24 @@ func TestEngine(t *testing.T) {
 		rec.read(func() {
 			if want := "42|" + noteAnsweredWithError("model overloaded"); rec.replies[0] != want {
 				t.Fatalf("reply was %q, want %q", rec.replies[0], want)
+			}
+		})
+	})
+
+	// The work is answered; an error after it is a detail for the trajectory,
+	// not a warning at the bottom of the thread.
+	t.Run("an error after the agent replied is a notice, not a note", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"idle-1"}`)
+		l.DeliverTask(context.Background(), 42, "go")
+		p := a.expect("session/prompt")
+		a.chunk("idle-1", "agent_message_chunk", "All done.")
+		a.fail(p, codeInternalError, "model overloaded")
+		rec.wait(t, func() bool { return rec.ends(42) == 1 })
+		rec.read(func() {
+			if want := []string{"reply:All done.", "notice:The agent hit an error after replying\n\nmodel overloaded", "usage:"}; !slices.Equal(rec.log, want) {
+				t.Fatalf("the human read %q, want %q", rec.log, want)
 			}
 		})
 	})
@@ -1244,7 +1379,7 @@ func TestEngine(t *testing.T) {
 		l := a.ready(rec, `{"sessionId":"idle-1"}`)
 		a.turn(rec, l, 42, "idle-1", "end_turn", func() { a.chunk("idle-1", "agent_thought_chunk", "abcdef") })
 		rec.read(func() {
-			if want := []string{"thought:abcd" + truncatedMarker}; !slices.Equal(rec.log, want) {
+			if want := []string{"thought:abcd" + truncatedMarker, "usage:"}; !slices.Equal(rec.log, want) {
 				t.Fatalf("the human read %q, want %q", rec.log, want)
 			}
 		})
@@ -1261,7 +1396,7 @@ func TestEngine(t *testing.T) {
 			a.update("sess-1", `{"sessionUpdate":"plan","entries":[{"content":"Old style","priority":"low","status":"pending"}]}`)
 		})
 		rec.read(func() {
-			want := []string{"plan:- [x] Read the code\n- [ ] Write the fix", "plan:# Revised", "plan:Plan withdrawn.", "plan:- [ ] Old style"}
+			want := []string{"plan:- [x] Read the code\n- [ ] Write the fix", "plan:# Revised", "plan:Plan withdrawn.", "plan:- [ ] Old style", "usage:"}
 			if !slices.Equal(rec.log, want) {
 				t.Fatalf("the human read %q, want %q", rec.log, want)
 			}
@@ -1284,7 +1419,7 @@ func TestEngine(t *testing.T) {
 			a.update("sess-1", `{"sessionUpdate":"notice","severity":"error","title":"  "}`)
 		})
 		rec.read(func() {
-			want := []string{"notice:MCP server unavailable\n\nContinuing without it.", "notice:Model rerouted"}
+			want := []string{"notice:MCP server unavailable\n\nContinuing without it.", "notice:Model rerouted", "usage:"}
 			if !slices.Equal(rec.log, want) {
 				t.Fatalf("the human read %q, want %q", rec.log, want)
 			}
@@ -1354,8 +1489,9 @@ func TestEngine(t *testing.T) {
 		a.write(`{"jsonrpc":"2.0","method":"something/else","params":{}}`)
 		a.turn(rec, l, 42, "idle-1", "end_turn")
 		rec.read(func() {
-			if len(rec.replies)+len(rec.telemetry) != 0 {
-				t.Fatalf("recorded replies %q and telemetry %+v, want nothing", rec.replies, rec.telemetry)
+			// Only the footer that ends the turn.
+			if !slices.Equal(rec.log, []string{"usage:"}) {
+				t.Fatalf("recorded %q, want only the turn's empty footer", rec.log)
 			}
 		})
 		a.quiet()
@@ -1396,17 +1532,37 @@ func TestEngine(t *testing.T) {
 		})
 	})
 
-	t.Run("the bridge saying goodbye mid-turn posts the cancelled note", func(t *testing.T) {
+	// Messages from Slack or a second tab can wait behind the turn the
+	// connection cut off; nothing will send them now, so each is marked
+	// ended too, or the composer waits for them for ever.
+	t.Run("deliveries waiting when the connection ends are each marked ended", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"idle-1"}`)
+		l.DeliverTask(context.Background(), 42, "first")
+		a.expect("session/prompt")
+		l.DeliverTask(context.Background(), 42, "second")
+		l.DeliverTask(context.Background(), 42, "third")
+		a.control(`{"agentrqBridge":"bye"}`)
+		rec.wait(t, func() bool { return rec.ends(42) == 3 })
+		rec.read(func() {
+			if want := []string{"42|" + noteGatewayShutDown}; !slices.Equal(rec.replies, want) {
+				t.Fatalf("replies were %q, want %q", rec.replies, want)
+			}
+		})
+	})
+
+	t.Run("the bridge saying goodbye mid-turn posts the shut-down note and ends the turn", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgent(t, rec)
 		l := a.ready(rec, `{"sessionId":"idle-1"}`)
 		l.DeliverTask(context.Background(), 42, "go")
 		a.expect("session/prompt")
 		a.control(`{"agentrqBridge":"bye"}`)
-		rec.wait(t, func() bool { return len(rec.replies) == 1 })
+		rec.wait(t, func() bool { return len(rec.replies) == 1 && rec.ends(42) == 1 })
 		rec.read(func() {
-			if rec.replies[0] != "42|"+noteCancelled {
-				t.Fatalf("reply was %q, want the cancelled note", rec.replies[0])
+			if rec.replies[0] != "42|"+noteGatewayShutDown {
+				t.Fatalf("reply was %q, want the shut-down note", rec.replies[0])
 			}
 		})
 	})

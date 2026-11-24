@@ -428,6 +428,45 @@ describe('when the turn ends', () => {
   })
 })
 
+// #1347: the agent ended its turn without a word, so nothing told the
+// composer, and Stop found nothing to stop. That refusal is the sign the
+// composer was out of step: it is released, and the queue goes.
+describe('a Stop that finds nothing running', () => {
+  it('releases the composer and sends the first queued message', async () => {
+    stopTask.mockRejectedValueOnce(new Error('the agent has nothing running for this task'))
+    const { send, click, queuedBubbles, buttonsSaying } = await mount()
+    await send('first thought')
+    await send('second thought')
+    await click('Send Now', 1)
+
+    expect(respondToTask.mock.calls.map((c) => c[3])).toEqual(['second thought'])
+    expect(queuedBubbles()).toHaveLength(1)
+    expect(buttonsSaying('Send Now')).toHaveLength(1)
+  })
+
+  // The server said nothing is running: the working line goes too, not only
+  // the composer's lock.
+  it('clears the working line as well', async () => {
+    stopTask.mockRejectedValueOnce(new Error('the agent has nothing running for this task'))
+    const { el, send, click } = await mount()
+    await send('first thought')
+    expect(el.querySelector('[data-testid="agent-working"]')).not.toBeNull()
+    await click('Send Now', 0)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(el.querySelector('[data-testid="agent-working"]')).toBeNull()
+  })
+
+  it('keeps the composer when the Stop failed for another reason', async () => {
+    stopTask.mockRejectedValueOnce(new Error('the connected agent does not support being stopped'))
+    const { send, click, queuedBubbles } = await mount()
+    await send('first thought')
+    await click('Send Now', 0)
+
+    expect(respondToTask).not.toHaveBeenCalled()
+    expect(queuedBubbles()).toHaveLength(1)
+  })
+})
+
 describe('sending a queued message now', () => {
   // Posting it mid-turn would only chain it behind the turn, so Send Now stops
   // the turn and lets the turn's end send it — ahead of anything queued before.

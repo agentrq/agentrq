@@ -106,15 +106,17 @@ func (p *projector) appendThought(text string) {
 	p.thought.add(text, p.thoughtCap)
 }
 
-// takeReply returns the turn's answer, and whether it is exactly what the
-// agent already sent through the reply tool; the next turn starts afresh.
-func (p *projector) takeReply() (reply string, duplicate bool) {
+// takeReply returns the turn's answer, whether it is exactly what the agent
+// already sent through the reply tool, and whether it sent one at all; the
+// next turn starts afresh.
+func (p *projector) takeReply() (reply string, duplicate, toolReplied bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	reply = p.reply.take()
-	duplicate = p.toolReply != nil && *p.toolReply == reply
+	toolReplied = p.toolReply != nil
+	duplicate = toolReplied && *p.toolReply == reply
 	p.toolReply = nil
-	return reply, duplicate
+	return reply, duplicate, toolReplied
 }
 
 func (p *projector) takeThought() string {
@@ -238,13 +240,19 @@ func (p *projector) toolCall(id string) toolCall {
 // runTurn is one delivery: find the task's session, mark the task started,
 // prompt, and post what the turn produced.
 //
-// A turn that comes up once the connection is ending is skipped without a
-// note: it never started, the task is still notstarted, and the poller pushes
-// it again to whichever agent is connected next.
+// However the delivery ends, the footer says so, after everything else it
+// posted (#1347, #1350): a turn that comes up once the connection is ending
+// too, which is skipped without a note. A footer never starts a task, so a
+// notstarted one stays for the poller to push to the next agent.
 func (e *engineV1) runTurn(d delivery) {
 	defer e.q.finish(d.taskID)
-	if e.q.cancelledSince(d.taskID, d.seq) || e.isEnding() {
+	var s *session
+	defer func() { e.markTurnEnd(d.taskID, s) }()
+	if e.isEnding() {
 		return
+	}
+	if e.q.cancelledSince(d.taskID, d.seq) {
+		return // stopped before it started
 	}
 	if isLogout(d.content) && supported(e.caps.Auth.Logout) {
 		e.logout(d.taskID)
@@ -287,6 +295,10 @@ func (e *engineV1) runTurn(d delivery) {
 		resp.StopReason, err = "cancelled", nil
 	}
 	e.barrier() // every update that came before the answer is applied now
+	if err != nil && e.q.cancelledSince(d.taskID, d.seq) {
+		// The human's Stop, answered with an error: still their own Stop.
+		resp.StopReason, err = "cancelled", nil
+	}
 	e.endTurn(s, d.taskID, resp.StopReason, err)
 	if e.deps.OnTurn != nil {
 		e.deps.OnTurn(e.ctx, e.c.WorkspaceID(), e.c.UserID())
@@ -341,20 +353,54 @@ func (e *engineV1) endTurn(s *session, taskID int64, stopReason string, err erro
 		return
 	}
 	e.flushThought(s)
-	if reply, duplicate := s.proj.takeReply(); reply != "" && !duplicate {
+	reply, duplicate, toolReplied := s.proj.takeReply()
+	if reply != "" && !duplicate {
 		if _, perr := e.ws.PostAgentReply(e.ctx, e.linkID, taskID, reply); perr != nil {
 			zlog.Error().Err(perr).Int64("task_id", taskID).Msg("acp v1: could not post the agent's reply")
 		}
 	}
-	if u, ok := s.proj.usageForTurnEnd(); ok {
-		e.ws.HandleAgentTelemetry(e.ctx, e.linkID, agentlink.TelemetryReport{
-			TaskID: b62(taskID), SessionID: s.id, Kind: "usage", Text: formatUsage(u), Data: usageData(u)})
-	}
-	if err != nil {
+	switch {
+	case err != nil && (reply != "" || toolReplied):
+		detail := errorText(err)
+		// The work is answered; the error after it is a detail for the
+		// trajectory, not a warning in the thread.
+		e.sendNotice(s, notice{Severity: "warning", Title: "The agent hit an error after replying", Description: &detail})
+	case err != nil:
 		e.note(taskID, noteAnsweredWithError(errorText(err)))
-	} else if note := stopNote(stopReason); note != "" {
-		e.note(taskID, note)
+	case stopNote(stopReason) != "":
+		e.note(taskID, stopNote(stopReason))
 	}
+}
+
+// markTurnEnd revises the task's usage footer, whose reportedAt is what tells
+// the composer a turn is over: with the session's latest usage, or with none
+// when the agent never reported any, which the composer draws no ring for.
+// Every delivery ends with it, whatever else it posted (#1347, #1350).
+func (e *engineV1) markTurnEnd(taskID int64, s *session) {
+	e.mu.Lock()
+	// Teardown marks the turns it cut off: a session still busy once the
+	// connection is ending. Every other delivery is marked here, ending or not.
+	cut := e.cause != nil && s != nil && s.busy
+	e.mu.Unlock()
+	if !cut {
+		e.postTurnEnd(taskID, s)
+	}
+}
+
+func (e *engineV1) postTurnEnd(taskID int64, s *session) {
+	if s == nil {
+		e.mu.Lock()
+		s = e.sessions.byTask[taskID]
+		e.mu.Unlock()
+	}
+	r := agentlink.TelemetryReport{TaskID: b62(taskID), Kind: "usage", Data: map[string]any{}}
+	if s != nil {
+		r.SessionID = s.id
+		if u, ok := s.proj.usageForTurnEnd(); ok {
+			r.Text, r.Data = formatUsage(u), usageData(u)
+		}
+	}
+	e.ws.HandleAgentTelemetry(e.ctx, e.linkID, r)
 }
 
 // taskOf is the session's task, 0 while it is idle.
