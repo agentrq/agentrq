@@ -175,7 +175,9 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 		switch ev.Action {
 		case entity.ActionTaskCreate:
 			c.sendToUser(ctx, ownerID, ev.WorkspaceID, ws.ContentID(), PushTypeTaskCreate, taskCreatePayload(c.basePath, ws.Name, workspaceIDStr, t))
-		case entity.ActionTaskUpdate, entity.ActionTaskComplete:
+		// Not ActionTaskComplete: a completion raises ActionTaskUpdate too, and
+		// would notify twice.
+		case entity.ActionTaskUpdate:
 			c.sendToUser(ctx, ownerID, ev.WorkspaceID, ws.ContentID(), PushTypeTaskUpdate, taskStatusPayload(c.basePath, ws.Name, workspaceIDStr, t))
 		}
 		return

@@ -19,6 +19,9 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
+	mock_repo "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
+	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/golang/mock/gomock"
@@ -592,6 +595,34 @@ func TestUpdateTaskStatus_Success(t *testing.T) {
 	}
 	if resp.Task.Status != "completed" {
 		t.Errorf("expected status completed, got %s", resp.Task.Status)
+	}
+}
+
+// Push and email notify on ActionTaskUpdate alone, so a completion must raise
+// it too, or a completion would notify nobody.
+func TestUpdateTaskStatus_CompletionRaisesUpdate(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := mock_repo.NewMockRepository(ctrl)
+	psSvc := mock_pubsub.NewMockService(ctrl)
+	var actions []entity.Action
+	psSvc.EXPECT().Publish(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, req pubsub.PublishRequest) (*pubsub.PublishResponse, error) {
+		actions = append(actions, req.Event.(entity.CRUDEvent).Action)
+		return &pubsub.PublishResponse{}, nil
+	}).AnyTimes()
+	c := New(Params{Repository: repo, PubSub: psSvc})
+
+	repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}, nil)
+	repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), "Status").Return(model.Task{ID: 10, WorkspaceID: 1, Status: "completed"}, nil)
+
+	if _, err := c.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
+		WorkspaceID: 1, TaskID: 10, Status: "completed", UserID: testUserIDStr,
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []entity.Action{entity.ActionTaskUpdate, entity.ActionTaskComplete}
+	if !slices.Equal(actions, want) {
+		t.Errorf("published %v, want %v", actions, want)
 	}
 }
 

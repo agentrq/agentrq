@@ -577,6 +577,27 @@ func TestProcessEvent_TaskUpdate_AgentActor(t *testing.T) {
 	})
 }
 
+// A completion raises ActionTaskUpdate as well, which already notifies: the
+// complete event must send nothing, or every completion arrives twice. gomock
+// fails the test if the subscriptions are listed.
+func TestProcessEvent_TaskComplete_NoSecondNotification(t *testing.T) {
+	c, mockRepo, _ := newTestController(t, Config{VAPIDPublicKey: "pub", VAPIDPrivateKey: "priv"})
+	mockRepo.EXPECT().
+		SystemGetWorkspace(gomock.Any(), int64(10)).
+		Return(model.Workspace{ID: 10, UserID: 1, Name: "ws"}, nil)
+	mockRepo.EXPECT().
+		SystemGetTask(gomock.Any(), int64(5)).
+		Return(model.Task{ID: 5, Title: "Fix bug", Status: "completed"}, nil)
+
+	c.processEvent(context.Background(), entity.CRUDEvent{
+		WorkspaceID:  10,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   5,
+		Action:       entity.ActionTaskComplete,
+		Actor:        entity.ActorAgent,
+	})
+}
+
 func TestProcessEvent_MessageCreate_AgentSender(t *testing.T) {
 	c, mockRepo, _ := newTestController(t, Config{VAPIDPublicKey: "pub", VAPIDPrivateKey: "priv"})
 	mockRepo.EXPECT().
