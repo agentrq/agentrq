@@ -81,11 +81,12 @@ func TestBadPayloads_AreRefusedWithFieldsAndExample(t *testing.T) {
 }
 
 // A memory name without its .md is refused, not repaired, and the refusal
-// gives the name with it as the example.
+// gives the name with it as the example, keeping a workspace it names.
 func TestMemoryName_WithoutMDIsRefusedWithTheName(t *testing.T) {
 	for name, want := range map[string]string{
 		"horizontal-scaling-map":             `memory name "horizontal-scaling-map" is not usable; names are lowercase words joined by single hyphens and ending in .md, like "horizontal-scaling-map.md"`,
-		"0ZzhYQG2qtl/horizontal-scaling-map": `memory name "horizontal-scaling-map" is not usable; names are lowercase words joined by single hyphens and ending in .md, like "horizontal-scaling-map.md"`,
+		"0ZzhYQG2qtl/horizontal-scaling-map": `memory name "0ZzhYQG2qtl/horizontal-scaling-map" is not usable; names are lowercase words joined by single hyphens and ending in .md, like "0ZzhYQG2qtl/horizontal-scaling-map.md"`,
+		"0ZzhYQG2qtl/two  spaces":            `memory name "two  spaces" is not usable; names are lowercase words joined by single hyphens and ending in .md, like "release-notes.md"`,
 		"two  spaces":                        `memory name "two  spaces" is not usable; names are lowercase words joined by single hyphens and ending in .md, like "release-notes.md"`,
 	} {
 		if _, err := resolveMemoryName(name); err == nil || err.Error() != want {
