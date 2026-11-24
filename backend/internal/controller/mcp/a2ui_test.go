@@ -280,3 +280,27 @@ func TestA2UIExamples_EveryCardShownToAnAgentIsPosted(t *testing.T) {
 		t.Errorf("%d cards shown to an agent; want the help example and the a2ui reference's", cards)
 	}
 }
+
+func TestHandleReply_ACardMayCarryAButton(t *testing.T) {
+	e := newA2UIReplyEnv(t)
+	card := `[
+ {"version":"1.0","createSurface":{"surfaceId":"deploy","catalogId":"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}},
+ {"version":"1.0","updateComponents":{"surfaceId":"deploy","components":[
+  {"id":"root","component":"Button","child":"label","action":{"event":{"name":"approve"}}},
+  {"id":"label","component":"Text","text":"Approve"}
+ ]}}
+]`
+	res, _, err := e.ps.handleReply(context.Background(), nil, a2uiReplyParams(card))
+	if err != nil || res.IsError {
+		t.Fatalf("reply = %v, %v", res, err)
+	}
+	if _, ok := e.metadata.(*A2UIMetadata); !ok {
+		t.Fatalf("metadata = %#v, want the card", e.metadata)
+	}
+
+	nameless := strings.Replace(card, `{"name":"approve"}`, `{"userMessage":"Approve"}`, 1)
+	res, _, err = e.ps.handleReply(context.Background(), nil, a2uiReplyParams(nameless))
+	if err != nil || !res.IsError {
+		t.Fatalf("a Button whose event has no name = %v, %v; want it refused", res, err)
+	}
+}

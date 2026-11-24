@@ -47,7 +47,7 @@ func (ps *WorkspaceServer) replyCard(ctx context.Context, taskID int64, ui json.
 			return nil, fmt.Errorf("ui is not available on this server (%v): send the reply without it", err)
 		}
 	}
-	surface, err := validator.Validate(ctx, ui, a2ui.Options{Attachments: ps.attachmentURLs(taskID, atts)})
+	surface, err := validator.Validate(ctx, ui, a2ui.Options{Interactive: true, Attachments: ps.attachmentURLs(taskID, atts)})
 	if err != nil {
 		return nil, err
 	}
