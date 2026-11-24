@@ -302,7 +302,10 @@
                  <!-- How long the agent took over what it is answering; room for it on a wide screen only. -->
                  <span v-if="workedFor[m.id]" class="hidden @min-[40rem]:inline text-[9px] font-semibold text-gray-400 dark:text-zinc-500" title="Time since the message this answers">· worked for {{ workedFor[m.id] }}</span>
                </div>
-               <MarkdownBody v-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
+               <!-- A card the agent drew; the raw toggle shows its text, which every card carries. -->
+               <A2uiSurface v-if="m.metadata?.type === 'a2ui' && !rawMessages.has(m.id)" :metadata="m.metadata" :text="m.text"
+                            :attachments="m.attachments" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
+               <MarkdownBody v-else-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
                <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
 
                <!-- Permission Request (agent message) -->
@@ -1070,6 +1073,7 @@ import CloneTaskModal from '../components/CloneTaskModal.vue';
 import { elicitOutcome, elicitRows, isElicitExpired } from '../composables/useElicitAnswer';
 import { withRequestAnswered } from '../composables/useRequestAnswer';
 import MarkdownBody from '../components/MarkdownBody.vue';
+import A2uiSurface from '../components/a2ui/A2uiSurface.vue';
 import TaskPlanPanel from '../components/TaskPlanPanel.vue';
 import TaskLinksPanel from '../components/TaskLinksPanel.vue';
 import ChatMinimap from '../components/ChatMinimap.vue';

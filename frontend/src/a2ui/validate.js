@@ -62,7 +62,7 @@ const listOf = (item, min = 0) => (v) => Array.isArray(v) && v.length >= min && 
 
 const CHILD = isString
 const CHILD_LIST = (v) => listOf(isString)(v) || shape({ componentId: isString, path: isString }, ['componentId', 'path'])(v)
-const ICON_NAMES = [
+export const ICON_NAMES = [
   'accountCircle', 'add', 'arrowBack', 'arrowForward', 'attachFile', 'calendarToday', 'call', 'camera', 'check', 'close',
   'delete', 'download', 'edit', 'event', 'error', 'fastForward', 'favorite', 'favoriteOff', 'folder', 'help', 'home',
   'info', 'locationOn', 'lock', 'lockOpen', 'mail', 'menu', 'moreVert', 'moreHoriz', 'notificationsOff', 'notifications',
