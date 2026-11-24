@@ -163,7 +163,7 @@ func exampleFits(a ToolAction, payload map[string]any) error {
 
 // Every example in the workspace skill is a call the server accepts: in
 // references/<tool>.md, one of that tool's actions with its real payload
-// fields; in examples.md, one of any tool's.
+// fields, every action having one; in examples.md, one of any tool's.
 func TestBuiltinSkills_ExamplesAreRealCalls(t *testing.T) {
 	tools := map[string][]ToolAction{}
 	for _, tool := range (&WorkspaceServer{}).tools() {
@@ -183,6 +183,11 @@ func TestBuiltinSkills_ExamplesAreRealCalls(t *testing.T) {
 			t.Errorf("%s has no examples", file)
 		}
 		candidates := tools[strings.TrimSuffix(path.Base(file), ".md")]
+		for _, a := range candidates {
+			if !slices.ContainsFunc(calls, func(c exampleCall) bool { return c.Action == a.Name }) {
+				t.Errorf("%s has no example of %s", file, a.Name)
+			}
+		}
 		if candidates == nil {
 			for _, actions := range tools {
 				candidates = append(candidates, actions...)
