@@ -74,11 +74,12 @@ describe('useInlineSkillMenu', () => {
     const show = ref(true)
     let menu
     const load = vi.fn().mockResolvedValue({ skills: SKILLS })
+    const loadTeam = vi.fn().mockResolvedValue({ skills: [{ name: 'deploy', description: 'Ship it', on: true, clash: false }] })
     const root = document.createElement('div')
     document.body.appendChild(root)
     app = createApp({
       setup() {
-        menu = useInlineSkillMenu({ text, workspaceId: 'ws1', el, load })
+        menu = useInlineSkillMenu({ text, workspaceId: 'ws1', el, load, loadTeam })
         return () => (show.value ? h('textarea', { ref: el, value: text.value, onInput: (e) => { text.value = e.target.value } }) : null)
       },
     })
@@ -90,10 +91,18 @@ describe('useInlineSkillMenu', () => {
       area().setSelectionRange(caret, caret)
       area().dispatchEvent(new Event('input'))
     }
-    return { text, el, show, menu: () => menu, area, type, load }
+    return { text, el, show, menu: () => menu, area, type, load, loadTeam }
   }
 
   const key = (k) => new KeyboardEvent('keydown', { key: k, cancelable: true })
+
+  it('offers the workspace\'s team skills too', async () => {
+    const t = await mount()
+    expect(t.loadTeam).toHaveBeenCalledWith('ws1')
+    t.type('/dep')
+    await nextTick()
+    expect(t.menu().matches.value.map((c) => c.name)).toEqual(['deploy'])
+  })
 
   it('opens on a /name in the middle of the text and Enter puts the skill there', async () => {
     const t = await mount()
