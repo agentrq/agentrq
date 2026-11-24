@@ -12,6 +12,7 @@
  * view as the arrow keys move it.
  */
 import { nextTick, ref, watch } from 'vue'
+import { TEAM_ICON } from '../composables/useTeamMode'
 
 const props = defineProps({
   menu: { type: Object, required: true },
@@ -43,8 +44,13 @@ watch(() => props.menu.selected.value, (i) => {
               class="text-[11px] font-medium text-gray-500 dark:text-zinc-400 truncate">{{ command.description }}</span>
         <!-- The argument it expects, or that it is a skill, kept to the right
              so the name and what it does read as one line. -->
+        <!-- A team skill carries the team icon. -->
         <span v-if="command.input?.hint || command.hint || command.skill"
-              class="ml-auto pl-3 text-[10px] font-medium text-gray-400 dark:text-zinc-500 shrink-0">{{ command.input?.hint || command.hint || 'skill' }}</span>
+              class="ml-auto pl-3 flex items-center gap-1 self-center text-[10px] font-medium text-gray-400 dark:text-zinc-500 shrink-0">
+          <svg v-if="command.team" data-test="team-skill-icon" role="img" aria-label="Team skill"
+               class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" :d="TEAM_ICON" />
+          </svg>{{ command.input?.hint || command.hint || 'skill' }}</span>
       </li>
     </ul>
   </div>

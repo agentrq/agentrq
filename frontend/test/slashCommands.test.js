@@ -360,8 +360,8 @@ describe('skills in the menu', () => {
 
   it('offers the team skills the workspace is opted into, not those it is out of or that clash', () => {
     expect(teamSkillCommands(TEAM)).toEqual([
-      { name: 'deploy', description: 'Ship it', skill: true },
-      { name: 'bare', description: '', skill: true },
+      { name: 'deploy', description: 'Ship it', skill: true, team: true },
+      { name: 'bare', description: '', skill: true, team: true },
     ])
     expect(teamSkillCommands(undefined)).toEqual([])
   })
@@ -374,7 +374,7 @@ describe('skills in the menu', () => {
     expect(loadTeam).toHaveBeenCalledWith('ws1')
     expect(commands.value).toEqual([
       { name: 'bare', description: 'mine', skill: true },
-      { name: 'deploy', description: 'Ship it', skill: true },
+      { name: 'deploy', description: 'Ship it', skill: true, team: true },
     ])
   })
 

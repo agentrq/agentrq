@@ -94,13 +94,13 @@ export function skillCommands(skills, workspaceId) {
 /**
  * The team skills the workspace is opted into as menu entries: those `on` and
  * not losing to an account skill of the same name (`clash`), the ones its
- * agents load.
+ * agents load. `team` marks one as the team's in the menu.
  */
 export function teamSkillCommands(skills) {
   if (!Array.isArray(skills)) return [];
   return skills
     .filter((s) => s && typeof s.name === 'string' && s.name !== '' && s.on === true && !s.clash)
-    .map((s) => ({ name: s.name, description: s.description || '', skill: true }));
+    .map((s) => ({ name: s.name, description: s.description || '', skill: true, team: true }));
 }
 
 /**
