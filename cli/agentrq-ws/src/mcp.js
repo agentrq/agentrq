@@ -6,10 +6,9 @@ import { VERSION } from './version.js'
 
 /**
  * The revision to negotiate with. The workspace server is deliberately
- * stateful, which means the go-sdk never offers 2026-07-28 there; it advertises
- * 2025-11-25 down to 2024-11-05. 2025-06-18 sits safely inside that range and
- * is the revision that introduced the MCP-Protocol-Version header, so it is
- * what this client speaks.
+ * stateful, which means it never offers 2026-07-28; it advertises 2025-11-25
+ * and 2025-06-18. 2025-06-18 is the revision that introduced the
+ * MCP-Protocol-Version header, so it is what this client speaks.
  */
 export const PROTOCOL_VERSION = '2025-06-18'
 

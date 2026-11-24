@@ -14,7 +14,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 // AgentLauncher is agentlaunch.Launcher, the launch the web form runs too, so
@@ -55,7 +55,7 @@ func (s *WorkspaceServer) handleListMachines(ctx context.Context, req *mcp.CallT
 
 func (s *WorkspaceServer) handleLaunchAgent(ctx context.Context, req *mcp.CallToolRequest, args LaunchAgentParams) (*mcp.CallToolResult, any, error) {
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "launchAgent", parseID(args.WorkspaceID))
-	// The schema's enum is only a description to the SDK, so it is checked
+	// The schema's enum is only a description to the mcp package, so it is checked
 	// here: an unknown kind would otherwise reach the machine as a session.
 	if !slices.Contains(agentlaunch.Kinds, args.Kind) {
 		return errorResponse(fmt.Errorf("kind must be one of %s", strings.Join(agentlaunch.Kinds, ", "))), nil, nil

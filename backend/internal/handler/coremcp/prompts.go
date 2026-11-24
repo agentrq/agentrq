@@ -10,7 +10,7 @@ import (
 	"fmt"
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 // registerPrompts adds ready-made prompt templates for the workflows the

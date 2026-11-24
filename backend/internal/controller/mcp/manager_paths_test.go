@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 // A verdict for a workspace whose server is not loaded loads it; one whose

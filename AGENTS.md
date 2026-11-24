@@ -57,7 +57,8 @@ Each line says what the note will stop you getting wrong.
   of them is guarded by a test that really compares the two. Every tool
   takes an action and its payload, and retired tool names must keep answering.
   Also cron granularity, valid task statuses, how workspace memory is keyed,
-  and why OAuth authorize must always show the consent page.
+  why OAuth authorize must always show the consent page, and why a session
+  id is a signed record and never a credential.
 - **[CoreMCP, and the supervisor workspace](docs/agents/coremcp-and-supervisor.md)**
   — `backend/internal/handler/coremcp/`, the account-wide server every account's
   auto-created "supervisor" workspace talks to. A new tool there is a change in

@@ -13,7 +13,7 @@ import (
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 // What a read-only connection may run, tool by tool. Every other action

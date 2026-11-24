@@ -11,7 +11,7 @@ import (
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/mustafaturan/monoflake"
 )
 

@@ -18,10 +18,10 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 )
 

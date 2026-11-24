@@ -57,7 +57,7 @@ func TestACPVersionsStayIsolated(t *testing.T) {
 // from MCP. Tests included, so a fake cannot pull it back in.
 func TestACPImportsNothingFromMCP(t *testing.T) {
 	const internal = "github.com/agentrq/agentrq/backend/internal/"
-	banned := []string{internal + "controller/mcp", internal + "handler/mcp", "github.com/modelcontextprotocol/"}
+	banned := []string{internal + "controller/mcp", internal + "handler/mcp", internal + "service/mcp", "github.com/modelcontextprotocol/"}
 	root, err := filepath.Abs("..")
 	if err != nil {
 		t.Fatalf("finding the backend failed: %v", err)

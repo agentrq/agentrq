@@ -8,8 +8,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // The workspace server's tools: task, memory, skills, workspace, siteTools

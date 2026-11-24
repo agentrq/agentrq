@@ -69,8 +69,16 @@ leaves the gateway's on screen.
 Never set `StreamableHTTPOptions.Stateless = true` here to "add" protocol
 revision 2026-07-28: stateless 405s the GET/SSE stream, and that stream is how
 `SendChannelNotification` and `SendPermissionVerdict` reach a connected agent.
-We advertise `2025-11-25` downwards and refuse the newer revision with a
-JSON-RPC `-32022` naming those versions, so clients renegotiate down.
+We advertise `2025-11-25` and `2025-06-18` and refuse the newer revision with
+a JSON-RPC `-32022` naming those versions, so clients renegotiate down.
+
+## A session id is a signed record, not a credential
+
+The workspace server's `Mcp-Session-Id` is a JWT holding only the handshake:
+never put anything that grants access in it. Only a GET (the client reopening
+its push stream) rebuilds a session the process does not hold; a POST stays
+404, or Claude Code, whose push stream gives up after about 2.5 s, carries on
+deaf after a long deploy instead of starting over.
 
 coremcp is stateless and does serve 2026-07-28 — it pushes nothing, so it has
 no stream to lose. The two servers differ on purpose; see

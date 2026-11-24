@@ -13,8 +13,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // An action tool takes two inputs, like a command line: the action, and its

@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 func TestWorkspaceIcons(t *testing.T) {

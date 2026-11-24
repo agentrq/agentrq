@@ -7,7 +7,7 @@ package mcp
 import (
 	"context"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 // ToolCall is what a tool call was counted as: the tool or action name, and

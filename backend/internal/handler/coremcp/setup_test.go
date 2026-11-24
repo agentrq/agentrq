@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 )

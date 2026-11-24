@@ -7,7 +7,7 @@ package mcp
 import (
 	"context"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 // TaskToolDescription is the workspace server's task tool's description.

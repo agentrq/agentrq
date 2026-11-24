@@ -8,7 +8,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 // What a client is told about each tool before it calls it.

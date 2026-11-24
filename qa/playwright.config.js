@@ -50,7 +50,8 @@ export default defineConfig({
       name: 'backend',
       // The server reads its config relative to its working directory.
       // QA_BACKEND_CMD runs a prebuilt server instead (the Postgres rig).
-      command: process.env.QA_BACKEND_CMD || 'go run .',
+      // lib/backend.mjs builds and runs it, and restarts it when a test asks.
+      command: `node ${JSON.stringify(join(repo, 'qa/lib/backend.mjs'))}`,
       cwd: join(repo, 'backend/cmd/server'),
       url: `http://localhost:${apiPort}/api/v1/auth/user`,
       // Unauthenticated, /auth/user answers 401, which Playwright counts as up.

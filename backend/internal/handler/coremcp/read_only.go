@@ -8,9 +8,9 @@ import (
 	"context"
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // readOnlyToolsMiddleware lists, to a read-only connection, every tool as

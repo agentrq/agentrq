@@ -13,7 +13,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 )

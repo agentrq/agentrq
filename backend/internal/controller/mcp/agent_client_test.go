@@ -8,7 +8,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"

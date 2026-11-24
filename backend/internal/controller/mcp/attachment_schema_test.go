@@ -13,12 +13,12 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/golang/mock/gomock"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestCreateTaskAttachmentSchema(t *testing.T) {

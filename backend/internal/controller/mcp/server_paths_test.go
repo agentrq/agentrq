@@ -5,9 +5,12 @@
 package mcp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -19,11 +22,11 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	mock_auth "github.com/agentrq/agentrq/backend/internal/service/mocks/auth"
 	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/golang/mock/gomock"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -575,24 +578,135 @@ func TestHandleCustomNotification_DropsABodyThatIsNotJSON(t *testing.T) {
 	}
 }
 
-// A push goes to each session, noting which ones hold a valid token, and a
-// session that cannot take it does not stop the rest.
+// A push goes to each session, noting which ones hold a valid token.
 func TestSendChannelNotification_EverySession(t *testing.T) {
 	ps := pushServer(t)
 	ctrl := gomock.NewController(t)
 	tokens := mock_auth.NewMockTokenService(ctrl)
 	tokens.EXPECT().ValidateToken("a-session-id-longer-than-twelve").
-		Return(&auth.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}}, nil).Times(2)
+		Return(&auth.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}}, nil).Times(1)
 	ps.tokenSvc = tokens
 	namedSession(t, ps, "a-session-id-longer-than-twelve")
 
 	ps.SendChannelNotification(context.Background(), 7, "next task")
+}
 
-	// A cancelled context makes every write fail, which is reported per
-	// session and not returned to the caller.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	ps.SendChannelNotification(ctx, 7, "next task")
+// A session whose client holds no push stream takes neither a push nor a
+// verdict. The verdict is held and goes out as soon as the stream opens, and
+// the next push follows it there.
+func TestPush_ToASessionWithNoStream(t *testing.T) {
+	ps := NewWorkspaceServer(
+		1, 0, "user", "http://localhost",
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, nil,
+	)
+	t.Cleanup(ps.Close)
+	tokens := mock_auth.NewMockTokenService(gomock.NewController(t))
+	tokens.EXPECT().ValidateToken(gomock.Any()).Return(nil, errNotTheRealThing).AnyTimes()
+	ps.tokenSvc = tokens
+	ps.getTask = func(_ context.Context, id int64) (model.Task, error) { return model.Task{ID: id}, nil }
+	srv := httptest.NewServer(ps.Handler())
+	t.Cleanup(srv.Close)
+
+	post := func(body, session string) *http.Response {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("MCP-Protocol-Version", "2025-06-18")
+		if session != "" {
+			req.Header.Set("Mcp-Session-Id", session)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, res.Body)
+		_ = res.Body.Close()
+		return res
+	}
+	opened := post(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-code","version":"1"}}}`, "")
+	session := opened.Header.Get("Mcp-Session-Id")
+	if opened.StatusCode != http.StatusOK || session == "" {
+		t.Fatalf("initialize answered %d with session %q", opened.StatusCode, session)
+	}
+	post(`{"jsonrpc":"2.0","method":"notifications/initialized"}`, session)
+
+	ctx := context.Background()
+	ps.SendChannelNotification(ctx, 7, "dropped")
+	ps.permissionRequests["req-1"] = session
+	ps.requestTaskIDs["req-1"] = 42
+	if err := ps.SendPermissionVerdict(ctx, 42, "req-1", "allow"); err == nil {
+		t.Fatal("a verdict to a session with no stream was reported delivered")
+	}
+	if ps.undeliveredVerdicts["req-1"] != "allow" {
+		t.Fatalf("the verdict was not held: %v", ps.undeliveredVerdicts)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("MCP-Protocol-Version", "2025-06-18")
+	req.Header.Set("Mcp-Session-Id", session)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = res.Body.Close() })
+	lines := bufio.NewScanner(res.Body)
+	if !lines.Scan() || lines.Text() != ": ok" {
+		t.Fatalf("the stream opened with %q", lines.Text())
+	}
+	next := func() string {
+		t.Helper()
+		for lines.Scan() {
+			if line := lines.Text(); strings.HasPrefix(line, "data: ") {
+				return line
+			}
+		}
+		t.Fatalf("the stream ended: %v", lines.Err())
+		return ""
+	}
+
+	if line := next(); !strings.Contains(line, `"method":"notifications/claude/channel/permission"`) || !strings.Contains(line, `"request_id":"req-1"`) || !strings.Contains(line, `"behavior":"allow"`) {
+		t.Fatalf("the stream opened with %s, want the held verdict", line)
+	}
+	// The verdict is let go once it is written, which can be after the line
+	// has arrived here.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		ps.undeliveredVerdictsMu.RLock()
+		_, stillHeld := ps.undeliveredVerdicts["req-1"]
+		ps.undeliveredVerdictsMu.RUnlock()
+		if !stillHeld {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the delivered verdict is still held")
+		}
+	}
+
+	ps.SendChannelNotification(ctx, 7, "delivered")
+	if line := next(); strings.Contains(line, "dropped") || !strings.Contains(line, `"content":"delivered"`) {
+		t.Fatalf("the stream carried %s", line)
+	}
+}
+
+// Opening a push stream hands over only the verdicts held for that session.
+func TestDeliverHeldVerdicts_OnlyThatSessions(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	sessID := connectedServer(t, ps, "agent")
+	ps.permissionRequests["mine"] = sessID
+	ps.permissionRequests["theirs"] = "another-session"
+	ps.undeliveredVerdicts["mine"] = "deny"
+	ps.undeliveredVerdicts["theirs"] = "allow"
+
+	ps.deliverHeldVerdicts(context.Background(), sessID)
+
+	if _, held := ps.undeliveredVerdicts["mine"]; held {
+		t.Error("this session's verdict is still held")
+	}
+	if ps.undeliveredVerdicts["theirs"] != "allow" {
+		t.Error("another session's verdict was handed over")
+	}
 }
 
 // The poller offers nothing when the pending backlog cannot be read.

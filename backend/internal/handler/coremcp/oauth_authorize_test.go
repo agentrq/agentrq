@@ -91,6 +91,12 @@ func (authorizeTokenSvc) ValidateClientRegistrationToken(tokenStr string) (*auth
 	}
 	return nil, jwt.ErrSignatureInvalid
 }
+func (authorizeTokenSvc) CreateMCPSessionToken(context.Context, string, string, auth.MCPSession) (string, error) {
+	return "", errors.New("not implemented")
+}
+func (authorizeTokenSvc) ValidateMCPSessionToken(context.Context, string, string, string) (*auth.MCPSession, error) {
+	return nil, errors.New("not implemented")
+}
 
 // consentRecorder is the one controller call the authorize handler makes.
 type consentRecorder struct {

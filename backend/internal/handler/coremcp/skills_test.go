@@ -21,7 +21,7 @@ import (
 	"testing/fstest"
 	"unicode/utf8"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"

@@ -8,7 +8,7 @@ import (
 	"context"
 
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 // The supervisor's tools: workspace, task, memory, skills, events, workflows,

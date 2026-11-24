@@ -165,7 +165,7 @@ describe('createBroker', () => {
    * Found against a real server, which is the only place it could be.
    *
    * The per-workspace endpoint already names the workspace, so its tools take
-   * no `workspaceId` — and the go-sdk validates strictly, refusing the whole
+   * no `workspaceId` — and the server validates strictly, refusing the whole
    * call with `unexpected additional properties ["workspaceId"]`. An extension
    * author would have had no way to explain that: they were doing the only
    * thing this broker's shape allowed.

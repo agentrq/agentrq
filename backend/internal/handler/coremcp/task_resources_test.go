@@ -15,7 +15,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 )
 
 type resourceHandler func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error)
