@@ -204,7 +204,7 @@ const INLINE_BUTTON = 'inline-flex items-center justify-center gap-1.5 px-3 text
                   <input :id="f.id" v-model="values[input.name]" :data-test="`reg-input-${input.name}`"
                     :type="input.secret ? (shown[input.name] ? 'text' : 'password') : input.type === 'number' ? 'number' : 'text'"
                     autocomplete="off" spellcheck="false" :required="input.required && !(input.secret && secretSet(input))"
-                    :placeholder="input.secret && secretSet(input) ? '•••••••• set' : input.type === 'array' ? 'main, release/*' : ''"
+                    :placeholder="input.secret && secretSet(input) ? '•••••••• set' : input.placeholder || ''"
                     :aria-describedby="f.describedBy" :aria-invalid="f.invalid"
                     :class="[fieldClass(f.invalid), input.secret && 'font-mono pr-10']" @input="clear(input.name)" />
                   <button v-if="input.secret" type="button" :data-test="`reg-reveal-${input.name}`"

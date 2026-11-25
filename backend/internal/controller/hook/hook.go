@@ -418,7 +418,7 @@ func toEntity(h model.Hook) entity.Hook {
 		Enabled: h.Enabled, CreatedAt: h.CreatedAt, UpdatedAt: h.UpdatedAt,
 	}
 	for i, in := range m.Inputs {
-		e.Inputs[i] = entity.HookInput{Name: in.Name, Label: in.Label, Type: in.Type, Items: in.Items, Secret: in.Secret, Required: in.Required}
+		e.Inputs[i] = entity.HookInput{Name: in.Name, Label: in.Label, Placeholder: in.Placeholder, Type: in.Type, Items: in.Items, Secret: in.Secret, Required: in.Required}
 	}
 	for i, ev := range m.Events {
 		e.Events[i] = entity.HookEvent{Name: ev.Name, Description: ev.Description}

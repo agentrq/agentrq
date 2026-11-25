@@ -164,7 +164,7 @@ GOOS=wasip1 GOARCH=wasm go build -o deploys.wasm .
 
 - Compare secrets with `sdk.Equal`, which takes the same time whatever the input.
 - Return `sdk.Reject` for a request that is not genuine, and `sdk.Accept` with no events for a genuine one with nothing to do.
-- Inputs are `string`, `number`, `boolean` or `array` (with `Items` naming the element type).
+- Inputs are `string`, `number`, `boolean` or `array` (with `Items` naming the element type). `Label` names one in the registration form, and `Placeholder` is an example value the form shows in the empty field, such as `main, release/*`.
 - [`wasm-hooks/generic`](../wasm-hooks/generic/main.go), [`wasm-hooks/github`](../wasm-hooks/github/main.go) and [`wasm-hooks/jira`](../wasm-hooks/jira/main.go) are complete examples, with tests that run the built module.
 
 Uploading a new version of a hook keeps its registrations, unless it would break one: an event someone routes is gone, an input becomes required, or an input changes type or stops being secret. Such an upgrade is refused. An input the new version drops is no longer given to it, and is cleared the next time the registration is saved.

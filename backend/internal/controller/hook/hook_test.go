@@ -158,7 +158,7 @@ func manifest(name, version string, inputs []hookrunner.Input, events ...string)
 }
 
 var modules = inspector{
-	"github-1":  manifest("github", "1.0.0", []hookrunner.Input{secret(), {Name: "branches", Type: hookrunner.InputArray, Items: hookrunner.InputString}}, "ci.failed", "push"),
+	"github-1":  manifest("github", "1.0.0", []hookrunner.Input{secret(), {Name: "branches", Placeholder: "main, release/*", Type: hookrunner.InputArray, Items: hookrunner.InputString}}, "ci.failed", "push"),
 	"generic-1": manifest("generic", "1.0.0", []hookrunner.Input{secret()}, "request.received"),
 	// An upgrade any registration keeps working with.
 	"github-2":            manifest("github", "2.0.0", []hookrunner.Input{secret(), {Name: "branches", Type: hookrunner.InputArray, Items: hookrunner.InputString}, {Name: "label", Type: hookrunner.InputString}}, "ci.failed", "push", "release.published"),
@@ -227,7 +227,7 @@ func TestCreateBuiltIn(t *testing.T) {
 	if h.ID != 101 || !h.BuiltIn || h.Name != "github" || h.Version != "1.0.0" || h.Description != "github 1.0.0" ||
 		h.SHA256 != digest("github-1") || h.SizeBytes != 8 || h.ABIVersion != 1 || !h.Enabled || h.CreatedAt.IsZero() ||
 		len(h.Inputs) != 2 || h.Inputs[0] != (entity.HookInput{Name: "webhookSecret", Type: "string", Secret: true, Required: true}) ||
-		h.Inputs[1].Items != "string" || len(h.Events) != 2 || h.Events[1] != (entity.HookEvent{Name: "push", Description: "on push"}) {
+		h.Inputs[1].Items != "string" || h.Inputs[1].Placeholder != "main, release/*" || len(h.Events) != 2 || h.Events[1] != (entity.HookEvent{Name: "push", Description: "on push"}) {
 		t.Errorf("hook = %+v", h)
 	}
 	if !f.blobs.has(key, "github-1") || len(f.blobs.m) != 1 {
