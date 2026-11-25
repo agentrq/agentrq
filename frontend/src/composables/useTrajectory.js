@@ -398,10 +398,10 @@ export const FOLLOW_STEP_MS = 1500;
  *
  * @param {import('vue').Ref<Array<object>>} items the visible rows, oldest first
  * @param {import('vue').Ref<string|null>} selectedId
- * @param {{delay?: number}} [options]
+ * @param {{delay?: number, following?: import('vue').Ref<boolean>}} [options]
+ *   following: an outside ref to keep the switch in, so it outlives the panel
  */
-export function useTrajectoryFollow(items, selectedId, { delay = FOLLOW_STEP_MS } = {}) {
-  const following = ref(false);
+export function useTrajectoryFollow(items, selectedId, { delay = FOLLOW_STEP_MS, following = ref(false) } = {}) {
   let timer = null;
 
   function cancel() {

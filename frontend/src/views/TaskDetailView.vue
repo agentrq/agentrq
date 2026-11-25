@@ -782,7 +782,7 @@
     <!-- Tool call trajectory (replaces the chat area in place) -->
     <TrajectoryPanel v-else :messages="trajectoryMessages" :tool-calls="sortedToolCalls"
                      :earlier-count="toolCallTotal - sortedToolCalls.length" :loading-earlier="loadingEarlierToolCalls"
-                     @load-earlier="loadEarlierToolCalls" />
+                     v-model:following="trajectoryFollowing" @load-earlier="loadEarlierToolCalls" />
 
     <!-- Reply Box -->
     <footer v-if="activeView === 'chat' && !workspace.archivedAt && !isTeamMode" class="px-1 @min-[40rem]:px-4 py-2 @min-[40rem]:py-4 @min-[48rem]:pb-0 border-t border-gray-100 dark:border-zinc-800 shrink-0 z-20 bg-white dark:bg-zinc-900/50">
@@ -1638,6 +1638,8 @@ async function openSystemEmoji() {
 }
 
 const activeView = ref('chat');
+// The trajectory's Follow switch, kept here because the panel unmounts on Chat.
+const trajectoryFollowing = ref(false);
 
 // The two view shortcuts are registered by the view that owns the state rather
 // than by the shell, which has no `activeView` to switch. Registering on mount

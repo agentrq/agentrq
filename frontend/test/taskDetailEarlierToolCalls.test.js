@@ -4,7 +4,8 @@
 
 /**
  * A task arrives with only its latest tool calls (#921), mounted for real: the
- * badge counts them all, and the trajectory pages in the rest on request.
+ * badge counts them all, and the trajectory pages in the rest on request. Also
+ * that Follow outlives a switch to Chat and back (#1411).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -118,6 +119,11 @@ async function mount() {
     badge: () => trajectoryButton().querySelector('span.rounded-full')?.textContent.trim(),
     loadEarlier: () => el.querySelector('[data-testid="trajectory-load-earlier"]'),
     listed: () => el.textContent,
+    follow: () => el.querySelector('[data-testid="trajectory-follow"]'),
+    show: async (label) => {
+      ;[...el.querySelectorAll('button')].find((b) => b.textContent.trim().startsWith(label)).click()
+      await settle()
+    },
   }
 }
 
@@ -204,5 +210,27 @@ describe('TaskDetailView and earlier tool calls', () => {
 
     expect(notifyError).toHaveBeenCalledWith('Failed to load earlier tool calls: offline')
     expect(view.loadEarlier().disabled).toBe(false)
+  })
+})
+
+describe('TaskDetailView and the trajectory Follow switch', () => {
+  it('keeps Follow on across a switch to Chat and back', async () => {
+    const view = await mount()
+    expect(view.follow().getAttribute('aria-checked')).toBe('false')
+
+    view.follow().click()
+    await settle()
+    expect(view.follow().getAttribute('aria-checked')).toBe('true')
+
+    await view.show('Chat')
+    expect(view.follow()).toBeNull()
+    await view.show('Trajectory')
+    expect(view.follow().getAttribute('aria-checked')).toBe('true')
+
+    view.follow().click()
+    await settle()
+    await view.show('Chat')
+    await view.show('Trajectory')
+    expect(view.follow().getAttribute('aria-checked')).toBe('false')
   })
 })
