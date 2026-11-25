@@ -321,3 +321,16 @@ func TestForkTask_CopiesOnlyTheConversation(t *testing.T) {
 		t.Errorf("plan changed: %s", got[1].Metadata)
 	}
 }
+
+// A question drawn as a card is closed like any other, its card kept, so the
+// fork shows what was asked.
+func TestForkMetadata_ClosesAPendingCardQuestionKeepingItsCard(t *testing.T) {
+	got := forkMetadata(datatypes.JSON(`{"type":"elicitation_request","mode":"a2ui","status":"pending","surfaceId":"release","messages":[{"version":"1.0"}]}`))
+	var meta map[string]any
+	if err := json.Unmarshal(got, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta["status"] != "cancel" || meta["mode"] != "a2ui" || meta["surfaceId"] != "release" || len(meta["messages"].([]any)) != 1 {
+		t.Errorf("forked question = %s, want it closed with its card", got)
+	}
+}

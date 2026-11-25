@@ -23,7 +23,7 @@ Examples:
 npx -y @agentrq/agentrq-ws@latest reply 0kGogHmaqvZ "Screenshot attached." --attach shot.png
 ```
 
-- `elicit`: asks the human and waits: a form (`requestedSchema`) or a link (`url`).
+- `elicit`: asks the human, waits: a form (`requestedSchema`), link (`url`) or card ([a2ui-buttons.md](a2ui-buttons.md)).
 Examples:
 ```json
 { "action": "elicit", "payload": { "taskId": "0kGogHmaqvZ", "message": "Which branch?", "mode": "form", "requestedSchema": { "type": "object", "properties": { "branch": { "type": "string" } } } } }

@@ -921,6 +921,8 @@ const (
 	// A click on a card's Button, posted as the person's reply; emitted by
 	// the backend.
 	ActionIDA2UIAction
+	// An agent's question drawn as an A2UI card; emitted by the backend.
+	ActionIDA2UIElicit
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

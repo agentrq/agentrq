@@ -342,14 +342,16 @@ type GetTaskParams struct {
 
 // ElicitParams is the input to the elicit tool. It mirrors the MCP protocol's
 // client-side "elicitation/create" request (message + a flat requestedSchema),
-// plus a "url" mode for asking the human to open a link rather than fill a form.
+// plus a "url" mode for asking the human to open a link rather than fill a form,
+// and an "a2ui" mode drawing the question as a card.
 type ElicitParams struct {
-	TaskID          string         `json:"taskId" jsonschema:"The ID of the task this question relates to (base62)."`
-	Message         string         `json:"message" jsonschema:"The human-readable question or prompt to show the user."`
-	Mode            string         `json:"mode" jsonschema:"'form' to request structured input via a JSON schema (mirrors MCP's elicitation/create requestedSchema), or 'url' to ask the user to open a link and confirm when done."`
-	RequestedSchema map[string]any `json:"requestedSchema,omitempty" jsonschema:"Required when mode is 'form'. A flat JSON Schema object: type must be 'object', with each property either primitive-typed (string, number, integer, boolean — optionally with 'enum'), an array of one of those primitive types (renders as a multi-select), or an enum expressed as 'oneOf'/'anyOf' options (each {const, title, description}) — no nested objects. Matches ACP's elicitation/create schema restrictions."`
-	URL             string         `json:"url,omitempty" jsonschema:"Required when mode is 'url'. The URL to show the user."`
-	TimeoutSeconds  int            `json:"timeoutSeconds,omitempty" jsonschema:"How long to wait for the user's response before giving up. Default 3600 (1 hour), max 3600 (1 hour). On timeout the tool returns {action: 'cancel'} rather than an error, since the human simply didn't respond in time."`
+	TaskID          string          `json:"taskId" jsonschema:"The ID of the task this question relates to (base62)."`
+	Message         string          `json:"message" jsonschema:"The human-readable question or prompt to show the user."`
+	Mode            string          `json:"mode" jsonschema:"'form' to request structured input via a JSON schema (mirrors MCP's elicitation/create requestedSchema), 'url' to ask the user to open a link and confirm when done, or 'a2ui' to draw the question as an A2UI card (ui) whose Button click is the answer."`
+	RequestedSchema map[string]any  `json:"requestedSchema,omitempty" jsonschema:"Required when mode is 'form'. A flat JSON Schema object: type must be 'object', with each property either primitive-typed (string, number, integer, boolean — optionally with 'enum'), an array of one of those primitive types (renders as a multi-select), or an enum expressed as 'oneOf'/'anyOf' options (each {const, title, description}) — no nested objects. Matches ACP's elicitation/create schema restrictions."`
+	URL             string          `json:"url,omitempty" jsonschema:"Required when mode is 'url'. The URL to show the user."`
+	UI              json.RawMessage `json:"ui,omitempty" jsonschema:"Required when mode is 'a2ui', and only then. A JSON array of A2UI v1.0 messages (basic catalog, one surface), as reply's ui, with no media. A Button click answers: content is {name, context, dataModel}, the action's name and context and the card's data model with what the human entered. message stays required, the fallback wherever cards are not shown."`
+	TimeoutSeconds  int             `json:"timeoutSeconds,omitempty" jsonschema:"How long to wait for the user's response before giving up. Default 3600 (1 hour), max 3600 (1 hour). On timeout the tool returns {action: 'cancel'} rather than an error, since the human simply didn't respond in time."`
 }
 
 // elicitationResponse is the human's answer to a pending elicit tool call,
@@ -1555,7 +1557,7 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 		}, nil, nil
 	}
 	if metadata != nil {
-		ps.emitA2UIReply(ctx, msgID)
+		ps.emitA2UI(ctx, entity.ActionA2UIReply, msgID)
 	}
 
 	// Update session-to-task mapping for context-aware routing (like permissions)
@@ -1760,6 +1762,12 @@ func (ps *WorkspaceServer) handleElicit(ctx context.Context, req *mcp.CallToolRe
 		"mode":    params.Mode,
 		"status":  "pending",
 	}
+	if len(params.UI) > 0 && params.Mode != elicitModeA2UI {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "ui needs mode 'a2ui'"}},
+		}, nil, nil
+	}
 	switch params.Mode {
 	case "form":
 		if len(params.RequestedSchema) == 0 {
@@ -1783,10 +1791,35 @@ func (ps *WorkspaceServer) handleElicit(ctx context.Context, req *mcp.CallToolRe
 			}, nil, nil
 		}
 		metadata["url"] = params.URL
+	case elicitModeA2UI:
+		if len(params.UI) == 0 {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "ui is required when mode is 'a2ui'"}},
+			}, nil, nil
+		}
+		if len(params.RequestedSchema) > 0 || params.URL != "" {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "mode 'a2ui' takes ui, not requestedSchema or url"}},
+			}, nil, nil
+		}
+		// No attachments: a question carries no files, so a card's media is
+		// refused.
+		surface, err := ps.validateCard(ctx, params.UI, nil, "ask with mode 'form' instead")
+		if err != nil {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+			}, nil, nil
+		}
+		metadata["version"] = a2uiVersion
+		metadata["surfaceId"] = surface.SurfaceID
+		metadata["messages"] = surface.Messages
 	default:
 		return &mcp.CallToolResult{
 			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "mode must be 'form' or 'url'"}},
+			Content: []mcp.Content{&mcp.TextContent{Text: "mode must be 'form', 'url' or 'a2ui'"}},
 		}, nil, nil
 	}
 
@@ -1853,6 +1886,9 @@ func (ps *WorkspaceServer) askHuman(ctx context.Context, taskID int64, message s
 	msgID, err := ps.reply(ctx, monoflake.ID(taskID).String(), message, nil, metadata)
 	if err != nil {
 		return elicitationResponse{}, err
+	}
+	if metadata["mode"] == elicitModeA2UI {
+		ps.emitA2UI(ctx, entity.ActionA2UIElicit, msgID)
 	}
 
 	select {
@@ -2134,8 +2170,8 @@ func buildConversationJSON(task model.Task, cursor, limit int) string {
 		}
 		// A card is for the page: its text says the same, and its JSON
 		// would only fill the agent's context.
-		if isA2UIMessage(m.Metadata) {
-			item["metadata"] = ""
+		if meta, card := agentMetadata(m.Metadata); card {
+			item["metadata"] = meta
 			item["ui"] = true
 		}
 		output = append(output, item)

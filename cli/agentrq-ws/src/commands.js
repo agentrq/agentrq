@@ -605,12 +605,16 @@ export const COMMANDS = [
   {
     path: ['ask'],
     summary: 'Ask the human a question and wait for the answer',
-    usage: 'agentrq-ws ask <taskId> <message> [--field name[:type[:description]]]... [--url URL]',
+    usage: 'agentrq-ws ask <taskId> <message> [--field name[:type[:description]]]... [--url URL] [--ui JSON|@file|-]',
     options: {
-      mode: { type: 'string', short: 'm', description: "'form' or 'url' (inferred when omitted)" },
+      mode: { type: 'string', short: 'm', description: "'form', 'url' or 'a2ui' (inferred when omitted)" },
       field: { type: 'string', multiple: true, description: 'Form field, e.g. branch:string:Which branch' },
       schema: { type: 'string', description: 'Full requestedSchema as JSON (@file supported)' },
       url: { type: 'string', short: 'u', description: 'Link to show the human (mode=url)' },
+      ui: {
+        type: 'string',
+        description: "The question as an A2UI v1.0 card, a JSON array of messages (@file supported; mode=a2ui): a Button's click answers, the message its fallback",
+      },
       timeout: { type: 'string', description: 'Seconds to wait, max 3600 (default 3600)' },
     },
     async run(ctx) {
@@ -627,17 +631,20 @@ export const COMMANDS = [
       }
       // The mode is almost always implied by which of the two was given, and
       // making somebody state it as well is ceremony.
-      const mode = ctx.values.mode || (ctx.values.url ? 'url' : 'form')
+      const ui = await readUI(ctx)
+      const mode = ctx.values.mode || (ui !== undefined ? 'a2ui' : ctx.values.url ? 'url' : 'form')
       if (mode === 'url' && !ctx.values.url) throw new UserError('mode=url needs --url')
       if (mode === 'form' && !requestedSchema) {
         throw new UserError('mode=form needs at least one --field (or --schema)')
       }
+      if (mode === 'a2ui' && ui === undefined) throw new UserError('mode=a2ui needs --ui')
       const payload = {
         taskId,
         message,
         mode,
         requestedSchema,
         url: ctx.values.url,
+        ui,
         timeoutSeconds: ctx.values.timeout ? Number(ctx.values.timeout) : undefined,
       }
       return ctx.client.callAction('task', 'elicit', payload, ['elicit', payload])
