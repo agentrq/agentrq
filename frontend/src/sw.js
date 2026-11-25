@@ -17,10 +17,12 @@ import {
   touchCacheEntry,
   withinSizeCap,
 } from './composables/useAttachmentCache'
-import { precacheProgressPlugin, precacheTotal } from './composables/usePwaUpdateProgress'
+import { claimOpenPages, precacheProgressPlugin, precacheTotal } from './composables/usePwaUpdateProgress'
 import { appPath, openNotificationUrl } from './composables/useNotificationClick'
 import { refreshBadge } from './composables/useAppBadge'
 import { shouldShowPush } from './composables/usePushDisplay'
+
+claimOpenPages(self)
 
 self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting()

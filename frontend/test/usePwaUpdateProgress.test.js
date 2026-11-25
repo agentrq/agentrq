@@ -7,6 +7,7 @@ import { ref } from 'vue'
 
 import {
   PRECACHE_PROGRESS,
+  claimOpenPages,
   percentOf,
   precacheProgressPlugin,
   precacheTotal,
@@ -91,6 +92,22 @@ describe('precacheProgressPlugin', () => {
     await plugin.handlerDidComplete({})
 
     expect(report).not.toHaveBeenCalled()
+  })
+})
+
+describe('claimOpenPages', () => {
+  it('takes over every open page once the worker activates', async () => {
+    const worker = new EventTarget()
+    worker.clients = { claim: vi.fn(() => Promise.resolve()) }
+    claimOpenPages(worker)
+    expect(worker.clients.claim).not.toHaveBeenCalled()
+
+    const event = new Event('activate')
+    event.waitUntil = vi.fn()
+    worker.dispatchEvent(event)
+
+    expect(worker.clients.claim).toHaveBeenCalledTimes(1)
+    expect(event.waitUntil).toHaveBeenCalledWith(worker.clients.claim.mock.results[0].value)
   })
 })
 
