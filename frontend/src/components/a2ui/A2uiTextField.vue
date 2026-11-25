@@ -5,7 +5,7 @@
 -->
 
 <script setup>
-/** TextField: a line, a paragraph, a number or a secret, in the app's field; its value always a string. */
+/** TextField: a line, a paragraph (growing with its text), a number or a secret, in the app's field; its value always a string. */
 import FormField from '../FormField.vue'
 import { useInput } from '../../a2ui/interact.js'
 import { fieldClass } from '../../utils/formStyles.js'
@@ -22,10 +22,12 @@ const TYPES = { number: 'number', obscured: 'password' }
   <FormField data-test="a2ui-textfield" :label="label" :error="error" class="min-w-0">
     <template #default="{ id, describedBy, invalid }">
       <textarea v-if="c.variant === 'longText'" :id="id" v-model="model" rows="3" :aria-describedby="describedBy" :aria-invalid="invalid || undefined"
-                :placeholder="displayText(resolveValue(c.placeholder, ctx))" :disabled="readOnly" :class="fieldClass(invalid)" class="text-[13px] py-2 resize-y" @blur="touch" />
+                :placeholder="displayText(resolveValue(c.placeholder, ctx))" :disabled="readOnly" :class="fieldClass(invalid, { answered: readOnly, size: 'chat' })"
+                class="field-sizing-content min-h-[4.5rem] max-h-72 resize-y" @blur="touch" />
       <input v-else :id="id" :value="model" :type="TYPES[c.variant] ?? 'text'" :aria-describedby="describedBy" :aria-invalid="invalid || undefined"
              :inputmode="c.variant === 'number' ? 'decimal' : undefined" :autocomplete="c.variant === 'obscured' ? 'off' : undefined"
-             :placeholder="displayText(resolveValue(c.placeholder, ctx))" :disabled="readOnly" :class="fieldClass(invalid)" class="text-[13px] py-2" @input="model = $event.target.value" @blur="touch" />
+             :placeholder="displayText(resolveValue(c.placeholder, ctx))" :disabled="readOnly" :class="fieldClass(invalid, { answered: readOnly, size: 'chat' })"
+             @input="model = $event.target.value" @blur="touch" />
     </template>
   </FormField>
 </template>

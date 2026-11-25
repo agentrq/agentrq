@@ -39,7 +39,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['action'])
 
-const ui = reactive({ answered: null, readOnly: false, busy: false, changes: null, send: (action) => emit('action', action) })
+const ui = reactive({ answered: null, readOnly: false, busy: false, pressed: null, changes: null, send: (action) => emit('action', action) })
 
 // Loaded again only when the card itself changes: a task refreshed while the
 // person types must not wipe what they entered.

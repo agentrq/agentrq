@@ -11,19 +11,28 @@
  * group. Name it with a legend, or an `aria-labelledby` on the group.
  */
 import { useId } from 'vue'
+import { CHAT_TOGGLE_TRACK, chatSegmentClass } from '../utils/formStyles'
 
 const picked = defineModel({ type: [String, Number, Boolean], default: '' })
 defineProps({
   // { value, label, test? }; `test` becomes the pill's data-test.
   options: { type: Array, required: true },
   uppercase: Boolean,
+  // Inside the task chat: its smaller toggle, as Agent | Human there.
+  chat: Boolean,
 })
 
 const name = `segment-${useId()}`
 </script>
 
 <template>
-  <div role="radiogroup" class="flex p-1 bg-gray-100 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-lg w-fit">
+  <div v-if="chat" role="radiogroup" :class="CHAT_TOGGLE_TRACK">
+    <label v-for="option in options" :key="String(option.value)" :data-test="option.test" :class="chatSegmentClass(option.value === picked)">
+      <input v-model="picked" type="radio" :name="name" :value="option.value" class="sr-only" />
+      {{ option.label }}
+    </label>
+  </div>
+  <div v-else role="radiogroup" class="flex p-1 bg-gray-100 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-lg w-fit">
     <label v-for="option in options" :key="String(option.value)" :data-test="option.test"
       class="px-5 py-1.5 rounded-md text-[10px] font-semibold border cursor-pointer select-none transition-all has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-gray-900/20 dark:has-[:focus-visible]:ring-white/20"
       :class="[uppercase && 'uppercase', option.value === picked

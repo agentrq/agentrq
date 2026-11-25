@@ -6,8 +6,12 @@ import { describe, expect, it } from 'vitest'
 
 import { ICON_PATHS, iconDrawing, iconFor } from '../src/a2ui/icons.js'
 import {
-  accessibilityAttrs, displayText, flexClasses, imageClasses, isAllowedMedia, listClasses, textHtml, weightStyle,
+  accessibilityAttrs, buttonClass, chipClass, choiceRowClass, columnChildClass, displayText, flexClasses, imageClasses, isAllowedMedia,
+  isDecisionRow, listClasses, rowClasses, rowOrder, textHtml, weightStyle,
 } from '../src/a2ui/render.js'
+import {
+  CANCEL_COLORS, CHAT_BUTTON, CHAT_SECONDARY_COLORS, DISABLED_BUTTON, PRIMARY_COLORS, fieldClass,
+} from '../src/utils/formStyles.js'
 import { ICON_NAMES } from '../src/a2ui/validate.js'
 
 const ctx = (dataModel = {}) => ({ surface: { dataModel }, scope: [] })
@@ -129,5 +133,86 @@ describe('a2ui icons', () => {
     expect(iconFor({ name: { svgPath: { '@path': '/path' } } }, c)).toEqual({ fill: 'M1 1z' })
     expect(iconFor({ name: { '@path': '/custom' } }, c)).toEqual({ fill: 'M2 2z' })
     expect(iconFor({ name: { '@path': '/missing' } }, c)).toBeNull()
+  })
+})
+
+describe('a2ui control classes', () => {
+  const classes = (list) => list.filter(Boolean).join(' ').split(/\s+/).sort()
+  const own = (...parts) => parts.join(' ').split(/\s+/).sort()
+
+  it("draws a Button as the chat's button, in the app's primary, secondary or borderless colours", () => {
+    expect(classes(buttonClass('primary')), 'primary').toEqual(own(CHAT_BUTTON, PRIMARY_COLORS, DISABLED_BUTTON))
+    expect(classes(buttonClass('borderless')), 'borderless').toEqual(own(CHAT_BUTTON, CANCEL_COLORS, DISABLED_BUTTON))
+    expect(classes(buttonClass(undefined)), 'no variant').toEqual(own(CHAT_BUTTON, CHAT_SECONDARY_COLORS, DISABLED_BUTTON))
+  })
+
+  it('keeps the Button that answered its card at full strength, though disabled', () => {
+    expect(classes(buttonClass('primary', true)), 'the chosen one').not.toContain('disabled:opacity-30')
+    expect(classes(buttonClass('primary', true)), 'the chosen one').toContain('disabled:cursor-default')
+  })
+
+  it("draws a chip as a segment of the chat's toggle, raised while picked, an unpicked one faded only when it cannot be picked", () => {
+    expect(classes(chipClass(true)), 'a picked chip').toEqual(expect.arrayContaining(['bg-white', 'shadow-sm']))
+    expect(classes(chipClass(true)), 'a picked chip').not.toContain('disabled:opacity-50')
+    expect(classes(chipClass(false)), 'an unpicked chip').not.toContain('bg-white')
+    expect(classes(chipClass(false)), 'an unpicked chip').toContain('disabled:opacity-50')
+  })
+
+  it('marks a picked row, and on a closed card fades only the rows not picked', () => {
+    expect(classes(choiceRowClass(true, false)), 'picked, open').toEqual(expect.arrayContaining(['border-gray-900', 'cursor-pointer']))
+    expect(classes(choiceRowClass(false, false)), 'unpicked, open').toEqual(expect.arrayContaining(['border-gray-300', 'cursor-pointer']))
+    expect(classes(choiceRowClass(true, true)), 'picked, closed').not.toContain('opacity-50')
+    expect(classes(choiceRowClass(false, true)), 'unpicked, closed').toContain('opacity-50')
+  })
+
+  it("sizes fields and rows as the chat's editor, buttons as its Send Now, smaller than a form's", () => {
+    const field = fieldClass(false, { size: 'chat' }).split(/\s+/)
+    for (const [name, list] of [['field', field], ['row', choiceRowClass(false, false)]]) {
+      expect(classes(list), name).toEqual(expect.arrayContaining(['text-[13px]', 'leading-[18px]', 'py-1.5', 'rounded-sm', 'border']))
+    }
+    for (const variant of ['primary', 'borderless', undefined]) {
+      expect(classes(buttonClass(variant)), `a ${variant ?? 'default'} button`).toEqual(expect.arrayContaining(['text-[10px]', 'uppercase', 'py-1', 'rounded-sm', 'border']))
+    }
+    expect(fieldClass(), 'a form field').toContain('py-2.5')
+  })
+})
+
+describe('a2ui decision buttons', () => {
+  const components = new Map([
+    ['ok', { id: 'ok', component: 'Button' }],
+    ['no', { id: 'no', component: 'Button' }],
+    ['words', { id: 'words', component: 'Text' }],
+  ])
+
+  it('puts a row of Buttons only on the right, unless the agent placed it', () => {
+    const row = (props) => ({ component: 'Row', ...props })
+    const plain = ['justify-start', 'items-stretch', 'gap-x-3']
+    expect(rowClasses(row({ children: ['ok', 'no'] }), components), 'Buttons only').toEqual(['justify-end', 'items-stretch', 'gap-x-2'])
+    expect(rowClasses(row({ children: ['ok', 'no'], justify: 'start' }), components), 'placed by the agent').toEqual(plain)
+    expect(rowClasses(row({ children: ['ok', 'words'] }), components), 'a Button beside text').toEqual(plain)
+    expect(rowClasses(row({ children: [] }), components), 'no children').toEqual(plain)
+    expect(rowClasses(row({ children: { componentId: 'ok', path: '/list' } }), components), 'a template').toEqual(plain)
+    expect(rowClasses(row({ children: ['missing'] }), components), 'an unknown child').toEqual(plain)
+    expect(isDecisionRow(undefined, components), 'no component').toBe(false)
+  })
+
+  it("orders a decision row's primary Buttons last, as the chat's Send Now, and leaves other rows alone", () => {
+    const withPrimary = new Map([...components, ['go', { id: 'go', component: 'Button', variant: 'primary' }]])
+    const entries = (...ids) => ids.map((id) => ({ id, key: id }))
+    const ids = (list) => list.map((e) => e.id)
+    expect(ids(rowOrder({ component: 'Row', children: ['go', 'ok', 'no'] }, withPrimary, entries('go', 'ok', 'no'))), 'a decision').toEqual(['ok', 'no', 'go'])
+    expect(ids(rowOrder({ component: 'Row', children: ['go', 'words'] }, withPrimary, entries('go', 'words'))), 'not a decision').toEqual(['go', 'words'])
+  })
+
+  it('puts a Button alone on its line on the right, and sets off a decision row closing a Column with a dashed line', () => {
+    const withRows = new Map([...components,
+      ['actions', { id: 'actions', component: 'Row', children: ['ok', 'no'] }],
+      ['mixed', { id: 'mixed', component: 'Row', children: ['ok', 'words'] }]])
+    expect(columnChildClass({}, withRows, 'ok'), 'a Button').toBe('self-end')
+    expect(columnChildClass({ align: 'start' }, withRows, 'ok'), 'a Button the Column aligns').toBeUndefined()
+    expect(columnChildClass({}, withRows, 'words'), 'a Text').toBeUndefined()
+    expect(columnChildClass({}, withRows, 'actions', true), 'the closing decision row').toContain('border-dashed')
+    expect(columnChildClass({}, withRows, 'actions', false), 'a decision row above other things').toBeUndefined()
+    expect(columnChildClass({}, withRows, 'mixed', true), 'a closing row that is not a decision').toBeUndefined()
   })
 })

@@ -74,7 +74,7 @@ describe('Button', () => {
     ], { msg: '  Ship it  ', who: 'me' }))
     const b = q(el, 'a2ui-button')
     expect(b.textContent.trim()).toBe('Approve')
-    expect(b.className).toContain('bg-gray-900')
+    expect(b.classList.contains('bg-black'), "a primary Button is the app's primary button").toBe(true)
     b.click()
     await nextTick()
     expect(actions).toEqual([{
@@ -133,6 +133,29 @@ describe('Button', () => {
     expect(go.disabled).toBe(false)
   })
 
+  it('spins on the pressed Button only, while its answer is on its way', async () => {
+    const { el, props, actions } = mount(card([col('go', 'stop'), button('go', 'go'), text('go-label', 'Go'), button('stop', 'stop'), text('stop-label', 'Stop')]))
+    const [go, stop] = qa(el, 'a2ui-button')
+    go.click()
+    expect(actions.map((a) => a.name), 'what was sent').toEqual(['go'])
+    props.busy = true
+    await nextTick()
+    expect(q(go, 'a2ui-sending'), 'the spinner on the pressed Button').not.toBeNull()
+    expect(go.getAttribute('aria-busy'), 'the pressed Button, busy for a screen reader').toBe('true')
+    expect(q(stop, 'a2ui-sending'), 'no spinner on the other Button').toBeNull()
+    expect(stop.getAttribute('aria-busy'), 'the other Button, not busy').toBeNull()
+    props.busy = false
+    await nextTick()
+    expect(q(go, 'a2ui-sending'), 'the spinner, once sent').toBeNull()
+  })
+
+  it('ties a failing check to its Button for a screen reader', () => {
+    const { el } = mount(card([col('go'), button('go', 'go', { '@checks': [{ condition: { '@path': '/no' }, message: 'Not yet' }] }), text('go-label', 'Go')]))
+    const go = q(el, 'a2ui-button')
+    const described = el.querySelector(`[id="${go.getAttribute('aria-describedby')}"]`)
+    expect(described?.textContent.trim(), "the Button's description").toBe('Not yet')
+  })
+
   it('on an answered card marks the chosen one and sends nothing', async () => {
     const metadata = card([col('yes', 'no'), button('yes', 'approve'), text('yes-label', 'Yes'), button('no', 'reject'), text('no-label', 'No')],
       null, { answered: { name: 'approve', at: '2026-11-25T00:00:00Z' } })
@@ -145,6 +168,8 @@ describe('Button', () => {
     expect(no.dataset.chosen).toBeUndefined()
     expect(no.getAttribute('aria-pressed')).toBe('false')
     expect(yes.disabled && no.disabled).toBe(true)
+    expect(yes.classList.contains('disabled:opacity-30'), 'the chosen Button, at full strength').toBe(false)
+    expect(no.classList.contains('disabled:opacity-30'), 'the other Button, faded').toBe(true)
     yes.click()
     expect(actions).toEqual([])
   })
@@ -304,7 +329,8 @@ describe('ChoicePicker', () => {
     chips[0].click(); await nextTick()
     chips[2].click(); await nextTick()
     expect(chips.map((c) => c.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'true'])
-    expect(chips[0].querySelector('svg')).not.toBeNull()
+    expect(chips[0].classList.contains('shadow-sm'), 'a picked chip, raised').toBe(true)
+    expect(chips[1].classList.contains('shadow-sm'), 'a chip not picked, lowered').toBe(false)
   })
 
   it('picks one chip, as a radio group', async () => {
@@ -514,7 +540,8 @@ describe('a read-only list of boxes', () => {
       col('p'), { id: 'p', component: 'ChoicePicker', options: [{ label: 'A', value: 'a' }], value: { '@path': '/p' } },
     ], { p: ['a'] }, { answered: {} }))
     const box = q(el, 'a2ui-choice')
-    expect(box.classList.contains('cursor-not-allowed')).toBe(true)
+    expect(box.classList.contains('cursor-default')).toBe(true)
+    expect(box.classList.contains('opacity-50'), 'the pick, at full strength').toBe(false)
     expect(box.querySelector('input').checked).toBe(true)
     // An answer that named no Button (answered elsewhere) marks none.
     expect(q(el, 'a2ui-surface').dataset.answered).toBe('true')
