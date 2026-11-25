@@ -35,6 +35,17 @@ export function precacheTotal(manifest) {
   return new Set(manifest.map((entry) => (typeof entry === 'string' ? entry : entry.url))).size
 }
 
+/**
+ * Has a newly activated worker take over every open page.
+ *
+ * A page the old worker controlled changes over without this, but one it did
+ * not, such as a hard reload, does not: no `controllerchange` arrives, and its
+ * "Restarting to update…" never ends.
+ */
+export function claimOpenPages(worker) {
+  worker.addEventListener('activate', (event) => event.waitUntil(worker.clients.claim()))
+}
+
 /** A 0–100 percentage from a progress message, or null when there is no total. */
 export function percentOf({ done, total }) {
   if (!total) return null
