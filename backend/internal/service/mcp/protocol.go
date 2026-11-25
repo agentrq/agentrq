@@ -116,13 +116,15 @@ type Annotations struct {
 
 // ServerCapabilities is what a server says it can do.
 type ServerCapabilities struct {
-	Experimental map[string]any          `json:"experimental,omitempty"`
-	Extensions   map[string]any          `json:"extensions,omitempty"`
-	Completions  *CompletionCapabilities `json:"completions,omitempty"`
-	Logging      *LoggingCapabilities    `json:"logging,omitempty"`
-	Prompts      *PromptCapabilities     `json:"prompts,omitempty"`
-	Resources    *ResourceCapabilities   `json:"resources,omitempty"`
-	Tools        *ToolCapabilities       `json:"tools,omitempty"`
+	Experimental map[string]any `json:"experimental,omitempty"`
+	Extensions   map[string]any `json:"extensions,omitempty"`
+	// A2UI is where A2UI's MCP binding advertises the cards a side draws.
+	A2UI        map[string]any          `json:"a2ui,omitempty"`
+	Completions *CompletionCapabilities `json:"completions,omitempty"`
+	Logging     *LoggingCapabilities    `json:"logging,omitempty"`
+	Prompts     *PromptCapabilities     `json:"prompts,omitempty"`
+	Resources   *ResourceCapabilities   `json:"resources,omitempty"`
+	Tools       *ToolCapabilities       `json:"tools,omitempty"`
 }
 
 // clone is a copy that changing does not change c.
@@ -130,6 +132,7 @@ func (c *ServerCapabilities) clone() *ServerCapabilities {
 	cp := *c
 	cp.Experimental = shallowClone(c.Experimental)
 	cp.Extensions = shallowClone(c.Extensions)
+	cp.A2UI = shallowClone(c.A2UI)
 	cp.Completions = shallowClonePtr(c.Completions)
 	cp.Logging = shallowClonePtr(c.Logging)
 	cp.Prompts = shallowClonePtr(c.Prompts)

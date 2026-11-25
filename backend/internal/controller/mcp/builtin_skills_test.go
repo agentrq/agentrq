@@ -43,7 +43,7 @@ func TestWorkspaceServer_ServesTheWorkspaceSkill(t *testing.T) {
 	}).AnyTimes()
 	ps := NewWorkspaceServer(
 		100, 0, "user", "http://localhost",
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, nil,
 	)
 	ps.pubsub = pub
@@ -163,9 +163,13 @@ func exampleFits(a ToolAction, payload map[string]any) error {
 	return decodePayload(payload, reflect.New(a.payload).Interface())
 }
 
+// referenceTopics are the reference files named after a topic rather than a
+// tool, each with the tool its examples call.
+var referenceTopics = map[string]string{"a2ui": "task", "a2ui-buttons": "task", "a2ui-charts": "task"}
+
 // Every example in the workspace skill is a call the server accepts: in
 // references/<tool>.md, one of that tool's actions with its real payload
-// fields, every action having one.
+// fields, every action having one; in a topic's file, calls of its tool.
 func TestBuiltinSkills_ExamplesAreRealCalls(t *testing.T) {
 	tools := map[string][]ToolAction{}
 	for _, tool := range (&WorkspaceServer{}).tools() {
@@ -184,8 +188,12 @@ func TestBuiltinSkills_ExamplesAreRealCalls(t *testing.T) {
 		if len(calls) == 0 {
 			t.Errorf("%s has no examples", file)
 		}
-		candidates := tools[strings.TrimSuffix(path.Base(file), ".md")]
-		for _, a := range candidates {
+		name := strings.TrimSuffix(path.Base(file), ".md")
+		candidates := tools[name]
+		if tool, ok := referenceTopics[name]; ok {
+			candidates = tools[tool]
+		}
+		for _, a := range tools[name] {
 			if !slices.ContainsFunc(calls, func(c exampleCall) bool { return c.Action == a.Name }) {
 				t.Errorf("%s has no example of %s", file, a.Name)
 			}

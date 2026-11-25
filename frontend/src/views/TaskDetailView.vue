@@ -302,7 +302,11 @@
                  <!-- How long the agent took over what it is answering; room for it on a wide screen only. -->
                  <span v-if="workedFor[m.id]" class="hidden @min-[40rem]:inline text-[9px] font-semibold text-gray-400 dark:text-zinc-500" title="Time since the message this answers">· worked for {{ workedFor[m.id] }}</span>
                </div>
-               <MarkdownBody v-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
+               <!-- A card the agent drew, or its question drawn as one; the raw toggle shows its text, which every card carries. -->
+               <A2uiSurface v-if="isCardMetadata(m.metadata) && !rawMessages.has(m.id)" :metadata="m.metadata" :text="m.text"
+                            :attachments="m.attachments" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200"
+                            :read-only="cardReadOnly(m)" :busy="cardsSending.has(m.id)" @action="sendCardAction(m, $event)" />
+               <MarkdownBody v-else-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
                <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
 
                <!-- Permission Request (agent message) -->
@@ -405,7 +409,8 @@
                </div>
 
                <!-- Elicitation Request (agent message) -->
-               <div v-else-if="m.metadata?.type === 'elicitation_request' && m.metadata.status === 'pending'" class="mt-4 border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden shadow-sm">
+               <!-- A question drawn as a card is answered on the card: this box is only for one nobody waits for. -->
+               <div v-else-if="m.metadata?.type === 'elicitation_request' && m.metadata.status === 'pending' && (m.metadata.mode !== 'a2ui' || isElicitExpired(m, elicitNow))" class="mt-4 border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden shadow-sm">
                  <div class="bg-gray-50 dark:bg-zinc-800/80 border-b border-gray-200 dark:border-zinc-700 px-3 py-2 flex items-center justify-between gap-3">
                    <div class="flex items-center gap-2">
                      <svg class="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -512,7 +517,7 @@
                </div>
 
                <!-- Elicitation closed: a checklist of what was asked, no card -->
-               <div v-else-if="m.metadata?.type === 'elicitation_request'" class="mt-4 min-w-0">
+               <div v-else-if="m.metadata?.type === 'elicitation_request' && m.metadata.status !== 'pending'" class="mt-4 min-w-0">
                  <template v-if="elicitOutcome(m) === 'answered' || elicitOutcome(m) === 'missed'">
                    <ol class="min-w-0">
                      <li v-for="(row, i) in elicitRows(m)" :key="row.key" class="relative grid grid-cols-[15px_minmax(0,1fr)] gap-x-2.5 min-w-0" :class="i < elicitRows(m).length - 1 ? 'pb-3' : ''">
@@ -681,8 +686,8 @@
                <div v-else dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
                <!-- Cancel / Send Now controls on the pending message -->
                <div v-if="m._pending" class="flex items-center gap-2 mt-3 pt-3 border-t border-dashed border-gray-300 dark:border-zinc-600 justify-end">
-                 <button type="button" @click="cancelPendingSend" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Cancel</button>
-                 <button type="button" @click="sendPendingNow" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Send Now</button>
+                 <button type="button" @click="cancelPendingSend" :class="CHAT_SECONDARY_BUTTON">Cancel</button>
+                 <button type="button" @click="sendPendingNow" :class="CHAT_PRIMARY_BUTTON">Send Now</button>
                </div>
                <!-- Edit / Delete / Send Now on a queued message. Send Now does
                     not post it mid-turn, which the gateway would only chain
@@ -690,13 +695,13 @@
                     it first. -->
                <div v-else-if="m._queued" class="flex items-center gap-2 mt-3 pt-3 border-t border-dashed border-gray-300 dark:border-zinc-600 justify-end">
                  <template v-if="editingQueuedId === m._queuedId">
-                   <button type="button" @click="cancelEditingQueued" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Cancel</button>
-                   <button type="button" @click="saveEditedQueued" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Save</button>
+                   <button type="button" @click="cancelEditingQueued" :class="CHAT_SECONDARY_BUTTON">Cancel</button>
+                   <button type="button" @click="saveEditedQueued" :class="CHAT_PRIMARY_BUTTON">Save</button>
                  </template>
                  <template v-else>
-                   <button type="button" @click="discardQueued(m)" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Delete</button>
-                   <button type="button" @click="startEditingQueued(m)" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Edit</button>
-                   <button type="button" @click="sendQueuedNow(m)" title="Stop the agent and send this next" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Send Now</button>
+                   <button type="button" @click="discardQueued(m)" :class="CHAT_SECONDARY_BUTTON">Delete</button>
+                   <button type="button" @click="startEditingQueued(m)" :class="CHAT_SECONDARY_BUTTON">Edit</button>
+                   <button type="button" @click="sendQueuedNow(m)" title="Stop the agent and send this next" :class="CHAT_PRIMARY_BUTTON">Send Now</button>
                  </template>
                </div>
                <!-- Attachments on human message -->
@@ -1031,7 +1036,7 @@ import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { downloadAttachment, isInlineImage } from '../composables/useAttachmentDownload';
 import { useEscapeKey } from '../composables/useEscapeKey';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT, TELEMETRY_UI_PLAN_COMMENT, TELEMETRY_UI_TASK_LINK_OPEN, TELEMETRY_UI_AUTOSCROLL_PAUSE } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, sendA2uiAction, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT, TELEMETRY_UI_PLAN_COMMENT, TELEMETRY_UI_TASK_LINK_OPEN, TELEMETRY_UI_AUTOSCROLL_PAUSE } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
@@ -1069,7 +1074,11 @@ import OwnerAvatar from '../components/OwnerAvatar.vue';
 import CloneTaskModal from '../components/CloneTaskModal.vue';
 import { elicitOutcome, elicitRows, isElicitExpired } from '../composables/useElicitAnswer';
 import { withRequestAnswered } from '../composables/useRequestAnswer';
+import { cardReadOnly as cardReadOnlyFor, useCardActions } from '../composables/useCardActions';
 import MarkdownBody from '../components/MarkdownBody.vue';
+import A2uiSurface from '../components/a2ui/A2uiSurface.vue';
+import { CHAT_PRIMARY_BUTTON, CHAT_SECONDARY_BUTTON } from '../utils/formStyles';
+import { isCardMetadata } from '../a2ui/surface.js';
 import TaskPlanPanel from '../components/TaskPlanPanel.vue';
 import TaskLinksPanel from '../components/TaskLinksPanel.vue';
 import ChatMinimap from '../components/ChatMinimap.vue';
@@ -1928,6 +1937,22 @@ async function submitElicitation(m, action) {
 function markAnswered(requestId, answer) {
   task.value = cacheTaskUpdate(sharedCache(), task.value, withRequestAnswered(task.value, requestId, answer));
 }
+
+// A card's Button clicks — see useCardActions.
+const { cardsSending, sendCardAction } = useCardActions({
+  // Looked up at the click: a test's mock of the api need not carry them.
+  api: {
+    respondToElicitation: (...a) => respondToElicitation(...a),
+    sendA2uiAction: (...a) => sendA2uiAction(...a),
+  },
+  ids: () => ({ workspaceId: workspaceId.value, taskId: taskId.value }),
+  task,
+  applyTaskUpdate,
+  markAnswered,
+  notifySuccess,
+  notifyError,
+});
+const cardReadOnly = (m) => cardReadOnlyFor(m, { archived: !!workspace.value?.archivedAt, teamMode: isTeamMode.value, now: elicitNow.value });
 
 async function updateStatus(newStatus) {
   try {

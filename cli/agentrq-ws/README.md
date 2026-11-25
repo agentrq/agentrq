@@ -48,7 +48,7 @@ Node 20.6 or newer.
 | `task create <title>` | Create a task, with `--clear-context` to send `/clear` to the agent first |
 | `task status <taskId> <status>` | Set a task's status |
 | `task help [action]` | The server's help for its `task` tool: every action, or one action's payload |
-| `reply <taskId> <text>` | Send a message to a task |
+| `reply <taskId> <text>` | Send a message to a task; `--ui @card.json` adds an A2UI v1.0 card, the text its fallback |
 | `attachment get <id> --task <taskId>` | Download an attachment to a file |
 | `memory load [name]` | Read a workspace memory (defaults to the index); its version goes to stderr |
 | `memory save [name] --content … [--version N]` | Replace a workspace memory; `--version` is the one `memory load` printed, required to change one that exists |
@@ -65,7 +65,7 @@ Node 20.6 or newer.
 | `pano delete <id>` | Delete a Pano doc |
 | `pano help [action]` | The server's help for its `pano` tool: every action, or one action's payload |
 | `event publish <name>` | Publish a named event |
-| `ask <taskId> <message>` | Ask the human a question and wait |
+| `ask <taskId> <message>` | Ask the human a question and wait; `--ui @card.json` asks with an A2UI v1.0 card whose Button answers |
 | `site-tools [q]` | List the websites shared with this workspace from the Chrome extension, and their tools' names and descriptions; `q` ranks the tools, `--pattern` filters them by a regular expression, `--limit`/`--offset` page |
 | `site-tool <site> <tool>` | Show one shared website's tool in full, with its input schema |
 | `call-site-tool <site> <tool> --task <taskId>` | Run a shared website's tool in the human's Chrome, with `--args '{…}'` |
@@ -98,6 +98,14 @@ agentrq-ws task create "Review the design" --body @brief.md --attach ./mock.png
 The server takes at most 4 MiB per request, and base64 adds a third, so a file
 over about 3 MiB is refused before anything is sent: gzip it first. Files that
 fit only on their own go one `reply` each.
+
+A card goes with `--ui`, A2UI v1.0 messages as a JSON array; its images name
+files attached to the same reply as `attachment:<filename>`, so they must fit
+one request together:
+
+```bash
+agentrq-ws reply 0isnjTCkpW5 "PR opened, coverage chart attached" --ui @card.json --attach ./chart.png
+```
 
 **Downloading** writes a file and prints where it went. With no `--out` it lands
 in the OS temp directory:

@@ -274,3 +274,24 @@ func TestGetTask_MessagesSinceKeepsOnlyLaterMessages(t *testing.T) {
 		t.Errorf("messages = %q, want %q", kept, want)
 	}
 }
+
+// A question drawn as a card is a question like any other: it is in the
+// thread, by its text, and the task awaits its answer.
+func TestTaskMessages_ACardQuestionIsInTheThread(t *testing.T) {
+	question := message(1, "agent", "Release v1.2 from main?", map[string]any{
+		"type": "elicitation_request", "mode": "a2ui", "status": "pending", "surfaceId": "release", "messages": []any{map[string]any{"version": "1.0"}},
+	})
+	task := entity.Task{ID: testTriggerID, WorkspaceID: testWorkspace, Status: "ongoing", Messages: []entity.Message{
+		message(0, "human", "Release it.", nil), question,
+	}}
+	srv := taskServer(&mockTaskCrud{getTask: func(context.Context, entity.GetTaskRequest) (*entity.GetTaskResponse, error) {
+		return &entity.GetTaskResponse{Task: task}, nil
+	}})
+	got := taskMessages(t, srv, map[string]any{})
+	if want := []string{"Release it.", "Release v1.2 from main?"}; !slices.Equal(texts(got.Messages), want) {
+		t.Errorf("messages = %q, want %q", texts(got.Messages), want)
+	}
+	if state := replyState(task.Messages); !state.AwaitingReply || state.LastMessageBy != "agent" {
+		t.Errorf("state = %+v, want awaiting the human's answer", state)
+	}
+}

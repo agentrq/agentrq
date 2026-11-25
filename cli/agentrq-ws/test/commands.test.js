@@ -14,6 +14,7 @@ import {
   collectAttachments,
   findCommand,
   parseFaq,
+  oneStdin,
   readStdin,
   resolveText,
 } from '../src/commands.js'
@@ -76,6 +77,21 @@ test('resolveText passes an inline value through', async () => {
 test('resolveText reads - from stdin', async () => {
   // Prose does not belong in a shell argument.
   assert.equal(await resolveText('-', { stdin: stdinOf('from stdin'), what: 'x' }), 'from stdin')
+})
+
+test('oneStdin lets one input read stdin, and refuses two', () => {
+  oneStdin({ a: '-', b: 'inline', c: undefined })
+  assert.throws(() => oneStdin({ 'the text': '-', '--ui': '-' }), /only one input can come from stdin \(-\): the text and --ui both ask for it/)
+})
+
+test('a command never reads stdin for two inputs', async () => {
+  for (const [path, positionals, values] of [
+    ['reply', ['t1', '-'], { ui: '-' }],
+    ['ask', ['t1', 'Pick one'], { schema: '-', ui: '-' }],
+    ['pano edit', ['d1'], { version: '1', ops: '-', append: '-' }],
+  ]) {
+    await assert.rejects(() => invoke(path, { positionals, values, stdin: stdinOf('[]') }), /only one input can come from stdin/, path)
+  }
 })
 
 test('resolveText refuses - with no stdin', async () => {
@@ -328,6 +344,53 @@ test('task create refuses attachments that do not fit one request', async () => 
     /attach fewer here and send the rest with reply/,
   )
   assert.deepEqual(client.calls, [])
+})
+
+test('reply sends an A2UI card from a file, beside its text and files', async () => {
+  const dir = scratch()
+  const card = join(dir, 'card.json')
+  const ui = [{ version: '1.0', createSurface: { surfaceId: 'pr-1', catalogId: 'basic' } }]
+  writeFileSync(card, JSON.stringify(ui))
+  const chart = join(dir, 'chart.png')
+  writeFileSync(chart, 'png')
+  const client = stubClient()
+
+  await invoke('reply', { positionals: ['0isnjTCkpW5', 'PR opened'], values: { ui: `@${card}`, attach: [chart] }, client })
+
+  const { args } = client.calls[0]
+  assert.equal(args.text, 'PR opened')
+  assert.deepEqual(args.ui, ui)
+  assert.equal(args.attachments[0].filename, 'chart.png')
+  assert.deepEqual(client.legacy[0][1].ui, ui)
+})
+
+test('reply sends an inline A2UI card without files', async () => {
+  const client = stubClient()
+  await invoke('reply', { positionals: ['0isnjTCkpW5', 'Done'], values: { ui: '[]' }, client })
+  assert.deepEqual(client.calls[0].args.ui, [])
+  assert.deepEqual(client.legacy[0], ['reply', { chatId: '0isnjTCkpW5', text: 'Done', ui: [] }])
+})
+
+test('reply refuses a --ui that is not JSON', async () => {
+  await assert.rejects(
+    () => invoke('reply', { positionals: ['0isnjTCkpW5', 'Done'], values: { ui: '{nope' }, client: stubClient() }),
+    /--ui is not valid JSON/,
+  )
+})
+
+test('reply refuses a card whose files do not fit one request', async () => {
+  const dir = scratch()
+  const paths = ['a.wasm', 'b.wasm'].map((name) => {
+    const path = join(dir, name)
+    writeFileSync(path, Buffer.alloc(2 << 20))
+    return path
+  })
+  const client = stubClient()
+  await assert.rejects(
+    () => invoke('reply', { positionals: ['0isnjTCkpW5', 'built'], values: { ui: '[]', attach: paths }, client }),
+    /a card needs its files in its own reply/,
+  )
+  assert.equal(client.calls.length, 0)
 })
 
 test('reply reads its text from a file', async () => {
@@ -605,7 +668,29 @@ test('ask takes a full schema as JSON', async () => {
   assert.deepEqual(client.calls[0].args.requestedSchema, schema)
 })
 
+test('ask infers a2ui mode from --ui and sends the card', async () => {
+  const client = stubClient()
+  const card = [{ version: '1.0', createSurface: { surfaceId: 'q' } }]
+  await invoke('ask', {
+    positionals: ['0isnjTCkpW5', 'Release?'],
+    values: { ui: JSON.stringify(card) },
+    client,
+  })
+  const { args } = client.calls[0]
+  assert.equal(args.mode, 'a2ui')
+  assert.deepEqual(args.ui, card)
+  assert.equal(args.requestedSchema, undefined)
+})
+
 test('ask refuses an unusable question', async () => {
+  await assert.rejects(
+    () => invoke('ask', { positionals: ['0isnjTCkpW5', 'Q'], values: { mode: 'a2ui' } }),
+    /mode=a2ui needs --ui/,
+  )
+  await assert.rejects(
+    () => invoke('ask', { positionals: ['0isnjTCkpW5', 'Q'], values: { ui: '{nope' } }),
+    /--ui is not valid JSON/,
+  )
   await assert.rejects(
     () => invoke('ask', { positionals: ['0isnjTCkpW5', 'Q'], values: { mode: 'url' } }),
     /mode=url needs --url/,

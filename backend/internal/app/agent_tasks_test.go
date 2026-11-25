@@ -19,7 +19,6 @@ import (
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	mock_repository "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
-	"github.com/agentrq/agentrq/backend/internal/service/storage"
 )
 
 type agentTasksEnv struct {
@@ -42,14 +41,10 @@ func newAgentTasks(t *testing.T) agentTasksEnv {
 		*actions = append(*actions, req.Event.(entity.CRUDEvent).Action)
 		return &pubsub.PublishResponse{}, nil
 	})
-	store, err := storage.New(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
 	bus := eventbus.New()
 	owner := monoflake.ID(memUser).String()
 	return agentTasksEnv{
-		a:       agentTasks{repo: repo, pubsub: ps, bus: bus, storage: store, ids: ids, workspaceID: memParent, contentID: memParent, owner: owner},
+		a:       agentTasks{repo: repo, pubsub: ps, bus: bus, ids: ids, workspaceID: memParent, owner: owner},
 		repo:    repo,
 		ids:     ids,
 		stream:  bus.Subscribe(memParent, owner),
@@ -69,7 +64,6 @@ func TestAgentTasksReply(t *testing.T) {
 	t.Run("the first reply starts the task, naming only its status", func(t *testing.T) {
 		e := newAgentTasks(t)
 		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(row("notstarted"), nil)
-		e.ids.EXPECT().NextID().Return(int64(7))
 		e.ids.EXPECT().NextID().Return(int64(8))
 		e.repo.EXPECT().UpdateTask(ctx, gomock.Any(), "Status").DoAndReturn(func(_ context.Context, m model.Task, _ ...string) (model.Task, error) {
 			if m.Status != "ongoing" {
@@ -82,14 +76,14 @@ func TestAgentTasksReply(t *testing.T) {
 				t.Errorf("message = %+v", msg)
 			}
 			var atts []entity.Attachment
-			if err := json.Unmarshal(msg.Attachments, &atts); err != nil || len(atts) != 1 || atts[0].Data != "" {
-				t.Errorf("attachments = %s, %v; want one, stored and without its data", msg.Attachments, err)
+			if err := json.Unmarshal(msg.Attachments, &atts); err != nil || len(atts) != 1 || atts[0].ID != "0a" || atts[0].URL != "https://files/a.txt" {
+				t.Errorf("attachments = %s, %v; want the one the server saved, as it was saved", msg.Attachments, err)
 			}
 			return nil
 		})
 		e.repo.EXPECT().GetTask(ctx, memParent, int64(101), memUser).Return(row("ongoing"), nil)
 
-		id, err := e.a.reply(call, chatID, "done", []entity.Attachment{{Filename: "a.txt", MimeType: "text/plain", Data: "aGk="}}, map[string]string{"k": "v"})
+		id, err := e.a.reply(call, chatID, "done", []entity.Attachment{{ID: "0a", Filename: "a.txt", MimeType: "text/plain", URL: "https://files/a.txt"}}, map[string]string{"k": "v"})
 		if err != nil || id != 8 {
 			t.Fatalf("reply = %d, %v", id, err)
 		}
@@ -172,4 +166,61 @@ func equalActions(got, want []entity.Action) bool {
 		}
 	}
 	return true
+}
+
+// An edit changes the message and reloads the task's page; nothing is
+// published, so nobody is notified.
+func TestAgentTasksEditMessage(t *testing.T) {
+	ctx := context.Background()
+	row := model.Task{ID: 101, WorkspaceID: memParent, UserID: memUser, Status: "ongoing"}
+	edit := func(model.Message) (string, []byte, error) { return "edited", nil, nil }
+
+	t.Run("an edit reloads the task without a notification", func(t *testing.T) {
+		e := newAgentTasks(t)
+		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(row, nil)
+		e.repo.EXPECT().EditMessage(ctx, int64(101), int64(555), gomock.Any()).DoAndReturn(func(_ context.Context, _, _ int64, f func(model.Message) (string, []byte, error)) error {
+			if text, _, _ := f(model.Message{}); text != "edited" {
+				t.Errorf("the repository got another edit: %q", text)
+			}
+			return nil
+		})
+		e.repo.EXPECT().GetTask(ctx, memParent, int64(101), memUser).Return(row, nil)
+		if err := e.a.editMessage(ctx, 101, 555, edit); err != nil {
+			t.Fatal(err)
+		}
+		if len(*e.actions) != 0 {
+			t.Errorf("published %v, want nothing", *e.actions)
+		}
+		select {
+		case <-e.stream:
+		default:
+			t.Error("the task was not put on the stream")
+		}
+	})
+
+	t.Run("refusals and storage failures", func(t *testing.T) {
+		e := newAgentTasks(t)
+		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(model.Task{ID: 101, WorkspaceID: memFork, UserID: memUser}, nil)
+		if err := e.a.editMessage(ctx, 101, 555, edit); err == nil {
+			t.Error("a task in another workspace was edited")
+		}
+
+		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(row, nil)
+		e.repo.EXPECT().EditMessage(ctx, int64(101), int64(555), gomock.Any()).Return(errRepo)
+		if err := e.a.editMessage(ctx, 101, 555, edit); err != errRepo {
+			t.Errorf("err = %v, want %v", err, errRepo)
+		}
+
+		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(row, nil)
+		e.repo.EXPECT().EditMessage(ctx, int64(101), int64(555), gomock.Any()).Return(nil)
+		e.repo.EXPECT().GetTask(ctx, memParent, int64(101), memUser).Return(model.Task{}, errRepo)
+		if err := e.a.editMessage(ctx, 101, 555, edit); err != nil {
+			t.Errorf("err = %v; the edit was made, only the reload failed", err)
+		}
+		select {
+		case line := <-e.stream:
+			t.Errorf("unexpected event: %s", line)
+		default:
+		}
+	})
 }

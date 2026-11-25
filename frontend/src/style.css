@@ -258,3 +258,8 @@ a.pano-assignee { cursor: pointer; }
 .md-body th, .md-body td { border: 1px solid #e5e7eb; padding: 0.35em 0.65em; text-align: left; }
 .md-body th { background: rgba(0,0,0,0.04); font-weight: 600; }
 .md-body img { max-width: 100%; border-radius: 4px; margin: 0.4em 0; }
+
+/* An A2UI card's value the agent just changed in place, marked for a moment. */
+@keyframes a2ui-changed { from { background-color: rgba(250, 204, 21, 0.35); } to { background-color: transparent; } }
+.a2ui-changed { animation: a2ui-changed 1.6s ease-out; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { .a2ui-changed { animation: none; background-color: rgba(250, 204, 21, 0.2); } }

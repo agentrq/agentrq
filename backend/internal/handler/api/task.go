@@ -7,6 +7,7 @@ package api
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -41,6 +42,7 @@ const (
 	_routePathAllowAll    = "/workspaces/:id/tasks/:taskID/allow_all"
 	_routePathPermission  = "/workspaces/:id/tasks/:taskID/permission"
 	_routePathElicitation = "/workspaces/:id/tasks/:taskID/elicitation"
+	_routePathA2uiAction  = "/workspaces/:id/tasks/:taskID/a2ui/actions"
 	_routePathStop        = "/workspaces/:id/tasks/:taskID/stop"
 	_routePathEvents      = "/workspaces/:id/events"
 	_routePathAttachment  = "/workspaces/:id/tasks/:taskID/attachments/:attachmentID"
@@ -71,6 +73,7 @@ func (h *handler) registerTaskRoutes() error {
 	h.router.Put(_routePathScheduled, h.updateScheduledTask())
 	h.router.Post(_routePathPermission, h.sendPermissionVerdict())
 	h.router.Post(_routePathElicitation, h.respondToElicitation())
+	h.router.Post(_routePathA2uiAction, h.sendA2uiAction())
 	h.router.Post(_routePathStop, h.stopTask())
 	h.router.Delete(_routePathTask, h.deleteTask())
 	h.router.Get(_routePathEvents, h.sseEvents())
@@ -491,6 +494,51 @@ func (h *handler) replyToTask() fiber.Handler {
 		c.Status(http.StatusOK)
 		return c.Send(mapper.FromReplyToTaskResponseEntityToHTTPResponse(rs))
 	}
+}
+
+// sendA2uiAction posts a click on a card's Button as the person's reply, and
+// hands it to the agent the way a typed reply is.
+func (h *handler) sendA2uiAction() fiber.Handler {
+	return func(c fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToSendA2uiActionRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.SendA2uiAction(ctx, *rq)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+
+		srv := h.mcpManager.Get(rq.WorkspaceID, rq.UserID)
+		srv.SendChannelNotification(ctx, rq.TaskID, a2uiActionChannelContent(rq, rs.Text))
+
+		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
+			Type:    "reply.received",
+			Payload: mapper.FromEntityTaskToView(rs.Task),
+		})
+
+		c.Status(http.StatusOK)
+		return c.Send(mapper.FromSendA2uiActionResponseEntityToHTTPResponse(rs))
+	}
+}
+
+// a2uiActionChannelContent is what the agent is told of a click: the reply,
+// as typed text is, then which action on which card, for an agent that acts
+// on the name rather than the words. Never read as a slash command.
+func a2uiActionChannelContent(rq *entity.SendA2uiActionRequest, text string) string {
+	action := map[string]any{"messageId": monoflake.ID(rq.MessageID).String(), "surfaceId": rq.SurfaceID, "name": rq.Name}
+	if len(rq.Context) > 0 {
+		action["context"] = rq.Context
+	}
+	b, _ := json.Marshal(action)
+	return replyChannelContent(rq.TaskID, text, nil, nil) + "\n[A2UI action] " + string(b)
 }
 
 func (h *handler) updateTaskStatus() fiber.Handler {

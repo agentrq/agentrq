@@ -102,7 +102,8 @@ mocks:
 		backend/internal/service/mocks/pubsub \
 		backend/internal/service/mocks/config \
 		backend/internal/service/mocks/s3 \
-		backend/internal/service/mocks/avatar
+		backend/internal/service/mocks/avatar \
+		backend/internal/service/mocks/a2ui
 	@cd backend && \
 		mockgen -source=internal/repository/base/repository.go -destination=internal/service/mocks/repository/mock_repository.go -package=repository && \
 		mockgen -source=internal/service/memq/memq.go -destination=internal/service/mocks/memq/mock_memq.go -package=memq && \
@@ -118,7 +119,8 @@ mocks:
 		mockgen -source=internal/service/pubsub/pubsub.go -destination=internal/service/mocks/pubsub/mock_pubsub.go -package=pubsub && \
 		mockgen -source=internal/service/config/config.go -destination=internal/service/mocks/config/mock_config.go -package=config && \
 		mockgen -source=internal/service/s3/s3.go -destination=internal/service/mocks/s3/mock_s3.go -package=s3 && \
-		mockgen -source=internal/service/avatar/avatar.go -destination=internal/service/mocks/avatar/mock_avatar.go -package=avatar
+		mockgen -source=internal/service/avatar/avatar.go -destination=internal/service/mocks/avatar/mock_avatar.go -package=avatar && \
+		mockgen -source=internal/service/a2ui/a2ui.go -destination=internal/service/mocks/a2ui/mock_a2ui.go -package=a2ui
 
 test: mocks
 	@cd backend && go test ./internal/service/... ./internal/controller/...

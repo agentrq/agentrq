@@ -90,6 +90,9 @@ Each line says what the note will stop you getting wrong.
   revoked invitations. In team mode, the two checks every read starts from,
   why a teammate's task events carry a type of their own, and why a team's
   memory is an index built at each load.
+- **[A2UI cards](docs/agents/a2ui.md)** — the `ui` an agent's reply may
+  carry. Why `text` is still required, why media is only an attached file,
+  and why there is no `@a2ui` package.
 - **[Hooks](docs/agents/hooks.md)** — requests from outside services firing
   events through WebAssembly hooks. Why a hook URL's id is no credential, why
   the token is never cached, why a request is answered before its hook runs,

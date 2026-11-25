@@ -596,6 +596,13 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionTeamInviteRevoke, model.ActionIDTeamInviteRevoke, "team invite revoke"},
 		{entity.ActionTeamInviteDecline, model.ActionIDTeamInviteDecline, "team invite decline"},
 		{entity.ActionTeamInviteExpire, model.ActionIDTeamInviteExpire, "team invite expire"},
+		{entity.ActionA2UIReply, model.ActionIDA2UIReply, "a2ui reply"},
+		{entity.ActionA2UIAction, model.ActionIDA2UIAction, "a2ui action"},
+		{entity.ActionA2UIElicit, model.ActionIDA2UIElicit, "a2ui elicit"},
+		{entity.ActionA2UIUpdate, model.ActionIDA2UIUpdate, "a2ui update"},
+		{entity.ActionA2UISlack, model.ActionIDA2UISlack, "a2ui slack"},
+		{entity.ActionA2UIResource, model.ActionIDA2UIResource, "a2ui resource"},
+		{entity.ActionA2UIChart, model.ActionIDA2UIChart, "a2ui chart"},
 	}
 
 	for _, tc := range cases {

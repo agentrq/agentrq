@@ -597,7 +597,7 @@ func TestSendChannelNotification_EverySession(t *testing.T) {
 func TestPush_ToASessionWithNoStream(t *testing.T) {
 	ps := NewWorkspaceServer(
 		1, 0, "user", "http://localhost",
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, nil,
 	)
 	t.Cleanup(ps.Close)
@@ -740,7 +740,7 @@ func (w *plainWriter) WriteHeader(code int)        { w.code = code }
 func TestHandler_ServesAWriterThatCannotFlush(t *testing.T) {
 	ps := NewWorkspaceServer(
 		1, 0, "user", "http://localhost",
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, nil,
 	)
 	t.Cleanup(ps.Close)

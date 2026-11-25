@@ -99,6 +99,18 @@ func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
 		// Presets: the server sees every save and removal itself.
 		"preset_create",
 		"preset_delete",
+		// Cards: the server validates and stores every one itself.
+		"a2ui_reply",
+		// A click on a card is checked and stored by the server.
+		"a2ui_action",
+		// An update to a card is merged and stored by the server.
+		"a2ui_update",
+		// A card posted to Slack is posted by the server.
+		"a2ui_slack",
+		// A card that came as an embedded resource is stored by the server.
+		"a2ui_resource",
+		// A card that draws a chart is stored by the server.
+		"a2ui_chart",
 	} {
 		if _, ok := entity.ClientReportableAction(name); ok {
 			t.Errorf("%q must not be client-reportable", name)

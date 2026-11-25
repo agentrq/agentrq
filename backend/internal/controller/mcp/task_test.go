@@ -42,7 +42,7 @@ func TestTaskTool_RoutesEachActionToItsHandler(t *testing.T) {
 		{"elicit", map[string]any{"taskId": "", "message": "", "mode": ""}, "taskId and message are required"},
 		{"getAttachment", map[string]any{"taskId": "1", "attachmentId": ""}, "attachmentId is required"},
 		{"create", map[string]any{"title": "t"}, "create: payload needs body; create takes {title, body, "},
-		{"reply", map[string]any{"chatId": "1", "text": "hi"}, `reply: bad payload: unknown field "chatId"; reply takes {taskId, text, attachments?}, like {"taskId": "0kGogHmaqvZ", "text": "Tests pass; opening the pull request."}`},
+		{"reply", map[string]any{"chatId": "1", "text": "hi"}, `reply: bad payload: unknown field "chatId"; reply takes {taskId, text, attachments?, ui?}, like {"taskId": "0kGogHmaqvZ", "text": "Build passed: 412 tests.", "attachments": [{"filename": "chart.png", "mimeType": "image/png", "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}], "ui": [{"version": "1.0", "createSurface": {"surfaceId": "build", "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}}, {"version": "1.0", "updateComponents": {"surfaceId": "build", "components": [{"id": "root", "component": "Card", "child": "col"}, {"id": "col", "component": "Column", "children": ["title", "chart"]}, {"id": "title", "component": "Text", "text": "## Build passed"}, {"id": "chart", "component": "Image", "url": "attachment:chart.png"}]}}]}`},
 		{"updateStatus", map[string]any{"taskId": 1, "status": "ongoing"}, "updateStatus: bad payload: cannot unmarshal number into Go struct field UpdateTaskStatusParams.taskId of type string; updateStatus takes {taskId, status}"},
 		{"list", nil, `unknown action "list": use create, get, updateStatus, reply, elicit, getAttachment or help`},
 	} {
@@ -149,7 +149,7 @@ func connectWorkspace(t *testing.T) *mcp.ClientSession {
 	t.Helper()
 	ps := NewWorkspaceServer(
 		1, 0, "user", "http://localhost",
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, nil,
 	)
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()

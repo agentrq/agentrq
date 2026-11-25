@@ -13,7 +13,6 @@ import (
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 
-	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -22,7 +21,6 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
-	"github.com/agentrq/agentrq/backend/internal/service/storage"
 )
 
 // agentTasks is what a workspace's agent changes on its tasks over MCP.
@@ -30,14 +28,14 @@ type agentTasks struct {
 	repo        base.Repository
 	pubsub      pubsub.Service
 	bus         *eventbus.Bus
-	storage     storage.Service
 	ids         idgen.Service
 	workspaceID int64
-	contentID   int64
 	owner       string
 }
 
 // reply posts the agent's message to a task, starting a task that had not.
+// Its attachments are already saved: the MCP server saves them first, since
+// a card in the message names them by their stored links.
 func (a agentTasks) reply(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
 	// What the agent writes is put down to its workspace.
 	ctx = entity.WithAgentWorkspace(ctx, a.workspaceID)
@@ -50,8 +48,6 @@ func (a agentTasks) reply(ctx context.Context, chatID string, text string, attac
 	if err != nil {
 		return 0, err
 	}
-
-	crud.SaveAttachments(a.storage, a.ids, a.contentID, taskID, attachments)
 
 	var attsData []byte
 	if len(attachments) > 0 {
@@ -112,6 +108,26 @@ func (a agentTasks) reply(ctx context.Context, chatID string, text string, attac
 		})
 	}
 	return msgID, nil
+}
+
+// editMessage changes one of the task's messages in place, with what edit
+// makes of it. An edit is no new message: nothing is notified, and the page
+// only reloads the task.
+func (a agentTasks) editMessage(ctx context.Context, taskID, messageID int64, edit func(model.Message) (string, []byte, error)) error {
+	if _, err := workspaceTask(ctx, a.repo, a.workspaceID, a.owner, taskID); err != nil {
+		return err
+	}
+	if err := a.repo.EditMessage(ctx, taskID, messageID, edit); err != nil {
+		return err
+	}
+	latest, err := a.repo.GetTask(ctx, a.workspaceID, taskID, monoflake.IDFromBase62(a.owner).Int64())
+	if err == nil {
+		a.bus.Publish(a.workspaceID, a.owner, eventbus.Event{
+			Type:    "task.updated",
+			Payload: mapper.FromModelTaskToView(latest),
+		})
+	}
+	return nil
 }
 
 // isUsageFooter is whether a message's metadata makes it the task's usage

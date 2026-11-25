@@ -14,7 +14,7 @@ Examples:
 { "action": "updateStatus", "payload": { "taskId": "0kGogHmaqvZ", "status": "ongoing" } }
 ```
 
-- `reply`: `text` and optional `attachments`. The human sees only these.
+- `reply`: `text`, optional `attachments` and `ui`, a card: [a2ui.md](a2ui.md). The human sees only these.
 Examples:
 ```json
 { "action": "reply", "payload": { "taskId": "0kGogHmaqvZ", "text": "Tests pass; opening a PR." } }
@@ -23,7 +23,7 @@ Examples:
 npx -y @agentrq/agentrq-ws@latest reply 0kGogHmaqvZ "Screenshot attached." --attach shot.png
 ```
 
-- `elicit`: asks the human and waits: a form (`requestedSchema`) or a link (`url`).
+- `elicit`: asks the human, waits: a form (`requestedSchema`), link (`url`) or card ([a2ui-buttons.md](a2ui-buttons.md)).
 Examples:
 ```json
 { "action": "elicit", "payload": { "taskId": "0kGogHmaqvZ", "message": "Which branch?", "mode": "form", "requestedSchema": { "type": "object", "properties": { "branch": { "type": "string" } } } } }
@@ -32,7 +32,7 @@ Examples:
 - `create`: `title`, `body`, `assignee` (`human` or `agent`); optional `cronSchedule`, `attachments`, `eventId` (published on completion).
 Examples:
 ```json
-{ "action": "create", "payload": { "title": "Review the release notes", "body": "Check the v0.9.20 notes before Friday.", "assignee": "human" } }
+{ "action": "create", "payload": { "title": "Review the release notes", "body": "Before Friday.", "assignee": "human" } }
 ```
 
 - `getAttachment`: its public link, or its content (`format`: `base64`, `textContent`).

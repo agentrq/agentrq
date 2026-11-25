@@ -1925,6 +1925,27 @@ const (
 	// Autoscroll paused for a task from its chat minimap. Browser-reported:
 	// the pause lives only in the tab.
 	ActionUIAutoscrollPause Action = 142
+	// An agent's reply that carried a card drawn with A2UI. Backend-emitted:
+	// the server validated and stored it.
+	ActionA2UIReply Action = 143
+	// A person's click on a card's Button, posted as their reply.
+	// Backend-emitted: the server checked the card and stored the reply.
+	ActionA2UIAction Action = 144
+	// An agent's question to the human drawn as an A2UI card (elicit with
+	// mode a2ui). Backend-emitted: the server validated and posted it.
+	ActionA2UIElicit Action = 145
+	// An agent's reply that updated a card already in the task instead of
+	// posting one. Backend-emitted: the server merged and stored it.
+	ActionA2UIUpdate Action = 146
+	// An agent's card posted to the task's Slack thread as Block Kit rather
+	// than as its text. Backend-emitted: the server posted it.
+	ActionA2UISlack Action = 147
+	// An agent's card that came as A2UI's MCP binding, an embedded resource,
+	// rather than as ui's array. Backend-emitted: the server stored it.
+	ActionA2UIResource Action = 148
+	// An agent's card that draws a Chart, from our own catalog: a reply, a
+	// question or an update. Backend-emitted: the server stored it.
+	ActionA2UIChart Action = 149
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2213,6 +2234,20 @@ func (a Action) String() string {
 		return "team_invite_expire"
 	case ActionUIAutoscrollPause:
 		return "ui_autoscroll_pause"
+	case ActionA2UIReply:
+		return "a2ui_reply"
+	case ActionA2UIAction:
+		return "a2ui_action"
+	case ActionA2UIElicit:
+		return "a2ui_elicit"
+	case ActionA2UIUpdate:
+		return "a2ui_update"
+	case ActionA2UISlack:
+		return "a2ui_slack"
+	case ActionA2UIResource:
+		return "a2ui_resource"
+	case ActionA2UIChart:
+		return "a2ui_chart"
 	}
 	return "unknown"
 }

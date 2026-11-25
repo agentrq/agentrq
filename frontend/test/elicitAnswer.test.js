@@ -41,6 +41,11 @@ describe('elicitOutcome', () => {
     expect(elicitOutcome(closed({ status: 'cancel', mode: 'url' }))).toBe('cancelled');
     expect(elicitOutcome({})).toBe('cancelled');
   });
+
+  it('calls a question asked as a card done: its answer is shown on the card', () => {
+    expect(elicitOutcome(closed({ status: 'accept', mode: 'a2ui', content: { name: 'approve' } }))).toBe('done');
+    expect(elicitOutcome(closed({ status: 'cancel', mode: 'a2ui' }))).toBe('cancelled');
+  });
 });
 
 describe('elicitRows', () => {

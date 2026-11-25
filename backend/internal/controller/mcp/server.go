@@ -30,6 +30,7 @@ import (
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/a2ui"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
@@ -64,6 +65,10 @@ type ListTasksFunc func(ctx context.Context, filter ListTasksFilter) ([]model.Ta
 type GetNextTaskFunc func(ctx context.Context) (model.Task, error)
 type ReplyFunc func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error)
 type UpdateMessageMetadataFunc func(ctx context.Context, taskID int64, messageID int64, metadata any) error
+
+// EditMessageFunc replaces a message's text and metadata with what edit
+// makes of the message, read and written in one transaction.
+type EditMessageFunc func(ctx context.Context, taskID int64, messageID int64, edit func(model.Message) (string, []byte, error)) error
 type UpdateWorkspaceAutoAllowedToolsFunc func(ctx context.Context, tools []string) error
 
 // ClearAgentContextFunc asks the agent to start from a clean context, by
@@ -112,21 +117,24 @@ type TaskPlanStore interface {
 
 // WorkspaceServer is a per-workspace MCP server that exposes the Claude Channels protocol.
 type WorkspaceServer struct {
-	workspaceID           int64
-	contentWorkspaceID    int64
-	userID                string
-	mcpServer             *mcp.Server
-	streamServer          *mcp.StreamableHTTPHandler
-	createTask            CreateTaskFunc
-	updateStatus          UpdateTaskStatusFunc
-	registerTaskAgent     RegisterTaskAgentFunc
-	getTask               GetTaskFunc
-	workspaceNotes        WorkspaceNotesFunc
+	workspaceID        int64
+	contentWorkspaceID int64
+	userID             string
+	mcpServer          *mcp.Server
+	streamServer       *mcp.StreamableHTTPHandler
+	createTask         CreateTaskFunc
+	updateStatus       UpdateTaskStatusFunc
+	registerTaskAgent  RegisterTaskAgentFunc
+	getTask            GetTaskFunc
+	workspaceNotes     WorkspaceNotesFunc
+	// a2ui validates cards; nil uses sharedA2UI.
+	a2ui                  a2ui.Service
 	recordAgentNote       AgentNoteRecorder
 	listTasks             ListTasksFunc
 	getNextTask           GetNextTaskFunc
 	reply                 ReplyFunc
 	updateMessageMetadata UpdateMessageMetadataFunc
+	editMessage           EditMessageFunc
 	updateAutoAllowed     UpdateWorkspaceAutoAllowedToolsFunc
 	clearAgentContext     ClearAgentContextFunc
 	publishEvent          PublishEventFunc
@@ -293,6 +301,10 @@ type ReplyParams struct {
 	TaskID      string            `json:"taskId" jsonschema:"The task to reply in (base62): the chat_id it arrived with."`
 	Text        string            `json:"text" jsonschema:"The message text to send"`
 	Attachments []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments to include in the reply: {id, filename, mimeType, data (base64) or textContent (plain text)}."`
+	UI          json.RawMessage   `json:"ui,omitempty" jsonschema:"Optional card: a JSON array of A2UI v1.0 messages (basic catalog, one surface): createSurface, then updateComponents with a component whose id is root. text stays required, the fallback wherever cards are not shown. Media (Image, Video, AudioPlayer) only as attachment:<filename> of a file in attachments. Without createSurface it updates the task's newest card with that surfaceId in place, and text replaces its text; deleteSurface drops the card. Also taken as A2UI's MCP binding: an embedded resource {type: resource, resource: {mimeType: application/a2ui+json, text}} whose text is that array."`
+
+	// viaResource is set when ui came as an embedded resource, to count it.
+	viaResource bool
 }
 
 // AttachmentParam is an attachment as a tool receives it. It is not
@@ -338,14 +350,16 @@ type GetTaskParams struct {
 
 // ElicitParams is the input to the elicit tool. It mirrors the MCP protocol's
 // client-side "elicitation/create" request (message + a flat requestedSchema),
-// plus a "url" mode for asking the human to open a link rather than fill a form.
+// plus a "url" mode for asking the human to open a link rather than fill a form,
+// and an "a2ui" mode drawing the question as a card.
 type ElicitParams struct {
-	TaskID          string         `json:"taskId" jsonschema:"The ID of the task this question relates to (base62)."`
-	Message         string         `json:"message" jsonschema:"The human-readable question or prompt to show the user."`
-	Mode            string         `json:"mode" jsonschema:"'form' to request structured input via a JSON schema (mirrors MCP's elicitation/create requestedSchema), or 'url' to ask the user to open a link and confirm when done."`
-	RequestedSchema map[string]any `json:"requestedSchema,omitempty" jsonschema:"Required when mode is 'form'. A flat JSON Schema object: type must be 'object', with each property either primitive-typed (string, number, integer, boolean — optionally with 'enum'), an array of one of those primitive types (renders as a multi-select), or an enum expressed as 'oneOf'/'anyOf' options (each {const, title, description}) — no nested objects. Matches ACP's elicitation/create schema restrictions."`
-	URL             string         `json:"url,omitempty" jsonschema:"Required when mode is 'url'. The URL to show the user."`
-	TimeoutSeconds  int            `json:"timeoutSeconds,omitempty" jsonschema:"How long to wait for the user's response before giving up. Default 3600 (1 hour), max 3600 (1 hour). On timeout the tool returns {action: 'cancel'} rather than an error, since the human simply didn't respond in time."`
+	TaskID          string          `json:"taskId" jsonschema:"The ID of the task this question relates to (base62)."`
+	Message         string          `json:"message" jsonschema:"The human-readable question or prompt to show the user."`
+	Mode            string          `json:"mode" jsonschema:"'form' to request structured input via a JSON schema (mirrors MCP's elicitation/create requestedSchema), 'url' to ask the user to open a link and confirm when done, or 'a2ui' to draw the question as an A2UI card (ui) whose Button click is the answer."`
+	RequestedSchema map[string]any  `json:"requestedSchema,omitempty" jsonschema:"Required when mode is 'form'. A flat JSON Schema object: type must be 'object', with each property either primitive-typed (string, number, integer, boolean — optionally with 'enum'), an array of one of those primitive types (renders as a multi-select), or an enum expressed as 'oneOf'/'anyOf' options (each {const, title, description}) — no nested objects. Matches ACP's elicitation/create schema restrictions."`
+	URL             string          `json:"url,omitempty" jsonschema:"Required when mode is 'url'. The URL to show the user."`
+	UI              json.RawMessage `json:"ui,omitempty" jsonschema:"Required when mode is 'a2ui', and only then. A JSON array of A2UI v1.0 messages (basic catalog, one surface), as reply's ui, with no media. A Button click answers: content is {name, context, dataModel}, the action's name and context and the card's data model with what the human entered. message stays required, the fallback wherever cards are not shown."`
+	TimeoutSeconds  int             `json:"timeoutSeconds,omitempty" jsonschema:"How long to wait for the user's response before giving up. Default 3600 (1 hour), max 3600 (1 hour). On timeout the tool returns {action: 'cancel'} rather than an error, since the human simply didn't respond in time."`
 }
 
 // elicitationResponse is the human's answer to a pending elicit tool call,
@@ -454,6 +468,7 @@ func NewWorkspaceServer(
 	getNextTask GetNextTaskFunc,
 	reply ReplyFunc,
 	updateMessageMetadata UpdateMessageMetadataFunc,
+	editMessage EditMessageFunc,
 	updateAutoAllowed UpdateWorkspaceAutoAllowedToolsFunc,
 	clearAgentContext ClearAgentContextFunc,
 	publishEvent PublishEventFunc,
@@ -491,6 +506,7 @@ func NewWorkspaceServer(
 		getNextTask:            getNextTask,
 		reply:                  reply,
 		updateMessageMetadata:  updateMessageMetadata,
+		editMessage:            editMessage,
 		updateAutoAllowed:      updateAutoAllowed,
 		clearAgentContext:      clearAgentContext,
 		publishEvent:           publishEvent,
@@ -541,6 +557,7 @@ func NewWorkspaceServer(
 		},
 	}
 	mcpskill.AddCapability(caps)
+	addA2UICapability(caps)
 	mcpSrv := mcp.NewServer(
 		&mcp.Implementation{
 			Name:        fmt.Sprintf("agentrq-workspace-%s", workspaceIDStr),
@@ -1516,24 +1533,74 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 		}, nil, nil
 	}
 
-	if _, err := ps.reply(ctx, params.TaskID, params.Text, toEntityAttachments(params.Attachments), nil); err != nil {
+	taskID := monoflake.IDFromBase62(params.TaskID).Int64()
+	if taskID == 0 {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
+		}, nil, nil
+	}
+
+	ui, viaResource, err := replyUI(params.UI)
+	if err != nil {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+		}, nil, nil
+	}
+	params.UI, params.viaResource = ui, viaResource
+
+	if surfaceID, ok := a2ui.UpdatedSurface(params.UI); ok {
+		return ps.updateCard(ctx, req, taskID, surfaceID, params)
+	}
+
+	// The files are saved first: a card's media names them by their stored
+	// links.
+	atts := toEntityAttachments(params.Attachments)
+	unsave := ps.saveAttachments(taskID, atts)
+
+	var metadata any
+	if len(params.UI) > 0 {
+		card, err := ps.replyCard(ctx, taskID, params.UI, atts)
+		if err != nil {
+			unsave()
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+			}, nil, nil
+		}
+		metadata = card
+	}
+
+	msgID, err := ps.reply(ctx, params.TaskID, params.Text, atts, metadata)
+	if err != nil {
+		unsave()
 		return &mcp.CallToolResult{
 			IsError: true,
 			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to deliver reply: %v", err)}},
 		}, nil, nil
 	}
-
-	// Update session-to-task mapping for context-aware routing (like permissions)
-	if tid := monoflake.IDFromBase62(params.TaskID).Int64(); tid != 0 && req != nil && req.GetSession() != nil {
-		sessID := req.GetSession().ID()
-		ps.sessionTasksMu.Lock()
-		ps.sessionTasks[sessID] = tid
-		ps.sessionTasksMu.Unlock()
+	if metadata != nil {
+		ps.emitA2UI(ctx, entity.ActionA2UIReply, msgID)
+		ps.emitA2UIResource(ctx, params, msgID)
+		ps.emitA2UIChart(ctx, metadata, msgID)
 	}
+	ps.noteSessionTask(req, taskID)
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: "reply sent"}},
 	}, nil, nil
+}
+
+// noteSessionTask maps the request's session to the task it replied in, for
+// context-aware routing (like permissions).
+func (ps *WorkspaceServer) noteSessionTask(req *mcp.CallToolRequest, taskID int64) {
+	if req != nil && req.GetSession() != nil {
+		sessID := req.GetSession().ID()
+		ps.sessionTasksMu.Lock()
+		ps.sessionTasks[sessID] = taskID
+		ps.sessionTasksMu.Unlock()
+	}
 }
 
 func (ps *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.CallToolRequest, params GetAttachmentParams) (*mcp.CallToolResult, any, error) {
@@ -1719,11 +1786,18 @@ func (ps *WorkspaceServer) handleElicit(ctx context.Context, req *mcp.CallToolRe
 		}, nil, nil
 	}
 
+	params.UI = presentUI(params.UI)
 	metadata := map[string]any{
 		"type":    "elicitation_request",
 		"message": params.Message,
 		"mode":    params.Mode,
 		"status":  "pending",
+	}
+	if len(params.UI) > 0 && params.Mode != elicitModeA2UI {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "ui needs mode 'a2ui'"}},
+		}, nil, nil
 	}
 	switch params.Mode {
 	case "form":
@@ -1748,10 +1822,35 @@ func (ps *WorkspaceServer) handleElicit(ctx context.Context, req *mcp.CallToolRe
 			}, nil, nil
 		}
 		metadata["url"] = params.URL
+	case elicitModeA2UI:
+		if len(params.UI) == 0 {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "ui is required when mode is 'a2ui'"}},
+			}, nil, nil
+		}
+		if len(params.RequestedSchema) > 0 || params.URL != "" {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "mode 'a2ui' takes ui, not requestedSchema or url"}},
+			}, nil, nil
+		}
+		// No attachments: a question carries no files, so a card's media is
+		// refused.
+		surface, err := ps.validateCard(ctx, params.UI, nil, "ask with mode 'form' instead")
+		if err != nil {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+			}, nil, nil
+		}
+		metadata["version"] = a2uiVersion
+		metadata["surfaceId"] = surface.SurfaceID
+		metadata["messages"] = surface.Messages
 	default:
 		return &mcp.CallToolResult{
 			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "mode must be 'form' or 'url'"}},
+			Content: []mcp.Content{&mcp.TextContent{Text: "mode must be 'form', 'url' or 'a2ui'"}},
 		}, nil, nil
 	}
 
@@ -1818,6 +1917,10 @@ func (ps *WorkspaceServer) askHuman(ctx context.Context, taskID int64, message s
 	msgID, err := ps.reply(ctx, monoflake.ID(taskID).String(), message, nil, metadata)
 	if err != nil {
 		return elicitationResponse{}, err
+	}
+	if metadata["mode"] == elicitModeA2UI {
+		ps.emitA2UI(ctx, entity.ActionA2UIElicit, msgID)
+		ps.emitA2UIChart(ctx, metadata, msgID)
 	}
 
 	select {
@@ -2089,14 +2192,21 @@ func buildConversationJSON(task model.Task, cursor, limit int) string {
 				}
 			}
 		}
-		output = append(output, map[string]any{
+		item := map[string]any{
 			"id":          monoflake.ID(m.ID).String(),
 			"sender":      m.Sender,
 			"text":        m.Text,
 			"created_at":  m.CreatedAt,
 			"attachments": attachments,
 			"metadata":    string(m.Metadata),
-		})
+		}
+		// A card is for the page: its text says the same, and its JSON
+		// would only fill the agent's context.
+		if meta, card := agentMetadata(m.Metadata); card {
+			item["metadata"] = meta
+			item["ui"] = true
+		}
+		output = append(output, item)
 	}
 
 	b, _ := json.Marshal(map[string]any{

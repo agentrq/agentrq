@@ -43,9 +43,10 @@ func (ps *WorkspaceServer) taskActions() []ToolAction {
 			WithExample(`{"taskId": "0kGogHmaqvZ", "includeConversation": true, "limit": 10}`),
 		NewToolAction("updateStatus", "Set a task's status: ongoing when you start, completed when you finish, blocked when you need the human.", ps.handleUpdateTaskStatus).
 			WithExample(`{"taskId": "0kGogHmaqvZ", "status": "ongoing"}`),
-		NewToolAction("reply", "Post a message to the task, optionally with attachments. The human sees only these.", ps.handleReply).
-			WithExample(`{"taskId": "0kGogHmaqvZ", "text": "Tests pass; opening the pull request."}`),
+		NewToolAction("reply", "Post a message to the task, optionally with attachments and an A2UI card. The human sees only these.", ps.handleReply).
+			WithExample(`{"taskId": "0kGogHmaqvZ", "text": "Build passed: 412 tests.", "attachments": [{"filename": "chart.png", "mimeType": "image/png", "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}], "ui": [{"version": "1.0", "createSurface": {"surfaceId": "build", "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}}, {"version": "1.0", "updateComponents": {"surfaceId": "build", "components": [{"id": "root", "component": "Card", "child": "col"}, {"id": "col", "component": "Column", "children": ["title", "chart"]}, {"id": "title", "component": "Text", "text": "## Build passed"}, {"id": "chart", "component": "Image", "url": "attachment:chart.png"}]}}]}`),
 		NewToolAction("elicit", "Ask the human a question and wait for the answer: {action, content}, action being accept, decline or cancel.", ps.handleElicit).
+			WithDetails("mode a2ui draws the question as a card, ui being reply's, with no media: a Button's click answers, content being {name, context, dataModel}.").
 			WithExample(`{"taskId": "0kGogHmaqvZ", "message": "Which branch should I release from?", "mode": "form", "requestedSchema": {"type": "object", "properties": {"branch": {"type": "string", "enum": ["main", "release"]}}, "required": ["branch"]}}`),
 		NewToolAction("getAttachment", "Get an attachment of a task: its name, type and public link, or its content as base64 or plain text.", ps.handleGetAttachment).
 			WithExample(`{"taskId": "0kGogHmaqvZ", "attachmentId": "att_1"}`),

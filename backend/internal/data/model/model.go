@@ -916,6 +916,21 @@ const (
 	// backend.
 	ActionIDMCPInitialize
 	ActionIDMCPReconnect
+	// An agent's reply that carried an A2UI card; emitted by the backend.
+	ActionIDA2UIReply
+	// A click on a card's Button, posted as the person's reply; emitted by
+	// the backend.
+	ActionIDA2UIAction
+	// An agent's question drawn as an A2UI card; emitted by the backend.
+	ActionIDA2UIElicit
+	// An agent's reply that updated a card in place; emitted by the backend.
+	ActionIDA2UIUpdate
+	// An agent's card posted to Slack as Block Kit; emitted by the backend.
+	ActionIDA2UISlack
+	// An agent's card that came as A2UI's MCP binding; emitted by the backend.
+	ActionIDA2UIResource
+	// An agent's card that draws a Chart; emitted by the backend.
+	ActionIDA2UIChart
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

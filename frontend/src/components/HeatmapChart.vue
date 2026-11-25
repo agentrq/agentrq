@@ -48,6 +48,7 @@
               :key="'cell-' + ri"
               class="flex-1 rounded-sm transition-colors"
               :class="[levelClass(cell), cell.dimmed ? 'opacity-30' : 'cursor-pointer']"
+              :style="levelStyle(cell)"
               @mouseenter="!cell.dimmed && onCellEnter($event, cell)"
               @mouseleave="hovered = null"
             />
@@ -76,7 +77,7 @@ const props = defineProps({
   rangeEnd: { type: Number, default: 0 }, // unix seconds
   metricLabel: { type: String, default: 'Count' },
   weekdayColumnLabels: { type: Boolean, default: false }, // show "Mon"/"Tue" column headers instead of dates
-  color: { type: String, default: 'gray' } // 'yellow' | 'violet' | 'gray'
+  color: { type: String, default: 'gray' } // 'yellow' | 'violet' | 'gray', or a '#rrggbb' in both themes
 });
 
 const hovered = ref(null);
@@ -149,8 +150,21 @@ function levelForCount(count) {
   return 1;
 }
 
+// A #rrggbb colour's levels are it at a quarter, a half, three quarters and
+// in full, over the empty cell's grey.
+const HEX_LEVEL_ALPHA = ['', '40', '80', 'bf', 'ff'];
+
+function levelStyle(cell) {
+  const lvl = levelForCount(cell.count);
+  if (!props.color.startsWith('#') || lvl === 0) return undefined;
+  return { backgroundColor: props.color + HEX_LEVEL_ALPHA[lvl] };
+}
+
 function levelClass(cell) {
   const lvl = levelForCount(cell.count);
+  if (props.color.startsWith('#') && lvl > 0) {
+    return '';
+  }
   if (props.color === 'yellow') {
     return YELLOW_LEVEL_CLASSES[lvl];
   }

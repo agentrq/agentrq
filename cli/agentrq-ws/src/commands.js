@@ -42,6 +42,15 @@ export async function resolveText(value, { stdin, what }) {
   return value
 }
 
+/**
+ * Refuses a command that reads more than one of its inputs, named by the
+ * keys of inputs, from stdin: the first read takes all of it.
+ */
+export function oneStdin(inputs) {
+  const piped = Object.keys(inputs).filter((name) => inputs[name] === '-')
+  if (piped.length > 1) throw new UserError(`only one input can come from stdin (-): ${piped.join(' and ')} both ask for it`)
+}
+
 /** Build the attachment array for a tool call from repeated --attach flags. */
 export function collectAttachments(values) {
   const paths = asArray(values.attach)
@@ -168,6 +177,7 @@ function printPanoDoc(result, { idOnly = false } = {}) {
 /** The ops of pano edit: --ops (a JSON array, as the tool takes it), then --replace/--with, then --append. */
 async function panoEditOps(ctx) {
   const { ops, replace, with: newString, append } = ctx.values
+  oneStdin({ '--ops': ops, '--append': append })
   const out = []
   if (ops !== undefined) {
     let parsed
@@ -322,25 +332,38 @@ export const COMMANDS = [
   },
   {
     path: ['reply'],
-    summary: 'Send a message to a task, optionally with files attached',
-    usage: 'agentrq-ws reply <taskId> <text|@file|-> [--attach PATH]...',
+    summary: 'Send a message to a task, optionally with files attached and an A2UI card',
+    usage: 'agentrq-ws reply <taskId> <text|@file|-> [--attach PATH]... [--ui JSON|@file|-]',
     options: {
       attach: { type: 'string', multiple: true, description: 'File to attach (repeatable)' },
+      ui: {
+        type: 'string',
+        description: "A2UI v1.0 messages as a JSON array (@file supported): a card shown with the text as its fallback; its media name attached files as attachment:<filename>",
+      },
     },
     async run(ctx) {
       const taskId = requirePositional(ctx.positionals, 0, 'taskId')
       const raw = requirePositional(ctx.positionals, 1, 'text')
+      oneStdin({ 'the text': raw, '--ui': ctx.values.ui })
       const text = await resolveText(raw, { stdin: ctx.stdin, what: 'the reply text' })
+      const ui = await readUI(ctx)
+      const card = ui === undefined ? {} : { ui }
       const attachments = collectAttachments(ctx.values)
-      if (!attachments) return ctx.client.callAction('task', 'reply', { taskId, text }, ['reply', { chatId: taskId, text }])
+      if (!attachments) {
+        return ctx.client.callAction('task', 'reply', { taskId, text, ...card }, ['reply', { chatId: taskId, text, ...card }])
+      }
       // Files too large to share one request go one reply per group, the text
       // with the first and the rest labelled by their position.
-      const batches = batchAttachments(attachments, Buffer.byteLength(JSON.stringify(text)))
+      const batches = batchAttachments(attachments, Buffer.byteLength(JSON.stringify({ text, ui })))
+      // A card names its files, so they must arrive in the same reply.
+      if (ui !== undefined && batches.length > 1) {
+        throw new UserError('the attachments do not fit one request together, and a card needs its files in its own reply: attach fewer')
+      }
       const outcomes = []
       for (const [i, group] of batches.entries()) {
         const body = i === 0 ? text : `Attachments ${i + 1}/${batches.length}: ${group.map((a) => a.filename).join(', ')}`
-        const payload = { taskId, text: body, attachments: group }
-        outcomes.push(await ctx.client.callAction('task', 'reply', payload, ['reply', { chatId: taskId, text: body, attachments: group }]))
+        const payload = { taskId, text: body, attachments: group, ...card }
+        outcomes.push(await ctx.client.callAction('task', 'reply', payload, ['reply', { chatId: taskId, text: body, attachments: group, ...card }]))
       }
       if (outcomes.length === 1) return outcomes[0]
       return { text: outcomes.map((o) => o.text).join('\n'), result: outcomes.at(-1).result }
@@ -593,17 +616,22 @@ export const COMMANDS = [
   {
     path: ['ask'],
     summary: 'Ask the human a question and wait for the answer',
-    usage: 'agentrq-ws ask <taskId> <message> [--field name[:type[:description]]]... [--url URL]',
+    usage: 'agentrq-ws ask <taskId> <message> [--field name[:type[:description]]]... [--url URL] [--ui JSON|@file|-]',
     options: {
-      mode: { type: 'string', short: 'm', description: "'form' or 'url' (inferred when omitted)" },
+      mode: { type: 'string', short: 'm', description: "'form', 'url' or 'a2ui' (inferred when omitted)" },
       field: { type: 'string', multiple: true, description: 'Form field, e.g. branch:string:Which branch' },
       schema: { type: 'string', description: 'Full requestedSchema as JSON (@file supported)' },
       url: { type: 'string', short: 'u', description: 'Link to show the human (mode=url)' },
+      ui: {
+        type: 'string',
+        description: "The question as an A2UI v1.0 card, a JSON array of messages (@file supported; mode=a2ui): a Button's click answers, the message its fallback",
+      },
       timeout: { type: 'string', description: 'Seconds to wait, max 3600 (default 3600)' },
     },
     async run(ctx) {
       const taskId = requirePositional(ctx.positionals, 0, 'taskId')
       const message = requirePositional(ctx.positionals, 1, 'message')
+      oneStdin({ '--schema': ctx.values.schema, '--ui': ctx.values.ui })
       let requestedSchema = buildRequestedSchema(ctx.values)
       if (ctx.values.schema !== undefined) {
         const raw = await resolveText(ctx.values.schema, { stdin: ctx.stdin, what: 'the schema' })
@@ -615,17 +643,20 @@ export const COMMANDS = [
       }
       // The mode is almost always implied by which of the two was given, and
       // making somebody state it as well is ceremony.
-      const mode = ctx.values.mode || (ctx.values.url ? 'url' : 'form')
+      const ui = await readUI(ctx)
+      const mode = ctx.values.mode || (ui !== undefined ? 'a2ui' : ctx.values.url ? 'url' : 'form')
       if (mode === 'url' && !ctx.values.url) throw new UserError('mode=url needs --url')
       if (mode === 'form' && !requestedSchema) {
         throw new UserError('mode=form needs at least one --field (or --schema)')
       }
+      if (mode === 'a2ui' && ui === undefined) throw new UserError('mode=a2ui needs --ui')
       const payload = {
         taskId,
         message,
         mode,
         requestedSchema,
         url: ctx.values.url,
+        ui,
         timeoutSeconds: ctx.values.timeout ? Number(ctx.values.timeout) : undefined,
       }
       return ctx.client.callAction('task', 'elicit', payload, ['elicit', payload])
@@ -723,6 +754,17 @@ function actionHelp(ctx, tool) {
 /** One pano call; a server from before payloads takes its fields beside action. */
 function pano(ctx, action, payload) {
   return ctx.client.callAction('pano', action, payload, ['pano', { action, ...payload }])
+}
+
+/** --ui as JSON, from inline, @file or stdin; not given is undefined. */
+async function readUI(ctx) {
+  if (ctx.values.ui === undefined) return undefined
+  const raw = await resolveText(ctx.values.ui, { stdin: ctx.stdin, what: 'the ui' })
+  try {
+    return JSON.parse(raw)
+  } catch (err) {
+    throw new UserError(`--ui is not valid JSON: ${err.message}`)
+  }
 }
 
 /** --args as JSON, from inline, @file or stdin; nothing given is {}. */
