@@ -81,6 +81,11 @@ export function memoryUsedPercent(metrics) {
   return Math.min(100, Math.max(0, ((metrics.memTotal - available) / metrics.memTotal) * 100))
 }
 
+/** Full enough to warn about: past 90%, a checkout or a build can run out of room. */
+export function nearlyFull(percent) {
+  return Number.isFinite(percent) && percent > 90
+}
+
 /** Busy enough to read in amber: past half, more agents here start to slow each other. */
 export function cpuHot(percent) {
   return Number.isFinite(percent) && percent > 50

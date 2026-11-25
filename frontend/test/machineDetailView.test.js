@@ -321,24 +321,70 @@ describe('MachineDetailView: Machine Info', () => {
     }
   }
 
-  it('fills the CPU meter and turns it amber past half', async () => {
+  it('fills the CPU meter and turns it black past half', async () => {
     const el = await shown(71.9)
     const cpu = el.querySelector('[data-testid=tile-cpu]')
     const cells = [...cpu.querySelectorAll('span')]
     expect(cells).toHaveLength(10)
-    expect(cells.filter((c) => c.className.includes('bg-amber-500'))).toHaveLength(7)
+    expect(cells.filter((c) => c.className.includes('bg-black'))).toHaveLength(7)
     expect(cpu.textContent).toContain('71.9%')
-    expect(cpu.querySelector('p:nth-child(2)').className).toContain('text-amber-600')
-    expect(el.querySelector('[data-testid=tile-load] p:nth-child(2)').className).toContain('text-amber-600')
+    // Busy, but not near the limit: the figures stay neutral.
+    expect(cpu.querySelector('p:nth-child(2)').className).not.toContain('text-red-800')
+    expect(el.querySelector('[data-testid=tile-load] p:nth-child(2)').className).toContain('text-gray-900')
     expect(el.textContent).toContain('1-, 5- and 15-minute')
     expect(el.textContent).toContain('412 GB free of 1.0 TB')
   })
 
-  it('stays green below half', async () => {
+  it('meters memory in use, and the columns follow the tiles', async () => {
+    const el = await shown(8)
+    const mem = [...el.querySelector('[data-testid=tile-memory]').querySelectorAll('span')]
+    expect(mem).toHaveLength(10)
+    expect(mem.filter((c) => c.className.includes('bg-gray-500'))).toHaveLength(5)
+    const cpu = [...el.querySelector('[data-testid=tile-cpu]').querySelectorAll('span')]
+    expect([...mem, ...cpu].every((c) => c.className.includes('flex-1') && !c.className.includes('max-w-'))).toBe(true)
+    // Both meters come straight after the reading, so they sit on one line.
+    for (const id of ['tile-cpu', 'tile-memory']) {
+      expect(el.querySelector(`[data-testid=${id}]`).children[2].getAttribute('aria-hidden')).toBe('true')
+    }
+    const grid = el.querySelector('[data-testid=tile-cpu]').parentElement
+    expect(grid.className).toContain('@min-[48rem]:grid-cols-4')
+    const bar = el.querySelector('[data-testid=disk-bar]')
+    expect(bar.className).not.toContain('max-w-')
+    expect(bar.firstElementChild.className).toContain('bg-gray-500')
+    expect(bar.firstElementChild.style.width).toBe('58.8%')
+  })
+
+  it('warns on nearly full memory and disks, and drops the load column on Windows', async () => {
+    MACHINE.metrics = {
+      ...metricsWith(95),
+      memAvailable: 1_000_000_000,
+      loadAvg: null,
+      disks: [{ mount: 'C:', free: 50_000_000_000, total: 1_000_000_000_000 }, { mount: 'Z:', free: 0, total: 0 }],
+    }
+    try {
+      const { el, clickTab } = await mount()
+      await clickTab('Machine Info')
+      const mem = [...el.querySelector('[data-testid=tile-memory]').querySelectorAll('span')]
+      expect(mem.filter((c) => c.className.includes('bg-black'))).toHaveLength(10)
+      expect(el.querySelector('[data-testid=tile-cpu] p:nth-child(2)').className).toContain('text-red-800')
+      expect(el.querySelector('[data-testid=tile-load]')).toBeNull()
+      const grid = el.querySelector('[data-testid=tile-cpu]').parentElement
+      expect(grid.className).toContain('@min-[48rem]:grid-cols-3')
+      expect(el.querySelector('[data-testid=disk-bar]').firstElementChild.className).toContain('bg-red-800')
+      // Every row sits on the shared grid, a bar-less one keeping the bar's column.
+      const rows = [...el.querySelector('[data-testid=disks]').children]
+      expect(rows.map((r) => r.className.includes('grid-cols-subgrid'))).toEqual([true, true])
+      expect(rows.map((r) => r.children.length)).toEqual([3, 3])
+      expect(el.querySelectorAll('[data-testid=disk-bar]')).toHaveLength(1)
+    } finally {
+      delete MACHINE.metrics
+    }
+  })
+
+  it('stays neutral below half', async () => {
     const el = await shown(8)
     const cpu = el.querySelector('[data-testid=tile-cpu]')
-    expect([...cpu.querySelectorAll('span')].filter((c) => c.className.includes('bg-emerald-500'))).toHaveLength(1)
-    expect(cpu.querySelector('p:nth-child(2)').className).not.toContain('text-amber-600')
-    expect(el.querySelector('[data-testid=tile-load] p:nth-child(2)').className).not.toContain('text-amber-600')
+    expect([...cpu.querySelectorAll('span')].filter((c) => c.className.includes('bg-gray-500'))).toHaveLength(1)
+    expect(cpu.querySelector('p:nth-child(2)').className).not.toContain('text-red-800')
   })
 })

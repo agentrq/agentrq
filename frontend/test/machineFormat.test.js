@@ -11,6 +11,7 @@ import {
   formatUptime,
   diskUsedPercent,
   memoryUsedPercent,
+  nearlyFull,
   cpuHot,
   meterCells,
   METER_CELLS,
@@ -90,6 +91,14 @@ describe('diskUsedPercent', () => {
     expect(diskUsedPercent({ total: 100, free: 200 })).toBe(0)
     expect(diskUsedPercent({ total: 100, free: -50 })).toBe(100)
     expect(diskUsedPercent({ total: 100 })).toBe(100)
+  })
+})
+
+describe('nearlyFull', () => {
+  it('warns only past 90%, and never without a reading', () => {
+    expect(nearlyFull(90)).toBe(false)
+    expect(nearlyFull(90.1)).toBe(true)
+    expect(nearlyFull(null)).toBe(false)
   })
 })
 
