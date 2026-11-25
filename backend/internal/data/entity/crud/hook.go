@@ -26,12 +26,13 @@ type Hook struct {
 
 // HookInput is a value each registration of a hook provides.
 type HookInput struct {
-	Name     string
-	Label    string
-	Type     string
-	Items    string
-	Secret   bool
-	Required bool
+	Name        string
+	Label       string
+	Placeholder string
+	Type        string
+	Items       string
+	Secret      bool
+	Required    bool
 }
 
 // HookEvent is one kind of event a hook writes.

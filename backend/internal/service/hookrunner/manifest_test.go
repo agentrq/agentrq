@@ -55,6 +55,7 @@ func TestParseManifestRefuses(t *testing.T) {
 		{"too many events", func(m *Manifest) { m.Events = make([]Event, maxEvents+1) }, "events"},
 		{"a bad input name", func(m *Manifest) { m.Inputs[1].Name = "1st" }, "input name"},
 		{"a long label", func(m *Manifest) { m.Inputs[1].Label = long }, "label"},
+		{"a long placeholder", func(m *Manifest) { m.Inputs[1].Placeholder = long }, "placeholder"},
 		{"an unknown type", func(m *Manifest) { m.Inputs[1].Type = "object" }, "type"},
 		{"a secret number", func(m *Manifest) { m.Inputs[2].Secret = true }, "only a string"},
 		{"an array of booleans", func(m *Manifest) { m.Inputs[1].Items = InputBoolean }, "items"},

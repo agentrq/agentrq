@@ -5222,6 +5222,7 @@ components:
             properties:
               name: { type: string }
               label: { type: string }
+              placeholder: { type: string, description: An example value the registration form shows in the empty field. }
               type: { type: string, enum: [string, number, boolean, array] }
               items: { type: string }
               secret: { type: boolean }

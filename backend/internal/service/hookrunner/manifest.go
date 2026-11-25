@@ -47,13 +47,15 @@ type Manifest struct {
 
 // Input is a value a registration of the hook provides, such as its webhook
 // secret. A secret one is write-only once stored.
+// Placeholder is an example value for the registration form.
 type Input struct {
-	Name     string `json:"name"`
-	Label    string `json:"label,omitempty"`
-	Type     string `json:"type"`
-	Items    string `json:"items,omitempty"`
-	Secret   bool   `json:"secret,omitempty"`
-	Required bool   `json:"required,omitempty"`
+	Name        string `json:"name"`
+	Label       string `json:"label,omitempty"`
+	Placeholder string `json:"placeholder,omitempty"`
+	Type        string `json:"type"`
+	Items       string `json:"items,omitempty"`
+	Secret      bool   `json:"secret,omitempty"`
+	Required    bool   `json:"required,omitempty"`
 }
 
 // Event is one kind of event the hook writes.
@@ -134,6 +136,8 @@ func (in Input) validate() error {
 		return fmt.Errorf("input name %q must be letters, digits and _, starting with a letter, at most 64", in.Name)
 	case len(in.Label) > maxTextSize:
 		return fmt.Errorf("input %q: label is over %d bytes", in.Name, maxTextSize)
+	case len(in.Placeholder) > maxTextSize:
+		return fmt.Errorf("input %q: placeholder is over %d bytes", in.Name, maxTextSize)
 	}
 	switch in.Type {
 	case InputString:

@@ -18,11 +18,11 @@ import (
 
 var manifest = sdk.Manifest{
 	Name:        "github",
-	Version:     "1.0.0",
+	Version:     "1.0.1",
 	Description: "CI runs, pull requests, issues, releases and pushes. Checks X-Hub-Signature-256.",
 	Inputs: []sdk.Input{
 		{Name: "webhookSecret", Label: "Webhook secret", Type: "string", Secret: true, Required: true},
-		{Name: "branches", Label: "Branches, as globs such as release/* (empty is every branch)", Type: "array", Items: "string"},
+		{Name: "branches", Label: "Branches, as globs such as release/* (empty is every branch)", Placeholder: "main, release/*", Type: "array", Items: "string"},
 	},
 	Events: []sdk.Event{
 		{Name: "ci.failed", Description: "A GitHub Actions workflow run finished with failure or timed out"},

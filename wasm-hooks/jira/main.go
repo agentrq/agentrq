@@ -21,14 +21,14 @@ import (
 
 var manifest = sdk.Manifest{
 	Name:        "jira",
-	Version:     "1.0.0",
+	Version:     "1.0.1",
 	Description: "Jira Cloud issues and comments, from an admin webhook (checks X-Hub-Signature) or an Automation rule's Send web request (checks a bearer token).",
 	Inputs: []sdk.Input{
 		{Name: "webhookSecret", Label: "Secret (the webhook's secret, or the rule's Authorization: Bearer token)", Type: "string", Secret: true, Required: true},
-		{Name: "assignees", Label: "Assignees: Jira account ids; the issue must be assigned to one", Type: "array", Items: "string", Required: true},
-		{Name: "actors", Label: "Actors: Jira account ids; one must have run the rule, changed the issue or commented", Type: "array", Items: "string", Required: true},
-		{Name: "projects", Label: "Project keys, such as ABC (empty is every project)", Type: "array", Items: "string"},
-		{Name: "labels", Label: "Labels; the issue must have one (empty is any issue)", Type: "array", Items: "string"},
+		{Name: "assignees", Label: "Assignees: Jira account ids; the issue must be assigned to one", Placeholder: "5b10ac8d82e05b22cc7d4ef5", Type: "array", Items: "string", Required: true},
+		{Name: "actors", Label: "Actors: Jira account ids; one must have run the rule, changed the issue or commented", Placeholder: "5b10ac8d82e05b22cc7d4ef5", Type: "array", Items: "string", Required: true},
+		{Name: "projects", Label: "Project keys, such as ABC (empty is every project)", Placeholder: "ABC, OPS", Type: "array", Items: "string"},
+		{Name: "labels", Label: "Labels; the issue must have one (empty is any issue)", Placeholder: "bug, backend", Type: "array", Items: "string"},
 	},
 	Events: []sdk.Event{
 		{Name: "jira.issue.sent", Description: "An Automation rule sent an issue, such as from a manual \"Send to AgentRQ\" action"},

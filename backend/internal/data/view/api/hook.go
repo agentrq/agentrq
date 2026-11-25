@@ -25,12 +25,13 @@ type Hook struct {
 
 // HookInput is a value each registration of a hook provides.
 type HookInput struct {
-	Name     string `json:"name"`
-	Label    string `json:"label,omitempty"`
-	Type     string `json:"type"`
-	Items    string `json:"items,omitempty"`
-	Secret   bool   `json:"secret"`
-	Required bool   `json:"required"`
+	Name        string `json:"name"`
+	Label       string `json:"label,omitempty"`
+	Placeholder string `json:"placeholder,omitempty"`
+	Type        string `json:"type"`
+	Items       string `json:"items,omitempty"`
+	Secret      bool   `json:"secret"`
+	Required    bool   `json:"required"`
 }
 
 // HookEvent is one kind of event a hook writes.

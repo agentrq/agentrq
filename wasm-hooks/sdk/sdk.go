@@ -37,13 +37,16 @@ type Manifest struct {
 
 // Input is a value each registration of the hook provides. A hook must
 // declare at least one required secret input, and check it.
+// Placeholder is an example value the registration form shows in the empty
+// field, such as "main, release/*" for a list of branches.
 type Input struct {
-	Name     string `json:"name"`
-	Label    string `json:"label,omitempty"`
-	Type     string `json:"type"`
-	Items    string `json:"items,omitempty"`
-	Secret   bool   `json:"secret,omitempty"`
-	Required bool   `json:"required,omitempty"`
+	Name        string `json:"name"`
+	Label       string `json:"label,omitempty"`
+	Placeholder string `json:"placeholder,omitempty"`
+	Type        string `json:"type"`
+	Items       string `json:"items,omitempty"`
+	Secret      bool   `json:"secret,omitempty"`
+	Required    bool   `json:"required,omitempty"`
 }
 
 // Event is one kind of event the hook writes.

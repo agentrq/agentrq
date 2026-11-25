@@ -9,6 +9,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,9 +41,26 @@ func buildHook(t *testing.T, name string) []byte {
 func TestBuiltInHooksRunOnTheServer(t *testing.T) {
 	s := newService(t)
 	s.maxPayloadSize = 65536
-	for _, name := range []string{"generic", "github", "jira"} {
-		if _, _, err := s.Inspect(context.Background(), buildHook(t, name)); err != nil {
+	// Each array input shows its own example, never another hook's (#1422).
+	wantPlaceholders := map[string]map[string]string{
+		"generic": {},
+		"github":  {"branches": "main, release/*"},
+		"jira":    {"assignees": "5b10ac8d82e05b22cc7d4ef5", "actors": "5b10ac8d82e05b22cc7d4ef5", "projects": "ABC, OPS", "labels": "bug, backend"},
+	}
+	for name, want := range wantPlaceholders {
+		m, _, err := s.Inspect(context.Background(), buildHook(t, name))
+		if err != nil {
 			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		got := map[string]string{}
+		for _, in := range m.Inputs {
+			if in.Placeholder != "" {
+				got[in.Name] = in.Placeholder
+			}
+		}
+		if !maps.Equal(got, want) {
+			t.Errorf("the %s hook's inputs have placeholders %v, want %v", name, got, want)
 		}
 	}
 

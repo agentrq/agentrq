@@ -40,7 +40,7 @@ const github = (over = {}) => ({
   id: 'gh1', builtIn: true, name: 'github', version: '1.0.0', description: 'GitHub webhooks', enabled: true,
   inputs: [
     { name: 'webhookSecret', label: 'Webhook secret', type: 'string', secret: true, required: true },
-    { name: 'branches', type: 'array', items: 'string', secret: false, required: false },
+    { name: 'branches', placeholder: 'main, release/*', type: 'array', items: 'string', secret: false, required: false },
     { name: 'maxRuns', type: 'number', secret: false, required: false },
     { name: 'drafts', type: 'boolean', secret: false, required: false },
   ],
@@ -610,6 +610,24 @@ describe('HookRegistrationForm', () => {
     expect(qa(el, 'reg-route')).toHaveLength(0)
     const { el: el2 } = await form({ hooks: [github()], registration: reg({ secretsSet: [] }) })
     expect(q(el2, 'reg-input-webhookSecret').placeholder).toBe('')
+  })
+
+  it("shows each input its own hook's example, and none when the hook gives none", async () => {
+    serve({})
+    const jira = github({
+      id: 'jira1', name: 'jira',
+      inputs: [
+        { name: 'webhookSecret', type: 'string', secret: true, required: true },
+        { name: 'projects', placeholder: 'ABC, OPS', type: 'array', items: 'string', secret: false, required: false },
+        { name: 'labels', type: 'array', items: 'string', secret: false, required: false },
+      ],
+    })
+    const { el } = await form({ hooks: [jira], registration: reg({ hookId: 'jira1', hookName: 'jira', inputs: {}, routes: {} }) })
+    expect(q(el, 'reg-input-projects').placeholder).toBe('ABC, OPS')
+    expect(q(el, 'reg-input-labels').placeholder).toBe('')
+    const { el: el2 } = await form({ hooks: [github()], registration: reg() })
+    expect(q(el2, 'reg-input-branches').placeholder).toBe('main, release/*')
+    expect(q(el2, 'reg-input-maxRuns').placeholder).toBe('')
   })
 
   it('reads triggers answered with no list as none', async () => {
