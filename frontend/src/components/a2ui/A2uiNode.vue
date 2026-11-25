@@ -7,9 +7,10 @@
 <script setup>
 /**
  * One component of a card, by id, drawn by the component for its entry. An
- * entry this renderer has no component for draws a small placeholder.
+ * entry this renderer has no component for draws a small placeholder. One
+ * the agent's last in-place update changed is marked for a moment.
  */
-import { computed } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 
 import A2uiAudioPlayer from './A2uiAudioPlayer.vue'
 import A2uiButton from './A2uiButton.vue'
@@ -30,6 +31,7 @@ import A2uiText from './A2uiText.vue'
 import A2uiTextField from './A2uiTextField.vue'
 import A2uiVideo from './A2uiVideo.vue'
 import { accessibilityAttrs, weightStyle } from '../../a2ui/render.js'
+import { shownValues } from '../../a2ui/live.js'
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -64,10 +66,25 @@ function viewFor(name) {
 
 const c = computed(() => props.ctx.surface.components.get(props.id))
 const view = computed(() => viewFor(c.value?.component))
+
+// Marked for a moment when what it shows changes with an agent's update to
+// the card (ui.changes), never with what the person enters.
+const FLASH_MS = 1600
+const shown = computed(() => shownValues(c.value, props.ctx))
+const changed = ref(false)
+let timer = null
+watch([shown, () => props.ctx.ui?.changes], ([now, changes], [before, was]) => {
+  if (changes === was || now === before || !now) return
+  clearTimeout(timer)
+  changed.value = true
+  timer = setTimeout(() => { changed.value = false }, FLASH_MS)
+})
+onUnmounted(() => clearTimeout(timer))
 </script>
 
 <template>
-  <component :is="view" v-if="view" :c="c" :ctx="ctx" :style="weightStyle(c)" v-bind="accessibilityAttrs(c, ctx)" />
+  <component :is="view" v-if="view" :c="c" :ctx="ctx" :style="weightStyle(c)" v-bind="accessibilityAttrs(c, ctx)"
+             :class="{ 'a2ui-changed': changed }" :data-changed="changed ? 'true' : undefined" />
   <span v-else data-test="a2ui-unknown" :style="weightStyle(c)"
         class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-gray-300 dark:border-zinc-600 text-[10px] text-gray-400 dark:text-zinc-500">
     {{ c?.component ?? id }} is not shown here
