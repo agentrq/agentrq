@@ -19,6 +19,7 @@ import (
 
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/daemon/wire"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
@@ -58,9 +59,11 @@ type (
 		IsAgentConnected(workspaceID int64) bool
 	}
 
-	// Tokens mints the workspace credential the agent connects with.
+	// Tokens mints the credentials the agent connects with: the workspace's,
+	// and the supervisor's for the supervisor workspace.
 	Tokens interface {
 		CreateMCPToken(userID, workspaceID, tokenType string) (string, error)
+		CreateSupervisorToken(userID, resource, tokenType string) (string, error)
 	}
 
 	// Launcher starts and stops agents. Machines may be nil on a server that
@@ -275,14 +278,6 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 		Rows:            rq.Rows,
 	}
 
-	// The supervisor workspace works across every other one, so its agent
-	// gets the account-wide server as well. Decided here and nowhere else:
-	// the daemon writes the entry when it is given a URL and works none of
-	// this out from the workspace's name.
-	if ws.Workspace.Name == SupervisorWorkspaceName {
-		start.CoreMCPURL = l.URLs.Core()
-	}
-
 	// The credential is minted only once everything else has passed: a
 	// token created and then discarded by a later refusal is a token that
 	// existed for no reason.
@@ -299,6 +294,19 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 	// The token is a query parameter in the URL, which is why this value
 	// travels in a frame and never in an argv or a log line.
 	start.MCPURL = l.URLs.Workspace(workspaceID) + "?token=" + token
+
+	// The supervisor workspace works across every other one, so its agent
+	// gets the account-wide server as well, with a token of its own. Decided
+	// here and nowhere else: the daemon writes the entry when it is given a
+	// URL and works none of this out from the workspace's name.
+	if ws.Workspace.Name == SupervisorWorkspaceName {
+		coreToken, err := l.Tokens.CreateSupervisorToken(rq.UserID, auth.SupervisorResource, auth.SupervisorLaunchToken)
+		if err != nil {
+			zlog.Error().Err(err).Msg("[launch] mint supervisor token")
+			return nil, err
+		}
+		start.CoreMCPURL = l.URLs.Core() + "?token=" + coreToken
+	}
 
 	session, err := l.Crud.CreateSession(ctx, entity.CreateSessionRequest{
 		UserID:      rq.UserID,

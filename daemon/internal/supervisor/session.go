@@ -384,7 +384,7 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 
 	servers := []MCPEntry{{Name: req.Params.ServerName, URL: req.MCPURL}}
 	if req.CoreMCPURL != "" {
-		servers = append(servers, MCPEntry{Name: wire.CoreMCPServerName, URL: req.CoreMCPURL})
+		servers = append(servers, MCPEntry{Name: wire.CoreMCPServerName, URL: req.CoreMCPURL, Override: true})
 	}
 
 	if cmd.NeedsMCPConfig {

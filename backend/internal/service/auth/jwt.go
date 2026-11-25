@@ -83,6 +83,17 @@ const WorkspaceMCPTokenTTL = 365 * 24 * time.Hour
 const (
 	SupervisorAccessTokenTTL  = 8 * time.Hour
 	SupervisorRefreshTokenTTL = 7 * 24 * time.Hour
+	// SupervisorLaunchTokenTTL is the token agentrqd writes for a launched
+	// supervisor agent. An agent reads it only when it starts, so it has to
+	// outlast the longest run: 30 days.
+	SupervisorLaunchTokenTTL = 30 * 24 * time.Hour
+)
+
+// SupervisorResource is the supervisor's audience. SupervisorLaunchToken is
+// the token type of a launch token, the one that may outlive an access token.
+const (
+	SupervisorResource    = "coremcp"
+	SupervisorLaunchToken = "launch"
 )
 
 // TokenConfig holds the two signing keys: APISecret for a person's session,
@@ -249,12 +260,15 @@ func (s *tokenService) CreateMCPToken(userID, workspaceID, tokenType string) (st
 }
 
 // CreateSupervisorToken mints a supervisor (CoreMCP) token for resource: a
-// refresh token lasts SupervisorRefreshTokenTTL, any other
-// SupervisorAccessTokenTTL.
+// refresh token lasts SupervisorRefreshTokenTTL, a launch token
+// SupervisorLaunchTokenTTL, any other SupervisorAccessTokenTTL.
 func (s *tokenService) CreateSupervisorToken(userID, resource, tokenType string) (string, error) {
 	ttl := SupervisorAccessTokenTTL
-	if tokenType == "refresh" {
+	switch tokenType {
+	case "refresh":
 		ttl = SupervisorRefreshTokenTTL
+	case SupervisorLaunchToken:
+		ttl = SupervisorLaunchTokenTTL
 	}
 	return s.createMCPToken(userID, resource, tokenType, ttl)
 }

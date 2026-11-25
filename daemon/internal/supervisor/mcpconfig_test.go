@@ -292,6 +292,52 @@ func TestRelaunchingKeepsTheCredentialAlreadyThere(t *testing.T) {
 	}
 }
 
+// The supervisor's entry is written over whatever is under its name, so its
+// token is this launch's: an older token expires, and a folder set up before
+// the token was sent has none. The workspace's own entry is still kept.
+func TestAnOverridingEntryReplacesWhatIsUnderItsName(t *testing.T) {
+	for name, existing := range map[string]string{
+		"no token":         "https://mcp.agentrq.com/mcp",
+		"an older token":   "https://mcp.agentrq.com/mcp?token=old",
+		"another endpoint": "https://elsewhere.example/mcp",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, MCPConfigName)
+			writeFile(t, path, `{"mcpServers":{`+
+				`"agentrq-workspace":{"type":"http","url":"https://agentrq.example/mcp/0inioPIhhbt?token=first"},`+
+				`"agentrq":{"type":"http","url":"`+existing+`"}}}`)
+
+			const core = "https://mcp.agentrq.com/mcp?token=new"
+			_, kept, err := WriteMCPConfig(dir, ws(testURL), MCPEntry{Name: "agentrq", URL: core, Override: true})
+			if err != nil {
+				t.Fatalf("WriteMCPConfig: %v", err)
+			}
+			if !slices.Equal(kept, []string{"agentrq-workspace"}) {
+				t.Errorf("kept = %v, want only the workspace's entry", kept)
+			}
+			cfg := readConfig(t, path)
+			if cfg.Servers["agentrq"].URL != core || !strings.Contains(cfg.Servers["agentrq-workspace"].URL, "token=first") {
+				t.Errorf("servers = %v", cfg.Servers)
+			}
+			assertKeyOrder(t, path, `"agentrq-workspace"`, `"agentrq"`)
+		})
+	}
+}
+
+// An overriding entry that is already exactly what it would write is kept,
+// and the file is left alone.
+func TestAnOverridingEntryAlreadyThereIsKept(t *testing.T) {
+	dir := t.TempDir()
+	entry := MCPEntry{Name: "agentrq", URL: "https://mcp.agentrq.com/mcp?token=same", Override: true}
+	if _, _, err := WriteMCPConfig(dir, entry); err != nil {
+		t.Fatal(err)
+	}
+	if _, kept, err := WriteMCPConfig(dir, entry); err != nil || !slices.Equal(kept, []string{"agentrq"}) {
+		t.Errorf("kept = %v, err = %v, want it kept", kept, err)
+	}
+}
+
 // Rewriting a file to the bytes it already holds still changes its timestamp,
 // and on a folder somebody is watching that is a change they have to explain.
 func TestAFileWithNothingToAddIsNotRewritten(t *testing.T) {

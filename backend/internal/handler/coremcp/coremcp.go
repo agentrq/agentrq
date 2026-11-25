@@ -259,7 +259,7 @@ func requestedLevel(scope string) string {
 // it refuses the token instead of granting it everything; and its ':' keeps it
 // from ever reading as a base62 workspace ID.
 const (
-	resourceSupervisor         = "coremcp"
+	resourceSupervisor         = auth.SupervisorResource
 	resourceSupervisorReadOnly = "coremcp:read"
 )
 
@@ -472,7 +472,11 @@ func (h *handler) streamableHandler() http.Handler {
 			}
 		}
 
-		if resource == "" || hasRestricted || claims.Subject == "" || outlivesTTL(claims, auth.SupervisorAccessTokenTTL) {
+		ttl := auth.SupervisorAccessTokenTTL
+		if auth.HasAudience(claims, auth.SupervisorLaunchToken) {
+			ttl = auth.SupervisorLaunchTokenTTL
+		}
+		if resource == "" || hasRestricted || claims.Subject == "" || outlivesTTL(claims, ttl) {
 			challengeUnauthorized(w, r, "unauthorized")
 			return
 		}

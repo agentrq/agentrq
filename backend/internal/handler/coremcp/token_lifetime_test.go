@@ -115,6 +115,27 @@ func TestSupervisorStreamable_ChallengesAnAccessTokenThatOutlivesEightHours(t *t
 	}
 }
 
+// The token agentrqd writes for a launched supervisor lasts 30 days, and only
+// that kind does: an access token as long is still refused.
+func TestSupervisorStreamable_ALaunchTokenLastsThirtyDays(t *testing.T) {
+	h := supervisorStreamHandler()
+	for name, tc := range map[string]struct {
+		token string
+		want  int
+	}{
+		"a launch token":            {mustMint(t)(supervisorTokens.CreateSupervisorToken("user-1", resourceSupervisor, auth.SupervisorLaunchToken)), http.StatusOK},
+		"a launch token past 30d":   {signSupervisorToken(t, auth.SupervisorLaunchToken, time.Now().Add(30*24*time.Hour+2*time.Minute)), http.StatusUnauthorized},
+		"an access token for 30d":   {signSupervisorToken(t, "access", time.Now().Add(30*24*time.Hour)), http.StatusUnauthorized},
+		"a launch token, no expiry": {signSupervisorToken(t, auth.SupervisorLaunchToken, time.Time{}), http.StatusUnauthorized},
+	} {
+		w := httptest.NewRecorder()
+		h.streamableHandler().ServeHTTP(w, supervisorStreamRequest(tc.token))
+		if w.Code != tc.want {
+			t.Errorf("%s: answered %d, want %d", name, w.Code, tc.want)
+		}
+	}
+}
+
 // A token minted by an instance whose clock runs a little ahead still works.
 func TestSupervisorStreamable_AllowsAClockAMinuteAhead(t *testing.T) {
 	h := supervisorStreamHandler()
