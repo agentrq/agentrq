@@ -104,7 +104,7 @@ jobs:
       - name: Test
         run: |
           go test ./internal/app/
-          go test ./internal/repository/base/ -run 'TaskChanges|CountNewMessages|StatusChanges'
+          go test ./internal/repository/base/ -run 'TaskChanges|CountNewMessages|StatusChanges|EditMessage'
         working-directory: backend
         env:
           AGENTRQ_TEST_POSTGRES_DSN: host=localhost port=5432 user=postgres password=postgres dbname=agentrq sslmode=disable

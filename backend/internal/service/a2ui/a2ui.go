@@ -72,6 +72,8 @@ type Options struct {
 type Surface struct {
 	SurfaceID string            `json:"surfaceId"`
 	Messages  []json.RawMessage `json:"messages"`
+	// Deleted is an update that deleted the surface: it has no messages.
+	Deleted bool `json:"deleted,omitempty"`
 }
 
 // Error lists every problem found, each with where it is and what to do.
@@ -86,6 +88,9 @@ func (e *Error) Error() string {
 // Service validates an agent's ui.
 type Service interface {
 	Validate(ctx context.Context, raw json.RawMessage, opts Options) (*Surface, error)
+	// Merge applies an update, a ui with no createSurface, to a stored
+	// surface, and validates the result.
+	Merge(ctx context.Context, current *Surface, update json.RawMessage, opts Options) (*Surface, error)
 }
 
 type service struct {

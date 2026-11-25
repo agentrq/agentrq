@@ -122,6 +122,7 @@ func TestActionString(t *testing.T) {
 		{ActionA2UIReply, "a2ui_reply"},
 		{ActionA2UIAction, "a2ui_action"},
 		{ActionA2UIElicit, "a2ui_elicit"},
+		{ActionA2UIUpdate, "a2ui_update"},
 		{ActionWorkspaceShare, "workspace_share"},
 		{ActionTeamTaskClone, "team_task_clone"},
 		{ActionTeamMemorySave, "team_memory_save"},

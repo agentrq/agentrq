@@ -35,7 +35,7 @@ func startProcess(t *testing.T, tokens auth.TokenService) *process {
 	manager := mcpctrl.NewManager(func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer {
 		return mcpctrl.NewWorkspaceServer(
 			workspaceID, 0, userID, "http://localhost",
-			nil, nil, nil, nil, listTasks, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+			nil, nil, nil, nil, listTasks, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 			eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, tokens, nil,
 		)
 	})

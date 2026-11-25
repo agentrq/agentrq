@@ -230,7 +230,7 @@ func TestHandler_ClosedStreamStopsStreaming(t *testing.T) {
 
 	ps := NewWorkspaceServer(
 		1, 0, "user", "http://localhost",
-		nil, nil, nil, nil, listTasks, nil, nil, nil, nil,
+		nil, nil, nil, nil, listTasks, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, pub,
 	)

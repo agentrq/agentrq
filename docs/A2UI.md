@@ -26,6 +26,12 @@ Pressing a button answers the card, once:
 
 Then the card stays in the thread read-only, the button you pressed marked, and a question shows what you entered. A card in an archived workspace, on a teammate's task, or a question the agent stopped waiting for takes no answer. A button that opens a link opens only `http` and `https` links, in a new tab, and only when you press it.
 
+## A card that updates
+
+A reply whose card starts with no `createSurface` updates the task's newest card with that `surfaceId` instead of posting a new one: a progress card can move from "building" to "412 tests passed" in place. Components are replaced by id, the card's data is written path by path, and the reply's text replaces the message's text. `deleteSurface` removes the card and leaves the message with its new text.
+
+An update is an edit, not a new message: it sends no push, Slack or email notification. The whole card is checked again after the update, and an update is refused when no card in the task has that id, when the card has been answered, when it is a question asked with `elicit`, or when it attaches files (an updated card shows only the files its first reply attached).
+
 ## The text is always there
 
 A reply with a card still needs its text, and the text should say everything the card does. Slack, push notifications, email, the desktop app's notifications and other agents reading the thread show only the text. If a stored card ever fails to load, the thread shows the text in its place.

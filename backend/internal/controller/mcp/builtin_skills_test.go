@@ -43,7 +43,7 @@ func TestWorkspaceServer_ServesTheWorkspaceSkill(t *testing.T) {
 	}).AnyTimes()
 	ps := NewWorkspaceServer(
 		100, 0, "user", "http://localhost",
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, nil,
 	)
 	ps.pubsub = pub
