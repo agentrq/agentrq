@@ -269,10 +269,12 @@ delivery path must too, or a reopened task is redone from its body alone.
 
 Every hand-off of a not started task (the pushes, the reassign push, Slack and
 `task get` with no ID) puts `taskinstruction.Start` after its ID: the exact
-`updateStatus` and `get` calls, with the real ID, then `workspace` get and
-`memory` load, and the `updateStatus` call that completes it. Without them
-agents started late and never read the task's messages; a new delivery path
-must add it too.
+`updateStatus` and `get` calls, with the real ID, both ways to fetch an
+attachment (`getAttachment` answers base64 on local storage; `agentrq-ws`
+needs npx), then
+`workspace` get and `memory` load, and the `updateStatus` call that completes
+it. Without them agents started late and never read the task's messages; a
+new delivery path must add it too.
 
 ## The workspace's notes go with the task, never in it
 
