@@ -35,6 +35,9 @@ export function precacheTotal(manifest) {
   return new Set(manifest.map((entry) => (typeof entry === 'string' ? entry : entry.url))).size
 }
 
+/** How long the bar waits for the next file before taking itself down. */
+export const PROGRESS_STALL_MS = 60_000
+
 /** A 0–100 percentage from a progress message, or null when there is no total. */
 export function percentOf({ done, total }) {
   if (!total) return null
@@ -57,6 +60,12 @@ export function withUpdateProgress(registered, container = globalThis.navigator?
 
   const progress = ref(null)
   let watched = null
+  let stall = null
+
+  const endDownload = () => {
+    clearTimeout(stall)
+    if (progress.value?.phase === 'downloading') progress.value = null
+  }
 
   container.addEventListener('message', (event) => {
     if (event.data?.type !== PRECACHE_PROGRESS) return
@@ -67,16 +76,24 @@ export function withUpdateProgress(registered, container = globalThis.navigator?
     const worker = event.source
     if (worker && worker.state !== 'installing') return
 
+    // Every file is cached: the download is over whatever the worker's state
+    // says, and a state change this page never sees must not hold the bar up.
+    if (event.data.total && event.data.done >= event.data.total) {
+      endDownload()
+      return
+    }
+
     progress.value = { phase: 'downloading', percent: percentOf(event.data), version: '' }
+    // A download that stops reporting has ended one way or another.
+    clearTimeout(stall)
+    stall = setTimeout(endDownload, PROGRESS_STALL_MS)
 
     // The worker leaves 'installing' whether it succeeded or failed: either
     // way the bar is done, and on success the "Update now" offer takes over.
     if (worker && worker !== watched) {
       watched = worker
       worker.addEventListener('statechange', () => {
-        if (worker.state !== 'installing' && progress.value?.phase === 'downloading') {
-          progress.value = null
-        }
+        if (worker.state !== 'installing') endDownload()
       })
     }
   })

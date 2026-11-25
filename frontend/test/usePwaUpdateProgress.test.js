@@ -7,6 +7,7 @@ import { ref } from 'vue'
 
 import {
   PRECACHE_PROGRESS,
+  PROGRESS_STALL_MS,
   percentOf,
   precacheProgressPlugin,
   precacheTotal,
@@ -183,6 +184,62 @@ describe('withUpdateProgress', () => {
     container.deliver({ type: PRECACHE_PROGRESS, done: 79, total: 79 }, worker)
 
     expect(progress.value).toBeNull()
+  })
+
+  it('takes the bar down at the last file even when no state change is seen', () => {
+    const container = fakeContainer()
+    const worker = fakeWorker()
+    const { progress } = withUpdateProgress(registered(), container)
+
+    container.deliver({ type: PRECACHE_PROGRESS, done: 78, total: 79 }, worker)
+    container.deliver({ type: PRECACHE_PROGRESS, done: 79, total: 79 }, worker)
+
+    expect(progress.value).toBeNull()
+  })
+
+  it('takes it down at the last file when the message names no worker', () => {
+    const container = fakeContainer()
+    const { progress } = withUpdateProgress(registered(), container)
+
+    container.deliver({ type: PRECACHE_PROGRESS, done: 1, total: 2 }, null)
+    container.deliver({ type: PRECACHE_PROGRESS, done: 2, total: 2 }, null)
+
+    expect(progress.value).toBeNull()
+  })
+
+  it('takes it down when the download stops reporting', () => {
+    vi.useFakeTimers()
+    try {
+      const container = fakeContainer()
+      const { progress } = withUpdateProgress(registered(), container)
+
+      container.deliver({ type: PRECACHE_PROGRESS, done: 1, total: 10 }, null)
+      vi.advanceTimersByTime(PROGRESS_STALL_MS - 1)
+      container.deliver({ type: PRECACHE_PROGRESS, done: 2, total: 10 }, null)
+      vi.advanceTimersByTime(PROGRESS_STALL_MS - 1)
+      expect(progress.value?.percent).toBe(20)
+
+      vi.advanceTimersByTime(1)
+      expect(progress.value).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('leaves the restart up when the stall timer fires', async () => {
+    vi.useFakeTimers()
+    try {
+      const container = fakeContainer()
+      const sw = withUpdateProgress(registered(), container)
+
+      container.deliver({ type: PRECACHE_PROGRESS, done: 1, total: 10 }, null)
+      await sw.updateServiceWorker(true)
+      vi.advanceTimersByTime(PROGRESS_STALL_MS)
+
+      expect(sw.progress.value?.phase).toBe('restarting')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('watches each worker once however many files it reports', () => {
