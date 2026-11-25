@@ -13,8 +13,10 @@ import { UserError } from './errors.js'
  * application/octet-stream, which is correct, just unspecific.
  */
 export const MIME_TYPES = {
+  '.aac': 'audio/aac',
   '.bmp': 'image/bmp',
   '.csv': 'text/csv',
+  '.flac': 'audio/flac',
   '.gif': 'image/gif',
   '.gz': 'application/gzip',
   '.htm': 'text/html',
@@ -25,9 +27,12 @@ export const MIME_TYPES = {
   '.js': 'text/javascript',
   '.json': 'application/json',
   '.log': 'text/plain',
+  '.m4a': 'audio/mp4',
   '.md': 'text/markdown',
   '.mp3': 'audio/mpeg',
   '.mp4': 'video/mp4',
+  '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg',
   '.pdf': 'application/pdf',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',

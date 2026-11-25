@@ -24,6 +24,12 @@ test('mimeTypeFor knows the common types and is not upset by the rest', () => {
   assert.equal(mimeTypeFor('SHOUT.PNG'), 'image/png')
   assert.equal(mimeTypeFor('notes.md'), 'text/markdown')
   assert.equal(mimeTypeFor('archive.tar'), 'application/x-tar')
+  // Safari plays no audio served as application/octet-stream.
+  assert.equal(mimeTypeFor('intro.m4a'), 'audio/mp4')
+  assert.equal(mimeTypeFor('take.AAC'), 'audio/aac')
+  assert.equal(mimeTypeFor('take.flac'), 'audio/flac')
+  assert.equal(mimeTypeFor('take.ogg'), 'audio/ogg')
+  assert.equal(mimeTypeFor('take.opus'), 'audio/ogg')
   assert.equal(mimeTypeFor('mystery.qqq'), 'application/octet-stream')
   assert.equal(mimeTypeFor('no-extension'), 'application/octet-stream')
 })
