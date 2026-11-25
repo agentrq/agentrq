@@ -41,10 +41,13 @@
             <h1 class="text-lg @min-[48rem]:text-2xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate">
               <span v-if="isFullPane" class="opacity-50 cursor-pointer hover:opacity-100" @click="router.push(`/workspaces/${workspaceId}`)">{{ toKebabCase(workspace?.name) }}</span>
               <span v-else>{{ toKebabCase(workspace?.name) || 'Workspace' }}</span>
-              <template v-if="isFullPane">
+              <!-- A span, not a <template>: page translation drops the empty
+                   text nodes marking a fragment's ends, and removing it then
+                   throws, breaking every later patch of this page. -->
+              <span v-if="isFullPane">
                 <span class="mx-1.5 text-gray-300 dark:text-zinc-700 font-medium">/</span>
                 <span class="text-gray-400 dark:text-zinc-500">{{ sectionLabel }}</span>
-              </template>
+              </span>
             </h1>
           </div>
         </div>
