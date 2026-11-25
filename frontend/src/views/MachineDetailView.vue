@@ -673,7 +673,7 @@ async function stopSession(id) {
                   <span
                     v-for="c in METER_CELLS"
                     :key="c"
-                    class="h-1.5 flex-1 max-w-3 rounded-sm"
+                    class="h-1.5 flex-1 rounded-sm"
                     :class="c > meterCells(machine.metrics.cpuPercent)
                       ? 'bg-gray-200 dark:bg-zinc-700'
                       : cpuHot(machine.metrics.cpuPercent) ? 'bg-amber-500 dark:bg-amber-400' : 'bg-emerald-500'"
@@ -692,7 +692,7 @@ async function stopSession(id) {
                   <span
                     v-for="c in METER_CELLS"
                     :key="c"
-                    class="h-1.5 flex-1 max-w-3 rounded-sm"
+                    class="h-1.5 flex-1 rounded-sm"
                     :class="c > meterCells(memoryUsedPercent(machine.metrics))
                       ? 'bg-gray-200 dark:bg-zinc-700'
                       : nearlyFull(memoryUsedPercent(machine.metrics)) ? 'bg-amber-500 dark:bg-amber-400' : 'bg-emerald-500'"

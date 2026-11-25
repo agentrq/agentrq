@@ -339,6 +339,8 @@ describe('MachineDetailView: Machine Info', () => {
     const mem = [...el.querySelector('[data-testid=tile-memory]').querySelectorAll('span')]
     expect(mem).toHaveLength(10)
     expect(mem.filter((c) => c.className.includes('bg-emerald-500'))).toHaveLength(5)
+    const cpu = [...el.querySelector('[data-testid=tile-cpu]').querySelectorAll('span')]
+    expect([...mem, ...cpu].every((c) => c.className.includes('flex-1') && !c.className.includes('max-w-'))).toBe(true)
     const grid = el.querySelector('[data-testid=tile-cpu]').parentElement
     expect(grid.className).toContain('@min-[48rem]:grid-cols-4')
     const bar = el.querySelector('[data-testid=disk-bar]')
