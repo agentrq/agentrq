@@ -140,6 +140,22 @@ export function modelGroups(agentModels) {
 }
 
 /**
+ * The groups cut down to the models whose name, id or group holds the query,
+ * ignoring case; a group left empty is dropped. All of them for no query.
+ */
+export function filterModelGroups(groups = [], query = '') {
+  const q = query.trim().toLowerCase();
+  if (!q) return groups;
+  const hit = (s) => typeof s === 'string' && s.toLowerCase().includes(q);
+  return groups
+    .map((group) => ({
+      ...group,
+      models: hit(group.name) ? group.models : group.models.filter((m) => hit(m.name) || hit(m.id)),
+    }))
+    .filter((group) => group.models.length > 0);
+}
+
+/**
  * The model to show as chosen: what was asked for, until the agent answers.
  *
  * The requested one wins while it is outstanding, because that is what the

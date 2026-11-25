@@ -14,6 +14,7 @@ import {
   canChooseModel,
   displayedModelId,
   isConfirmed,
+  filterModelGroups,
   modelGroups,
   popoverPosition,
   useAgentModelPicker,
@@ -64,6 +65,34 @@ describe('canChooseModel', () => {
     // A choice sent to nothing goes nowhere.
     expect(canChooseModel({ agentConnected: false, agentModels: twoModels })).toBe(false);
     expect(canChooseModel(undefined)).toBe(false);
+  });
+});
+
+describe('filterModelGroups', () => {
+  const groups = [
+    { name: 'Anthropic', models: [{ id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5' }, { id: 'anthropic/claude-opus', name: 'Claude Opus' }] },
+    { name: 'OpenAI', models: [{ id: 'openai/gpt-5:thinking', name: 'GPT-5' }] },
+  ];
+
+  it('keeps everything for an empty or blank query', () => {
+    expect(filterModelGroups(groups, '')).toBe(groups);
+    expect(filterModelGroups(groups, '   ')).toBe(groups);
+    expect(filterModelGroups()).toEqual([]);
+  });
+
+  it('matches a name or an id, ignoring case, and drops emptied groups', () => {
+    expect(filterModelGroups(groups, 'SONNET')).toEqual([
+      { name: 'Anthropic', models: [groups[0].models[0]] },
+    ]);
+    expect(filterModelGroups(groups, ':thinking')).toEqual([groups[1]]);
+  });
+
+  it('keeps a whole group whose name matches', () => {
+    expect(filterModelGroups(groups, 'anthropic')).toEqual([groups[0]]);
+  });
+
+  it('matches nothing', () => {
+    expect(filterModelGroups(groups, 'llama')).toEqual([]);
   });
 });
 

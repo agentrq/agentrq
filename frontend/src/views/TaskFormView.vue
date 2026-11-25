@@ -31,7 +31,9 @@
           @dragleave.prevent="isDragging = false"
           @drop.prevent="handleDrop">
       
-      <div class="w-full max-w-3xl space-y-4">
+      <!-- Wide enough that the toolbar, with a long model name in it, keeps
+           the send button on the same row. -->
+      <div class="w-full max-w-5xl space-y-4">
         
         <h1 class="text-xl @min-[48rem]:text-3xl font-black text-gray-800 dark:text-zinc-200 tracking-tight text-center mb-8">
           {{ isEditMode ? 'Edit Task' : 'What do you want to achieve?' }}
@@ -92,14 +94,14 @@
 
              <!-- The shortcut, said out loud. Hidden on narrow screens, where
                   there is no keyboard to press it with and no room to say so. -->
-             <span class="hidden @min-[40rem]:inline text-[10px] font-medium text-gray-400 dark:text-zinc-500 mr-2 shrink-0">
+             <span class="hidden @min-[40rem]:inline ml-auto text-[10px] font-medium text-gray-400 dark:text-zinc-500 mr-2 shrink-0">
                {{ isEditMode ? 'Cmd ⌘ + Enter to save' : 'Cmd ⌘ + Enter to create' }}
              </span>
 
              <!-- Submit Button -->
              <button type="submit"
                      :disabled="!canSubmit"
-                     class="h-8 w-8 @min-[40rem]:h-9 @min-[40rem]:w-9 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-md border border-transparent">
+                     class="ml-auto h-8 w-8 @min-[40rem]:h-9 @min-[40rem]:w-9 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-md border border-transparent">
                 <svg v-if="sending" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v8H4z" /></svg>
                 <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
              </button>
