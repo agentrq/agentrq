@@ -149,17 +149,17 @@ describe('a2ui functions', () => {
     expect(callFunction('pluralize', { value: 2, two: 'two', few: 'few', other: 'o' }, ctx({ locale: 'ar' }))).toBe('two')
   })
 
-  it('openUrl opens only a web or mail link, and only from a click', () => {
+  it('openUrl opens only an http(s) link, and only from a click', () => {
     const open = vi.fn()
     expect(call('openUrl', { url: 'https://agentrq.com/x' }, { open })).toBeUndefined()
     expect(open).not.toHaveBeenCalled()
-    for (const url of ['javascript:alert(1)', 'data:text/html,x', 'not a url', 3]) {
+    for (const url of ['javascript:alert(1)', 'data:text/html,x', 'mailto:hi@example.com', 'not a url', 3]) {
       call('openUrl', { url }, { open, userActivated: true })
     }
     expect(open).not.toHaveBeenCalled()
     call('openUrl', { url: 'https://agentrq.com/x' }, { open, userActivated: true })
-    call('openUrl', { url: 'mailto:hi@example.com' }, { open, userActivated: true })
-    expect(open.mock.calls).toEqual([['https://agentrq.com/x'], ['mailto:hi@example.com']])
+    call('openUrl', { url: 'http://example.com' }, { open, userActivated: true })
+    expect(open.mock.calls).toEqual([['https://agentrq.com/x'], ['http://example.com/']])
   })
 
   it('openUrl uses a new window, without an opener, by default', () => {

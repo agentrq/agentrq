@@ -12,15 +12,22 @@
 import { computed } from 'vue'
 
 import A2uiAudioPlayer from './A2uiAudioPlayer.vue'
+import A2uiButton from './A2uiButton.vue'
 import A2uiCard from './A2uiCard.vue'
+import A2uiCheckBox from './A2uiCheckBox.vue'
+import A2uiChoicePicker from './A2uiChoicePicker.vue'
 import A2uiColumn from './A2uiColumn.vue'
+import A2uiDateTimeInput from './A2uiDateTimeInput.vue'
 import A2uiDivider from './A2uiDivider.vue'
 import A2uiIcon from './A2uiIcon.vue'
 import A2uiImage from './A2uiImage.vue'
 import A2uiList from './A2uiList.vue'
+import A2uiModal from './A2uiModal.vue'
 import A2uiRow from './A2uiRow.vue'
+import A2uiSlider from './A2uiSlider.vue'
 import A2uiTabs from './A2uiTabs.vue'
 import A2uiText from './A2uiText.vue'
+import A2uiTextField from './A2uiTextField.vue'
 import A2uiVideo from './A2uiVideo.vue'
 import { accessibilityAttrs, weightStyle } from '../../a2ui/render.js'
 
@@ -44,6 +51,13 @@ function viewFor(name) {
     case 'Card': return A2uiCard
     case 'Tabs': return A2uiTabs
     case 'Divider': return A2uiDivider
+    case 'Button': return A2uiButton
+    case 'TextField': return A2uiTextField
+    case 'CheckBox': return A2uiCheckBox
+    case 'ChoicePicker': return A2uiChoicePicker
+    case 'Slider': return A2uiSlider
+    case 'DateTimeInput': return A2uiDateTimeInput
+    case 'Modal': return A2uiModal
     default: return null
   }
 }

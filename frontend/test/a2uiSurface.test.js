@@ -7,7 +7,7 @@ import { isReactive, reactive } from 'vue'
 
 import { isDynamic, resolveArgs, resolveValue } from '../src/a2ui/resolve.js'
 import {
-  ROOT_ID, applyMessage, applyMessages, childEntries, createSurfaceState, loadSurface, surfaceContext,
+  ROOT_ID, applyMessage, applyMessages, childEntries, createSurfaceState, isCardMetadata, loadSurface, surfaceContext,
 } from '../src/a2ui/surface.js'
 import { BASIC_CATALOG_ID } from '../src/a2ui/validate.js'
 
@@ -69,6 +69,20 @@ describe('a2ui surface', () => {
     const interactive = [create(), update([{ id: 'root', component: 'Button', child: 't', action: { event: { name: 'go' } } }, { id: 't', component: 'Text', text: 'Go' }])]
     expect(loadSurface({ type: 'a2ui', messages: interactive })).toBeNull()
     expect(loadSurface({ type: 'a2ui', messages: interactive }, { interactive: true })).not.toBeNull()
+  })
+
+  it('loads a question asked as a card, answered with the data model the person sent', () => {
+    const messages = [create(), update([{ id: 'root', component: 'Text', text: { '@path': '/v' } }]), data({ v: 'asked' })]
+    const question = { type: 'elicitation_request', mode: 'a2ui', status: 'pending', messages }
+    expect(isCardMetadata(question)).toBe(true)
+    expect(isCardMetadata({ type: 'elicitation_request', mode: 'form' })).toBe(false)
+    expect(isCardMetadata(undefined)).toBe(false)
+    expect(loadSurface(question).dataModel).toEqual({ v: 'asked' })
+    expect(loadSurface({ ...question, status: 'accept', content: { name: 'ok', dataModel: { v: 'sent' } } }).dataModel).toEqual({ v: 'sent' })
+    // Only an object replaces it, and only on a question.
+    expect(loadSurface({ ...question, status: 'accept', content: { name: 'ok', dataModel: ['x'] } }).dataModel).toEqual({ v: 'asked' })
+    expect(loadSurface({ ...question, status: 'accept', content: { name: 'ok', dataModel: null } }).dataModel).toEqual({ v: 'asked' })
+    expect(loadSurface({ type: 'a2ui', messages, content: { dataModel: { v: 'sent' } } }).dataModel).toEqual({ v: 'asked' })
   })
 
   it('expands static children and List templates, each item its own scope and @index', () => {

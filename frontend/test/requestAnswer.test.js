@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 import { describe, it, expect } from 'vitest'
-import { withRequestAnswered } from '../src/composables/useRequestAnswer'
+import { withCardAnswered, withRequestAnswered } from '../src/composables/useRequestAnswer'
 
 const task = () => ({
   id: 't1',
@@ -40,5 +40,31 @@ describe('withRequestAnswered', () => {
     expect(withRequestAnswered(before, '', { status: 'accept' })).toBe(before)
     expect(withRequestAnswered(null, 'r1', { status: 'accept' })).toBe(null)
     expect(withRequestAnswered({ id: 't1' }, 'r1', { status: 'accept' })).toEqual({ id: 't1' })
+  })
+})
+
+describe('withCardAnswered', () => {
+  const cards = () => ({
+    id: 't1',
+    messages: [
+      { id: 'm1', sender: 'agent', metadata: { type: 'a2ui', surfaceId: 's1' } },
+      { id: 'm2', sender: 'agent', metadata: { type: 'a2ui', surfaceId: 's2', answered: { name: 'old' } } },
+      { id: 'm3', sender: 'agent', text: 'no card' },
+    ],
+  })
+
+  it("marks the message's card answered, and leaves the rest alone", () => {
+    const before = cards()
+    const after = withCardAnswered(before, 'm1', { name: 'approve' })
+    expect(after.messages[0].metadata).toEqual({ type: 'a2ui', surfaceId: 's1', answered: { name: 'approve' } })
+    expect(after.messages[1]).toBe(before.messages[1])
+    expect(before.messages[0].metadata.answered).toBeUndefined()
+  })
+
+  it('keeps an answer the card already has, and the task when nothing matches', () => {
+    const before = cards()
+    expect(withCardAnswered(before, 'm2', { name: 'new' })).toBe(before)
+    expect(withCardAnswered(before, 'nope', { name: 'x' })).toBe(before)
+    expect(withCardAnswered(null, 'm1', {})).toBeNull()
   })
 })
