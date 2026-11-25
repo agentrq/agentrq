@@ -11,12 +11,13 @@
     <div class="w-full px-4 py-2 mb-6 shrink-0 flex flex-row items-start justify-between gap-4">
       <div class="flex flex-col min-w-0 flex-1">
         <h1 class="text-lg @min-[48rem]:text-2xl font-black text-gray-800 dark:text-zinc-200 tracking-tight truncate leading-tight">
-          <template v-if="workspace">
+          <!-- Spans, not <template>s: see WorkspaceDetailView's heading. -->
+          <span v-if="workspace">
             <span data-test="team-analytics-scope" class="opacity-50 cursor-pointer hover:opacity-100" @click="openTasks">{{ workspace }}</span>
             <span class="mx-1.5 text-gray-300 dark:text-zinc-700 font-medium">/</span>
             <span class="text-gray-400 dark:text-zinc-500">Analytics</span>
-          </template>
-          <template v-else>Analytics</template>
+          </span>
+          <span v-else>Analytics</span>
         </h1>
         <p v-if="!workspace" data-test="team-analytics-scope" class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5 truncate">All workspaces</p>
       </div>

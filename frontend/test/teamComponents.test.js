@@ -123,6 +123,11 @@ const click = async (node) => {
   node.click();
   await flush();
 };
+// What page translation leaves of a heading: its text rewritten, and the empty
+// text nodes Vue marks a fragment's ends with gone.
+const translate = (node) => {
+  for (const c of [...node.childNodes]) if (c.nodeType === Node.TEXT_NODE && !c.nodeValue.trim()) c.remove();
+};
 const key = async (node, k, init = {}) => {
   node.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init }));
   await flush();
@@ -1174,6 +1179,21 @@ describe('a team\'s analytics', () => {
     expect(pressed('[data-test=team-analytics]')).toBe(false);
     await click($('[data-test=team-analytics]'));
     expect(here().fullPath).toBe('/teams/tm1/analytics?workspace=Backend');
+  });
+
+  it('keeps its heading working on a translated page, as Skills does', async () => {
+    api.fetchTeamStats.mockResolvedValue({ summary: {} });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (const [view, page, title] of [[TeamAnalyticsView, 'analytics', 'Analytics'], [SkillsView, 'skills', 'Skills']]) {
+      await mount(view, { path: `/teams/tm1/${page}?workspace=Backend` });
+      translate($('h1'));
+      await router.push(`/teams/tm1/${page}`);
+      await flush();
+      expect(text($('h1')), `the whole team's ${page} heading`).toBe(title);
+      app.unmount();
+    }
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
   });
 
   it('offers no skills for the whole team, and its statuses open the whole team\'s lists', async () => {

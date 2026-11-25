@@ -26,12 +26,13 @@ const teamWorkspace = computed(() => (typeof route.query.workspace === 'string' 
     <div class="w-full px-4 py-2 mb-6 shrink-0 flex flex-row items-start justify-between gap-4">
       <div class="flex flex-col min-w-0 flex-1">
         <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 tracking-tight truncate leading-tight">
-          <template v-if="teamWorkspace">
+          <!-- Spans, not <template>s: see WorkspaceDetailView's heading. -->
+          <span v-if="teamWorkspace">
             <span data-test="team-skills-workspace" class="opacity-50 cursor-pointer hover:opacity-100" @click="router.push(link({ path: '/tasks/active', query: { workspace: teamWorkspace } }))">{{ teamWorkspace }}</span>
             <span class="mx-1.5 text-gray-300 dark:text-zinc-700 font-medium">/</span>
             <span class="text-gray-400 dark:text-zinc-500">Skills</span>
-          </template>
-          <template v-else>Skills</template>
+          </span>
+          <span v-else>Skills</span>
         </h1>
         <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
           <template v-if="teamWorkspace">The skills it owns, which every teammate can change.</template>
