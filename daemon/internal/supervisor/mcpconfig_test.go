@@ -80,6 +80,60 @@ func TestTheSupervisorGetsBothServersInOneFile(t *testing.T) {
 	}
 }
 
+// The workspace's own server comes first and the account-wide one after it,
+// as given: a map would sort "agentrq" ahead of "agentrq-workspace".
+func TestTheSupervisorsServersAreWrittenInTheOrderGiven(t *testing.T) {
+	dir := t.TempDir()
+	path, _, err := WriteMCPConfig(dir, ws(testURL), MCPEntry{Name: "agentrq", URL: "https://mcp.agentrq.com/mcp"})
+	if err != nil {
+		t.Fatalf("WriteMCPConfig: %v", err)
+	}
+	assertKeyOrder(t, path, `"agentrq-workspace"`, `"agentrq"`)
+}
+
+// A person's own servers keep their places, and ours go after them.
+func TestAnExistingFilesServerOrderIsKept(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, MCPConfigName)
+	writeFile(t, path, `{"mcpServers":{"zeta":{"type":"http","url":"https://z.example"},"alpha":{"type":"http","url":"https://a.example"}}}`)
+	if _, _, err := WriteMCPConfig(dir, ws(testURL)); err != nil {
+		t.Fatalf("WriteMCPConfig: %v", err)
+	}
+	assertKeyOrder(t, path, `"zeta"`, `"alpha"`, `"agentrq-workspace"`)
+}
+
+func assertKeyOrder(t *testing.T, path string, keys ...string) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	last := -1
+	for _, k := range keys {
+		i := strings.Index(string(b), k+":")
+		if i <= last {
+			t.Fatalf("%s is out of order, want %v in:\n%s", k, keys, b)
+		}
+		last = i
+	}
+}
+
+func TestObjectKeys(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want []string
+	}{
+		{`null`, nil},
+		{`{"b":1,"a":{"x":[1,2]},"b":3}`, []string{"b", "a"}},
+		{`{"a":1,`, []string{"a"}},
+		{`{"a":}`, nil},
+	} {
+		if got := objectKeys(json.RawMessage(tc.in)); !slices.Equal(got, tc.want) {
+			t.Errorf("objectKeys(%s) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // The whole credential is a query parameter in that URL, so the file is the
 // only place it may live — and only the owner may read it.
 func TestMCPConfigIsOwnerOnly(t *testing.T) {
