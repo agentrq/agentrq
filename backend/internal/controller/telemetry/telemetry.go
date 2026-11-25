@@ -7,6 +7,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -84,8 +85,36 @@ func New(p Params) Controller {
 			Help: "Telemetry actions recorded, by action name and, for MCP calls, the tool, resource or prompt.",
 		}, []string{"action", "sub_action"})
 		p.Registerer.MustRegister(c.actions)
+		c.primeActions()
 	}
 	return c
+}
+
+// primeActions creates every series the controller can count at 0. A series
+// born at 1 on its first event hides that event from increase() and rate(), so
+// after each restart a rare action would read as never having happened. The
+// names come from the same lookups recording uses: tool calls under each tool,
+// method calls under each resource, prompt or method ("resource:", "prompt:"
+// or "skills/list"), and every other action under no tool.
+func (c *controller) primeActions() {
+	for id := 0; id < 256; id++ {
+		if _, ok := crudActionID(entity.Action(id)); ok {
+			c.actions.WithLabelValues(entity.Action(id).String(), "")
+		}
+		action := mcpAction(id)
+		switch {
+		case action.String() == "unknown":
+		case !action.named():
+			c.actions.WithLabelValues(action.String(), "")
+		default:
+			method := uint8(action) == model.ActionIDMCPMethodCall
+			for name := range subActionIDByToolName {
+				if strings.ContainsAny(name, ":/") == method {
+					c.actions.WithLabelValues(action.String(), name)
+				}
+			}
+		}
+	}
 }
 
 // enqueue counts a telemetry row on Prometheus under the action's name and,
@@ -161,8 +190,34 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 	if event.ResourceType == entity.ResourceTeamSkill && event.Origin == entity.OriginMCP {
 		return
 	}
+	action, ok := crudActionID(event.Action)
+	if !ok {
+		return
+	}
+	c.enqueue(model.Telemetry{
+		UserID:      event.UserID,
+		WorkspaceID: event.WorkspaceID,
+		OccurredAt:  time.Now().Unix(),
+		Action:      action,
+		Actor:       uint8(event.Actor),
+	}, event.Action, "")
+	// A scheduled task is also a task create.
+	if event.Action == entity.ActionTaskFromScheduled {
+		c.enqueue(model.Telemetry{
+			UserID:      event.UserID,
+			WorkspaceID: event.WorkspaceID,
+			OccurredAt:  time.Now().Unix(),
+			Action:      model.ActionIDTaskCreate,
+			Actor:       uint8(event.Actor),
+		}, entity.ActionTaskCreate, "")
+	}
+}
+
+// crudActionID is the stored action a CRUD event is recorded as, and false
+// for one that is not recorded.
+func crudActionID(a entity.Action) (uint8, bool) {
 	var action uint8
-	switch event.Action {
+	switch a {
 	case entity.ActionWorkspaceCreate:
 		action = model.ActionIDWorkspaceCreate
 	case entity.ActionWorkspaceUpdate:
@@ -186,21 +241,7 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 	case entity.ActionTaskApproveManual:
 		action = model.ActionIDTaskApproveManual
 	case entity.ActionTaskFromScheduled:
-		c.enqueue(model.Telemetry{
-			UserID:      event.UserID,
-			WorkspaceID: event.WorkspaceID,
-			OccurredAt:  time.Now().Unix(),
-			Action:      model.ActionIDTaskFromScheduled,
-			Actor:       uint8(event.Actor),
-		}, entity.ActionTaskFromScheduled, "")
-		c.enqueue(model.Telemetry{
-			UserID:      event.UserID,
-			WorkspaceID: event.WorkspaceID,
-			OccurredAt:  time.Now().Unix(),
-			Action:      model.ActionIDTaskCreate,
-			Actor:       uint8(event.Actor),
-		}, entity.ActionTaskCreate, "")
-		return
+		action = model.ActionIDTaskFromScheduled
 	case entity.ActionTaskRejectManual:
 		action = model.ActionIDTaskRejectManual
 	case entity.ActionUserCreate:
@@ -408,16 +449,9 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 	case entity.ActionA2UIChart:
 		action = model.ActionIDA2UIChart
 	default:
-		return
+		return 0, false
 	}
-
-	c.enqueue(model.Telemetry{
-		UserID:      event.UserID,
-		WorkspaceID: event.WorkspaceID,
-		OccurredAt:  time.Now().Unix(),
-		Action:      action,
-		Actor:       uint8(event.Actor),
-	}, event.Action, "")
+	return action, true
 }
 
 // subActionIDByToolName maps every tool/resource/prompt name either MCP
@@ -524,14 +558,13 @@ var subActionIDByToolName = map[string]uint8{
 
 func (c *controller) recordMCP(event mcp.MCPEvent) {
 	var action mcpAction
-	var tool mcpTool
 	switch event.Action {
 	case mcp.ActionMCPToolCall:
-		action, tool = mcpAction(model.ActionIDMCPToolCall), mcpTool(event.ToolName)
+		action = mcpAction(model.ActionIDMCPToolCall)
 	case mcp.ActionMCPMethodCall:
-		action, tool = mcpAction(model.ActionIDMCPMethodCall), mcpTool(event.ToolName)
+		action = mcpAction(model.ActionIDMCPMethodCall)
 	case mcp.ActionMCPToolCallError:
-		action, tool = mcpAction(model.ActionIDMCPToolCallError), mcpTool(event.ToolName)
+		action = mcpAction(model.ActionIDMCPToolCallError)
 	case mcp.ActionMCPAgentToolCallFail:
 		action = mcpAction(model.ActionIDAgentToolCallFail)
 	case mcp.ActionMCPConnect:
@@ -561,6 +594,11 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 		}
 	default:
 		return
+	}
+
+	var tool mcpTool
+	if action.named() {
+		tool = mcpTool(event.ToolName)
 	}
 
 	c.recordMCPClient(event.ClientID, event.ClientName, event.ClientVersion)
@@ -612,6 +650,16 @@ func (a mcpAction) String() string {
 		return "mcp_permission_extension_deny"
 	}
 	return "unknown"
+}
+
+// named is whether the action is counted by the tool, resource or prompt
+// it called.
+func (a mcpAction) named() bool {
+	switch uint8(a) {
+	case model.ActionIDMCPToolCall, model.ActionIDMCPToolCallError, model.ActionIDMCPMethodCall:
+		return true
+	}
+	return false
 }
 
 // mcpTool is the tool, resource or prompt an MCP call named, empty for any

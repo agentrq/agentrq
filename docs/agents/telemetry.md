@@ -17,6 +17,11 @@ makes them self-evidently true. A few happen entirely in the browser and are
   stored ID. A stored action without a `String()` name reads `unknown` there,
   and `prometheus_test.go` fails on it. `sub_action` is only ever a name from
   `subActionIDByToolName`, so a caller cannot grow the label set.
+- **Every series is created at 0 when the controller starts** (`primeActions`),
+  from the same lookups recording uses. A series born at 1 hides its first
+  event from `increase()`/`rate()`, so after a deploy a rare action reads as
+  zero. A name these lookups can't produce is never primed, and loses that
+  first event.
 - **Every metric on `/metrics` carries `app_version`** (`v0.18.4`, never a
   sha), and `agentrq_build_info{app_version} 1` names the build for deploy
   annotations. It comes from registering through the `Registerer` that

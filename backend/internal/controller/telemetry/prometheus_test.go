@@ -67,17 +67,126 @@ func TestPrometheus_CRUDActionsUseTheirNames(t *testing.T) {
 	}
 }
 
+// total sums every series of the actions counter.
+func total(t *testing.T, reg *prometheus.Registry) float64 {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sum float64
+	for _, f := range families {
+		if f.GetName() != "agentrq_telemetry_actions_total" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			sum += m.GetCounter().GetValue()
+		}
+	}
+	return sum
+}
+
+// series reads every action/sub_action series the registry holds, with its value.
+func series(t *testing.T, reg *prometheus.Registry) map[[2]string]float64 {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[[2]string]float64{}
+	for _, f := range families {
+		if f.GetName() != "agentrq_telemetry_actions_total" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			var key [2]string
+			for _, l := range m.GetLabel() {
+				switch l.GetName() {
+				case "action":
+					key[0] = l.GetValue()
+				case "sub_action":
+					key[1] = l.GetValue()
+				}
+			}
+			out[key] = m.GetCounter().GetValue()
+		}
+	}
+	return out
+}
+
+// Every series exists at 0 before its first event, so increase() and rate()
+// see that event rather than a series born at 1.
+func TestPrometheus_SeriesStartAtZero(t *testing.T) {
+	_, reg := promController(t)
+	got := series(t, reg)
+	for _, key := range [][2]string{
+		{"team_create", ""},
+		{"team_join", ""},
+		{"user_signout", ""},
+		{"pano_share", ""},
+		{"team_skill_opt_in", ""},
+		{"task_from_scheduled", ""},
+		{"mcp_permission_deny", ""},
+		{"mcp_connect", ""},
+		{"agent_tool_call_fail", ""},
+		{"mcp_tool_call", "getTask"},
+		{"mcp_tool_call_error", "pano"},
+		{"mcp_method_call", "resource:task"},
+		{"mcp_method_call", "prompt:new-workspace"},
+		{"mcp_method_call", "skills/list"},
+	} {
+		v, ok := got[key]
+		if !ok {
+			t.Errorf("%s/%q has no series", key[0], key[1])
+		} else if v != 0 {
+			t.Errorf("%s/%q starts at %v, want 0", key[0], key[1], v)
+		}
+	}
+	// Tools are only tool calls, resources and prompts only method calls, and
+	// a call by tool is never primed without one.
+	for _, key := range [][2]string{
+		{"mcp_tool_call", "resource:task"},
+		{"mcp_tool_call_error", "prompt:new-workspace"},
+		{"mcp_method_call", "getTask"},
+		{"mcp_tool_call", ""},
+		{"mcp_method_call", ""},
+		{"unknown", ""},
+	} {
+		if _, ok := got[key]; ok {
+			t.Errorf("%s/%q is primed, want no series", key[0], key[1])
+		}
+	}
+	// Every action recordCRUD counts, and every tool and method, is primed.
+	for a := 0; a < 256; a++ {
+		if _, ok := crudActionID(entity.Action(a)); ok {
+			if _, ok := got[[2]string{entity.Action(a).String(), ""}]; !ok {
+				t.Errorf("%s has no series", entity.Action(a))
+			}
+		}
+	}
+	for name := range subActionIDByToolName {
+		_, asTool := got[[2]string{"mcp_tool_call", name}]
+		_, asMethod := got[[2]string{"mcp_method_call", name}]
+		if asTool == asMethod {
+			t.Errorf("%s primed as tool %v, as method %v; want exactly one", name, asTool, asMethod)
+		}
+	}
+	if sum := total(t, reg); sum != 0 {
+		t.Fatalf("primed series sum to %v, want 0", sum)
+	}
+}
+
 // A team skill an agent changed is not stored, so it is not counted either.
 func TestPrometheus_SkippedCRUDIsNotCounted(t *testing.T) {
-	c, _ := promController(t)
+	c, reg := promController(t)
 	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionTeamSkillAdd, ResourceType: entity.ResourceTeamSkill, Origin: entity.OriginMCP})
-	if got := testutil.CollectAndCount(c.actions); got != 0 {
-		t.Fatalf("counted %d series, want 0", got)
+	if got := total(t, reg); got != 0 {
+		t.Fatalf("counted %v, want 0", got)
 	}
 }
 
 func TestPrometheus_MCPActionsUseTheirNames(t *testing.T) {
-	c, _ := promController(t)
+	c, reg := promController(t)
 	for _, tc := range []struct {
 		event     mcp.MCPEvent
 		action    string
@@ -109,8 +218,8 @@ func TestPrometheus_MCPActionsUseTheirNames(t *testing.T) {
 	// Events that store nothing count nothing.
 	c.recordMCP(mcp.MCPEvent{Action: mcp.ActionMCPNotification, Method: "permission_request"})
 	c.recordMCP(mcp.MCPEvent{Action: mcp.Action(255)})
-	if got := testutil.CollectAndCount(c.actions); got != 17 {
-		t.Fatalf("counted %d series, want 17", got)
+	if got := total(t, reg); got != 17 {
+		t.Fatalf("counted %v, want 17", got)
 	}
 }
 
