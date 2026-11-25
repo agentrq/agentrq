@@ -67,6 +67,7 @@ type handler struct {
 	coremcpServer *WorkspaceServer
 	crud          crud.Controller
 	tokenSvc      auth.TokenService
+	revoked       *revokedWorkspaces
 	cimd          auth.CIMDResolver
 	baseURL       string
 	domain        string
@@ -116,6 +117,9 @@ func New(p Params) (Handler, error) {
 		baseURL:       p.BaseURL,
 		domain:        p.Domain,
 	}
+	h.revoked = newRevokedWorkspaces(func(ctx context.Context, since time.Time) ([]int64, error) {
+		return h.crud.ListRevokedWorkspaceIDs(ctx, since)
+	})
 
 	isLocal := p.Domain == "localhost" || p.Domain == "127.0.0.1" || p.Domain == ""
 
@@ -473,10 +477,12 @@ func (h *handler) streamableHandler() http.Handler {
 		}
 
 		ttl := auth.SupervisorAccessTokenTTL
-		if auth.HasAudience(claims, auth.SupervisorLaunchToken) {
+		launch := auth.HasAudience(claims, auth.SupervisorLaunchToken)
+		if launch {
 			ttl = auth.SupervisorLaunchTokenTTL
 		}
-		if resource == "" || hasRestricted || claims.Subject == "" || outlivesTTL(claims, ttl) {
+		if resource == "" || hasRestricted || claims.Subject == "" || outlivesTTL(claims, ttl) ||
+			(launch && h.launchRevoked(r.Context(), claims)) {
 			challengeUnauthorized(w, r, "unauthorized")
 			return
 		}
@@ -492,6 +498,13 @@ func (h *handler) streamableHandler() http.Handler {
 
 		h.coremcpServer.Handler().ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// launchRevoked reports whether a launch token's workspace has been deleted
+// or its id reset since the token was minted, or the token names none.
+func (h *handler) launchRevoked(ctx context.Context, claims *auth.Claims) bool {
+	id := monoflake.IDFromBase62(auth.LaunchWorkspaceID(claims)).Int64()
+	return id <= 0 || h.revoked.has(ctx, id)
 }
 
 func (h *handler) oauthMetadataHandler() http.Handler {

@@ -19,7 +19,6 @@ import (
 
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
-	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/daemon/wire"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
@@ -63,7 +62,7 @@ type (
 	// and the supervisor's for the supervisor workspace.
 	Tokens interface {
 		CreateMCPToken(userID, workspaceID, tokenType string) (string, error)
-		CreateSupervisorToken(userID, resource, tokenType string) (string, error)
+		CreateSupervisorLaunchToken(userID, workspaceID string) (string, error)
 	}
 
 	// Launcher starts and stops agents. Machines may be nil on a server that
@@ -300,7 +299,7 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 	// here and nowhere else: the daemon writes the entry when it is given a
 	// URL and works none of this out from the workspace's name.
 	if ws.Workspace.Name == SupervisorWorkspaceName {
-		coreToken, err := l.Tokens.CreateSupervisorToken(rq.UserID, auth.SupervisorResource, auth.SupervisorLaunchToken)
+		coreToken, err := l.Tokens.CreateSupervisorLaunchToken(rq.UserID, rq.WorkspaceID)
 		if err != nil {
 			zlog.Error().Err(err).Msg("[launch] mint supervisor token")
 			return nil, err

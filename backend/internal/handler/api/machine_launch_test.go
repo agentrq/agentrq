@@ -652,7 +652,8 @@ func TestLaunchAgent_TheSupervisorGetsTheCoreServer(t *testing.T) {
 		t.Fatalf("the core token does not verify: %v", err)
 	}
 	if claims.Subject != monoflake.ID(100).String() ||
-		!auth.HasAudience(claims, auth.SupervisorResource) || !auth.HasAudience(claims, auth.SupervisorLaunchToken) {
+		!auth.HasAudience(claims, auth.SupervisorResource) || !auth.HasAudience(claims, auth.SupervisorLaunchToken) ||
+		auth.LaunchWorkspaceID(claims) != monoflake.ID(1).String() {
 		t.Errorf("claims = %+v, want a supervisor launch token for the account", claims)
 	}
 }

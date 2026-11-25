@@ -119,6 +119,12 @@ func (c *controller) CheckWorkspaceAccess(ctx context.Context, id int64, userID 
 	return c.repository.CheckWorkspaceAccess(ctx, id, uid)
 }
 
+// ListRevokedWorkspaceIDs lists the ids of the workspaces deleted, or reset
+// to a new id, since since.
+func (c *controller) ListRevokedWorkspaceIDs(ctx context.Context, since time.Time) ([]int64, error) {
+	return c.repository.ListRevokedWorkspaceIDs(ctx, since)
+}
+
 func (c *controller) ListWorkspaces(ctx context.Context, req entity.ListWorkspacesRequest) (*entity.ListWorkspacesResponse, error) {
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	ms, err := c.repository.ListWorkspaces(ctx, uid, req.IncludeArchived)

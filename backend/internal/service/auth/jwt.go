@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -91,10 +92,25 @@ const (
 
 // SupervisorResource is the supervisor's audience. SupervisorLaunchToken is
 // the token type of a launch token, the one that may outlive an access token.
+// A launch token also names its supervisor workspace, as
+// launchWorkspacePrefix and the workspace's base62 id: resetting that id
+// revokes it. The ':' keeps it from ever reading as a workspace's audience.
 const (
 	SupervisorResource    = "coremcp"
 	SupervisorLaunchToken = "launch"
+	launchWorkspacePrefix = "workspace:"
 )
+
+// LaunchWorkspaceID is the base62 workspace id a launch token names, "" when
+// it names none.
+func LaunchWorkspaceID(claims *Claims) string {
+	for _, aud := range claims.Audience {
+		if id, ok := strings.CutPrefix(aud, launchWorkspacePrefix); ok {
+			return id
+		}
+	}
+	return ""
+}
 
 // TokenConfig holds the two signing keys: APISecret for a person's session,
 // tickets and sign-in state, MCPSecret for everything an agent or MCP client
@@ -165,6 +181,7 @@ type TokenService interface {
 	ValidateRefreshToken(tokenStr string) (*Claims, error)
 	CreateMCPToken(userID, workspaceID, tokenType string) (string, error)
 	CreateSupervisorToken(userID, resource, tokenType string) (string, error)
+	CreateSupervisorLaunchToken(userID, workspaceID string) (string, error)
 	CreateOAuthCodeToken(userID, workspaceID, codeChallenge string) (string, error)
 	CreateTerminalTicket(userID, sessionID string) (string, error)
 	ValidateTerminalTicket(tokenStr, sessionID string) (*Claims, error)
@@ -260,17 +277,25 @@ func (s *tokenService) CreateMCPToken(userID, workspaceID, tokenType string) (st
 }
 
 // CreateSupervisorToken mints a supervisor (CoreMCP) token for resource: a
-// refresh token lasts SupervisorRefreshTokenTTL, a launch token
-// SupervisorLaunchTokenTTL, any other SupervisorAccessTokenTTL.
+// refresh token lasts SupervisorRefreshTokenTTL, any other
+// SupervisorAccessTokenTTL.
 func (s *tokenService) CreateSupervisorToken(userID, resource, tokenType string) (string, error) {
 	ttl := SupervisorAccessTokenTTL
-	switch tokenType {
-	case "refresh":
+	if tokenType == "refresh" {
 		ttl = SupervisorRefreshTokenTTL
-	case SupervisorLaunchToken:
-		ttl = SupervisorLaunchTokenTTL
 	}
 	return s.createMCPToken(userID, resource, tokenType, ttl)
+}
+
+// CreateSupervisorLaunchToken mints the supervisor token agentrqd writes for
+// the agent it launches in workspaceID (base62), the supervisor workspace.
+func (s *tokenService) CreateSupervisorLaunchToken(userID, workspaceID string) (string, error) {
+	claims := Claims{RegisteredClaims: jwt.RegisteredClaims{
+		Subject:   userID,
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(SupervisorLaunchTokenTTL)),
+		Audience:  jwt.ClaimStrings{SupervisorResource, SupervisorLaunchToken, launchWorkspacePrefix + workspaceID},
+	}}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.mcpSecret)
 }
 
 func (s *tokenService) createMCPToken(userID, workspaceID, tokenType string, ttl time.Duration) (string, error) {

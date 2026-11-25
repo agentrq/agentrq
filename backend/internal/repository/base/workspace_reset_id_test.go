@@ -293,3 +293,20 @@ func TestResetWorkspaceID_CoversEveryColumnNamingAWorkspace(t *testing.T) {
 		t.Errorf("the model package has %d columns naming a workspace and the reset moves %d", len(found), len(covered))
 	}
 }
+
+// A second reset in the same process moves every row too: UpdateColumn writes
+// the new id back into the model it is given, so a shared model left the
+// tables keyed by workspace_id matching nothing on the next reset.
+func TestResetWorkspaceID_ASecondResetMovesEveryRowToo(t *testing.T) {
+	for _, run := range []string{"first", "second"} {
+		db, repo := resetDB(t)
+		if err := repo.ResetWorkspaceID(context.Background(), rsOld, rsNew, rsUser); err != nil {
+			t.Fatalf("%s reset: %v", run, err)
+		}
+		for _, m := range workspaceIDTables {
+			if c := countIn(t, db, m, rsNew); c != 1 {
+				t.Errorf("%s reset: %d rows of %T name the new id, want 1", run, c, m)
+			}
+		}
+	}
+}

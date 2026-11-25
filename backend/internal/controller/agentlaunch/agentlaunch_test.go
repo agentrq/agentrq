@@ -92,8 +92,8 @@ func (t fakeTokens) CreateMCPToken(userID, workspaceID, tokenType string) (strin
 	return "tok-" + workspaceID, t.err
 }
 
-func (t fakeTokens) CreateSupervisorToken(userID, resource, tokenType string) (string, error) {
-	return "sup-" + userID + "-" + resource + "-" + tokenType, t.supervisorErr
+func (t fakeTokens) CreateSupervisorLaunchToken(userID, workspaceID string) (string, error) {
+	return "sup-" + userID + "-" + workspaceID, t.supervisorErr
 }
 
 // conn is a daemon socket that keeps every control message it is sent.
@@ -209,7 +209,7 @@ func TestLaunch_TheSupervisorGetsTheCoreServer(t *testing.T) {
 	if _, err := l.Launch(context.Background(), request("claude-code")); err != nil {
 		t.Fatal(err)
 	}
-	want := "https://agentrq.example/mcp?token=sup-" + request("claude-code").UserID + "-coremcp-launch"
+	want := "https://agentrq.example/mcp?token=sup-user-1-" + workspace1
 	if got := c.start(t).CoreMCPURL; got != want {
 		t.Errorf("coreMcpUrl = %q, want %q", got, want)
 	}
