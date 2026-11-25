@@ -27,7 +27,7 @@ function update(e) {
   <FormField data-test="a2ui-datetime" :label="label || 'Date'" :error="error" class="min-w-0">
     <template #default="{ id, describedBy, invalid }">
       <input :id="id" :type="input.type" :value="input.value" :min="bound(c.min)" :max="bound(c.max)" :disabled="readOnly"
-             :aria-describedby="describedBy" :aria-invalid="invalid || undefined" :class="fieldClass(invalid)" class="text-[13px] py-2"
+             :aria-describedby="describedBy" :aria-invalid="invalid || undefined" :class="fieldClass(invalid, { answered: readOnly })"
              @input="update" @change="update" />
     </template>
   </FormField>

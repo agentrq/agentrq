@@ -18,7 +18,7 @@ const children = computed(() => childEntries(props.ctx.surface, props.c.children
 </script>
 
 <template>
-  <div data-test="a2ui-column" class="flex flex-col gap-2 min-w-0" :class="flexClasses(c)">
+  <div data-test="a2ui-column" class="flex flex-col gap-3 @min-[32rem]/a2ui:gap-4 min-w-0" :class="flexClasses(c)">
     <A2uiNode v-for="child in children" :id="child.id" :key="child.key" :ctx="child.ctx" />
   </div>
 </template>

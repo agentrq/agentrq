@@ -6,8 +6,10 @@ import { describe, expect, it } from 'vitest'
 
 import { ICON_PATHS, iconDrawing, iconFor } from '../src/a2ui/icons.js'
 import {
-  accessibilityAttrs, displayText, flexClasses, imageClasses, isAllowedMedia, listClasses, textHtml, weightStyle,
+  accessibilityAttrs, buttonClass, chipClass, choiceRowClass, displayText, flexClasses, imageClasses, isAllowedMedia, listClasses,
+  textHtml, weightStyle,
 } from '../src/a2ui/render.js'
+import { CANCEL_BUTTON, PRIMARY_BUTTON, SECONDARY_BUTTON } from '../src/utils/formStyles.js'
 import { ICON_NAMES } from '../src/a2ui/validate.js'
 
 const ctx = (dataModel = {}) => ({ surface: { dataModel }, scope: [] })
@@ -129,5 +131,40 @@ describe('a2ui icons', () => {
     expect(iconFor({ name: { svgPath: { '@path': '/path' } } }, c)).toEqual({ fill: 'M1 1z' })
     expect(iconFor({ name: { '@path': '/custom' } }, c)).toEqual({ fill: 'M2 2z' })
     expect(iconFor({ name: { '@path': '/missing' } }, c)).toBeNull()
+  })
+})
+
+describe('a2ui control classes', () => {
+  const classes = (list) => list.join(' ').split(/\s+/).sort()
+  const own = (s) => s.split(/\s+/).sort()
+
+  it("draws a Button as the app's own primary, secondary or borderless button", () => {
+    expect(classes(buttonClass('primary')), 'primary').toEqual(own(PRIMARY_BUTTON))
+    expect(classes(buttonClass('borderless')), 'borderless').toEqual(own(CANCEL_BUTTON))
+    expect(classes(buttonClass(undefined)), 'no variant').toEqual(own(SECONDARY_BUTTON))
+  })
+
+  it('keeps the Button that answered its card at full strength, though disabled', () => {
+    expect(classes(buttonClass('primary', true)), 'the chosen one').not.toContain('disabled:opacity-30')
+    expect(classes(buttonClass('primary', true)), 'the chosen one').toContain('disabled:cursor-default')
+  })
+
+  it('fills a picked chip and fades an unpicked one only when it cannot be picked', () => {
+    expect(classes(chipClass(true)), 'a picked chip, black as the primary button').toContain('bg-black')
+    expect(classes(chipClass(true)), 'a picked chip').not.toContain('disabled:opacity-50')
+    expect(classes(chipClass(false)), 'an unpicked chip').toContain('disabled:opacity-50')
+  })
+
+  it('marks a picked row, and on a closed card fades only the rows not picked', () => {
+    expect(classes(choiceRowClass(true, false)), 'picked, open').toEqual(expect.arrayContaining(['border-gray-900', 'cursor-pointer']))
+    expect(classes(choiceRowClass(false, false)), 'unpicked, open').toEqual(expect.arrayContaining(['border-gray-300', 'cursor-pointer']))
+    expect(classes(choiceRowClass(true, true)), 'picked, closed').not.toContain('opacity-50')
+    expect(classes(choiceRowClass(false, true)), 'unpicked, closed').toContain('opacity-50')
+  })
+
+  it('makes every control the height of a field: a 20px line and 10px padding', () => {
+    for (const [name, list] of [['button', buttonClass('primary')], ['chip', chipClass(false)], ['row', choiceRowClass(false, false)]]) {
+      expect(classes(list), name).toEqual(expect.arrayContaining(['leading-5', 'py-2.5', 'border', 'pointer-coarse:min-h-11']))
+    }
   })
 })

@@ -8,6 +8,7 @@
 import DOMPurify from 'dompurify'
 
 import { renderMarkdown } from '../utils/markdown.js'
+import { BUTTON, CANCEL_COLORS, DISABLED_BUTTON, PRIMARY_COLORS, SECONDARY_COLORS } from '../utils/formStyles.js'
 import { resolveValue } from './resolve.js'
 
 const JUSTIFY = {
@@ -96,4 +97,44 @@ const IMAGE_FIT = {
 export function imageClasses(c) {
   const fit = IMAGE_FIT[c.fit] ?? (c.variant === 'header' || c.variant === 'avatar' ? IMAGE_FIT.cover : IMAGE_FIT.fill)
   return [IMAGE_VARIANT[c.variant] ?? IMAGE_VARIANT.mediumFeature, fit]
+}
+
+const BUTTON_VARIANT = {
+  primary: `px-5 ${PRIMARY_COLORS}`,
+  borderless: `px-4 ${CANCEL_COLORS}`,
+  default: `px-5 ${SECONDARY_COLORS}`,
+}
+
+/**
+ * A Button's classes: the app's primary, secondary or borderless button. The
+ * one that answered its card stays at full strength though disabled.
+ */
+export function buttonClass(variant, chosen = false) {
+  return [BUTTON, BUTTON_VARIANT[variant] ?? BUTTON_VARIANT.default, chosen ? 'disabled:cursor-default' : DISABLED_BUTTON]
+}
+
+const FOCUS = 'outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 dark:focus-visible:ring-white/25'
+
+/** A ChoicePicker chip: a toggle the height of a field, filled while picked. */
+export function chipClass(picked) {
+  return [
+    'inline-flex items-center gap-1.5 px-3.5 py-2.5 pointer-coarse:min-h-11 rounded-lg border text-sm leading-5 font-medium',
+    'transition-colors disabled:cursor-default',
+    FOCUS,
+    picked
+      ? 'bg-black dark:bg-white text-white dark:text-zinc-900 border-black dark:border-white'
+      : 'bg-white dark:bg-zinc-950 text-gray-700 dark:text-zinc-300 border-gray-300 dark:border-zinc-700 enabled:hover:border-gray-400 dark:enabled:hover:border-zinc-500 disabled:opacity-50',
+  ]
+}
+
+/** A ChoicePicker row: a radio or check and its label, the height of a field, as the app's choice cards. */
+export function choiceRowClass(picked, readOnly) {
+  return [
+    'flex items-center gap-3 px-3 py-2.5 pointer-coarse:min-h-11 rounded-lg border text-sm leading-5 transition-colors',
+    'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-gray-900/20 dark:has-[:focus-visible]:ring-white/20',
+    picked
+      ? 'border-gray-900 dark:border-zinc-200 bg-gray-50 dark:bg-zinc-800/60 text-gray-900 dark:text-white font-medium'
+      : 'border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-gray-700 dark:text-zinc-300',
+    readOnly ? (picked ? 'cursor-default' : 'cursor-default opacity-50') : picked ? 'cursor-pointer' : 'cursor-pointer hover:border-gray-400 dark:hover:border-zinc-500',
+  ]
 }

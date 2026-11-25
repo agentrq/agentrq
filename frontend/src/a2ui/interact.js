@@ -113,8 +113,12 @@ export function clickButton(c, ctx) {
     return
   }
   if (ui.readOnly || ui.busy) return
+  ui.pressed = c.id
   ui.send(buttonAction(c, ctx))
 }
+
+/** Whether Button c's answer is on its way: the one pressed, while the card is busy. */
+export const isSending = (c, ui) => !!ui.busy && ui.pressed === c.id
 
 /** Whether Button c is the one the card was answered with. */
 export const isChosen = (c, ui) => !!ui.answered && !!c.action.event && c.action.event.name === ui.answered.name

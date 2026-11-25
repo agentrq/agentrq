@@ -55,6 +55,9 @@ describe('the form helpers', () => {
     expect(FIELD).toBe(fieldClass(false))
     expect(fieldClass(true)).toContain('border-red-500')
     expect(FIELD).not.toContain('red')
+    expect(FIELD, 'a field, faded while disabled').toContain('disabled:opacity-50')
+    expect(fieldClass(false, { answered: true }), "an answered card's field, read in full").not.toContain('disabled:opacity-50')
+    expect(fieldClass(false, { answered: true }), "an answered card's field").toContain('disabled:bg-gray-50')
   })
 })
 
