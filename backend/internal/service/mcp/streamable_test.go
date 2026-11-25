@@ -1009,6 +1009,44 @@ func TestStreamableCallsInFlight(t *testing.T) {
 		})
 		close(release)
 	})
+
+	t.Run("a long call keeps its POST alive", func(t *testing.T) {
+		release := make(chan struct{})
+		srv := shServer(release)
+		h := shHandler(srv, nil)
+		h.keepalive = 10 * time.Millisecond
+		hs := httptest.NewServer(h)
+		t.Cleanup(hs.Close)
+		resp, _ := shPost(t, hs.URL, shInit(1, "2025-11-25", "c"))
+		id := resp.Header.Get("Mcp-Session-Id")
+
+		req, _ := http.NewRequest(http.MethodPost, hs.URL, strings.NewReader(shCall(3, "block", "")))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Mcp-Session-Id", id)
+		// The headers arrive while the call still waits: before, they came
+		// only with its answer.
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		if res.StatusCode != http.StatusOK || res.Header.Get("Content-Type") != "text/event-stream" {
+			t.Fatalf("the waiting call answered %d %q", res.StatusCode, res.Header.Get("Content-Type"))
+		}
+		buf := make([]byte, len(": ok\n\n"))
+		if _, err := io.ReadFull(res.Body, buf); err != nil || string(buf) != ": ok\n\n" {
+			t.Fatalf("the waiting call sent %q %v", buf, err)
+		}
+		close(release)
+		rest, err := io.ReadAll(res.Body)
+		if err != nil || !strings.Contains(string(rest), "released") {
+			t.Fatalf("the call then answered %q %v", rest, err)
+		}
+		if msgs := shData(t, string(rest)); len(msgs) != 1 {
+			t.Fatalf("the comments read as messages: %v", msgs)
+		}
+	})
 }
 
 // A call's own notifications go out on its POST, before its answer.
@@ -1343,6 +1381,29 @@ func TestStreamableStreamUnits(t *testing.T) {
 		body := w.Body.String()
 		if !strings.HasPrefix(body, ": ok\n\n") || !strings.Contains(body, `"method":"notifications/x"`) || w.Header().Get("Content-Type") != "text/event-stream" {
 			t.Fatalf("the stream opened %q with %q", w.Header().Get("Content-Type"), body)
+		}
+	})
+
+	t.Run("a keepalive skips a held, released or finished stream", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		st := newStream(w, map[jsonrpc.ID]bool{jsonrpc.Int64ID(1): true}, false, false)
+		st.hold()
+		st.keepalive()
+		if w.Body.Len() != 0 {
+			t.Fatalf("a held stream was kept alive: %q", w.Body.String())
+		}
+		st.unhold()
+		st.keepalive()
+		if w.Body.String() != ": ok\n\n" {
+			t.Fatalf("the keepalive wrote %q", w.Body.String())
+		}
+		_ = st.write([]byte(`{}`), jsonrpc.Int64ID(1), 0)
+		n := w.Body.Len()
+		st.keepalive()
+		st.release()
+		st.keepalive()
+		if w.Body.Len() != n {
+			t.Fatalf("a finished stream was kept alive: %q", w.Body.String())
 		}
 	})
 
