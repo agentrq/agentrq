@@ -111,6 +111,8 @@ func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
 		"a2ui_resource",
 		// A card that draws a chart is stored by the server.
 		"a2ui_chart",
+		// A card that draws a progress bar is stored by the server.
+		"a2ui_progress",
 	} {
 		if _, ok := entity.ClientReportableAction(name); ok {
 			t.Errorf("%q must not be client-reportable", name)

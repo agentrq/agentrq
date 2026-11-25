@@ -62,8 +62,8 @@ func TestValidate_AcceptsCharts(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got, want := HasChart(s), strings.Contains(string(raw), `"Chart"`); got != want {
-				t.Errorf("HasChart = %v, want %v", got, want)
+			if got, want := HasComponent(s, "Chart"), strings.Contains(string(raw), `"Chart"`); got != want {
+				t.Errorf("HasComponent = %v, want %v", got, want)
 			}
 		})
 	}
@@ -77,7 +77,7 @@ func TestValidate_RefusesCharts(t *testing.T) {
 		"basic surface": {card(chart("line", `[]`)), []string{`components[1] "c": Chart is in our catalog: createSurface's catalogId must be "` + AgentRQCatalogID + `" to use it`}},
 		"our @catalogId on a basic surface": {card(`{"id":"c","component":"Text","text":"x","@catalogId":"` + AgentRQCatalogID + `"}`),
 			[]string{`@catalogId must be the surface's catalog, "` + BasicCatalogID + `", or left out`}},
-		"unknown, named with ours": {ourCard(`{"id":"c","component":"Map"}`), []string{`component "Map" is not one of Text, Image, Icon, Video, AudioPlayer, Row, Column, List, Card, Tabs, Divider, Chart`}},
+		"unknown, named with ours": {ourCard(`{"id":"c","component":"Map"}`), []string{`component "Map" is not one of Text, Image, Icon, Video, AudioPlayer, Row, Column, List, Card, Tabs, Divider, Chart, Progress`}},
 		"no data":                  {ourCard(`{"id":"c","component":"Chart"}`), []string{`"c": `, "data"}},
 		"bad variant":              {ourCard(chart("pie", `[]`)), []string{`"c": variant: `, "pie"}},
 		"bad colour":               {ourCard(`{"id":"c","component":"Chart","data":[],"color":"red"}`), []string{`"c": color: `}},
@@ -89,7 +89,7 @@ func TestValidate_RefusesCharts(t *testing.T) {
 		"heatmap, half past":       {ourCard(chart("heatmap", `[{"label":"2026-01-01 10:30","value":1}]`)), []string{`data[0].label "2026-01-01 10:30"`}},
 		"heatmap, over a year":     {ourCard(chart("heatmap", days(367, heatmapDay, 24*time.Hour))), []string{`"c": the heatmap spans 367 days; a day grid draws at most 366`}},
 		"heatmap, over a month":    {ourCard(chart("heatmap", `[{"label":"2026-01-01 00:00","value":1},{"label":"2026-02-01 00:00","value":1}]`)), []string{`the heatmap spans 32 days; a hour grid draws at most 31`}},
-		"unknown catalog":          {ui(`{"version":"1.0","createSurface":{"surfaceId":"s","catalogId":"acme"}}`), []string{`catalogId must be "` + BasicCatalogID + `", the basic catalog, or "` + AgentRQCatalogID + `", ours, which adds Chart`}},
+		"unknown catalog":          {ui(`{"version":"1.0","createSurface":{"surfaceId":"s","catalogId":"acme"}}`), []string{`catalogId must be "` + BasicCatalogID + `", the basic catalog, or "` + AgentRQCatalogID + `", ours, which adds Chart and Progress`}},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -108,7 +108,7 @@ func TestMerge_KeepsOurCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !HasChart(merged) || !strings.Contains(string(merged.Messages[0]), AgentRQCatalogID) {
+	if !HasComponent(merged, "Chart") || !strings.Contains(string(merged.Messages[0]), AgentRQCatalogID) {
 		t.Errorf("merged = %s", merged.Messages)
 	}
 }

@@ -106,7 +106,7 @@ func (ps *WorkspaceServer) updateCard(ctx context.Context, req *mcp.CallToolRequ
 	}
 	ps.emitA2UI(ctx, entity.ActionA2UIUpdate, msgID)
 	ps.emitA2UIResource(ctx, params, msgID)
-	ps.emitA2UIChart(ctx, json.RawMessage(merged), msgID)
+	ps.emitA2UIComponents(ctx, json.RawMessage(merged), msgID)
 	ps.noteSessionTask(req, taskID)
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("card %q updated in message %s", surfaceID, monoflake.ID(msgID).String())}},
@@ -272,15 +272,20 @@ func replyUI(ui json.RawMessage) (json.RawMessage, bool, error) {
 	return nil, false, errors.New("ui's resource has no text: its text is the JSON array of A2UI messages")
 }
 
-// emitA2UIChart counts a card, stored as metadata, that draws a Chart.
-func (ps *WorkspaceServer) emitA2UIChart(ctx context.Context, metadata any, msgID int64) {
+// emitA2UIComponents counts a card, stored as metadata, that draws a Chart or
+// a Progress, from our own catalog.
+func (ps *WorkspaceServer) emitA2UIComponents(ctx context.Context, metadata any, msgID int64) {
 	var card struct {
 		Messages []json.RawMessage `json:"messages"`
 	}
 	b, _ := json.Marshal(metadata) // metadata the server just stored
 	_ = json.Unmarshal(b, &card)
-	if a2ui.HasChart(&a2ui.Surface{Messages: card.Messages}) {
+	surface := &a2ui.Surface{Messages: card.Messages}
+	if a2ui.HasComponent(surface, "Chart") {
 		ps.emitA2UI(ctx, entity.ActionA2UIChart, msgID)
+	}
+	if a2ui.HasComponent(surface, "Progress") {
+		ps.emitA2UI(ctx, entity.ActionA2UIProgress, msgID)
 	}
 }
 

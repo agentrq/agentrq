@@ -58,6 +58,54 @@
         }
       },
       "required": ["component", "data"]
+    },
+    "Progress": {
+      "type": "object",
+      "description": "A bar filled to value of max, its percent beside it: a card's progress, such as checks done, updated in place as they finish.",
+      "properties": {
+        "component": {
+          "const": "Progress"
+        },
+        "label": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "What is progressing, such as 3 of 5 checks."
+        },
+        "value": {
+          "description": "How far it is, from 0 to max: a number, or a binding to one in the data model.",
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "$ref": "common_types.json#/$defs/DataBinding"
+            },
+            {
+              "$ref": "common_types.json#/$defs/FunctionCall"
+            }
+          ]
+        },
+        "max": {
+          "description": "The value that fills the bar; 100 when left out.",
+          "default": 100,
+          "oneOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            {
+              "$ref": "common_types.json#/$defs/DataBinding"
+            },
+            {
+              "$ref": "common_types.json#/$defs/FunctionCall"
+            }
+          ]
+        },
+        "weight": {
+          "$ref": "catalog.json#/$defs/Weight"
+        }
+      },
+      "required": ["component", "value"]
     }
   }
 }

@@ -408,3 +408,39 @@ func TestBuildCardBlocksListsAChartsPoints(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildCardBlocksDrawsAProgressBar(t *testing.T) {
+	for name, tc := range map[string]struct {
+		comps, data, want string
+	}{
+		"of max, labelled": {
+			`[{"id":"root","component":"Progress","label":"3 of 5 <checks>","value":3,"max":5}]`, `{}`,
+			"section: *3 of 5 &lt;checks&gt;*\n`▓▓▓▓▓▓░░░░` 60%",
+		},
+		"bound, of 100": {
+			`[{"id":"root","component":"Progress","value":{"@path":"/done"}}]`, `{"done":42}`,
+			"section: `▓▓▓▓░░░░░░` 42%",
+		},
+		"clamped, a bad max": {
+			`[{"id":"root","component":"Progress","value":250,"max":{"@path":"/none"}}]`, `{}`,
+			"section: `▓▓▓▓▓▓▓▓▓▓` 100%",
+		},
+		"below zero, a zero max": {
+			`[{"id":"root","component":"Column","children":["p","t"]},{"id":"p","component":"Progress","value":-3,"max":0},{"id":"t","component":"Text","text":"done"}]`, `{}`,
+			"section: `░░░░░░░░░░` 0%\nsection: done",
+		},
+		"unresolved, labelled": {
+			`[{"id":"root","component":"Column","children":["p","t"]},{"id":"p","component":"Progress","label":"Checks","value":{"@call":"length","args":{"value":[]}}},{"id":"t","component":"Text","text":"x"}]`, `{}`,
+			"section: *Checks*\nsection: x",
+		},
+	} {
+		got := describe(BuildCardBlocks("agent", "Weekly", components(t, tc.comps, tc.data), taskLink))
+		if got != agentLine+"\n"+tc.want {
+			t.Errorf("%s: blocks =\n%s\nwant\n%s", name, got, agentLine+"\n"+tc.want)
+		}
+	}
+	// Nothing to draw: the text is posted instead.
+	if got := BuildCardBlocks("agent", "Weekly", components(t, `[{"id":"root","component":"Progress","value":{"@path":"/none"}}]`, `{}`), taskLink); got != nil {
+		t.Errorf("blocks = %s, want none", describe(got))
+	}
+}

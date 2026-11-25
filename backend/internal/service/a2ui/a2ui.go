@@ -4,7 +4,7 @@
 
 // Package a2ui decides whether the UI an agent attached to a message, a list
 // of A2UI v1.0 messages (https://a2ui.org) in the basic catalog or our own
-// (the basic one and a Chart), may be shown,
+// (the basic one, a Chart and a Progress), may be shown,
 // and returns a cleaned copy with media references resolved to our storage.
 //
 // Structure is checked with the official schemas. What they cannot say is
@@ -54,7 +54,7 @@ var (
 	displayComponents     = []string{"Text", "Image", "Icon", "Video", "AudioPlayer", "Row", "Column", "List", "Card", "Tabs", "Divider"}
 	interactiveComponents = []string{"Button", "TextField", "CheckBox", "ChoicePicker", "Slider", "DateTimeInput", "Modal"}
 	// agentrqComponents are display components only our catalog has.
-	agentrqComponents = []string{"Chart"}
+	agentrqComponents = []string{"Chart", "Progress"}
 
 	// CatalogIDs are the catalogs a surface may use.
 	CatalogIDs = []string{BasicCatalogID, AgentRQCatalogID}
@@ -245,7 +245,7 @@ func (v *validator) message(i int, m, p any) {
 	if kind == "createSurface" {
 		id, _ := body["catalogId"].(string)
 		if !slices.Contains(CatalogIDs, id) {
-			v.addf("%s: catalogId must be %q, the basic catalog, or %q, ours, which adds Chart", at, BasicCatalogID, AgentRQCatalogID)
+			v.addf("%s: catalogId must be %q, the basic catalog, or %q, ours, which adds Chart and Progress", at, BasicCatalogID, AgentRQCatalogID)
 			return
 		}
 		v.catalogID = id
@@ -390,8 +390,8 @@ func (v *validator) chart(at string, obj map[string]any) {
 	}
 }
 
-// HasChart says whether a surface draws a Chart.
-func HasChart(s *Surface) bool {
+// HasComponent says whether a surface draws a component named name.
+func HasComponent(s *Surface, name string) bool {
 	for _, raw := range s.Messages {
 		var m struct {
 			UpdateComponents struct {
@@ -402,7 +402,7 @@ func HasChart(s *Surface) bool {
 		}
 		_ = json.Unmarshal(raw, &m) // every message was marshalled by Validate
 		for _, c := range m.UpdateComponents.Components {
-			if c.Component == "Chart" {
+			if c.Component == name {
 				return true
 			}
 		}

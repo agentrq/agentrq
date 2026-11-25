@@ -25,6 +25,7 @@ import A2uiIcon from './A2uiIcon.vue'
 import A2uiImage from './A2uiImage.vue'
 import A2uiList from './A2uiList.vue'
 import A2uiModal from './A2uiModal.vue'
+import A2uiProgress from './A2uiProgress.vue'
 import A2uiRow from './A2uiRow.vue'
 import A2uiSlider from './A2uiSlider.vue'
 import A2uiTabs from './A2uiTabs.vue'
@@ -62,6 +63,7 @@ function viewFor(name) {
     case 'DateTimeInput': return A2uiDateTimeInput
     case 'Modal': return A2uiModal
     case 'Chart': return A2uiChart
+    case 'Progress': return A2uiProgress
     default: return null
   }
 }

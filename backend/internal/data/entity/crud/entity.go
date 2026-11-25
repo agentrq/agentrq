@@ -1946,6 +1946,9 @@ const (
 	// An agent's card that draws a Chart, from our own catalog: a reply, a
 	// question or an update. Backend-emitted: the server stored it.
 	ActionA2UIChart Action = 149
+	// An agent's card that draws a Progress bar, from our own catalog: a
+	// reply, a question or an update. Backend-emitted: the server stored it.
+	ActionA2UIProgress Action = 150
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2248,6 +2251,8 @@ func (a Action) String() string {
 		return "a2ui_resource"
 	case ActionA2UIChart:
 		return "a2ui_chart"
+	case ActionA2UIProgress:
+		return "a2ui_progress"
 	}
 	return "unknown"
 }
