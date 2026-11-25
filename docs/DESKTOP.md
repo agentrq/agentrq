@@ -43,7 +43,32 @@ Options go after a `--`:
 curl -fsSL https://agentrq.com/install.sh | sh -s -- --quit
 ```
 
-### Windows, or downloading by hand
+### Windows: one command
+
+In PowerShell:
+
+```powershell
+irm https://agentrq.com/install.ps1 | iex
+```
+
+Run it again to update. It picks the setup program from the latest release,
+checks it against the SHA-256 GitHub records for it, and runs it silently. It
+installs for your user only, so it needs no administrator rights.
+
+Piped into `iex` it cannot take flags, so its options are environment
+variables, set first:
+
+| Variable | Effect |
+|---|---|
+| `$env:AGENTRQ_QUIT = '1'` | Close a running AgentRQ instead of refusing to install over it |
+| `$env:AGENTRQ_VERSION = 'v0.5.0'` | Install a specific release rather than the newest |
+| `$env:AGENTRQ_FORCE = '1'` | Reinstall even if that version is already installed |
+
+```powershell
+$env:AGENTRQ_QUIT = '1'; irm https://agentrq.com/install.ps1 | iex
+```
+
+### Downloading by hand
 
 Take the build for your machine from the
 [latest release](https://github.com/agentrq/agentrq/releases/latest).
@@ -299,7 +324,13 @@ curl -fsSL https://agentrq.com/install.sh | sh -s -- --tauri
 
 Run it again to update. Setting `AGENTRQ_TAURI=1` does the same as `--tauri`.
 
-On Windows, or by hand from the
+On Windows, set `AGENTRQ_TAURI` first:
+
+```powershell
+$env:AGENTRQ_TAURI = '1'; irm https://agentrq.com/install.ps1 | iex
+```
+
+Or by hand from the
 [latest release](https://github.com/agentrq/agentrq-desktop/releases/latest) of
 [agentrq/agentrq-desktop](https://github.com/agentrq/agentrq-desktop), where the
 Tauri build lives, download the

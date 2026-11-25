@@ -135,9 +135,8 @@ case "$os" in
 Darwin) platform="mac" ;;
 Linux) platform="linux" ;;
 *)
-	# Windows installs and updates itself through the NSIS installer, so there
-	# is nothing useful for this script to do there.
-	die "unsupported system: $os. Download an installer from $RELEASES_PAGE"
+	# Windows has install.ps1.
+	die "unsupported system: $os. On Windows, run in PowerShell: irm https://agentrq.com/install.ps1 | iex"
 	;;
 esac
 

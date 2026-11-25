@@ -231,3 +231,10 @@ test('Linux: Tauri install writes desktop file with StartupWMClass=agentrq-tauri
   ].join('\n');
   assert.equal(content, expected);
 });
+
+test('Windows is pointed at install.ps1', () => {
+  const { r, apis } = run({ arch: 'x86_64', names: ELECTRON, osName: 'MINGW64_NT-10.0' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /irm https:\/\/agentrq\.com\/install\.ps1 \| iex/);
+  assert.deepEqual(apis, []);
+});

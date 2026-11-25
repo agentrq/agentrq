@@ -41,9 +41,11 @@ jobs:
       - name: PowerShell syntax
         shell: pwsh
         run: |
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/installers/install-agentrqd.ps1", [ref]$null, [ref]$errors) | Out-Null
-          if ($errors) { $errors; exit 1 }
+          foreach ($f in Get-ChildItem installers/*.ps1) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $f.Name; $errors; exit 1 }
+          }
 
   test:
     name: Test ${{ matrix.os }}
@@ -68,3 +70,51 @@ jobs:
 
       - name: Test
         run: node --test installers/test/
+
+  # install.ps1 installs the real latest release of each app, the way the
+  # docs run it (irm | iex in Windows PowerShell 5.1), then runs again in
+  # PowerShell 7 to prove the "already installed" check.
+  windows:
+    name: install.ps1 ${{ matrix.app }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [electron, tauri]
+    permissions:
+      contents: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      AGENTRQ_TAURI: ${{ matrix.app == 'tauri' && '1' || '' }}
+      PRODUCT: ${{ matrix.app == 'tauri' && 'AgentRQ Tauri' || 'AgentRQ' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install (irm | iex, Windows PowerShell)
+        shell: powershell
+        run: Get-Content -Raw installers/install.ps1 | Invoke-Expression
+
+      - name: Run it again (PowerShell 7, as a file)
+        shell: pwsh
+        run: |
+          ./installers/install.ps1 | Tee-Object -Variable out
+          if (-not ($out -match 'already installed')) { exit 1 }
+
+      - name: Check the uninstall entry
+        shell: pwsh
+        run: |
+          $entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' |
+            ForEach-Object { Get-ItemProperty $_.PSPath } |
+            Where-Object { $_.DisplayName -eq $env:PRODUCT -or ($env:PRODUCT -eq 'AgentRQ' -and $_.DisplayName -match '^AgentRQ [0-9]') }
+          if (-not $entry) { 'no uninstall entry'; exit 1 }
+          $entry | Format-List DisplayName, DisplayVersion, InstallLocation, UninstallString
+
+      - name: A missing release is an error, not a closed window
+        shell: powershell
+        run: |
+          $env:AGENTRQ_VERSION = 'v0.0.0'
+          try { Get-Content -Raw installers/install.ps1 | Invoke-Expression; 'no error'; exit 1 }
+          catch { if ("$_" -notmatch 'could not fetch') { "$_"; exit 1 } }
