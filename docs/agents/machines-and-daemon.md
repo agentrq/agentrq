@@ -345,7 +345,7 @@ with a token in it.
 
 ## A bare command is looked up on PATH before the pty starts it
 
-On Windows go-pty looks for a bare `npx` in the working directory, never on PATH, so `pty.Start` resolves it first; drop that and every Windows launch fails as `<repo>\npx` (#1342).
+On Windows go-pty looks for a bare `npx` in the working directory, never on PATH, so `pty.Start` resolves it first; drop that and every Windows launch fails as `<repo>\npx` (#1342). A name the lookup misses is refused, never passed on as given, or it fails the same way in whatever folder the agent runs (#1396); on Windows the registry's current PATH is searched too, because the daemon's own is the one it started with.
 
 ## A fork runs in a folder the daemon makes, and only a daemon that says so
 

@@ -77,6 +77,7 @@ var (
 	ErrNoDir      = errors.New("pty: no working directory given")
 	ErrDirMissing = errors.New("pty: working directory does not exist")
 	ErrDirNotDir  = errors.New("pty: working directory is not a directory")
+	ErrNotOnPath  = errors.New("pty: command not found on agentrqd's PATH")
 )
 
 // Start opens a pseudo-terminal and starts the process in it.
@@ -93,6 +94,10 @@ func Start(ctx context.Context, spec Spec) (Session, error) {
 		return nil, ErrNoDir
 	}
 	if err := checkDir(spec.Dir); err != nil {
+		return nil, err
+	}
+	argv0, err := resolveExecutable(spec.Argv[0])
+	if err != nil {
 		return nil, err
 	}
 
@@ -117,7 +122,7 @@ func Start(ctx context.Context, spec Spec) (Session, error) {
 		return nil, fmt.Errorf("pty: initial resize: %w", err)
 	}
 
-	cmd := p.CommandContext(ctx, resolveExecutable(spec.Argv[0]), spec.Argv[1:]...)
+	cmd := p.CommandContext(ctx, argv0, spec.Argv[1:]...)
 	cmd.Dir = spec.Dir
 	cmd.Env = spec.Env
 	if err := cmd.Start(); err != nil {
@@ -131,16 +136,28 @@ func Start(ctx context.Context, spec Spec) (Session, error) {
 // resolveExecutable finds a bare command name such as "npx" on PATH.
 //
 // On Windows go-pty looks for a bare name in the working directory, never on
-// PATH, so an agent started in a repository failed as "<repo>\npx" (#1342). A
-// name with a directory part, or one PATH does not hold, is left as given.
-func resolveExecutable(name string) string {
+// PATH, so a bare name must never reach it: an agent failed as "<repo>\npx"
+// (#1342) and, when the lookup missed, as "<fork folder>\npx" (#1396). The
+// daemon's PATH is the one it started with, so on Windows the system's current
+// PATH is searched too — Node installed since is found without a restart. A
+// name found in neither is refused, naming it. One with a directory part is
+// left as given.
+func resolveExecutable(name string) (string, error) {
 	if filepath.Base(name) != name {
-		return name
+		return name, nil
 	}
 	if path, err := exec.LookPath(name); err == nil {
-		return path
+		return path, nil
 	}
-	return name
+	for _, dir := range filepath.SplitList(systemPath()) {
+		if !filepath.IsAbs(dir) {
+			continue
+		}
+		if path, err := exec.LookPath(filepath.Join(dir, name)); err == nil {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("%w: %s", ErrNotOnPath, name)
 }
 
 // checkDir reports why a working directory cannot be used, in terms the person

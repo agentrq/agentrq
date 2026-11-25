@@ -356,17 +356,55 @@ func TestResolveExecutable(t *testing.T) {
 		t.Fatalf("os.Executable: %v", err)
 	}
 	t.Setenv("PATH", filepath.Dir(exe))
+	stubSystemPath(t, "")
 
-	if got := resolveExecutable(filepath.Base(exe)); got != exe {
-		t.Errorf("bare name on PATH: got %q, want %q", got, exe)
-	}
-	if got := resolveExecutable("definitely-not-on-path"); got != "definitely-not-on-path" {
-		t.Errorf("bare name not on PATH: got %q, want it unchanged", got)
+	if got, err := resolveExecutable(filepath.Base(exe)); err != nil || got != exe {
+		t.Errorf("bare name on PATH: got %q, %v; want %q", got, err, exe)
 	}
 	withDir := filepath.Join("some", "dir", filepath.Base(exe))
-	if got := resolveExecutable(withDir); got != withDir {
-		t.Errorf("name with a directory: got %q, want it unchanged", got)
+	if got, err := resolveExecutable(withDir); err != nil || got != withDir {
+		t.Errorf("name with a directory: got %q, %v; want it unchanged", got, err)
 	}
+}
+
+// A bare name found nowhere is refused naming the command, and never handed to
+// go-pty, which on Windows reported it as "<working dir>\npx" (#1396).
+func TestResolveExecutableRefusesANameNotOnPath(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	stubSystemPath(t, string(os.PathListSeparator)+"relative"+string(os.PathListSeparator)+t.TempDir())
+
+	_, err := resolveExecutable("definitely-not-on-path")
+	if !errors.Is(err, ErrNotOnPath) || !strings.Contains(err.Error(), "definitely-not-on-path") {
+		t.Fatalf("got %v, want ErrNotOnPath naming the command", err)
+	}
+
+	spec := helperSpec(t, "hello")
+	spec.Argv = []string{"definitely-not-on-path"}
+	if _, err := Start(t.Context(), spec); !errors.Is(err, ErrNotOnPath) {
+		t.Errorf("Start: got %v, want ErrNotOnPath", err)
+	}
+}
+
+// The daemon's PATH is the one it started with; a command on the system's
+// current PATH is found too, as Node installed after agentrqd started is.
+func TestResolveExecutableSearchesTheSystemPath(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	stubSystemPath(t, "relative"+string(os.PathListSeparator)+filepath.Dir(exe))
+
+	if got, err := resolveExecutable(filepath.Base(exe)); err != nil || got != exe {
+		t.Errorf("got %q, %v; want %q", got, err, exe)
+	}
+}
+
+func stubSystemPath(t *testing.T, path string) {
+	t.Helper()
+	prev := systemPath
+	systemPath = func() string { return path }
+	t.Cleanup(func() { systemPath = prev })
 }
 
 // A cancelled context must not leave the process running.
