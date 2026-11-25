@@ -929,6 +929,8 @@ const (
 	ActionIDA2UISlack
 	// An agent's card that came as A2UI's MCP binding; emitted by the backend.
 	ActionIDA2UIResource
+	// An agent's card that draws a Chart; emitted by the backend.
+	ActionIDA2UIChart
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

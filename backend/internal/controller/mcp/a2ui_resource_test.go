@@ -128,7 +128,7 @@ func TestInitialize_AdvertisesA2UI(t *testing.T) {
 	)
 	cs := connectTestServer(t, ps.MCPServer())
 	b, _ := json.Marshal(cs.InitializeResult().Capabilities.A2UI)
-	want := `{"rendererCapabilities":{"1.0":{"supportedCatalogIds":["` + a2ui.BasicCatalogID + `"]}}}`
+	want := `{"rendererCapabilities":{"1.0":{"supportedCatalogIds":["` + a2ui.BasicCatalogID + `","` + a2ui.AgentRQCatalogID + `"]}}}`
 	if string(b) != want {
 		t.Errorf("capabilities.a2ui = %s, want %s", b, want)
 	}

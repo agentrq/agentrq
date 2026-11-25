@@ -193,7 +193,7 @@ func TestValidate_Components(t *testing.T) {
 		parts       []string
 	}{
 		"not an object": {card(), false, nil},
-		"unknown":       {card(`{"id":"c","component":"Chart"}`), true, []string{`ui[1].updateComponents.components[1] "c": component "Chart" is not one of Text, Image, Icon, Video, AudioPlayer, Row, Column, List, Card, Tabs, Divider, Button, TextField`}},
+		"unknown":       {card(`{"id":"c","component":"Map"}`), true, []string{`ui[1].updateComponents.components[1] "c": component "Map" is not one of Text, Image, Icon, Video, AudioPlayer, Row, Column, List, Card, Tabs, Divider, Button, TextField`}},
 		"no name":       {card(`{"id":"c"}`), false, []string{`component "" is not one of Text, Image, Icon, Video, AudioPlayer, Row, Column, List, Card, Tabs, Divider`}},
 		"input on display": {card(`{"id":"c","component":"TextField","label":"Name"}`), false, []string{
 			`components[1] "c": TextField is not available here, where the ui only displays; use Text, Image, Icon, Video, AudioPlayer, Row, Column, List, Card, Tabs, Divider`}},
@@ -205,7 +205,7 @@ func TestValidate_Components(t *testing.T) {
 		"no id":            {card(`{"component":"Text","text":"x"}`), false, []string{`components[1]: `, "id"}},
 		"surface":          {card(`{"id":"c","component":"Surface","child":"root"}`), true, []string{`component "Surface" is not one of`}},
 		"duplicate id":     {card(`{"id":"c","component":"Text","text":"x"}`, `{"id":"c","component":"Divider"}`), false, []string{`components[2] "c": id "c" is used twice in this list; ids must be unique`}},
-		"other catalog":    {card(`{"id":"c","component":"Text","text":"x","@catalogId":"acme.com:ui"}`), false, []string{`"c": @catalogId must be "` + BasicCatalogID + `", the basic catalog, or left out`}},
+		"other catalog":    {card(`{"id":"c","component":"Text","text":"x","@catalogId":"acme.com:ui"}`), false, []string{`"c": @catalogId must be the surface's catalog, "` + BasicCatalogID + `", or left out`}},
 	}
 	tests["not an object"] = struct {
 		raw         json.RawMessage
@@ -373,15 +373,15 @@ func TestValidate_Graph(t *testing.T) {
 		}
 	})
 	t.Run("not checked while a component is refused", func(t *testing.T) {
-		_, err := svc(t).Validate(context.Background(), ui(create(""), update(`{"id":"a","component":"Chart"}`)), Options{})
-		wantProblem(t, err, `component "Chart"`)
+		_, err := svc(t).Validate(context.Background(), ui(create(""), update(`{"id":"a","component":"Map"}`)), Options{})
+		wantProblem(t, err, `component "Map"`)
 	})
 }
 
 func TestValidate_ListsAtMostTwentyProblems(t *testing.T) {
 	comps := []string{`{"id":"root","component":"Divider"}`}
 	for i := 0; i < 25; i++ {
-		comps = append(comps, fmt.Sprintf(`{"id":"c%d","component":"Chart"}`, i))
+		comps = append(comps, fmt.Sprintf(`{"id":"c%d","component":"Map"}`, i))
 	}
 	_, err := svc(t).Validate(context.Background(), ui(create(""), update(comps...)), Options{})
 	p := problems(t, err)
@@ -491,7 +491,7 @@ func TestValidate_OfficialExamples(t *testing.T) {
 
 func TestNew_RefusesBrokenSchemas(t *testing.T) {
 	read := func(name string) []byte {
-		b, err := fs.ReadFile(schemaFiles, "schema/"+name)
+		b, err := fs.ReadFile(schemaFiles, name)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -499,8 +499,8 @@ func TestNew_RefusesBrokenSchemas(t *testing.T) {
 	}
 	good := func() fstest.MapFS {
 		m := fstest.MapFS{}
-		for _, n := range []string{"agent_to_renderer.json", "common_types.json", "catalog.json"} {
-			m["schema/"+n] = &fstest.MapFile{Data: read(n)}
+		for _, n := range []string{"schema/agent_to_renderer.json", "schema/common_types.json", "schema/catalog.json", ourCatalogFile} {
+			m[n] = &fstest.MapFile{Data: read(n)}
 		}
 		return m
 	}
@@ -511,20 +511,24 @@ func TestNew_RefusesBrokenSchemas(t *testing.T) {
 		file, data string
 		want       string
 	}{
-		"missing message schema": {"agent_to_renderer.json", "", "agent_to_renderer.json"},
-		"broken common types":    {"common_types.json", "{", "common_types.json"},
-		"broken catalog":         {"catalog.json", "{", "catalog.json"},
-		"catalog with no $defs":  {"catalog.json", `{"components":{}}`, "anyFunction"},
-		"no message definitions": {"agent_to_renderer.json", `{"$defs":{}}`, "CreateSurfaceMessage"},
-		"catalog with no Text":   {"catalog.json", `{"$defs":{"anyComponent":{},"anyFunction":{}}}`, "components_Text"},
+		"missing message schema": {"schema/agent_to_renderer.json", "", "agent_to_renderer.json"},
+		"broken common types":    {"schema/common_types.json", "{", "common_types.json"},
+		"broken catalog":         {"schema/catalog.json", "{", "catalog.json"},
+		"catalog with no $defs":  {"schema/catalog.json", `{"components":{}}`, `"/$defs/`},
+		"no message definitions": {"schema/agent_to_renderer.json", `{"$defs":{}}`, "CreateSurfaceMessage"},
+		"catalog with no Text":   {"schema/catalog.json", `{"$defs":{"anyComponent":{},"anyFunction":{},"Weight":{}}}`, "components_Text"},
+		"missing own catalog":    {ourCatalogFile, "", ourCatalogFile},
+		"broken own catalog":     {ourCatalogFile, "{", ourCatalogFile},
+		"own catalog, no Chart":  {ourCatalogFile, `{"components":{}}`, "components_Chart"},
+		"own Chart unresolvable": {ourCatalogFile, `{"components":{"Chart":{"$ref":"catalog.json#/$defs/nothing"}}}`, `"/$defs/nothing"`},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			fsys := good()
 			if tc.data == "" {
-				delete(fsys, "schema/"+tc.file)
+				delete(fsys, tc.file)
 			} else {
-				fsys["schema/"+tc.file] = &fstest.MapFile{Data: []byte(tc.data)}
+				fsys[tc.file] = &fstest.MapFile{Data: []byte(tc.data)}
 			}
 			_, err := newService(fsys)
 			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.HasPrefix(err.Error(), "loading the A2UI schemas: ") {

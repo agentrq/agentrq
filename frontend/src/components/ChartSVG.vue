@@ -278,9 +278,12 @@ function handleMouseMove(e) {
   hoveredPoint.value = closest;
 }
 
+// An analytics bucket shortened: an hour to HH:MM, a day to MM-DD. Any
+// other label, a card's, is shown as it is.
 function formatDate(dateStr) {
-  if (dateStr.includes(':')) return dateStr.split(' ')[1].slice(0, 5);
-  return dateStr.slice(5);
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(dateStr)) return dateStr.split(' ')[1].slice(0, 5);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr.slice(5);
+  return dateStr;
 }
 
 const xAxisLabels = computed(() => {

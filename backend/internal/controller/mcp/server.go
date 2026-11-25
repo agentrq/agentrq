@@ -1583,6 +1583,7 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 	if metadata != nil {
 		ps.emitA2UI(ctx, entity.ActionA2UIReply, msgID)
 		ps.emitA2UIResource(ctx, params, msgID)
+		ps.emitA2UIChart(ctx, metadata, msgID)
 	}
 	ps.noteSessionTask(req, taskID)
 
@@ -1918,6 +1919,7 @@ func (ps *WorkspaceServer) askHuman(ctx context.Context, taskID int64, message s
 	}
 	if metadata["mode"] == elicitModeA2UI {
 		ps.emitA2UI(ctx, entity.ActionA2UIElicit, msgID)
+		ps.emitA2UIChart(ctx, metadata, msgID)
 	}
 
 	select {

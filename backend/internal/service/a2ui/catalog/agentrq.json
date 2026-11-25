@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json",
+  "title": "AgentRQ catalog",
+  "description": "Every component and function of the A2UI v1.0 basic catalog, and the components below. A surface whose createSurface names this catalogId may use both.",
+  "components": {
+    "Chart": {
+      "type": "object",
+      "description": "A chart drawn as the AgentRQ analytics pages draw theirs.",
+      "properties": {
+        "component": {
+          "const": "Chart"
+        },
+        "variant": {
+          "type": "string",
+          "description": "line: a value over time; bar: values side by side; heatmap: a value per day (labels YYYY-MM-DD) or per hour (labels YYYY-MM-DD HH:00).",
+          "enum": ["line", "bar", "heatmap"],
+          "default": "line"
+        },
+        "label": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "What the values count, shown beside each one, such as Tasks."
+        },
+        "data": {
+          "description": "The points, in order: a list, or a binding to one in the data model.",
+          "oneOf": [
+            {
+              "type": "array",
+              "maxItems": 744,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "value": {
+                    "type": "number"
+                  }
+                },
+                "required": ["label", "value"],
+                "additionalProperties": false
+              }
+            },
+            {
+              "$ref": "common_types.json#/$defs/DataBinding"
+            }
+          ]
+        },
+        "color": {
+          "type": "string",
+          "description": "tasks (the default) or messages, the analytics tones, or a #rrggbb colour used as given in both themes.",
+          "pattern": "^(tasks|messages|#[0-9a-fA-F]{6})$"
+        },
+        "weight": {
+          "$ref": "catalog.json#/$defs/Weight"
+        }
+      },
+      "required": ["component", "data"]
+    }
+  }
+}

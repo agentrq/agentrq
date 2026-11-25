@@ -198,6 +198,7 @@ export default defineConfig({
         'src/components/ChoiceCards.vue',
         'src/components/ToggleSwitch.vue',
         'src/components/SegmentedControl.vue',
+        'src/components/BarChart.vue',
         'src/utils/formStyles.js',
         'src/utils/forms.js',
         'src/composables/useMissionPicker.js',

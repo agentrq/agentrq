@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 // Package a2ui decides whether the UI an agent attached to a message, a list
-// of A2UI v1.0 messages (https://a2ui.org) in the basic catalog, may be shown,
+// of A2UI v1.0 messages (https://a2ui.org) in the basic catalog or our own
+// (the basic one and a Chart), may be shown,
 // and returns a cleaned copy with media references resolved to our storage.
 //
 // Structure is checked with the official schemas. What they cannot say is
@@ -23,11 +24,15 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 )
 
 const (
-	// BasicCatalogID is the only catalog a surface may use.
+	// BasicCatalogID is the official basic catalog.
 	BasicCatalogID = "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"
+	// AgentRQCatalogID is ours: the basic catalog and the components in
+	// agentrqComponents (catalog/agentrq.json).
+	AgentRQCatalogID = "https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json"
 
 	MaxBytes      = 64 << 10
 	MaxComponents = 200
@@ -48,6 +53,11 @@ var (
 
 	displayComponents     = []string{"Text", "Image", "Icon", "Video", "AudioPlayer", "Row", "Column", "List", "Card", "Tabs", "Divider"}
 	interactiveComponents = []string{"Button", "TextField", "CheckBox", "ChoicePicker", "Slider", "DateTimeInput", "Modal"}
+	// agentrqComponents are display components only our catalog has.
+	agentrqComponents = []string{"Chart"}
+
+	// CatalogIDs are the catalogs a surface may use.
+	CatalogIDs = []string{BasicCatalogID, AgentRQCatalogID}
 
 	// Media properties, which the schema types as DynamicString: a binding or
 	// a call would pass it, so the literal attachment rule is ours.
@@ -172,6 +182,7 @@ type validator struct {
 	schemas    *schemas
 	opts       Options
 	surfaceID  string
+	catalogID  string
 	count      int
 	components map[string]*component
 	problems   []string
@@ -231,8 +242,13 @@ func (v *validator) message(i int, m, p any) {
 		return
 	}
 	v.surface(at, body["surfaceId"].(string))
-	if kind == "createSurface" && body["catalogId"] != BasicCatalogID {
-		v.addf("%s: catalogId must be %q, the basic catalog", at, BasicCatalogID)
+	if kind == "createSurface" {
+		id, _ := body["catalogId"].(string)
+		if !slices.Contains(CatalogIDs, id) {
+			v.addf("%s: catalogId must be %q, the basic catalog, or %q, ours, which adds Chart", at, BasicCatalogID, AgentRQCatalogID)
+			return
+		}
+		v.catalogID = id
 	}
 }
 
@@ -280,27 +296,116 @@ func (v *validator) componentList(at string, list, plain []any) {
 			continue
 		}
 		seen[id] = true
-		if c, ok := obj["@catalogId"]; ok && c != BasicCatalogID {
-			v.addf("%s: @catalogId must be %q, the basic catalog, or left out", cat, BasicCatalogID)
+		if c, ok := obj["@catalogId"]; ok && c != BasicCatalogID && (c != AgentRQCatalogID || v.catalogID != AgentRQCatalogID) {
+			v.addf("%s: @catalogId must be the surface's catalog, %q, or left out", cat, v.catalogID)
 			continue
 		}
 		v.media(cat, name, obj)
+		if name == "Chart" {
+			v.chart(cat, obj)
+		}
 		v.components[id] = &component{at: cat, obj: obj}
 	}
 }
 
 func (v *validator) allowed(at, name string) bool {
-	if slices.Contains(displayComponents, name) || v.opts.Interactive && slices.Contains(interactiveComponents, name) {
+	ours := v.catalogID == AgentRQCatalogID
+	if slices.Contains(displayComponents, name) || v.opts.Interactive && slices.Contains(interactiveComponents, name) ||
+		ours && slices.Contains(agentrqComponents, name) {
 		return true
 	}
-	use := displayComponents
-	if v.opts.Interactive {
-		use = append(append([]string{}, displayComponents...), interactiveComponents...)
+	use := append([]string{}, displayComponents...)
+	if ours {
+		use = append(use, agentrqComponents...)
 	}
-	if slices.Contains(interactiveComponents, name) {
+	if v.opts.Interactive {
+		use = append(use, interactiveComponents...)
+	}
+	switch {
+	case slices.Contains(agentrqComponents, name):
+		v.addf("%s: %s is in our catalog: createSurface's catalogId must be %q to use it", at, name, AgentRQCatalogID)
+	case slices.Contains(interactiveComponents, name):
 		v.addf("%s: %s is not available here, where the ui only displays; use %s", at, name, strings.Join(use, ", "))
-	} else {
+	default:
 		v.addf("%s: component %q is not one of %s", at, name, strings.Join(use, ", "))
+	}
+	return false
+}
+
+const (
+	// heatmapDays and heatmapHourDays are the longest spans a heatmap's grid
+	// draws: a year of days, a month of hours.
+	heatmapDays     = 366
+	heatmapHourDays = 31
+	heatmapDay      = "2006-01-02"
+	heatmapHour     = "2006-01-02 15:04"
+)
+
+// chart checks what the schema cannot of a Chart's literal points: values
+// are zero or more, and a heatmap's labels are all days or all hours, the
+// analytics pages' buckets, over a span its grid can draw. Bound points are
+// the renderer's to check, which leaves out any it cannot draw.
+func (v *validator) chart(at string, obj map[string]any) {
+	points, ok := obj["data"].([]any)
+	if !ok {
+		return
+	}
+	heatmap := obj["variant"] == "heatmap"
+	layout := ""
+	var first, last time.Time
+	for i, p := range points {
+		point := p.(map[string]any)
+		if n, _ := point["value"].(json.Number).Float64(); n < 0 {
+			v.addf("%s: data[%d].value is %s; values are counts or amounts, zero or more", at, i, point["value"])
+			return
+		}
+		if !heatmap {
+			continue
+		}
+		label := point["label"].(string)
+		if layout == "" {
+			layout = heatmapDay
+			if len(label) > len(heatmapDay) {
+				layout = heatmapHour
+			}
+		}
+		t, err := time.Parse(layout, label)
+		if err != nil || layout == heatmapHour && t.Minute() != 0 {
+			v.addf("%s: data[%d].label %q must be a day, YYYY-MM-DD, or an hour, YYYY-MM-DD HH:00, like the first point's; a heatmap draws one or the other", at, i, label)
+			return
+		}
+		if i == 0 || t.Before(first) {
+			first = t
+		}
+		if i == 0 || t.After(last) {
+			last = t
+		}
+	}
+	limit := heatmapDays
+	if layout == heatmapHour {
+		limit = heatmapHourDays
+	}
+	if days := int(last.Sub(first).Hours()/24) + 1; heatmap && days > limit {
+		v.addf("%s: the heatmap spans %d days; a %s grid draws at most %d", at, days, map[string]string{heatmapDay: "day", heatmapHour: "hour"}[layout], limit)
+	}
+}
+
+// HasChart says whether a surface draws a Chart.
+func HasChart(s *Surface) bool {
+	for _, raw := range s.Messages {
+		var m struct {
+			UpdateComponents struct {
+				Components []struct {
+					Component string `json:"component"`
+				} `json:"components"`
+			} `json:"updateComponents"`
+		}
+		_ = json.Unmarshal(raw, &m) // every message was marshalled by Validate
+		for _, c := range m.UpdateComponents.Components {
+			if c.Component == "Chart" {
+				return true
+			}
+		}
 	}
 	return false
 }

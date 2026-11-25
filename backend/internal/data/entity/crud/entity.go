@@ -1943,6 +1943,9 @@ const (
 	// An agent's card that came as A2UI's MCP binding, an embedded resource,
 	// rather than as ui's array. Backend-emitted: the server stored it.
 	ActionA2UIResource Action = 148
+	// An agent's card that draws a Chart, from our own catalog: a reply, a
+	// question or an update. Backend-emitted: the server stored it.
+	ActionA2UIChart Action = 149
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2243,6 +2246,8 @@ func (a Action) String() string {
 		return "a2ui_slack"
 	case ActionA2UIResource:
 		return "a2ui_resource"
+	case ActionA2UIChart:
+		return "a2ui_chart"
 	}
 	return "unknown"
 }

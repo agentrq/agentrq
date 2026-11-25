@@ -30,6 +30,8 @@ const (
 	// The validator stores no card deeper than 16; a hand-edited row could
 	// loop, and drawing one must never recurse without end.
 	maxCardDepth = 32
+	// maxChartLines is how many of a Chart's points Slack lists.
+	maxChartLines = 12
 )
 
 // BuildCardBlocks draws an agent's A2UI card, the message's metadata, as
@@ -191,12 +193,44 @@ func (d *cardDrawer) draw(id string, scope []string, depth int) {
 			child, _ := tab["child"].(string)
 			d.draw(child, scope, depth+1)
 		}
+	case "Chart":
+		d.chart(c, scope)
 	case "Icon":
 		// Decoration only.
 	default:
 		// Inputs, buttons, a modal, players: the page has them.
 		d.more = true
 	}
+}
+
+// chart lists a Chart's points, a label and its value a line, under the
+// chart's label. Slack draws no chart, so the page is a button away.
+func (d *cardDrawer) chart(c map[string]any, scope []string) {
+	d.more = true
+	points, _ := c["data"].([]any)
+	if bind, ok := c["data"].(map[string]any); ok {
+		path, _ := bind["@path"].(string)
+		points, _ = readPath(d.data, d.tokens(path, scope)).([]any)
+	}
+	var lines []string
+	for _, p := range points {
+		point, _ := p.(map[string]any)
+		label, _ := point["label"].(string)
+		value, ok := point["value"].(float64)
+		if label != "" && ok {
+			lines = append(lines, escapeMarkdown(label)+": *"+strconv.FormatFloat(value, 'f', -1, 64)+"*")
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	if len(lines) > maxChartLines {
+		lines = append(lines[:maxChartLines], fmt.Sprintf("_…and %d more_", len(lines)-maxChartLines))
+	}
+	if title := strings.TrimSpace(d.str(c["label"], scope)); title != "" {
+		lines = append([]string{"*" + escapeMarkdown(title) + "*"}, lines...)
+	}
+	d.items = append(d.items, cardItem{kind: itemText, text: strings.Join(lines, "\n")})
 }
 
 // children draws a fixed list of ids, or a template once per data item.
