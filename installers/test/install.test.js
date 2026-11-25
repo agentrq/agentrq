@@ -238,3 +238,15 @@ test('Windows is pointed at install.ps1', () => {
   assert.match(r.stderr, /irm https:\/\/agentrq\.com\/install\.ps1 \| iex/);
   assert.deepEqual(apis, []);
 });
+
+test('Windows with --tauri is pointed at install.ps1 with AGENTRQ_TAURI', () => {
+  const { r } = run({ arch: 'x86_64', names: TAURI, args: ['--tauri'], osName: 'MSYS_NT-10.0' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /\$env:AGENTRQ_TAURI = '1'; irm https:\/\/agentrq\.com\/install\.ps1 \| iex/);
+});
+
+test('another unsupported system is pointed at the releases', () => {
+  const { r } = run({ arch: 'x86_64', names: ELECTRON, osName: 'FreeBSD' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /unsupported system: FreeBSD.*https:\/\/github\.com\/agentrq\/agentrq\/releases/);
+});
