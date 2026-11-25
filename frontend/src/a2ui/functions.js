@@ -170,8 +170,8 @@ function pluralize(args, ctx) {
   return args[category] ?? args.other ?? ''
 }
 
-// Opens a web or mail link, and only from a click: a value drawn on the
-// page never opens anything.
+// Opens a web link (http or https only), and only from a click: a value
+// drawn on the page never opens anything.
 function openUrl({ url }, ctx) {
   if (!ctx.userActivated || typeof url !== 'string') return undefined
   let parsed
@@ -180,7 +180,7 @@ function openUrl({ url }, ctx) {
   } catch {
     return undefined
   }
-  if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) return undefined
+  if (!['http:', 'https:'].includes(parsed.protocol)) return undefined
   const open = ctx.open ?? ((href) => window.open(href, '_blank', 'noopener,noreferrer'))
   open(parsed.href)
   return undefined

@@ -110,6 +110,7 @@ export default defineConfig({
         'src/composables/useTaskFork.js',
         'src/composables/useElicitAnswer.js',
         'src/composables/useRequestAnswer.js',
+        'src/composables/useCardActions.js',
         'src/composables/useMemories.js',
         'src/composables/useSkills.js',
         'src/composables/usePano.js',
