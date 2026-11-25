@@ -178,7 +178,8 @@ export function skillTokenAt(text, caret) {
 /**
  * The text after choosing a skill for the `/name` at the caret, and where the
  * caret goes: just past the name and the one space after it, where what to do
- * with the skill is typed.
+ * with the skill is typed. An agent command that takes no argument is left
+ * bare, as `applyCommand` leaves it, ready to send.
  */
 export function applyInlineSkill(command, text, caret) {
   const current = typeof text === 'string' ? text : '';
@@ -186,10 +187,11 @@ export function applyInlineSkill(command, text, caret) {
   const token = skillTokenAt(current, at) ?? { start: at, end: at };
   const after = current.slice(token.end);
   const name = `/${command.name}`;
-  const space = /^\s/.test(after) ? '' : ' ';
+  const gap = applyCommand(command).endsWith(' ') ? 1 : 0;
+  const space = gap && !/^\s/.test(after) ? ' ' : '';
   return {
     text: current.slice(0, token.start) + name + space + after,
-    caret: token.start + name.length + 1,
+    caret: token.start + name.length + gap,
   };
 }
 
@@ -206,8 +208,11 @@ const CARET_EVENTS = ['input', 'keyup', 'click', 'focus'];
  * @param {import('vue').Ref<string>} options.text  the textarea's contents, writable
  * @param {import('vue').Ref<string>|(() => string)} options.workspaceId
  * @param {import('vue').Ref<HTMLTextAreaElement|null>} options.el  the textarea
+ * @param {import('vue').Ref<Array>|(() => Array)} [options.leading]  commands
+ *   offered only for a `/name` that starts the text, ahead of the skills: an
+ *   agent's own commands, which it reads only as the whole message
  */
-export function useInlineSkillMenu({ text, workspaceId, el, load, loadTeam }) {
+export function useInlineSkillMenu({ text, workspaceId, el, load, loadTeam, leading }) {
   const caret = ref(null);
   const sync = () => {
     const node = toValue(el);
@@ -227,9 +232,13 @@ export function useInlineSkillMenu({ text, workspaceId, el, load, loadTeam }) {
   watch(() => toValue(text), () => nextTick(sync));
 
   let placed = null;
+  const skills = useSkillCommands(workspaceId, { ...(load && { load }), ...(loadTeam && { loadTeam }) });
+  const commands = computed(() =>
+    skillTokenAt(toValue(text), caret.value)?.start === 0 ? mergeCommands(leading, skills) : skills.value
+  );
   const menu = useSlashCommands({
     text,
-    commands: useSkillCommands(workspaceId, { ...(load && { load }), ...(loadTeam && { loadTeam }) }),
+    commands,
     query: (current) => skillTokenAt(current, caret.value)?.query ?? null,
     apply: (command, current) => {
       const next = applyInlineSkill(command, current, caret.value);

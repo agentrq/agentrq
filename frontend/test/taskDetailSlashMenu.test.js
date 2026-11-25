@@ -140,6 +140,35 @@ describe('the reply box\'s / menu', () => {
     expect(input.value).toBe('/release ')
     expect(view.el.querySelector('[data-test=slash-menu]')).toBeNull()
   })
+
+  it('offers the skills for a /name in the middle of the message, but not the agent\'s commands', async () => {
+    const view = await mount()
+    const input = view.composer()
+    input.value = 'please /re and then push'
+    input.setSelectionRange(10, 10)
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    expect(rows(view.el)).toEqual([
+      '/releaseCut a releaseskill',
+      '/reviewskill reviewskill',
+    ])
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await settle()
+    expect(input.value).toBe('please /release and then push')
+    expect(input.selectionStart).toBe(16)
+    expect(view.el.querySelector('[data-test=slash-menu]')).toBeNull()
+  })
+
+  it('puts a skill in where a row is clicked', async () => {
+    const view = await mount()
+    const input = view.composer()
+    input.value = 'first /'
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    view.el.querySelector('[data-test=slash-menu] li').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(input.value).toBe('first /release ')
+  })
 })
 
 describe('the reply box\'s # menu', () => {
