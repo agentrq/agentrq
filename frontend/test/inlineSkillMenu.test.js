@@ -50,6 +50,12 @@ describe('applyInlineSkill', () => {
     expect(applyInlineSkill(release, 'a /refoo', 4)).toEqual({ text: 'a /release ', caret: 11 })
   })
 
+  it('leaves an agent command that takes no argument bare, and one that does spaced', () => {
+    expect(applyInlineSkill({ name: 'compact' }, '/comp', 5)).toEqual({ text: '/compact', caret: 8 })
+    expect(applyInlineSkill({ name: 'compact' }, '/comp now', 5)).toEqual({ text: '/compact now', caret: 8 })
+    expect(applyInlineSkill({ name: 'init', hint: 'what' }, '/in', 3)).toEqual({ text: '/init ', caret: 6 })
+  })
+
   it('inserts at the caret when there is no /name, and survives no text', () => {
     expect(applyInlineSkill(release, 'ab', 1)).toEqual({ text: 'a/release b', caret: 10 })
     expect(applyInlineSkill(release, undefined)).toEqual({ text: '/release ', caret: 9 })
@@ -68,7 +74,7 @@ describe('useInlineSkillMenu', () => {
     { name: 'review', workspaceEnabled: true },
   ]
 
-  async function mount(initial = '') {
+  async function mount(initial = '', leading) {
     const text = ref(initial)
     const el = ref(null)
     const show = ref(true)
@@ -79,7 +85,7 @@ describe('useInlineSkillMenu', () => {
     document.body.appendChild(root)
     app = createApp({
       setup() {
-        menu = useInlineSkillMenu({ text, workspaceId: 'ws1', el, load, loadTeam })
+        menu = useInlineSkillMenu({ text, workspaceId: 'ws1', el, load, loadTeam, leading })
         return () => (show.value ? h('textarea', { ref: el, value: text.value, onInput: (e) => { text.value = e.target.value } }) : null)
       },
     })
@@ -95,6 +101,24 @@ describe('useInlineSkillMenu', () => {
   }
 
   const key = (k) => new KeyboardEvent('keydown', { key: k, cancelable: true })
+
+  it('offers the leading commands only for a /name that starts the text, ahead of the skills', async () => {
+    const t = await mount('', ref([{ name: 'compact' }, { name: 'review', description: 'agent' }]))
+    t.type('/')
+    await nextTick()
+    expect(t.menu().matches.value.map((c) => c.name)).toEqual(['compact', 'review', 'release', 'deploy'])
+    expect(t.menu().matches.value[1].description).toBe('agent')
+
+    t.type('then /')
+    await nextTick()
+    expect(t.menu().matches.value.map((c) => c.name)).toEqual(['release', 'review', 'deploy'])
+
+    t.type('/comp')
+    await nextTick()
+    expect(t.menu().handleKeydown(key('Tab'))).toBe(true)
+    expect(t.text.value).toBe('/compact')
+    expect(t.menu().open.value).toBe(false)
+  })
 
   it('offers the workspace\'s team skills too', async () => {
     const t = await mount()

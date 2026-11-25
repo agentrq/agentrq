@@ -810,7 +810,7 @@
 
       <!-- The agent's slash commands and the workspace's skills. Sits above
            the composer so it never covers what is being typed. -->
-      <SlashCommandMenu :menu="slashMenu" class="mb-2" @accept="acceptSlashCommand" />
+      <SlashCommandMenu :menu="slashMenu" class="mb-2" @accept="slashMenu.accept" />
       <SlashCommandMenu :menu="presetMenu" prefix="#" label="Presets" class="mb-2" @accept="acceptPreset" />
 
       <form @submit.prevent="submitReply">
@@ -1047,7 +1047,7 @@ import { useQueuedMessages } from '../composables/useQueuedMessages';
 import { scrollToBottom as scrollContainerToBottom, shouldScrollOnViewChange } from '../composables/useChatScroll';
 import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
-import { mergeCommands, useSkillCommands, useSlashCommands } from '../composables/useSlashCommands';
+import { useInlineSkillMenu } from '../composables/useSlashCommands';
 import SlashCommandMenu from '../components/SlashCommandMenu.vue';
 import { usePresetMenu } from '../composables/usePresets';
 import { renderMarkdown } from '../utils/markdown';
@@ -1184,22 +1184,18 @@ function startRename() {
 const descExpanded = ref(false);
 const replyText = ref('');
 
-// The agent's own slash commands and the workspace's skills, offered as you
-// type `/`. An agent's command wins a name a skill also has.
-const agentCommands = computed(() => workspace.value?.agentCommands?.commands ?? []);
-// None for a teammate's task: their workspace's skills are theirs, and there is
-// no composer to offer them in.
-const skillCommands = useSkillCommands(computed(() => (isTeamMode.value ? '' : workspaceId.value)));
-const slashMenu = useSlashCommands({
+// The workspace's skills, offered for a `/name` typed anywhere in the message,
+// and the agent's own slash commands, offered only at its start: the agent
+// reads one only as the whole message. An agent's command wins a name a skill
+// also has. No skills for a teammate's task: their workspace's skills are
+// theirs, and there is no composer to offer them in.
+const textareaRef = ref(null);
+const slashMenu = useInlineSkillMenu({
   text: replyText,
-  commands: computed(() => mergeCommands(agentCommands, skillCommands)),
+  workspaceId: computed(() => (isTeamMode.value ? '' : workspaceId.value)),
+  el: textareaRef,
+  leading: computed(() => workspace.value?.agentCommands?.commands ?? []),
 });
-
-/** Puts the chosen command in the composer, for a click on the menu. */
-function acceptSlashCommand(command) {
-  const applied = slashMenu.accept(command);
-  if (applied !== null) setReplyText(applied);
-}
 
 // The workspace's presets, offered as a word starts with `#`; none for a
 // teammate's task, like the skills.
@@ -1216,7 +1212,8 @@ function acceptPreset(preset) {
 
 /** The menu's keys while it is open; everything else stays the composer's. */
 function onComposerKeydown(event) {
-  const claimed = slashMenu.handleKeydown(event) || presetMenu.handleKeydown(event);
+  if (slashMenu.handleKeydown(event)) return;
+  const claimed = presetMenu.handleKeydown(event);
   if (!claimed) return;
   event.preventDefault();
   if (claimed.text !== null) setReplyText(claimed.text);
@@ -1258,7 +1255,6 @@ const {
 const editingQueuedId = ref(null);
 const editingQueuedText = ref('');
 
-const textareaRef = ref(null);
 const {
   isRecording: sttRecording,
   isTranscribing: sttTranscribing,
