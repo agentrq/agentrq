@@ -334,6 +334,40 @@ describe('MachineDetailView: Machine Info', () => {
     expect(el.textContent).toContain('412 GB free of 1.0 TB')
   })
 
+  it('meters memory in use, and the columns follow the tiles', async () => {
+    const el = await shown(8)
+    const mem = [...el.querySelector('[data-testid=tile-memory]').querySelectorAll('span')]
+    expect(mem).toHaveLength(10)
+    expect(mem.filter((c) => c.className.includes('bg-emerald-500'))).toHaveLength(5)
+    const grid = el.querySelector('[data-testid=tile-cpu]').parentElement
+    expect(grid.className).toContain('@min-[48rem]:grid-cols-4')
+    const bar = el.querySelector('[data-testid=disk-bar]')
+    expect(bar.className).not.toContain('max-w-')
+    expect(bar.firstElementChild.className).toContain('bg-emerald-500')
+    expect(bar.firstElementChild.style.width).toBe('58.8%')
+  })
+
+  it('warns on nearly full memory and disks, and drops the load column on Windows', async () => {
+    MACHINE.metrics = {
+      ...metricsWith(8),
+      memAvailable: 1_000_000_000,
+      loadAvg: null,
+      disks: [{ mount: 'C:', free: 50_000_000_000, total: 1_000_000_000_000 }],
+    }
+    try {
+      const { el, clickTab } = await mount()
+      await clickTab('Machine Info')
+      const mem = [...el.querySelector('[data-testid=tile-memory]').querySelectorAll('span')]
+      expect(mem.filter((c) => c.className.includes('bg-amber-500'))).toHaveLength(10)
+      expect(el.querySelector('[data-testid=tile-load]')).toBeNull()
+      const grid = el.querySelector('[data-testid=tile-cpu]').parentElement
+      expect(grid.className).toContain('@min-[48rem]:grid-cols-3')
+      expect(el.querySelector('[data-testid=disk-bar]').firstElementChild.className).toContain('bg-red-500')
+    } finally {
+      delete MACHINE.metrics
+    }
+  })
+
   it('stays green below half', async () => {
     const el = await shown(8)
     const cpu = el.querySelector('[data-testid=tile-cpu]')

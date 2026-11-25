@@ -29,6 +29,7 @@ import {
   formatAge,
   diskUsedPercent,
   memoryUsedPercent,
+  nearlyFull,
   cpuHot,
   meterCells,
   METER_CELLS,
@@ -642,7 +643,7 @@ async function stopSession(id) {
         </div>
 
         <!-- Machine Info: what the machine has left -->
-        <div v-if="activeTab === 'info'">
+        <div v-if="activeTab === 'info'" class="@container">
           <div class="flex items-baseline justify-between gap-3 mb-4">
             <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Resources</h2>
             <p v-if="machine.metrics" class="text-[11px] text-gray-400 dark:text-zinc-500">
@@ -655,7 +656,11 @@ async function stopSession(id) {
           </p>
 
           <div v-else class="space-y-2">
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <!-- As many columns as tiles: no load average (Windows) is three. -->
+            <div
+              class="grid grid-cols-2 gap-2"
+              :class="formatLoadAvg(machine.metrics.loadAvg) ? '@min-[48rem]:grid-cols-4' : '@min-[48rem]:grid-cols-3'"
+            >
               <div :class="TILE" data-testid="tile-cpu">
                 <p :class="TILE_LABEL">CPU</p>
                 <p
@@ -675,7 +680,7 @@ async function stopSession(id) {
                   />
                 </div>
               </div>
-              <div :class="TILE">
+              <div :class="TILE" data-testid="tile-memory">
                 <p :class="TILE_LABEL">Memory</p>
                 <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
                   {{ formatBytes(machine.metrics.memAvailable) }}
@@ -683,6 +688,16 @@ async function stopSession(id) {
                 <p class="text-[11px] text-gray-400 dark:text-zinc-500">
                   free of {{ formatBytes(machine.metrics.memTotal) }}
                 </p>
+                <div class="flex gap-1 mt-1.5" aria-hidden="true">
+                  <span
+                    v-for="c in METER_CELLS"
+                    :key="c"
+                    class="h-1.5 flex-1 max-w-3 rounded-sm"
+                    :class="c > meterCells(memoryUsedPercent(machine.metrics))
+                      ? 'bg-gray-200 dark:bg-zinc-700'
+                      : nearlyFull(memoryUsedPercent(machine.metrics)) ? 'bg-amber-500 dark:bg-amber-400' : 'bg-emerald-500'"
+                  />
+                </div>
               </div>
               <div :class="TILE">
                 <p :class="TILE_LABEL">Uptime</p>
@@ -713,11 +728,12 @@ async function stopSession(id) {
               <span class="font-mono text-xs text-gray-700 dark:text-zinc-200 truncate min-w-0">{{ disk.mount }}</span>
               <div
                 v-if="diskUsedPercent(disk) !== null"
-                class="h-1.5 flex-1 max-w-xs rounded-full bg-gray-200 dark:bg-zinc-700 overflow-hidden"
+                class="h-1.5 flex-1 rounded-full bg-gray-200 dark:bg-zinc-700 overflow-hidden"
+                data-testid="disk-bar"
               >
                 <div
                   class="h-full rounded-full"
-                  :class="diskUsedPercent(disk) > 90 ? 'bg-red-500' : 'bg-gray-800 dark:bg-zinc-300'"
+                  :class="nearlyFull(diskUsedPercent(disk)) ? 'bg-red-500' : 'bg-emerald-500'"
                   :style="{ width: `${diskUsedPercent(disk)}%` }"
                 />
               </div>
