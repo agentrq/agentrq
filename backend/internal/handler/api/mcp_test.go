@@ -83,6 +83,9 @@ type fakeWorkspaceServer struct {
 
 	// elicitErr is RespondToElicitation's answer: nobody waiting, when set.
 	elicitErr error
+	// elicitAction and elicitContent are the answer it was given.
+	elicitAction  string
+	elicitContent map[string]any
 
 	// calls records, in order, which of ClearContextForTask/
 	// SendChannelNotification the handler made — a test asserting a push order
@@ -149,6 +152,7 @@ func (f *fakeWorkspaceServer) SendPermissionVerdictFrom(ctx context.Context, tas
 }
 
 func (f *fakeWorkspaceServer) RespondToElicitation(requestID, action string, content map[string]any) error {
+	f.elicitAction, f.elicitContent = action, content
 	return f.elicitErr
 }
 

@@ -37,21 +37,30 @@ type A2UIMetadata struct {
 // the schemas take ~200 ms to resolve, so once per process.
 var sharedA2UI = sync.OnceValues(a2ui.New)
 
+// elicitModeA2UI is the elicit mode whose question is drawn as a card.
+const elicitModeA2UI = "a2ui"
+
 // replyCard validates a reply's card against the files already saved with
 // it, and returns the message metadata that carries it.
 func (ps *WorkspaceServer) replyCard(ctx context.Context, taskID int64, ui json.RawMessage, atts []entity.Attachment) (*A2UIMetadata, error) {
-	validator := ps.a2ui
-	if validator == nil {
-		var err error
-		if validator, err = sharedA2UI(); err != nil {
-			return nil, fmt.Errorf("ui is not available on this server (%v): send the reply without it", err)
-		}
-	}
-	surface, err := validator.Validate(ctx, ui, a2ui.Options{Interactive: true, Attachments: ps.attachmentURLs(taskID, atts)})
+	surface, err := ps.validateCard(ctx, ui, ps.attachmentURLs(taskID, atts), "send the reply without it")
 	if err != nil {
 		return nil, err
 	}
 	return &A2UIMetadata{Type: MessageTypeA2UI, Version: a2uiVersion, SurfaceID: surface.SurfaceID, Messages: surface.Messages}, nil
+}
+
+// validateCard checks a card, its media resolved from attachments; without
+// the validator, the error says to do instead.
+func (ps *WorkspaceServer) validateCard(ctx context.Context, ui json.RawMessage, attachments map[string]string, instead string) (*a2ui.Surface, error) {
+	validator := ps.a2ui
+	if validator == nil {
+		var err error
+		if validator, err = sharedA2UI(); err != nil {
+			return nil, fmt.Errorf("ui is not available on this server (%v): %s", err, instead)
+		}
+	}
+	return validator.Validate(ctx, ui, a2ui.Options{Interactive: true, Attachments: attachments})
 }
 
 // attachmentURLs maps each saved file of a reply to where the page reads it:
@@ -80,15 +89,15 @@ func (ps *WorkspaceServer) deleteAttachments(taskID int64, atts []entity.Attachm
 	}
 }
 
-// emitA2UIReply counts a reply that carried a card.
-func (ps *WorkspaceServer) emitA2UIReply(ctx context.Context, msgID int64) {
+// emitA2UI counts a message that carried a card: a reply, or a question.
+func (ps *WorkspaceServer) emitA2UI(ctx context.Context, action entity.Action, msgID int64) {
 	if ps.pubsub == nil {
 		return
 	}
 	ps.pubsub.Publish(ctx, pubsub.PublishRequest{
 		PubSubID: entity.PubSubTopicCRUD,
 		Event: entity.CRUDEvent{
-			Action:       entity.ActionA2UIReply,
+			Action:       action,
 			WorkspaceID:  ps.workspaceID,
 			UserID:       monoflake.IDFromBase62(ps.userID).Int64(),
 			ResourceType: entity.ResourceMessage,
@@ -99,10 +108,24 @@ func (ps *WorkspaceServer) emitA2UIReply(ctx context.Context, msgID int64) {
 	})
 }
 
-// isA2UIMessage is whether a message's metadata carries a card.
-func isA2UIMessage(metadata []byte) bool {
-	var m struct {
-		Type string `json:"type"`
+// agentMetadata is what an agent reading the thread gets of a message's
+// metadata, and whether it carries a card. A card is for the page: a reply's
+// is left out, and a question drawn as one keeps all but its messages.
+func agentMetadata(metadata []byte) (string, bool) {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(metadata, &m) != nil {
+		return string(metadata), false
 	}
-	return len(metadata) > 0 && json.Unmarshal(metadata, &m) == nil && m.Type == MessageTypeA2UI
+	var typ, mode string
+	_ = json.Unmarshal(m["type"], &typ)
+	_ = json.Unmarshal(m["mode"], &mode)
+	switch {
+	case typ == MessageTypeA2UI:
+		return "", true
+	case typ == "elicitation_request" && mode == elicitModeA2UI:
+		delete(m, "messages")
+		b, _ := json.Marshal(m)
+		return string(b), true
+	}
+	return string(metadata), false
 }

@@ -5,9 +5,9 @@
 - **`text` stays required** and says all the card says: Slack, push, email and agents see only it.
 - **Media only as `attachment:<filename>`** of a file in the same reply's `attachments`. Links are refused.
 - Messages: `createSurface` (`surfaceId`, `catalogId` `https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json`); `updateComponents`, a flat list whose root has `id` `root`; optional `updateDataModel` (`path`, `value`), read with `{"@path": "/x"}`.
-- A refused `ui` posts nothing; its error names each problem.
+- A refused `ui` posts nothing; the error lists why.
 
-Components: `Text` (`text`, markdown; `variant` caption), `Image` (`url`), `Icon` (`name`: check, error, warning, info…), `Video`, `AudioPlayer`, `Row`, `Column`, `List` (`children`: ids, or `{"path": "/rows", "componentId": "row"}` per item, bound relative: `{"@path": "name"}`), `Card` (`child`), `Tabs` (`tabs`: `{title, child}`), `Divider`. Buttons and inputs are refused.
+Components: `Text` (`text`, markdown; `variant` caption), `Image` (`url`), `Icon` (`name`: check, error, warning…), `Video`, `AudioPlayer`, `Row`, `Column`, `List` (`children`: ids, or `{"path": "/rows", "componentId": "row"}` per item, bound relative: `{"@path": "name"}`), `Card` (`child`), `Tabs` (`tabs`: `{title, child}`), `Divider`, `Button`: [a2ui-buttons.md](a2ui-buttons.md).
 
 Patterns:
 - Result: Card → Column → Text `## Title`, Text summary, Image of a chart.

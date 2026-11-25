@@ -65,7 +65,7 @@ Node 20.6 or newer.
 | `pano delete <id>` | Delete a Pano doc |
 | `pano help [action]` | The server's help for its `pano` tool: every action, or one action's payload |
 | `event publish <name>` | Publish a named event |
-| `ask <taskId> <message>` | Ask the human a question and wait |
+| `ask <taskId> <message>` | Ask the human a question and wait; `--ui @card.json` asks with an A2UI v1.0 card whose Button answers |
 | `site-tools [q]` | List the websites shared with this workspace from the Chrome extension, and their tools' names and descriptions; `q` ranks the tools, `--pattern` filters them by a regular expression, `--limit`/`--offset` page |
 | `site-tool <site> <tool>` | Show one shared website's tool in full, with its input schema |
 | `call-site-tool <site> <tool> --task <taskId>` | Run a shared website's tool in the human's Chrome, with `--args '{…}'` |

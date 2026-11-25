@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/mustafaturan/monoflake"
@@ -204,8 +205,8 @@ func TestAttachmentURLs(t *testing.T) {
 	}
 }
 
-func TestEmitA2UIReply_WithoutPubSubIsQuiet(t *testing.T) {
-	(&WorkspaceServer{}).emitA2UIReply(context.Background(), 1)
+func TestEmitA2UI_WithoutPubSubIsQuiet(t *testing.T) {
+	(&WorkspaceServer{}).emitA2UI(context.Background(), entity.ActionA2UIReply, 1)
 }
 
 func TestBuildConversationJSON_ACardIsFlaggedNotSent(t *testing.T) {
@@ -302,5 +303,218 @@ func TestHandleReply_ACardMayCarryAButton(t *testing.T) {
 	res, _, err = e.ps.handleReply(context.Background(), nil, a2uiReplyParams(nameless))
 	if err != nil || !res.IsError {
 		t.Fatalf("a Button whose event has no name = %v, %v; want it refused", res, err)
+	}
+}
+
+const a2uiTestQuestion = `[
+ {"version":"1.0","createSurface":{"surfaceId":"release","catalogId":"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}},
+ {"version":"1.0","updateComponents":{"surfaceId":"release","components":[
+  {"id":"root","component":"Column","children":["q","go"]},
+  {"id":"q","component":"Text","text":"Release from main?"},
+  {"id":"go","component":"Button","child":"label","action":{"event":{"name":"release","context":{"branch":"main"}}}},
+  {"id":"label","component":"Text","text":"Release"}
+ ]}}
+]`
+
+func a2uiElicitParams(ui string) ElicitParams {
+	return ElicitParams{TaskID: monoflake.ID(42).String(), Message: "Release from main?", Mode: "a2ui", UI: json.RawMessage(ui), TimeoutSeconds: 60}
+}
+
+// a2uiElicitEnv is newA2UIReplyEnv that also records how the question was
+// closed.
+func a2uiElicitEnv(t *testing.T) (*a2uiReplyEnv, *map[string]any) {
+	e := newA2UIReplyEnv(t)
+	var closed map[string]any
+	e.ps.updateMessageMetadata = func(_ context.Context, taskID, msgID int64, metadata any) error {
+		if taskID != 42 || msgID != 555 {
+			t.Errorf("closed message %d of task %d, want 555 of 42", msgID, taskID)
+		}
+		closed = metadata.(map[string]any)
+		return nil
+	}
+	return e, &closed
+}
+
+// answer sends the human's answer to the question as soon as it is asked.
+func answer(t *testing.T, ps *WorkspaceServer, action string, content map[string]any) {
+	go func() {
+		requestID := monoflake.ID(900).String()
+		for range 500 {
+			if ps.RespondToElicitation(requestID, action, content) == nil {
+				return
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+		t.Error("the question was never asked")
+	}()
+}
+
+func TestHandleElicit_ACardQuestionIsAnsweredByAClick(t *testing.T) {
+	e, closed := a2uiElicitEnv(t)
+	content := map[string]any{"name": "release", "context": map[string]any{"branch": "main"}, "dataModel": map[string]any{"notes": "ship it"}}
+	answer(t, e.ps, "accept", content)
+
+	res, _, err := e.ps.handleElicit(context.Background(), nil, a2uiElicitParams(a2uiTestQuestion))
+	if err != nil || res.IsError {
+		t.Fatalf("elicit = %v, %v", res, err)
+	}
+	var got elicitationResponse
+	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Action != "accept" || got.Content["name"] != "release" || got.Content["dataModel"].(map[string]any)["notes"] != "ship it" {
+		t.Errorf("answer = %+v, want accept with the click's content", got)
+	}
+
+	meta := e.metadata.(map[string]any)
+	if meta["type"] != "elicitation_request" || meta["mode"] != "a2ui" || meta["status"] != "pending" ||
+		meta["version"] != "1.0" || meta["surfaceId"] != "release" || meta["message"] != "Release from main?" {
+		t.Errorf("stored question = %v", meta)
+	}
+	if msgs, _ := meta["messages"].([]json.RawMessage); len(msgs) != 2 {
+		t.Errorf("stored messages = %v, want the validated surface", meta["messages"])
+	}
+	if _, ok := meta["requestedSchema"]; ok {
+		t.Errorf("a card question stored a schema: %v", meta)
+	}
+	if (*closed)["status"] != "accept" || (*closed)["content"].(map[string]any)["name"] != "release" {
+		t.Errorf("the question was closed with %v, want the answer kept", *closed)
+	}
+	if len(e.events) != 1 || e.events[0].Action != entity.ActionA2UIElicit || e.events[0].ResourceID != 555 || e.events[0].Actor != entity.ActorAgent {
+		t.Errorf("events = %+v, want one a2ui_elicit for message 555", e.events)
+	}
+}
+
+func TestHandleElicit_ACardQuestionMayBeDeclined(t *testing.T) {
+	e, closed := a2uiElicitEnv(t)
+	answer(t, e.ps, "decline", nil)
+	res, _, _ := e.ps.handleElicit(context.Background(), nil, a2uiElicitParams(a2uiTestQuestion))
+	if res.IsError || res.Content[0].(*mcp.TextContent).Text != `{"action":"decline"}` {
+		t.Errorf("elicit = %v, want decline", res.Content[0])
+	}
+	if (*closed)["status"] != "decline" {
+		t.Errorf("closed = %v", *closed)
+	}
+}
+
+func TestHandleElicit_AnUnansweredCardQuestionIsCancelled(t *testing.T) {
+	e, closed := a2uiElicitEnv(t)
+	p := a2uiElicitParams(a2uiTestQuestion)
+	p.TimeoutSeconds = 1
+	res, _, _ := e.ps.handleElicit(context.Background(), nil, p)
+	if res.IsError || res.Content[0].(*mcp.TextContent).Text != `{"action":"cancel"}` {
+		t.Errorf("elicit = %v, want cancel", res.Content[0])
+	}
+	if (*closed)["status"] != "cancel" {
+		t.Errorf("closed = %v", *closed)
+	}
+}
+
+func TestHandleElicit_CardQuestionRefusals(t *testing.T) {
+	media := `[
+ {"version":"1.0","createSurface":{"surfaceId":"m","catalogId":"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}},
+ {"version":"1.0","updateComponents":{"surfaceId":"m","components":[{"id":"root","component":"Image","url":"attachment:chart.png"}]}}
+]`
+	schema := map[string]any{"type": "object", "properties": map[string]any{"b": map[string]any{"type": "string"}}}
+	cases := []struct {
+		name   string
+		edit   func(p *ElicitParams)
+		prefix string
+	}{
+		{"no ui", func(p *ElicitParams) { p.UI = nil }, "ui is required when mode is 'a2ui'"},
+		{"a schema too", func(p *ElicitParams) { p.RequestedSchema = schema }, "mode 'a2ui' takes ui, not requestedSchema or url"},
+		{"a url too", func(p *ElicitParams) { p.URL = "https://example.com" }, "mode 'a2ui' takes ui, not requestedSchema or url"},
+		{"ui on a form", func(p *ElicitParams) { p.Mode, p.RequestedSchema = "form", schema }, "ui needs mode 'a2ui'"},
+		{"ui on a link", func(p *ElicitParams) { p.Mode, p.URL = "url", "https://example.com" }, "ui needs mode 'a2ui'"},
+		{"media", func(p *ElicitParams) { p.UI = json.RawMessage(media) }, "ui is not valid A2UI v1.0: "},
+		{"an unknown mode", func(p *ElicitParams) { p.Mode, p.UI = "card", nil }, "mode must be 'form', 'url' or 'a2ui'"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := newA2UIReplyEnv(t)
+			p := a2uiElicitParams(a2uiTestQuestion)
+			c.edit(&p)
+			res, _, err := e.ps.handleElicit(context.Background(), nil, p)
+			if err != nil || !res.IsError || !strings.HasPrefix(res.Content[0].(*mcp.TextContent).Text, c.prefix) {
+				t.Errorf("elicit = %v, %v; want refused with %q", res.Content[0], err, c.prefix)
+			}
+			if e.replies != 0 || len(e.events) != 0 {
+				t.Errorf("a refused question was posted (%d) or counted (%v)", e.replies, e.events)
+			}
+		})
+	}
+}
+
+func TestHandleElicit_ACardQuestionNeedsTheValidator(t *testing.T) {
+	shared := sharedA2UI
+	t.Cleanup(func() { sharedA2UI = shared })
+	sharedA2UI = func() (a2ui.Service, error) { return nil, errors.New("schemas missing") }
+	e := newA2UIReplyEnv(t)
+	res, _, _ := e.ps.handleElicit(context.Background(), nil, a2uiElicitParams(a2uiTestQuestion))
+	if !res.IsError || res.Content[0].(*mcp.TextContent).Text != "ui is not available on this server (schemas missing): ask with mode 'form' instead" {
+		t.Errorf("elicit = %v, want it refused", res.Content[0])
+	}
+}
+
+func TestBuildConversationJSON_ACardQuestionKeepsItsAnswerNotItsCard(t *testing.T) {
+	task := model.Task{ID: 42, Messages: []model.Message{
+		{ID: 1, Sender: "agent", Text: "Release?", Metadata: []byte(`{"type":"elicitation_request","mode":"a2ui","status":"accept","surfaceId":"release","messages":[{"big":"json"}],"content":{"name":"release"}}`)},
+		{ID: 2, Sender: "agent", Text: "Which?", Metadata: []byte(`{"type":"elicitation_request","mode":"form","status":"pending"}`)},
+		{ID: 3, Sender: "human", Text: "hi"},
+	}}
+	out := buildConversationJSON(task, 0, 10)
+	if strings.Contains(out, "big") {
+		t.Errorf("the card's JSON reached the agent: %s", out)
+	}
+	var got struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil || len(got.Messages) != 3 {
+		t.Fatalf("conversation = %s, %v", out, err)
+	}
+	var meta map[string]any
+	_ = json.Unmarshal([]byte(got.Messages[0]["metadata"].(string)), &meta)
+	if got.Messages[0]["ui"] != true || meta["status"] != "accept" || meta["content"].(map[string]any)["name"] != "release" || meta["surfaceId"] != "release" {
+		t.Errorf("card question = %v", got.Messages[0])
+	}
+	if _, ok := got.Messages[1]["ui"]; ok {
+		t.Errorf("a form question is flagged as a card: %v", got.Messages[1])
+	}
+	if _, ok := got.Messages[2]["ui"]; ok || got.Messages[2]["metadata"] != "" {
+		t.Errorf("plain message = %v", got.Messages[2])
+	}
+}
+
+// Every question card an agent is shown is one elicit accepts.
+func TestA2UIExamples_EveryQuestionCardShownToAnAgentIsValid(t *testing.T) {
+	files, err := fs.Glob(builtinSkillFiles, "skills/agentrq/references/*.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cards := 0
+	for _, file := range files {
+		body, err := builtinSkillFiles.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range exampleCalls(t, file, body) {
+			if c.Action != "elicit" || c.Payload["ui"] == nil {
+				continue
+			}
+			cards++
+			var p ElicitParams
+			if err := decodePayload(c.Payload, &p); err != nil {
+				t.Fatal(err)
+			}
+			if p.Mode != "a2ui" || p.Message == "" {
+				t.Errorf("question card in %s: mode %q, message %q", file, p.Mode, p.Message)
+			}
+			if _, err := (&WorkspaceServer{}).validateCard(context.Background(), p.UI, nil, ""); err != nil {
+				t.Errorf("the question card in %s is refused: %v", file, err)
+			}
+		}
+	}
+	if cards < 1 {
+		t.Error("no question card is shown to an agent; want the a2ui reference's")
 	}
 }
