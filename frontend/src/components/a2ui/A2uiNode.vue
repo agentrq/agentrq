@@ -15,6 +15,7 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import A2uiAudioPlayer from './A2uiAudioPlayer.vue'
 import A2uiButton from './A2uiButton.vue'
 import A2uiCard from './A2uiCard.vue'
+import A2uiChart from './A2uiChart.vue'
 import A2uiCheckBox from './A2uiCheckBox.vue'
 import A2uiChoicePicker from './A2uiChoicePicker.vue'
 import A2uiColumn from './A2uiColumn.vue'
@@ -60,6 +61,7 @@ function viewFor(name) {
     case 'Slider': return A2uiSlider
     case 'DateTimeInput': return A2uiDateTimeInput
     case 'Modal': return A2uiModal
+    case 'Chart': return A2uiChart
     default: return null
   }
 }

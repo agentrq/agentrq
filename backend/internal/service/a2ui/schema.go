@@ -19,9 +19,10 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-// The official A2UI v1.0 schemas, vendored unmodified (see schema/README.md).
+// The official A2UI v1.0 schemas, vendored unmodified (see schema/README.md),
+// and our own catalog's additions to the basic one (catalog/agentrq.json).
 //
-//go:embed schema/*.json
+//go:embed schema/*.json catalog/*.json
 var schemaFiles embed.FS
 
 const (
@@ -72,24 +73,48 @@ func loadSchemas(fsys fs.FS) (*schemas, error) {
 	// catalog component. Once the component's name is known, the same
 	// definition with only that branch gives an error about its properties,
 	// rather than "did not validate against any of" eighteen.
-	for _, name := range append(append([]string{}, displayComponents...), interactiveComponents...) {
-		r, err := resolve(fsys, &jsonschema.Schema{
-			AllOf: []*jsonschema.Schema{
-				{Ref: "common_types.json#/$defs/ComponentCommon"},
-				{Ref: "catalog.json#/$defs/components_" + name},
-			},
-			UnevaluatedProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}},
-		})
-		if err != nil {
+	for _, name := range slices.Concat(displayComponents, interactiveComponents, agentrqComponents) {
+		if err := s.addComponent(fsys, docs, name, &jsonschema.Schema{Ref: "catalog.json#/$defs/components_" + name}); err != nil {
 			return nil, err
 		}
-		s.components[name] = r
-		props := map[string]bool{}
-		propertyNames(docs, docs["common_types.json"].Defs["ComponentCommon"], props)
-		propertyNames(docs, docs["catalog.json"].Defs["components_"+name], props)
-		s.properties[name] = slices.Sorted(maps.Keys(props))
 	}
 	return s, nil
+}
+
+// addComponent resolves component name, defined by def, with the common
+// properties every component has, and notes the properties it defines.
+func (s *schemas) addComponent(fsys fs.FS, docs map[string]*jsonschema.Schema, name string, def *jsonschema.Schema) error {
+	r, err := resolve(fsys, &jsonschema.Schema{
+		AllOf:                 []*jsonschema.Schema{{Ref: "common_types.json#/$defs/ComponentCommon"}, def},
+		UnevaluatedProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}},
+	})
+	if err != nil {
+		return err
+	}
+	s.components[name] = r
+	props := map[string]bool{}
+	propertyNames(docs, docs["common_types.json"].Defs["ComponentCommon"], props)
+	propertyNames(docs, docs["catalog.json"].Defs["components_"+name], props)
+	s.properties[name] = slices.Sorted(maps.Keys(props))
+	return nil
+}
+
+// ourCatalogFile holds the components our catalog adds to the basic one. Its
+// $refs are relative to the official schemas, as the basic catalog's are.
+const ourCatalogFile = "catalog/agentrq.json"
+
+func readOurCatalog(fsys fs.FS) (map[string]json.RawMessage, error) {
+	b, err := fs.ReadFile(fsys, ourCatalogFile)
+	if err != nil {
+		return nil, err
+	}
+	var doc struct {
+		Components map[string]json.RawMessage `json:"components"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		return nil, fmt.Errorf("%s: %w", ourCatalogFile, err)
+	}
+	return doc.Components, nil
 }
 
 // propertyNames collects the properties a component schema defines, through
@@ -126,7 +151,11 @@ func readSchema(fsys fs.FS, name string) (*jsonschema.Schema, error) {
 	case "common_types.json":
 		b = bytes.ReplaceAll(b, []byte(xidPattern), []byte(goXIDPattern))
 	case "catalog.json":
-		if b, err = flattenCatalog(b); err != nil {
+		ours, err := readOurCatalog(fsys)
+		if err != nil {
+			return nil, err
+		}
+		if b, err = flattenCatalog(b, ours); err != nil {
 			return nil, err
 		}
 	}
@@ -140,8 +169,10 @@ func readSchema(fsys fs.FS, name string) (*jsonschema.Schema, error) {
 // flattenCatalog moves the catalog's components and functions into $defs.
 // The catalog keeps them under top-level "components" and "functions", which
 // are not schema keywords, and the resolver follows a $ref's JSON pointer only
-// through keywords, so "#/components/Text" would not resolve.
-func flattenCatalog(b []byte) ([]byte, error) {
+// through keywords, so "#/components/Text" would not resolve. Our catalog's
+// components join them, and anyComponent, so a message may hold them; which
+// surface may use them is the validator's to say.
+func flattenCatalog(b []byte, ours map[string]json.RawMessage) ([]byte, error) {
 	var doc struct {
 		ID         string                     `json:"$id"`
 		Defs       map[string]json.RawMessage `json:"$defs"`
@@ -160,6 +191,17 @@ func flattenCatalog(b []byte) ([]byte, error) {
 	}
 	for name, def := range doc.Functions {
 		defs["functions_"+name] = def
+	}
+	var anyComponent map[string]any
+	_ = json.Unmarshal(defs["anyComponent"], &anyComponent) // a catalog without it fails to resolve
+	oneOf, _ := anyComponent["oneOf"].([]any)
+	for _, name := range slices.Sorted(maps.Keys(ours)) {
+		defs["components_"+name] = ours[name]
+		oneOf = append(oneOf, map[string]any{"$ref": "#/$defs/components_" + name})
+	}
+	if anyComponent != nil {
+		anyComponent["oneOf"] = oneOf
+		defs["anyComponent"], _ = json.Marshal(anyComponent)
 	}
 	// Every value was just decoded, so this cannot fail.
 	out, _ := json.Marshal(map[string]any{"$id": doc.ID, "$defs": defs})

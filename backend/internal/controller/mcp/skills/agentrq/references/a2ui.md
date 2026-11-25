@@ -1,18 +1,18 @@
 # A2UI cards
 
-`task.reply`'s `ui` is a card shown with `text`: A2UI v1.0 messages for one surface. Draw one when layout says more than prose.
+`task.reply`'s `ui` is a card shown with `text`: A2UI v1.0 messages for one surface. Draw one when layout beats prose.
 
 - **`text` stays required** and says all the card says: push, email and agents see only it.
 - **Media only as `attachment:<filename>`** of a file in the same reply's `attachments`. Links are refused.
 - Messages: `createSurface` (`surfaceId`, `catalogId` `https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json`); `updateComponents`, a flat list whose root has `id` `root`; optional `updateDataModel` (`path`, `value`), read with `{"@path": "/x"}`.
-- A refused `ui` posts nothing; the error lists why.
+- A refused `ui` posts nothing and says why.
 
-Components: `Text` (`text`, markdown; `variant` caption), `Image` (`url`), `Icon` (`name`: check, error, warning…), `Video`, `AudioPlayer`, `Row`, `Column`, `List` (`children`: ids, or `{"path": "/rows", "componentId": "row"}` per item, bound relative: `{"@path": "name"}`), `Card` (`child`), `Tabs` (`tabs`: `{title, child}`), `Divider`, `Button`: [a2ui-buttons.md](a2ui-buttons.md).
+Components: `Text` (`text`, markdown; `variant` caption), `Image` (`url`), `Icon` (`name`: check, error, warning…), `Video`, `AudioPlayer`, `Row`, `Column`, `List` (`children`: ids, or `{"path": "/rows", "componentId": "row"}` per item, bound relative: `{"@path": "name"}`), `Card` (`child`), `Tabs` (`tabs`: `{title, child}`), `Divider`, `Button`: [a2ui-buttons.md](a2ui-buttons.md), `Chart`: [a2ui-charts.md](a2ui-charts.md).
 
 Patterns:
-- Result: Card → Column → Text `## Title`, Text summary, Image of a chart.
-- Comparison: Card → List over `/rows` → Row → Text name, Text value.
-- Status: Card → Column → a Row per check: Icon `check` or `error`, Text.
+- Result: Card → Column → Text `## Title`, Text summary, a `Chart`.
+- Comparison: Card → List over `/rows` → Row → Text name, value.
+- Status: Card → Column → a Row per check: Icon `check`/`error`, Text.
 
 ```json
 {"action":"reply","payload":{"taskId":"0kGogHmaqvZ","text":"Build passed: 412 tests.","attachments":[{"filename":"chart.png","mimeType":"image/png","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}],"ui":[{"version":"1.0","createSurface":{"surfaceId":"build","catalogId":"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}},{"version":"1.0","updateComponents":{"surfaceId":"build","components":[{"id":"root","component":"Card","child":"col"},{"id":"col","component":"Column","children":["title","chart"]},{"id":"title","component":"Text","text":"## Build passed"},{"id":"chart","component":"Image","url":"attachment:chart.png"}]}}]}}

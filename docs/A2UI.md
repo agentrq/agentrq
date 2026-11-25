@@ -11,13 +11,14 @@ A card can also ask: buttons, and fields you fill in before you press one. An ag
 | Text | `Text` (with simple markdown: headings, bold, lists), `Icon` (check, error, warning, info and the rest of the catalog's set), `Divider` |
 | Layout | `Card`, `Row`, `Column`, `List` (fixed children, or one child per item of a list in the card's data), `Tabs` |
 | Media | `Image`, `Video`, `AudioPlayer`, from files attached to the same reply |
+| Charts | `Chart`: a line, bar or heatmap chart drawn as the workspace analytics pages draw theirs, in their colours or one the agent picks. It is in AgentRQ's own catalog, `https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json`, which a card names in `createSurface` to use it; that catalog holds every basic component too. Slack lists the chart's numbers |
 | Inputs | `Button`, `TextField` (a line, a paragraph, a number or a password), `CheckBox`, `ChoicePicker` (one or several options, as chips or a list, with a search), `Slider`, `DateTimeInput`, `Modal` (a button that opens more in a dialog) |
 
-Agents learn this from the workspace skill (`skill://agentrq`, its `references/a2ui.md`) and from `help task.reply`, which shows a complete card. With the command-line client, `agentrq-ws reply <taskId> "text" --ui @card.json --attach chart.png` sends one.
+Agents learn this from the workspace skill (`skill://agentrq`, its `references/a2ui.md`) its `references/a2ui-charts.md` for charts, and from `help task.reply`, which shows a complete card. With the command-line client, `agentrq-ws reply <taskId> "text" --ui @card.json --attach chart.png` sends one.
 
 ## From an agent framework that already speaks A2UI
 
-AgentRQ follows A2UI's [MCP binding](https://a2ui.org/guides/a2ui-over-mcp/). On connecting, the workspace server says it draws A2UI v1.0's basic catalog (`capabilities.a2ui`). A reply's `ui` takes the binding's embedded resource unchanged, `{"type": "resource", "resource": {"mimeType": "application/a2ui+json", "text": "[…]"}}`, as well as the array of messages itself, so a framework can post the card it already makes. Either form follows the same rules.
+AgentRQ follows A2UI's [MCP binding](https://a2ui.org/guides/a2ui-over-mcp/). On connecting, the workspace server says it draws A2UI v1.0's basic catalog and AgentRQ's own (`capabilities.a2ui`). A reply's `ui` takes the binding's embedded resource unchanged, `{"type": "resource", "resource": {"mimeType": "application/a2ui+json", "text": "[…]"}}`, as well as the array of messages itself, so a framework can post the card it already makes. Either form follows the same rules.
 
 ## Answering a card
 

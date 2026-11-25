@@ -405,6 +405,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDA2UISlack
 	case entity.ActionA2UIResource:
 		action = model.ActionIDA2UIResource
+	case entity.ActionA2UIChart:
+		action = model.ActionIDA2UIChart
 	default:
 		return
 	}

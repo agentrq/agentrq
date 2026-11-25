@@ -94,14 +94,18 @@ func (ps *WorkspaceServer) updateCard(ctx context.Context, req *mcp.CallToolRequ
 	if err != nil {
 		return fail(err)
 	}
+	var merged []byte
 	err = ps.editMessage(ctx, taskID, msgID, func(m model.Message) (string, []byte, error) {
-		return ps.mergeCard(ctx, validator, m, surfaceID, params)
+		text, metadata, err := ps.mergeCard(ctx, validator, m, surfaceID, params)
+		merged = metadata
+		return text, metadata, err
 	})
 	if err != nil {
 		return fail(err)
 	}
 	ps.emitA2UI(ctx, entity.ActionA2UIUpdate, msgID)
 	ps.emitA2UIResource(ctx, params, msgID)
+	ps.emitA2UIChart(ctx, json.RawMessage(merged), msgID)
 	ps.noteSessionTask(req, taskID)
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("card %q updated in message %s", surfaceID, monoflake.ID(msgID).String())}},
@@ -211,11 +215,11 @@ func (ps *WorkspaceServer) emitA2UI(ctx context.Context, action entity.Action, m
 const a2uiMimeType = "application/a2ui+json"
 
 // addA2UICapability advertises the cards this server draws, as A2UI's MCP
-// binding names them: version 1.0 of the basic catalog.
+// binding names them: version 1.0 of the basic catalog, and of ours.
 func addA2UICapability(caps *mcp.ServerCapabilities) {
 	caps.A2UI = map[string]any{
 		"rendererCapabilities": map[string]any{
-			a2uiVersion: map[string]any{"supportedCatalogIds": []string{a2ui.BasicCatalogID}},
+			a2uiVersion: map[string]any{"supportedCatalogIds": a2ui.CatalogIDs},
 		},
 	}
 }
@@ -246,6 +250,18 @@ func replyUI(ui json.RawMessage) (json.RawMessage, bool, error) {
 		return r.Resource.Blob, true, nil
 	}
 	return nil, false, errors.New("ui's resource has no text: its text is the JSON array of A2UI messages")
+}
+
+// emitA2UIChart counts a card, stored as metadata, that draws a Chart.
+func (ps *WorkspaceServer) emitA2UIChart(ctx context.Context, metadata any, msgID int64) {
+	var card struct {
+		Messages []json.RawMessage `json:"messages"`
+	}
+	b, _ := json.Marshal(metadata) // metadata the server just stored
+	_ = json.Unmarshal(b, &card)
+	if a2ui.HasChart(&a2ui.Surface{Messages: card.Messages}) {
+		ps.emitA2UI(ctx, entity.ActionA2UIChart, msgID)
+	}
 }
 
 // emitA2UIResource counts a card that came as A2UI's MCP binding.

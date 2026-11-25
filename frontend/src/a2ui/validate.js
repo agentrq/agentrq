@@ -7,6 +7,9 @@
 // refused here and the message's text is shown instead.
 
 export const BASIC_CATALOG_ID = 'https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json'
+// Ours: the basic catalog and AGENTRQ_COMPONENTS.
+export const AGENTRQ_CATALOG_ID = 'https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json'
+const CATALOG_IDS = [BASIC_CATALOG_ID, AGENTRQ_CATALOG_ID]
 // The server's 64 KiB is of the ui as the agent sent it; stored, each
 // attachment:<filename> has become a longer link, so a stored card gets twice.
 export const MAX_BYTES = 2 * (64 << 10)
@@ -22,6 +25,8 @@ const FUNCTION_NAMES = new Set([
 
 export const DISPLAY_COMPONENTS = ['Text', 'Image', 'Icon', 'Video', 'AudioPlayer', 'Row', 'Column', 'List', 'Card', 'Tabs', 'Divider']
 export const INTERACTIVE_COMPONENTS = ['Button', 'TextField', 'CheckBox', 'ChoicePicker', 'Slider', 'DateTimeInput', 'Modal']
+export const AGENTRQ_COMPONENTS = ['Chart']
+export const MAX_CHART_POINTS = 744
 
 // --- value shapes -----------------------------------------------------------
 
@@ -35,7 +40,7 @@ const isBinding = (v) => isObject(v) && isString(v['@path']) && onlyKeys(v, ['@p
 
 function isCall(v) {
   if (!isObject(v) || !FUNCTION_NAMES.has(v['@call']) || !onlyKeys(v, ['@call', 'args', 'catalogId'])) return false
-  if (v.catalogId !== undefined && v.catalogId !== BASIC_CATALOG_ID) return false
+  if (v.catalogId !== undefined && !CATALOG_IDS.includes(v.catalogId)) return false
   if (v.args === undefined) return true
   return isObject(v.args) && Object.values(v.args).every((a) => (Array.isArray(a) ? a.every(isValue) : isValue(a)))
 }
@@ -74,6 +79,7 @@ const ICON = (v) => oneOf(...ICON_NAMES)(v) || shape({ svgPath: DS }, ['svgPath'
 const ACTION = (v) =>
   shape({ event: shape({ name: isString, userMessage: DS, context: (c) => isObject(c) && Object.values(c).every(isValue) }, ['name']) }, ['event'])(v) ||
   shape({ functionCall: isCall }, ['functionCall'])(v)
+const POINT = shape({ label: (v) => isString(v) && v.length >= 1 && v.length <= 64, value: (v) => isNumber(v) && v >= 0 }, ['label', 'value'])
 const CHECKS = listOf(shape({ condition: (c) => isBinding(c) || isCall(c), message: isString }, ['condition']))
 
 // Every component's own properties, the catalog's, beside the common ones.
@@ -119,6 +125,10 @@ const COMPONENTS = {
   }, ['options', 'value']],
   Slider: [{ ...CHECKABLE, label: DS, min: isNumber, max: isNumber, value: DN, steps: (v) => Number.isInteger(v) && v >= 1 }, ['value', 'max']],
   DateTimeInput: [{ ...CHECKABLE, value: DS, enableDate: isBoolean, enableTime: isBoolean, min: DS, max: DS, label: DS }, ['value']],
+  Chart: [{
+    variant: oneOf('line', 'bar', 'heatmap'), label: DS, color: (v) => isString(v) && /^(tasks|messages|#[0-9a-fA-F]{6})$/.test(v),
+    data: (v) => isBinding(v) || (listOf(POINT)(v) && v.length <= MAX_CHART_POINTS),
+  }, ['data']],
 }
 
 const MEDIA = { Image: ['url'], Video: ['url', 'posterUrl'], AudioPlayer: ['url'] }
@@ -144,7 +154,7 @@ const MESSAGES = {
 
 // --- the checks -------------------------------------------------------------
 
-function checkComponent(c, at, allowed) {
+function checkComponent(c, at, allowed, catalogId) {
   if (!isObject(c)) return `${at}: not an object`
   const [own, required] = (allowed.includes(c.component) && COMPONENTS[c.component]) || []
   if (!own) return `${at}: component ${JSON.stringify(c.component)} is not allowed here`
@@ -156,7 +166,7 @@ function checkComponent(c, at, allowed) {
   }
   const missing = required.find((k) => !(k in c))
   if (missing) return `${at}: ${missing} is required`
-  if (c['@catalogId'] !== undefined && c['@catalogId'] !== BASIC_CATALOG_ID) return `${at}: @catalogId must be the basic catalog`
+  if (c['@catalogId'] !== undefined && ![BASIC_CATALOG_ID, catalogId].includes(c['@catalogId'])) return `${at}: @catalogId must be the surface's catalog`
   const media = (MEDIA[c.component] ?? []).find((p) => p in c && !isStoredMediaUrl(c[p]))
   if (media) return `${at}: ${media} must be a stored file`
   return ''
@@ -209,7 +219,8 @@ export function validateMessages(messages, options = {}) {
   const fail = (problem) => ({ ok: false, problems: [problem] })
   if (!Array.isArray(messages) || messages.length === 0) return fail('ui must be a non-empty array')
   if (byteLength(messages) > MAX_BYTES) return fail(`ui is larger than ${MAX_BYTES} bytes`)
-  const allowed = options.interactive ? [...DISPLAY_COMPONENTS, ...INTERACTIVE_COMPONENTS] : DISPLAY_COMPONENTS
+  let allowed = options.interactive ? [...DISPLAY_COMPONENTS, ...INTERACTIVE_COMPONENTS] : DISPLAY_COMPONENTS
+  let catalogId = BASIC_CATALOG_ID
   const components = new Map()
   let surfaceId = null
   let count = 0
@@ -224,12 +235,16 @@ export function validateMessages(messages, options = {}) {
     if (!SURFACE_ID.test(body.surfaceId)) return fail(`${at}.${kind}: surfaceId is not valid`)
     if (surfaceId !== null && body.surfaceId !== surfaceId) return fail(`${at}.${kind}: one message carries one surface`)
     surfaceId = body.surfaceId
-    if (kind === 'createSurface' && body.catalogId !== BASIC_CATALOG_ID) return fail(`${at}.${kind}: catalogId must be the basic catalog`)
+    if (kind === 'createSurface') {
+      if (!CATALOG_IDS.includes(body.catalogId)) return fail(`${at}.${kind}: catalogId must be the basic catalog or ours`)
+      catalogId = body.catalogId
+      if (catalogId === AGENTRQ_CATALOG_ID) allowed = [...allowed, ...AGENTRQ_COMPONENTS]
+    }
     const seen = new Set()
     for (const [j, c] of (body.components ?? []).entries()) {
       const cat = `${at}.${kind}.components[${j}]`
       if (++count > MAX_COMPONENTS) return fail(`${cat}: more than ${MAX_COMPONENTS} components`)
-      const problem = checkComponent(c, cat, allowed)
+      const problem = checkComponent(c, cat, allowed, catalogId)
       if (problem) return fail(problem)
       if (seen.has(c.id)) return fail(`${cat}: id ${JSON.stringify(c.id)} is used twice`)
       seen.add(c.id)

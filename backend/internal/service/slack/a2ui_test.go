@@ -338,3 +338,36 @@ func TestBuildCardBlocksLeavesTheMetadataAsItWas(t *testing.T) {
 		t.Errorf("metadata changed:\n%s\nwas\n%s", after, before)
 	}
 }
+
+func TestBuildCardBlocksListsAChartsPoints(t *testing.T) {
+	button := "button: open_in_agentrq Open in AgentRQ " + taskLink
+	var many []string
+	for i := range 14 {
+		many = append(many, fmt.Sprintf(`{"label":"d%d","value":%d}`, i, i))
+	}
+	for name, tc := range map[string]struct {
+		comps, data, want string
+	}{
+		"a list": {
+			`[{"id":"root","component":"Chart","label":"PRs <merged>","data":[{"label":"Mon_1","value":2},{"label":"Tue","value":0.5},{"label":"","value":1},{"label":"x"}]}]`, `{}`,
+			"section: *PRs &lt;merged&gt;*\nMon_1: *2*\nTue: *0.5*\n" + button,
+		},
+		"bound, no label": {
+			`[{"id":"root","component":"Chart","variant":"bar","data":{"@path":"/points"}}]`, `{"points":[{"label":"a","value":3}]}`,
+			"section: a: *3*\n" + button,
+		},
+		"cut at twelve": {
+			`[{"id":"root","component":"Chart","data":[` + strings.Join(many, ",") + `]}]`, `{}`,
+			"section: d0: *0*\nd1: *1*\nd2: *2*\nd3: *3*\nd4: *4*\nd5: *5*\nd6: *6*\nd7: *7*\nd8: *8*\nd9: *9*\nd10: *10*\nd11: *11*\n_…and 2 more_\n" + button,
+		},
+		"no points": {
+			`[{"id":"root","component":"Chart","data":{"@path":"/none"}}]`, `{}`,
+			"section: Weekly\n" + button,
+		},
+	} {
+		got := describe(BuildCardBlocks("agent", "Weekly", components(t, tc.comps, tc.data), taskLink))
+		if got != agentLine+"\n"+tc.want {
+			t.Errorf("%s: blocks =\n%s\nwant\n%s", name, got, agentLine+"\n"+tc.want)
+		}
+	}
+}
