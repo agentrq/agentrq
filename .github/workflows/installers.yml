@@ -100,8 +100,10 @@ jobs:
       - name: Run it again (PowerShell 7, as a file)
         shell: pwsh
         run: |
-          ./installers/install.ps1 | Tee-Object -Variable out
-          if (-not ($out -match 'already installed')) { exit 1 }
+          # Write-Host goes to the information stream, not the pipeline.
+          $out = & ./installers/install.ps1 *>&1 | Out-String
+          $out
+          if ($out -notmatch 'already installed') { exit 1 }
 
       - name: Check the uninstall entry
         shell: pwsh
