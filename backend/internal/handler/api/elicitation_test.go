@@ -121,3 +121,31 @@ func TestRespondToElicitation_LeavesAQuestionBeforeItsDeadline(t *testing.T) {
 		})
 	}
 }
+
+// A click on a question's card answers it through the same route, its
+// content reaching the waiting agent as sent.
+func TestRespondToElicitation_ACardsAnswerReachesTheAgent(t *testing.T) {
+	userID := monoflake.ID(100).String()
+	crudCtrl := &mockCrudElicitation{}
+	crudCtrl.checkWorkspaceAccessFunc = func(context.Context, int64, string) (bool, error) { return true, nil }
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+	app := fiber.New()
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/elicitation", func(c fiber.Ctx) error {
+		c.Locals("user_id", userID)
+		return h.respondToElicitation()(c)
+	})
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks/"+monoflake.ID(2).String()+"/elicitation",
+		bytes.NewBufferString(`{"requestId":"req-1","action":"accept","content":{"name":"release","context":{"branch":"main"},"dataModel":{"notes":"ship it"}}}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("answer = %v, %v", resp, err)
+	}
+	ctx, _ := srv.elicitContent["context"].(map[string]any)
+	model, _ := srv.elicitContent["dataModel"].(map[string]any)
+	if srv.elicitAction != "accept" || srv.elicitContent["name"] != "release" || ctx["branch"] != "main" || model["notes"] != "ship it" {
+		t.Errorf("the agent got %q %v", srv.elicitAction, srv.elicitContent)
+	}
+}

@@ -652,7 +652,29 @@ test('ask takes a full schema as JSON', async () => {
   assert.deepEqual(client.calls[0].args.requestedSchema, schema)
 })
 
+test('ask infers a2ui mode from --ui and sends the card', async () => {
+  const client = stubClient()
+  const card = [{ version: '1.0', createSurface: { surfaceId: 'q' } }]
+  await invoke('ask', {
+    positionals: ['0isnjTCkpW5', 'Release?'],
+    values: { ui: JSON.stringify(card) },
+    client,
+  })
+  const { args } = client.calls[0]
+  assert.equal(args.mode, 'a2ui')
+  assert.deepEqual(args.ui, card)
+  assert.equal(args.requestedSchema, undefined)
+})
+
 test('ask refuses an unusable question', async () => {
+  await assert.rejects(
+    () => invoke('ask', { positionals: ['0isnjTCkpW5', 'Q'], values: { mode: 'a2ui' } }),
+    /mode=a2ui needs --ui/,
+  )
+  await assert.rejects(
+    () => invoke('ask', { positionals: ['0isnjTCkpW5', 'Q'], values: { ui: '{nope' } }),
+    /--ui is not valid JSON/,
+  )
   await assert.rejects(
     () => invoke('ask', { positionals: ['0isnjTCkpW5', 'Q'], values: { mode: 'url' } }),
     /mode=url needs --url/,
