@@ -135,7 +135,13 @@ const REFRESH_ICON =
 // Machine Info's readings, one tile each, as the session cards are drawn.
 const TILE = 'border border-gray-100 dark:border-zinc-800 rounded-lg p-3 bg-gray-50/60 dark:bg-zinc-800/30'
 const TILE_LABEL = 'text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500'
-const HOT = 'text-amber-600 dark:text-amber-400'
+// A figure is coloured only when the machine is close to its limit.
+const CRITICAL = 'text-red-800 dark:text-red-700'
+// The charts' palette: gray then black in light, neon in dark.
+const METER_FILL = 'bg-gray-500 dark:bg-[#aec477]'
+const METER_WARN = 'bg-black dark:bg-[#aec477]'
+// Running out of disk is the one reading that stops work, so it alone is red.
+const DISK_FULL = 'bg-red-800'
 
 const DOTS = {
   good: 'bg-emerald-500',
@@ -665,7 +671,7 @@ async function stopSession(id) {
                 <p :class="TILE_LABEL">CPU</p>
                 <p
                   class="text-base font-bold tabular-nums"
-                  :class="cpuHot(machine.metrics.cpuPercent) ? HOT : 'text-gray-900 dark:text-zinc-100'"
+                  :class="nearlyFull(machine.metrics.cpuPercent) ? CRITICAL : 'text-gray-900 dark:text-zinc-100'"
                 >
                   {{ formatPercent(machine.metrics.cpuPercent) }}
                 </p>
@@ -676,7 +682,7 @@ async function stopSession(id) {
                     class="h-1.5 flex-1 rounded-sm"
                     :class="c > meterCells(machine.metrics.cpuPercent)
                       ? 'bg-gray-200 dark:bg-zinc-700'
-                      : cpuHot(machine.metrics.cpuPercent) ? 'bg-amber-500 dark:bg-amber-400' : 'bg-emerald-500'"
+                      : cpuHot(machine.metrics.cpuPercent) ? METER_WARN : METER_FILL"
                   />
                 </div>
               </div>
@@ -693,7 +699,7 @@ async function stopSession(id) {
                     class="h-1.5 flex-1 rounded-sm"
                     :class="c > meterCells(memoryUsedPercent(machine.metrics))
                       ? 'bg-gray-200 dark:bg-zinc-700'
-                      : nearlyFull(memoryUsedPercent(machine.metrics)) ? 'bg-amber-500 dark:bg-amber-400' : 'bg-emerald-500'"
+                      : nearlyFull(memoryUsedPercent(machine.metrics)) ? METER_WARN : METER_FILL"
                   />
                 </div>
                 <p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-1">
@@ -711,8 +717,7 @@ async function stopSession(id) {
               <div v-if="formatLoadAvg(machine.metrics.loadAvg)" :class="TILE" data-testid="tile-load">
                 <p :class="TILE_LABEL">Load</p>
                 <p
-                  class="text-xs sm:text-sm font-bold font-mono whitespace-pre-wrap"
-                  :class="cpuHot(machine.metrics.cpuPercent) ? HOT : 'text-gray-900 dark:text-zinc-100'"
+                  class="text-xs sm:text-sm font-bold font-mono whitespace-pre-wrap text-gray-900 dark:text-zinc-100"
                 >{{ formatLoadAvg(machine.metrics.loadAvg) }}</p>
                 <p class="text-[11px] text-gray-400 dark:text-zinc-500">1-, 5- and 15-minute</p>
               </div>
@@ -720,27 +725,32 @@ async function stopSession(id) {
 
             <!-- Per mount, never one number: a box can be 2% full and still
                  fail to check out a repository. -->
-            <div
-              v-for="disk in machine.metrics.disks || []"
-              :key="disk.mount"
-              :class="TILE"
-              class="flex items-center gap-3 text-[11px]"
-            >
-              <span class="font-mono text-xs text-gray-700 dark:text-zinc-200 truncate min-w-0">{{ disk.mount }}</span>
+            <!-- One grid for every mount, so the bars share a start and an end
+                 whatever the mount's name or its figures. -->
+            <div class="grid grid-cols-[auto_1fr_auto] gap-y-2" data-testid="disks">
               <div
-                v-if="diskUsedPercent(disk) !== null"
-                class="h-1.5 flex-1 rounded-full bg-gray-200 dark:bg-zinc-700 overflow-hidden"
-                data-testid="disk-bar"
+                v-for="disk in machine.metrics.disks || []"
+                :key="disk.mount"
+                :class="TILE"
+                class="grid grid-cols-subgrid col-span-3 items-center gap-x-3 text-[11px]"
               >
+                <span class="font-mono text-xs text-gray-700 dark:text-zinc-200 truncate max-w-48">{{ disk.mount }}</span>
                 <div
-                  class="h-full rounded-full"
-                  :class="nearlyFull(diskUsedPercent(disk)) ? 'bg-red-500' : 'bg-emerald-500'"
-                  :style="{ width: `${diskUsedPercent(disk)}%` }"
-                />
+                  v-if="diskUsedPercent(disk) !== null"
+                  class="h-1.5 rounded-full bg-gray-200 dark:bg-zinc-700 overflow-hidden"
+                  data-testid="disk-bar"
+                >
+                  <div
+                    class="h-full rounded-full"
+                    :class="nearlyFull(diskUsedPercent(disk)) ? DISK_FULL : METER_FILL"
+                    :style="{ width: `${diskUsedPercent(disk)}%` }"
+                  />
+                </div>
+                <span v-else />
+                <span class="text-right text-gray-400 dark:text-zinc-500 tabular-nums">
+                  {{ formatBytes(disk.free) }} free of {{ formatBytes(disk.total) }}
+                </span>
               </div>
-              <span class="ml-auto text-gray-400 dark:text-zinc-500 tabular-nums shrink-0">
-                {{ formatBytes(disk.free) }} free of {{ formatBytes(disk.total) }}
-              </span>
             </div>
           </div>
         </div>
