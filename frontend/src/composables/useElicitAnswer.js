@@ -17,10 +17,11 @@ export function formatElicitAnswerValue(value) {
 
 // How a closed question ended. The server closes one nobody answered in time
 // as "cancel", and a form offers no Cancel button, so a cancelled form was
-// missed rather than cancelled by the human.
+// missed rather than cancelled by the human. A question drawn as a card shows
+// its answer on the card, so it is only done.
 export function elicitOutcome(m) {
   const { status, mode, content } = m.metadata || {};
-  if (status === 'accept') return Object.keys(content || {}).length ? 'answered' : 'done';
+  if (status === 'accept') return mode !== 'a2ui' && Object.keys(content || {}).length ? 'answered' : 'done';
   if (status === 'decline') return 'declined';
   return mode === 'form' ? 'missed' : 'cancelled';
 }

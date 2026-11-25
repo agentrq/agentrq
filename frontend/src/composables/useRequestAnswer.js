@@ -19,3 +19,17 @@ export function withRequestAnswered(task, requestId, answer) {
   });
   return found ? { ...task, messages } : task;
 }
+
+// The task with the agent's card on message messageId marked answered by the
+// person's click, once the server has confirmed it: the card goes read-only
+// with the chosen Button marked, without waiting for the live event.
+export function withCardAnswered(task, messageId, answered) {
+  if (!task?.messages) return task;
+  let found = false;
+  const messages = task.messages.map((m) => {
+    if (m.id !== messageId || m.metadata?.answered) return m;
+    found = true;
+    return { ...m, metadata: { ...m.metadata, answered } };
+  });
+  return found ? { ...task, messages } : task;
+}

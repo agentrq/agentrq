@@ -60,14 +60,25 @@ export function applyMessages(messages, state = createSurfaceState()) {
   return state
 }
 
+/** Whether metadata is a message's card: a reply's, or a question asked as one. */
+export function isCardMetadata(metadata) {
+  return metadata?.type === 'a2ui' || (metadata?.type === 'elicitation_request' && metadata.mode === 'a2ui')
+}
+
 /**
  * The surface a message's metadata carries, or null when it carries none or
- * one that fails validation: the caller then shows the message's text.
+ * one that fails validation: the caller then shows the message's text. An
+ * answered question's card holds the data model its answer sent, so it
+ * shows what the person entered.
  */
 export function loadSurface(metadata, options = {}) {
-  if (metadata?.type !== 'a2ui' || !Array.isArray(metadata.messages)) return null
+  if (!isCardMetadata(metadata) || !Array.isArray(metadata.messages)) return null
   if (!validateMessages(metadata.messages, options).ok) return null
   const state = applyMessages(metadata.messages)
+  const sent = metadata.content?.dataModel
+  if (metadata.type === 'elicitation_request' && sent !== null && typeof sent === 'object' && !Array.isArray(sent)) {
+    state.dataModel = clone(sent)
+  }
   return state.deleted ? null : state
 }
 
