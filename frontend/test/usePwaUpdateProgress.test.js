@@ -7,7 +7,6 @@ import { ref } from 'vue'
 
 import {
   PRECACHE_PROGRESS,
-  PROGRESS_STALL_MS,
   percentOf,
   precacheProgressPlugin,
   precacheTotal,
@@ -38,6 +37,33 @@ function fakeWorker(state = 'installing') {
   }
   return worker
 }
+
+/** A registration that can be told a new worker has been found. */
+function fakeRegistration({ installing = null, waiting = null } = {}) {
+  const registration = new EventTarget()
+  registration.installing = installing
+  registration.waiting = waiting
+  registration.find = (worker) => {
+    registration.installing = worker
+    registration.dispatchEvent(new Event('updatefound'))
+  }
+  // The browser sets waiting before the worker says it is installed.
+  registration.install = (worker) => {
+    registration.installing = null
+    registration.waiting = worker
+    worker.moveTo('installed')
+  }
+  return registration
+}
+
+/** A container whose registration is ready, after the microtasks it takes. */
+function readyContainer(registration, options) {
+  const container = fakeContainer(options)
+  container.ready = Promise.resolve(registration)
+  return container
+}
+
+const settle = () => new Promise((resolve) => setTimeout(resolve))
 
 function registered(overrides = {}) {
   return { needRefresh: ref(false), offlineReady: ref(false), updateServiceWorker: vi.fn(async () => {}), ...overrides }
@@ -186,62 +212,6 @@ describe('withUpdateProgress', () => {
     expect(progress.value).toBeNull()
   })
 
-  it('takes the bar down at the last file even when no state change is seen', () => {
-    const container = fakeContainer()
-    const worker = fakeWorker()
-    const { progress } = withUpdateProgress(registered(), container)
-
-    container.deliver({ type: PRECACHE_PROGRESS, done: 78, total: 79 }, worker)
-    container.deliver({ type: PRECACHE_PROGRESS, done: 79, total: 79 }, worker)
-
-    expect(progress.value).toBeNull()
-  })
-
-  it('takes it down at the last file when the message names no worker', () => {
-    const container = fakeContainer()
-    const { progress } = withUpdateProgress(registered(), container)
-
-    container.deliver({ type: PRECACHE_PROGRESS, done: 1, total: 2 }, null)
-    container.deliver({ type: PRECACHE_PROGRESS, done: 2, total: 2 }, null)
-
-    expect(progress.value).toBeNull()
-  })
-
-  it('takes it down when the download stops reporting', () => {
-    vi.useFakeTimers()
-    try {
-      const container = fakeContainer()
-      const { progress } = withUpdateProgress(registered(), container)
-
-      container.deliver({ type: PRECACHE_PROGRESS, done: 1, total: 10 }, null)
-      vi.advanceTimersByTime(PROGRESS_STALL_MS - 1)
-      container.deliver({ type: PRECACHE_PROGRESS, done: 2, total: 10 }, null)
-      vi.advanceTimersByTime(PROGRESS_STALL_MS - 1)
-      expect(progress.value?.percent).toBe(20)
-
-      vi.advanceTimersByTime(1)
-      expect(progress.value).toBeNull()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('leaves the restart up when the stall timer fires', async () => {
-    vi.useFakeTimers()
-    try {
-      const container = fakeContainer()
-      const sw = withUpdateProgress(registered(), container)
-
-      container.deliver({ type: PRECACHE_PROGRESS, done: 1, total: 10 }, null)
-      await sw.updateServiceWorker(true)
-      vi.advanceTimersByTime(PROGRESS_STALL_MS)
-
-      expect(sw.progress.value?.phase).toBe('restarting')
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
   it('watches each worker once however many files it reports', () => {
     const container = fakeContainer()
     const worker = fakeWorker()
@@ -296,5 +266,152 @@ describe('withUpdateProgress', () => {
     sw.dismissProgress()
 
     expect(sw.progress.value).toBeNull()
+  })
+})
+
+describe('withUpdateProgress offering the update itself', () => {
+  it('offers a version found after Workbox stopped listening', async () => {
+    // Workbox drops its updatefound listener after the first update it did
+    // not start, so in a tab left open the next version was never offered.
+    const registration = fakeRegistration()
+    const container = readyContainer(registration)
+    const base = registered()
+    const sw = withUpdateProgress(base, container)
+    await settle()
+
+    const worker = fakeWorker()
+    registration.find(worker)
+    container.deliver({ type: PRECACHE_PROGRESS, done: 10, total: 10 }, worker)
+    expect(sw.progress.value?.percent).toBe(100)
+
+    registration.install(worker)
+
+    expect(base.needRefresh.value).toBe(true)
+    expect(sw.progress.value).toBeNull()
+  })
+
+  it('offers it again after the last offer was dismissed', async () => {
+    const registration = fakeRegistration()
+    const base = registered()
+    withUpdateProgress(base, readyContainer(registration))
+    await settle()
+
+    const first = fakeWorker()
+    registration.find(first)
+    registration.install(first)
+    base.needRefresh.value = false
+
+    const second = fakeWorker()
+    registration.find(second)
+    registration.install(second)
+
+    expect(base.needRefresh.value).toBe(true)
+  })
+
+  it('follows a worker that was already installing when the page started', async () => {
+    const worker = fakeWorker()
+    const registration = fakeRegistration({ installing: worker })
+    const base = registered()
+    withUpdateProgress(base, readyContainer(registration))
+    await settle()
+
+    registration.install(worker)
+
+    expect(base.needRefresh.value).toBe(true)
+  })
+
+  it('offers a worker that was already waiting', async () => {
+    const base = registered()
+    withUpdateProgress(base, readyContainer(fakeRegistration({ waiting: fakeWorker('installed') })))
+    await settle()
+
+    expect(base.needRefresh.value).toBe(true)
+  })
+
+  it('offers nothing to a page no worker controls', async () => {
+    const base = registered()
+    const registration = fakeRegistration({ waiting: fakeWorker('installed') })
+    withUpdateProgress(base, readyContainer(registration, { controller: null }))
+    await settle()
+
+    expect(base.needRefresh.value).toBe(false)
+  })
+
+  it('takes the bar down when the install fails, even if no message named the worker', async () => {
+    const registration = fakeRegistration()
+    const container = readyContainer(registration)
+    const base = registered()
+    const sw = withUpdateProgress(base, container)
+    await settle()
+
+    const worker = fakeWorker()
+    registration.find(worker)
+    container.deliver({ type: PRECACHE_PROGRESS, done: 3, total: 10 }, null)
+    worker.moveTo('redundant')
+
+    expect(sw.progress.value).toBeNull()
+    expect(base.needRefresh.value).toBe(false)
+  })
+
+  it('offers nothing for a worker that installed but is not the waiting one', async () => {
+    const registration = fakeRegistration()
+    const base = registered()
+    withUpdateProgress(base, readyContainer(registration))
+    await settle()
+
+    const worker = fakeWorker()
+    registration.find(worker)
+    worker.moveTo('installed')
+
+    expect(base.needRefresh.value).toBe(false)
+  })
+
+  it('ignores an update found with nothing installing', async () => {
+    const registration = fakeRegistration()
+    const base = registered()
+    withUpdateProgress(base, readyContainer(registration))
+    await settle()
+
+    registration.find(null)
+
+    expect(base.needRefresh.value).toBe(false)
+  })
+
+  it('reloads once the new version takes over, as Workbox does only for its own offers', async () => {
+    const container = fakeContainer()
+    const reload = vi.fn()
+    const sw = withUpdateProgress(registered(), container, reload)
+
+    await sw.updateServiceWorker(true)
+    expect(reload).not.toHaveBeenCalled()
+
+    container.dispatchEvent(new Event('controllerchange'))
+    container.dispatchEvent(new Event('controllerchange'))
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not reload when asked not to', async () => {
+    const container = fakeContainer()
+    const reload = vi.fn()
+    const sw = withUpdateProgress(registered(), container, reload)
+
+    await sw.updateServiceWorker(false)
+    container.dispatchEvent(new Event('controllerchange'))
+
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('reloads the page by default', async () => {
+    const reload = vi.fn()
+    vi.stubGlobal('location', { reload })
+    try {
+      const container = fakeContainer()
+      const sw = withUpdateProgress(registered(), container)
+      await sw.updateServiceWorker(true)
+      container.dispatchEvent(new Event('controllerchange'))
+      expect(reload).toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

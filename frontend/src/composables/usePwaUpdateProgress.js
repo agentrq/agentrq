@@ -35,9 +35,6 @@ export function precacheTotal(manifest) {
   return new Set(manifest.map((entry) => (typeof entry === 'string' ? entry : entry.url))).size
 }
 
-/** How long the bar waits for the next file before taking itself down. */
-export const PROGRESS_STALL_MS = 60_000
-
 /** A 0–100 percentage from a progress message, or null when there is no total. */
 export function percentOf({ done, total }) {
   if (!total) return null
@@ -52,20 +49,46 @@ export function percentOf({ done, total }) {
  * from the worker's messages, and the same shape App.vue's banner reads:
  * `{ phase, percent, version }`.
  *
+ * It also makes the "Update now" offer itself, from the registration. Workbox
+ * stops listening for updates after the first one it did not start, so in a
+ * tab left open every later version would download and never be offered.
+ *
  * Returned as is when the registration already has progress (the desktop
  * build), or when there is no service worker to hear from.
  */
-export function withUpdateProgress(registered, container = globalThis.navigator?.serviceWorker) {
+export function withUpdateProgress(
+  registered,
+  container = globalThis.navigator?.serviceWorker,
+  reload = () => globalThis.location.reload(),
+) {
   if (registered.progress || !container) return registered
 
   const progress = ref(null)
   let watched = null
-  let stall = null
 
   const endDownload = () => {
-    clearTimeout(stall)
     if (progress.value?.phase === 'downloading') progress.value = null
   }
+
+  container.ready?.then((registration) => {
+    const offer = () => {
+      // An uncontrolled page has no older version running to replace.
+      if (!registration.waiting || !container.controller) return
+      endDownload()
+      registered.needRefresh.value = true
+    }
+    const follow = (worker) => {
+      if (!worker) return
+      // Followed from 'installing', so any change means the install is over.
+      worker.addEventListener('statechange', () => {
+        if (worker.state === 'installed' && registration.waiting === worker) offer()
+        else endDownload()
+      })
+    }
+    registration.addEventListener('updatefound', () => follow(registration.installing))
+    follow(registration.installing)
+    offer()
+  })
 
   container.addEventListener('message', (event) => {
     if (event.data?.type !== PRECACHE_PROGRESS) return
@@ -76,17 +99,7 @@ export function withUpdateProgress(registered, container = globalThis.navigator?
     const worker = event.source
     if (worker && worker.state !== 'installing') return
 
-    // Every file is cached: the download is over whatever the worker's state
-    // says, and a state change this page never sees must not hold the bar up.
-    if (event.data.total && event.data.done >= event.data.total) {
-      endDownload()
-      return
-    }
-
     progress.value = { phase: 'downloading', percent: percentOf(event.data), version: '' }
-    // A download that stops reporting has ended one way or another.
-    clearTimeout(stall)
-    stall = setTimeout(endDownload, PROGRESS_STALL_MS)
 
     // The worker leaves 'installing' whether it succeeded or failed: either
     // way the bar is done, and on success the "Update now" offer takes over.
@@ -107,6 +120,8 @@ export function withUpdateProgress(registered, container = globalThis.navigator?
     updateServiceWorker: async (reloadPage) => {
       // Up until the page reloads under the new version.
       progress.value = { phase: 'restarting', percent: null, version: '' }
+      // Workbox reloads only for an offer it made, and this one may not be.
+      if (reloadPage) container.addEventListener('controllerchange', () => reload(), { once: true })
       try {
         await registered.updateServiceWorker(reloadPage)
       } catch {
