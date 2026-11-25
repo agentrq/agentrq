@@ -6,6 +6,7 @@ package crud
 
 import (
 	"context"
+	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
@@ -149,6 +150,7 @@ type WorkspaceController interface {
 	GetWorkspace(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceResponse, error)
 	EnsureSupervisorWorkspace(ctx context.Context, req entity.EnsureSupervisorWorkspaceRequest) (*entity.GetWorkspaceResponse, error)
 	CheckWorkspaceAccess(ctx context.Context, id int64, userID string) (bool, error)
+	ListRevokedWorkspaceIDs(ctx context.Context, since time.Time) ([]int64, error)
 	ListWorkspaces(ctx context.Context, req entity.ListWorkspacesRequest) (*entity.ListWorkspacesResponse, error)
 	ArchiveWorkspace(ctx context.Context, req entity.ArchiveWorkspaceRequest) error
 	ResetWorkspaceID(ctx context.Context, req entity.ResetWorkspaceIDRequest) (*entity.ResetWorkspaceIDResponse, error)

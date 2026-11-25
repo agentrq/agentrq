@@ -5,6 +5,7 @@
 package coremcp
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/mustafaturan/monoflake"
 )
 
 // signSupervisorToken signs a supervisor token for user-1 that expires at exp,
@@ -111,6 +113,52 @@ func TestSupervisorStreamable_ChallengesAnAccessTokenThatOutlivesEightHours(t *t
 		h.streamableHandler().ServeHTTP(w, supervisorStreamRequest(token))
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("%s: answered %d, want 401", name, w.Code)
+		}
+	}
+}
+
+// signLaunchToken signs a launch token for user-1 naming workspace, expiring
+// at exp, or never when exp is zero.
+func signLaunchToken(t *testing.T, workspace string, exp time.Time) string {
+	t.Helper()
+	claims := auth.Claims{RegisteredClaims: jwt.RegisteredClaims{
+		Subject:  "user-1",
+		Audience: jwt.ClaimStrings{resourceSupervisor, auth.SupervisorLaunchToken, "workspace:" + workspace},
+	}}
+	if !exp.IsZero() {
+		claims.ExpiresAt = jwt.NewNumericDate(exp)
+	}
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("supervisor-streamable-secret"))
+	if err != nil {
+		t.Fatalf("signing a launch token: %v", err)
+	}
+	return tok
+}
+
+// The token agentrqd writes for a launched supervisor lasts 30 days, and only
+// that kind does: an access token as long is still refused. It stops working
+// once the workspace it names is revoked: deleted, or its id reset.
+func TestSupervisorStreamable_ALaunchTokenLastsThirtyDaysUntilItsWorkspaceIsRevoked(t *testing.T) {
+	h := supervisorStreamHandler()
+	const workspace, revoked = int64(1000), int64(1001)
+	h.revoked = newRevokedWorkspaces(func(context.Context, time.Time) ([]int64, error) { return []int64{revoked}, nil })
+	id := monoflake.ID(workspace).String()
+	for name, tc := range map[string]struct {
+		token string
+		want  int
+	}{
+		"a launch token":              {mustMint(t)(supervisorTokens.CreateSupervisorLaunchToken("user-1", id)), http.StatusOK},
+		"one for a revoked workspace": {mustMint(t)(supervisorTokens.CreateSupervisorLaunchToken("user-1", monoflake.ID(revoked).String())), http.StatusUnauthorized},
+		"one naming no workspace":     {signSupervisorToken(t, auth.SupervisorLaunchToken, time.Now().Add(time.Hour)), http.StatusUnauthorized},
+		"one naming an unreadable id": {signLaunchToken(t, "", time.Now().Add(time.Hour)), http.StatusUnauthorized},
+		"one past 30 days":            {signLaunchToken(t, id, time.Now().Add(30*24*time.Hour+2*time.Minute)), http.StatusUnauthorized},
+		"one with no expiry":          {signLaunchToken(t, id, time.Time{}), http.StatusUnauthorized},
+		"an access token for 30 days": {signSupervisorToken(t, "access", time.Now().Add(30*24*time.Hour)), http.StatusUnauthorized},
+	} {
+		w := httptest.NewRecorder()
+		h.streamableHandler().ServeHTTP(w, supervisorStreamRequest(tc.token))
+		if w.Code != tc.want {
+			t.Errorf("%s: answered %d, want %d", name, w.Code, tc.want)
 		}
 	}
 }

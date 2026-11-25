@@ -697,6 +697,7 @@ func TestMCPTokenLifetimes(t *testing.T) {
 		"supervisor access":           {func() (string, error) { return s.CreateSupervisorToken("user-1", "coremcp", "access") }, []string{"coremcp", "access"}, 8 * time.Hour},
 		"supervisor read-only access": {func() (string, error) { return s.CreateSupervisorToken("user-1", "coremcp:read", "access") }, []string{"coremcp:read", "access"}, 8 * time.Hour},
 		"supervisor refresh":          {func() (string, error) { return s.CreateSupervisorToken("user-1", "coremcp", "refresh") }, []string{"coremcp", "refresh"}, 7 * 24 * time.Hour},
+		"supervisor launch":           {func() (string, error) { return s.CreateSupervisorLaunchToken("user-1", "0inioPIhhbt") }, []string{"coremcp", "launch", "workspace:0inioPIhhbt"}, 30 * 24 * time.Hour},
 		"workspace access":            {func() (string, error) { return s.CreateMCPToken("user-1", "ws1", "access") }, []string{"ws1", "access"}, 365 * 24 * time.Hour},
 		"workspace refresh":           {func() (string, error) { return s.CreateMCPToken("user-1", "ws1", "refresh") }, []string{"ws1", "refresh"}, 365 * 24 * time.Hour},
 	} {

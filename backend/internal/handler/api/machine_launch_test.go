@@ -640,16 +640,21 @@ func launchInto(t *testing.T, workspaceName string) wire.StartSession {
 }
 
 // The supervisor workspace works across every other one, so its agent is given
-// the account-wide server as well as its own.
+// the account-wide server as well as its own, with a supervisor launch token.
 func TestLaunchAgent_TheSupervisorGetsTheCoreServer(t *testing.T) {
 	start := launchInto(t, agentlaunch.SupervisorWorkspaceName)
-	if start.CoreMCPURL != "https://agentrq.example/mcp" {
-		t.Errorf("coreMcpUrl = %q, want the account-wide server", start.CoreMCPURL)
+	base, token, ok := strings.Cut(start.CoreMCPURL, "?token=")
+	if !ok || base != "https://agentrq.example/mcp" {
+		t.Fatalf("coreMcpUrl = %q, want the account-wide server with a token", start.CoreMCPURL)
 	}
-	// And it carries no credential: that server authenticates over its own
-	// OAuth flow, so a token on this URL would be one minted for nothing.
-	if strings.Contains(start.CoreMCPURL, "token=") {
-		t.Errorf("the core URL carries a token: %q", start.CoreMCPURL)
+	claims, err := ticketTokens(t).ValidateToken(token)
+	if err != nil {
+		t.Fatalf("the core token does not verify: %v", err)
+	}
+	if claims.Subject != monoflake.ID(100).String() ||
+		!auth.HasAudience(claims, auth.SupervisorResource) || !auth.HasAudience(claims, auth.SupervisorLaunchToken) ||
+		auth.LaunchWorkspaceID(claims) != monoflake.ID(1).String() {
+		t.Errorf("claims = %+v, want a supervisor launch token for the account", claims)
 	}
 }
 

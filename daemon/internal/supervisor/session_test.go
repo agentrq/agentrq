@@ -855,6 +855,25 @@ func TestTheCoreServerIsWrittenWhenTheBackendSendsIt(t *testing.T) {
 	}
 }
 
+// A relaunch gives the core entry this launch's token: the supervisor's token
+// expires, so the one an earlier launch wrote would leave the agent without it.
+func TestARelaunchGivesTheCoreServerItsNewToken(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	req := claudeRequest(t, 1)
+	writeFile(t, filepath.Join(req.Dir, MCPConfigName),
+		`{"mcpServers":{"agentrq":{"type":"http","url":"https://mcp.agentrq.com/mcp"}}}`)
+	req.CoreMCPURL = "https://mcp.agentrq.com/mcp?token=new"
+
+	if _, err := s.Start(t.Context(), "work", req); err != nil {
+		t.Fatal(err)
+	}
+	cfg := readConfig(t, filepath.Join(req.Dir, MCPConfigName))
+	if got := cfg.Servers[wire.CoreMCPServerName].URL; got != req.CoreMCPURL {
+		t.Errorf("core entry = %q, want %q", got, req.CoreMCPURL)
+	}
+}
+
 // Every other workspace gets one entry, and nothing about the folder tells the
 // daemon otherwise.
 func TestAnOrdinaryWorkspaceGetsNoCoreServer(t *testing.T) {

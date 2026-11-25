@@ -67,6 +67,7 @@ type handler struct {
 	coremcpServer *WorkspaceServer
 	crud          crud.Controller
 	tokenSvc      auth.TokenService
+	revoked       *revokedWorkspaces
 	cimd          auth.CIMDResolver
 	baseURL       string
 	domain        string
@@ -116,6 +117,9 @@ func New(p Params) (Handler, error) {
 		baseURL:       p.BaseURL,
 		domain:        p.Domain,
 	}
+	h.revoked = newRevokedWorkspaces(func(ctx context.Context, since time.Time) ([]int64, error) {
+		return h.crud.ListRevokedWorkspaceIDs(ctx, since)
+	})
 
 	isLocal := p.Domain == "localhost" || p.Domain == "127.0.0.1" || p.Domain == ""
 
@@ -259,7 +263,7 @@ func requestedLevel(scope string) string {
 // it refuses the token instead of granting it everything; and its ':' keeps it
 // from ever reading as a base62 workspace ID.
 const (
-	resourceSupervisor         = "coremcp"
+	resourceSupervisor         = auth.SupervisorResource
 	resourceSupervisorReadOnly = "coremcp:read"
 )
 
@@ -472,7 +476,13 @@ func (h *handler) streamableHandler() http.Handler {
 			}
 		}
 
-		if resource == "" || hasRestricted || claims.Subject == "" || outlivesTTL(claims, auth.SupervisorAccessTokenTTL) {
+		ttl := auth.SupervisorAccessTokenTTL
+		launch := auth.HasAudience(claims, auth.SupervisorLaunchToken)
+		if launch {
+			ttl = auth.SupervisorLaunchTokenTTL
+		}
+		if resource == "" || hasRestricted || claims.Subject == "" || outlivesTTL(claims, ttl) ||
+			(launch && h.launchRevoked(r.Context(), claims)) {
 			challengeUnauthorized(w, r, "unauthorized")
 			return
 		}
@@ -488,6 +498,13 @@ func (h *handler) streamableHandler() http.Handler {
 
 		h.coremcpServer.Handler().ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// launchRevoked reports whether a launch token's workspace has been deleted
+// or its id reset since the token was minted, or the token names none.
+func (h *handler) launchRevoked(ctx context.Context, claims *auth.Claims) bool {
+	id := monoflake.IDFromBase62(auth.LaunchWorkspaceID(claims)).Int64()
+	return id <= 0 || h.revoked.has(ctx, id)
 }
 
 func (h *handler) oauthMetadataHandler() http.Handler {

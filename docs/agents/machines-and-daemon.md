@@ -335,7 +335,9 @@ stalls an agent on the one call nobody is watching.
 
 Only the **supervisor** workspace gets the second, account-wide `agentrq`
 entry, and only the backend decides that — by sending `CoreMCPURL`. The daemon
-knows nothing about which workspace is which.
+knows nothing about which workspace is which. That URL carries a 30-day
+supervisor token, so the `agentrq` entry is the one written over on every
+launch (`MCPEntry.Override`): kept, it would hold an expired token or none.
 
 The folder itself is checked in `workspaceDir` before any of this: absolute
 only, cleaned, and it must already exist. The pty layer checks it too and still

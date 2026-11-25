@@ -86,10 +86,14 @@ type fakeAgents struct{ connected bool }
 
 func (a fakeAgents) IsAgentConnected(int64) bool { return a.connected }
 
-type fakeTokens struct{ err error }
+type fakeTokens struct{ err, supervisorErr error }
 
 func (t fakeTokens) CreateMCPToken(userID, workspaceID, tokenType string) (string, error) {
 	return "tok-" + workspaceID, t.err
+}
+
+func (t fakeTokens) CreateSupervisorLaunchToken(userID, workspaceID string) (string, error) {
+	return "sup-" + userID + "-" + workspaceID, t.supervisorErr
 }
 
 // conn is a daemon socket that keeps every control message it is sent.
@@ -205,8 +209,23 @@ func TestLaunch_TheSupervisorGetsTheCoreServer(t *testing.T) {
 	if _, err := l.Launch(context.Background(), request("claude-code")); err != nil {
 		t.Fatal(err)
 	}
-	if got := c.start(t).CoreMCPURL; got != "https://agentrq.example/mcp" {
-		t.Errorf("coreMcpUrl = %q", got)
+	want := "https://agentrq.example/mcp?token=sup-user-1-" + workspace1
+	if got := c.start(t).CoreMCPURL; got != want {
+		t.Errorf("coreMcpUrl = %q, want %q", got, want)
+	}
+}
+
+// No supervisor token, no launch: an agent started without the account-wide
+// server would look like a supervisor and act like any other workspace.
+func TestLaunch_TheSupervisorIsNotStartedWithoutItsToken(t *testing.T) {
+	l, crud, c := launcher()
+	crud.workspace.Name = SupervisorWorkspaceName
+	l.Tokens = fakeTokens{supervisorErr: errDatabaseDown}
+	if _, err := l.Launch(context.Background(), request("claude-code")); !errors.Is(err, errDatabaseDown) {
+		t.Errorf("err = %v, want %v", err, errDatabaseDown)
+	}
+	if len(c.sent) != 0 || len(crud.created) != 0 {
+		t.Errorf("sent %v, created %v", c.sent, crud.created)
 	}
 }
 

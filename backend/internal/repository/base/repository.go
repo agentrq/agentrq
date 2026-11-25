@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/agentrq/agentrq/backend/internal/service/tasklatency"
 	"gorm.io/datatypes"
@@ -290,6 +292,7 @@ type Repository interface {
 	ActiveSessionForWorkspace(ctx context.Context, workspaceID, userID int64) (model.Session, error)
 	RecordForkFolder(ctx context.Context, workspaceID, machineID, userID int64) error
 	ForkFolderMachines(ctx context.Context, workspaceID, userID int64) ([]int64, error)
+	ListRevokedWorkspaceIDs(ctx context.Context, since time.Time) ([]int64, error)
 	WorkspaceNamesByID(ctx context.Context, ids []int64, userID int64) (map[int64]string, error)
 	UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time, restored bool) error
 	RecordSessionActivity(ctx context.Context, machineID int64, sessions []entity.SessionActivity) error
@@ -701,7 +704,10 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 		return err
 	}
 
-	// 3. Delete the workspace itself
+	// 3. Delete the workspace itself, revoking a supervisor's launch tokens.
+	if err := revokeSupervisorID(tx, id, userID); err != nil {
+		return err
+	}
 	res := tx.Where("id = ? AND user_id = ?", id, userID).Delete(&model.Workspace{})
 	if res.Error != nil {
 		return res.Error
@@ -710,6 +716,35 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// supervisorWorkspaceName is the workspace whose agent agentrqd launches with
+// a supervisor launch token, as agentlaunch.SupervisorWorkspaceName.
+const supervisorWorkspaceName = "supervisor"
+
+// revokeSupervisorID records, inside tx, that id is about to name no
+// workspace any more when it is userID's supervisor: the one kind of
+// workspace a launch token names. It drops the records no launch token can
+// still name, older than its lifetime and an hour for clocks that disagree,
+// so the table holds only the last 30 days' supervisors.
+func revokeSupervisorID(tx *gorm.DB, id, userID int64) error {
+	var supervisors int64
+	if err := tx.Model(&model.Workspace{}).Where("id = ? AND user_id = ? AND name = ?", id, userID, supervisorWorkspaceName).
+		Count(&supervisors).Error; err != nil || supervisors == 0 {
+		return err
+	}
+	now := time.Now()
+	if err := tx.Where("revoked_at < ?", now.Add(-auth.SupervisorLaunchTokenTTL-time.Hour)).Delete(&model.RevokedWorkspace{}).Error; err != nil {
+		return err
+	}
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&model.RevokedWorkspace{ID: id, RevokedAt: now}).Error
+}
+
+// ListRevokedWorkspaceIDs lists the workspace ids revoked since since.
+func (r *repository) ListRevokedWorkspaceIDs(ctx context.Context, since time.Time) ([]int64, error) {
+	var ids []int64
+	err := r.conn(ctx).Model(&model.RevokedWorkspace{}).Where("revoked_at >= ?", since).Pluck("id", &ids).Error
+	return ids, err
 }
 
 // workspaceIDTables are the tables whose workspace_id names the workspace,
@@ -729,6 +764,9 @@ var workspaceIDTables = []any{
 // transaction. UpdateColumn leaves updated_at alone, so nothing reorders.
 func (r *repository) ResetWorkspaceID(ctx context.Context, oldID, newID, userID int64) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := revokeSupervisorID(tx, oldID, userID); err != nil {
+			return err
+		}
 		res := tx.Model(&model.Workspace{}).Where("id = ? AND user_id = ?", oldID, userID).UpdateColumn("id", newID)
 		if res.Error != nil {
 			return res.Error
@@ -740,7 +778,11 @@ func (r *repository) ResetWorkspaceID(ctx context.Context, oldID, newID, userID 
 			return err
 		}
 		for _, m := range workspaceIDTables {
-			if err := tx.Model(m).Where("workspace_id = ?", oldID).UpdateColumn("workspace_id", newID).Error; err != nil {
+			// A fresh model each time: UpdateColumn writes the new id back
+			// into the model it is given, and on a table keyed by
+			// workspace_id the next reset would then match no rows.
+			fresh := reflect.New(reflect.TypeOf(m).Elem()).Interface()
+			if err := tx.Model(fresh).Where("workspace_id = ?", oldID).UpdateColumn("workspace_id", newID).Error; err != nil {
 				return err
 			}
 		}

@@ -33,6 +33,10 @@ type MCPServer struct {
 type MCPEntry struct {
 	Name string
 	URL  string
+	// Override replaces an entry already under this name, rather than keeping
+	// it, so its token is this launch's: the supervisor's token expires, and a
+	// folder set up before it was sent has no token at all.
+	Override bool
 }
 
 // MCPConfig is the file's shape.
@@ -65,7 +69,8 @@ var (
 //     points at, and its name comes back in `kept` so the daemon can say so.
 //     A person's own .mcp.json is theirs, and a folder that already names
 //     these servers has been set up by somebody who meant it.
-//     A fork's folder is the exception: see [WriteForkMCPConfig].
+//     A fork's folder is the exception: see [WriteForkMCPConfig]. So is an
+//     entry marked [MCPEntry.Override].
 //
 // The cost of that rule, and it is worth knowing before changing it back: a
 // relaunch into a folder that already has an entry reuses the token that entry
@@ -121,11 +126,15 @@ func writeMCPConfig(dir string, replaceElsewhere bool, entries []MCPEntry) (path
 			return "", nil, nil, checkErr
 		}
 		if existing, ok := cfg.Servers[e.Name]; ok && existing.URL != "" {
-			if !replaceElsewhere || !endpointDiffers(existing.URL, e.URL) {
+			switch {
+			case e.Override && existing.URL != e.URL:
+				// Written over, with this launch's token.
+			case !replaceElsewhere || !endpointDiffers(existing.URL, e.URL):
 				kept = append(kept, e.Name)
 				continue
+			default:
+				replaced = append(replaced, e.Name)
 			}
-			replaced = append(replaced, e.Name)
 		}
 		if _, ok := raw.servers[e.Name]; !ok {
 			raw.order = append(raw.order, e.Name)

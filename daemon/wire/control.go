@@ -296,10 +296,8 @@ type StartSession struct {
 	//
 	// Sent only for the "supervisor" workspace, and that decision is the
 	// backend's alone: the daemon writes the entry when it is given a URL and
-	// nothing else about the workspace tells it to. It carries no credential,
-	// because that server authenticates over its own OAuth flow rather than
-	// the minted token the per-workspace URL holds — so unlike MCPURL, this
-	// one is safe to log.
+	// nothing else about the workspace tells it to. Like MCPURL it carries a
+	// token, the supervisor's, as a query parameter, so it is never logged.
 	CoreMCPURL string `json:"coreMcpUrl,omitempty"`
 	// Workspace is what claude-code reports itself as.
 	Workspace string `json:"workspace,omitempty"`

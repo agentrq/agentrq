@@ -32,7 +32,11 @@ anywhere earlier misses Pano. Unmarked is a write, so a forgotten mark refuses a
 read rather than leaking a write.
 
 **Supervisor tokens are minted by `CreateSupervisorToken` (8h access, 7d
-refresh), never `CreateMCPToken`, whose year is for workspace tokens.** Tokens
+refresh, 30d for the `launch` token agentrqd writes, which an agent reads only
+at start), never `CreateMCPToken`, whose year is for workspace tokens.** A
+launch token names its supervisor workspace (`workspace:<id>`); deleting it or
+resetting its id writes the id to `revoked_workspaces` (supervisors only, 30
+days kept), which each instance holds as a map reloaded every 15 minutes. Tokens
 are stateless, so the endpoint also refuses one expiring further out than that
 (`outlivesTTL`): without it, every year-long token signed before the limits
 would keep working.

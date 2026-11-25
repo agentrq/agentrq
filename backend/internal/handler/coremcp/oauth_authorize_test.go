@@ -40,6 +40,9 @@ func (authorizeTokenSvc) CreateMCPToken(userID, workspaceID, tokenType string) (
 func (authorizeTokenSvc) CreateSupervisorToken(userID, resource, tokenType string) (string, error) {
 	return "supervisor-token", nil
 }
+func (authorizeTokenSvc) CreateSupervisorLaunchToken(userID, workspaceID string) (string, error) {
+	return "launch-token", nil
+}
 func (authorizeTokenSvc) CreateOAuthCodeToken(userID, workspaceID, codeChallenge string) (string, error) {
 	return "code-token", nil
 }
