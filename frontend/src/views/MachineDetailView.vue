@@ -685,9 +685,7 @@ async function stopSession(id) {
                 <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
                   {{ formatBytes(machine.metrics.memAvailable) }}
                 </p>
-                <p class="text-[11px] text-gray-400 dark:text-zinc-500">
-                  free of {{ formatBytes(machine.metrics.memTotal) }}
-                </p>
+                <!-- The meter first, so it lines up with the CPU meter beside it. -->
                 <div class="flex gap-1 mt-1.5" aria-hidden="true">
                   <span
                     v-for="c in METER_CELLS"
@@ -698,6 +696,9 @@ async function stopSession(id) {
                       : nearlyFull(memoryUsedPercent(machine.metrics)) ? 'bg-amber-500 dark:bg-amber-400' : 'bg-emerald-500'"
                   />
                 </div>
+                <p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-1">
+                  free of {{ formatBytes(machine.metrics.memTotal) }}
+                </p>
               </div>
               <div :class="TILE">
                 <p :class="TILE_LABEL">Uptime</p>

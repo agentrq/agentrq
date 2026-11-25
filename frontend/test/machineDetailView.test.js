@@ -341,6 +341,10 @@ describe('MachineDetailView: Machine Info', () => {
     expect(mem.filter((c) => c.className.includes('bg-emerald-500'))).toHaveLength(5)
     const cpu = [...el.querySelector('[data-testid=tile-cpu]').querySelectorAll('span')]
     expect([...mem, ...cpu].every((c) => c.className.includes('flex-1') && !c.className.includes('max-w-'))).toBe(true)
+    // Both meters come straight after the reading, so they sit on one line.
+    for (const id of ['tile-cpu', 'tile-memory']) {
+      expect(el.querySelector(`[data-testid=${id}]`).children[2].getAttribute('aria-hidden')).toBe('true')
+    }
     const grid = el.querySelector('[data-testid=tile-cpu]').parentElement
     expect(grid.className).toContain('@min-[48rem]:grid-cols-4')
     const bar = el.querySelector('[data-testid=disk-bar]')
