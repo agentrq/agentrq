@@ -1934,6 +1934,9 @@ const (
 	// An agent's question to the human drawn as an A2UI card (elicit with
 	// mode a2ui). Backend-emitted: the server validated and posted it.
 	ActionA2UIElicit Action = 145
+	// An agent's reply that updated a card already in the task instead of
+	// posting one. Backend-emitted: the server merged and stored it.
+	ActionA2UIUpdate Action = 146
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2228,6 +2231,8 @@ func (a Action) String() string {
 		return "a2ui_action"
 	case ActionA2UIElicit:
 		return "a2ui_elicit"
+	case ActionA2UIUpdate:
+		return "a2ui_update"
 	}
 	return "unknown"
 }

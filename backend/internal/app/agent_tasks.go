@@ -110,6 +110,26 @@ func (a agentTasks) reply(ctx context.Context, chatID string, text string, attac
 	return msgID, nil
 }
 
+// editMessage changes one of the task's messages in place, with what edit
+// makes of it. An edit is no new message: nothing is notified, and the page
+// only reloads the task.
+func (a agentTasks) editMessage(ctx context.Context, taskID, messageID int64, edit func(model.Message) (string, []byte, error)) error {
+	if _, err := workspaceTask(ctx, a.repo, a.workspaceID, a.owner, taskID); err != nil {
+		return err
+	}
+	if err := a.repo.EditMessage(ctx, taskID, messageID, edit); err != nil {
+		return err
+	}
+	latest, err := a.repo.GetTask(ctx, a.workspaceID, taskID, monoflake.IDFromBase62(a.owner).Int64())
+	if err == nil {
+		a.bus.Publish(a.workspaceID, a.owner, eventbus.Event{
+			Type:    "task.updated",
+			Payload: mapper.FromModelTaskToView(latest),
+		})
+	}
+	return nil
+}
+
 // isUsageFooter is whether a message's metadata makes it the task's usage
 // footer.
 func isUsageFooter(metadata datatypes.JSON) bool {

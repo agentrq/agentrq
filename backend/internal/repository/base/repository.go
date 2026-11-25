@@ -19,6 +19,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/agentrq/agentrq/backend/internal/service/tasklatency"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -90,6 +91,11 @@ type Repository interface {
 	// "answered" key, and reports whether it did: of two clicks on one card,
 	// one wins.
 	AnswerMessage(ctx context.Context, taskID int64, messageID int64, metadata []byte) (bool, error)
+	// EditMessage replaces a message's text and metadata with what edit
+	// makes of the message, holding its row: of two edits at once, the
+	// second reads the first's result. An error from edit changes nothing;
+	// ErrNotFound when the task has no such message.
+	EditMessage(ctx context.Context, taskID int64, messageID int64, edit func(model.Message) (string, []byte, error)) error
 	GetWorkspaceAttachments(ctx context.Context, workspaceID int64) ([]entity.TaskAttachment, error)
 
 	// Memory — the workspace's own notes, written by agents through the MCP
@@ -1200,6 +1206,25 @@ func (r *repository) AnswerMessage(ctx context.Context, taskID int64, messageID 
 	db := r.conn(ctx)
 	res := db.Model(&model.Message{}).Where("id = ? AND task_id = ?", messageID, taskID).Where(unansweredClause(db)).Update("metadata", metadata)
 	return res.RowsAffected == 1, res.Error
+}
+
+func (r *repository) EditMessage(ctx context.Context, taskID int64, messageID int64, edit func(model.Message) (string, []byte, error)) error {
+	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		var m model.Message
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND task_id = ?", messageID, taskID).Take(&m).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		text, metadata, err := edit(m)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&model.Message{}).Where("id = ?", messageID).
+			Updates(map[string]any{"text": text, "metadata": datatypes.JSON(metadata)}).Error
+	})
 }
 
 func unansweredClause(db *gorm.DB) string {

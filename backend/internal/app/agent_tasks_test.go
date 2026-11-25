@@ -167,3 +167,60 @@ func equalActions(got, want []entity.Action) bool {
 	}
 	return true
 }
+
+// An edit changes the message and reloads the task's page; nothing is
+// published, so nobody is notified.
+func TestAgentTasksEditMessage(t *testing.T) {
+	ctx := context.Background()
+	row := model.Task{ID: 101, WorkspaceID: memParent, UserID: memUser, Status: "ongoing"}
+	edit := func(model.Message) (string, []byte, error) { return "edited", nil, nil }
+
+	t.Run("an edit reloads the task without a notification", func(t *testing.T) {
+		e := newAgentTasks(t)
+		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(row, nil)
+		e.repo.EXPECT().EditMessage(ctx, int64(101), int64(555), gomock.Any()).DoAndReturn(func(_ context.Context, _, _ int64, f func(model.Message) (string, []byte, error)) error {
+			if text, _, _ := f(model.Message{}); text != "edited" {
+				t.Errorf("the repository got another edit: %q", text)
+			}
+			return nil
+		})
+		e.repo.EXPECT().GetTask(ctx, memParent, int64(101), memUser).Return(row, nil)
+		if err := e.a.editMessage(ctx, 101, 555, edit); err != nil {
+			t.Fatal(err)
+		}
+		if len(*e.actions) != 0 {
+			t.Errorf("published %v, want nothing", *e.actions)
+		}
+		select {
+		case <-e.stream:
+		default:
+			t.Error("the task was not put on the stream")
+		}
+	})
+
+	t.Run("refusals and storage failures", func(t *testing.T) {
+		e := newAgentTasks(t)
+		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(model.Task{ID: 101, WorkspaceID: memFork, UserID: memUser}, nil)
+		if err := e.a.editMessage(ctx, 101, 555, edit); err == nil {
+			t.Error("a task in another workspace was edited")
+		}
+
+		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(row, nil)
+		e.repo.EXPECT().EditMessage(ctx, int64(101), int64(555), gomock.Any()).Return(errRepo)
+		if err := e.a.editMessage(ctx, 101, 555, edit); err != errRepo {
+			t.Errorf("err = %v, want %v", err, errRepo)
+		}
+
+		e.repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(row, nil)
+		e.repo.EXPECT().EditMessage(ctx, int64(101), int64(555), gomock.Any()).Return(nil)
+		e.repo.EXPECT().GetTask(ctx, memParent, int64(101), memUser).Return(model.Task{}, errRepo)
+		if err := e.a.editMessage(ctx, 101, 555, edit); err != nil {
+			t.Errorf("err = %v; the edit was made, only the reload failed", err)
+		}
+		select {
+		case line := <-e.stream:
+			t.Errorf("unexpected event: %s", line)
+		default:
+		}
+	})
+}

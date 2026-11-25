@@ -42,7 +42,7 @@ var manifestToolRe = regexp.MustCompile(`^[a-zA-Z]+(\.[a-zA-Z]+)?$`)
 func workspaceServer() *mcp.Server {
 	ps := mcpevent.NewWorkspaceServer(
 		1, 0, "user", "http://localhost",
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil,           // clearAgentContext
 		nil,           // publishEvent
 		nil, nil, nil, // loadMemory, saveMemory, deleteMemory

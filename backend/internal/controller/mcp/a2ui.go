@@ -13,7 +13,9 @@ import (
 	"github.com/mustafaturan/monoflake"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/a2ui"
+	"github.com/agentrq/agentrq/backend/internal/service/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 )
@@ -53,14 +55,108 @@ func (ps *WorkspaceServer) replyCard(ctx context.Context, taskID int64, ui json.
 // validateCard checks a card, its media resolved from attachments; without
 // the validator, the error says to do instead.
 func (ps *WorkspaceServer) validateCard(ctx context.Context, ui json.RawMessage, attachments map[string]string, instead string) (*a2ui.Surface, error) {
-	validator := ps.a2ui
-	if validator == nil {
-		var err error
-		if validator, err = sharedA2UI(); err != nil {
-			return nil, fmt.Errorf("ui is not available on this server (%v): %s", err, instead)
-		}
+	validator, err := ps.cardValidator(instead)
+	if err != nil {
+		return nil, err
 	}
 	return validator.Validate(ctx, ui, a2ui.Options{Interactive: true, Attachments: attachments})
+}
+
+// cardValidator is the validator; without it, the error says to do instead.
+func (ps *WorkspaceServer) cardValidator(instead string) (a2ui.Service, error) {
+	if ps.a2ui != nil {
+		return ps.a2ui, nil
+	}
+	validator, err := sharedA2UI()
+	if err != nil {
+		return nil, fmt.Errorf("ui is not available on this server (%v): %s", err, instead)
+	}
+	return validator, nil
+}
+
+// updateCard applies a reply's ui that creates no surface to the task's
+// newest card with that surface id, and makes text the message's text. It is
+// an edit: no new message, so nobody is notified.
+func (ps *WorkspaceServer) updateCard(ctx context.Context, req *mcp.CallToolRequest, taskID int64, surfaceID string, params ReplyParams) (*mcp.CallToolResult, any, error) {
+	fail := func(err error) (*mcp.CallToolResult, any, error) {
+		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil, nil
+	}
+	if len(params.Attachments) > 0 {
+		return fail(fmt.Errorf("ui updates card %q, which shows only the files its own reply attached: send the update without attachments, or a new card that starts with createSurface", surfaceID))
+	}
+	msgID, err := ps.findCard(ctx, taskID, surfaceID)
+	if err != nil {
+		return fail(err)
+	}
+	validator, err := ps.cardValidator("send the reply without it")
+	if err != nil {
+		return fail(err)
+	}
+	err = ps.editMessage(ctx, taskID, msgID, func(m model.Message) (string, []byte, error) {
+		return ps.mergeCard(ctx, validator, m, surfaceID, params)
+	})
+	if err != nil {
+		return fail(err)
+	}
+	ps.emitA2UI(ctx, entity.ActionA2UIUpdate, msgID)
+	ps.noteSessionTask(req, taskID)
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("card %q updated in message %s", surfaceID, monoflake.ID(msgID).String())}},
+	}, nil, nil
+}
+
+// findCard is the task's newest message whose card is surfaceID.
+func (ps *WorkspaceServer) findCard(ctx context.Context, taskID int64, surfaceID string) (int64, error) {
+	task, err := ps.getTask(ctx, taskID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get task: %v", err)
+	}
+	for i := len(task.Messages) - 1; i >= 0; i-- {
+		var meta struct {
+			Type      string `json:"type"`
+			Mode      string `json:"mode"`
+			SurfaceID string `json:"surfaceId"`
+		}
+		if json.Unmarshal(task.Messages[i].Metadata, &meta) != nil || meta.SurfaceID != surfaceID {
+			continue
+		}
+		switch {
+		case meta.Type == MessageTypeA2UI:
+			return task.Messages[i].ID, nil
+		case meta.Type == "elicitation_request" && meta.Mode == elicitModeA2UI:
+			return 0, fmt.Errorf("card %q is a question asked with elicit, which cannot be updated: send a new card that starts with createSurface", surfaceID)
+		}
+	}
+	return 0, fmt.Errorf("no card with surfaceId %q in task %s: a ui without createSurface updates a card already in the task; start a new one with createSurface", surfaceID, monoflake.ID(taskID).String())
+}
+
+// mergeCard is the text and metadata of m once params' ui is applied to its
+// card, read under the message's lock: a card answered or changed since it
+// was found is refused.
+func (ps *WorkspaceServer) mergeCard(ctx context.Context, validator a2ui.Service, m model.Message, surfaceID string, params ReplyParams) (string, []byte, error) {
+	var meta struct {
+		A2UIMetadata
+		Answered json.RawMessage `json:"answered"`
+	}
+	if json.Unmarshal(m.Metadata, &meta) != nil || meta.Type != MessageTypeA2UI || meta.SurfaceID != surfaceID {
+		return "", nil, fmt.Errorf("card %q is no longer in message %s: start a new card with createSurface", surfaceID, monoflake.ID(m.ID).String())
+	}
+	if len(meta.Answered) > 0 && string(meta.Answered) != "null" {
+		return "", nil, fmt.Errorf("card %q was answered, so it cannot be updated: send a new card that starts with createSurface", surfaceID)
+	}
+	var atts []entity.Attachment
+	_ = json.Unmarshal(m.Attachments, &atts)
+	surface, err := validator.Merge(ctx, &a2ui.Surface{SurfaceID: surfaceID, Messages: meta.Messages}, params.UI,
+		a2ui.Options{Interactive: true, Attachments: ps.attachmentURLs(m.TaskID, atts)})
+	if err != nil {
+		return "", nil, err
+	}
+	if surface.Deleted {
+		// The message keeps its text and drops the card.
+		return params.Text, nil, nil
+	}
+	b, _ := json.Marshal(A2UIMetadata{Type: MessageTypeA2UI, Version: a2uiVersion, SurfaceID: surfaceID, Messages: surface.Messages})
+	return params.Text, b, nil
 }
 
 // attachmentURLs maps each saved file of a reply to where the page reads it:

@@ -923,6 +923,8 @@ const (
 	ActionIDA2UIAction
 	// An agent's question drawn as an A2UI card; emitted by the backend.
 	ActionIDA2UIElicit
+	// An agent's reply that updated a card in place; emitted by the backend.
+	ActionIDA2UIUpdate
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

@@ -103,6 +103,8 @@ func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
 		"a2ui_reply",
 		// A click on a card is checked and stored by the server.
 		"a2ui_action",
+		// An update to a card is merged and stored by the server.
+		"a2ui_update",
 	} {
 		if _, ok := entity.ClientReportableAction(name); ok {
 			t.Errorf("%q must not be client-reportable", name)

@@ -65,6 +65,10 @@ type ListTasksFunc func(ctx context.Context, filter ListTasksFilter) ([]model.Ta
 type GetNextTaskFunc func(ctx context.Context) (model.Task, error)
 type ReplyFunc func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error)
 type UpdateMessageMetadataFunc func(ctx context.Context, taskID int64, messageID int64, metadata any) error
+
+// EditMessageFunc replaces a message's text and metadata with what edit
+// makes of the message, read and written in one transaction.
+type EditMessageFunc func(ctx context.Context, taskID int64, messageID int64, edit func(model.Message) (string, []byte, error)) error
 type UpdateWorkspaceAutoAllowedToolsFunc func(ctx context.Context, tools []string) error
 
 // ClearAgentContextFunc asks the agent to start from a clean context, by
@@ -130,6 +134,7 @@ type WorkspaceServer struct {
 	getNextTask           GetNextTaskFunc
 	reply                 ReplyFunc
 	updateMessageMetadata UpdateMessageMetadataFunc
+	editMessage           EditMessageFunc
 	updateAutoAllowed     UpdateWorkspaceAutoAllowedToolsFunc
 	clearAgentContext     ClearAgentContextFunc
 	publishEvent          PublishEventFunc
@@ -296,7 +301,7 @@ type ReplyParams struct {
 	TaskID      string            `json:"taskId" jsonschema:"The task to reply in (base62): the chat_id it arrived with."`
 	Text        string            `json:"text" jsonschema:"The message text to send"`
 	Attachments []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments to include in the reply: {id, filename, mimeType, data (base64) or textContent (plain text)}."`
-	UI          json.RawMessage   `json:"ui,omitempty" jsonschema:"Optional card: a JSON array of A2UI v1.0 messages (basic catalog, one surface): createSurface, then updateComponents with a component whose id is root. text stays required, the fallback wherever cards are not shown. Media (Image, Video, AudioPlayer) only as attachment:<filename> of a file in attachments."`
+	UI          json.RawMessage   `json:"ui,omitempty" jsonschema:"Optional card: a JSON array of A2UI v1.0 messages (basic catalog, one surface): createSurface, then updateComponents with a component whose id is root. text stays required, the fallback wherever cards are not shown. Media (Image, Video, AudioPlayer) only as attachment:<filename> of a file in attachments. Without createSurface it updates the task's newest card with that surfaceId in place, and text replaces its text; deleteSurface drops the card."`
 }
 
 // AttachmentParam is an attachment as a tool receives it. It is not
@@ -460,6 +465,7 @@ func NewWorkspaceServer(
 	getNextTask GetNextTaskFunc,
 	reply ReplyFunc,
 	updateMessageMetadata UpdateMessageMetadataFunc,
+	editMessage EditMessageFunc,
 	updateAutoAllowed UpdateWorkspaceAutoAllowedToolsFunc,
 	clearAgentContext ClearAgentContextFunc,
 	publishEvent PublishEventFunc,
@@ -497,6 +503,7 @@ func NewWorkspaceServer(
 		getNextTask:            getNextTask,
 		reply:                  reply,
 		updateMessageMetadata:  updateMessageMetadata,
+		editMessage:            editMessage,
 		updateAutoAllowed:      updateAutoAllowed,
 		clearAgentContext:      clearAgentContext,
 		publishEvent:           publishEvent,
@@ -1530,6 +1537,10 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 		}, nil, nil
 	}
 
+	if surfaceID, ok := a2ui.UpdatedSurface(params.UI); ok {
+		return ps.updateCard(ctx, req, taskID, surfaceID, params)
+	}
+
 	// The files are saved first: a card's media names them by their stored
 	// links.
 	atts := toEntityAttachments(params.Attachments)
@@ -1559,18 +1570,22 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 	if metadata != nil {
 		ps.emitA2UI(ctx, entity.ActionA2UIReply, msgID)
 	}
+	ps.noteSessionTask(req, taskID)
 
-	// Update session-to-task mapping for context-aware routing (like permissions)
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: "reply sent"}},
+	}, nil, nil
+}
+
+// noteSessionTask maps the request's session to the task it replied in, for
+// context-aware routing (like permissions).
+func (ps *WorkspaceServer) noteSessionTask(req *mcp.CallToolRequest, taskID int64) {
 	if req != nil && req.GetSession() != nil {
 		sessID := req.GetSession().ID()
 		ps.sessionTasksMu.Lock()
 		ps.sessionTasks[sessID] = taskID
 		ps.sessionTasksMu.Unlock()
 	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: "reply sent"}},
-	}, nil, nil
 }
 
 func (ps *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.CallToolRequest, params GetAttachmentParams) (*mcp.CallToolResult, any, error) {
