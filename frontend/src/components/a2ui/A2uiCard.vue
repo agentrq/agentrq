@@ -12,7 +12,7 @@ defineProps({ c: { type: Object, required: true }, ctx: { type: Object, required
 </script>
 
 <template>
-  <div data-test="a2ui-card" class="min-w-0 rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 @min-[32rem]/a2ui:p-5">
+  <div data-test="a2ui-card" class="min-w-0 rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 @min-[32rem]/a2ui:p-4">
     <A2uiNode :id="c.child" :ctx="ctx" />
   </div>
 </template>

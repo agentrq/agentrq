@@ -19,9 +19,9 @@ const checked = computed({ get: () => model.value === true, set: (v) => { model.
 
 <template>
   <div data-test="a2ui-checkbox" class="min-w-0">
-    <label :for="id" class="inline-flex items-center gap-2.5 min-h-6 pointer-coarse:min-h-11 text-sm leading-5 text-gray-900 dark:text-zinc-100" :class="readOnly ? 'cursor-default' : 'cursor-pointer'">
+    <label :for="id" class="inline-flex items-center gap-2 min-h-5 pointer-coarse:min-h-10 text-[13px] leading-[18px] text-gray-900 dark:text-zinc-100" :class="readOnly ? 'cursor-default' : 'cursor-pointer'">
       <input :id="id" v-model="checked" type="checkbox" :disabled="readOnly" :aria-describedby="error ? `${id}-error` : undefined"
-             class="w-4 h-4 shrink-0 rounded accent-black dark:accent-white outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 focus-visible:ring-offset-2 dark:focus-visible:ring-white/25 dark:focus-visible:ring-offset-zinc-900" />
+             class="w-3.5 h-3.5 shrink-0 rounded accent-black dark:accent-white outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 focus-visible:ring-offset-2 dark:focus-visible:ring-white/25 dark:focus-visible:ring-offset-zinc-900" />
       <span class="break-words">{{ label }}</span>
     </label>
     <FieldError v-if="error" :id="`${id}-error`" :message="error" />

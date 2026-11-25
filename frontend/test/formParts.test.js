@@ -146,6 +146,26 @@ describe('SegmentedControl', () => {
     expect(loose.querySelector('label').className).not.toContain('uppercase')
     expect(loose.querySelector('input').name).not.toBe(radio.name)
   })
+
+  it("draws the chat's smaller toggle inside the task chat, as Agent | Human there", async () => {
+    const picked = ref('a')
+    const el = mount(() => h(SegmentedControl, {
+      chat: true, modelValue: picked.value, 'onUpdate:modelValue': (v) => { picked.value = v },
+      options: [{ value: 'a', label: 'A', test: 'a' }, { value: 'b', label: 'B', test: 'b' }],
+    }))
+    await nextTick()
+    const group = el.querySelector('[role="radiogroup"]')
+    expect(group.classList.contains('bg-gray-100'), 'the grey track').toBe(true)
+    const [a, b] = [group.querySelector('[data-test="a"]'), group.querySelector('[data-test="b"]')]
+    expect(a.classList.contains('text-[10px]'), "the chat buttons' type").toBe(true)
+    expect(a.classList.contains('shadow-sm'), 'the picked segment, raised').toBe(true)
+    b.querySelector('input').checked = true
+    b.querySelector('input').dispatchEvent(new Event('change'))
+    await nextTick()
+    expect(picked.value, 'the pick').toBe('b')
+    expect(b.classList.contains('shadow-sm'), 'the new pick, raised').toBe(true)
+    expect(a.classList.contains('shadow-sm'), 'the old pick, lowered').toBe(false)
+  })
 })
 
 describe('ToggleSwitch', () => {

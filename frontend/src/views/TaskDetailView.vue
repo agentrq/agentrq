@@ -686,8 +686,8 @@
                <div v-else dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
                <!-- Cancel / Send Now controls on the pending message -->
                <div v-if="m._pending" class="flex items-center gap-2 mt-3 pt-3 border-t border-dashed border-gray-300 dark:border-zinc-600 justify-end">
-                 <button type="button" @click="cancelPendingSend" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Cancel</button>
-                 <button type="button" @click="sendPendingNow" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Send Now</button>
+                 <button type="button" @click="cancelPendingSend" :class="CHAT_SECONDARY_BUTTON">Cancel</button>
+                 <button type="button" @click="sendPendingNow" :class="CHAT_PRIMARY_BUTTON">Send Now</button>
                </div>
                <!-- Edit / Delete / Send Now on a queued message. Send Now does
                     not post it mid-turn, which the gateway would only chain
@@ -695,13 +695,13 @@
                     it first. -->
                <div v-else-if="m._queued" class="flex items-center gap-2 mt-3 pt-3 border-t border-dashed border-gray-300 dark:border-zinc-600 justify-end">
                  <template v-if="editingQueuedId === m._queuedId">
-                   <button type="button" @click="cancelEditingQueued" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Cancel</button>
-                   <button type="button" @click="saveEditedQueued" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Save</button>
+                   <button type="button" @click="cancelEditingQueued" :class="CHAT_SECONDARY_BUTTON">Cancel</button>
+                   <button type="button" @click="saveEditedQueued" :class="CHAT_PRIMARY_BUTTON">Save</button>
                  </template>
                  <template v-else>
-                   <button type="button" @click="discardQueued(m)" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Delete</button>
-                   <button type="button" @click="startEditingQueued(m)" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Edit</button>
-                   <button type="button" @click="sendQueuedNow(m)" title="Stop the agent and send this next" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Send Now</button>
+                   <button type="button" @click="discardQueued(m)" :class="CHAT_SECONDARY_BUTTON">Delete</button>
+                   <button type="button" @click="startEditingQueued(m)" :class="CHAT_SECONDARY_BUTTON">Edit</button>
+                   <button type="button" @click="sendQueuedNow(m)" title="Stop the agent and send this next" :class="CHAT_PRIMARY_BUTTON">Send Now</button>
                  </template>
                </div>
                <!-- Attachments on human message -->
@@ -1077,6 +1077,7 @@ import { withRequestAnswered } from '../composables/useRequestAnswer';
 import { cardReadOnly as cardReadOnlyFor, useCardActions } from '../composables/useCardActions';
 import MarkdownBody from '../components/MarkdownBody.vue';
 import A2uiSurface from '../components/a2ui/A2uiSurface.vue';
+import { CHAT_PRIMARY_BUTTON, CHAT_SECONDARY_BUTTON } from '../utils/formStyles';
 import { isCardMetadata } from '../a2ui/surface.js';
 import TaskPlanPanel from '../components/TaskPlanPanel.vue';
 import TaskLinksPanel from '../components/TaskLinksPanel.vue';

@@ -329,7 +329,8 @@ describe('ChoicePicker', () => {
     chips[0].click(); await nextTick()
     chips[2].click(); await nextTick()
     expect(chips.map((c) => c.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'true'])
-    expect(chips[0].querySelector('svg')).not.toBeNull()
+    expect(chips[0].classList.contains('shadow-sm'), 'a picked chip, raised').toBe(true)
+    expect(chips[1].classList.contains('shadow-sm'), 'a chip not picked, lowered').toBe(false)
   })
 
   it('picks one chip, as a radio group', async () => {

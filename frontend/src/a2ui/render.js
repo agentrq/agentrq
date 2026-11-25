@@ -8,7 +8,9 @@
 import DOMPurify from 'dompurify'
 
 import { renderMarkdown } from '../utils/markdown.js'
-import { BUTTON, CANCEL_COLORS, DISABLED_BUTTON, PRIMARY_COLORS, SECONDARY_COLORS } from '../utils/formStyles.js'
+import {
+  CANCEL_COLORS, CHAT_BUTTON, CHAT_SECONDARY_COLORS, CONTROL_SIZE, DISABLED_BUTTON, PRIMARY_COLORS, chatSegmentClass,
+} from '../utils/formStyles.js'
 import { resolveValue } from './resolve.js'
 
 const JUSTIFY = {
@@ -25,6 +27,46 @@ const ALIGN = { start: 'items-start', center: 'items-center', end: 'items-end', 
 /** A Row's or Column's justify and align classes, the spec's defaults when unset. */
 export function flexClasses(c) {
   return [JUSTIFY[c.justify] ?? JUSTIFY.start, ALIGN[c.align] ?? ALIGN.stretch]
+}
+
+const isButton = (components, id) => components?.get(id)?.component === 'Button'
+
+/**
+ * Whether Row c is the card's decision: Buttons only, which the agent did
+ * not place. It sits at the bottom right, as the chat's Cancel and Send Now.
+ */
+export function isDecisionRow(c, components) {
+  return c?.component === 'Row' && !c.justify && Array.isArray(c.children) && c.children.length > 0 &&
+    c.children.every((id) => isButton(components, id))
+}
+
+/** A Row's justify, align and gap classes; a decision row's on the right, its Buttons as close as the chat's. */
+export function rowClasses(c, components) {
+  if (!isDecisionRow(c, components)) return [...flexClasses(c), 'gap-x-3']
+  return [...flexClasses({ ...c, justify: 'end' }), 'gap-x-2']
+}
+
+/**
+ * A Row's children in the order drawn: a decision row's primary Buttons last,
+ * on the right as the chat's Send Now, and so last for the keyboard too.
+ */
+export function rowOrder(c, components, children) {
+  if (!isDecisionRow(c, components)) return children
+  const primary = (child) => components.get(child.id).variant === 'primary'
+  return [...children.filter((child) => !primary(child)), ...children.filter(primary)]
+}
+
+/**
+ * The class a Column gives its child id: a Button alone on its line sits on
+ * the right, unless the Column aligns it; a decision row closing the Column
+ * is set off by a dashed line, as the chat's Send Now.
+ */
+export function columnChildClass(c, components, id, last) {
+  if (isButton(components, id)) return c.align ? undefined : 'self-end'
+  if (last && isDecisionRow(components?.get(id), components)) {
+    return 'pt-3 border-t border-dashed border-gray-300 dark:border-zinc-600'
+  }
+  return undefined
 }
 
 /** A List's classes: its direction and cross-axis alignment. */
@@ -99,38 +141,28 @@ export function imageClasses(c) {
   return [IMAGE_VARIANT[c.variant] ?? IMAGE_VARIANT.mediumFeature, fit]
 }
 
-const BUTTON_VARIANT = {
-  primary: `px-5 ${PRIMARY_COLORS}`,
-  borderless: `px-4 ${CANCEL_COLORS}`,
-  default: `px-5 ${SECONDARY_COLORS}`,
-}
+const BUTTON_VARIANT = { primary: PRIMARY_COLORS, borderless: CANCEL_COLORS, default: CHAT_SECONDARY_COLORS }
 
 /**
- * A Button's classes: the app's primary, secondary or borderless button. The
- * one that answered its card stays at full strength though disabled.
+ * A Button's classes: the chat's own button (Cancel, Send Now), primary,
+ * secondary or borderless. The one that answered its card stays at full strength
+ * though disabled.
  */
 export function buttonClass(variant, chosen = false) {
-  return [BUTTON, BUTTON_VARIANT[variant] ?? BUTTON_VARIANT.default, chosen ? 'disabled:cursor-default' : DISABLED_BUTTON]
+  return [CHAT_BUTTON, BUTTON_VARIANT[variant] ?? BUTTON_VARIANT.default, chosen ? 'disabled:cursor-default' : DISABLED_BUTTON]
 }
 
 const FOCUS = 'outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 dark:focus-visible:ring-white/25'
 
-/** A ChoicePicker chip: a toggle the height of a field, filled while picked. */
+/** A ChoicePicker chip: a segment of the chat's toggle, raised while picked; one not picked fades on a closed card. */
 export function chipClass(picked) {
-  return [
-    'inline-flex items-center gap-1.5 px-3.5 py-2.5 pointer-coarse:min-h-11 rounded-lg border text-sm leading-5 font-medium',
-    'transition-colors disabled:cursor-default',
-    FOCUS,
-    picked
-      ? 'bg-black dark:bg-white text-white dark:text-zinc-900 border-black dark:border-white'
-      : 'bg-white dark:bg-zinc-950 text-gray-700 dark:text-zinc-300 border-gray-300 dark:border-zinc-700 enabled:hover:border-gray-400 dark:enabled:hover:border-zinc-500 disabled:opacity-50',
-  ]
+  return [chatSegmentClass(picked), picked ? 'disabled:cursor-default' : 'disabled:cursor-default disabled:opacity-50']
 }
 
-/** A ChoicePicker row: a radio or check and its label, the height of a field, as the app's choice cards. */
+/** A ChoicePicker row: a radio or check and its label, the height of a chat field, as the app's choice cards. */
 export function choiceRowClass(picked, readOnly) {
   return [
-    'flex items-center gap-3 px-3 py-2.5 pointer-coarse:min-h-11 rounded-lg border text-sm leading-5 transition-colors',
+    `flex items-center gap-2.5 rounded-lg border transition-colors ${CONTROL_SIZE.chat}`,
     'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-gray-900/20 dark:has-[:focus-visible]:ring-white/20',
     picked
       ? 'border-gray-900 dark:border-zinc-200 bg-gray-50 dark:bg-zinc-800/60 text-gray-900 dark:text-white font-medium'
