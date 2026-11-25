@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -193,6 +194,40 @@ func TestStartRunsTheResolvedCommandInTheWorkspaceFolder(t *testing.T) {
 	}
 	if len(spec.Argv) == 0 || spec.Argv[0] != "claude" {
 		t.Errorf("argv = %v", spec.Argv)
+	}
+}
+
+// An agent's git must fail fast rather than wait at a credential prompt
+// nobody can see (#1414), and the rest of the environment is still inherited.
+func TestAnAgentStartsWithGitsPromptOff(t *testing.T) {
+	t.Setenv("GIT_TERMINAL_PROMPT", "")
+	os.Unsetenv("GIT_TERMINAL_PROMPT")
+	t.Setenv("AGENTRQ_TEST_INHERITED", "yes")
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	if _, err := s.Start(t.Context(), "work", claudeRequest(t, 1)); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	spec, _ := st.last()
+	if !slices.Contains(spec.Env, "GIT_TERMINAL_PROMPT=0") {
+		t.Errorf("env lacks GIT_TERMINAL_PROMPT=0: %v", spec.Env)
+	}
+	if !slices.Contains(spec.Env, "AGENTRQ_TEST_INHERITED=yes") {
+		t.Error("env no longer inherits the daemon's")
+	}
+}
+
+// A value the person chose is theirs, and is not overridden or doubled.
+func TestGitEnvKeepsAPromptSettingAlreadyMade(t *testing.T) {
+	t.Setenv("GIT_TERMINAL_PROMPT", "1")
+	var got []string
+	for _, kv := range gitEnv() {
+		if strings.HasPrefix(kv, "GIT_TERMINAL_PROMPT=") {
+			got = append(got, kv)
+		}
+	}
+	if !slices.Equal(got, []string{"GIT_TERMINAL_PROMPT=1"}) {
+		t.Errorf("GIT_TERMINAL_PROMPT entries = %v, want only the person's own", got)
 	}
 }
 

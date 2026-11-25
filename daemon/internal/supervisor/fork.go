@@ -224,6 +224,7 @@ func runGitTo(ctx context.Context, dir string, out io.Writer, args ...string) (s
 	var text bytes.Buffer
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	cmd.Env = gitEnv()
 	cmd.Stdout = io.MultiWriter(&text, out)
 	cmd.Stderr = cmd.Stdout
 	// A filter git runs, LFS's for one, can hold the output open after git
@@ -231,6 +232,19 @@ func runGitTo(ctx context.Context, dir string, out io.Writer, args ...string) (s
 	cmd.WaitDelay = gitWaitDelay
 	err := cmd.Run()
 	return text.String(), err
+}
+
+// gitEnv is the daemon's environment with git's credential prompt turned off,
+// for git the daemon runs and for every agent it starts (#1414). Nobody is at
+// the terminal git would ask in, so the prompt waited until the context ran
+// out; now a push that needs credentials fails at once, saying so. A value the
+// person set themselves is kept.
+func gitEnv() []string {
+	env := os.Environ()
+	if _, ok := os.LookupEnv("GIT_TERMINAL_PROMPT"); !ok {
+		env = append(env, "GIT_TERMINAL_PROMPT=0")
+	}
+	return env
 }
 
 // copyTree copies from into target, keeping modes and copying symlinks as

@@ -54,6 +54,9 @@ pseudo-terminals, and streams them to the browser.
   marks one `unverified`, and the consent resets with every new agent. CoreMCP
   and WebMCP's `launchAgent` leave it out on purpose: an agent must not be able
   to consent for the person.
+- **Agents, and the daemon's own git, run with `GIT_TERMINAL_PROMPT=0`**
+  (`gitEnv`). Nobody can answer git's credential prompt in an agent's pty, so
+  without it a push hung until the context expired (#1414).
 - **Merging a workspace fork kills its agent first, and waits for the row to
   say so** (`forkmerge.Merger`, shared by REST and CoreMCP). Merging past a
   live one leaves it working, token on disk, for a workspace that is gone; so an offline machine refuses the
