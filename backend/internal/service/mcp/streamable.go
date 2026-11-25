@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/agentrq/agentrq/backend/internal/service/mcp/jsonrpc"
@@ -42,6 +43,13 @@ const (
 	// as: the last revision before the header existed.
 	versionWithoutHeader = "2025-03-26"
 )
+
+// postKeepalive is how long a POST waits on an unanswered call before it
+// sends an SSE comment, and again after each. A client or proxy that finds
+// a connection silent for minutes drops it: Bun's fetch, under Claude Code,
+// gives up after five with "The operation timed out.", and an elicit waits
+// up to an hour.
+var postKeepalive = 25 * time.Second
 
 // DefaultMaxRequestBodyBytes caps a POST body unless the options say
 // otherwise.
@@ -131,6 +139,8 @@ type StreamableHTTPHandler struct {
 	mu       sync.Mutex
 	sessions map[string]*httpSession
 	ended    endedIDs
+
+	keepalive time.Duration // postKeepalive, read once
 }
 
 // maxEnded is how many deleted session ids a handler remembers. Past it the
@@ -175,6 +185,7 @@ func NewStreamableHTTPHandler(getServer func(*http.Request) *Server, opts *Strea
 	h := &StreamableHTTPHandler{
 		getServer: getServer,
 		sessions:  map[string]*httpSession{},
+		keepalive: postKeepalive,
 	}
 	if opts != nil {
 		h.opts = *opts
@@ -679,9 +690,17 @@ func (h *StreamableHTTPHandler) servePOST(w http.ResponseWriter, req *http.Reque
 
 	// The POST stays open until every call it carried is answered, or the
 	// client goes: closing the session does not cut off a call in progress.
-	select {
-	case <-ctx.Done():
-	case <-st.done:
+	tick := time.NewTicker(h.keepalive)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-st.done:
+			return
+		case <-tick.C:
+			st.keepalive()
+		}
 	}
 }
 
@@ -977,6 +996,20 @@ func (st *stream) open() {
 		_ = st.event(data)
 	}
 	st.queue = nil
+}
+
+// keepalive writes an SSE comment, which clients ignore, so a call that
+// takes long is not taken for a dead connection. The headers go out with
+// the first.
+func (st *stream) keepalive() {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.w == nil || st.closed || st.held {
+		return
+	}
+	st.started = true
+	_, _ = io.WriteString(st.w, ": ok\n\n")
+	_ = http.NewResponseController(st.w).Flush()
 }
 
 // hold queues what is written until unhold, so a handshake can set its

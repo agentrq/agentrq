@@ -86,6 +86,10 @@ its push stream) rebuilds a session the process does not hold; a POST stays
 404, or Claude Code, whose push stream gives up after about 2.5 s, carries on
 deaf after a long deploy instead of starting over.
 
+A POST whose call is still unanswered sends an SSE comment every 25 s. Keep
+it: `elicit` waits up to an hour, and a silent connection is dropped by Bun's
+fetch (Claude Code) at five minutes and by proxies sooner.
+
 coremcp is stateless and does serve 2026-07-28 — it pushes nothing, so it has
 no stream to lose. The two servers differ on purpose; see
 [coremcp-and-supervisor.md](coremcp-and-supervisor.md).
