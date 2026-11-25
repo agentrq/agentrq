@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/taskinstruction"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -16,7 +17,7 @@ import (
 func TestTaskPushContent(t *testing.T) {
 	id := monoflake.ID(42).String()
 	for _, title := range []string{"Fix the flake", entity.UntitledTaskTitle} {
-		if got := taskPushContent(entity.Task{ID: 42, Title: title, Body: "Only on CI."}); got != "[Task "+id+"]\nOnly on CI." {
+		if got := taskPushContent(entity.Task{ID: 42, Title: title, Body: "Only on CI."}); got != "[Task "+id+"]"+taskinstruction.Start(id)+"\nOnly on CI." {
 			t.Errorf("title %q: got %q", title, got)
 		}
 	}
@@ -25,8 +26,18 @@ func TestTaskPushContent(t *testing.T) {
 func TestReassignedTaskContent(t *testing.T) {
 	want := "[Task reassigned to agent] " + monoflake.ID(42).String()
 	for _, title := range []string{"Fix the flake", entity.UntitledTaskTitle} {
-		if got := reassignedTaskContent(entity.Task{ID: 42, Title: title}); got != want {
+		if got := reassignedTaskContent(entity.Task{ID: 42, Title: title, Status: "ongoing"}); got != want {
 			t.Errorf("title %q: got %q, want %q", title, got, want)
 		}
+	}
+}
+
+// A not started task comes with the steps to start it; one already
+// underway does not, as the test above shows.
+func TestReassignedTaskContent_NotStartedCarriesTheStartSteps(t *testing.T) {
+	id := monoflake.ID(42).String()
+	want := "[Task reassigned to agent] " + id + taskinstruction.Start(id)
+	if got := reassignedTaskContent(entity.Task{ID: 42, Status: "notstarted"}); got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

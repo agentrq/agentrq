@@ -265,6 +265,15 @@ The supervisor's `task.followUp` is a human message marked `{"followUp":true}`
 `task get` put every follow-up after the task's ID, before its body; a new
 delivery path must too, or a reopened task is redone from its body alone.
 
+## A not started task comes with the steps to start it
+
+Every hand-off of a not started task (the pushes, the reassign push, Slack and
+`task get` with no ID) puts `taskinstruction.Start` after its ID: the exact
+`updateStatus` and `get` calls, with the real ID, then `workspace` get and
+`memory` load, and the `updateStatus` call that completes it. Without them
+agents started late and never read the task's messages; a new delivery path
+must add it too.
+
 ## The workspace's notes go with the task, never in it
 
 A workspace's `selfLearningLoopNote` is appended to a task's body only when the

@@ -27,6 +27,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/security"
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	"github.com/agentrq/agentrq/backend/internal/service/taskinstruction"
 	"github.com/golang/mock/gomock"
 	"github.com/mustafaturan/monoflake"
 	slackapi "github.com/slack-go/slack"
@@ -1136,7 +1137,7 @@ func TestHandleSlashCommandHoldsTheAgentWhileItIsBusy(t *testing.T) {
 				}
 				return
 			}
-			want := "[Task " + monoflake.ID(newID).String() + "]\nship it\nAttachments:\n  - id=A1 name=spec.md type=text/markdown"
+			want := "[Task " + monoflake.ID(newID).String() + "]" + taskinstruction.Start(monoflake.ID(newID).String()) + "\nship it\nAttachments:\n  - id=A1 name=spec.md type=text/markdown"
 			if f.mcp.pushed != want {
 				t.Errorf("pushed %q, want %q", f.mcp.pushed, want)
 			}

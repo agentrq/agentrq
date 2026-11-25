@@ -17,6 +17,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/taskinstruction"
 	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
@@ -175,7 +176,7 @@ func TestPushTaskToAgent_CarriesTheWorkspaceNotes(t *testing.T) {
 	h := &handler{crud: &mockCrudPushEvent{}, mcpManager: &fakeMCPManager{server: srv}}
 	h.pushTaskToAgent(context.Background(), monoflake.ID(100).String(), task)
 
-	if want := "[Task " + monoflake.ID(7).String() + "]\nDo it.\n\nKeep me posted."; srv.notifiedContent != want {
+	if want := "[Task " + monoflake.ID(7).String() + "]" + taskinstruction.Start(monoflake.ID(7).String()) + "\nDo it.\n\nKeep me posted."; srv.notifiedContent != want {
 		t.Errorf("the agent was pushed %q, want %q", srv.notifiedContent, want)
 	}
 	// Named with the note it was last handed, so a repeat writes nothing.

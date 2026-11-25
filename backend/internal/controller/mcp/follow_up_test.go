@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/taskinstruction"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 )
@@ -48,7 +49,7 @@ func TestPollOnceHandsTheFollowUpsOverBeforeTheBody(t *testing.T) {
 
 	ps.pollOnce(pendingTaskRepo(listed))
 
-	want := fmtTask(7, "Next assigned task:\n"+taskIDLine(listed)+wantFollowUps+"\nDetails: Do it.")
+	want := fmtTask(7, "Next assigned task:\n"+taskIDLine(listed)+taskinstruction.Start(monoflake.ID(7).String())+wantFollowUps+"\nDetails: Do it.")
 	if len(l.tasks) != 1 || l.tasks[0] != want {
 		t.Fatalf("the link got %q, want %q", l.tasks, want)
 	}

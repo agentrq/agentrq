@@ -41,6 +41,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	"github.com/agentrq/agentrq/backend/internal/service/taskinstruction"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 )
@@ -1252,7 +1253,8 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 		// The ID is part of the push because a task body can instruct the
 		// agent to quote it back when publishing an event, and this path
 		// is how workflow-step tasks are delivered.
-		msg := "Next assigned task:\n" + taskIDLine(nextTask) + ps.followUpBlock(context.Background(), nextTask) +
+		msg := "Next assigned task:\n" + taskIDLine(nextTask) + taskinstruction.Start(monoflake.ID(nextTask.ID).String()) +
+			ps.followUpBlock(context.Background(), nextTask) +
 			"\nDetails: " + ps.AgentTaskBody(context.Background(), nextTask.ID, nextTask.AgentNoteID, nextTask.Body)
 		if atts := formatModelAttachments(nextTask.Attachments); atts != "" {
 			msg += "\n" + atts
@@ -2105,6 +2107,9 @@ func (ps *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolR
 
 	var sb strings.Builder
 	sb.WriteString(header + "\n" + taskIDLine(task))
+	if params.TaskID == "" {
+		sb.WriteString(taskinstruction.Start(monoflake.ID(task.ID).String()))
+	}
 	if task.Status != "" {
 		fmt.Fprintf(&sb, "\nStatus: %s", task.Status)
 	}
