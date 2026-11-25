@@ -203,6 +203,8 @@ const props = defineProps({
   loadingEarlier: { type: Boolean, default: false },
 });
 defineEmits(['load-earlier']);
+// Held by the task page, which outlives this panel across Chat/Trajectory switches.
+const followModel = defineModel('following', { type: Boolean, default: false });
 const hasEarlier = computed(() => props.earlierCount > 0);
 
 const LANES = TRAJECTORY_LANES;
@@ -246,7 +248,7 @@ function pick(id) {
   selectedId.value = id;
 }
 
-const { following, setFollowing } = useTrajectoryFollow(filteredItems, selectedId);
+const { following, setFollowing } = useTrajectoryFollow(filteredItems, selectedId, { following: followModel });
 
 function onListKeydown(e) {
   const tab = detailTabForKey(e, detailTabs.value);
