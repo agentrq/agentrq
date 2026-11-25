@@ -45,6 +45,8 @@ type a2uiActionEnv struct {
 	repo   *mock_repo.MockRepository
 	idgen  *mock_idgen.MockService
 	events []entity.CRUDEvent
+	// afterAnswer is what the store returns once answer has run.
+	afterAnswer error
 }
 
 func newA2uiActionEnv(t *testing.T) *a2uiActionEnv {
@@ -67,28 +69,37 @@ func a2uiActionRequest(component, name string) entity.SendA2uiActionRequest {
 		SurfaceID: "deploy", Name: name, SourceComponentID: component, Context: map[string]any{"env": "prod"}}
 }
 
-// expectCard expects the reads up to the card: the workspace, the task, and
-// message 500 on task taskOf with metadata.
-func (e *a2uiActionEnv) expectCard(taskOf int64, metadata string) {
+// expectCard expects the workspace and task reads, then the answer to
+// message 500 of task 10 holding metadata, which answer is run against
+// unless the store fails with storeErr first. It returns what was answered.
+func (e *a2uiActionEnv) expectCard(metadata string, storeErr error) *a2uiAnswer {
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10, WorkspaceID: 1, Status: "blocked"}, nil)
-	e.repo.EXPECT().SystemGetMessage(gomock.Any(), int64(500)).Return(model.Message{ID: 500, TaskID: taskOf, Sender: "agent", Metadata: datatypes.JSON(metadata)}, nil)
+	got := &a2uiAnswer{}
+	e.repo.EXPECT().AnswerCard(gomock.Any(), int64(10), int64(500), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _, _ int64, answer func(model.Message) (model.Message, []byte, error)) error {
+			if storeErr != nil {
+				return storeErr
+			}
+			reply, answered, err := answer(model.Message{ID: 500, TaskID: 10, Sender: "agent", Metadata: datatypes.JSON(metadata)})
+			if err != nil {
+				return err
+			}
+			got.reply, got.answered = reply, answered
+			return e.afterAnswer
+		})
+	return got
+}
+
+type a2uiAnswer struct {
+	reply    model.Message
+	answered []byte
 }
 
 func TestSendA2uiAction_PostsTheClickAsThePersonsReply(t *testing.T) {
 	e := newA2uiActionEnv(t)
-	e.expectCard(10, a2uiCardMetadata)
-	var answered map[string]any
-	e.repo.EXPECT().AnswerMessage(gomock.Any(), int64(10), int64(500), gomock.Any()).DoAndReturn(func(_ context.Context, _, _ int64, b []byte) (bool, error) {
-		_ = json.Unmarshal(b, &answered)
-		return true, nil
-	})
+	got := e.expectCard(a2uiCardMetadata, nil)
 	e.idgen.EXPECT().NextID().Return(int64(600))
-	var posted model.Message
-	e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, m model.Message) error {
-		posted = m
-		return nil
-	})
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, m model.Task, _ ...string) (model.Task, error) {
 		if m.Status != "ongoing" {
 			t.Errorf("status = %q, want the blocked task resumed", m.Status)
@@ -104,7 +115,8 @@ func TestSendA2uiAction_PostsTheClickAsThePersonsReply(t *testing.T) {
 	if rs.Text != "Approve" || rs.MessageID != 600 || rs.Task.ID != 10 {
 		t.Errorf("response = %+v, want the label posted as message 600", rs)
 	}
-	if posted.Sender != "human" || posted.Text != "Approve" || posted.TaskID != 10 || posted.UserID != testUserID {
+	posted := got.reply
+	if posted.ID != 600 || posted.Sender != "human" || posted.Text != "Approve" || posted.TaskID != 10 || posted.UserID != testUserID {
 		t.Errorf("posted = %+v, want the person's reply", posted)
 	}
 	var meta map[string]any
@@ -117,9 +129,10 @@ func TestSendA2uiAction_PostsTheClickAsThePersonsReply(t *testing.T) {
 		action["context"].(map[string]any)["env"] != "prod" {
 		t.Errorf("metadata = %s", posted.Metadata)
 	}
-	mark, _ := answered["answered"].(map[string]any)
-	if answered["type"] != "a2ui" || mark["name"] != "approve" || mark["at"] == nil {
-		t.Errorf("source metadata = %v, want the card kept and answered by approve", answered)
+	var mark map[string]any
+	_ = json.Unmarshal(got.answered, &mark)
+	if len(mark) != 2 || mark["name"] != "approve" || mark["at"] == nil {
+		t.Errorf("answered = %s, want approve and its time", got.answered)
 	}
 	var actions []entity.Action
 	for _, ev := range e.events {
@@ -151,10 +164,8 @@ func TestSendA2uiAction_TheReplysText(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newA2uiActionEnv(t)
-			e.expectCard(10, tc.card)
-			e.repo.EXPECT().AnswerMessage(gomock.Any(), int64(10), int64(500), gomock.Any()).Return(true, nil)
+			e.expectCard(tc.card, nil)
 			e.idgen.EXPECT().NextID().Return(int64(600))
-			e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(nil)
 			e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(model.Task{ID: 10, WorkspaceID: 1}, nil)
 			e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, errDBDown)
 			req := a2uiActionRequest(tc.component, tc.action)
@@ -177,31 +188,23 @@ func TestSendA2uiAction_Refused(t *testing.T) {
 	answered := strings.Replace(a2uiCardMetadata, `"surfaceId":"deploy","messages"`, `"surfaceId":"deploy","answered":{"name":"reject"},"messages"`, 1)
 	for _, tc := range []struct {
 		name      string
-		taskOf    int64
 		card      string
 		req       entity.SendA2uiActionRequest
 		wantError string
 		conflict  bool
 	}{
-		{"another task's message", 11, a2uiCardMetadata, a2uiActionRequest("ok", "approve"), "", false},
-		{"a message with no card", 10, `{"type":"usage"}`, a2uiActionRequest("ok", "approve"), "carries no card", false},
-		{"a message with no metadata", 10, ``, a2uiActionRequest("ok", "approve"), "carries no card", false},
-		{"another surface", 10, strings.Replace(a2uiCardMetadata, `"surfaceId":"deploy","messages"`, `"surfaceId":"other","messages"`, 1), a2uiActionRequest("ok", "approve"), "is not surface", false},
-		{"no such component", 10, a2uiCardMetadata, a2uiActionRequest("nope", "approve"), "has no Button", false},
-		{"a component that is no Button", 10, a2uiCardMetadata, a2uiActionRequest("info", "approve"), "has no Button", false},
-		{"an action the Button no longer has", 10, a2uiCardMetadata, a2uiActionRequest("ok", "old"), "has no Button", false},
-		{"already answered", 10, answered, a2uiActionRequest("ok", "approve"), "already answered", true},
+		{"a message with no card", `{"type":"usage"}`, a2uiActionRequest("ok", "approve"), "carries no card", false},
+		{"a message with no metadata", ``, a2uiActionRequest("ok", "approve"), "carries no card", false},
+		{"another surface", strings.Replace(a2uiCardMetadata, `"surfaceId":"deploy","messages"`, `"surfaceId":"other","messages"`, 1), a2uiActionRequest("ok", "approve"), "is not surface", false},
+		{"no such component", a2uiCardMetadata, a2uiActionRequest("nope", "approve"), "has no Button", false},
+		{"a component that is no Button", a2uiCardMetadata, a2uiActionRequest("info", "approve"), "has no Button", false},
+		{"an action the Button no longer has", a2uiCardMetadata, a2uiActionRequest("ok", "old"), "has no Button", false},
+		{"already answered", answered, a2uiActionRequest("ok", "approve"), "already answered", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newA2uiActionEnv(t)
-			e.expectCard(tc.taskOf, tc.card)
+			e.expectCard(tc.card, nil)
 			_, err := e.c.SendA2uiAction(context.Background(), tc.req)
-			if tc.wantError == "" {
-				if !errors.Is(err, base.ErrNotFound) {
-					t.Fatalf("err = %v, want not found", err)
-				}
-				return
-			}
 			var refused *entity.A2uiActionError
 			if !errors.As(err, &refused) || !strings.Contains(refused.Message, tc.wantError) || refused.Conflict != tc.conflict {
 				t.Fatalf("err = %#v, want %q (conflict %v)", err, tc.wantError, tc.conflict)
@@ -213,16 +216,14 @@ func TestSendA2uiAction_Refused(t *testing.T) {
 	}
 }
 
-// Two clicks at once both read the card unanswered; the second loses the
-// conditional update and is refused like any second answer.
-func TestSendA2uiAction_TheSecondOfTwoClicksIsRefused(t *testing.T) {
+// Another task's message, or one since deleted, is not found by the store.
+func TestSendA2uiAction_AMessageTheTaskDoesNotHave(t *testing.T) {
 	e := newA2uiActionEnv(t)
-	e.expectCard(10, a2uiCardMetadata)
-	e.repo.EXPECT().AnswerMessage(gomock.Any(), int64(10), int64(500), gomock.Any()).Return(false, nil)
+	e.expectCard(a2uiCardMetadata, base.ErrNotFound)
 	_, err := e.c.SendA2uiAction(context.Background(), a2uiActionRequest("ok", "approve"))
-	var refused *entity.A2uiActionError
-	if !errors.As(err, &refused) || !refused.Conflict {
-		t.Fatalf("err = %v, want the card already answered", err)
+	wantErrIs(t, "SendA2uiAction", err, base.ErrNotFound)
+	if len(e.events) != 0 {
+		t.Errorf("events = %+v, want none", e.events)
 	}
 }
 
@@ -247,36 +248,27 @@ func TestSendA2uiAction_Failures(t *testing.T) {
 		_, err := e.c.SendA2uiAction(context.Background(), req)
 		wantErrIs(t, "SendA2uiAction", err, base.ErrNotFound)
 	})
-	t.Run("message not found", func(t *testing.T) {
+	t.Run("the card cannot be read", func(t *testing.T) {
 		e := newA2uiActionEnv(t)
-		e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-		e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10}, nil)
-		e.repo.EXPECT().SystemGetMessage(gomock.Any(), int64(500)).Return(model.Message{}, base.ErrNotFound)
-		_, err := e.c.SendA2uiAction(context.Background(), req)
-		wantErrIs(t, "SendA2uiAction", err, base.ErrNotFound)
-	})
-	t.Run("the answer is not stored", func(t *testing.T) {
-		e := newA2uiActionEnv(t)
-		e.expectCard(10, a2uiCardMetadata)
-		e.repo.EXPECT().AnswerMessage(gomock.Any(), int64(10), int64(500), gomock.Any()).Return(false, errDBDown)
+		e.expectCard(a2uiCardMetadata, errDBDown)
 		_, err := e.c.SendA2uiAction(context.Background(), req)
 		wantErrIs(t, "SendA2uiAction", err, errDBDown)
 	})
-	t.Run("the reply is not stored", func(t *testing.T) {
+	t.Run("the answer and its reply are not stored", func(t *testing.T) {
 		e := newA2uiActionEnv(t)
-		e.expectCard(10, a2uiCardMetadata)
-		e.repo.EXPECT().AnswerMessage(gomock.Any(), int64(10), int64(500), gomock.Any()).Return(true, nil)
+		e.afterAnswer = errDBDown
+		e.expectCard(a2uiCardMetadata, nil)
 		e.idgen.EXPECT().NextID().Return(int64(600))
-		e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(errDBDown)
 		_, err := e.c.SendA2uiAction(context.Background(), req)
 		wantErrIs(t, "SendA2uiAction", err, errDBDown)
+		if len(e.events) != 0 {
+			t.Errorf("events = %+v, want none for a click that was not stored", e.events)
+		}
 	})
 	t.Run("the task is not resumed", func(t *testing.T) {
 		e := newA2uiActionEnv(t)
-		e.expectCard(10, a2uiCardMetadata)
-		e.repo.EXPECT().AnswerMessage(gomock.Any(), int64(10), int64(500), gomock.Any()).Return(true, nil)
+		e.expectCard(a2uiCardMetadata, nil)
 		e.idgen.EXPECT().NextID().Return(int64(600))
-		e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(nil)
 		e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(model.Task{}, errDBDown)
 		_, err := e.c.SendA2uiAction(context.Background(), req)
 		wantErrIs(t, "SendA2uiAction", err, errDBDown)

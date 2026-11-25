@@ -12,6 +12,7 @@ import {
   CANCEL_COLORS, CHAT_BUTTON, CHAT_SECONDARY_COLORS, CONTROL_SIZE, DISABLED_BUTTON, PRIMARY_COLORS, chatSegmentClass,
 } from '../utils/formStyles.js'
 import { resolveValue } from './resolve.js'
+import { isOwnMediaRoute } from './validate.js'
 
 const JUSTIFY = {
   start: 'justify-start',
@@ -115,7 +116,7 @@ export function textHtml(text) {
  */
 export function isAllowedMedia(url, attachments = []) {
   if (typeof url !== 'string' || url === '') return false
-  if (/^\/(storage|api\/v1\/workspaces)\//.test(url)) return !url.includes('/../')
+  if (/^\/(storage|api\/v1\/workspaces)\//.test(url)) return isOwnMediaRoute(url)
   return (attachments ?? []).some((a) => a?.url === url)
 }
 

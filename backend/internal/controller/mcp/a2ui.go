@@ -14,6 +14,7 @@ import (
 
 	"github.com/mustafaturan/monoflake"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/a2ui"
@@ -183,13 +184,31 @@ func (ps *WorkspaceServer) attachmentURLs(taskID int64, atts []entity.Attachment
 	return urls
 }
 
-// deleteAttachments removes the files saved for a reply that was not posted.
-func (ps *WorkspaceServer) deleteAttachments(taskID int64, atts []entity.Attachment) {
-	for _, a := range atts {
-		if a.ID != "" {
-			storage.DeleteAttachment(ps.storage, ps.contentID(), taskID, a.ID)
+// saveAttachments saves a reply's files and returns what removes them again
+// if the reply is not posted: only the files it stored, never an attachment
+// that came with no data and an id of its own, which may be another message's.
+func (ps *WorkspaceServer) saveAttachments(taskID int64, atts []entity.Attachment) (unsave func()) {
+	var stored []int
+	for i := range atts {
+		if atts[i].Data != "" {
+			stored = append(stored, i)
 		}
 	}
+	crud.SaveAttachments(ps.storage, ps.idgen, ps.contentID(), taskID, atts)
+	return func() {
+		for _, i := range stored {
+			storage.DeleteAttachment(ps.storage, ps.contentID(), taskID, atts[i].ID)
+		}
+	}
+}
+
+// presentUI is ui, or nil when it is absent: JSON null, which many clients
+// send for an optional field they leave out, counts as no card.
+func presentUI(ui json.RawMessage) json.RawMessage {
+	if trimmed := bytes.TrimSpace(ui); len(trimmed) == 0 || string(trimmed) == "null" {
+		return nil
+	}
+	return ui
 }
 
 // emitA2UI counts a message that carried a card: a reply, or a question.
@@ -228,6 +247,7 @@ func addA2UICapability(caps *mcp.ServerCapabilities) {
 // MCP binding: an embedded resource whose text (or blob) is the array, which
 // an agent framework emitting A2UI posts unchanged.
 func replyUI(ui json.RawMessage) (json.RawMessage, bool, error) {
+	ui = presentUI(ui)
 	trimmed := bytes.TrimSpace(ui)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return ui, false, nil

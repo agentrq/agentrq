@@ -900,6 +900,12 @@ func (c *controller) postHumanMessage(ctx context.Context, workspaceID int64, m 
 	if err := c.repository.CreateMessage(ctx, msg); err != nil {
 		return entity.Task{}, err
 	}
+	return c.humanMessagePosted(ctx, workspaceID, m, msg)
+}
+
+// humanMessagePosted announces the person's stored message and resumes its
+// task.
+func (c *controller) humanMessagePosted(ctx context.Context, workspaceID int64, m model.Task, msg model.Message) (entity.Task, error) {
 	c.emitEvent(ctx, entity.CRUDEvent{
 		Action:       entity.ActionMessageCreate,
 		WorkspaceID:  workspaceID,

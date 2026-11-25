@@ -129,8 +129,8 @@ func (d *cardDrawer) apply(msg any) bool {
 	}
 	if update, ok := obj["updateDataModel"].(map[string]any); ok {
 		path, _ := update["path"].(string)
-		value, set := update["value"]
-		d.data = writePath(d.data, pointerTokens(path), value, set)
+		value, present := update["value"]
+		d.data = writePath(d.data, pointerTokens(path), value, present && value == nil)
 	}
 	_, deleted := obj["deleteSurface"]
 	return !deleted
@@ -422,19 +422,38 @@ func readPath(node any, tokens []string) any {
 	return node
 }
 
-// writePath sets the value at tokens, or removes it when set is false,
-// making the objects on the way as needed.
-func writePath(node any, tokens []string, value any, set bool) any {
+// writePath sets the value at tokens, or removes it, as the page does: a
+// removed list item takes its place, and a write just past a list's end
+// appends (further past, which the page leaves holes for, is ignored).
+// Objects are made on the way as needed; a path through a key that would
+// reach the page's object prototype changes nothing.
+func writePath(node any, tokens []string, value any, remove bool) any {
+	if slices.ContainsFunc(tokens, func(t string) bool { return t == "__proto__" || t == "constructor" || t == "prototype" }) {
+		return node
+	}
+	return write(node, tokens, value, remove)
+}
+
+func write(node any, tokens []string, value any, remove bool) any {
 	if len(tokens) == 0 {
-		if !set {
-			return nil
+		if remove {
+			return map[string]any{}
 		}
 		return value
 	}
 	t, rest := tokens[0], tokens[1:]
 	if list, ok := node.([]any); ok {
-		if i, err := strconv.Atoi(t); err == nil && i >= 0 && i < len(list) {
-			list[i] = writePath(list[i], rest, value, set)
+		i, err := strconv.Atoi(t)
+		switch {
+		case err != nil || i < 0 || i > len(list):
+		case remove && len(rest) == 0:
+			if i < len(list) {
+				list = slices.Delete(list, i, i+1)
+			}
+		case i == len(list):
+			list = append(list, write(nil, rest, value, remove))
+		default:
+			list[i] = write(list[i], rest, value, remove)
 		}
 		return list
 	}
@@ -442,11 +461,11 @@ func writePath(node any, tokens []string, value any, set bool) any {
 	if !ok {
 		obj = map[string]any{}
 	}
-	if !set && len(rest) == 0 {
+	if remove && len(rest) == 0 {
 		delete(obj, t)
 		return obj
 	}
-	obj[t] = writePath(obj[t], rest, value, set)
+	obj[t] = write(obj[t], rest, value, remove)
 	return obj
 }
 
