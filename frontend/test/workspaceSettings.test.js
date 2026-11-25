@@ -10,6 +10,7 @@ import {
   buildClaudePermissionsConfig,
   buildMcpServers,
   buildSupervisorMcpUrl,
+  WORKSPACE_MCP_SERVER_NAME,
   isReadOnlySettingsTab,
   shouldShowSettingsActionBar,
 } from '../src/composables/useWorkspaceSettings';
@@ -93,20 +94,20 @@ describe('useWorkspaceSettings', () => {
 
   describe('buildClaudePermissionsConfig', () => {
     it('allows every tool of the workspace server with one wildcard', () => {
-      const { permissions } = buildClaudePermissionsConfig('agentrq-ws1');
+      const { permissions } = buildClaudePermissionsConfig('agentrq-workspace');
 
-      expect(permissions.allow).toEqual(['mcp__agentrq-ws1__*']);
+      expect(permissions.allow).toEqual(['mcp__agentrq-workspace__*']);
     });
 
     it('enables the project MCP servers and names this one', () => {
-      const config = buildClaudePermissionsConfig('agentrq-ws1');
+      const config = buildClaudePermissionsConfig('agentrq-workspace');
 
       expect(config.enableAllProjectMcpServers).toBe(true);
-      expect(config.enabledMcpjsonServers).toEqual(['agentrq-ws1']);
+      expect(config.enabledMcpjsonServers).toEqual(['agentrq-workspace']);
     });
 
     it('serialises to the snippet shape the setup tab displays', () => {
-      const config = buildClaudePermissionsConfig('agentrq-ws1');
+      const config = buildClaudePermissionsConfig('agentrq-workspace');
 
       expect(Object.keys(config)).toEqual([
         'permissions',
@@ -117,17 +118,17 @@ describe('useWorkspaceSettings', () => {
     });
 
     it('does not add the core server for a workspace that is not named exactly "supervisor"', () => {
-      const config = buildClaudePermissionsConfig('agentrq-ws1', 'Supervisor');
+      const config = buildClaudePermissionsConfig('agentrq-workspace', 'Supervisor');
 
-      expect(config.permissions.allow).toEqual(['mcp__agentrq-ws1__*']);
-      expect(config.enabledMcpjsonServers).toEqual(['agentrq-ws1']);
+      expect(config.permissions.allow).toEqual(['mcp__agentrq-workspace__*']);
+      expect(config.enabledMcpjsonServers).toEqual(['agentrq-workspace']);
     });
 
     it('allows and enables the "agentrq" core server for a supervisor workspace', () => {
-      const config = buildClaudePermissionsConfig('agentrq-ws1', 'supervisor');
+      const config = buildClaudePermissionsConfig('agentrq-workspace', 'supervisor');
 
-      expect(config.permissions.allow).toEqual(['mcp__agentrq-ws1__*', 'mcp__agentrq__*']);
-      expect(config.enabledMcpjsonServers).toEqual(['agentrq-ws1', 'agentrq']);
+      expect(config.permissions.allow).toEqual(['mcp__agentrq-workspace__*', 'mcp__agentrq__*']);
+      expect(config.enabledMcpjsonServers).toEqual(['agentrq-workspace', 'agentrq']);
     });
   });
 
@@ -173,43 +174,49 @@ describe('useWorkspaceSettings', () => {
     });
   });
 
+  describe('WORKSPACE_MCP_SERVER_NAME', () => {
+    it('is the name agentrqd and native ACP give the workspace server, not one per workspace id', () => {
+      expect(WORKSPACE_MCP_SERVER_NAME).toBe('agentrq-workspace');
+    });
+  });
+
   describe('buildMcpServers', () => {
     it('writes a single entry for a regular workspace', () => {
       const servers = buildMcpServers({
-        serverName: 'agentrq-ws1',
+        serverName: 'agentrq-workspace',
         authenticatedUrl: 'https://a1b2.mcp.agentrq.com?token=tok',
         workspaceName: 'My Workspace',
         supervisorMcpUrl: 'https://mcp.agentrq.com/mcp',
       });
 
       expect(servers).toEqual({
-        'agentrq-ws1': { type: 'http', url: 'https://a1b2.mcp.agentrq.com?token=tok' },
+        'agentrq-workspace': { type: 'http', url: 'https://a1b2.mcp.agentrq.com?token=tok' },
       });
     });
 
     it('adds a second "agentrq" entry for a workspace named exactly "supervisor"', () => {
       const servers = buildMcpServers({
-        serverName: 'agentrq-ws1',
+        serverName: 'agentrq-workspace',
         authenticatedUrl: 'https://a1b2.mcp.agentrq.com?token=tok',
         workspaceName: 'supervisor',
         supervisorMcpUrl: 'https://mcp.agentrq.com/mcp',
       });
 
       expect(servers).toEqual({
-        'agentrq-ws1': { type: 'http', url: 'https://a1b2.mcp.agentrq.com?token=tok' },
+        'agentrq-workspace': { type: 'http', url: 'https://a1b2.mcp.agentrq.com?token=tok' },
         agentrq: { type: 'http', url: 'https://mcp.agentrq.com/mcp' },
       });
     });
 
     it('does not add the second entry for a name that only looks like supervisor', () => {
       const servers = buildMcpServers({
-        serverName: 'agentrq-ws1',
+        serverName: 'agentrq-workspace',
         authenticatedUrl: 'https://a1b2.mcp.agentrq.com?token=tok',
         workspaceName: 'Supervisor',
         supervisorMcpUrl: 'https://mcp.agentrq.com/mcp',
       });
 
-      expect(Object.keys(servers)).toEqual(['agentrq-ws1']);
+      expect(Object.keys(servers)).toEqual(['agentrq-workspace']);
     });
   });
 });

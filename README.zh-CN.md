@@ -295,7 +295,7 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 ```json
 {
   "mcpServers": {
-    "agentrq-WORKSPACE_ID": {
+    "agentrq-workspace": {
       "type": "http",
       "url": "YOUR_MCP_URL"
     }
@@ -303,7 +303,7 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 }
 ```
 
-也可以创建 `.claude/settings.local.json` 预批准 AgentRQ 工具，减少每次调用时的确认提示：一条通配规则 `mcp__agentrq-WORKSPACE_ID__*` 即可覆盖该 Workspace 的全部工具。详细配置见英文 [README.md](README.md) 的 `Claude Code & AI Integration` 部分。
+也可以创建 `.claude/settings.local.json` 预批准 AgentRQ 工具，减少每次调用时的确认提示：一条通配规则 `mcp__agentrq-workspace__*` 即可覆盖该 Workspace 的全部工具。详细配置见英文 [README.md](README.md) 的 `Claude Code & AI Integration` 部分。
 
 连接后，Agent 可以使用以下七个 Workspace MCP 工具。每个工具都接收两个输入：`action` 与 `payload`（该操作的字段），例如 `task {"action": "reply", "payload": {"taskId": "<id>", "text": "On it."}}`；`help` 工具负责说明用法——不传参数时列出所有工具及其操作，`{"action": "task"}` 列出某个工具的操作，`{"action": "task.create"}` 打印某个操作的 payload 和示例。
 

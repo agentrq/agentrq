@@ -1014,7 +1014,7 @@ import {
   getRetentionDays,
   setRetentionDays,
 } from '../composables/useCacheRetention';
-import { shouldShowSettingsActionBar, workspaceUpdatePayload, buildClaudePermissionsConfig, buildMcpServers, buildSupervisorMcpUrl } from '../composables/useWorkspaceSettings';
+import { shouldShowSettingsActionBar, workspaceUpdatePayload, buildClaudePermissionsConfig, buildMcpServers, buildSupervisorMcpUrl, WORKSPACE_MCP_SERVER_NAME } from '../composables/useWorkspaceSettings';
 import {
   entryForTab,
   isExtensionTab,
@@ -1271,8 +1271,8 @@ const authenticatedUrl = computed(() => {
   return `${baseUrl}?token=${token.value}`;
 });
 
-const serverName = computed(() => `agentrq-${workspaceId.value}`);
-const startCommand = computed(() => `claude --dangerously-load-development-channels server:${serverName.value} --name ${workspace.value?.name}`);
+const serverName = WORKSPACE_MCP_SERVER_NAME;
+const startCommand = computed(() => `claude --dangerously-load-development-channels server:${serverName} --name ${workspace.value?.name}`);
 
 // The ACP gateway bridges any agent that speaks the Agent Client Protocol, so
 // the example names one rather than implying the bridge belongs to it.
@@ -1313,7 +1313,7 @@ const supervisorMcpUrl = computed(() => buildSupervisorMcpUrl({
 
 const mcpConfig = computed(() => ({
   mcpServers: buildMcpServers({
-    serverName: serverName.value,
+    serverName,
     authenticatedUrl: authenticatedUrl.value,
     workspaceName: workspace.value?.name,
     supervisorMcpUrl: supervisorMcpUrl.value,
@@ -1322,7 +1322,7 @@ const mcpConfig = computed(() => ({
 
 const configJson = computed(() => JSON.stringify(mcpConfig.value, null, 2));
 
-const permissionsConfig = computed(() => buildClaudePermissionsConfig(serverName.value, workspace.value?.name));
+const permissionsConfig = computed(() => buildClaudePermissionsConfig(serverName, workspace.value?.name));
 
 const permissionsConfigJson = computed(() => JSON.stringify(permissionsConfig.value, null, 2));
 
