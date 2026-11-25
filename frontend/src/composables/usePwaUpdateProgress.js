@@ -49,14 +49,46 @@ export function percentOf({ done, total }) {
  * from the worker's messages, and the same shape App.vue's banner reads:
  * `{ phase, percent, version }`.
  *
+ * It also makes the "Update now" offer itself, from the registration. Workbox
+ * stops listening for updates after the first one it did not start, so in a
+ * tab left open every later version would download and never be offered.
+ *
  * Returned as is when the registration already has progress (the desktop
  * build), or when there is no service worker to hear from.
  */
-export function withUpdateProgress(registered, container = globalThis.navigator?.serviceWorker) {
+export function withUpdateProgress(
+  registered,
+  container = globalThis.navigator?.serviceWorker,
+  reload = () => globalThis.location.reload(),
+) {
   if (registered.progress || !container) return registered
 
   const progress = ref(null)
   let watched = null
+
+  const endDownload = () => {
+    if (progress.value?.phase === 'downloading') progress.value = null
+  }
+
+  container.ready?.then((registration) => {
+    const offer = () => {
+      // An uncontrolled page has no older version running to replace.
+      if (!registration.waiting || !container.controller) return
+      endDownload()
+      registered.needRefresh.value = true
+    }
+    const follow = (worker) => {
+      if (!worker) return
+      // Followed from 'installing', so any change means the install is over.
+      worker.addEventListener('statechange', () => {
+        if (worker.state === 'installed' && registration.waiting === worker) offer()
+        else endDownload()
+      })
+    }
+    registration.addEventListener('updatefound', () => follow(registration.installing))
+    follow(registration.installing)
+    offer()
+  })
 
   container.addEventListener('message', (event) => {
     if (event.data?.type !== PRECACHE_PROGRESS) return
@@ -74,9 +106,7 @@ export function withUpdateProgress(registered, container = globalThis.navigator?
     if (worker && worker !== watched) {
       watched = worker
       worker.addEventListener('statechange', () => {
-        if (worker.state !== 'installing' && progress.value?.phase === 'downloading') {
-          progress.value = null
-        }
+        if (worker.state !== 'installing') endDownload()
       })
     }
   })
@@ -90,6 +120,8 @@ export function withUpdateProgress(registered, container = globalThis.navigator?
     updateServiceWorker: async (reloadPage) => {
       // Up until the page reloads under the new version.
       progress.value = { phase: 'restarting', percent: null, version: '' }
+      // Workbox reloads only for an offer it made, and this one may not be.
+      if (reloadPage) container.addEventListener('controllerchange', () => reload(), { once: true })
       try {
         await registered.updateServiceWorker(reloadPage)
       } catch {
