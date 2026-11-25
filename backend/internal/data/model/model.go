@@ -927,6 +927,8 @@ const (
 	ActionIDA2UIUpdate
 	// An agent's card posted to Slack as Block Kit; emitted by the backend.
 	ActionIDA2UISlack
+	// An agent's card that came as A2UI's MCP binding; emitted by the backend.
+	ActionIDA2UIResource
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

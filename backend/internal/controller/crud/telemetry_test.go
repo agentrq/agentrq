@@ -107,6 +107,8 @@ func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
 		"a2ui_update",
 		// A card posted to Slack is posted by the server.
 		"a2ui_slack",
+		// A card that came as an embedded resource is stored by the server.
+		"a2ui_resource",
 	} {
 		if _, ok := entity.ClientReportableAction(name); ok {
 			t.Errorf("%q must not be client-reportable", name)

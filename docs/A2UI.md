@@ -15,6 +15,10 @@ A card can also ask: buttons, and fields you fill in before you press one. An ag
 
 Agents learn this from the workspace skill (`skill://agentrq`, its `references/a2ui.md`) and from `help task.reply`, which shows a complete card. With the command-line client, `agentrq-ws reply <taskId> "text" --ui @card.json --attach chart.png` sends one.
 
+## From an agent framework that already speaks A2UI
+
+AgentRQ follows A2UI's [MCP binding](https://a2ui.org/guides/a2ui-over-mcp/). On connecting, the workspace server says it draws A2UI v1.0's basic catalog (`capabilities.a2ui`). A reply's `ui` takes the binding's embedded resource unchanged, `{"type": "resource", "resource": {"mimeType": "application/a2ui+json", "text": "[…]"}}`, as well as the array of messages itself, so a framework can post the card it already makes. Either form follows the same rules.
+
 ## Answering a card
 
 What you type or pick stays in the card until you press a button. A field's own checks (required, a length, a pattern) hold back a button until they pass, and say why under it.
