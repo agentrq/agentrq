@@ -123,6 +123,7 @@ func TestActionString(t *testing.T) {
 		{ActionA2UIAction, "a2ui_action"},
 		{ActionA2UIElicit, "a2ui_elicit"},
 		{ActionA2UIUpdate, "a2ui_update"},
+		{ActionA2UISlack, "a2ui_slack"},
 		{ActionWorkspaceShare, "workspace_share"},
 		{ActionTeamTaskClone, "team_task_clone"},
 		{ActionTeamMemorySave, "team_memory_save"},

@@ -925,6 +925,8 @@ const (
 	ActionIDA2UIElicit
 	// An agent's reply that updated a card in place; emitted by the backend.
 	ActionIDA2UIUpdate
+	// An agent's card posted to Slack as Block Kit; emitted by the backend.
+	ActionIDA2UISlack
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

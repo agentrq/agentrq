@@ -34,7 +34,7 @@ An update is an edit, not a new message: it sends no push, Slack or email notifi
 
 ## The text is always there
 
-A reply with a card still needs its text, and the text should say everything the card does. Slack, push notifications, email, the desktop app's notifications and other agents reading the thread show only the text. If a stored card ever fails to load, the thread shows the text in its place.
+A reply with a card still needs its text, and the text should say everything the card does. Push notifications, email, the desktop app's notifications and other agents reading the thread show only the text. Slack shows the card's text, images and layout, with an "Open in AgentRQ" button when the card has anything to click or type into. It shows the text instead when it cannot draw the card. If a stored card ever fails to load, the thread shows the text in its place.
 
 ## Media comes only from your own storage
 

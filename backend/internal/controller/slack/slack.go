@@ -232,10 +232,12 @@ func (c *controller) OnMessageCreated(ctx context.Context, msg entity.Message, t
 		}
 	}
 
-	blocks := slacksvc.BuildMessageBlocks(senderName, msg.Text)
-	if _, err := c.slack.PostThreadReply(ctx, decryptedToken, thread.SlackChannelID, thread.ThreadTS, blocks); err != nil {
-		zlog.Warn().Err(err).Int64("taskID", task.ID).Msg("[slack] failed to post thread reply")
-		c.handleSlackError(ctx, task.WorkspaceID, err)
+	if !c.postCard(ctx, decryptedToken, thread, senderName, msg, task) {
+		blocks := slacksvc.BuildMessageBlocks(senderName, msg.Text)
+		if _, err := c.slack.PostThreadReply(ctx, decryptedToken, thread.SlackChannelID, thread.ThreadTS, blocks); err != nil {
+			zlog.Warn().Err(err).Int64("taskID", task.ID).Msg("[slack] failed to post thread reply")
+			c.handleSlackError(ctx, task.WorkspaceID, err)
+		}
 	}
 
 	// If this is a pending MCP permission request, post interactive buttons too
@@ -268,6 +270,34 @@ func (c *controller) OnMessageCreated(ctx context.Context, msg entity.Message, t
 		}
 	}
 	return nil
+}
+
+// postCard posts a message's A2UI card to the thread as Block Kit; false when
+// it has none to show or Slack refused it (an image it could not fetch), and
+// the text is posted instead.
+func (c *controller) postCard(ctx context.Context, token string, thread model.SlackTaskThread, sender string, msg entity.Message, task entity.Task) bool {
+	taskURL := c.baseURL + "/workspaces/" + monoflake.ID(task.WorkspaceID).String() + "/tasks/" + monoflake.ID(task.ID).String()
+	blocks := slacksvc.BuildCardBlocks(sender, msg.Text, msg.Metadata, taskURL)
+	if blocks == nil {
+		return false
+	}
+	if _, err := c.slack.PostThreadReply(ctx, token, thread.SlackChannelID, thread.ThreadTS, blocks); err != nil {
+		zlog.Warn().Err(err).Int64("messageID", msg.ID).Msg("[slack] card refused, posting its text")
+		return false
+	}
+	c.pubsub.Publish(ctx, pubsub.PublishRequest{
+		PubSubID: entity.PubSubTopicCRUD,
+		Event: entity.CRUDEvent{
+			Action:       entity.ActionA2UISlack,
+			WorkspaceID:  task.WorkspaceID,
+			UserID:       task.UserID,
+			ResourceType: entity.ResourceMessage,
+			ResourceID:   msg.ID,
+			Actor:        entity.ActorAgent,
+			Origin:       entity.OriginSlack,
+		},
+	})
+	return true
 }
 
 // OnMessageUpdated processes updates to permission request messages (verdicts) and replaces Slack buttons with static text.

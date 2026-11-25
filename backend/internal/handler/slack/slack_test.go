@@ -339,6 +339,26 @@ func TestInteractionsDispatchesEachButtonByItsPrefix(t *testing.T) {
 	logs.waitFor(t, "unknown action_id prefix")
 }
 
+func TestInteractionsIgnoresACardsLinkToTheTask(t *testing.T) {
+	logs := captureLogs(t)
+	f := newFixture()
+	payload := `{"type":"block_actions","actions":[{"action_id":"open_in_agentrq"}]}`
+	rr := f.serve(formRequest("/slack/interactions", url.Values{"payload": {payload}}))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", rr.Code)
+	}
+	// Skipped before any dispatch, so nothing can arrive later.
+	select {
+	case line := <-logs:
+		t.Errorf("logged %q for a link", line)
+	case <-f.ctrl.approvals:
+		t.Error("a link was dispatched as an approval")
+	case <-f.ctrl.permissions:
+		t.Error("a link was dispatched as a permission")
+	default:
+	}
+}
+
 func TestInteractionsAcceptsARawJSONBody(t *testing.T) {
 	f := newFixture()
 	rr := f.serve(httptest.NewRequest(http.MethodPost, "/slack/interactions", strings.NewReader(
