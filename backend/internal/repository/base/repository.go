@@ -87,10 +87,12 @@ type Repository interface {
 	CreateMessage(ctx context.Context, m model.Message) error
 	ListMessages(ctx context.Context, taskID int64) ([]model.Message, error)
 	UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error
-	// AnswerMessage replaces a message's metadata only while it has no
-	// "answered" key, and reports whether it did: of two clicks on one card,
-	// one wins.
-	AnswerMessage(ctx context.Context, taskID int64, messageID int64, metadata []byte) (bool, error)
+	// AnswerCard answers the card in a message in one transaction, holding
+	// its row: answer sees the message as it is now and returns the reply to
+	// store and the value of the card's "answered" key, which is the only key
+	// written. An error from answer changes nothing; ErrNotFound when the
+	// task has no such message.
+	AnswerCard(ctx context.Context, taskID int64, messageID int64, answer func(model.Message) (model.Message, []byte, error)) error
 	// EditMessage replaces a message's text and metadata with what edit
 	// makes of the message, holding its row: of two edits at once, the
 	// second reads the first's result. An error from edit changes nothing;
@@ -1202,10 +1204,29 @@ func (r *repository) UpdateMessageMetadata(ctx context.Context, taskID int64, me
 	})
 }
 
-func (r *repository) AnswerMessage(ctx context.Context, taskID int64, messageID int64, metadata []byte) (bool, error) {
-	db := r.conn(ctx)
-	res := db.Model(&model.Message{}).Where("id = ? AND task_id = ?", messageID, taskID).Where(unansweredClause(db)).Update("metadata", metadata)
-	return res.RowsAffected == 1, res.Error
+func (r *repository) AnswerCard(ctx context.Context, taskID int64, messageID int64, answer func(model.Message) (model.Message, []byte, error)) error {
+	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		var m model.Message
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND task_id = ?", messageID, taskID).Take(&m).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		reply, answered, err := answer(m)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Message{}).Where("id = ?", messageID).
+			Update("metadata", gorm.Expr(setAnsweredExpr(tx), string(answered))).Error; err != nil {
+			return err
+		}
+		if reply.ByWorkspaceID == 0 {
+			reply.ByWorkspaceID = entity.GetAgentWorkspace(ctx)
+		}
+		return tx.Create(&reply).Error
+	})
 }
 
 func (r *repository) EditMessage(ctx context.Context, taskID int64, messageID int64, edit func(model.Message) (string, []byte, error)) error {
@@ -1227,16 +1248,18 @@ func (r *repository) EditMessage(ctx context.Context, taskID int64, messageID in
 	})
 }
 
-func unansweredClause(db *gorm.DB) string {
+// setAnsweredExpr is the card's metadata with its "answered" key set to the
+// JSON in its one value, the rest left as stored.
+func setAnsweredExpr(db *gorm.DB) string {
 	if db.Dialector.Name() == "postgres" {
-		return pgUnanswered
+		return pgSetAnswered
 	}
-	return sqliteUnanswered
+	return sqliteSetAnswered
 }
 
 const (
-	pgUnanswered     = "metadata->'answered' IS NULL"
-	sqliteUnanswered = "json_extract(metadata, '$.answered') IS NULL"
+	pgSetAnswered     = "jsonb_set(metadata, '{answered}', CAST(? AS jsonb))"
+	sqliteSetAnswered = "json_set(metadata, '$.answered', json(?))"
 )
 
 // CreateToolCall records a tool call on a task of the call's workspace that

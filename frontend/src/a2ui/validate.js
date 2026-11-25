@@ -139,7 +139,18 @@ const MEDIA = { Image: ['url'], Video: ['url', 'posterUrl'], AudioPlayer: ['url'
  * a bucket's or the server's own, which is http on a server without TLS.
  */
 export function isStoredMediaUrl(url) {
-  return typeof url === 'string' && (/^\/(storage|api\/v1\/workspaces)\//.test(url) || /^https?:\/\/[^/]/.test(url))
+  return isOwnMediaRoute(url) || (typeof url === 'string' && /^https?:\/\/[^/]/.test(url))
+}
+
+const OWN_MEDIA = /^\/(storage|api\/v1\/workspaces)\//
+
+/**
+ * Whether url is a relative link to our own stored files, as the browser
+ * will fetch it: dot segments, also percent-encoded or with backslashes,
+ * are resolved first, so none climbs out of those routes.
+ */
+export function isOwnMediaRoute(url) {
+  return typeof url === 'string' && OWN_MEDIA.test(url) && OWN_MEDIA.test(new URL(url, 'https://own.invalid').pathname)
 }
 
 const MESSAGES = {

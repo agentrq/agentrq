@@ -42,6 +42,15 @@ export async function resolveText(value, { stdin, what }) {
   return value
 }
 
+/**
+ * Refuses a command that reads more than one of its inputs, named by the
+ * keys of inputs, from stdin: the first read takes all of it.
+ */
+export function oneStdin(inputs) {
+  const piped = Object.keys(inputs).filter((name) => inputs[name] === '-')
+  if (piped.length > 1) throw new UserError(`only one input can come from stdin (-): ${piped.join(' and ')} both ask for it`)
+}
+
 /** Build the attachment array for a tool call from repeated --attach flags. */
 export function collectAttachments(values) {
   const paths = asArray(values.attach)
@@ -168,6 +177,7 @@ function printPanoDoc(result, { idOnly = false } = {}) {
 /** The ops of pano edit: --ops (a JSON array, as the tool takes it), then --replace/--with, then --append. */
 async function panoEditOps(ctx) {
   const { ops, replace, with: newString, append } = ctx.values
+  oneStdin({ '--ops': ops, '--append': append })
   const out = []
   if (ops !== undefined) {
     let parsed
@@ -334,6 +344,7 @@ export const COMMANDS = [
     async run(ctx) {
       const taskId = requirePositional(ctx.positionals, 0, 'taskId')
       const raw = requirePositional(ctx.positionals, 1, 'text')
+      oneStdin({ 'the text': raw, '--ui': ctx.values.ui })
       const text = await resolveText(raw, { stdin: ctx.stdin, what: 'the reply text' })
       const ui = await readUI(ctx)
       const card = ui === undefined ? {} : { ui }
@@ -620,6 +631,7 @@ export const COMMANDS = [
     async run(ctx) {
       const taskId = requirePositional(ctx.positionals, 0, 'taskId')
       const message = requirePositional(ctx.positionals, 1, 'message')
+      oneStdin({ '--schema': ctx.values.schema, '--ui': ctx.values.ui })
       let requestedSchema = buildRequestedSchema(ctx.values)
       if (ctx.values.schema !== undefined) {
         const raw = await resolveText(ctx.values.schema, { stdin: ctx.stdin, what: 'the schema' })

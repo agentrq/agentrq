@@ -14,6 +14,7 @@ import {
   collectAttachments,
   findCommand,
   parseFaq,
+  oneStdin,
   readStdin,
   resolveText,
 } from '../src/commands.js'
@@ -76,6 +77,21 @@ test('resolveText passes an inline value through', async () => {
 test('resolveText reads - from stdin', async () => {
   // Prose does not belong in a shell argument.
   assert.equal(await resolveText('-', { stdin: stdinOf('from stdin'), what: 'x' }), 'from stdin')
+})
+
+test('oneStdin lets one input read stdin, and refuses two', () => {
+  oneStdin({ a: '-', b: 'inline', c: undefined })
+  assert.throws(() => oneStdin({ 'the text': '-', '--ui': '-' }), /only one input can come from stdin \(-\): the text and --ui both ask for it/)
+})
+
+test('a command never reads stdin for two inputs', async () => {
+  for (const [path, positionals, values] of [
+    ['reply', ['t1', '-'], { ui: '-' }],
+    ['ask', ['t1', 'Pick one'], { schema: '-', ui: '-' }],
+    ['pano edit', ['d1'], { version: '1', ops: '-', append: '-' }],
+  ]) {
+    await assert.rejects(() => invoke(path, { positionals, values, stdin: stdinOf('[]') }), /only one input can come from stdin/, path)
+  }
 })
 
 test('resolveText refuses - with no stdin', async () => {

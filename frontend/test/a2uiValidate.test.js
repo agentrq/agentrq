@@ -281,6 +281,7 @@ describe('a2ui validate: stored media links', () => {
     expect(isStoredMediaUrl('http://localhost:3000/storage/w-1/2/3')).toBe(true)
     expect(isStoredMediaUrl('http:///a')).toBe(false)
     expect(isStoredMediaUrl('/api/v1/other')).toBe(false)
+    expect(isStoredMediaUrl('/storage/%2e%2e/api/v1/user')).toBe(false)
     expect(isStoredMediaUrl(undefined)).toBe(false)
   })
 })

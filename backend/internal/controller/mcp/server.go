@@ -1557,13 +1557,13 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 	// The files are saved first: a card's media names them by their stored
 	// links.
 	atts := toEntityAttachments(params.Attachments)
-	crud.SaveAttachments(ps.storage, ps.idgen, ps.contentID(), taskID, atts)
+	unsave := ps.saveAttachments(taskID, atts)
 
 	var metadata any
 	if len(params.UI) > 0 {
 		card, err := ps.replyCard(ctx, taskID, params.UI, atts)
 		if err != nil {
-			ps.deleteAttachments(taskID, atts)
+			unsave()
 			return &mcp.CallToolResult{
 				IsError: true,
 				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
@@ -1574,7 +1574,7 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 
 	msgID, err := ps.reply(ctx, params.TaskID, params.Text, atts, metadata)
 	if err != nil {
-		ps.deleteAttachments(taskID, atts)
+		unsave()
 		return &mcp.CallToolResult{
 			IsError: true,
 			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to deliver reply: %v", err)}},
@@ -1786,6 +1786,7 @@ func (ps *WorkspaceServer) handleElicit(ctx context.Context, req *mcp.CallToolRe
 		}, nil, nil
 	}
 
+	params.UI = presentUI(params.UI)
 	metadata := map[string]any{
 		"type":    "elicitation_request",
 		"message": params.Message,

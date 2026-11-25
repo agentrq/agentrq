@@ -41,7 +41,7 @@ var dynamicSQL = map[string]string{
 	"taskCountsByCategory:metadataExpr":                "the per-database metadata filter",
 	"ListTaskPreviews:queueExpr":                       "the per-database sort order",
 	"syncNeedsInput:pendingRequestClause(tx)":          "pendingRequestClause, a per-database constant",
-	"AnswerMessage:unansweredClause(db)":               "unansweredClause, a per-database constant",
+	"AnswerCard:setAnsweredExpr(tx)":                   "setAnsweredExpr, a per-database constant",
 	"listTasks:awaitingReplyClause(r.conn(ctx))":       "awaitingReplyClause, a per-database constant",
 	"awaitingReplyMessages:clause":                     "the per-database reply messages filter",
 	"ListTaskChanges:changed":                          "the per-database changed-tasks filter",

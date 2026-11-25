@@ -13,7 +13,6 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
-	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 )
@@ -36,65 +35,48 @@ func (c *controller) SendA2uiAction(ctx context.Context, req entity.SendA2uiActi
 	if err != nil {
 		return nil, err
 	}
-	src, err := c.repository.SystemGetMessage(ctx, req.MessageID)
+
+	// The click is checked against the card as it is under its row's lock,
+	// and the reply is stored with the mark: an agent's update or deletion
+	// is never overwritten, and a card is never answered without its reply.
+	answered, _ := json.Marshal(map[string]any{"name": req.Name, "at": time.Now().UTC()})
+	var msg model.Message
+	err = c.repository.AnswerCard(ctx, m.ID, req.MessageID, func(src model.Message) (model.Message, []byte, error) {
+		text, err := clickText(req, src.Metadata)
+		if err != nil {
+			return model.Message{}, nil, err
+		}
+		// Not a type: typed metadata reads as no conversation in several
+		// places, and this is the person's reply.
+		action, _ := json.Marshal(map[string]any{"a2uiAction": map[string]any{
+			"messageId": monoflake.ID(src.ID).String(),
+			"surfaceId": req.SurfaceID,
+			"name":      req.Name,
+			"context":   req.Context,
+		}})
+		msg = model.Message{
+			ID:        c.idgen.NextID(),
+			CreatedAt: time.Now(),
+			TaskID:    m.ID,
+			UserID:    uid,
+			Sender:    "human",
+			Text:      text,
+			Metadata:  datatypes.JSON(action),
+		}
+		return msg, answered, nil
+	})
 	if err != nil {
 		return nil, err
-	}
-	if src.TaskID != m.ID {
-		return nil, base.ErrNotFound
-	}
-
-	var meta map[string]any
-	if json.Unmarshal(src.Metadata, &meta) != nil || meta["type"] != a2uiType {
-		return nil, &entity.A2uiActionError{Message: "this message carries no card"}
-	}
-	if meta["surfaceId"] != req.SurfaceID {
-		return nil, &entity.A2uiActionError{Message: fmt.Sprintf("this message's card is not surface %q", req.SurfaceID)}
-	}
-	if meta["answered"] != nil {
-		return nil, errA2uiAnswered
-	}
-	components := cardComponents(src.Metadata)
-	button := components[req.SourceComponentID]
-	if button["component"] != "Button" || eventOf(button)["name"] != req.Name {
-		return nil, &entity.A2uiActionError{Message: fmt.Sprintf("the card has no Button %q with action %q", req.SourceComponentID, req.Name)}
-	}
-
-	meta["answered"] = map[string]any{"name": req.Name, "at": time.Now().UTC()}
-	b, _ := json.Marshal(meta)
-	if ok, err := c.repository.AnswerMessage(ctx, req.TaskID, src.ID, b); err != nil {
-		return nil, err
-	} else if !ok {
-		return nil, errA2uiAnswered
 	}
 	c.emitEvent(ctx, entity.CRUDEvent{
 		Action:       entity.ActionMessageUpdate,
 		WorkspaceID:  req.WorkspaceID,
 		UserID:       uid,
 		ResourceType: entity.ResourceMessage,
-		ResourceID:   src.ID,
+		ResourceID:   req.MessageID,
 		Actor:        entity.ActorHuman,
 	})
-
-	text := actionText(req, button, components)
-	// Not a type: typed metadata reads as no conversation in several places,
-	// and this is the person's reply.
-	action, _ := json.Marshal(map[string]any{"a2uiAction": map[string]any{
-		"messageId": monoflake.ID(src.ID).String(),
-		"surfaceId": req.SurfaceID,
-		"name":      req.Name,
-		"context":   req.Context,
-	}})
-	msg := model.Message{
-		ID:        c.idgen.NextID(),
-		CreatedAt: time.Now(),
-		TaskID:    m.ID,
-		UserID:    uid,
-		Sender:    "human",
-		Text:      text,
-		Metadata:  datatypes.JSON(action),
-	}
-	t, err := c.postHumanMessage(ctx, req.WorkspaceID, m, msg)
+	t, err := c.humanMessagePosted(ctx, req.WorkspaceID, m, msg)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +88,28 @@ func (c *controller) SendA2uiAction(ctx context.Context, req entity.SendA2uiActi
 		ResourceID:   msg.ID,
 		Actor:        entity.ActorHuman,
 	})
-	return &entity.SendA2uiActionResponse{Task: t, MessageID: msg.ID, Text: text}, nil
+	return &entity.SendA2uiActionResponse{Task: t, MessageID: msg.ID, Text: msg.Text}, nil
+}
+
+// clickText checks a click against the card stored as metadata, and is the
+// reply it posts.
+func clickText(req entity.SendA2uiActionRequest, metadata []byte) (string, error) {
+	var meta map[string]any
+	if json.Unmarshal(metadata, &meta) != nil || meta["type"] != a2uiType {
+		return "", &entity.A2uiActionError{Message: "this message carries no card"}
+	}
+	if meta["surfaceId"] != req.SurfaceID {
+		return "", &entity.A2uiActionError{Message: fmt.Sprintf("this message's card is not surface %q", req.SurfaceID)}
+	}
+	if meta["answered"] != nil {
+		return "", errA2uiAnswered
+	}
+	components := cardComponents(metadata)
+	button := components[req.SourceComponentID]
+	if button["component"] != "Button" || eventOf(button)["name"] != req.Name {
+		return "", &entity.A2uiActionError{Message: fmt.Sprintf("the card has no Button %q with action %q", req.SourceComponentID, req.Name)}
+	}
+	return actionText(req, button, components), nil
 }
 
 var errA2uiAnswered = &entity.A2uiActionError{Message: "this card is already answered", Conflict: true}

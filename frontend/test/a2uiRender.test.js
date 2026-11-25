@@ -95,6 +95,8 @@ describe('a2ui media', () => {
   it('allows our own relative routes', () => {
     expect(isAllowedMedia('/storage/artifacts/w/t/a1')).toBe(true)
     expect(isAllowedMedia('/api/v1/workspaces/w/tasks/t/attachments/a1')).toBe(true)
+    // A dot segment that stays inside our routes is still ours.
+    expect(isAllowedMedia('/storage/x/../w/t/a1')).toBe(true)
   })
 
   it('allows a bucket link only when it is one of the message attachments', () => {
@@ -106,7 +108,8 @@ describe('a2ui media', () => {
 
   it('refuses anything else', () => {
     for (const url of ['', undefined, 3, 'http://x/y', 'javascript:alert(1)', 'data:image/png;base64,AA', '//evil.example/storage/x',
-      '/storage/../api/v1/user', '/other/x', 'storage/x']) {
+      '/storage/../api/v1/user', '/storage/%2e%2e/api/v1/user', '/storage/%2E./api/v1/user',
+      '/storage/..\\api/v1/user', '/api/v1/workspaces/%2e%2e/%2e%2e/user', '/other/x', 'storage/x']) {
       expect(isAllowedMedia(url, attachments)).toBe(false)
     }
   })

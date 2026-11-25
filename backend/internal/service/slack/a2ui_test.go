@@ -315,6 +315,43 @@ func TestBuildCardBlocksAppliesTheCardsUpdatesInOrder(t *testing.T) {
 	}
 }
 
+// Slack applies a card's data writes as the page does: null removes, a
+// removed list item takes its place, and a write just past the end appends.
+func TestBuildCardBlocksWritesTheDataModelAsThePageDoes(t *testing.T) {
+	meta := card(t, `[
+		{"version":"1.0","createSurface":{"surfaceId":"s","catalogId":"x","dataModel":{"items":["a","b","c"],"kept":"k","n":5}}},
+		{"version":"1.0","updateComponents":{"surfaceId":"s","components":[
+			{"id":"root","component":"Column","children":["items","kept","n","made"]},
+			{"id":"items","component":"List","children":{"componentId":"item","path":"/items"}},
+			{"id":"item","component":"Text","text":{"@path":""}},
+			{"id":"kept","component":"Text","text":{"@path":"/kept"}},
+			{"id":"n","component":"Text","text":{"@path":"/n"}},
+			{"id":"made","component":"Text","text":{"@path":"/n2/deep/x"}}
+		]}},
+		{"version":"1.0","updateDataModel":{"surfaceId":"s","path":"/items/0","value":null}},
+		{"version":"1.0","updateDataModel":{"surfaceId":"s","path":"/items/2","value":"d"}},
+		{"version":"1.0","updateDataModel":{"surfaceId":"s","path":"/items/9","value":"far"}},
+		{"version":"1.0","updateDataModel":{"surfaceId":"s","path":"/items/9","value":null}},
+		{"version":"1.0","updateDataModel":{"surfaceId":"s","path":"/items/x","value":"key"}},
+		{"version":"1.0","updateDataModel":{"surfaceId":"s","path":"/items/1/sub","value":"over"}},
+		{"version":"1.0","updateDataModel":{"surfaceId":"s","path":"/items/3/sub","value":"made"}},
+		{"version":"1.0","updateDataModel":{"surfaceId":"s","path":"/items/3","value":null}},
+		{"version":"1.0","updateDataModel":{"surfaceId":"s","path":"/kept/__proto__/x","value":"no"}},
+		{"version":"1.0","updateDataModel":{"surfaceId":"s","path":"/n","value":null}},
+		{"version":"1.0","updateDataModel":{"surfaceId":"s","path":"/n2/deep/x","value":"made"}}
+	]`)
+	want := strings.Join([]string{agentLine, "section: b", "section: d", "section: k", "section: made"}, "\n")
+	if got := describe(BuildCardBlocks("agent", "text", meta, taskLink)); got != want {
+		t.Errorf("blocks =\n%s\nwant\n%s", got, want)
+	}
+
+	// A null at the root clears the model to an empty object.
+	meta["messages"] = append(meta["messages"].([]any), map[string]any{"version": "1.0", "updateDataModel": map[string]any{"surfaceId": "s", "path": "/", "value": nil}})
+	if got := BuildCardBlocks("agent", "text", meta, taskLink); got != nil {
+		t.Errorf("blocks = %s, want none once the model is cleared", describe(got))
+	}
+}
+
 func TestBuildCardBlocksReadsAnEscapedPathAndAClearedModel(t *testing.T) {
 	meta := components(t, `[{"id":"root","component":"Column","children":["a","b"]},
 		{"id":"a","component":"Text","text":{"@path":"/a~1b~0c"}},

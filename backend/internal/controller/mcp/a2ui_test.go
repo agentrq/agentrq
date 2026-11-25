@@ -178,6 +178,37 @@ func TestHandleReply_AFailedPostDeletesItsFiles(t *testing.T) {
 	}
 }
 
+func TestHandleReply_ARefusedCardKeepsAFileItDidNotStore(t *testing.T) {
+	e := newA2UIReplyEnv(t)
+	// Another message's file in the task, named by an attachment with no data.
+	if _, err := storage.SaveAttachment(e.store, 100, 42, "theirs", "iVBORw0K", "image/png"); err != nil {
+		t.Fatal(err)
+	}
+	p := a2uiReplyParams(`[{"version":"1.0","createSurface":{}}]`)
+	p.Attachments = append(p.Attachments, AttachmentParam{ID: "theirs", Filename: "old.png"})
+	if res, _, _ := e.ps.handleReply(context.Background(), nil, p); !res.IsError {
+		t.Fatal("an invalid card was accepted")
+	}
+	if _, err := storage.LoadAttachment(e.store, 100, 42, "theirs"); err != nil {
+		t.Errorf("the refused reply deleted a file it never stored: %v", err)
+	}
+	if _, err := storage.LoadAttachment(e.store, 100, 42, monoflake.ID(900).String()); err == nil {
+		t.Error("the refused reply's own file is still stored")
+	}
+}
+
+func TestHandleReply_ANullUIIsNoCard(t *testing.T) {
+	for _, ui := range []string{"null", " null\n"} {
+		e := newA2UIReplyEnv(t)
+		if res, _, _ := e.ps.handleReply(context.Background(), nil, a2uiReplyParams(ui)); res.IsError {
+			t.Fatalf("ui %q: reply = %v, want it posted", ui, res.Content[0])
+		}
+		if e.replies != 1 || e.metadata != nil {
+			t.Errorf("ui %q: replies = %d, metadata = %#v; want a plain reply", ui, e.replies, e.metadata)
+		}
+	}
+}
+
 func TestHandleReply_AnInvalidTaskIDIsRefusedBeforeAnyFileIsSaved(t *testing.T) {
 	e := newA2UIReplyEnv(t)
 	p := a2uiReplyParams(a2uiTestCard)
@@ -422,6 +453,8 @@ func TestHandleElicit_CardQuestionRefusals(t *testing.T) {
 		prefix string
 	}{
 		{"no ui", func(p *ElicitParams) { p.UI = nil }, "ui is required when mode is 'a2ui'"},
+		{"a null ui", func(p *ElicitParams) { p.UI = json.RawMessage("null") }, "ui is required when mode is 'a2ui'"},
+		{"a null ui on a form", func(p *ElicitParams) { p.Mode, p.UI = "form", json.RawMessage("null") }, "requestedSchema is required when mode is 'form'"},
 		{"a schema too", func(p *ElicitParams) { p.RequestedSchema = schema }, "mode 'a2ui' takes ui, not requestedSchema or url"},
 		{"a url too", func(p *ElicitParams) { p.URL = "https://example.com" }, "mode 'a2ui' takes ui, not requestedSchema or url"},
 		{"ui on a form", func(p *ElicitParams) { p.Mode, p.RequestedSchema = "form", schema }, "ui needs mode 'a2ui'"},
