@@ -2,7 +2,7 @@
 
 `task.reply`'s `ui` is a card shown with `text`: A2UI v1.0 messages for one surface. Draw one when layout says more than prose.
 
-- **`text` stays required** and says all the card says: Slack, push, email and agents see only it.
+- **`text` stays required** and says all the card says: push, email and agents see only it.
 - **Media only as `attachment:<filename>`** of a file in the same reply's `attachments`. Links are refused.
 - Messages: `createSurface` (`surfaceId`, `catalogId` `https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json`); `updateComponents`, a flat list whose root has `id` `root`; optional `updateDataModel` (`path`, `value`), read with `{"@path": "/x"}`.
 - A refused `ui` posts nothing; the error lists why.
