@@ -5,7 +5,7 @@
 -->
 
 <script setup>
-/** Tabs: the app's segmented pills over the picked tab's child. */
+/** Tabs: the chat's toggle over the picked tab's child. */
 import { computed, ref } from 'vue'
 
 import A2uiNode from './A2uiNode.vue'
@@ -26,8 +26,8 @@ const current = computed(() => props.c.tabs[picked.value] ?? props.c.tabs[0])
 
 <template>
   <div data-test="a2ui-tabs" class="flex flex-col gap-2 min-w-0">
-    <div class="max-w-full overflow-x-auto custom-scrollbar">
-      <SegmentedControl v-model="picked" :options="options" />
+    <div class="max-w-full">
+      <SegmentedControl v-model="picked" :options="options" chat />
     </div>
     <A2uiNode :id="current.child" :key="current.child" :ctx="ctx" />
   </div>

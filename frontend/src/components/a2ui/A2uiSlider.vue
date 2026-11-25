@@ -27,10 +27,10 @@ const value = computed({
   <div data-test="a2ui-slider" class="min-w-0">
     <div class="flex items-baseline justify-between gap-3 mb-1.5">
       <label :for="id" :class="LABEL">{{ label }}</label>
-      <output :for="id" data-test="a2ui-slider-value" class="text-[12px] font-semibold tabular-nums text-gray-700 dark:text-zinc-300">{{ displayText(value) }}</output>
+      <output :for="id" data-test="a2ui-slider-value" class="text-[13px] leading-[18px] font-semibold tabular-nums text-gray-900 dark:text-zinc-100">{{ displayText(value) }}</output>
     </div>
     <input :id="id" v-model.number="value" type="range" :min="range.min" :max="range.max" :step="range.step" :disabled="readOnly"
-           :aria-describedby="error ? `${id}-error` : undefined" class="w-full accent-gray-900 dark:accent-white disabled:opacity-50" />
+           :aria-describedby="error ? `${id}-error` : undefined" class="block w-full h-4 pointer-coarse:h-10 accent-black dark:accent-white cursor-pointer disabled:cursor-default outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 dark:focus-visible:ring-white/25 rounded-full" />
     <FieldError v-if="error" :id="`${id}-error`" :message="error" />
   </div>
 </template>
