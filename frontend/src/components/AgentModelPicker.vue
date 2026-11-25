@@ -15,6 +15,7 @@
             @keydown.down.prevent="openFromKeys"
             @keydown.up.prevent="openFromKeys"
             :disabled="picker.sending.value"
+            :title="picker.selectedName.value || undefined"
             :class="compact
               ? 'text-[9px] font-medium text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-100 max-w-[140px]'
               : 'w-7 h-7 sm:w-auto sm:px-2 gap-1 justify-center rounded-md text-[10px] font-semibold bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
@@ -47,12 +48,29 @@
            ref="menu"
            :style="{ top: `${position.top}px`, left: `${position.left}px`, maxHeight: `${position.maxHeight}px` }"
            role="menu"
-           class="fixed w-[240px] overflow-y-auto bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-2xl z-50 p-2"
-           @keydown="keys.onKeydown"
+           class="fixed w-[320px] max-w-[calc(100vw-16px)] overflow-y-auto bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-2xl z-50 p-2"
+           @keydown="onMenuKeydown"
            @click.stop>
+        <!-- Pinned, so the search box stays in reach while the list scrolls. -->
+        <div class="sticky -top-2 -mx-2 -mt-2 px-2 pt-2 bg-white dark:bg-zinc-900 z-10">
         <h3 class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400 px-2 py-1.5">Model</h3>
 
-        <div v-for="group in picker.groups.value" :key="group.name || '_'">
+        <!-- A long list, as some agents report, is searched rather than
+             scrolled: the same threshold as the app's other pickers. -->
+        <input v-if="searchable"
+               ref="search"
+               v-model="query"
+               type="text"
+               placeholder="Search models"
+               aria-label="Search models"
+               autocomplete="off"
+               spellcheck="false"
+               class="w-full mb-1 px-2 py-1.5 text-[11px] bg-gray-50 dark:bg-zinc-800/60 border border-gray-200 dark:border-zinc-700 rounded-md text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-500 outline-none focus:border-gray-400 dark:focus:border-zinc-500" />
+        </div>
+
+        <p v-if="shownGroups.length === 0" class="px-2 py-1.5 text-[11px] text-gray-400 dark:text-zinc-500">No match</p>
+
+        <div v-for="group in shownGroups" :key="group.name || '_'">
           <p v-if="group.name" class="text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-600 px-2 pt-2 pb-1">
             {{ group.name }}
           </p>
@@ -65,7 +83,8 @@
                     ? 'bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-white'
                     : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800/60'"
                   class="w-full text-left px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-2 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-gray-400 dark:focus-visible:ring-zinc-500">
-            <span class="truncate grow">{{ model.name || model.id }}</span>
+            <!-- Wrapped, never cut: a suffix is often what tells two models apart. -->
+            <span class="grow min-w-0 wrap-anywhere">{{ model.name || model.id }}</span>
             <span v-if="model.id === picker.selectedId.value" class="shrink-0 text-[9px]">●</span>
           </button>
         </div>
@@ -88,9 +107,10 @@
  * mounted component can own: the menu's open state, where it currently sits,
  * and the clock that gives up on a switch nothing confirmed.
  */
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { MAX_POPOVER_HEIGHT, popoverPosition, useAgentModelPicker } from '../composables/useAgentModelPicker';
+import { MAX_POPOVER_HEIGHT, filterModelGroups, popoverPosition, useAgentModelPicker } from '../composables/useAgentModelPicker';
+import { SEARCH_THRESHOLD } from '../composables/usePicker';
 import { useMenuKeyboard } from '../composables/useMenuKeyboard';
 import { useToasts } from '../composables/useToasts';
 import { setAgentModel } from '../api';
@@ -105,6 +125,8 @@ const props = defineProps({
 const open = ref(false);
 const trigger = ref(null);
 const menu = ref(null);
+const search = ref(null);
+const query = ref('');
 const position = ref({ top: 0, left: 0, maxHeight: MAX_POPOVER_HEIGHT });
 const { addToast } = useToasts();
 
@@ -112,6 +134,9 @@ const picker = useAgentModelPicker({
   workspace: () => props.workspace,
   selectModel: (modelId) => setAgentModel(props.workspace?.id, modelId),
 });
+
+const searchable = computed(() => (props.workspace?.agentModels?.models?.length || 0) > SEARCH_THRESHOLD);
+const shownGroups = computed(() => filterModelGroups(picker.groups.value, query.value));
 
 /**
  * Measure, then place.
@@ -135,8 +160,32 @@ async function place() {
 async function toggle() {
   open.value = !open.value;
   if (!open.value) return;
+  query.value = '';
   await place();
-  keys.focusChecked();
+  if (searchable.value) search.value?.focus();
+  else keys.focusChecked();
+}
+
+// A shorter list moves the menu, which may be opening upward from the button.
+watch(query, () => {
+  if (open.value) place();
+});
+
+/**
+ * In the search box, letters are typed rather than jumped to; Enter picks the
+ * first match, and the arrows, Escape and Tab do what they do in the list.
+ */
+function onMenuKeydown(event) {
+  if (event.target === search.value) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const first = shownGroups.value[0]?.models[0];
+      if (first) pick(first.id);
+      return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Escape', 'Tab'].includes(event.key)) return;
+  }
+  keys.onKeydown(event);
 }
 
 const keys = useMenuKeyboard({
