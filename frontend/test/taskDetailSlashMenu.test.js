@@ -190,3 +190,15 @@ describe('the reply box\'s # menu', () => {
     expect(input.value).toBe('deploy to staging')
   })
 })
+
+describe('pasting into the reply box', () => {
+  it('attaches a screenshot from the clipboard', async () => {
+    const view = await mount()
+    const e = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(e, 'clipboardData', { value: { types: ['Files'], files: [new File(['png'], 'image.png', { type: 'image/png' })] } })
+    view.composer().dispatchEvent(e)
+    await settle()
+    expect(e.defaultPrevented).toBe(true)
+    expect(view.el.textContent).toMatch(/pasted-\d{8}-\d{6}\.png/)
+  })
+})

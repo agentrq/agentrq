@@ -25,6 +25,7 @@ import TaskOptionsTools from '../components/TaskOptionsTools.vue'
 import TaskAttachmentChips from '../components/TaskAttachmentChips.vue'
 import DeleteModal from '../components/DeleteModal.vue'
 import { renderMarkdown } from '../utils/markdown'
+import { pasteFiles } from '../utils/pasteFiles'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useToasts } from '../composables/useToasts'
 import { useEventBus } from '../useEventBus'
@@ -290,6 +291,7 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
         <ComposerBox v-model="chatMessage" data-test="pano-chat-input" dir="auto" :input-ref="(el) => { chatInput = el }"
           @keydown.meta.enter.prevent="sendChat" @keydown.ctrl.enter.prevent="sendChat"
           @input="onChatInput" @click="onChatInput" @keydown="onChatKey" @blur="docMention = null"
+          @paste="pasteFiles($event, chatOpts.processFiles)"
           :disabled="!chatOnline || chatSending"
           :placeholder="chatOnline ? `Ask ${supervisor.name} about the Pano, # to tag a doc... (Cmd ⌘ + Enter to send)` : 'Connect your supervisor agent to start chatting'"
           :send-disabled="!chatOnline || !chatMessage.trim() || chatSending">

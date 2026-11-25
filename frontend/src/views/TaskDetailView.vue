@@ -821,6 +821,7 @@
           @keydown.meta.enter="submitReply"
           @keydown.ctrl.enter="submitReply"
           @keydown="onComposerKeydown"
+          @paste="pasteFiles($event, processFiles)"
           :disabled="offline || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
           :placeholder="offline ? 'Offline — reconnect to reply' : agentWorking ? workingPlaceholder() : ((!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions... (Cmd ⌘ + Enter to send)')"
           :send-title="agentWorking ? 'Queue this message until the agent finishes' : 'Send Message'"
@@ -1089,6 +1090,7 @@ import ComposerBox from '../components/ComposerBox.vue';
 import ComposerNotice from '../components/ComposerNotice.vue';
 import { foldReactions, summarizeReactions, emojiKeyboardHint, openEmojiKeyboard } from '../composables/useEmojiReactions';
 import { insertAtCursor } from '../utils/insertAtCursor';
+import { pasteFiles } from '../utils/pasteFiles';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 import TaskTimeline from '../components/TaskTimeline.vue';
 import {

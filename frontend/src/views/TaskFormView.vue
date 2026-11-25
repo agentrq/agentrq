@@ -92,6 +92,7 @@
           <textarea v-model="bodyRef"
                     ref="bodyInput"
                     @keydown="onDescriptionKeydown"
+                    @paste="pasteFiles($event, opts.processFiles)"
                     placeholder="Provide detailed context or instructions..." 
                     class="w-full px-4 pt-3 pb-2 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-y min-h-[160px] custom-scrollbar"
                     required></textarea>
@@ -155,6 +156,7 @@ import { useInlineSkillMenu } from '../composables/useSlashCommands';
 import { usePresetMenu } from '../composables/usePresets';
 import { useComposerFit } from '../composables/useComposerFit';
 import ResizeHandle from '../components/ResizeHandle.vue';
+import { pasteFiles } from '../utils/pasteFiles';
 
 const route = useRoute();
 const router = useRouter();
