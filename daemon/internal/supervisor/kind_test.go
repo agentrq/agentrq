@@ -6,6 +6,7 @@ package supervisor
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -192,7 +193,7 @@ func TestIdentifiersThatCouldBecomeFlagsOrWorseAreRefused(t *testing.T) {
 		"--dangerously-skip-permissions", "-x", // would be read as flags
 		"a b", "a;b", "a|b", "a&b", "$(id)", "`id`", // shell-shaped, refused anyway
 		"a\nb", "a\x00b", // control characters
-		"../escape", "a/b", // path-shaped
+		"../escape", "/abs", // path-shaped
 		strings.Repeat("a", 200), // absurd length
 	}
 	for _, v := range bad {
@@ -208,6 +209,29 @@ func TestIdentifiersThatCouldBecomeFlagsOrWorseAreRefused(t *testing.T) {
 	// an empty string is how "nobody chose one" arrives.
 	if _, err := Resolve(KindACPGateway, Params{Model: "", Agent: "a"}); err != nil {
 		t.Errorf("Resolve refused an absent model: %v", err)
+	}
+}
+
+// Gateways name models `provider/model:variant`, and the launch form offers
+// those ids from the agent's own list, so a launch with one must start
+// (#1421). The agent stays an identifier.
+func TestModelIdsTheGatewayReportsAreAccepted(t *testing.T) {
+	for _, model := range []string{
+		"openrouter/anthropic/claude-haiku-5.5", "Qwen/Qwen3-Coder", "llama3.2:latest",
+		"openrouter/meta/llama:free", "model@2026-01-01", "a+b", "gemini-3.8-flash-high",
+	} {
+		cmd, err := Resolve(KindACPGateway, Params{Model: model, Agent: "a"})
+		if err != nil {
+			t.Errorf("Resolve refused gateway model=%q: %v", model, err)
+		} else if !slices.Contains(cmd.Argv, model) {
+			t.Errorf("argv %q does not pass model %q", cmd.Argv, model)
+		}
+		if _, err := Resolve(KindClaudeCode, Params{Model: model, Workspace: "w", ServerName: "s"}); err != nil {
+			t.Errorf("Resolve refused claude-code model=%q: %v", model, err)
+		}
+	}
+	if _, err := Resolve(KindACPGateway, Params{Agent: "a/b"}); !errors.Is(err, ErrBadParameter) {
+		t.Errorf("Resolve accepted agent=%q, error = %v", "a/b", err)
 	}
 }
 

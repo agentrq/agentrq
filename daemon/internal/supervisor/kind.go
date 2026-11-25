@@ -72,6 +72,12 @@ type Params struct {
 // a value into an instruction.
 var safeParam = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
+// safeModel is what a *model id* may contain: safeParam plus `:`, `/`, `@`
+// and `+`, because gateways name models `provider/model:variant`, and the
+// launch form offers exactly those ids from the agent's own list (#1421).
+// It still starts with a letter or digit, so it never arrives as a flag.
+var safeModel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$`)
+
 // safeName is what a *display name* may contain.
 //
 // Wider than safeParam, and it has to be: a workspace is called "Terminal
@@ -104,14 +110,14 @@ func checkParam(field, value string) error {
 	return check(safeParam, field, value)
 }
 
-// checkOptionalParam validates an identifier's shape only when one was given.
+// checkOptionalModel validates a model id's shape only when one was given.
 // A field that is not mandatory must not gain a mandatory shape the moment
 // it is empty.
-func checkOptionalParam(field, value string) error {
+func checkOptionalModel(value string) error {
 	if value == "" {
 		return nil
 	}
-	return checkParam(field, value)
+	return check(safeModel, "model", value)
 }
 
 // checkName validates a human-chosen name.
@@ -162,7 +168,7 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		if err := checkParam("serverName", p.ServerName); err != nil {
 			return Command{}, err
 		}
-		if err := checkOptionalParam("model", p.Model); err != nil {
+		if err := checkOptionalModel(p.Model); err != nil {
 			return Command{}, err
 		}
 		if p.Effort != "" && !claudeEfforts[p.Effort] {
@@ -218,7 +224,7 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		// Model is the gateway's own default when none is given — only the
 		// agent picks which process runs at all, so it is the one parameter
 		// this daemon can't leave unresolved.
-		if err := checkOptionalParam("model", p.Model); err != nil {
+		if err := checkOptionalModel(p.Model); err != nil {
 			return Command{}, err
 		}
 		if p.Effort != "" && !claudeEfforts[p.Effort] {

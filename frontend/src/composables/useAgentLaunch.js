@@ -349,6 +349,12 @@ export function rememberLaunchChoice(workspaceId, { machineId, kind, params }) {
 const SAFE_PARAM = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 
 /**
+ * What the daemon accepts as a model id, mirroring its `safeModel`: wider than
+ * a name, since gateways list models as `provider/model:variant` (#1421).
+ */
+const SAFE_MODEL = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$/
+
+/**
  * Whether an agent can be started for this workspace, and if not, why.
  *
  * The reason is the useful half. "Cannot launch" tells somebody they are
@@ -484,7 +490,12 @@ export function machineEligibility(machine) {
 }
 
 const BAD_SHAPE_REASON = (field) =>
-  `That ${field} has characters the daemon will not accept: letters, digits, dot, dash and underscore, starting with a letter or digit.`
+  field === 'model'
+    ? 'That model has characters the daemon will not accept: letters, digits and . _ - : / @ +, starting with a letter or digit.'
+    : `That ${field} has characters the daemon will not accept: letters, digits, dot, dash and underscore, starting with a letter or digit.`
+
+/** Whether `value` is a shape the daemon accepts for `field`. */
+const safeShape = (field, value) => (field === 'model' ? SAFE_MODEL : SAFE_PARAM).test(value)
 
 /**
  * Whether the machine says installing `agent` downloads a binary the ACP
@@ -510,13 +521,13 @@ export function paramsEligibility(kind, params, agents = []) {
   for (const field of spec.needs) {
     const value = (params?.[field] ?? '').trim()
     if (!value) return { ok: false, reason: `${spec.label} needs a ${field}.` }
-    if (!SAFE_PARAM.test(value)) return { ok: false, reason: BAD_SHAPE_REASON(field) }
+    if (!safeShape(field, value)) return { ok: false, reason: BAD_SHAPE_REASON(field) }
   }
   // Optional fields are validated the same way when given, and skipped
   // entirely when not — leaving one blank is how "no preference" arrives.
   for (const field of spec.optional) {
     const value = (params?.[field] ?? '').trim()
-    if (value && !SAFE_PARAM.test(value)) return { ok: false, reason: BAD_SHAPE_REASON(field) }
+    if (value && !safeShape(field, value)) return { ok: false, reason: BAD_SHAPE_REASON(field) }
   }
   if (kind === 'acp-gateway' && isUnverifiedAgent(agents, params?.agent) && !params?.allowUnverified) {
     return { ok: false, reason: 'Confirm installing this agent without a checksum.' }
