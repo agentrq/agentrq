@@ -13,12 +13,17 @@
  * What the person enters stays in the card's own data model; a Button's
  * click is emitted as `action`, for the page to send. Once the card is
  * answered it is read-only, its chosen Button marked.
+ *
+ * A reply's card the agent updates in place is patched, never drawn again:
+ * a value the agent left alone keeps what the person entered there, and
+ * what it changed is marked for a moment.
  */
-import { computed, reactive, shallowRef, watch, watchEffect } from 'vue'
+import { computed, reactive, shallowRef, toRaw, watch, watchEffect } from 'vue'
 
 import A2uiNode from './A2uiNode.vue'
 import MarkdownBody from '../MarkdownBody.vue'
 import { cardAnswer } from '../../a2ui/interact.js'
+import { patchSurface } from '../../a2ui/live.js'
 import { loadSurface, surfaceContext } from '../../a2ui/surface.js'
 
 const props = defineProps({
@@ -34,16 +39,26 @@ const props = defineProps({
 })
 const emit = defineEmits(['action'])
 
+const ui = reactive({ answered: null, readOnly: false, busy: false, changes: null, send: (action) => emit('action', action) })
+
 // Loaded again only when the card itself changes: a task refreshed while the
 // person types must not wipe what they entered.
 const surface = shallowRef(null)
+// The data model as the agent last left it, apart from the person's edits.
+let agentModel = null
 watch(
   () => JSON.stringify([props.metadata?.messages, props.metadata?.content?.dataModel, props.metadata?.type]),
-  () => { surface.value = loadSurface(props.metadata, { interactive: true }) },
+  () => {
+    const next = loadSurface(props.metadata, { interactive: true })
+    // Only a reply's card is updated in place; a question's changes when answered.
+    const changes = props.metadata?.type === 'a2ui' ? patchSurface(surface.value, agentModel, next) : null
+    if (!changes) surface.value = next
+    else if (changes.paths.length || changes.ids.length) ui.changes = changes
+    agentModel = next && structuredClone(toRaw(next.dataModel))
+  },
   { immediate: true },
 )
 
-const ui = reactive({ answered: null, readOnly: false, busy: false, send: (action) => emit('action', action) })
 watchEffect(() => {
   ui.answered = cardAnswer(props.metadata)
   ui.readOnly = props.readOnly || !!ui.answered
