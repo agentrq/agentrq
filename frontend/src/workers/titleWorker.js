@@ -3,15 +3,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 import { pipeline, env } from '@huggingface/transformers';
+import { titleMessages, cleanTitle } from '../utils/titlePrompt.js';
 
 // Skip local check, we'll fetch from HF Hub using WASM
 env.allowLocalModels = false;
 
-// Google FLAN-T5-base (248M parameters).
-const MODEL_NAME = 'Xenova/flan-t5-base';
+// AgentRQ's own title model: IBM Granite 4.0 350M (Apache-2.0) fine-tuned for
+// task titles, Apache-2.0. Its 4-bit export uses only operators both
+// onnxruntime-web backends have, so one file runs on WebGPU and on WASM.
+const MODEL_NAME = 'agentrq/task-title-350m-ONNX';
 
 class TitleGenerationPipeline {
-  static task = 'text2text-generation';
+  static task = 'text-generation';
   static model = MODEL_NAME;
   static instance = null;
 
@@ -19,7 +22,9 @@ class TitleGenerationPipeline {
     if (this.instance === null) {
       this.instance = await pipeline(this.task, this.model, {
         progress_callback,
-        device: 'wasm', // We prefer WASM for broad compatibility, though webgpu is possible
+        // WebGPU where the browser has a GPU adapter, else WASM; same file.
+        device: (await self.navigator?.gpu?.requestAdapter?.()) ? 'webgpu' : 'wasm',
+        dtype: 'q4',
       });
     }
     return this.instance;
@@ -35,23 +40,12 @@ self.addEventListener('message', async (e) => {
         self.postMessage({ id, type: 'PROGRESS', data: x });
       });
 
-      // Format the prompt for FLAN-T5
-      const prompt = `Write a very short, concise task title (max 6 words) for the following task description:\n\n${data.text}`;
-
-      const output = await generator(prompt, {
-        max_new_tokens: 15,
-        temperature: 0.3, // Low temperature for deterministic/focused titles
-        repetition_penalty: 1.2,
+      const output = await generator(titleMessages(data.text), {
+        max_new_tokens: 20,
+        do_sample: false,
       });
 
-      let title = output[0].generated_text.trim();
-
-      // Cleanup common artifacts if the model gets chatty (e.g. "Title: ...", "Task Title: ...")
-      title = title
-        .replace(/^(Task\s+)?Title:\s*/i, '')
-        .replace(/^Task\s+Title\s+/i, '')
-        .replace(/^"|"$/g, '')
-        .trim();
+      const title = cleanTitle(output[0].generated_text.at(-1).content);
 
       self.postMessage({ id, type: 'SUCCESS', data: { title } });
     } catch (error) {

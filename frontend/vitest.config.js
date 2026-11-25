@@ -184,6 +184,7 @@ export default defineConfig({
         'src/utils/publicStats.js',
         'src/utils/hooks.js',
         'src/utils/circuitBreaker.js',
+        'src/utils/titlePrompt.js',
         'src/components/EventsTabs.vue',
         'src/components/HookRegistrationForm.vue',
         'src/views/HooksView.vue',
