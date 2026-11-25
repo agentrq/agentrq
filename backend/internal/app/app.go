@@ -598,6 +598,7 @@ func New(cfg Config) (*App, error) {
 				}
 				return err
 			},
+			agentTasks{repo: repo, pubsub: pubsubSvc, bus: bus, ids: ids, workspaceID: workspaceID, owner: workspaceOwner}.editMessage,
 			func(ctx context.Context, tools []string) error {
 				return crudCtrl.UpdateWorkspaceAutoAllowedTools(ctx, entity.UpdateWorkspaceAutoAllowedToolsRequest{
 					WorkspaceID: workspace.ID,

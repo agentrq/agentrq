@@ -44,7 +44,7 @@ func startSessionProcess(t *testing.T, tokens auth.TokenService) *sessionProcess
 	}).AnyTimes()
 	ps := NewWorkspaceServer(
 		1, 0, "user-1", "http://localhost",
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, tokens, bus,
 	)
 	t.Cleanup(ps.Close)
