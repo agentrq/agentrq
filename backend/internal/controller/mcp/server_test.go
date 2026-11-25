@@ -26,6 +26,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	"github.com/agentrq/agentrq/backend/internal/service/taskinstruction"
 	"github.com/golang/mock/gomock"
 	"github.com/mustafaturan/monoflake"
 )
@@ -751,6 +752,9 @@ func TestWorkspaceServer_HandleGetTask_NextTask(t *testing.T) {
 	if !contains(text, "Next assigned task:") || !contains(text, "ID: "+monoflake.ID(42).String()) || contains(text, "Title:") {
 		t.Errorf("unexpected content: %s", text)
 	}
+	if !contains(text, taskinstruction.Start(monoflake.ID(42).String())+"\nDetails: Test Body") {
+		t.Errorf("expected the steps to start the task before its body: %s", text)
+	}
 
 	// Case 1b: Success with attachments
 	ps.getNextTask = func(ctx context.Context) (model.Task, error) {
@@ -832,6 +836,9 @@ func TestWorkspaceServer_HandleGetTask_ByID(t *testing.T) {
 	}
 	if contains(text, "Conversation:") {
 		t.Errorf("did not expect conversation without includeConversation: %s", text)
+	}
+	if contains(text, "Before anything else:") {
+		t.Errorf("a task fetched by its ID is not handed over, so it carries no steps to start it: %s", text)
 	}
 
 	// Case 2: fetch by id, with conversation

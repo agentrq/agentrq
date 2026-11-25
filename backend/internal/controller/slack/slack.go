@@ -24,6 +24,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
+	"github.com/agentrq/agentrq/backend/internal/service/taskinstruction"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 )
@@ -681,7 +682,8 @@ func (c *controller) HandleSlashCommand(ctx context.Context, channelID string, t
 		}
 
 		if shouldNotifyMCP {
-			content := fmt.Sprintf("[Task %s]\n%s", monoflake.ID(resp.Task.ID).String(), c.mcp.AgentTaskBody(ctx, link.WorkspaceID, ownerID, resp.Task.ID, resp.Task.AgentNoteID, resp.Task.Body))
+			taskID := monoflake.ID(resp.Task.ID).String()
+			content := fmt.Sprintf("[Task %s]%s\n%s", taskID, taskinstruction.Start(taskID), c.mcp.AgentTaskBody(ctx, link.WorkspaceID, ownerID, resp.Task.ID, resp.Task.AgentNoteID, resp.Task.Body))
 			if atts := formatSlackAttachments(resp.Task.Attachments); atts != "" {
 				content += "\n" + atts
 			}

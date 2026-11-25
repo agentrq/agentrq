@@ -11,6 +11,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/mcp"
+	"github.com/agentrq/agentrq/backend/internal/service/taskinstruction"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -78,7 +79,7 @@ func TestPollOnceHandsTheAgentTheNotes(t *testing.T) {
 		t.Errorf("recorded %v, want %v", *recorded, want)
 	}
 
-	want := fmtTask(7, "Next assigned task:\n"+taskIDLine(model.Task{ID: 7})+"\nDetails: Do it.\n\n"+testNotes)
+	want := fmtTask(7, "Next assigned task:\n"+taskIDLine(model.Task{ID: 7})+taskinstruction.Start(monoflake.ID(7).String())+"\nDetails: Do it.\n\n"+testNotes)
 	if len(l.tasks) != 1 || l.tasks[0] != want {
 		t.Fatalf("the link got %q, want %q", l.tasks, want)
 	}

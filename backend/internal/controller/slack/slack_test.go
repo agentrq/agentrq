@@ -20,6 +20,7 @@ import (
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	mock_repo "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
+	"github.com/agentrq/agentrq/backend/internal/service/taskinstruction"
 	"github.com/golang/mock/gomock"
 	"github.com/mustafaturan/monoflake"
 	slackapi "github.com/slack-go/slack"
@@ -321,7 +322,7 @@ func TestHandleSlashCommand_Success_QuotedBoth(t *testing.T) {
 	}
 	// The agent is handed the task by ID and body, then the workspace's notes,
 	// which are not stored with it; the title stays out.
-	if want := "[Task " + monoflake.ID(7).String() + "]\nDescription goes in second quotes here\n\nKeep me posted."; mcp.pushed != want {
+	if want := "[Task " + monoflake.ID(7).String() + "]" + taskinstruction.Start(monoflake.ID(7).String()) + "\nDescription goes in second quotes here\n\nKeep me posted."; mcp.pushed != want {
 		t.Errorf("pushed %q, want %q", mcp.pushed, want)
 	}
 	// Through the workspace's server, which records the notes it hands over.

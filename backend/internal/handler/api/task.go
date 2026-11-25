@@ -23,6 +23,7 @@ import (
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/eventinstruction"
+	"github.com/agentrq/agentrq/backend/internal/service/taskinstruction"
 	"github.com/gofiber/fiber/v3"
 	"github.com/mustafaturan/monoflake"
 )
@@ -174,12 +175,18 @@ func (h *handler) agentHasRoom(ctx context.Context, workspaceID int64, userID st
 // taskPushContent is the line an agent is handed a task with: its ID and body.
 // The title is left out, since a browser's local model may have written it.
 func taskPushContent(t entity.Task) string {
-	return "[Task " + monoflake.ID(t.ID).String() + "]\n" + t.Body
+	id := monoflake.ID(t.ID).String()
+	return "[Task " + id + "]" + taskinstruction.Start(id) + "\n" + t.Body
 }
 
 // reassignedTaskContent tells the agent a task is now its own, by its ID.
+// A not started one comes with the steps to start it.
 func reassignedTaskContent(t entity.Task) string {
-	return "[Task reassigned to agent] " + monoflake.ID(t.ID).String()
+	id := monoflake.ID(t.ID).String()
+	if t.Status == "notstarted" {
+		return "[Task reassigned to agent] " + id + taskinstruction.Start(id)
+	}
+	return "[Task reassigned to agent] " + id
 }
 
 // pushTaskToAgent hands a task to the workspace's agent now, rather than on
