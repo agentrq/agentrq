@@ -115,6 +115,7 @@ export default defineConfig({
         'src/composables/useSkills.js',
         'src/composables/usePano.js',
         'src/composables/useTaskOptions.js',
+        'src/composables/useComposerFit.js',
         'src/composables/useTaskPlan.js',
         'src/components/TaskPlanPanel.vue',
         'src/composables/useTaskLinks.js',

@@ -26,14 +26,14 @@
       </div>
     </header>
 
-    <main class="flex-1 overflow-y-auto pt-8 @min-[48rem]:pt-16 pb-24 px-1 @min-[40rem]:px-2 @min-[48rem]:px-4 scroll-smooth custom-scrollbar flex items-start justify-center"
+    <main ref="scroller" class="flex-1 overflow-y-auto pt-8 @min-[48rem]:pt-16 pb-24 px-1 @min-[40rem]:px-2 @min-[48rem]:px-4 scroll-smooth custom-scrollbar flex items-start justify-center"
           @dragover.prevent="isDragging = true"
           @dragleave.prevent="isDragging = false"
           @drop.prevent="handleDrop">
       
       <!-- Wide enough that the toolbar, with a long model name in it, keeps
            the send button on the same row. -->
-      <div class="w-full max-w-5xl space-y-4">
+      <div ref="formColumn" :class="['w-full space-y-4', expanded ? 'max-w-none' : 'max-w-5xl']" :style="formWidth ? { maxWidth: `${formWidth}px` } : null">
         
         <h1 class="text-xl @min-[48rem]:text-3xl font-black text-gray-800 dark:text-zinc-200 tracking-tight text-center mb-8">
           {{ isEditMode ? 'Edit Task' : 'What do you want to achieve?' }}
@@ -47,6 +47,14 @@
 
         <form id="taskForm" @submit.prevent="isEditMode ? submitEditProtocol() : submitHumanTask()" 
               class="flex flex-col bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-xl focus-within:border-gray-900 dark:focus-within:border-white focus-within:ring-0 transition-all shadow-xl relative overflow-visible z-10">
+
+          <!-- Its edges widen the form only when dragged, both sides at once so
+               it stays centred; a double-click gives the page's width back.
+               A width of 0 makes each report how far its edge moved. -->
+          <ResizeHandle v-for="edge in ['left', 'right']" :key="edge" :edge="edge" :width="0"
+                        v-model:dragging="resizingWidth"
+                        :class="['hidden @min-[48rem]:flex', edge === 'left' ? '-left-4' : '-right-4']"
+                        @resize="resizeWidth" @reset="resetWidth" />
           
           <!-- Auto-generated Title Input (Top edge) -->
           <div class="px-4 pt-3 pb-1 border-b border-gray-100 dark:border-zinc-800/50 flex items-center gap-2 group relative">
@@ -66,6 +74,18 @@
                <svg v-if="isGenerating" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
                <svg v-else class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 21l-.813-5.096L3 15l5.188-.813L9 9l.813 5.187L15 15l-5.187.813zM19.071 4.929l-.571 3.571-3.571.571 3.571.571.571 3.571.571-3.571 3.571-.571-3.571-.571-.571-3.571z" /></svg>
             </button>
+
+            <!-- Widens the form to the page and gives the description all the
+                 height left; dragging the form's edges sets a width instead. -->
+            <button type="button" @click="toggleExpanded(); tooltipStore.hide()"
+                    :aria-label="expanded ? 'Restore editor size' : 'Expand editor'"
+                    :aria-pressed="expanded"
+                    @mouseenter="tooltipStore.show($event, expanded ? 'Restore editor size' : 'Expand editor', 'top')"
+                    @mouseleave="tooltipStore.hide()"
+                    class="p-1 hover:bg-gray-100 dark:hover:bg-zinc-850 rounded text-gray-450 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-100 transition-all shrink-0">
+               <svg v-if="expanded" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25" /></svg>
+               <svg v-else class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
+            </button>
           </div>
 
           <!-- Description Textarea -->
@@ -73,7 +93,7 @@
                     ref="bodyInput"
                     @keydown="onDescriptionKeydown"
                     placeholder="Provide detailed context or instructions..." 
-                    class="w-full px-4 pt-3 pb-2 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-none min-h-[160px] custom-scrollbar"
+                    class="w-full px-4 pt-3 pb-2 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-y min-h-[160px] custom-scrollbar"
                     required></textarea>
 
           <!-- The workspace's skills, offered as a word starts with `/`. -->
@@ -133,6 +153,8 @@ import TaskAttachmentChips from '../components/TaskAttachmentChips.vue';
 import SlashCommandMenu from '../components/SlashCommandMenu.vue';
 import { useInlineSkillMenu } from '../composables/useSlashCommands';
 import { usePresetMenu } from '../composables/usePresets';
+import { useComposerFit } from '../composables/useComposerFit';
+import ResizeHandle from '../components/ResizeHandle.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -201,6 +223,17 @@ function onDescriptionKeydown(event) {
 }
 
 const bodyInput = ref(null);
+
+const scroller = ref(null);
+const formColumn = ref(null);
+const {
+  expanded,
+  toggleExpanded,
+  width: formWidth,
+  dragging: resizingWidth,
+  resize: resizeWidth,
+  reset: resetWidth,
+} = useComposerFit({ el: bodyInput, container: scroller, content: formColumn, text: bodyRef });
 
 const slashMenu = useInlineSkillMenu({ text: bodyRef, workspaceId, el: bodyInput });
 
