@@ -88,7 +88,10 @@ deaf after a long deploy instead of starting over.
 
 A POST whose call is still unanswered sends an SSE comment every 25 s. Keep
 it: `elicit` waits up to an hour, and a silent connection is dropped by Bun's
-fetch (Claude Code) at five minutes and by proxies sooner.
+fetch (Claude Code) at five minutes and by proxies sooner. A call that named a
+`progressToken` gets a `notifications/progress` instead: Claude Code also
+aborts a call with no response or progress for five minutes, and a comment is
+neither.
 
 coremcp is stateless and does serve 2026-07-28 — it pushes nothing, so it has
 no stream to lose. The two servers differ on purpose; see
