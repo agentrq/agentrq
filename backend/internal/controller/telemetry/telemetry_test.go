@@ -600,6 +600,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionA2UIAction, model.ActionIDA2UIAction, "a2ui action"},
 		{entity.ActionA2UIElicit, model.ActionIDA2UIElicit, "a2ui elicit"},
 		{entity.ActionA2UIUpdate, model.ActionIDA2UIUpdate, "a2ui update"},
+		{entity.ActionA2UISlack, model.ActionIDA2UISlack, "a2ui slack"},
 	}
 
 	for _, tc := range cases {

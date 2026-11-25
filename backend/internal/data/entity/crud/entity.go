@@ -1937,6 +1937,9 @@ const (
 	// An agent's reply that updated a card already in the task instead of
 	// posting one. Backend-emitted: the server merged and stored it.
 	ActionA2UIUpdate Action = 146
+	// An agent's card posted to the task's Slack thread as Block Kit rather
+	// than as its text. Backend-emitted: the server posted it.
+	ActionA2UISlack Action = 147
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2233,6 +2236,8 @@ func (a Action) String() string {
 		return "a2ui_elicit"
 	case ActionA2UIUpdate:
 		return "a2ui_update"
+	case ActionA2UISlack:
+		return "a2ui_slack"
 	}
 	return "unknown"
 }

@@ -153,6 +153,9 @@ func interactionsHandler(svc slacksvc.Service, ctrl slackctrl.Controller) http.H
 		w.WriteHeader(http.StatusOK)
 
 		for _, act := range interaction.Actions {
+			if act.ActionID == slacksvc.OpenActionID {
+				continue // a card's link to the task: Slack opened it
+			}
 			action := slackctrl.SlackBlockAction{
 				ActionID:  act.ActionID,
 				ChannelID: interaction.Channel.ID,

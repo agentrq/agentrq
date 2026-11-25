@@ -279,19 +279,10 @@ func BuildTaskBlocks(workspaceID, taskID, title, body string, needsApproval bool
 
 // BuildMessageBlocks builds a simple text thread-reply block.
 func BuildMessageBlocks(sender, text string) []slackapi.Block {
-	prefix := ""
-	switch sender {
-	case "agent":
-		prefix = "🤖 *Agent:* "
-	case "human":
-		prefix = "👤 *Human:* "
-	default:
-		prefix = fmt.Sprintf("👤 *%s:* ", sender)
-	}
 	return []slackapi.Block{
 		slackapi.NewSectionBlock(
 			slackapi.NewTextBlockObject(slackapi.MarkdownType,
-				prefix+escapeMarkdown(text), false, false),
+				senderPrefix(sender)+escapeMarkdown(text), false, false),
 			nil, nil,
 		),
 	}
