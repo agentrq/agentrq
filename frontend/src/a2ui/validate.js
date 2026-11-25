@@ -25,7 +25,7 @@ const FUNCTION_NAMES = new Set([
 
 export const DISPLAY_COMPONENTS = ['Text', 'Image', 'Icon', 'Video', 'AudioPlayer', 'Row', 'Column', 'List', 'Card', 'Tabs', 'Divider']
 export const INTERACTIVE_COMPONENTS = ['Button', 'TextField', 'CheckBox', 'ChoicePicker', 'Slider', 'DateTimeInput', 'Modal']
-export const AGENTRQ_COMPONENTS = ['Chart']
+export const AGENTRQ_COMPONENTS = ['Chart', 'Progress']
 export const MAX_CHART_POINTS = 744
 
 // --- value shapes -----------------------------------------------------------
@@ -129,6 +129,7 @@ const COMPONENTS = {
     variant: oneOf('line', 'bar', 'heatmap'), label: DS, color: (v) => isString(v) && /^(tasks|messages|#[0-9a-fA-F]{6})$/.test(v),
     data: (v) => isBinding(v) || (listOf(POINT)(v) && v.length <= MAX_CHART_POINTS),
   }, ['data']],
+  Progress: [{ label: DS, value: dynamic((v) => isNumber(v) && v >= 0), max: dynamic((v) => isNumber(v) && v > 0) }, ['value']],
 }
 
 const MEDIA = { Image: ['url'], Video: ['url', 'posterUrl'], AudioPlayer: ['url'] }

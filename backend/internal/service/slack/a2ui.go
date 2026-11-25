@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
@@ -195,6 +196,8 @@ func (d *cardDrawer) draw(id string, scope []string, depth int) {
 		}
 	case "Chart":
 		d.chart(c, scope)
+	case "Progress":
+		d.progress(c, scope)
 	case "Icon":
 		// Decoration only.
 	default:
@@ -231,6 +234,42 @@ func (d *cardDrawer) chart(c map[string]any, scope []string) {
 		lines = append([]string{"*" + escapeMarkdown(title) + "*"}, lines...)
 	}
 	d.items = append(d.items, cardItem{kind: itemText, text: strings.Join(lines, "\n")})
+}
+
+// progressCells is how many cells a Progress bar is drawn with.
+const progressCells = 10
+
+// progress draws a Progress as its label over a bar of cells and its
+// percent, value of max (100 when left out) clamped to 0–100%.
+func (d *cardDrawer) progress(c map[string]any, scope []string) {
+	var lines []string
+	if label := strings.TrimSpace(d.str(c["label"], scope)); label != "" {
+		lines = append(lines, "*"+escapeMarkdown(label)+"*")
+	}
+	value, ok := d.num(c["value"], scope)
+	limit, hasMax := d.num(c["max"], scope)
+	if !hasMax || limit <= 0 {
+		limit = 100
+	}
+	if ok {
+		pct := int(math.Round(min(max(value/limit, 0), 1) * 100))
+		filled := pct * progressCells / 100
+		lines = append(lines, "`"+strings.Repeat("▓", filled)+strings.Repeat("░", progressCells-filled)+"` "+strconv.Itoa(pct)+"%")
+	}
+	if len(lines) > 0 {
+		d.items = append(d.items, cardItem{kind: itemText, text: strings.Join(lines, "\n")})
+	}
+}
+
+// num resolves a DynamicNumber: a literal or a data binding. A function call
+// is the page's to evaluate.
+func (d *cardDrawer) num(v any, scope []string) (float64, bool) {
+	if obj, ok := v.(map[string]any); ok {
+		path, _ := obj["@path"].(string)
+		v = readPath(d.data, d.tokens(path, scope))
+	}
+	n, ok := v.(float64)
+	return n, ok
 }
 
 // children draws a fixed list of ids, or a template once per data item.

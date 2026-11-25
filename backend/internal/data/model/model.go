@@ -931,6 +931,8 @@ const (
 	ActionIDA2UIResource
 	// An agent's card that draws a Chart; emitted by the backend.
 	ActionIDA2UIChart
+	// An agent's card that draws a Progress bar; emitted by the backend.
+	ActionIDA2UIProgress
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

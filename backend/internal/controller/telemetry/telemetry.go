@@ -448,6 +448,8 @@ func crudActionID(a entity.Action) (uint8, bool) {
 		action = model.ActionIDA2UIResource
 	case entity.ActionA2UIChart:
 		action = model.ActionIDA2UIChart
+	case entity.ActionA2UIProgress:
+		action = model.ActionIDA2UIProgress
 	default:
 		return 0, false
 	}

@@ -101,6 +101,17 @@ export function displayText(value) {
 }
 
 /**
+ * How full a Progress is, a whole percent from 0 to 100: value of max (100
+ * when it is not a number above zero). null when value is not a number, so
+ * the bar shows no percent rather than a wrong one.
+ */
+export function progressPercent(value, max) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  const limit = typeof max === 'number' && Number.isFinite(max) && max > 0 ? max : 100
+  return Math.round(Math.min(Math.max(value / limit, 0), 1) * 100)
+}
+
+/**
  * A Text's markdown as HTML. The spec allows no HTML, images or links in it,
  * and an image would make the page fetch whatever the agent (or a value bound
  * from the data model) named, so both go, keeping a link's words.

@@ -72,3 +72,14 @@ func TestHandleElicit_AQuestionWithAChartIsCounted(t *testing.T) {
 		t.Errorf("events = %v, want %v", actions(e.events), want)
 	}
 }
+
+func TestHandleReply_ACardWithAProgressIsCounted(t *testing.T) {
+	e := newA2UIReplyEnv(t)
+	card := strings.Replace(chartCard, `"children":["title","chart"]`, `"children":["title","chart","bar"]},{"id":"bar","component":"Progress","value":2,"max":5`, 1)
+	if res, _, err := e.ps.handleReply(context.Background(), nil, ReplyParams{TaskID: "g", Text: "2 of 5", UI: json.RawMessage(card)}); err != nil || res.IsError {
+		t.Fatalf("reply = %v, %v", res, err)
+	}
+	if want := []entity.Action{entity.ActionA2UIReply, entity.ActionA2UIChart, entity.ActionA2UIProgress}; !reflect.DeepEqual(actions(e.events), want) {
+		t.Errorf("events = %v, want %v", actions(e.events), want)
+	}
+}
