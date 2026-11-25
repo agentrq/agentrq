@@ -87,7 +87,7 @@ test('oneStdin lets one input read stdin, and refuses two', () => {
 test('a command never reads stdin for two inputs', async () => {
   for (const [path, positionals, values] of [
     ['reply', ['t1', '-'], { ui: '-' }],
-    ['elicit', ['t1', 'Pick one'], { schema: '-', ui: '-' }],
+    ['ask', ['t1', 'Pick one'], { schema: '-', ui: '-' }],
     ['pano edit', ['d1'], { version: '1', ops: '-', append: '-' }],
   ]) {
     await assert.rejects(() => invoke(path, { positionals, values, stdin: stdinOf('[]') }), /only one input can come from stdin/, path)
