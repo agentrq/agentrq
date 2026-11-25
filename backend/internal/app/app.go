@@ -55,6 +55,7 @@ import (
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
+	"github.com/agentrq/agentrq/backend/internal/service/a2ui"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/cleanup"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
@@ -878,6 +879,8 @@ func New(cfg Config) (*App, error) {
 	}); err != nil {
 		return nil, fmt.Errorf("api handler: %w", err)
 	}
+
+	fiberApp.Get(a2ui.CatalogPath, a2uiCatalogHandler(a2ui.Catalog))
 
 	// SPA Fallback
 	fiberApp.Get("/*", func(c fiber.Ctx) error {
