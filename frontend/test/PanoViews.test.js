@@ -566,6 +566,17 @@ describe('the chat box\'s task options', () => {
     expect(sent()[4]).toEqual([{ filename: 'two.txt', mimeType: 'text/plain', data: btoa('two') }]);
   });
 
+  it('send a screenshot pasted into the message', async () => {
+    const { el } = await mount('/pano', [...WORKSPACES, SUP]);
+    const e = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(e, 'clipboardData', { value: { types: ['Files'], files: [new File(['png'], 'image.png', { type: 'image/png' })] } });
+    $(el, 'pano-chat-input').dispatchEvent(e);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(e.defaultPrevented).toBe(true);
+    await send(el);
+    expect(sent()[4]).toEqual([{ filename: expect.stringMatching(/^pasted-\d{8}-\d{6}\.png$/), mimeType: 'image/png', data: btoa('png') }]);
+  });
+
   it('send a repeated schedule as a scheduled task, and keep the board rather than open a chat', async () => {
     const { el, router } = await mount('/pano', [...WORKSPACES, SUP]);
     await click($(el, 'task-schedule'));

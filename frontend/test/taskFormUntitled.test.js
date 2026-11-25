@@ -141,3 +141,15 @@ describe('Escape', () => {
     expect(push).not.toHaveBeenCalled()
   })
 })
+
+describe('pasting into the description', () => {
+  it('attaches a screenshot from the clipboard', async () => {
+    const form = await mount()
+    const e = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(e, 'clipboardData', { value: { types: ['Files'], files: [new File(['png'], 'image.png', { type: 'image/png' })] } })
+    form.el.querySelector('#taskForm textarea').dispatchEvent(e)
+    await settle()
+    expect(e.defaultPrevented).toBe(true)
+    expect(form.el.querySelector('#taskForm').textContent).toMatch(/pasted-\d{8}-\d{6}\.png/)
+  })
+})
