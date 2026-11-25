@@ -5,6 +5,7 @@
 package supervisor
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -126,6 +127,9 @@ func writeMCPConfig(dir string, replaceElsewhere bool, entries []MCPEntry) (path
 			}
 			replaced = append(replaced, e.Name)
 		}
+		if _, ok := raw.servers[e.Name]; !ok {
+			raw.order = append(raw.order, e.Name)
+		}
 		raw.servers[e.Name], _ = json.Marshal(MCPServer{Type: "http", URL: e.URL}) // two strings: cannot fail
 		added++
 	}
@@ -138,7 +142,7 @@ func writeMCPConfig(dir string, replaceElsewhere bool, entries []MCPEntry) (path
 	}
 
 	// Neither can fail: every value is JSON that was just read or encoded.
-	raw.top["mcpServers"], _ = json.Marshal(raw.servers)
+	raw.top["mcpServers"] = raw.marshalServers()
 	body, _ := json.MarshalIndent(raw.top, "", "  ")
 	if err := writePrivate(dir, path, ".mcp-*.json", append(body, '\n')); err != nil {
 		return "", nil, nil, err
@@ -149,9 +153,58 @@ func writeMCPConfig(dir string, replaceElsewhere bool, entries []MCPEntry) (path
 // rawMCPConfig is the file as it was read, every field of it, so writing our
 // entries back does not drop what this daemon has no struct for: a stdio
 // server's command and args, a server's headers, a key besides mcpServers.
+//
+// order keeps the servers in the file's order, with new ones after it in the
+// order they were given: a Go map would sort them, putting the supervisor's
+// "agentrq" ahead of the workspace's own "agentrq-workspace".
 type rawMCPConfig struct {
 	top     map[string]json.RawMessage
 	servers map[string]json.RawMessage
+	order   []string
+}
+
+// marshalServers writes the servers as one JSON object, in raw.order.
+func (raw rawMCPConfig) marshalServers() json.RawMessage {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, name := range raw.order {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		key, _ := json.Marshal(name) // a string: cannot fail
+		b.Write(key)
+		b.WriteByte(':')
+		b.Write(raw.servers[name])
+	}
+	b.WriteByte('}')
+	return b.Bytes()
+}
+
+// objectKeys lists a JSON object's keys in the order they are written, each
+// once. Anything that is not an object has none.
+func objectKeys(obj json.RawMessage) []string {
+	dec := json.NewDecoder(bytes.NewReader(obj))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return nil
+	}
+	var keys []string
+	seen := map[string]bool{}
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return keys
+		}
+		key, _ := t.(string)
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return keys
+		}
+		if !seen[key] {
+			seen[key] = true
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 
 // endpointDiffers reports whether two MCP URLs name different endpoints. The
@@ -256,6 +309,7 @@ func loadMCPConfig(path string) (MCPConfig, rawMCPConfig, bool, error) {
 	if raw.servers == nil {
 		raw.servers = map[string]json.RawMessage{}
 	}
+	raw.order = objectKeys(raw.top["mcpServers"])
 	return cfg, raw, true, nil
 }
 

@@ -443,7 +443,7 @@ Create a `.mcp.json` file in your local project directory (the leading dot is re
 ```json
 {
   "mcpServers": {
-    "agentrq-WORKSPACE_ID": {
+    "agentrq-workspace": {
       "type": "http",
       "url": "YOUR_MCP_URL"
     }
@@ -458,10 +458,10 @@ Add a `.claude/settings.local.json` file in the same project directory to pre-ap
 ```json
 {
   "permissions": {
-    "allow": ["mcp__agentrq-WORKSPACE_ID__*"]
+    "allow": ["mcp__agentrq-workspace__*"]
   },
   "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": ["agentrq-WORKSPACE_ID"]
+  "enabledMcpjsonServers": ["agentrq-workspace"]
 }
 ```
 
@@ -470,7 +470,7 @@ Add a `.claude/settings.local.json` file in the same project directory to pre-ap
 Once both files are in place, launch Claude Code from that project directory:
 
 ```bash
-claude --dangerously-load-development-channels server:agentrq-WORKSPACE_ID
+claude --dangerously-load-development-channels server:agentrq-workspace
 ```
 
 > **Tip:** The workspace ID, full MCP URL (with token), and ready-to-paste config snippets are all available in the **Setup** modal inside each AgentRQ workspace.

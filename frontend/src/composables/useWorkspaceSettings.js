@@ -122,6 +122,13 @@ const UNSET = { allowAllCommands: false, clearContextDefault: false, selfLearnin
 const SUPERVISOR_MCP_SERVER_NAME = 'agentrq';
 
 /**
+ * The key a workspace's own server is written under in `.mcp.json`: the same
+ * for every workspace, and the name agentrqd and native ACP use, so the
+ * setup tab's snippets match what an agentrqd-launched agent sees.
+ */
+export const WORKSPACE_MCP_SERVER_NAME = 'agentrq-workspace';
+
+/**
  * Builds the `.claude/settings.local.json` contents shown on the setup tab.
  *
  * Each server is allowed with a single `mcp__<server>__*` wildcard rather than
@@ -133,7 +140,7 @@ const SUPERVISOR_MCP_SERVER_NAME = 'agentrq';
  * allowed and enabled, matching the second `.mcp.json` entry `buildMcpServers`
  * writes for it.
  *
- * @param {string} serverName The MCP server key, e.g. `agentrq-0ZzhYQG2qtl`.
+ * @param {string} serverName The MCP server key, `WORKSPACE_MCP_SERVER_NAME`.
  * @param {string} [workspaceName] The workspace's name, checked for the exact
  *   "supervisor" case.
  * @returns {{permissions: {allow: string[]}, enableAllProjectMcpServers: boolean, enabledMcpjsonServers: string[]}}

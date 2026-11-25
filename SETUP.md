@@ -286,7 +286,7 @@ After setup, sign into your AgentRQ instance, create a workspace, and copy the M
 ```json
 {
   "mcpServers": {
-    "agentrq": {
+    "agentrq-workspace": {
       "type": "http",
       "url": "https://WORKSPACE_ID.mcp.your-domain.com/mcp?token=YOUR_TOKEN"
     }
@@ -299,7 +299,7 @@ For local dev (no TLS):
 ```json
 {
   "mcpServers": {
-    "agentrq": {
+    "agentrq-workspace": {
       "type": "http",
       "url": "http://WORKSPACE_ID.mcp.localhost:2026/mcp?token=YOUR_TOKEN"
     }
