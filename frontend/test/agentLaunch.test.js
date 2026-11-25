@@ -207,7 +207,7 @@ describe('paramsEligibility', () => {
   // Mirrors the daemon's own rule, so the refusal arrives while somebody is
   // still looking at the field rather than after a round trip.
   it('refuses what the daemon would refuse', () => {
-    for (const bad of ['--dangerously-skip-permissions', '-x', 'a b', 'a/b', '../escape', 'a;b']) {
+    for (const bad of ['--dangerously-skip-permissions', '-x', 'a b', '/abs', '../escape', 'a;b', 'a\nb']) {
       const e = paramsEligibility('acp-gateway', { model: bad, agent: 'a' })
       expect(e.ok, bad).toBe(false)
       expect(e.reason).toContain('will not accept')
@@ -218,6 +218,22 @@ describe('paramsEligibility', () => {
     for (const good of ['gemini-3.8-flash-high', 'antigravity-acp', 'claude_3', 'gpt.4o']) {
       expect(paramsEligibility('acp-gateway', { model: good, agent: good }).ok, good).toBe(true)
     }
+  })
+
+  // Gateways list models as `provider/model:variant`, and the form offers
+  // them from the agent's own list, so picking one must not block the launch.
+  it('accepts the model ids a gateway reports', () => {
+    for (const model of ['openrouter/anthropic/claude-haiku-5.5', 'Qwen/Qwen3-Coder', 'llama3.2:latest', 'model@2026-01-01', 'a+b']) {
+      expect(paramsEligibility('acp-gateway', { model, agent: 'a' }).ok, model).toBe(true)
+      expect(paramsEligibility('claude-code', { model }).ok, model).toBe(true)
+    }
+  })
+
+  it('names the model rule when a model is refused, and keeps the agent an identifier', () => {
+    expect(paramsEligibility('acp-gateway', { model: 'a b', agent: 'a' }).reason).toContain(': / @ +')
+    const e = paramsEligibility('acp-gateway', { agent: 'a/b' })
+    expect(e.ok).toBe(false)
+    expect(e.reason).toContain('dot, dash and underscore')
   })
 
   it('refuses a kind the daemon does not run', () => {
