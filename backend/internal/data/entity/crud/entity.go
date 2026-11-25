@@ -1940,6 +1940,9 @@ const (
 	// An agent's card posted to the task's Slack thread as Block Kit rather
 	// than as its text. Backend-emitted: the server posted it.
 	ActionA2UISlack Action = 147
+	// An agent's card that came as A2UI's MCP binding, an embedded resource,
+	// rather than as ui's array. Backend-emitted: the server stored it.
+	ActionA2UIResource Action = 148
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2238,6 +2241,8 @@ func (a Action) String() string {
 		return "a2ui_update"
 	case ActionA2UISlack:
 		return "a2ui_slack"
+	case ActionA2UIResource:
+		return "a2ui_resource"
 	}
 	return "unknown"
 }

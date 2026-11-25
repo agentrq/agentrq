@@ -301,7 +301,10 @@ type ReplyParams struct {
 	TaskID      string            `json:"taskId" jsonschema:"The task to reply in (base62): the chat_id it arrived with."`
 	Text        string            `json:"text" jsonschema:"The message text to send"`
 	Attachments []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments to include in the reply: {id, filename, mimeType, data (base64) or textContent (plain text)}."`
-	UI          json.RawMessage   `json:"ui,omitempty" jsonschema:"Optional card: a JSON array of A2UI v1.0 messages (basic catalog, one surface): createSurface, then updateComponents with a component whose id is root. text stays required, the fallback wherever cards are not shown. Media (Image, Video, AudioPlayer) only as attachment:<filename> of a file in attachments. Without createSurface it updates the task's newest card with that surfaceId in place, and text replaces its text; deleteSurface drops the card."`
+	UI          json.RawMessage   `json:"ui,omitempty" jsonschema:"Optional card: a JSON array of A2UI v1.0 messages (basic catalog, one surface): createSurface, then updateComponents with a component whose id is root. text stays required, the fallback wherever cards are not shown. Media (Image, Video, AudioPlayer) only as attachment:<filename> of a file in attachments. Without createSurface it updates the task's newest card with that surfaceId in place, and text replaces its text; deleteSurface drops the card. Also taken as A2UI's MCP binding: an embedded resource {type: resource, resource: {mimeType: application/a2ui+json, text}} whose text is that array."`
+
+	// viaResource is set when ui came as an embedded resource, to count it.
+	viaResource bool
 }
 
 // AttachmentParam is an attachment as a tool receives it. It is not
@@ -554,6 +557,7 @@ func NewWorkspaceServer(
 		},
 	}
 	mcpskill.AddCapability(caps)
+	addA2UICapability(caps)
 	mcpSrv := mcp.NewServer(
 		&mcp.Implementation{
 			Name:        fmt.Sprintf("agentrq-workspace-%s", workspaceIDStr),
@@ -1537,6 +1541,15 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 		}, nil, nil
 	}
 
+	ui, viaResource, err := replyUI(params.UI)
+	if err != nil {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+		}, nil, nil
+	}
+	params.UI, params.viaResource = ui, viaResource
+
 	if surfaceID, ok := a2ui.UpdatedSurface(params.UI); ok {
 		return ps.updateCard(ctx, req, taskID, surfaceID, params)
 	}
@@ -1569,6 +1582,7 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 	}
 	if metadata != nil {
 		ps.emitA2UI(ctx, entity.ActionA2UIReply, msgID)
+		ps.emitA2UIResource(ctx, params, msgID)
 	}
 	ps.noteSessionTask(req, taskID)
 

@@ -118,6 +118,7 @@ func TestServerCapabilitiesClone(t *testing.T) {
 	orig := &ServerCapabilities{
 		Experimental: map[string]any{"a": 1},
 		Extensions:   map[string]any{"b": 2},
+		A2UI:         map[string]any{"d": 4},
 		Completions:  &CompletionCapabilities{},
 		Logging:      &LoggingCapabilities{},
 		Prompts:      &PromptCapabilities{ListChanged: true},
@@ -127,10 +128,11 @@ func TestServerCapabilitiesClone(t *testing.T) {
 	cp := orig.clone()
 	cp.Experimental["a"] = 9
 	cp.Extensions["c"] = 3
+	cp.A2UI["d"] = 5
 	cp.Prompts.ListChanged = false
 	cp.Resources.Subscribe = true
 	cp.Tools.ListChanged = true
-	if orig.Experimental["a"] != 1 || len(orig.Extensions) != 1 || !orig.Prompts.ListChanged || orig.Resources.Subscribe || orig.Tools.ListChanged {
+	if orig.Experimental["a"] != 1 || len(orig.Extensions) != 1 || orig.A2UI["d"] != 4 || !orig.Prompts.ListChanged || orig.Resources.Subscribe || orig.Tools.ListChanged {
 		t.Errorf("changing the clone changed the original: %+v", orig)
 	}
 	empty := (&ServerCapabilities{}).clone()

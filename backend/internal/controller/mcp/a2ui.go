@@ -5,8 +5,10 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -99,6 +101,7 @@ func (ps *WorkspaceServer) updateCard(ctx context.Context, req *mcp.CallToolRequ
 		return fail(err)
 	}
 	ps.emitA2UI(ctx, entity.ActionA2UIUpdate, msgID)
+	ps.emitA2UIResource(ctx, params, msgID)
 	ps.noteSessionTask(req, taskID)
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("card %q updated in message %s", surfaceID, monoflake.ID(msgID).String())}},
@@ -202,6 +205,54 @@ func (ps *WorkspaceServer) emitA2UI(ctx context.Context, action entity.Action, m
 			Origin:       entity.OriginMCP,
 		},
 	})
+}
+
+// a2uiMimeType marks an embedded resource that carries A2UI messages.
+const a2uiMimeType = "application/a2ui+json"
+
+// addA2UICapability advertises the cards this server draws, as A2UI's MCP
+// binding names them: version 1.0 of the basic catalog.
+func addA2UICapability(caps *mcp.ServerCapabilities) {
+	caps.A2UI = map[string]any{
+		"rendererCapabilities": map[string]any{
+			a2uiVersion: map[string]any{"supportedCatalogIds": []string{a2ui.BasicCatalogID}},
+		},
+	}
+}
+
+// replyUI is a reply's ui as A2UI messages, and whether it came as A2UI's
+// MCP binding: an embedded resource whose text (or blob) is the array, which
+// an agent framework emitting A2UI posts unchanged.
+func replyUI(ui json.RawMessage) (json.RawMessage, bool, error) {
+	trimmed := bytes.TrimSpace(ui)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return ui, false, nil
+	}
+	var r struct {
+		Type     string `json:"type"`
+		Resource struct {
+			MimeType string `json:"mimeType"`
+			Text     string `json:"text"`
+			Blob     []byte `json:"blob"`
+		} `json:"resource"`
+	}
+	if json.Unmarshal(trimmed, &r) != nil || r.Type != "resource" || r.Resource.MimeType != a2uiMimeType {
+		return nil, false, fmt.Errorf(`ui is a JSON array of A2UI messages, or an embedded resource {"type": "resource", "resource": {"mimeType": %q, "text": "<that array>"}}`, a2uiMimeType)
+	}
+	if r.Resource.Text != "" {
+		return json.RawMessage(r.Resource.Text), true, nil
+	}
+	if len(r.Resource.Blob) > 0 {
+		return r.Resource.Blob, true, nil
+	}
+	return nil, false, errors.New("ui's resource has no text: its text is the JSON array of A2UI messages")
+}
+
+// emitA2UIResource counts a card that came as A2UI's MCP binding.
+func (ps *WorkspaceServer) emitA2UIResource(ctx context.Context, params ReplyParams, msgID int64) {
+	if params.viaResource {
+		ps.emitA2UI(ctx, entity.ActionA2UIResource, msgID)
+	}
 }
 
 // agentMetadata is what an agent reading the thread gets of a message's
