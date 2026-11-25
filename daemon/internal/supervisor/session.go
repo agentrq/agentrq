@@ -489,6 +489,7 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	tty, err := s.start(context.WithoutCancel(ctx), pty.Spec{
 		Argv: argv,
 		Dir:  req.Dir,
+		Env:  gitEnv(),
 		Cols: req.Cols,
 		Rows: req.Rows,
 	})
