@@ -15,7 +15,7 @@ const TaskToolDescription = "Work on this workspace's tasks and talk to the huma
 	"Run action help for the actions, and help with payload {\"topic\": \"<action>\"} for one's payload. " +
 	"get {taskId}: a task, or with no taskId the next not started task assigned to the agent. " +
 	"updateStatus {taskId, status}: 'ongoing' when you start, 'completed' when you finish, 'blocked' when you need the human. " +
-	"reply {taskId, text}: a message to the task; the human sees only these. Add `ui`, an A2UI card (help task.reply), when it has structure: progress, results, a choice. " +
+	"reply {taskId, text}: a message to the task; the human sees only these. Add `ui`, a card as a JSON array of A2UI messages, not one object (help task.reply), when it has structure: progress, results, a choice. " +
 	"elicit {taskId, message, mode}: asks the human and waits for the answer. getAttachment {taskId, attachmentId}: a task's attachment. create {title, body}: a new task. " +
 	"taskId is the chat_id a task arrives with."
 
