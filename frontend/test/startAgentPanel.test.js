@@ -63,12 +63,14 @@ async function mount(props, list, workspaces = []) {
   document.body.appendChild(el)
   const availability = []
   const noMachine = []
+  const opened = []
   const app = createApp({
     render: () =>
       h(StartAgentPanel, {
         ...props,
         onAvailability: (v) => availability.push(v),
         onNoMachine: (v) => noMachine.push(v),
+        onOpen: (v) => opened.push(v),
       }),
   })
   // Blockers render their fix as a link; the real router is mocked away.
@@ -80,14 +82,43 @@ async function mount(props, list, workspaces = []) {
   app.mount(el)
   await settle()
   const text = () => el.textContent.replace(/\s+/g, ' ').trim()
+  // Into the form: "Change" when the folded button would start straight
+  // away, the folded button itself when it only opens the form.
   const open = async () => {
-    el.querySelector('button').click()
+    ;(el.querySelector('[data-test=start-agent-change]') ?? el.querySelector('button')).click()
     await settle()
   }
-  return { el, text, open, availability, noMachine }
+  return { el, text, open, availability, noMachine, opened }
 }
 
 describe('StartAgentPanel', () => {
+  // The workspace page folds its own introduction away while the form is open.
+  it('tells the page when its form opens and closes', async () => {
+    localStorage.clear()
+    const { el, open, opened } = await mount({ workspace: WORKSPACE }, [ONLINE])
+    expect(opened).toEqual([false])
+    await open()
+    expect(opened.at(-1)).toBe(true)
+    ;[...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Cancel').click()
+    await settle()
+    expect(opened.at(-1)).toBe(false)
+  })
+
+  it('ends the form with Start on the right, set apart by a divider', async () => {
+    const { el } = await mount({ workspace: WORKSPACE }, [ONLINE])
+    ;(el.querySelector('[data-test=start-agent-change]') ?? el.querySelector('button')).click()
+    await settle()
+    const row = el.querySelector('[data-test=start-agent-start]').parentElement
+    expect(row.className).toContain('justify-end')
+    expect(row.className).toContain('border-t')
+    expect(row.lastElementChild.dataset.test).toBe('start-agent-start')
+  })
+
+  it('says the card on the setup page is open from the start', async () => {
+    const { opened } = await mount({ workspace: WORKSPACE, variant: 'card' }, [ONLINE])
+    expect(opened.at(-1)).toBe(true)
+  })
+
   it('renders nothing, and says so, when no machine is online', async () => {
     // The setup guide is still the honest answer here, so the page must be
     // able to keep it as its primary action.
@@ -99,11 +130,45 @@ describe('StartAgentPanel', () => {
     expect(noMachine.at(-1)).toBe(true)
   })
 
-  it('offers one folded action naming where it will run', async () => {
+  it('offers one folded action naming what it will start, and where', async () => {
+    localStorage.clear()
     const { text, el, availability } = await mount({ workspace: WORKSPACE }, [ONLINE])
-    expect(text()).toBe('Start an agent on workshop-pi')
+    expect(text()).toBe('Start Claude Code on workshop-pi · default model · Change')
     expect(el.querySelectorAll('select')).toHaveLength(0)
     expect(availability.at(-1)).toBe(true)
+  })
+
+  // In the workspace, starting an agent should take one click (#1425).
+  it('starts with one click when nothing is left to decide, and goes to its terminal', async () => {
+    localStorage.clear()
+    const { el } = await mount({ workspace: WORKSPACE }, [ONLINE])
+    el.querySelector('[data-test=start-agent-quick]').click()
+    await settle()
+    expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ machineId: 'm1', kind: 'claude-code' }))
+    expect(push).toHaveBeenLastCalledWith('/sessions/sess-9')
+    localStorage.clear()
+  })
+
+  it('names the gateway agent last launched here, by its own name', async () => {
+    localStorage.clear()
+    localStorage.setItem(
+      'agentrq:lastLaunch',
+      JSON.stringify({ ws1: { machineId: 'm1', kind: 'acp-gateway', params: { 'acp-gateway': { agent: 'codex-acp', model: 'gpt-5' } } } })
+    )
+    const { text } = await mount({ workspace: WORKSPACE }, [ONLINE])
+    expect(text()).toBe('Start Codex on workshop-pi · gpt-5 · Change')
+    localStorage.clear()
+  })
+
+  it('opens the form instead of starting when a machine is still to be picked', async () => {
+    localStorage.clear()
+    const calls = launchAgent.mock.calls.length
+    const { el, text } = await mount({ workspace: WORKSPACE }, [ONLINE, SECOND])
+    expect(text()).toBe('Start an agent')
+    el.querySelector('[data-test=start-agent-quick]').click()
+    await settle()
+    expect(launchAgent.mock.calls.length).toBe(calls)
+    expect(el.querySelector('#start-agent-machine-m1')).toBeTruthy()
   })
 
   it('does not say there is no machine when one is online', async () => {
@@ -121,16 +186,24 @@ describe('StartAgentPanel', () => {
     expect(text()).toMatch(/Runs in \/srv\/app on workshop-pi, your only machine that is online\./)
   })
 
-  // The wide, two-column card is for a machine picker beside what to run;
-  // with one machine there is nothing to put beside it.
-  it('opens narrow with one machine, and wide with several to pick from', async () => {
+  // The machine page's width too, whatever the number of machines (#1425).
+  it('opens at one width, with one machine or several', async () => {
+    localStorage.clear()
     const one = await mount({ workspace: WORKSPACE }, [ONLINE])
     await one.open()
-    expect(one.el.firstElementChild.className).toContain('max-w-[420px]')
+    expect(one.el.firstElementChild.className).toContain('max-w-2xl')
     one.el.remove()
     const several = await mount({ workspace: WORKSPACE }, [ONLINE, SECOND])
     await several.open()
-    expect(several.el.firstElementChild.className).toContain('max-w-4xl')
+    expect(several.el.firstElementChild.className).toContain('max-w-2xl')
+  })
+
+  // Two hand-written copies of this form drifted apart once (#1425).
+  it('renders the same options form as the machine page', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = (f) => readFileSync(new URL(f, import.meta.url), 'utf8')
+    expect(source('../src/components/StartAgentPanel.vue')).toContain('<AgentLaunchOptions')
+    expect(source('../src/views/MachineDetailView.vue')).toContain('<AgentLaunchOptions')
   })
 
   it('asks which machine when there are several, and says so before the button', async () => {
