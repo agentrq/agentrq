@@ -134,9 +134,14 @@ arch="$(uname -m)"
 case "$os" in
 Darwin) platform="mac" ;;
 Linux) platform="linux" ;;
+MINGW* | MSYS* | CYGWIN* | Windows_NT)
+	# Windows has install.ps1.
+	if [ -n "$TAURI" ]; then
+		die "this script is for macOS and Linux. On Windows, run in PowerShell: \$env:AGENTRQ_TAURI = '1'; irm https://agentrq.com/install.ps1 | iex"
+	fi
+	die "this script is for macOS and Linux. On Windows, run in PowerShell: irm https://agentrq.com/install.ps1 | iex"
+	;;
 *)
-	# Windows installs and updates itself through the NSIS installer, so there
-	# is nothing useful for this script to do there.
 	die "unsupported system: $os. Download an installer from $RELEASES_PAGE"
 	;;
 esac

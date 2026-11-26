@@ -235,6 +235,12 @@ On macOS and Linux, one command installs it — and updates it later:
 curl -fsSL https://agentrq.com/install.sh | sh -s -- --quit
 ```
 
+On Windows, in PowerShell:
+
+```powershell
+irm https://agentrq.com/install.ps1 | iex
+```
+
 Or **[download the latest release →](https://github.com/agentrq/agentrq/releases/latest)**
 
 | Platform | Download |
@@ -242,7 +248,7 @@ Or **[download the latest release →](https://github.com/agentrq/agentrq/releas
 | macOS | `.dmg` — Apple silicon and Intel |
 | Windows | `.exe` installer — x64 and arm64 |
 | Linux | `.AppImage` or `.deb` — x64 and arm64 |
-| Tauri build (preview) | `.dmg`, `.exe`, `.AppImage`, or `.deb` (`AgentRQ-Tauri-` assets, or `install.sh --tauri`) — see [Preview: Tauri build](docs/DESKTOP.md#preview-tauri-build) |
+| Tauri build (preview) | `.dmg`, `.exe`, `.AppImage`, or `.deb` (`AgentRQ-Tauri-` assets, `install.sh --tauri`, or `install.ps1` with `AGENTRQ_TAURI=1`) — see [Preview: Tauri build](docs/DESKTOP.md#preview-tauri-build) |
 | iPhone and iPad | No download: add the web app to your Home Screen from Safari — see [AgentRQ on iPhone and iPad](docs/IPHONE.md) |
 
 Builds are currently **unsigned**, so a hand-downloaded build warns on first
