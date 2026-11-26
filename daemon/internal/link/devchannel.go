@@ -17,7 +17,7 @@ import (
 // given to take before Enter is pressed again, and how many presses are tried.
 var (
 	devChannelWait    = 2 * time.Minute
-	devChannelPoll    = 250 * time.Millisecond
+	devChannelPoll    = time.Second
 	devChannelRetry   = time.Second
 	devChannelPresses = 3
 )
