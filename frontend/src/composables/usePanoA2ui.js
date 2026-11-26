@@ -47,13 +47,13 @@ export function mountPanoA2ui(container, { files, color, appContext = null }) {
  */
 export function usePanoA2ui(el, source) {
   const appContext = getCurrentInstance()?.appContext ?? null
-  let unmount = () => {}
+  let unmount = null
   watch(source, async () => {
-    unmount()
-    unmount = () => {}
+    unmount?.()
+    unmount = null
     await nextTick()
     const { files, color } = source()
     unmount = mountPanoA2ui(el(), { files, color, appContext })
   }, { immediate: true, flush: 'post' })
-  onBeforeUnmount(() => unmount())
+  onBeforeUnmount(() => unmount?.())
 }

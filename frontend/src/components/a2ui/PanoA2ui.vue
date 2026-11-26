@@ -23,7 +23,8 @@ const props = defineProps({
   color: { type: Object, required: true },
 })
 
-const ui = reactive({ answered: null, readOnly: true, busy: false, pressed: null, changes: null, send: () => {} })
+// No send: a doc draws nothing that answers.
+const ui = reactive({ answered: null, readOnly: true, busy: false, pressed: null, changes: null })
 const ctx = computed(() => surfaceContext(props.surface, { attachments: props.files, ui, pano: props.color }))
 </script>
 
