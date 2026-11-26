@@ -185,6 +185,9 @@
       <div v-else class="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col items-center justify-center-safe m-4 p-8 text-center h-full bg-gray-50 dark:bg-zinc-900/50 rounded-sm border border-dashed border-gray-200 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-500">
         
         <template v-if="!isAgentConnected">
+          <!-- Folded away while the start form is open: its own heading
+               says the same, and the form needs the room. -->
+          <template v-if="!startFormOpen">
            <div class="w-16 h-16 bg-white dark:bg-zinc-800 rounded-sm border border-gray-100 dark:border-zinc-700 flex items-center justify-center mb-5 shadow-sm">
              <svg class="w-8 h-8 text-gray-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -192,17 +195,21 @@
            </div>
            <h3 class="text-xl font-black text-gray-800 dark:text-zinc-100 tracking-tight">{{ tasks.length === 0 ? 'Connect your first Agent' : 'Agent is Offline' }}</h3>
            <p class="text-sm text-gray-500 dark:text-zinc-400 mt-2 max-w-[420px] leading-relaxed font-medium">
-            {{ tasks.length === 0 ? 'This workspace is currently offline. Connect Claude, Gemini, or Codex via MCP to start automating tasks.' : 'This workspace is currently offline. Reconnect Claude, Gemini, or Codex via MCP to start automating tasks.' }}
+            <!-- With a machine to start one on, the button below is the
+                 way; "reconnect via MCP" above it would contradict it. -->
+            {{ canStartAgent ? 'No agent is running here. Start one on your machine, or connect one over MCP.' : tasks.length === 0 ? 'This workspace is currently offline. Connect Claude, Gemini, or Codex via MCP to start automating tasks.' : 'This workspace is currently offline. Reconnect Claude, Gemini, or Codex via MCP to start automating tasks.' }}
            </p>
+          </template>
            <!-- With a machine online, starting an agent is a button rather
                 than a guide to go and read. The setup guide stays either way:
                 it is still the answer for connecting an agent from somewhere
                 this control panel cannot reach. -->
-           <div class="mt-8 w-full max-w-4xl flex flex-col items-center gap-3">
+           <div class="w-full max-w-4xl flex flex-col items-center gap-3" :class="startFormOpen ? '' : 'mt-8'">
              <StartAgentPanel
                :workspace="workspace"
                variant="hero"
                @availability="canStartAgent = $event"
+               @open="startFormOpen = $event"
              />
              <button
                @click="router.push({ path: `/workspaces/${workspaceId}/settings`, query: { tab: 'setup' } })"
@@ -352,6 +359,7 @@ const {
 // Reported by the panel, which is the thing that knows whether any machine is
 // online. It decides which of the two actions in the offline state is primary.
 const canStartAgent = ref(false);
+const startFormOpen = ref(false);
 
 /**
  * What extensions offer for this workspace.

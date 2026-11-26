@@ -44,11 +44,7 @@ import { useEventBus } from '../useEventBus'
 import { useToasts } from '../composables/useToasts'
 import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import DeleteModal from '../components/DeleteModal.vue'
-import AcpAgentList from '../components/AcpAgentList.vue'
-import UnverifiedAgentConsent from '../components/UnverifiedAgentConsent.vue'
-import AgentKindPicker from '../components/AgentKindPicker.vue'
-import ClaudeOptionsPicker from '../components/ClaudeOptionsPicker.vue'
-import AcpEffortPicker from '../components/AcpEffortPicker.vue'
+import AgentLaunchOptions from '../components/AgentLaunchOptions.vue'
 import { useAgentLaunch } from '../composables/useAgentLaunch'
 import { terminalPath } from '../composables/useTerminalView'
 
@@ -481,7 +477,9 @@ async function stopSession(id) {
              five of them, and a form that fired and reported whichever it hit
              would make you press the button to find out whether you could
              press the button. -->
-        <div v-if="activeTab === 'new-session'" class="space-y-4">
+        <!-- `max-w-2xl`, the width of the workspace's own form: the same
+             launch at the same width reads as the same form (#1425). -->
+        <div v-if="activeTab === 'new-session'" class="space-y-4 max-w-2xl">
           <div>
             <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Run an agent here</h2>
             <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
@@ -508,7 +506,7 @@ async function stopSession(id) {
               v-else
               role="radiogroup"
               aria-labelledby="launch-workspace-label"
-              class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 max-h-56 overflow-y-auto custom-scrollbar"
+              class="grid gap-2 sm:grid-cols-2 max-h-56 overflow-y-auto custom-scrollbar"
             >
               <!-- `min-w-0` on the card itself, not just on the text inside
                    it: a grid item's minimum width is its content, so without
@@ -575,57 +573,16 @@ async function stopSession(id) {
             </div>
           </div>
 
-          <AgentKindPicker id-prefix="launch-kind" v-model="launchKind" />
-
-          <ClaudeOptionsPicker v-if="launchKind === 'claude-code'" id-prefix="launch" v-model="launchParams" :models="launchClaudeModels" />
-
-          <!-- Only the gateway needs these, and only the agent is required.
-               Agent first: the model list is per-agent, so there is nothing
-               to suggest for the second field until the first is answered. -->
-          <div v-if="launchKind === 'acp-gateway'" class="grid gap-3 md:grid-cols-2">
-            <div>
-              <label
-                for="launch-agent"
-                class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
-                >Agent</label
-              >
-              <input
-                id="launch-agent"
-                v-model="launchParams.agent"
-                type="text"
-                spellcheck="false"
-                autocapitalize="off"
-                autocorrect="off"
-                class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
-              />
-            </div>
-            <div>
-              <label
-                for="launch-model"
-                class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
-                >Model <span class="normal-case font-normal tracking-normal">(optional)</span></label
-              >
-              <input
-                id="launch-model"
-                v-model="launchParams.model"
-                type="text"
-                list="launch-model-options"
-                placeholder="Gateway default"
-                spellcheck="false"
-                autocapitalize="off"
-                autocorrect="off"
-                class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
-              />
-              <datalist id="launch-model-options">
-                <option v-for="m in launchAcpModels" :key="m.id" :value="m.id">{{ m.name }}</option>
-              </datalist>
-            </div>
-          <AcpEffortPicker class="md:col-span-2" id-prefix="launch" v-model="launchParams.effort" />
-          <!-- The list only ever suggests: any other id typed in the field is
-               still sent, so an agent the list does not know can still run. -->
-          <AcpAgentList v-if="launchKind === 'acp-gateway'" id-prefix="launch" :agents="launchAcpAgents" :query="launchParams.agent" @pick="pickLaunchAcpAgent" />
-          <UnverifiedAgentConsent v-if="launchUnverifiedAgent" v-model="launchParams.allowUnverified" class="md:col-span-2" id-prefix="launch" :agent="launchParams.agent" />
-          </div>
+          <AgentLaunchOptions
+            id-prefix="launch"
+            v-model:kind="launchKind"
+            v-model:params="launchParams"
+            :claude-models="launchClaudeModels"
+            :acp-models="launchAcpModels"
+            :acp-agents="launchAcpAgents"
+            :unverified-agent="launchUnverifiedAgent"
+            @pick="pickLaunchAcpAgent"
+          />
 
           <!-- Said before the button rather than after it is pressed. -->
           <ul v-if="launchBlockers.length" class="space-y-1">
@@ -639,13 +596,17 @@ async function stopSession(id) {
             </li>
           </ul>
 
-          <button
-            :disabled="!canLaunch"
-            @click="startAgent"
-            class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {{ launching ? 'Starting…' : 'Start agent' }}
-          </button>
+          <!-- Set apart and to the right, as in the workspace's start form. -->
+          <div class="flex justify-end border-t border-gray-100 dark:border-zinc-800 pt-4">
+            <button
+              data-test="launch-start"
+              :disabled="!canLaunch"
+              @click="startAgent"
+              class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {{ launching ? 'Starting…' : 'Start agent' }}
+            </button>
+          </div>
         </div>
 
         <!-- Machine Info: what the machine has left -->

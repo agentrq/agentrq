@@ -617,20 +617,30 @@ export function useAcpGatewaySuggestions({
   recordTelemetry = (...args) => api.recordTelemetry(...args),
 }) {
   const machineAgents = ref([])
+  // False while the machine's own list is on its way: until it arrives, an
+  // agent that needs checksum consent looks as if it does not.
+  const agentsLoaded = ref(true)
   const acpModels = ref([])
   const claudeReported = ref([])
 
+  let agentsAsked = 0
   watch(
     () => (kind.value === 'acp-gateway' ? getMachineId() : ''),
     async (machineId) => {
+      const asked = ++agentsAsked
       machineAgents.value = []
+      agentsLoaded.value = !machineId
       if (!machineId) return
+      let agents = []
       try {
         const data = await fetchAcpAgents(machineId)
-        machineAgents.value = data?.agents ?? []
+        agents = data?.agents ?? []
       } catch {
-        machineAgents.value = []
+        agents = []
       }
+      if (asked !== agentsAsked) return
+      machineAgents.value = agents
+      agentsLoaded.value = true
     },
     { immediate: true }
   )
@@ -688,7 +698,7 @@ export function useAcpGatewaySuggestions({
   )
   const claudeModels = computed(() => claudeModelSteps(claudeReported.value))
 
-  return { acpAgents, acpModels, claudeModels, pickAcpAgent, unverifiedAgent }
+  return { acpAgents, agentsLoaded, acpModels, claudeModels, pickAcpAgent, unverifiedAgent }
 }
 
 /**

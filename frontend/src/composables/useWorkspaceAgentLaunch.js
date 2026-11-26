@@ -103,7 +103,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
   const kind = ref(KINDS[0].id)
   const params = useKindParams(kind, () => workspace?.value?.id)
 
-  const { acpAgents, acpModels, claudeModels, pickAcpAgent, unverifiedAgent } = useAcpGatewaySuggestions({
+  const { acpAgents, agentsLoaded, acpModels, claudeModels, pickAcpAgent, unverifiedAgent } = useAcpGatewaySuggestions({
     kind,
     params,
     getMachineId: () => machineId.value,
@@ -158,6 +158,16 @@ export function useWorkspaceAgentLaunch(deps = {}) {
   )
 
   const canLaunch = computed(() => blockers.value.length === 0 && !launching.value)
+
+  /**
+   * Whether one click may start without showing the form: only with a single
+   * machine, since several are a choice left to the person (see `load`), and
+   * only once the machine's agent list is in, so a consent the agent needs is
+   * known before anything starts.
+   */
+  const canQuickLaunch = computed(
+    () => canLaunch.value && available.value.length === 1 && agentsLoaded.value
+  )
 
   /**
    * Load the machines, and preselect one when the choice is obvious.
@@ -233,6 +243,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     noMachine,
     blockers,
     canLaunch,
+    canQuickLaunch,
     acpAgents,
     acpModels,
     claudeModels,

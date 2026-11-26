@@ -19,11 +19,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspaceAgentLaunch } from '../composables/useWorkspaceAgentLaunch'
-import AcpAgentList from './AcpAgentList.vue'
-import UnverifiedAgentConsent from './UnverifiedAgentConsent.vue'
-import AgentKindPicker from './AgentKindPicker.vue'
-import ClaudeOptionsPicker from './ClaudeOptionsPicker.vue'
-import AcpEffortPicker from './AcpEffortPicker.vue'
+import AgentLaunchOptions from './AgentLaunchOptions.vue'
 import { terminalPath } from '../composables/useTerminalView'
 import { launchFolderNote } from '../composables/useAgentLaunch'
 import { useWorkspaceStore } from '../stores/workspaceStore'
@@ -37,7 +33,7 @@ const props = defineProps({
   variant: { type: String, default: 'hero' },
 })
 
-const emit = defineEmits(['started', 'availability', 'no-machine'])
+const emit = defineEmits(['started', 'availability', 'no-machine', 'open'])
 
 const router = useRouter()
 const workspace = computed(() => props.workspace)
@@ -62,6 +58,7 @@ const {
   noMachine,
   blockers,
   canLaunch,
+  canQuickLaunch,
   acpAgents,
   acpModels,
   claudeModels,
@@ -82,6 +79,13 @@ watch(offered, (value) => emit('availability', value), { immediate: true })
 // And when there is nowhere to run at all, setting up a machine is what the
 // setup page should lead with.
 watch(noMachine, (value) => emit('no-machine', value), { immediate: true })
+// So the page can fold its own introduction away while the form is open: the
+// form's heading says the same thing, and the room is better spent on it.
+watch(
+  () => open.value && offered.value,
+  (value) => emit('open', value),
+  { immediate: true }
+)
 
 /** The machine that will run it, when there is no choice to make. */
 const onlyMachine = computed(() => (available.value.length === 1 ? available.value[0] : null))
@@ -90,6 +94,32 @@ const primaryLabel = computed(() => {
   if (launching.value) return 'Starting…'
   return started.value ? 'Starting…' : 'Start an agent'
 })
+
+/** What the folded button would start: the agent's own name where it has one. */
+const agentLabel = computed(() => {
+  if (kind.value !== 'acp-gateway') return 'Claude Code'
+  const id = (params.value?.agent ?? '').trim()
+  return acpAgents.value.find((a) => a.id === id)?.name || id
+})
+
+const modelLabel = computed(() => (params.value?.model ?? '').trim() || 'default model')
+
+const quickLabel = computed(() => {
+  if (launching.value || started.value) return 'Starting…'
+  return canQuickLaunch.value ? `Start ${agentLabel.value}` : 'Start an agent'
+})
+
+/**
+ * In the workspace, starting an agent should take one click. The folded
+ * button starts what it names, the workspace's last launch or else the
+ * browser's, when nothing is left to decide (`canQuickLaunch`); with a
+ * machine to pick, a blocker to read or the agent list still on its way, it
+ * opens the form that asks instead.
+ */
+function quickStart() {
+  if (canQuickLaunch.value) start()
+  else open.value = true
+}
 
 async function start() {
   const session = await launcher.launch()
@@ -108,37 +138,44 @@ async function start() {
 </script>
 
 <template>
-  <!-- Wide only with a machine to pick: with one, the left column would hold
-       just the heading, so the card stays narrow and one column. -->
+  <!-- One width for the open form, the machine page's too (#1425): wide
+       enough to pair Agent with Model, narrow enough that no field becomes a
+       bar across the screen. -->
   <div
     v-if="offered"
-    :class="variant === 'card' ? 'w-full' : open && available.length > 1 ? 'w-full max-w-4xl' : 'w-full max-w-[420px]'"
+    :class="variant === 'card' || open ? 'w-full max-w-2xl' : 'w-full max-w-[420px]'"
   >
-    <!-- Folded: one action, and what it will do. -->
-    <button
-      v-if="!open"
-      type="button"
-      @click="open = true"
-      class="w-full px-8 py-3 bg-black dark:bg-white text-white dark:text-zinc-900 rounded-sm text-[10px] font-black uppercase tracking-widest shadow-lg hover:shadow-xl active:scale-95 transition-all"
-    >
-      Start an agent
-    </button>
-    <p
-      v-if="!open && onlyMachine"
-      class="mt-2 text-[11px] text-gray-500 dark:text-zinc-400 font-medium text-center"
-    >
-      on {{ onlyMachine.name }}
-    </p>
+    <!-- Folded: one click starts what it names, when nothing is left to
+         decide. Otherwise the same button opens the form that asks. -->
+    <template v-if="!open">
+      <button
+        type="button"
+        data-test="start-agent-quick"
+        :disabled="launching || !!started"
+        @click="quickStart"
+        class="w-full px-8 py-3 bg-black dark:bg-white text-white dark:text-zinc-900 rounded-lg text-[11px] font-black uppercase tracking-widest hover:opacity-80 active:scale-95 transition-all disabled:opacity-60"
+      >
+        {{ quickLabel }}
+      </button>
+      <p class="mt-2 text-[11px] text-gray-500 dark:text-zinc-400 font-medium text-center">
+        <template v-if="canQuickLaunch">
+          on {{ selected?.name }} · {{ modelLabel }} ·
+          <button
+            type="button"
+            data-test="start-agent-change"
+            @click="open = true"
+            class="underline hover:text-gray-800 dark:hover:text-zinc-200"
+          >Change</button>
+        </template>
+        <template v-else-if="onlyMachine">on {{ onlyMachine.name }}</template>
+      </p>
+      <p v-if="error" class="mt-2 text-[11px] text-red-600 dark:text-red-400 font-medium text-center">{{ error }}</p>
+    </template>
 
     <div
       v-if="open"
-      class="@container border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900 space-y-4 text-left animate-in fade-in slide-in-from-bottom-2 duration-300"
+      class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900 space-y-4 text-left animate-in fade-in slide-in-from-bottom-2 duration-300"
     >
-      <!-- Two columns once the card is wide enough: where on the left,
-           what to run and its options on the right. One column, the
-           gateway's agent list alone ran off a large screen. -->
-      <div class="grid gap-4 @3xl:grid-cols-2 @3xl:gap-6">
-      <div class="space-y-4 min-w-0">
       <div>
         <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Start an agent</h2>
         <!-- Says where it will run and on what. With one machine there is
@@ -163,17 +200,17 @@ async function start() {
 
       <!-- One machine is not a choice, so it is stated in the line above rather
            than asked for here. -->
-      <div v-if="available.length > 1">
+      <div v-if="available.length > 1" class="@container">
         <p
           id="start-agent-machine-label"
           class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
         >
           Machine
         </p>
-        <!-- The machine page's workspace picker in miniature, so the two launch
-             forms still look alike. `min-w-0` on the card and not only on the
-             name: a grid item's minimum width is its content, so without it a
-             long machine name widens the card instead of truncating. -->
+        <!-- The machine page's workspace picker, so the two launch forms look
+             alike. `min-w-0` on the card and not only on the name: a grid
+             item's minimum width is its content, so without it a long machine
+             name widens the card instead of truncating. -->
         <div
           role="radiogroup"
           aria-labelledby="start-agent-machine-label"
@@ -218,64 +255,16 @@ async function start() {
         </div>
       </div>
 
-      </div>
-
-      <div class="space-y-4 min-w-0">
-      <!-- Its own row: sharing one with the machine picker meant two columns,
-           and in a 420px card neither was wide enough to read. -->
-      <AgentKindPicker id-prefix="start-agent-kind" v-model="kind" />
-
-      <ClaudeOptionsPicker v-if="kind === 'claude-code'" id-prefix="start-agent" v-model="params" :models="claudeModels" />
-
-      <!-- Only the gateway needs these, and only the agent is required. Agent
-           first: the model list is per-agent, so there is nothing to suggest
-           for the second field until the first is answered. -->
-      <div v-if="kind === 'acp-gateway'" class="grid gap-3 @md:grid-cols-2">
-        <div>
-          <label
-            for="start-agent-agent"
-            class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
-            >Agent</label
-          >
-          <input
-            id="start-agent-agent"
-            v-model="params.agent"
-            type="text"
-            spellcheck="false"
-            autocapitalize="off"
-            autocorrect="off"
-            class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
-          />
-        </div>
-        <div>
-          <label
-            for="start-agent-model"
-            class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
-            >Model <span class="normal-case font-normal tracking-normal">(optional)</span></label
-          >
-          <input
-            id="start-agent-model"
-            v-model="params.model"
-            type="text"
-            list="start-agent-model-options"
-            placeholder="Gateway default"
-            spellcheck="false"
-            autocapitalize="off"
-            autocorrect="off"
-            class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
-          />
-          <datalist id="start-agent-model-options">
-            <option v-for="m in acpModels" :key="m.id" :value="m.id">{{ m.name }}</option>
-          </datalist>
-        </div>
-      <AcpEffortPicker class="@md:col-span-2" id-prefix="start-agent" v-model="params.effort" />
-      <!-- The list only ever suggests: any other id typed in the field is
-           still sent, so an agent the list does not know can still run. -->
-      <AcpAgentList v-if="kind === 'acp-gateway'" class="@md:col-span-2" id-prefix="start-agent" :agents="acpAgents" :query="params.agent" @pick="pickAcpAgent" />
-      <UnverifiedAgentConsent v-if="unverifiedAgent" v-model="params.allowUnverified" class="@md:col-span-2" id-prefix="start-agent" :agent="params.agent" />
-      </div>
-      </div>
-      </div>
+      <AgentLaunchOptions
+        id-prefix="start-agent"
+        v-model:kind="kind"
+        v-model:params="params"
+        :claude-models="claudeModels"
+        :acp-models="acpModels"
+        :acp-agents="acpAgents"
+        :unverified-agent="unverifiedAgent"
+        @pick="pickAcpAgent"
+      />
 
       <!-- Said before the button rather than after it is pressed. -->
       <ul v-if="blockers.length" class="space-y-1">
@@ -293,15 +282,9 @@ async function start() {
 
       <p v-if="error" class="text-[11px] text-red-600 dark:text-red-400 font-medium">{{ error }}</p>
 
-      <div class="flex items-center gap-2">
-        <button
-          type="button"
-          :disabled="!canLaunch"
-          @click="start"
-          class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {{ primaryLabel }}
-        </button>
+      <!-- Set apart and to the right, as on the machine page; Cancel sits
+           before Start so the primary action ends the row. -->
+      <div class="flex items-center justify-end gap-2 border-t border-gray-100 dark:border-zinc-800 pt-4">
         <button
           v-if="variant === 'hero'"
           type="button"
@@ -309,6 +292,15 @@ async function start() {
           class="px-4 py-2 text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-200 transition-all"
         >
           Cancel
+        </button>
+        <button
+          type="button"
+          data-test="start-agent-start"
+          :disabled="!canLaunch"
+          @click="start"
+          class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {{ primaryLabel }}
         </button>
       </div>
     </div>
