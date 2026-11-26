@@ -305,6 +305,53 @@ describe('useWorkspaceAgentLaunch: acp-gateway suggestions', () => {
     expect(l.acpAgents.value).toEqual([{ id: 'codex-acp', name: 'Codex' }])
   })
 
+  // One click must not start before a consent the agent needs is known.
+  it('holds the one-click start until the machine agent list is in', async () => {
+    let release
+    const fetchAcpAgents = vi.fn(() => new Promise((r) => (release = r)))
+    const { l } = harness({ deps: { fetchAcpAgents } })
+    await l.load()
+    expect(l.canQuickLaunch.value).toBe(true)
+    l.kind.value = 'acp-gateway'
+    l.params.value.agent = 'codex-acp'
+    await flush()
+    expect(l.canQuickLaunch.value).toBe(false)
+    release({ agents: [] })
+    await flush()
+    expect(l.canQuickLaunch.value).toBe(true)
+  })
+
+  it('never one-click starts with several machines, even with one remembered', async () => {
+    localStorage.setItem('agentrq:lastLaunch', JSON.stringify({ ws1: { machineId: 'm1', kind: 'claude-code' } }))
+    const { l } = harness({ machines: [{ ...READY_MACHINE }, { ...READY_MACHINE, id: 'm2', name: 'second' }] })
+    await l.load()
+    expect(l.canLaunch.value).toBe(true)
+    expect(l.canQuickLaunch.value).toBe(false)
+    localStorage.clear()
+  })
+
+  // A machine changed while its list was on its way must not take the old answer.
+  it('drops an agent list that answers for a machine no longer chosen', async () => {
+    const releases = {}
+    const fetchAcpAgents = vi.fn((id) => new Promise((r) => (releases[id] = r)))
+    const { l } = harness({
+      machines: [{ ...READY_MACHINE }, { ...READY_MACHINE, id: 'm2', name: 'second' }],
+      deps: { fetchAcpAgents },
+    })
+    await l.load()
+    l.machineId.value = 'm1'
+    l.kind.value = 'acp-gateway'
+    await flush()
+    l.machineId.value = 'm2'
+    await flush()
+    releases.m1({ agents: [{ id: 'stale', name: 'Stale' }] })
+    await flush()
+    expect(l.acpAgents.value.map((a) => a.id)).not.toContain('stale')
+    releases.m2({ agents: [{ id: 'fresh', name: 'Fresh' }] })
+    await flush()
+    expect(l.acpAgents.value.map((a) => a.id)).toContain('fresh')
+  })
+
   it('copes with a response carrying no agents key at all', async () => {
     const fetchAcpAgents = vi.fn().mockResolvedValue(undefined)
     const { l } = harness({ deps: { fetchAcpAgents } })

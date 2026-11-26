@@ -17,7 +17,7 @@
  * composable could ever have seen.
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createApp, h } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { useWorkspaceStore } from '../src/stores/workspaceStore'
@@ -28,11 +28,13 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 let machines = []
 const LOCAL_AGENTS = [{ id: 'local-acp', name: 'Local' }]
 let acpAgents = LOCAL_AGENTS
+// Set to a pending promise to hold the machine's agent list back.
+let agentsGate = null
 const launchAgent = vi.fn(() => Promise.resolve({ session: { id: 'sess-9' } }))
 vi.mock('../src/api', () => ({
   fetchMachines: () => Promise.resolve({ machines }),
   launchAgent: (...args) => launchAgent(...args),
-  fetchAcpAgents: () => Promise.resolve({ agents: acpAgents }),
+  fetchAcpAgents: () => agentsGate ?? Promise.resolve({ agents: acpAgents }),
   fetchAcpModels: () => Promise.resolve({ agent: '', models: [] }),
   fetchWorkspaces: () => Promise.resolve({ workspaces: [] }),
   recordTelemetry: (...args) => recordTelemetry(...args),
@@ -92,6 +94,12 @@ async function mount(props, list, workspaces = []) {
 }
 
 describe('StartAgentPanel', () => {
+  // The folded state follows the remembered launch, so no test may inherit one.
+  beforeEach(() => {
+    localStorage.clear()
+    agentsGate = null
+  })
+
   // The workspace page folds its own introduction away while the form is open.
   it('tells the page when its form opens and closes', async () => {
     localStorage.clear()
@@ -169,6 +177,46 @@ describe('StartAgentPanel', () => {
     await settle()
     expect(launchAgent.mock.calls.length).toBe(calls)
     expect(el.querySelector('#start-agent-machine-m1')).toBeTruthy()
+  })
+
+  // Several machines are a choice left to the person, even when this
+  // workspace remembers one of them.
+  it('opens the form rather than starting on a remembered machine when there are several', async () => {
+    localStorage.setItem('agentrq:lastLaunch', JSON.stringify({ ws1: { machineId: 'm1', kind: 'claude-code' } }))
+    const calls = launchAgent.mock.calls.length
+    const { el, text } = await mount({ workspace: WORKSPACE }, [ONLINE, SECOND])
+    expect(text()).toBe('Start an agent')
+    el.querySelector('[data-test=start-agent-quick]').click()
+    await settle()
+    expect(launchAgent.mock.calls.length).toBe(calls)
+    expect(el.querySelector('#start-agent-machine-m1')).toBeTruthy()
+  })
+
+  // Until the machine's agent list is in, a consent the agent needs is unknown.
+  it('opens the form rather than starting a gateway agent while the agent list is loading', async () => {
+    localStorage.setItem(
+      'agentrq:lastLaunch',
+      JSON.stringify({ ws1: { machineId: 'm1', kind: 'acp-gateway', params: { 'acp-gateway': { agent: 'codex-acp' } } } })
+    )
+    agentsGate = new Promise(() => {})
+    const calls = launchAgent.mock.calls.length
+    const { el, text } = await mount({ workspace: WORKSPACE }, [ONLINE])
+    expect(text()).toMatch(/^Start an agent ?on workshop-pi$/)
+    el.querySelector('[data-test=start-agent-quick]').click()
+    await settle()
+    expect(launchAgent.mock.calls.length).toBe(calls)
+    expect(el.querySelector('#start-agent-agent')).toBeTruthy()
+  })
+
+  it('cannot be clicked again once it has started an agent', async () => {
+    push.mockImplementationOnce(() => {})
+    launchAgent.mockImplementationOnce(() => Promise.resolve({ session: { id: 'sess-1' } }))
+    const { el } = await mount({ workspace: WORKSPACE }, [ONLINE])
+    const quick = el.querySelector('[data-test=start-agent-quick]')
+    quick.click()
+    await settle()
+    expect(quick.disabled).toBe(true)
+    expect(quick.textContent.trim()).toBe('Starting…')
   })
 
   it('does not say there is no machine when one is online', async () => {

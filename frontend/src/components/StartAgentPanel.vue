@@ -58,6 +58,7 @@ const {
   noMachine,
   blockers,
   canLaunch,
+  canQuickLaunch,
   acpAgents,
   acpModels,
   claudeModels,
@@ -105,17 +106,18 @@ const modelLabel = computed(() => (params.value?.model ?? '').trim() || 'default
 
 const quickLabel = computed(() => {
   if (launching.value || started.value) return 'Starting…'
-  return canLaunch.value ? `Start ${agentLabel.value}` : 'Start an agent'
+  return canQuickLaunch.value ? `Start ${agentLabel.value}` : 'Start an agent'
 })
 
 /**
  * In the workspace, starting an agent should take one click. The folded
  * button starts what it names, the workspace's last launch or else the
- * browser's, when nothing is left to decide; with a machine to pick or a
- * blocker to read, it opens the form that asks instead.
+ * browser's, when nothing is left to decide (`canQuickLaunch`); with a
+ * machine to pick, a blocker to read or the agent list still on its way, it
+ * opens the form that asks instead.
  */
 function quickStart() {
-  if (canLaunch.value) start()
+  if (canQuickLaunch.value) start()
   else open.value = true
 }
 
@@ -149,14 +151,14 @@ async function start() {
       <button
         type="button"
         data-test="start-agent-quick"
-        :disabled="launching"
+        :disabled="launching || !!started"
         @click="quickStart"
-        class="w-full px-8 py-3 bg-black dark:bg-white text-white dark:text-zinc-900 rounded-sm text-[10px] font-black uppercase tracking-widest shadow-lg hover:shadow-xl active:scale-95 transition-all disabled:opacity-60"
+        class="w-full px-8 py-3 bg-black dark:bg-white text-white dark:text-zinc-900 rounded-lg text-[11px] font-black uppercase tracking-widest hover:opacity-80 active:scale-95 transition-all disabled:opacity-60"
       >
         {{ quickLabel }}
       </button>
       <p class="mt-2 text-[11px] text-gray-500 dark:text-zinc-400 font-medium text-center">
-        <template v-if="canLaunch">
+        <template v-if="canQuickLaunch">
           on {{ selected?.name }} · {{ modelLabel }} ·
           <button
             type="button"
