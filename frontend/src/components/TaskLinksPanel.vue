@@ -24,9 +24,9 @@
         <ul class="mt-1 flex gap-1.5 min-w-0" :class="pinned ? 'flex-col' : 'flex-wrap'">
           <li v-for="link in group.links" :key="link.key" class="min-w-0 max-w-full">
             <RouterLink v-if="link.to" :to="link.to" :title="link.to" :class="chip" class="block truncate" @click="emit('follow')">{{ link.label }}</RouterLink>
-            <a v-else-if="link.kind === 'pr'" :href="link.href" target="_blank" rel="noopener noreferrer" :title="link.href"
-               :class="chip" class="flex items-center gap-1 font-mono" @click="emit('follow')">
-              <svg class="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true" data-testid="task-links-github"><path :d="GITHUB_MARK" /></svg><span class="truncate">{{ link.label }}</span></a>
+            <a v-else-if="link.kind === 'pr' || link.kind === 'issue'" :href="link.href" target="_blank" rel="noopener noreferrer" :title="link.href"
+               :class="chip" class="flex items-center gap-1 h-[calc(1.5em+6px)] font-mono [&>span]:[text-box:trim-both_cap_alphabetic]" @click="emit('follow')">
+              <svg class="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true" data-testid="task-links-github"><path :d="GITHUB_MARK" /></svg><span class="shrink-0" data-testid="task-links-number">#{{ link.number }}</span><span class="ml-auto pl-1 py-1 -my-1 truncate min-w-0 text-gray-400 dark:text-zinc-500" data-testid="task-links-repo">{{ link.repo }}</span></a>
             <a v-else :href="link.href" target="_blank" rel="noopener noreferrer" :title="link.href" :class="chip" class="block truncate" @click="emit('follow')">{{ link.label }}</a>
           </li>
         </ul>
@@ -37,7 +37,7 @@
 
 <script setup>
 /**
- * Every link the task mentions: pull requests, Pano docs, other tasks and the
+ * Every link the task mentions: pull requests, issues, Pano docs, other tasks and the
  * rest, so none has to be dug out of a long conversation. The Pano docs linked
  * to the task are listed too, mentioned or not.
  *

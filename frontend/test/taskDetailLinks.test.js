@@ -136,10 +136,10 @@ describe('TaskDetailView and the task links', () => {
     // It floats over the conversation, which keeps its full width.
     expect(pinned.className).toContain('absolute')
     expect(pinned.parentElement.className).toContain('relative')
-    expect(summary(el)).toBe('· gh#12 · Roadmap')
+    expect(summary(el)).toBe('· agentrq#12 · Roadmap')
 
     const pr = pinned.querySelector('[data-testid="task-links-pr"] a')
-    expect(pr.textContent).toContain('gh#12')
+    expect(pr.textContent).toContain('#12agentrq')
     pr.addEventListener('click', (e) => e.preventDefault())
     pr.click()
     expect(recordTelemetry).toHaveBeenCalledWith('ui_task_link_open', 'ws1')
@@ -150,18 +150,18 @@ describe('TaskDetailView and the task links', () => {
     messages = [...messages, { id: 'm2', sender: 'agent', text: 'Opened https://github.com/agentrq/agentrq/pull/13', createdAt: at(2) }]
     events.value = [...events.value, { type: 'task.updated', payload: task() }]
     await settle()
-    expect(summary(el)).toBe('· gh#12 · gh#13 · Roadmap')
+    expect(summary(el)).toBe('· agentrq#12 · agentrq#13 · Roadmap')
   })
 
   it('lists the Pano docs linked to the task, and those the agent linked by the next status change', async () => {
     panoDocs = [{ id: 'd1', title: 'Roadmap doc' }]
     const el = await mount()
-    expect(summary(el)).toBe('· gh#12 · Roadmap doc')
+    expect(summary(el)).toBe('· agentrq#12 · Roadmap doc')
 
     panoDocs = [{ id: 'd1', title: 'Roadmap doc' }, { id: 'd7', title: 'Release notes' }]
     events.value = [...events.value, { type: 'task.updated', payload: { ...task(), status: 'completed' } }]
     await settle()
-    expect(summary(el)).toBe('· gh#12 · Roadmap doc · Release notes')
+    expect(summary(el)).toBe('· agentrq#12 · Roadmap doc · Release notes')
 
     // The bar under the plan, for a narrow view, opens to them too.
     const bar = el.querySelector('[data-testid="task-links"]')

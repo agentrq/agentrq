@@ -25,13 +25,20 @@ describe('linksInText', () => {
 describe('classifyLink', () => {
   it('recognises a GitHub pull request, and its files tab', () => {
     expect(classifyLink({ href: 'https://github.com/agentrq/agentrq/pull/1099/files' }, origin)).toEqual({
-      kind: 'pr', key: 'agentrq/agentrq#1099', href: 'https://github.com/agentrq/agentrq/pull/1099/files', owner: 'agentrq', repo: 'agentrq', number: '1099',
+      kind: 'pr', key: 'agentrq/agentrq#1099', href: 'https://github.com/agentrq/agentrq/pull/1099/files', owner: 'agentrq', repo: 'agentrq', number: '1099', label: 'agentrq#1099',
     })
     expect(classifyLink({ href: 'https://www.github.com/a/b/pull/7' }, origin).kind).toBe('pr')
   })
 
+  it('recognises a GitHub issue, and a comment on it', () => {
+    expect(classifyLink({ href: 'https://github.com/agentrq/agentrq/issues/1447#issuecomment-1' }, origin)).toEqual({
+      kind: 'issue', key: 'agentrq/agentrq#1447', href: 'https://github.com/agentrq/agentrq/issues/1447#issuecomment-1', owner: 'agentrq', repo: 'agentrq', number: '1447', label: 'agentrq#1447',
+    })
+  })
+
   it('treats any other GitHub page as external', () => {
-    expect(classifyLink({ href: 'https://github.com/a/b/issues/7' }, origin)).toMatchObject({ kind: 'external', label: 'github.com/a/b/issues/7' })
+    expect(classifyLink({ href: 'https://github.com/a/b/issues' }, origin)).toMatchObject({ kind: 'external', label: 'github.com/a/b/issues' })
+    expect(classifyLink({ href: 'https://github.com/a/b/issues/new' }, origin).kind).toBe('external')
   })
 
   it('recognises tasks on this server, absolute or relative, in both route shapes', () => {
@@ -82,7 +89,7 @@ describe('taskLinks', () => {
     const result = taskLinks(task, { origin, taskId: 't1' })
     expect(result.total).toBe(4)
     expect(kinds(result)).toEqual([
-      ['pr', ['gh#12']],
+      ['pr', ['agentrq#12']],
       ['pano', ['Roadmap']],
       ['task', ['Login']],
       ['external', ['example.com/x']],
@@ -99,9 +106,11 @@ describe('taskLinks', () => {
     expect(taskLinks({}, { origin, panoDocs: [{ id: 'd4', title: 'Plan' }] }).total).toBe(1)
   })
 
-  it('names the repository once pull requests come from more than one', () => {
-    const task = { body: 'https://github.com/a/front/pull/1 https://github.com/a/back/pull/2' }
-    expect(kinds(taskLinks(task, { origin }))).toEqual([['pr', ['front#1', 'back#2']]])
+  it('labels pull requests and issues by repository and number, each in its own group', () => {
+    const task = { body: 'https://github.com/a/front/pull/1 fixes https://github.com/a/back/issues/2 and https://github.com/a/back/issues/2' }
+    const result = taskLinks(task, { origin })
+    expect(kinds(result)).toEqual([['pr', ['front#1']], ['issue', ['back#2']]])
+    expect(result.groups[1].label).toBe('Issues')
   })
 
   it('has nothing for a task without links, or without a task', () => {
