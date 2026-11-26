@@ -12,6 +12,9 @@ env.allowLocalModels = false;
 // task titles, Apache-2.0. Its 4-bit export uses only operators both
 // onnxruntime-web backends have, so one file runs on WebGPU and on WASM.
 const MODEL_NAME = 'agentrq/task-title-350m-ONNX';
+// A tag, never 'main': the browser caches the model by its URL, so a new
+// upload to 'main' would never reach anyone who already has the old one.
+const MODEL_REVISION = 'v2';
 
 class TitleGenerationPipeline {
   static task = 'text-generation';
@@ -25,6 +28,7 @@ class TitleGenerationPipeline {
         // WebGPU where the browser has a GPU adapter, else WASM; same file.
         device: (await self.navigator?.gpu?.requestAdapter?.()) ? 'webgpu' : 'wasm',
         dtype: 'q4',
+        revision: MODEL_REVISION,
       });
     }
     return this.instance;
