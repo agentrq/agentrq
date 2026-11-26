@@ -39,6 +39,47 @@ describe('cleanTitle', () => {
   ])('%j becomes %j', (answer, title) => {
     expect(cleanTitle(answer)).toBe(title);
   });
+
+  // Loops the model wrote on the 1,000-task test sets, cut where the token cap stopped them.
+  it.each([
+    [
+      'Nebula X tanıtım sosyal medya sosyal medya sosyal medya sosyal medya sosyal',
+      'Nebula X tanıtım sosyal medya',
+    ],
+    ['Eksik hata sayfası sayfası sayfası sayfası sayfası say', 'Eksik hata sayfası'],
+    ['Sugu ni shouda ni naru to shouda ni naru to shouda ni naru to shouda', 'Sugu ni shouda ni naru to'],
+    ['確認確認確認確認確', '確認'],
+    ['回帰テストテストテストテスト', '回帰テスト'],
+    ['Fix login login login bug', 'Fix login bug'],
+    ['Update docs docs docs.', 'Update docs'],
+    ['审计日志中的破解猫猫猫猫猫�', '审计日志中的破解猫'],
+  ])('cuts the loop in %j to %j', (answer, title) => {
+    expect(cleanTitle(answer)).toBe(title);
+  });
+
+  it.each([
+    ["Refactor module 'Auth'", "Refactor module 'Auth'"],
+    ['Fix color contrast for "sunny"', 'Fix color contrast for "sunny"'],
+    ["'Rename 'beta' flag'", "Rename 'beta' flag"],
+    ["Proje grafik başlıklarını Türkçe'", 'Proje grafik başlıklarını Türkçe'],
+    ['"Bump Go', 'Bump Go'],
+    ['Replace image �', 'Replace image'],
+  ])('keeps the quotes that belong to %j: %j', (answer, title) => {
+    expect(cleanTitle(answer)).toBe(title);
+  });
+
+  it.each([
+    'Plan Bora Bora trip',
+    'Dosyaları yavaş yavaş taşı',
+    'Pay invoice 1212',
+    'Check www.example.com',
+    'Refactor the the parser',
+    'Fix 404 on /api/v1/tasks',
+    '東京大学の研究室に連絡',
+    'Book Walla Walla hotel',
+  ])('leaves %j as it is', (title) => {
+    expect(cleanTitle(title)).toBe(title);
+  });
 });
 
 describe('TITLE_MAX_NEW_TOKENS', () => {
