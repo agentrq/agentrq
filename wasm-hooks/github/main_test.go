@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/agentrq/agentrq/wasm-hooks/sdk"
 )
@@ -117,7 +118,7 @@ func TestPullRequests(t *testing.T) {
 	if want := "Pull request #7 opened by ada in o/r: Add hooks\n`feat/hooks` → `main`\nhttps://github.com/o/r/pull/7"; e.Name != "pr.opened" || e.Payload != want {
 		t.Errorf("opened = %+v", e)
 	}
-	if want := "GitHub PR #7: Add hooks"; e.Subject != want {
+	if want := "GH P#7: Add hooks"; e.Subject != want {
 		t.Errorf("a pull request has the subject %q, want %q", e.Subject, want)
 	}
 	e = one(t, handle(delivery("pull_request", fmt.Sprintf(pr, "review_requested", `,"requested_reviewer":{"login":"bob"}`))))
@@ -128,6 +129,10 @@ func TestPullRequests(t *testing.T) {
 	if !strings.Contains(e.Payload.(string), "#7 review requested in") {
 		t.Errorf("a team review = %+v", e)
 	}
+	long := strings.Replace(fmt.Sprintf(pr, "opened", ""), "Add hooks", strings.Repeat("x", 100), 1)
+	if s := one(t, handle(delivery("pull_request", long))).Subject; !strings.HasPrefix(s, "GH P#7: xxx") || !strings.HasSuffix(s, "…") || utf8.RuneCountInString(s) != sdk.MaxSubjectLength {
+		t.Errorf("a long title is cropped to %q", s)
+	}
 	none(t, handle(delivery("pull_request", fmt.Sprintf(pr, "closed", ""))))
 	none(t, handle(delivery("pull_request", fmt.Sprintf(pr, "opened", ""), "release/*")))
 }
@@ -137,7 +142,7 @@ func TestIssuesAndReleases(t *testing.T) {
 	if e.Name != "issue.opened" || e.Payload != "Issue #3 opened by ada in o/r: Bug\nhttps://github.com/o/r/issues/3" {
 		t.Errorf("issue = %+v", e)
 	}
-	if want := "GitHub issue #3: Bug"; e.Subject != want {
+	if want := "GH I#3: Bug"; e.Subject != want {
 		t.Errorf("an issue has the subject %q, want %q", e.Subject, want)
 	}
 	e = one(t, handle(delivery("release", `{"action":"published","repository":{"full_name":"o/r"},"release":{"tag_name":"v1.0.0","name":"One","html_url":"https://github.com/o/r/releases/tag/v1.0.0"}}`)))
