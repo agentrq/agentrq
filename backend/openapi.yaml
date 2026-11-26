@@ -5079,6 +5079,8 @@ components:
             The agent that last changed the task's status, as it named
             itself: the one working on it, or the one that did. Only in a
             task list and on the live stream; absent when no agent has.
+        timing:
+          $ref: '#/components/schemas/TaskListTiming'
         agentNote:
           type: string
           readOnly: true
@@ -5126,6 +5128,31 @@ components:
           type: string
           description: The model that agent was running, when it reported one.
         createdAt: { type: string, format: date-time }
+
+    TaskListTiming:
+      type: object
+      readOnly: true
+      description: |
+        What a task's card shows. Only in a task list; absent for a task with
+        no history.
+      properties:
+        workedSeconds:
+          type: integer
+          description: |
+            Total time spent ongoing, up to the task's latest transition. While
+            workingSince is set the task is still working, and the time since
+            then adds to it.
+        workingSince:
+          type: string
+          format: date-time
+          description: The latest transition, while it is to ongoing; absent otherwise.
+        statusSince:
+          type: string
+          format: date-time
+          description: |
+            When the task entered its current status. A question to the human
+            (needsinput) is no change of status. Absent when the history does
+            not end in the task's status.
 
     TaskTiming:
       type: object

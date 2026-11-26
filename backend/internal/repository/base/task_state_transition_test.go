@@ -637,3 +637,45 @@ func TestListLastTaskAgents(t *testing.T) {
 		t.Fatalf("got %v, want the injected failure", err)
 	}
 }
+
+// A page's histories come back per task, oldest first, with what a card is
+// built from and nothing else.
+func TestListTaskHistories(t *testing.T) {
+	db := deleteTaskDB(t)
+	repo := New(&mockDB{db: db})
+	now := time.Now()
+	seed := func(id int64) model.Task {
+		t.Helper()
+		task, err := repo.CreateTask(context.Background(), model.Task{ID: id, CreatedAt: now, UpdatedAt: now, WorkspaceID: dtWorkspaceID, UserID: dtUserID, Status: "notstarted"})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		return task
+	}
+	task := seed(dtTaskID)
+	task.Status = "ongoing"
+	ctx := entity.WithTaskAgent(context.Background(), entity.TaskAgent{ID: 7})
+	if _, err := repo.UpdateTask(ctx, task, "Status"); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	seed(dtTaskID + 1)
+
+	got, err := repo.ListTaskHistories(context.Background(), []int64{dtTaskID, dtTaskID + 1, 999})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	first := got[dtTaskID]
+	if len(got) != 2 || len(first) != 2 || len(got[dtTaskID+1]) != 1 {
+		t.Fatalf("histories = %+v, want two rows for the first task, one for the second, none for the unknown", got)
+	}
+	if first[0].ToState != model.TaskStateNotStarted || first[1].FromState != model.TaskStateNotStarted ||
+		first[1].ToState != model.TaskStateOngoing || first[1].AgentID != 7 || first[1].TaskID != dtTaskID || first[1].CreatedAt.IsZero() {
+		t.Fatalf("first history = %+v, want notstarted then ongoing by agent 7", first)
+	}
+	if first[1].UserID != 0 || first[1].WorkspaceID != 0 {
+		t.Fatalf("history row = %+v, want only the card's columns read", first[1])
+	}
+	if got, err := repo.ListTaskHistories(context.Background(), nil); err != nil || got != nil {
+		t.Fatalf("no tasks = %v, %v; want nothing", got, err)
+	}
+}

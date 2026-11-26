@@ -124,6 +124,24 @@ func TestFromEntityTaskToView_AgentNote(t *testing.T) {
 	}
 }
 
+// A listed task carries its card timing in camelCase, the running stretch's
+// start only while there is one, and no timing at all when it has none.
+func TestFromEntityTaskToView_Timing(t *testing.T) {
+	at := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	b, _ := json.Marshal(FromEntityTaskToView(entity.Task{ID: 1, Timing: &entity.TaskListTiming{WorkedSeconds: 600, StatusSince: &at}}))
+	if want := `"timing":{"workedSeconds":600,"statusSince":"2026-11-26T12:00:00Z"}`; !strings.Contains(string(b), want) {
+		t.Errorf("view %s, want %s", b, want)
+	}
+	b, _ = json.Marshal(FromEntityTaskToView(entity.Task{ID: 1, Timing: &entity.TaskListTiming{WorkingSince: &at, StatusSince: &at}}))
+	if want := `"timing":{"workedSeconds":0,"workingSince":"2026-11-26T12:00:00Z","statusSince":"2026-11-26T12:00:00Z"}`; !strings.Contains(string(b), want) {
+		t.Errorf("view %s, want %s", b, want)
+	}
+	b, _ = json.Marshal(FromEntityTaskToView(entity.Task{ID: 1}))
+	if strings.Contains(string(b), "timing") {
+		t.Errorf("a task with no timing carries the field: %s", b)
+	}
+}
+
 // The stream event carries the task's plan, or no plan once it is withdrawn.
 func TestFromModelTaskPlanToUpdatedView(t *testing.T) {
 	at := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)

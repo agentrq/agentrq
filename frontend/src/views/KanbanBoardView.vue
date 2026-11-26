@@ -107,7 +107,22 @@
                 <AgentIcon :name="t.agent" />
                 <span class="truncate">{{ t.agent }}</span>
               </div>
-              
+
+              <!-- How long it was worked on, and how long it has been where it
+                   is. Text trimmed to cap height, or the icons sit low. -->
+              <div v-if="footerOf(t)" data-test="card-timing"
+                   class="mt-2 pt-1.5 border-t border-gray-200/70 dark:border-zinc-700/60 flex items-center gap-1 text-[10px] font-medium tabular-nums text-gray-500 dark:text-zinc-400">
+                <template v-if="footerOf(t).total">
+                  <svg class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <span data-test="card-worked" title="Time worked" class="[text-box:trim-both_cap_alphabetic]">{{ footerOf(t).total }}</span>
+                </template>
+                <span data-test="card-state" :title="footerTitle[footerOf(t).kind]" class="ml-auto flex items-center gap-1" :class="footerTone[footerOf(t).kind]">
+                  <span v-if="footerOf(t).kind === 'working'" class="w-1.5 h-1.5 mx-[3px] rounded-full bg-green-500 animate-pulse"></span>
+                  <svg v-else-if="footerOf(t).kind === 'blocked'" class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <span class="[text-box:trim-both_cap_alphabetic]">{{ footerOf(t).state }}</span>
+                </span>
+              </div>
+
               <!-- Quick actions for Pending -->
               <div v-if="!isTeamMode && isPendingOnHuman(t) && requiresAllowDeny(t)" class="mt-3" @click.stop>
                 <div class="flex flex-wrap gap-2" v-if="isAgentConnected(t)">
@@ -182,6 +197,7 @@ import { canSpinUp, useSpinUp } from '../composables/useSpinUp';
 import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
 import { readCachedTasks, readAllCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
 import { taskAccentClass } from '../composables/useTaskStatusStyle';
+import { cardFooter, timingAfterMove } from '../composables/useCardTiming';
 import { getOrder, sortColumn, orderBetween } from '../composables/useKanbanOrder';
 import { useKanbanScheduled } from '../composables/useKanbanScheduled';
 import { useCron } from '../composables/useCron';
@@ -333,9 +349,25 @@ function upsert(t) {
   if (idx === -1) {
     tasks.value.push(t);
   } else {
-    tasks.value[idx] = { ...tasks.value[idx], ...t };
+    const prev = tasks.value[idx];
+    const next = { ...prev, ...t };
+    // A move that brings no timing (a drag, a live update) times itself.
+    if (!('timing' in t) && t.status && t.status !== prev.status) next.timing = timingAfterMove(prev.timing, t.status, t.updatedAt);
+    tasks.value[idx] = next;
   }
 }
+
+// The card footers count up: a clock that ticks, rather than each card its own.
+const now = ref(Date.now());
+let clock = null;
+const footerOf = (t) => cardFooter(t, now.value);
+const footerTone = {
+  working: 'text-green-700 dark:text-green-400',
+  blocked: 'text-red-600 dark:text-red-400',
+  completed: 'text-gray-400 dark:text-zinc-500',
+  rejected: 'text-gray-400 dark:text-zinc-500',
+};
+const footerTitle = { working: 'Ongoing for', blocked: 'Blocked for', completed: 'Completed', rejected: 'Rejected' };
 
 function removeTask(id) {
   tasks.value = tasks.value.filter(x => String(x.id) !== String(id));
@@ -476,7 +508,7 @@ async function onDrop(e, colId) {
 
   if (col.sortBy === 'recent') {
     if (task.status === newStatus) return;
-    const snapshot = { status: task.status, updatedAt: task.updatedAt };
+    const snapshot = { status: task.status, updatedAt: task.updatedAt, timing: task.timing ?? null };
     upsert({ id: task.id, status: newStatus, updatedAt: new Date().toISOString() }); // optimistic: newest first
     try {
       // The server's timestamp replaces this clock's, or a live update stamped
@@ -502,7 +534,7 @@ async function onDrop(e, colId) {
   // No-op: same column, same status, dropped in its current slot.
   if (fromColId === colId && task.status === newStatus && getOrder(task) === newOrder) return;
 
-  const snapshot = { status: task.status, sortOrder: getOrder(task) };
+  const snapshot = { status: task.status, sortOrder: getOrder(task), timing: task.timing ?? null };
   upsert({ id: task.id, status: newStatus, sortOrder: newOrder }); // optimistic
 
   try {
@@ -511,7 +543,7 @@ async function onDrop(e, colId) {
     }
     await updateTaskOrder(workspaceOf(task), id, newOrder);
   } catch (err) {
-    upsert({ id: task.id, status: snapshot.status, sortOrder: snapshot.sortOrder }); // revert
+    upsert({ id: task.id, status: snapshot.status, sortOrder: snapshot.sortOrder, timing: snapshot.timing }); // revert
     const msg = (err && err.message) || 'failed to move task';
     notifyError('Move failed: ' + msg);
   }
@@ -669,10 +701,12 @@ onMounted(async () => {
   else if (isGlobal.value && workspaceStore.workspaces.length === 0) await workspaceStore.fetchWorkspaces();
   loadAll();
   connect();
+  clock = setInterval(() => { now.value = Date.now(); }, 30000);
 });
 
 onUnmounted(() => {
   disconnect();
+  clearInterval(clock);
 });
 
 // The team board's filters are in the URL: a new one reads the board again.

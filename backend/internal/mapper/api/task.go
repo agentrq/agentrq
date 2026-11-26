@@ -667,6 +667,9 @@ func FromEntityTaskToView(t entity.Task) view.Task {
 		ClearContext:     t.ClearContext,
 		Agent:            t.Agent,
 	}
+	if t.Timing != nil {
+		res.Timing = &view.TaskListTiming{WorkedSeconds: t.Timing.WorkedSeconds, WorkingSince: t.Timing.WorkingSince, StatusSince: t.Timing.StatusSince}
+	}
 	if t.ParentID != 0 {
 		res.ParentID = monoflake.ID(t.ParentID).String()
 	}

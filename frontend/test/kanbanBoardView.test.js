@@ -319,6 +319,47 @@ describe('KanbanBoardView', () => {
     expect(agent('Task n1').textContent.trim()).toBe('codex')
   })
 
+  describe('the timing footer', () => {
+    const mins = (m) => new Date(Date.now() - m * 60000).toISOString()
+    const footer = (card, text) => card(text).querySelector('[data-test="card-timing"]')
+    const parts = (card, text) => {
+      const f = footer(card, text)
+      return [f.querySelector('[data-test="card-worked"]')?.textContent.trim() ?? '', f.querySelector('[data-test="card-state"]').textContent.trim()]
+    }
+
+    it('shows the time worked and the current state on ongoing, blocked and closed cards, and none elsewhere', async () => {
+      byStatus.ongoing = [task('o1', 'ongoing', { timing: { workedSeconds: 600, workingSince: mins(5), statusSince: mins(5) } })]
+      byStatus.blocked = [task('b1', 'blocked', { timing: { workedSeconds: 1380, statusSince: mins(47) } })]
+      byStatus['completed,rejected'] = [
+        task('d1', 'completed', { timing: { workedSeconds: 3660, statusSince: mins(42) } }),
+        task('d2', 'rejected', { timing: { workedSeconds: 0, statusSince: mins(180) } }),
+      ]
+      byStatus.notstarted = [task('n1', 'notstarted', { timing: { workedSeconds: 0, statusSince: mins(3) } })]
+      const { card } = await mount()
+      expect(parts(card, 'Task o1')).toEqual(['15m', '5m'])
+      expect(parts(card, 'Task b1')).toEqual(['23m', '47m'])
+      expect(parts(card, 'Task d1')).toEqual(['1h 1m', '✓ 42m ago'])
+      expect(parts(card, 'Task d2')).toEqual(['', '✗ 3h ago'])
+      expect(footer(card, 'Task n1')).toBeNull()
+    })
+
+    it('times a move a live update brings, which carries no timing', async () => {
+      byStatus.ongoing = [task('o1', 'ongoing', { updatedAt: mins(60), timing: { workedSeconds: 60, workingSince: mins(10), statusSince: mins(10) } })]
+      const { card } = await mount()
+      events.value = [{ type: 'status.updated', payload: task('o1', 'completed', { updatedAt: new Date().toISOString() }) }]
+      await settle()
+      expect(parts(card, 'Task o1')).toEqual(['11m', '✓ now'])
+    })
+
+    it('puts the timing back with the card when a move fails', async () => {
+      updateTaskStatus.mockRejectedValue(new Error('network unreachable'))
+      byStatus.ongoing = [task('o1', 'ongoing', { timing: { workedSeconds: 0, workingSince: mins(5), statusSince: mins(5) } })]
+      const { card, drag } = await mount()
+      await drag('Task o1', { into: 'Done' })
+      expect(parts(card, 'Task o1')).toEqual(['5m', '5m'])
+    })
+  })
+
   it('names no workspace on a card when the board is one workspace’s', async () => {
     const { el } = await mount()
     expect(el.querySelector('[data-test="card-workspace"]')).toBeNull()
