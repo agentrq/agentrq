@@ -24,6 +24,15 @@ func TestPresetRequests(t *testing.T) {
 		{name: "no workspace id", target: "/workspaces/0/presets", body: `{}`},
 		{name: "a body that is not JSON", target: ws, body: `{`},
 	})
+	checkRequest(t, "/workspaces/:id/presets/:name", FromHTTPRequestToUpdatePresetRequestEntity, []requestCase[entity.UpdatePresetRequest]{
+		{name: "a preset renamed and edited", target: ws + "/a%20b", body: `{"name":"ship","body":"ship it"}`,
+			want: &entity.UpdatePresetRequest{WorkspaceID: 42, Name: "a b", NewName: "ship", Body: "ship it"}},
+		{name: "only the body", target: ws + "/deploy", body: `{"body":"ship it"}`,
+			want: &entity.UpdatePresetRequest{WorkspaceID: 42, Name: "deploy", Body: "ship it"}},
+		{name: "no workspace id", target: "/workspaces/0/presets/a", body: `{}`},
+		{name: "a broken escape in the name", target: ws + "/a%zz", body: `{}`},
+		{name: "a body that is not JSON", target: ws + "/a", body: `{`},
+	})
 	checkRequest(t, "/workspaces/:id/presets/:name", FromHTTPRequestToDeletePresetRequestEntity, []requestCase[entity.DeletePresetRequest]{
 		{name: "a preset by name", target: ws + "/pull-n-push", want: &entity.DeletePresetRequest{WorkspaceID: 42, Name: "pull-n-push"}},
 		{name: "an escaped name", target: ws + "/a%20b", want: &entity.DeletePresetRequest{WorkspaceID: 42, Name: "a b"}},
@@ -41,6 +50,8 @@ func TestPresetResponses(t *testing.T) {
 		view.ListPresetsResponse{Presets: []view.Preset{}})
 	checkResponse(t, FromCreatePresetResponseEntityToHTTPResponse(&entity.CreatePresetResponse{Preset: p}),
 		view.CreatePresetResponse{Preset: want})
+	checkResponse(t, FromUpdatePresetResponseEntityToHTTPResponse(&entity.UpdatePresetResponse{Preset: p}),
+		view.UpdatePresetResponse{Preset: want})
 }
 
 func TestFromErrorToHTTPResponse_ARefusedPreset(t *testing.T) {

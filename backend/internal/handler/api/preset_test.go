@@ -28,6 +28,15 @@ type presetCrud struct {
 	sawList   entity.ListPresetsRequest
 	sawCreate entity.CreatePresetRequest
 	sawDelete entity.DeletePresetRequest
+	sawUpdate entity.UpdatePresetRequest
+}
+
+func (p *presetCrud) UpdatePreset(_ context.Context, req entity.UpdatePresetRequest) (*entity.UpdatePresetResponse, error) {
+	p.sawUpdate = req
+	if p.err != nil {
+		return nil, p.err
+	}
+	return &entity.UpdatePresetResponse{Preset: entity.Preset{ID: 900, WorkspaceID: 4242, Name: req.NewName, Body: req.Body}}, nil
 }
 
 func (p *presetCrud) ListPresets(_ context.Context, req entity.ListPresetsRequest) (*entity.ListPresetsResponse, error) {
@@ -64,6 +73,7 @@ func presetApp(c crud.Controller) *fiber.App {
 	})
 	app.Get("/workspaces/:id/presets", h.listWorkspacePresets())
 	app.Post("/workspaces/:id/presets", h.createWorkspacePreset())
+	app.Put("/workspaces/:id/presets/:name", h.updateWorkspacePreset())
 	app.Delete("/workspaces/:id/presets/:name", h.deleteWorkspacePreset())
 	return app
 }
@@ -118,6 +128,20 @@ func TestCreateWorkspacePreset(t *testing.T) {
 	}
 }
 
+func TestUpdateWorkspacePreset(t *testing.T) {
+	c := &presetCrud{}
+	status, body := presetRequest(t, c, http.MethodPut, "/workspaces/"+testPresetWorkspaceID+"/presets/deploy", `{"name":"ship","body":"ship it"}`)
+	if status != http.StatusOK {
+		t.Fatalf("status %d, want 200: %s", status, body)
+	}
+	if !strings.Contains(body, `"preset":{`) || !strings.Contains(body, `"name":"ship"`) {
+		t.Errorf("the response is %s, want the edited preset", body)
+	}
+	if c.sawUpdate != (entity.UpdatePresetRequest{WorkspaceID: 4242, UserID: "user-1", Name: "deploy", NewName: "ship", Body: "ship it"}) {
+		t.Errorf("the controller was asked for %+v", c.sawUpdate)
+	}
+}
+
 func TestDeleteWorkspacePreset(t *testing.T) {
 	c := &presetCrud{}
 	status, body := presetRequest(t, c, http.MethodDelete, "/workspaces/"+testPresetWorkspaceID+"/presets/pull-n-push", "")
@@ -137,6 +161,7 @@ func TestWorkspacePresets_RefuseAnUnusableRequest(t *testing.T) {
 		{"create with no workspace id", http.MethodPost, "/workspaces/0/presets", `{"name":"a","body":"b"}`},
 		{"create with a body that is not JSON", http.MethodPost, "/workspaces/" + testPresetWorkspaceID + "/presets", `{`},
 		{"delete with no workspace id", http.MethodDelete, "/workspaces/0/presets/a", ""},
+		{"update with a body that is not JSON", http.MethodPut, "/workspaces/" + testPresetWorkspaceID + "/presets/a", `{`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if status, body := presetRequest(t, &presetCrud{}, tc.method, tc.path, tc.body); status != http.StatusUnprocessableEntity {
@@ -169,6 +194,8 @@ func TestWorkspacePresets_ControllerErrorsMapToStatuses(t *testing.T) {
 		{"list of another account's workspace", http.MethodGet, "/workspaces/" + testPresetWorkspaceID + "/presets", "", base.ErrNotFound, http.StatusNotFound, "not found"},
 		{"create with a name taken", http.MethodPost, "/workspaces/" + testPresetWorkspaceID + "/presets", `{"name":"a","body":"b"}`, &entity.PresetError{Message: `a preset named "a" exists`, Conflict: true}, http.StatusConflict, `a preset named \"a\" exists`},
 		{"create with an empty body", http.MethodPost, "/workspaces/" + testPresetWorkspaceID + "/presets", `{"name":"a","body":""}`, &entity.PresetError{Message: "preset body is empty"}, http.StatusUnprocessableEntity, "preset body is empty"},
+		{"update with a name taken", http.MethodPut, "/workspaces/" + testPresetWorkspaceID + "/presets/a", `{"name":"b","body":"x"}`, &entity.PresetError{Message: `a preset named "b" exists`, Conflict: true}, http.StatusConflict, `a preset named \"b\" exists`},
+		{"update of a preset not there", http.MethodPut, "/workspaces/" + testPresetWorkspaceID + "/presets/a", `{"body":"x"}`, base.ErrNotFound, http.StatusNotFound, "not found"},
 		{"delete of a preset not there", http.MethodDelete, "/workspaces/" + testPresetWorkspaceID + "/presets/a", "", base.ErrNotFound, http.StatusNotFound, "not found"},
 		{"delete failing in the database", http.MethodDelete, "/workspaces/" + testPresetWorkspaceID + "/presets/a", "", errors.New("database unavailable"), http.StatusInternalServerError, "internal server error"},
 	} {

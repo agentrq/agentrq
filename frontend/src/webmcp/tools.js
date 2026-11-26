@@ -524,6 +524,21 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ workspaceId, name, body }) => api.createWorkspacePreset(workspaceId, name, body),
     }),
     tool({
+      name: 'updateWorkspacePreset',
+      description:
+        'Edit a workspace\'s preset: replace its body, and rename it when newName differs. The new name follows the ' +
+        'createWorkspacePreset rules and must not be taken.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        name: str('The preset\'s name, as listWorkspacePresets reports it.'),
+        newName: str('The name it should have; its current name to keep it.'),
+        body: str('The message the preset puts in the composer.'),
+      },
+      required: ['workspaceId', 'name', 'newName', 'body'],
+      screen: before(settingsPage('presets')),
+      run: ({ workspaceId, name, newName, body }) => api.updateWorkspacePreset(workspaceId, name, newName, body),
+    }),
+    tool({
       name: 'deleteWorkspacePreset',
       description: 'Remove a workspace\'s preset by name.',
       properties: { workspaceId: WORKSPACE_ID, name: str('The preset\'s name, as listWorkspacePresets reports it.') },

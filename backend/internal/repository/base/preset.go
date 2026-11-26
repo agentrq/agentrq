@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -37,6 +38,33 @@ func (r *repository) CreatePreset(ctx context.Context, p model.Preset) (model.Pr
 		return model.Preset{}, ErrPresetExists
 	}
 	return p, nil
+}
+
+// UpdatePreset gives the workspace's preset called name p's name and body,
+// and returns it as stored. It returns ErrNotFound when the workspace has no
+// preset by that name, and ErrPresetExists when the new name is taken; the
+// unique index decides that, as it does for CreatePreset.
+func (r *repository) UpdatePreset(ctx context.Context, userID, workspaceID int64, name string, p model.Preset) (model.Preset, error) {
+	var saved model.Preset
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&model.Preset{}).
+			Where("user_id = ? AND workspace_id = ? AND name = ?", userID, workspaceID, name).
+			Updates(map[string]any{"name": p.Name, "body": p.Body})
+		if errors.Is(res.Error, gorm.ErrDuplicatedKey) {
+			return ErrPresetExists
+		}
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return tx.Where("user_id = ? AND workspace_id = ? AND name = ?", userID, workspaceID, p.Name).First(&saved).Error
+	})
+	if err != nil {
+		return model.Preset{}, err
+	}
+	return saved, nil
 }
 
 // DeletePreset removes a workspace's preset by name, or returns ErrNotFound

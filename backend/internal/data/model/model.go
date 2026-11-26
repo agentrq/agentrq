@@ -933,6 +933,8 @@ const (
 	ActionIDA2UIChart
 	// An agent's card that draws a Progress bar; emitted by the backend.
 	ActionIDA2UIProgress
+	// A workspace preset edited; emitted by the backend.
+	ActionIDPresetUpdate
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

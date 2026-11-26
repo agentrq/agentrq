@@ -738,6 +738,17 @@ type (
 		Preset Preset `json:"preset"`
 	}
 
+	// UpdatePresetRequest edits the preset named in the path. An empty name
+	// keeps the one it has.
+	UpdatePresetRequest struct {
+		Name string `json:"name"`
+		Body string `json:"body"`
+	}
+
+	UpdatePresetResponse struct {
+		Preset Preset `json:"preset"`
+	}
+
 	GetMemoryResponse struct {
 		Memory Memory `json:"memory"`
 	}

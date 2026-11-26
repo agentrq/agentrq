@@ -97,7 +97,7 @@ export function usePresetMenu({
 }
 
 /**
- * The settings tab's list: load, add and remove, with the server's sentence
+ * The settings tab's list: load, add, edit and remove, with the server's sentence
  * when it refuses. Each change applies at once; there is no Save.
  *
  * @param {import('vue').Ref<string>|(() => string)} workspaceId
@@ -105,6 +105,7 @@ export function usePresetMenu({
 export function useWorkspacePresets(workspaceId, {
   list = (id) => api.listWorkspacePresets(id),
   create = (id, name, body) => api.createWorkspacePreset(id, name, body),
+  update = (id, name, newName, body) => api.updateWorkspacePreset(id, name, newName, body),
   remove = (id, name) => api.deleteWorkspacePreset(id, name),
 } = {}) {
   const presets = ref([]);
@@ -128,11 +129,23 @@ export function useWorkspacePresets(workspaceId, {
   }
 
   /** Saves a preset; true when it was kept, so the form can clear. */
-  async function add(name, body) {
+  function add(name, body) {
+    return save(() => create(toValue(workspaceId), name.trim(), body), presets.value);
+  }
+
+  /** Gives the preset called oldName a new name and body; true when kept. */
+  function edit(oldName, name, body) {
+    return save(
+      () => update(toValue(workspaceId), oldName, name.trim(), body),
+      presets.value.filter((p) => p.name !== oldName)
+    );
+  }
+
+  async function save(send, others) {
     saving.value = true;
     try {
-      const res = await create(toValue(workspaceId), name.trim(), body);
-      presets.value = [...presets.value, res.preset]
+      const res = await send();
+      presets.value = [...others, res.preset]
         // By code point, as the server orders them.
         .sort((a, b) => (a.name < b.name ? -1 : 1));
       error.value = '';
@@ -155,5 +168,5 @@ export function useWorkspacePresets(workspaceId, {
     }
   }
 
-  return { presets, loading, error, saving, load, add, remove: removePreset };
+  return { presets, loading, error, saving, load, add, edit, remove: removePreset };
 }

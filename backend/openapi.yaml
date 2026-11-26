@@ -848,6 +848,38 @@ paths:
         in: path
         required: true
         schema: { type: string, maxLength: 64 }
+    put:
+      tags: [Workspaces]
+      summary: Edit a preset
+      description: >
+        Replaces the preset's body, and renames it when `name` is given and
+        differs. The new name and body follow the rules for saving one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                name: { type: string, maxLength: 64 }
+                body: { type: string }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preset: { $ref: '#/components/schemas/Preset' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The workspace has a preset by the new name.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
     delete:
       tags: [Workspaces]
       summary: Remove a preset

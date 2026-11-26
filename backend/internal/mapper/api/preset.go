@@ -47,6 +47,22 @@ func FromHTTPRequestToDeletePresetRequestEntity(c fiber.Ctx) *entity.DeletePrese
 	return &entity.DeletePresetRequest{WorkspaceID: workspaceID, Name: name}
 }
 
+func FromHTTPRequestToUpdatePresetRequestEntity(c fiber.Ctx) *entity.UpdatePresetRequest {
+	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+	if workspaceID == 0 {
+		return nil
+	}
+	name, err := url.PathUnescape(c.Params("name"))
+	if err != nil {
+		return nil
+	}
+	var payload view.UpdatePresetRequest
+	if err := json.Unmarshal(c.Body(), &payload); err != nil {
+		return nil
+	}
+	return &entity.UpdatePresetRequest{WorkspaceID: workspaceID, Name: name, NewName: payload.Name, Body: payload.Body}
+}
+
 func FromListPresetsResponseEntityToHTTPResponse(rs *entity.ListPresetsResponse) []byte {
 	presets := make([]view.Preset, len(rs.Presets))
 	for i, p := range rs.Presets {
@@ -58,6 +74,11 @@ func FromListPresetsResponseEntityToHTTPResponse(rs *entity.ListPresetsResponse)
 
 func FromCreatePresetResponseEntityToHTTPResponse(rs *entity.CreatePresetResponse) []byte {
 	payload, _ := json.Marshal(view.CreatePresetResponse{Preset: fromEntityPresetToView(rs.Preset)})
+	return payload
+}
+
+func FromUpdatePresetResponseEntityToHTTPResponse(rs *entity.UpdatePresetResponse) []byte {
+	payload, _ := json.Marshal(view.UpdatePresetResponse{Preset: fromEntityPresetToView(rs.Preset)})
 	return payload
 }
 

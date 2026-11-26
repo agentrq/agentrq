@@ -1953,6 +1953,9 @@ const (
 	// An agent's card that draws a Progress bar, from our own catalog: a
 	// reply, a question or an update. Backend-emitted: the server stored it.
 	ActionA2UIProgress Action = 150
+	// A workspace preset edited from the settings page: its body, its name
+	// or both. Emitted by the backend.
+	ActionPresetUpdate Action = 151
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2257,6 +2260,8 @@ func (a Action) String() string {
 		return "a2ui_chart"
 	case ActionA2UIProgress:
 		return "a2ui_progress"
+	case ActionPresetUpdate:
+		return "preset_update"
 	}
 	return "unknown"
 }

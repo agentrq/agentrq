@@ -167,10 +167,27 @@ describe('useWorkspacePresets', () => {
     expect(p.error.value).toBe('');
   });
 
+  it('edits a preset in place, keeping name order through a rename', async () => {
+    const list = vi.fn().mockResolvedValue({ presets: [DEPLOY, PULL] });
+    const update = vi.fn((id, name, newName, body) => Promise.resolve({ preset: { name: newName, body } }));
+    const p = useWorkspacePresets(() => 'ws1', { list, update });
+    await p.load();
+
+    expect(await p.edit('deploy', 'deploy', 'deploy to prod')).toBe(true);
+    expect(update).toHaveBeenCalledWith('ws1', 'deploy', 'deploy', 'deploy to prod');
+    expect(p.presets.value).toEqual([{ name: 'deploy', body: 'deploy to prod' }, PULL]);
+
+    expect(await p.edit('deploy', ' zz ', 'last')).toBe(true);
+    expect(update).toHaveBeenLastCalledWith('ws1', 'deploy', 'zz', 'last');
+    expect(p.presets.value.map((x) => x.name)).toEqual(['pull-n-push', 'zz']);
+    expect(p.error.value).toBe('');
+  });
+
   it('shows the server\'s sentence when it refuses, and keeps the list', async () => {
     const p = useWorkspacePresets(() => 'ws1', {
       list: () => Promise.reject(new Error('Failed to fetch presets')),
       create: () => Promise.reject(new Error('a preset named "deploy" exists')),
+      update: () => Promise.reject(new Error('a preset named "ship" exists')),
       remove: () => Promise.reject(new Error('Failed to remove preset')),
     });
     await p.load();
@@ -178,6 +195,10 @@ describe('useWorkspacePresets', () => {
     expect(await p.add('deploy', 'x')).toBe(false);
     expect(p.error.value).toBe('a preset named "deploy" exists');
     expect(p.saving.value).toBe(false);
+    p.presets.value = [PULL];
+    expect(await p.edit('pull-n-push', 'ship', 'x')).toBe(false);
+    expect(p.error.value).toBe('a preset named "ship" exists');
+    expect(p.presets.value).toEqual([PULL]);
     await p.remove('deploy');
     expect(p.error.value).toBe('Failed to remove preset');
   });
@@ -209,16 +230,19 @@ describe('useWorkspacePresets', () => {
   it('calls the API by default', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((url, init = {}) => {
       if (init.method === 'POST') return Promise.resolve(new Response(JSON.stringify({ preset: PULL }), { status: 201 }));
+      if (init.method === 'PUT') return Promise.resolve(new Response(JSON.stringify({ preset: { ...PULL, body: 'new' } }), { status: 200 }));
       if (init.method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }));
       return Promise.resolve(new Response(JSON.stringify({ presets: [] }), { status: 200 }));
     });
     const p = useWorkspacePresets(() => 'ws1');
     await p.load();
     await p.add('pull-n-push', PULL.body);
+    await p.edit('pull-n-push', 'pull-n-push', 'new');
     await p.remove('pull-n-push');
     expect(fetchSpy.mock.calls.map(([url, init]) => `${init?.method || 'GET'} ${url}`)).toEqual([
       expect.stringMatching(/^GET .*\/workspaces\/ws1\/presets$/),
       expect.stringMatching(/^POST .*\/workspaces\/ws1\/presets$/),
+      expect.stringMatching(/^PUT .*\/workspaces\/ws1\/presets\/pull-n-push$/),
       expect.stringMatching(/^DELETE .*\/workspaces\/ws1\/presets\/pull-n-push$/),
     ]);
     fetchSpy.mockRestore();
@@ -244,6 +268,14 @@ describe('the preset API calls', () => {
     spy.mockRestore();
     spy = answer(500, 'not json');
     await expect(api.createWorkspacePreset('ws1', 'a', 'b')).rejects.toThrow('Failed to save preset');
+    spy.mockRestore();
+    spy = answer(409, JSON.stringify({ error: { code: 409, message: 'a preset named "c" exists' } }));
+    await expect(api.updateWorkspacePreset('ws1', 'a b', 'c', 'd')).rejects.toThrow('a preset named "c" exists');
+    expect(spy.mock.calls[0][0]).toContain('/presets/a%20b');
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ name: 'c', body: 'd' });
+    spy.mockRestore();
+    spy = answer(500, 'not json');
+    await expect(api.updateWorkspacePreset('ws1', 'a', 'a', 'b')).rejects.toThrow('Failed to save preset');
     spy.mockRestore();
   });
 });

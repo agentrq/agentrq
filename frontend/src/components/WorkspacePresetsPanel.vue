@@ -5,7 +5,7 @@
 -->
 
 <!-- A workspace's presets: messages the composer puts in place of #name.
-     Adding and removing apply at once; there is no Save. -->
+     Adding, editing and removing apply at once; there is no Save for the page. -->
 <template>
   <div data-test="presets" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
     <div class="space-y-4">
@@ -27,10 +27,16 @@
             <span class="text-xs font-bold text-gray-800 dark:text-zinc-200 font-mono">#{{ preset.name }}</span>
             <span class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium whitespace-pre-wrap break-words line-clamp-3">{{ preset.body }}</span>
           </div>
-          <button type="button" data-test="preset-remove" :aria-label="`Remove #${preset.name}`" @click="remove(preset.name)"
-                  class="shrink-0 text-gray-300 hover:text-red-500 transition-colors p-2 -m-2">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-          </button>
+          <div class="shrink-0 flex items-center gap-4">
+            <button type="button" data-test="preset-edit" :aria-label="`Edit #${preset.name}`" @click="startEdit(preset)"
+                    class="text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors p-2 -m-2">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.536 8 18l1.464-4.536z" /></svg>
+            </button>
+            <button type="button" data-test="preset-remove" :aria-label="`Remove #${preset.name}`" @click="remove(preset.name)"
+                    class="text-gray-300 hover:text-red-500 transition-colors p-2 -m-2">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </button>
+          </div>
         </div>
       </div>
       <div v-else data-test="presets-empty" class="py-10 border-2 border-dashed border-gray-100 dark:border-zinc-800 rounded-sm flex flex-col items-center justify-center text-center px-8 bg-gray-50/30 dark:bg-zinc-900/30">
@@ -40,7 +46,7 @@
     </div>
 
     <div class="space-y-4 pt-8 border-t border-gray-100 dark:border-zinc-800">
-      <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Add a Preset</h3>
+      <h3 data-test="preset-form-title" class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">{{ editing ? `Edit #${editing}` : 'Add a Preset' }}</h3>
       <div class="space-y-2">
         <label for="presetName" class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Name</label>
         <input id="presetName" v-model="name" data-test="preset-name" type="text" spellcheck="false" autocapitalize="off" autocorrect="off"
@@ -58,10 +64,16 @@
         <!-- The workspace's skills, offered as a word starts with `/`. -->
         <SlashCommandMenu :menu="skillMenu" @accept="skillMenu.accept" />
       </div>
-      <button type="button" data-test="preset-add" :disabled="!canAdd" @click="submit"
-              class="px-5 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-zinc-900 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:bg-black dark:hover:bg-zinc-100 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
-        {{ saving ? 'Saving…' : 'Add Preset' }}
-      </button>
+      <div class="flex items-center gap-3">
+        <button type="button" data-test="preset-add" :disabled="!canAdd" @click="submit"
+                class="px-5 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-zinc-900 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:bg-black dark:hover:bg-zinc-100 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
+          {{ saving ? 'Saving…' : editing ? 'Save Preset' : 'Add Preset' }}
+        </button>
+        <button v-if="editing" type="button" data-test="preset-cancel" @click="clear"
+                class="px-5 py-2.5 border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-300 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:border-gray-900 dark:hover:border-white transition-all">
+          Cancel
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -80,20 +92,39 @@ const props = defineProps({
   workspaceId: { type: String, required: true },
 });
 
-const { presets, loading, error, saving, load, add, remove } = useWorkspacePresets(() => props.workspaceId);
+const { presets, loading, error, saving, load, add, edit, remove } = useWorkspacePresets(() => props.workspaceId);
 
 const name = ref('');
 const body = ref('');
+// The name of the preset the form is editing; '' when it adds one.
+const editing = ref('');
 const bodyInput = ref(null);
 const skillMenu = useInlineSkillMenu({ text: body, workspaceId: () => props.workspaceId, el: bodyInput });
 const canAdd = computed(() => !saving.value && name.value.trim() !== '' && body.value.trim() !== '');
 
+// Starting or leaving an edit drops a refusal shown for the last save.
+function startEdit(preset) {
+  error.value = '';
+  editing.value = preset.name;
+  name.value = preset.name;
+  body.value = preset.body;
+  // Focusing scrolls the form into view, below a long list too.
+  bodyInput.value.focus();
+}
+
+function clear() {
+  error.value = '';
+  editing.value = '';
+  name.value = '';
+  body.value = '';
+}
+
 async function submit() {
   name.value = toKebabCase(name.value);
   if (!canAdd.value) return;
-  if (await add(name.value, body.value)) {
-    name.value = '';
-    body.value = '';
+  const save = editing.value ? () => edit(editing.value, name.value, body.value) : () => add(name.value, body.value);
+  if (await save()) {
+    clear();
   }
 }
 

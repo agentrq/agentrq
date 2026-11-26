@@ -749,6 +749,7 @@ func (h *handler) registerWorkspaceRoutes() error {
 	r.Get("/:id/memories/:name", h.getWorkspaceMemory())
 	r.Get("/:id/presets", h.listWorkspacePresets())
 	r.Post("/:id/presets", h.createWorkspacePreset())
+	r.Put("/:id/presets/:name", h.updateWorkspacePreset())
 	r.Delete("/:id/presets/:name", h.deleteWorkspacePreset())
 	h.registerSkillRoutes(r)
 	r.Put("/:id/slack", h.setWorkspaceSlackChannel())
@@ -1403,6 +1404,28 @@ func (h *handler) createWorkspacePreset() fiber.Handler {
 		}
 		c.Status(http.StatusCreated)
 		return c.Send(mapper.FromCreatePresetResponseEntityToHTTPResponse(rs))
+	}
+}
+
+func (h *handler) updateWorkspacePreset() fiber.Handler {
+	return func(c fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToUpdatePresetRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.UpdatePreset(ctx, *rq)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.Send(mapper.FromUpdatePresetResponseEntityToHTTPResponse(rs))
 	}
 }
 
