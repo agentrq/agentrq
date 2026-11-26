@@ -18,7 +18,8 @@ import (
 // test actually failed.
 func TestMain(m *testing.M) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	// Set once, before any session's watcher can read it.
-	devChannelPoll = time.Millisecond
+	// Set once, before any session's watcher can read them, and short, so no
+	// watcher outlives its test by long.
+	devChannelWait, devChannelPoll, devChannelRetry = 5*time.Second, time.Millisecond, 100*time.Millisecond
 	os.Exit(m.Run())
 }

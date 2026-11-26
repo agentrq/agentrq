@@ -58,29 +58,60 @@ func restoreClaudeCode(t *testing.T, h *harness, serverName string) *supervisor.
 // first task without anybody pressing Enter in its terminal.
 func TestALaunchedClaudeCodeConfirmsItsOwnDevChannel(t *testing.T) {
 	b := newBackend(t)
-	h := start(t, b)
+	var logged syncBuffer
+	h := start(t, b, logTo(&logged))
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
 		SessionID: 7, Kind: string(supervisor.KindClaudeCode), Dir: t.TempDir(), Workspace: "demo",
 		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace", Cols: 100, Rows: 30,
 	}))
 	waitFor(t, func() bool { _, ok := h.link.streams.get(7); return ok }, "the session never streamed")
+	answered(t, h, &logged)
+}
 
+// answered shows the session the warning, waits for Enter, then clears it the
+// way Claude Code does, and checks the daemon pressed once and says so.
+func answered(t *testing.T, h *harness, logged *syncBuffer) {
+	t.Helper()
 	if _, err := h.tty.outW.Write(devChannelPrompt(t)); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return string(h.tty.written()) == "\r" }, "the warning was never confirmed")
+	waitFor(t, func() bool { return len(h.tty.written()) > 0 }, "the warning was never confirmed")
+	if _, err := h.tty.outW.Write([]byte("\x1b[2J")); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(logged.String(), "confirmed") }, "the confirmation was never logged")
+	if got := string(h.tty.written()); got != "\r" {
+		t.Errorf("typed %q, want one Enter", got)
+	}
 }
 
 // And one that comes back after the daemon updated itself, which nobody is
 // watching by design.
 func TestARestoredClaudeCodeConfirmsItsOwnDevChannel(t *testing.T) {
-	h := start(t, newBackend(t))
+	var logged syncBuffer
+	h := start(t, newBackend(t), logTo(&logged))
 	restoreClaudeCode(t, h, "agentrq-workspace")
+	answered(t, h, &logged)
+}
 
-	if _, err := h.tty.outW.Write(devChannelPrompt(t)); err != nil {
+// An Enter that lands before Claude Code reads its input is lost, so it is
+// pressed again while the warning stays, and given up on after a few.
+func TestADevChannelWarningThatStaysIsPressedAgain(t *testing.T) {
+	var logged syncBuffer
+	h := start(t, newBackend(t), logTo(&logged))
+	sess := restoreClaudeCode(t, h, "agentrq-workspace")
+
+	screen := stream.NewScreen(100, 30)
+	if _, err := screen.Write(devChannelPrompt(t)); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return string(h.tty.written()) == "\r" }, "the warning was never confirmed")
+	h.link.confirmDevChannel(sess, screen, time.Minute)
+	if got, want := string(h.tty.written()), strings.Repeat("\r", devChannelPresses); got != want {
+		t.Errorf("typed %q, want %q", got, want)
+	}
+	if !strings.Contains(logged.String(), "it stayed") {
+		t.Errorf("giving up was not logged: %s", logged.String())
+	}
 }
 
 // A warning for any channel but the session's own is a person's to answer.
