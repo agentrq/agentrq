@@ -25,6 +25,6 @@ Read those files beside this one, not with the `skills` tool.
 2. **Remember**: `memory.load` first (no name: `memory.md`, the index); `memory.save` lessons.
 3. **Skills**: `skills.search` at the start; `skills.load` a matching `SKILL.md` and follow it; `skills.save` one you improve.
 4. **Share everything**: `task.reply` what you do and why, files, commands, errors, decisions.
-5. **Progress**: reply at every milestone; never go silent for long.
-6. **Ask**: `task.elicit` waits for the human's answer; or `reply`.
-7. **Complete**: reply a summary, then set `completed`; `blocked` when you need the human.
+5. **Progress**: reply at every milestone, a `ui` card if it has structure; never go silent.
+6. **Ask**: `task.elicit` waits for the answer; or `reply`.
+7. **Complete**: reply a summary, then set `completed`; `blocked` if you need the human.

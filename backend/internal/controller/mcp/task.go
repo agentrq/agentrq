@@ -15,7 +15,7 @@ const TaskToolDescription = "Work on this workspace's tasks and talk to the huma
 	"Run action help for the actions, and help with payload {\"topic\": \"<action>\"} for one's payload. " +
 	"get {taskId}: a task, or with no taskId the next not started task assigned to the agent. " +
 	"updateStatus {taskId, status}: 'ongoing' when you start, 'completed' when you finish, 'blocked' when you need the human. " +
-	"reply {taskId, text}: a message to the task; the human sees only these. " +
+	"reply {taskId, text}: a message to the task; the human sees only these. Add `ui`, an A2UI card (help task.reply), when it has structure: progress, results, a choice. " +
 	"elicit {taskId, message, mode}: asks the human and waits for the answer. getAttachment {taskId, attachmentId}: a task's attachment. create {title, body}: a new task. " +
 	"taskId is the chat_id a task arrives with."
 
@@ -44,6 +44,7 @@ func (ps *WorkspaceServer) taskActions() []ToolAction {
 		NewToolAction("updateStatus", "Set a task's status: ongoing when you start, completed when you finish, blocked when you need the human.", ps.handleUpdateTaskStatus).
 			WithExample(`{"taskId": "0kGogHmaqvZ", "status": "ongoing"}`),
 		NewToolAction("reply", "Post a message to the task, optionally with attachments and an A2UI card. The human sees only these.", ps.handleReply).
+			WithDetails("Send a ui card, not text alone, whenever the message has structure: progress steps, results, a table, a choice. text stays the one-line fallback for push, email and Slack. Guide: skill://agentrq/references/a2ui.md.").
 			WithExample(`{"taskId": "0kGogHmaqvZ", "text": "Build passed: 412 tests.", "attachments": [{"filename": "chart.png", "mimeType": "image/png", "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}], "ui": [{"version": "1.0", "createSurface": {"surfaceId": "build", "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}}, {"version": "1.0", "updateComponents": {"surfaceId": "build", "components": [{"id": "root", "component": "Card", "child": "col"}, {"id": "col", "component": "Column", "children": ["title", "chart"]}, {"id": "title", "component": "Text", "text": "## Build passed"}, {"id": "chart", "component": "Image", "url": "attachment:chart.png"}]}}]}`),
 		NewToolAction("elicit", "Ask the human a question and wait for the answer: {action, content}, action being accept, decline or cancel.", ps.handleElicit).
 			WithDetails("mode a2ui draws the question as a card, ui being reply's, with no media: a Button's click answers, content being {name, context, dataModel}.").
