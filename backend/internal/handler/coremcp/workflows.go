@@ -78,7 +78,7 @@ type CreateWorkflowStepParams struct {
 	WorkflowID       string `json:"workflowId" jsonschema:"Workflow ID (base62)"`
 	EventID          string `json:"eventId" jsonschema:"The event this step reacts to"`
 	WorkspaceID      string `json:"workspaceId" jsonschema:"The workspace the step's task is created in"`
-	Title            string `json:"title" jsonschema:"Task title, used exactly as written: placeholders are not substituted here"`
+	Title            string `json:"title" jsonschema:"Task title. {{EVENT_SUBJECT}} is replaced with the event's one-line subject, such as Jira issue ABC-1234, which a hook sets; nothing else is substituted here"`
 	Body             string `json:"body,omitempty" jsonschema:"Task body. {{EVENT_PAYLOAD}} and {{EVENT_FAQ}} are replaced with what the publisher sent"`
 	Assignee         string `json:"assignee,omitempty" jsonschema:"enum: agent, human. Defaults to agent"`
 	AllowAllCommands bool   `json:"allowAllCommands,omitempty" jsonschema:"Let the spawned task run commands without asking for permission"`

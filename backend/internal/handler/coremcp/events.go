@@ -50,7 +50,7 @@ type DeleteEventParams struct {
 type CreateEventTriggerParams struct {
 	EventID          string `json:"eventId" jsonschema:"The event this trigger listens to"`
 	WorkspaceID      string `json:"workspaceId" jsonschema:"The workspace the task is created in"`
-	Title            string `json:"title" jsonschema:"Task title, used exactly as written: placeholders are not substituted here"`
+	Title            string `json:"title" jsonschema:"Task title. {{EVENT_SUBJECT}} is replaced with the event's one-line subject, such as Jira issue ABC-1234, which a hook sets; nothing else is substituted here"`
 	Body             string `json:"body,omitempty" jsonschema:"Task body. {{EVENT_PAYLOAD}} and {{EVENT_FAQ}} are replaced with what the publisher sent"`
 	Assignee         string `json:"assignee,omitempty" jsonschema:"enum: agent, human. Defaults to agent"`
 	CronSchedule     string `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule for the spawned task. Hourly granularity at most: the minute field must be a single fixed number"`
@@ -69,7 +69,7 @@ type GetEventTriggerParams struct {
 type UpdateEventTriggerParams struct {
 	TriggerID        string `json:"triggerId" jsonschema:"Event trigger ID (base62)"`
 	WorkspaceID      string `json:"workspaceId" jsonschema:"The workspace the task is created in"`
-	Title            string `json:"title" jsonschema:"Task title, used exactly as written"`
+	Title            string `json:"title" jsonschema:"Task title. {{EVENT_SUBJECT}} is replaced with the event's one-line subject, such as Jira issue ABC-1234, which a hook sets; nothing else is substituted here"`
 	Body             string `json:"body,omitempty" jsonschema:"Task body. {{EVENT_PAYLOAD}} and {{EVENT_FAQ}} are replaced with what the publisher sent"`
 	Assignee         string `json:"assignee,omitempty" jsonschema:"enum: agent, human. Defaults to agent"`
 	CronSchedule     string `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule for the spawned task, hourly at most"`

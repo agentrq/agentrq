@@ -5,7 +5,7 @@ A hook turns a request from an outside service into one of your account's events
 - A **hook** is a small WebAssembly program that checks that a request is genuine and decides which events it fires. AgentRQ ships three built-in hooks, `github`, `jira` and `generic`, and you can write your own.
 - A **registration** is one use of a hook in your account. It has a name, its own URL, the hook's inputs (such as the webhook secret), and **routes** that map each of the hook's events to one of your events.
 
-An event fires the tasks its triggers describe, so set up the event and its trigger first: **Events → New event**, then add a trigger that creates a task in a workspace. A trigger's body can include `{{EVENT_PAYLOAD}}`, the request's details.
+An event fires the tasks its triggers describe, so set up the event and its trigger first: **Events → New event**, then add a trigger that creates a task in a workspace. A trigger's body can include `{{EVENT_PAYLOAD}}`, the request's details, and its title `{{EVENT_SUBJECT}}`, a one-line name the hook gives the event, such as `Jira issue ABC-1234: Login fails` or `GitHub issue #12: Crash on start`. A title made only of `{{EVENT_SUBJECT}}` is the event's name when the event has no subject.
 
 ## Registering a hook
 
@@ -42,7 +42,7 @@ This example gives an agent a task whenever an issue is opened in a repository.
 ![The New Trigger form, with the workspace, title and instructions filled in](assets/hooks/github-3-trigger.png)
 
 2. The workspace that gets the task.
-3. A task title.
+3. A task title. **+ Event subject** puts `{{EVENT_SUBJECT}}` in it, which names each task after its issue, as `GitHub issue #12: Crash on start`.
 4. **+ Event payload** puts `{{EVENT_PAYLOAD}}` in the instructions, which brings in the issue's details.
 5. **Create trigger**.
 
@@ -132,7 +132,7 @@ When the server allows it (`AGENTRQ_HOOKS_ALLOW_USER_HOOKS=true`), **Events → 
 A hook is a WASI preview1 program, written in any language that compiles to `wasip1`. It runs in a sandbox, a fresh one for every request: no files, no network, no environment, 32 MiB of memory and 250 ms. It is called two ways:
 
 - **`manifest`**: it prints its name, version, inputs and events as JSON. It must declare at least one input that is both `secret` and `required`, and check it, because the URL's id alone can be guessed.
-- **`handle`**: it reads `{registrationId, request, inputs, now}` on stdin and prints `{accept, reason, events}`. Each event has a `name` the manifest declares, and optionally a `dedupKey`, a `payload` (a string or any JSON value) and a `faq`.
+- **`handle`**: it reads `{registrationId, request, inputs, now}` on stdin and prints `{accept, reason, events}`. Each event has a `name` the manifest declares, and optionally a `dedupKey`, a `subject` (one line of at most 76 characters that a trigger's title takes through `{{EVENT_SUBJECT}}`; `sdk.Subject` makes one), a `payload` (a string or any JSON value) and a `faq`.
 
 In Go, the SDK in [`wasm-hooks/sdk`](../wasm-hooks/sdk) does the plumbing:
 

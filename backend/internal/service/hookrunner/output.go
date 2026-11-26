@@ -8,15 +8,21 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 const (
 	// MaxEventsPerRequest is the most events one request may become.
 	MaxEventsPerRequest = 32
 	maxDedupKeySize     = 255
-	maxFAQs             = 20
-	maxReasonSize       = 512
+	// MaxSubjectLength is the longest subject an event may carry, in
+	// characters, so a task title made of one stays short enough to scan.
+	MaxSubjectLength = 76
+	maxFAQs          = 20
+	maxReasonSize    = 512
 )
 
 // Request is the raw request the hook validates. Header names are lowercase.
@@ -53,10 +59,12 @@ type Result struct {
 }
 
 // EventOut is one event the hook wrote. Payload is what the event carries,
-// written by the hook, never the request's body as such.
+// written by the hook, never the request's body as such. Subject is its
+// optional one-line name, such as "Jira issue ABC-1234", for task titles.
 type EventOut struct {
 	Name     string
 	DedupKey string
+	Subject  string
 	Payload  string
 	FAQ      []FAQ
 }
@@ -70,6 +78,7 @@ type rawResult struct {
 type rawEvent struct {
 	Name     string          `json:"name"`
 	DedupKey string          `json:"dedupKey"`
+	Subject  string          `json:"subject"`
 	Payload  json.RawMessage `json:"payload"`
 	FAQ      []FAQ           `json:"faq"`
 }
@@ -111,6 +120,10 @@ func parseResult(out []byte, m Manifest, maxPayloadSize int) (Result, error) {
 			return Result{}, outputErr("event %d: %q is not declared in the manifest", i, e.Name)
 		case len(e.DedupKey) > maxDedupKeySize:
 			return Result{}, outputErr("event %d: dedupKey is over %d bytes", i, maxDedupKeySize)
+		case utf8.RuneCountInString(e.Subject) > MaxSubjectLength:
+			return Result{}, outputErr("event %d: subject is over %d characters", i, MaxSubjectLength)
+		case !oneLine(e.Subject):
+			return Result{}, outputErr("event %d: subject is not one line of text", i)
 		case len(e.FAQ) > maxFAQs:
 			return Result{}, outputErr("event %d: more than %d faq entries", i, maxFAQs)
 		}
@@ -122,7 +135,7 @@ func parseResult(out []byte, m Manifest, maxPayloadSize int) (Result, error) {
 		if size > maxPayloadSize {
 			return Result{}, outputErr("event %d: payload and faq are %d bytes; at most %d", i, size, maxPayloadSize)
 		}
-		res.Events = append(res.Events, EventOut{Name: e.Name, DedupKey: e.DedupKey, Payload: payload, FAQ: e.FAQ})
+		res.Events = append(res.Events, EventOut{Name: e.Name, DedupKey: e.DedupKey, Subject: e.Subject, Payload: payload, FAQ: e.FAQ})
 	}
 	return res, nil
 }
@@ -142,4 +155,13 @@ func payloadText(raw json.RawMessage) string {
 	var buf bytes.Buffer
 	_ = json.Compact(&buf, raw)
 	return buf.String()
+}
+
+// oneLine reports whether s holds no control character, line break or
+// paragraph break: a subject becomes a task title, and a NUL in one would
+// make Postgres refuse the task.
+func oneLine(s string) bool {
+	return !strings.ContainsFunc(s, func(r rune) bool {
+		return unicode.IsControl(r) || r == '\u2028' || r == '\u2029'
+	})
 }

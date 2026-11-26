@@ -21,7 +21,7 @@ import (
 
 var manifest = sdk.Manifest{
 	Name:        "jira",
-	Version:     "1.0.1",
+	Version:     "1.1.0",
 	Description: "Jira Cloud issues and comments, from an admin webhook (checks X-Hub-Signature) or an Automation rule's Send web request (checks a bearer token).",
 	Inputs: []sdk.Input{
 		{Name: "webhookSecret", Label: "Secret (the webhook's secret, or the rule's Authorization: Bearer token)", Type: "string", Secret: true, Required: true},
@@ -267,7 +267,20 @@ func event(name string, p payload) sdk.Out {
 	if key := projectKey(is); key != "" {
 		faq = append(faq, sdk.FAQ{Q: "Which Jira project?", A: key})
 	}
-	return sdk.Out{Name: name, Payload: b.String(), FAQ: faq}
+	return sdk.Out{Name: name, Subject: subject(is), Payload: b.String(), FAQ: faq}
+}
+
+// subject names the issue by its key and summary, or is empty when the issue
+// has no key, so the task is named after the event instead.
+func subject(is *issue) string {
+	if is.Key == "" {
+		return ""
+	}
+	s := "Jira issue " + is.Key
+	if summary := strings.TrimSpace(is.Fields.Summary); summary != "" {
+		s += ": " + summary
+	}
+	return sdk.Subject(s)
 }
 
 // details is the issue's type, priority, status, people and labels, as one

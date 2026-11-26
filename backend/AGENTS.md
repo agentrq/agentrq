@@ -89,10 +89,10 @@ Event-driven agent-to-agent communication wired through three layers:
   - `EventTrigger` — workspaceID, title, body, assignee, allowAllCommands, **emitEventId** (optional: which event the spawned task should publish on completion).
   - `Task.EventID` — links a task to an event it should publish when completed.
 
-- **PubSub topic**: `PubSubTopicEvents = 3` (see `internal/data/entity/crud/entity.go`). Payload: `EventPublishedPayload{EventID, Name, Payload, FAQ}`.
+- **PubSub topic**: `PubSubTopicEvents = 3` (see `internal/data/entity/crud/entity.go`). Payload: `EventPublishedPayload{EventID, Name, Subject, Payload, FAQ}`.
 
 - **Consumer** (`internal/controller/event/event.go`): subscribes to topic 3, fans out to all matching `EventTrigger` rows via `SystemListEventTriggersByEventID`.
-  - `renderTemplate` substitutes `{{EVENT_PAYLOAD}}` and `{{EVENT_FAQ}}` **in the task body only** — the title uses static text (`strings.TrimSpace`).
+  - `renderTemplate` substitutes `{{EVENT_PAYLOAD}}` and `{{EVENT_FAQ}}` in the task body; `renderTitle` substitutes only `{{EVENT_SUBJECT}}` (a hook's one-line subject) in the title, cuts it to 255 characters, and falls back to the event's name when the placeholder leaves it empty.
   - If `trigger.EmitEventID != 0`, appends the `service/eventinstruction` line, `[On completion, before marking this task completed: call workspace {action: "publishEvent", payload: {name: …, taskId: …, payload: …, faq: […]}}]`, to the body and sets `Task.EventID = trigger.EmitEventID` (event chaining).
   - Triggered tasks always start as `notstarted`; `CronSchedule` on `EventTrigger` is ignored at fire time.
 

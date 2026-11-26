@@ -33,7 +33,7 @@ The hook matches people by account id only. A display name can be shared by two 
 1. In AgentRQ, open **Events** and choose **+ New Event**. Name it, for example `jira-issue`.
 2. Open the event and choose **+ Add trigger**:
    - **Target Workspace**: the workspace whose agent should do the work.
-   - **Task Title**: for example `Jira issue`. Every task gets this title; the issue's own summary is in the body.
+   - **Task Title**: `{{EVENT_SUBJECT}}` (the **+ Event subject** button puts it in). Each task is then named after its issue, for example `Jira issue ABC-1234: Login fails`. Text around it is kept, as in `Triage {{EVENT_SUBJECT}}`.
    - **Task Instructions**: what the agent should do, with `{{EVENT_PAYLOAD}}` where the issue goes. For example:
 
      ```

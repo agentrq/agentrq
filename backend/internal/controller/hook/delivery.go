@@ -362,7 +362,7 @@ func (c *controller) process(ctx context.Context, id int64) {
 		for i, f := range e.FAQ {
 			faq[i] = model.HookPendingFAQ{Q: f.Q, A: f.A}
 		}
-		events = append(events, model.HookPendingEvent{HookEvent: e.Name, EventID: eventID, DedupKey: e.DedupKey, Payload: e.Payload, FAQ: faq})
+		events = append(events, model.HookPendingEvent{HookEvent: e.Name, EventID: eventID, DedupKey: e.DedupKey, Subject: e.Subject, Payload: e.Payload, FAQ: faq})
 	}
 	if len(events) == 0 {
 		reason := res.Reason
@@ -415,7 +415,7 @@ func (c *controller) publish(ctx context.Context, id int64) {
 			faq[i] = entity.EventFAQ{Q: f.Q, A: f.A}
 		}
 		kept = append(kept, e)
-		payloads = append(payloads, entity.EventPublishedPayload{EventID: ev.ID, Name: ev.Name, Payload: e.Payload, FAQ: faq})
+		payloads = append(payloads, entity.EventPublishedPayload{EventID: ev.ID, Name: ev.Name, Subject: e.Subject, Payload: e.Payload, FAQ: faq})
 	}
 	for i, p := range payloads {
 		if _, err := c.pubsub.Publish(ctx, pubsub.PublishRequest{PubSubID: entity.PubSubTopicEvents, Event: p}); err != nil {

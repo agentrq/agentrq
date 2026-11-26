@@ -91,6 +91,9 @@ func TestBuiltInHooksRunOnTheServer(t *testing.T) {
 		!strings.HasPrefix(res.Events[0].Payload, "Workflow `test` failed on `main`") {
 		t.Errorf("result = %+v", res)
 	}
+	if want := "CI failed on main: test"; res.Events[0].Subject != want {
+		t.Errorf("the github hook gave the subject %q, want %q", res.Events[0].Subject, want)
+	}
 }
 
 // A Jira Automation rule cannot sign, so it sends the secret as a bearer
@@ -121,6 +124,9 @@ func TestBuiltInJiraHookRunsOnTheServer(t *testing.T) {
 	if !res.Accept || len(res.Events) != 1 || res.Events[0].Name != "jira.issue.sent" ||
 		res.Events[0].Payload != "Jira issue ABC-7 sent: Login fails\nhttps://acme.atlassian.net/browse/ABC-7" {
 		t.Errorf("result = %+v", res)
+	}
+	if want := "Jira issue ABC-7: Login fails"; res.Events[0].Subject != want {
+		t.Errorf("the jira hook gave the subject %q, want %q", res.Events[0].Subject, want)
 	}
 	if res, err := handle("Bearer nope"); err != nil || res.Accept {
 		t.Errorf("a wrong token = %+v, %v", res, err)

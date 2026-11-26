@@ -7,7 +7,7 @@ An event is a named signal a workspace publishes; a trigger is a standing instru
 - `get` — Get an event by ID
 - `update` — Revise an event's payload guidelines. Its name is fixed once created
 - `delete` — Delete an event. Its triggers stop firing
-- `createTrigger` — When this event fires, create a task in this workspace. `{{EVENT_PAYLOAD}}` and `{{EVENT_FAQ}}` are substituted in the body only; `emitEventId` chains a second event to the task's completion
+- `createTrigger` — When this event fires, create a task in this workspace. `{{EVENT_PAYLOAD}}` and `{{EVENT_FAQ}}` are substituted in the body, only `{{EVENT_SUBJECT}}` (a hook's one-line subject) in the title; `emitEventId` chains a second event to the task's completion
 - `listTriggers` — List the triggers attached to an event
 - `getTrigger` — Get an event trigger by ID
 - `updateTrigger` — Rewrite a trigger. Every field is written as given, so send the ones to keep as well

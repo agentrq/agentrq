@@ -351,7 +351,7 @@ func TestDeliveryPublished(t *testing.T) {
 	ctx := context.Background()
 	f := qSetup(t)
 	f.run.res = hookrunner.Result{Accept: true, Events: []hookrunner.EventOut{
-		{Name: "ci.failed", DedupKey: "run-1", Payload: `{"run":1}`, FAQ: []hookrunner.FAQ{{Q: "which branch?", A: "main"}}},
+		{Name: "ci.failed", DedupKey: "run-1", Subject: "CI failed on main: test", Payload: `{"run":1}`, FAQ: []hookrunner.FAQ{{Q: "which branch?", A: "main"}}},
 		{Name: "push", Payload: "pushed"},
 		{Name: "ci.failed", DedupKey: "run-1", Payload: "the same run, sent twice"},
 	}}
@@ -370,6 +370,9 @@ func TestDeliveryPublished(t *testing.T) {
 	if len(events) != 2 || events[0].EventID != ciFailed || events[0].Name != "event-500" || events[0].Payload != `{"run":1}` ||
 		events[0].FAQ[0].A != "main" || events[1].EventID != pushed || events[1].Payload != "pushed" {
 		t.Errorf("published = %+v", events)
+	}
+	if events[0].Subject != "CI failed on main: test" || events[1].Subject != "" {
+		t.Errorf("the events were published with the subjects %q and %q, want the hook's %q and none", events[0].Subject, events[1].Subject, "CI failed on main: test")
 	}
 	if !slices.Equal(actions, []entity.Action{entity.ActionHookReceive, entity.ActionHookPublish}) {
 		t.Errorf("telemetry = %v", actions)

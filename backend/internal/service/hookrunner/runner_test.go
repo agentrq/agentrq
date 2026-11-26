@@ -188,11 +188,11 @@ func TestHandleSendsTheRequestAndInputs(t *testing.T) {
 
 func TestHandleReturnsTheHooksAnswer(t *testing.T) {
 	s := newService(t)
-	res, err := handle(t, s, map[string]any{"mode": "reply", "reply": `{"accept":true,"events":[{"name":"pr.opened","dedupKey":"d1","payload":{"n": 1},"faq":[{"q":"Q","a":"A"}]}]}`})
+	res, err := handle(t, s, map[string]any{"mode": "reply", "reply": `{"accept":true,"events":[{"name":"pr.opened","dedupKey":"d1","subject":"GitHub PR #1: Add hooks","payload":{"n": 1},"faq":[{"q":"Q","a":"A"}]}]}`})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := EventOut{Name: "pr.opened", DedupKey: "d1", Payload: `{"n":1}`, FAQ: []FAQ{{Q: "Q", A: "A"}}}
+	want := EventOut{Name: "pr.opened", DedupKey: "d1", Subject: "GitHub PR #1: Add hooks", Payload: `{"n":1}`, FAQ: []FAQ{{Q: "Q", A: "A"}}}
 	if !res.Accept || len(res.Events) != 1 || fmt.Sprint(res.Events[0]) != fmt.Sprint(want) {
 		t.Errorf("result = %+v", res)
 	}

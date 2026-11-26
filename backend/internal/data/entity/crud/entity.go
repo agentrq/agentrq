@@ -1492,6 +1492,10 @@ const (
 type EventPublishedPayload struct {
 	EventID int64
 	Name    string
+	// Subject is an optional one-line name for what happened, such as "Jira
+	// issue ABC-1234", which a trigger's title takes through {{EVENT_SUBJECT}}.
+	// Only a hook sets one.
+	Subject string
 	Payload string
 	FAQ     []EventFAQ
 	// WorkflowID is set when the publishing task was part of a workflow run.

@@ -7,6 +7,7 @@ package event
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -134,8 +135,8 @@ func TestProcessEvent_SingleTrigger(t *testing.T) {
 		ID:          1,
 		EventID:     42,
 		WorkspaceID: 10,
-		Title:       "Deploy: {{EVENT_PAYLOAD}}",
-		Body:        "Details",
+		Title:       "Fix {{EVENT_SUBJECT}} ({{EVENT_PAYLOAD}})",
+		Body:        "Details: {{EVENT_PAYLOAD}}",
 		Assignee:    "agent",
 	}
 
@@ -149,20 +150,13 @@ func TestProcessEvent_SingleTrigger(t *testing.T) {
 
 	mockIDGen.EXPECT().NextID().Return(int64(999))
 
+	var created model.Task
 	mockRepo.EXPECT().
 		CreateTask(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, t model.Task) (model.Task, error) {
-			if t.Title != "Deploy: v1.2.3" {
-				return model.Task{}, nil
-			}
-			if t.TriggerID != 42 {
-				return model.Task{}, nil
-			}
-			if t.WorkspaceID != 10 {
-				return model.Task{}, nil
-			}
-			t.CreatedAt = time.Now()
-			return t, nil
+		DoAndReturn(func(_ context.Context, task model.Task) (model.Task, error) {
+			created = task
+			task.CreatedAt = time.Now()
+			return task, nil
 		})
 
 	mockPubSub.EXPECT().
@@ -172,8 +166,40 @@ func TestProcessEvent_SingleTrigger(t *testing.T) {
 	c.processEvent(context.Background(), entity.EventPublishedPayload{
 		EventID: 42,
 		Name:    "deploy_done",
+		Subject: "Jira issue ABC-1234",
 		Payload: "v1.2.3",
 	})
+
+	// The title takes the subject, never the payload; the body takes the payload.
+	if want := "Fix Jira issue ABC-1234 ({{EVENT_PAYLOAD}})"; created.Title != want {
+		t.Errorf("the task was created with the title %q, want %q", created.Title, want)
+	}
+	if created.Body != "Details: v1.2.3" || created.TriggerID != 42 || created.WorkspaceID != 10 {
+		t.Errorf("the task was created with body %q, trigger %d and workspace %d, want %q, 42 and 10", created.Body, created.TriggerID, created.WorkspaceID, "Details: v1.2.3")
+	}
+}
+
+func TestRenderTitle(t *testing.T) {
+	long := strings.Repeat("é", maxTitleLength+5)
+	for _, tc := range []struct {
+		name, title string
+		ev          entity.EventPublishedPayload
+		want        string
+	}{
+		{"a static title is kept", " Review the deploy ", entity.EventPublishedPayload{Name: "deploy_done", Subject: "x"}, "Review the deploy"},
+		{"the subject placeholder becomes the subject", "Work on {{EVENT_SUBJECT}}", entity.EventPublishedPayload{Subject: "Jira issue ABC-1234"}, "Work on Jira issue ABC-1234"},
+		{"an event without a subject leaves the rest of the title", "{{EVENT_SUBJECT}} triaged", entity.EventPublishedPayload{Name: "jira"}, "triaged"},
+		{"a title that comes out empty is the event's name", "{{EVENT_SUBJECT}}", entity.EventPublishedPayload{Name: "jira_issue"}, "jira_issue"},
+		{"a blank title stays blank, so the task is skipped", "  ", entity.EventPublishedPayload{Name: "jira_issue"}, ""},
+		{"a missing subject mid-title leaves no double space", "Triage {{EVENT_SUBJECT}}  now", entity.EventPublishedPayload{Name: "jira"}, "Triage now"},
+		{"a title over the column's size is cut and marked", "{{EVENT_SUBJECT}}", entity.EventPublishedPayload{Subject: long}, strings.Repeat("é", maxTitleLength-1) + "…"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := renderTitle(tc.title, tc.ev); got != tc.want {
+				t.Errorf("renderTitle(%q) returned %q, want %q", tc.title, got, tc.want)
+			}
+		})
+	}
 }
 
 func TestProcessEvent_MultipleWorkspaces(t *testing.T) {

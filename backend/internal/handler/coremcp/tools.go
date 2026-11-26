@@ -166,7 +166,7 @@ func (s *WorkspaceServer) eventsActions() []mcpevent.ToolAction {
 			WithExample(`{"eventId": "0kEvt7hQx2M"}`).
 			ReadOnly(),
 		mcpevent.NewToolAction("createTrigger", "React to an event: when it fires, create a task in a workspace.", s.handleCreateEventTrigger).
-			WithDetails("The body may carry {{EVENT_PAYLOAD}} and {{EVENT_FAQ}}; the title is used as written. emitEventId chains a second event to the task's completion. A cron schedule is at most hourly.").
+			WithDetails("The body may carry {{EVENT_PAYLOAD}} and {{EVENT_FAQ}}; the title only {{EVENT_SUBJECT}}, a hook's one-line subject such as Jira issue ABC-1234. emitEventId chains a second event to the task's completion. A cron schedule is at most hourly.").
 			WithExample(`{"eventId": "0kEvt7hQx2M", "workspaceId": "0ZzhYQG2qtl", "title": "Write the release notes", "body": "{{EVENT_PAYLOAD}}", "emitEventId": "0kEvt9notes"}`),
 		mcpevent.NewToolAction("getTrigger", "Get an event trigger.", s.handleGetEventTrigger).
 			WithExample(`{"triggerId": "0kTrg3aB9cD"}`).

@@ -45,7 +45,7 @@ vi.mock('../src/api', () => ({
   fetchWorkflowText: vi.fn(async () => ({ text: server.text })),
   replaceWorkflowFromText: vi.fn(),
   fetchWorkflows: vi.fn(async () => ({ workflows: [{ ...server.workflow }] })),
-  fetchEvents: vi.fn(async () => ({ events: [{ id: 'e1', name: 'deploy_requested' }] })),
+  fetchEvents: vi.fn(async () => ({ events: [{ id: 'e1', name: 'deploy_requested' }, { id: 'e2', name: 'deploy_done' }] })),
   fetchEventTriggers: vi.fn(async () => ({ eventTriggers: [] })),
   fetchWorkspaces: vi.fn(async () => ({ workspaces: [{ id: 'ws1', name: 'Payments' }] })),
   API_BASE_URL: '/api/v1',
@@ -160,5 +160,39 @@ describe('the open workflow page', () => {
     await agentCalls('updateWorkflow', { workflowId: 'wf1', startEventId: 'e1' })
 
     expect(api.getWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('inserts the event subject into a step title at the cursor', async () => {
+    server.workflow.startEventId = 'e1'
+    server.steps = [{ id: 'st1', eventId: 'e1', workspaceId: 'ws1', title: 'Fix  now', body: '', assignee: 'agent', emitEventId: '' }]
+    const el = await mount()
+    el.querySelector('[data-test="step-edit"]').click()
+    await settle()
+    const title = el.querySelector('input[placeholder="Update the changelog"]')
+    expect(title.value).toBe('Fix  now')
+    title.setSelectionRange(4, 4)
+    const chip = el.querySelector('[data-test="step-insert-subject"]')
+    chip.dispatchEvent(new MouseEvent('mouseenter'))
+    chip.dispatchEvent(new MouseEvent('mouseleave'))
+    chip.click()
+    await settle()
+    expect(title.value).toBe('Fix {{EVENT_SUBJECT}} now')
+    expect(document.activeElement).toBe(title)
+    expect(title.selectionStart).toBe('Fix {{EVENT_SUBJECT}}'.length)
+  })
+
+  it('offers the event subject only on a step of the start event, the one a hook can fire', async () => {
+    server.workflow.startEventId = 'e1'
+    server.steps = [
+      { id: 'st1', eventId: 'e1', workspaceId: 'ws1', title: 'Deploy', body: '', assignee: 'agent', emitEventId: 'e2' },
+      { id: 'st2', eventId: 'e2', workspaceId: 'ws1', title: 'Announce', body: '', assignee: 'agent', emitEventId: '' },
+    ]
+    const el = await mount()
+    const edits = el.querySelectorAll('[data-test="step-edit"]')
+    expect(edits).toHaveLength(2)
+    edits[1].click()
+    await settle()
+    expect(el.querySelector('input[placeholder="Update the changelog"]').value).toBe('Announce')
+    expect(el.querySelector('[data-test="step-insert-subject"]')).toBeNull()
   })
 })
