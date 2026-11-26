@@ -295,6 +295,8 @@ type (
 		// Agent is the agent that last changed the task's status, as it
 		// named itself: the one working on it, or the one that did.
 		Agent string `json:"agent,omitempty"`
+		// Timing is what the task's card shows, in a task list only.
+		Timing *TaskListTiming `json:"timing,omitempty"`
 		// AgentNote is the workspace's note the agent was last handed the
 		// task with, on the single-task read; absent when none was recorded.
 		AgentNote *string `json:"agentNote,omitempty"`
@@ -478,6 +480,14 @@ type (
 		Agent      string    `json:"agent,omitempty"`
 		AgentModel string    `json:"agentModel,omitempty"`
 		CreatedAt  time.Time `json:"createdAt"`
+	}
+
+	// TaskListTiming is a card's timing. workedSeconds stops at the latest
+	// transition: while workingSince is set, the card adds the time since.
+	TaskListTiming struct {
+		WorkedSeconds int64      `json:"workedSeconds"`
+		WorkingSince  *time.Time `json:"workingSince,omitempty"`
+		StatusSince   *time.Time `json:"statusSince,omitempty"`
 	}
 
 	TaskTiming struct {

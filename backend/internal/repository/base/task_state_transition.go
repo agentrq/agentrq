@@ -25,6 +25,27 @@ func (r *repository) ListTaskStateTransitions(ctx context.Context, taskID int64)
 	return rows, err
 }
 
+// ListTaskHistories returns each task's transitions, oldest first, for a
+// page of task cards: one query on the task_id index, and only the columns a
+// card is built from (no user, workspace or model ids).
+func (r *repository) ListTaskHistories(ctx context.Context, taskIDs []int64) (map[int64][]model.TaskStateTransition, error) {
+	if len(taskIDs) == 0 {
+		return nil, nil
+	}
+	var rows []model.TaskStateTransition
+	if err := r.conn(ctx).Select("id, task_id, from_state, to_state, agent_id, created_at").
+		Where("task_id IN ?", taskIDs).
+		Order("task_id asc, created_at asc, id asc").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[int64][]model.TaskStateTransition, len(taskIDs))
+	for _, row := range rows {
+		out[row.TaskID] = append(out[row.TaskID], row)
+	}
+	return out, nil
+}
+
 // ListLastTaskAgents returns, for each of the tasks whose history names an
 // agent, the ID of the agent behind the latest change that names one.
 func (r *repository) ListLastTaskAgents(ctx context.Context, taskIDs []int64) (map[int64]int64, error) {

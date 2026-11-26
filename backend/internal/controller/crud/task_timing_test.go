@@ -113,25 +113,48 @@ func TestGetTask_NoTaskAgents(t *testing.T) {
 	}
 }
 
-// A listing that asks for agents names each task's latest one; the namer is
-// asked once for the whole page, and a task no agent changed has none.
+// A listing for cards reads the whole page's history in one query: it names
+// each task's latest agent, asking the namer once, and times each task.
 func TestListTasks_PreloadAgents(t *testing.T) {
 	e := newTestController(t)
 	namer := &stubAgentNamer{agents: map[int64]string{7: "claude-code"}}
 	useAgentNamer(e, namer)
+	t0 := time.Date(2026, 11, 26, 10, 0, 0, 0, time.UTC)
+	at := func(m int) time.Time { return t0.Add(time.Duration(m) * time.Minute) }
 
-	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{{ID: 10}, {ID: 11}, {ID: 12}}, nil)
-	e.repo.EXPECT().ListLastTaskAgents(gomock.Any(), []int64{10, 11, 12}).Return(map[int64]int64{10: 7, 12: 42}, nil)
+	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{
+		{ID: 10, Status: "ongoing"}, {ID: 11, Status: "notstarted"}, {ID: 12, Status: "completed"},
+	}, nil)
+	e.repo.EXPECT().ListTaskHistories(gomock.Any(), []int64{10, 11, 12}).Return(map[int64][]model.TaskStateTransition{
+		10: {
+			{TaskID: 10, ToState: model.TaskStateOngoing, AgentID: 7, CreatedAt: at(0)},
+			{TaskID: 10, FromState: model.TaskStateOngoing, ToState: model.TaskStateBlocked, AgentID: 7, CreatedAt: at(5)},
+			{TaskID: 10, FromState: model.TaskStateBlocked, ToState: model.TaskStateOngoing, CreatedAt: at(9)},
+		},
+		12: {
+			{TaskID: 12, ToState: model.TaskStateOngoing, AgentID: 42, CreatedAt: at(0)},
+			{TaskID: 12, FromState: model.TaskStateOngoing, ToState: model.TaskStateCompleted, CreatedAt: at(3)},
+		},
+	}, nil)
 
 	resp, err := e.controller.ListTasks(context.Background(), entity.ListTasksRequest{UserID: testUserIDStr, PreloadAgents: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got := []string{resp.Tasks[0].Agent, resp.Tasks[1].Agent, resp.Tasks[2].Agent}; got[0] != "claude-code" || got[1] != "" || got[2] != "" {
-		t.Fatalf("agents = %q, want claude-code on the first task, none on the one no agent changed nor on the one whose agent is unnamed", got)
+		t.Fatalf("agents = %q, want claude-code on the first task (the latest change naming one), none on the one no agent changed nor on the one whose agent is unnamed", got)
 	}
 	if len(namer.agentIDs) != 2 || namer.modelIDs != nil {
 		t.Fatalf("namer was asked for agents %v and models %v, want agents 7 and 42 and no models", namer.agentIDs, namer.modelIDs)
+	}
+	if tm := resp.Tasks[0].Timing; tm == nil || tm.WorkedSeconds != 300 || tm.WorkingSince == nil || !tm.WorkingSince.Equal(at(9)) || tm.StatusSince == nil || !tm.StatusSince.Equal(at(9)) {
+		t.Fatalf("ongoing timing = %+v; want 300s worked, working and ongoing since +9m", tm)
+	}
+	if resp.Tasks[1].Timing != nil {
+		t.Fatalf("no history timing = %+v, want nil", resp.Tasks[1].Timing)
+	}
+	if tm := resp.Tasks[2].Timing; tm == nil || tm.WorkedSeconds != 180 || tm.WorkingSince != nil || tm.StatusSince == nil || !tm.StatusSince.Equal(at(3)) {
+		t.Fatalf("completed timing = %+v; want 180s worked, closed at +3m", tm)
 	}
 }
 
@@ -155,7 +178,7 @@ func TestListTasks_PreloadAgentsErrors(t *testing.T) {
 		e := newTestController(t)
 		useAgentNamer(e, &stubAgentNamer{})
 		e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{{ID: 10}}, nil)
-		e.repo.EXPECT().ListLastTaskAgents(gomock.Any(), []int64{10}).Return(nil, errors.New("database unavailable"))
+		e.repo.EXPECT().ListTaskHistories(gomock.Any(), []int64{10}).Return(nil, errors.New("database unavailable"))
 		if _, err := e.controller.ListTasks(context.Background(), entity.ListTasksRequest{UserID: testUserIDStr, PreloadAgents: true}); err == nil {
 			t.Fatal("ListTasks succeeded, want the history lookup's error")
 		}
@@ -164,7 +187,7 @@ func TestListTasks_PreloadAgentsErrors(t *testing.T) {
 		e := newTestController(t)
 		useAgentNamer(e, &stubAgentNamer{err: errors.New("database unavailable")})
 		e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{{ID: 10}}, nil)
-		e.repo.EXPECT().ListLastTaskAgents(gomock.Any(), []int64{10}).Return(map[int64]int64{10: 7}, nil)
+		e.repo.EXPECT().ListTaskHistories(gomock.Any(), []int64{10}).Return(map[int64][]model.TaskStateTransition{10: {{TaskID: 10, AgentID: 7}}}, nil)
 		if _, err := e.controller.ListTasks(context.Background(), entity.ListTasksRequest{UserID: testUserIDStr, PreloadAgents: true}); err == nil {
 			t.Fatal("ListTasks succeeded, want the namer's error")
 		}

@@ -355,25 +355,43 @@ func (c *controller) ListTasks(ctx context.Context, req entity.ListTasksRequest)
 	return c.taskListResponse(ctx, ms, req.PreloadAgents)
 }
 
-// taskListResponse is the listed tasks, each named with the agent that last
-// worked on it when withAgents.
-func (c *controller) taskListResponse(ctx context.Context, ms []model.Task, withAgents bool) (*entity.ListTasksResponse, error) {
+// taskListResponse is the listed tasks; for cards, each also named with the
+// agent that last worked on it and timed, from one history query per page.
+func (c *controller) taskListResponse(ctx context.Context, ms []model.Task, forCards bool) (*entity.ListTasksResponse, error) {
 	tasks := make([]entity.Task, len(ms))
 	for i, m := range ms {
 		tasks[i] = c.fromModelTaskToEntity(m)
 	}
-	if withAgents && len(tasks) > 0 {
-		ids := make([]int64, len(tasks))
-		for i, t := range tasks {
-			ids[i] = t.ID
+	if !forCards || len(tasks) == 0 {
+		return &entity.ListTasksResponse{Tasks: tasks}, nil
+	}
+	ids := make([]int64, len(tasks))
+	for i, t := range tasks {
+		ids[i] = t.ID
+	}
+	histories, err := c.repository.ListTaskHistories(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	lastAgent := make(map[int64]int64)
+	for i := range tasks {
+		rows := histories[tasks[i].ID]
+		if t := model.TaskListTimingOf(rows, model.TaskStateFromStatus(tasks[i].Status)); t != nil {
+			tasks[i].Timing = &entity.TaskListTiming{WorkedSeconds: t.WorkedSeconds, WorkingSince: t.WorkingSince, StatusSince: t.StatusSince}
 		}
-		agents, err := c.LastTaskAgents(ctx, ids)
-		if err != nil {
-			return nil, err
+		for j := len(rows) - 1; j >= 0; j-- {
+			if rows[j].AgentID != 0 {
+				lastAgent[tasks[i].ID] = rows[j].AgentID
+				break
+			}
 		}
-		for i := range tasks {
-			tasks[i].Agent = agents[tasks[i].ID]
-		}
+	}
+	agents, err := c.nameTaskAgents(ctx, lastAgent)
+	if err != nil {
+		return nil, err
+	}
+	for i := range tasks {
+		tasks[i].Agent = agents[tasks[i].ID]
 	}
 	return &entity.ListTasksResponse{Tasks: tasks}, nil
 }
@@ -429,8 +447,17 @@ func (c *controller) LastTaskAgents(ctx context.Context, taskIDs []int64) (map[i
 		return nil, nil
 	}
 	byTask, err := c.repository.ListLastTaskAgents(ctx, taskIDs)
-	if err != nil || len(byTask) == 0 {
+	if err != nil {
 		return nil, err
+	}
+	return c.nameTaskAgents(ctx, byTask)
+}
+
+// nameTaskAgents names the agent ID each task maps to, leaving out the
+// unnamed; the namer is not asked when there is none.
+func (c *controller) nameTaskAgents(ctx context.Context, byTask map[int64]int64) (map[int64]string, error) {
+	if c.taskAgents == nil || len(byTask) == 0 {
+		return nil, nil
 	}
 	agentIDs := make([]int64, 0, len(byTask))
 	for _, id := range byTask {

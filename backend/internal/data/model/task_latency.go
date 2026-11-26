@@ -58,6 +58,45 @@ func TaskTimingOf(transitions []TaskStateTransition, now time.Time) TaskTiming {
 	return timing
 }
 
+// TaskListTiming is what a task card shows. WorkedSeconds stops at the
+// latest transition, so a card adds now − WorkingSince itself and counts up
+// live without knowing when the server answered.
+type TaskListTiming struct {
+	WorkedSeconds int64
+	WorkingSince  *time.Time // the latest transition, while it is to ongoing
+	StatusSince   *time.Time // when the task entered status; a pending question is no change
+}
+
+// TaskListTimingOf is a card's timing from a task's transitions, oldest
+// first; nil when there are none. StatusSince is nil when the history does
+// not end in status.
+func TaskListTimingOf(transitions []TaskStateTransition, status TaskState) *TaskListTiming {
+	n := len(transitions)
+	if n == 0 {
+		return nil
+	}
+	last := transitions[n-1]
+	timing := &TaskListTiming{WorkedSeconds: TaskTimingOf(transitions, last.CreatedAt).WorkedSeconds}
+	if last.ToState == TaskStateOngoing {
+		at := last.CreatedAt
+		timing.WorkingSince = &at
+	}
+	current, since := TaskStateNone, time.Time{}
+	for _, tr := range transitions {
+		s := tr.ToState
+		if s == TaskStateNeedsInput {
+			s = tr.FromState
+		}
+		if s != current {
+			current, since = s, tr.CreatedAt
+		}
+	}
+	if current == status {
+		timing.StatusSince = &since
+	}
+	return timing
+}
+
 // TaskLatency is one closed task's timing, written by the repository in the
 // transaction that closes it. There is one row per task: closing it again
 // after a reopen replaces the row with the totals over its whole history.

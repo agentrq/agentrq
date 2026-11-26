@@ -310,6 +310,7 @@ type Repository interface {
 	GetTaskPlan(ctx context.Context, taskID int64) (model.TaskPlan, error)
 	ListTaskStateTransitions(ctx context.Context, taskID int64) ([]model.TaskStateTransition, error)
 	ListLastTaskAgents(ctx context.Context, taskIDs []int64) (map[int64]int64, error)
+	ListTaskHistories(ctx context.Context, taskIDs []int64) (map[int64][]model.TaskStateTransition, error)
 	CreateAgents(ctx context.Context, agents []model.Agent) error
 	CreateAgentModels(ctx context.Context, models []model.AgentModel) error
 	// RecordAgentNote files the note a task was handed to its agent with and

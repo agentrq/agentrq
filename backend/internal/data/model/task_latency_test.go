@@ -129,3 +129,78 @@ func sameTime(a, b *time.Time) bool {
 	}
 	return a.Equal(*b)
 }
+
+func TestTaskListTimingOf(t *testing.T) {
+	t0 := time.Date(2026, 9, 27, 10, 0, 0, 0, time.UTC)
+	at := func(minutes int) *time.Time { v := t0.Add(time.Duration(minutes) * time.Minute); return &v }
+	tr := func(from, to TaskState, minutes int) TaskStateTransition {
+		return TaskStateTransition{FromState: from, ToState: to, CreatedAt: *at(minutes)}
+	}
+	for _, tc := range []struct {
+		name           string
+		transitions    []TaskStateTransition
+		status         TaskState
+		worked         int64
+		working, since *time.Time
+	}{
+		{
+			name: "working again: the running stretch is left to the card",
+			transitions: []TaskStateTransition{
+				tr(TaskStateNone, TaskStateNotStarted, 0),
+				tr(TaskStateNotStarted, TaskStateOngoing, 5),
+				tr(TaskStateOngoing, TaskStateBlocked, 15),
+				tr(TaskStateBlocked, TaskStateOngoing, 45),
+			},
+			status: TaskStateOngoing, worked: 600, working: at(45), since: at(45),
+		},
+		{
+			name: "waiting on a question: still ongoing since it went ongoing, not working",
+			transitions: []TaskStateTransition{
+				tr(TaskStateNone, TaskStateOngoing, 0),
+				tr(TaskStateOngoing, TaskStateNeedsInput, 10),
+			},
+			status: TaskStateOngoing, worked: 600, since: at(0),
+		},
+		{
+			name: "back from a question: the stretch since the answer runs",
+			transitions: []TaskStateTransition{
+				tr(TaskStateNone, TaskStateOngoing, 0),
+				tr(TaskStateOngoing, TaskStateNeedsInput, 10),
+				tr(TaskStateNeedsInput, TaskStateOngoing, 30),
+			},
+			status: TaskStateOngoing, worked: 600, working: at(30), since: at(0),
+		},
+		{
+			name: "blocked",
+			transitions: []TaskStateTransition{
+				tr(TaskStateNone, TaskStateOngoing, 0),
+				tr(TaskStateOngoing, TaskStateBlocked, 23),
+			},
+			status: TaskStateBlocked, worked: 1380, since: at(23),
+		},
+		{
+			name: "completed after a question",
+			transitions: []TaskStateTransition{
+				tr(TaskStateNone, TaskStateOngoing, 0),
+				tr(TaskStateOngoing, TaskStateNeedsInput, 10),
+				tr(TaskStateNeedsInput, TaskStateCompleted, 20),
+			},
+			status: TaskStateCompleted, worked: 600, since: at(20),
+		},
+		{
+			name:        "the history ends elsewhere than the status",
+			transitions: []TaskStateTransition{tr(TaskStateNone, TaskStateOngoing, 0)},
+			status:      TaskStateCompleted, working: at(0),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := TaskListTimingOf(tc.transitions, tc.status)
+			if got == nil || got.WorkedSeconds != tc.worked || !sameTime(got.WorkingSince, tc.working) || !sameTime(got.StatusSince, tc.since) {
+				t.Fatalf("TaskListTimingOf = %+v; want worked %d, working since %v, status since %v", got, tc.worked, tc.working, tc.since)
+			}
+		})
+	}
+	if got := TaskListTimingOf(nil, TaskStateOngoing); got != nil {
+		t.Fatalf("no history = %+v, want nil", got)
+	}
+}

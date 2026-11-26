@@ -353,6 +353,16 @@ type (
 		// Agent names the agent behind the task's latest status change made
 		// by one; filled only when the listing asks for it.
 		Agent string
+		// Timing is what the task's card shows, filled with Agent; nil when
+		// the task has no history.
+		Timing *TaskListTiming
+	}
+
+	// TaskListTiming is a card's timing; see model.TaskListTiming.
+	TaskListTiming struct {
+		WorkedSeconds int64
+		WorkingSince  *time.Time
+		StatusSince   *time.Time
 	}
 
 	CreateTaskRequest struct {
