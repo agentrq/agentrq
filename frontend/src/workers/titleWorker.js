@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 import { pipeline, env } from '@huggingface/transformers';
-import { titleMessages, cleanTitle } from '../utils/titlePrompt.js';
+import { titleMessages, cleanTitle, TITLE_MAX_NEW_TOKENS } from '../utils/titlePrompt.js';
 
 // Skip local check, we'll fetch from HF Hub using WASM
 env.allowLocalModels = false;
@@ -41,7 +41,7 @@ self.addEventListener('message', async (e) => {
       });
 
       const output = await generator(titleMessages(data.text), {
-        max_new_tokens: 20,
+        max_new_tokens: TITLE_MAX_NEW_TOKENS,
         do_sample: false,
       });
 

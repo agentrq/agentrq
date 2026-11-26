@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 import { describe, it, expect } from 'vitest';
-import { titleMessages, cleanTitle } from '../src/utils/titlePrompt.js';
+import { titleMessages, cleanTitle, TITLE_MAX_NEW_TOKENS } from '../src/utils/titlePrompt.js';
 
 describe('titleMessages', () => {
   it('sends the instruction the model was trained on, then exactly what was typed', () => {
@@ -38,5 +38,12 @@ describe('cleanTitle', () => {
     [null, ''],
   ])('%j becomes %j', (answer, title) => {
     expect(cleanTitle(answer)).toBe(title);
+  });
+});
+
+describe('TITLE_MAX_NEW_TOKENS', () => {
+  it('leaves room for a title in a script that spends several tokens per word', () => {
+    // At 20, 61% of Arabic and 40% of Japanese titles were cut off mid-word.
+    expect(TITLE_MAX_NEW_TOKENS).toBeGreaterThanOrEqual(48);
   });
 });
