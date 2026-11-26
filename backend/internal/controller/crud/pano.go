@@ -295,6 +295,7 @@ func (c *controller) SavePanoDoc(ctx context.Context, req entity.SavePanoDocRequ
 		return nil, panoRefuse("color must be one of %s", strings.Join(entity.PanoColors, ", "))
 	}
 	links := panoLinks(req.Markdown)
+	panoA2UILinks(req.Markdown, links)
 	uploads, err := decodePanoUploads(req.Files, true)
 	if err != nil {
 		return nil, err
@@ -347,6 +348,16 @@ func (c *controller) SavePanoDoc(ctx context.Context, req entity.SavePanoDocRequ
 	}
 	if kept+len(uploads) > PanoMaxFiles {
 		return nil, panoRefuse("a Pano doc holds at most %d files", PanoMaxFiles)
+	}
+	files := map[string]bool{}
+	for _, f := range linked {
+		files[f.Filename] = true
+	}
+	for _, u := range uploads {
+		files[u.filename] = true
+	}
+	if err := checkPanoA2UI(ctx, req.Markdown, files); err != nil {
+		return nil, err
 	}
 
 	// The items assigned to tasks are written with each task's status now,

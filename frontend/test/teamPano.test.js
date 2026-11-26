@@ -270,6 +270,18 @@ describe('a doc shared with the team', () => {
     }
   });
 
+  it('draws an a2ui block as a card, its media by the team link', async () => {
+    const card = '```a2ui\n' + JSON.stringify([
+      { version: '1.0', createSurface: { surfaceId: 's', catalogId: 'https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json' } },
+      { version: '1.0', updateComponents: { surfaceId: 's', components: [{ id: 'root', component: 'Image', url: 'attachment:chart.png' }] } },
+    ]) + '\n```';
+    api.getTeamPanoDoc.mockResolvedValue({ doc: { ...DOC, markdown: card } });
+    await mount(TeamPanoDocView, { path: '/teams/tm1/pano/d1' });
+    await new Promise((r) => setTimeout(r, 0));
+    const body = $('[data-test=team-pano-body]');
+    expect(body.querySelector('[data-test=a2ui-image]').getAttribute('src')).toBe('/api/v1/teams/tm1/pano/d1/files/f1');
+  });
+
   it('shows a doc with no files, by a teammate with no name yet', async () => {
     api.getTeamPanoDoc.mockResolvedValue({ doc: { id: 'd1', title: 'Bare', markdown: 'text', color: 'pink', updatedAt: DOC.updatedAt, expiresAt: DOC.expiresAt } });
     await mount(TeamPanoDocView, { path: '/teams/tm1/pano/d1' });

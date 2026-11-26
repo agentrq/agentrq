@@ -1287,6 +1287,23 @@ describe('a doc', () => {
     });
   });
 
+  it('draws an a2ui block as a card in the doc\'s colour, in the doc and its preview', async () => {
+    const card = '```a2ui\n' + JSON.stringify([
+      { version: '1.0', createSurface: { surfaceId: 's', catalogId: 'https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json' } },
+      { version: '1.0', updateComponents: { surfaceId: 's', components: [{ id: 'root', component: 'Image', url: 'attachment:chart.png' }] } },
+    ]) + '\n```';
+    api.getPanoDoc.mockResolvedValue({ doc: { ...DOC, markdown: `# Plan\n\n${card}` } });
+    const { el } = await mount('/pano/d1');
+    await settle();
+    const body = $(el, 'pano-body');
+    expect(body.querySelector('[data-test="pano-a2ui"]').style.getPropertyValue('--pano-accent')).toBe(PANO_COLORS[2].inkHex);
+    expect(body.querySelector('[data-test="a2ui-image"]').getAttribute('src')).toBe('https://x/storage/chart');
+    await click($(el, 'pano-edit'));
+    await click($(el, 'pano-preview-tab'));
+    await settle();
+    expect($(el, 'pano-preview').querySelector('[data-test="a2ui-image"]')).not.toBeNull();
+  });
+
   it('lays the paper straight, read and edited, where the board tilts it', async () => {
     const { el } = await mount('/pano/d1');
     expect($(el, 'pano-title').closest('article').style.rotate).toBe('');

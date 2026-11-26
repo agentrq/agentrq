@@ -55,7 +55,7 @@ type (
 		ID       string          `json:"id,omitempty" jsonschema:"The doc to replace (base62). Leave it out to create a doc."`
 		Version  int64           `json:"version,omitempty" jsonschema:"The doc's version, as you last read it. Required with an id, refused if the doc has changed since; not needed to create."`
 		Title    string          `json:"title" jsonschema:"The doc's title."`
-		Markdown string          `json:"markdown" jsonschema:"The doc's full markdown, replacing what it had."`
+		Markdown string          `json:"markdown" jsonschema:"The doc's full markdown, replacing what it had. A fenced a2ui block holds an A2UI card the doc draws: a chart, tabs, cards, images, video or audio (the agentrq skill's references/pano-a2ui.md)."`
 		TTLDays  int             `json:"ttlDays,omitempty" jsonschema:"How many days the doc lives from this save before it is deleted. Leave it out to keep the doc's own, 30 for a new doc."`
 		Color    string          `json:"color,omitempty" jsonschema:"enum: yellow, pink, green, blue, orange, purple, amber"`
 		Files    []PanoFileParam `json:"files,omitempty" jsonschema:"Linked files, each linked from the markdown by its filename."`

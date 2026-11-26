@@ -25,9 +25,11 @@ const theme = useThemeStore()
 const variant = computed(() => props.c.variant ?? 'line')
 const label = computed(() => displayText(resolveValue(props.c.label, props.ctx)))
 const points = computed(() => chartPoints(resolveValue(props.c.data, props.ctx)))
-const color = computed(() => chartColor(props.c.color, variant.value, theme.isDark))
+// In a Pano doc, the note's ink unless the agent picked a colour of its own.
+const pano = computed(() => props.ctx.pano && !/^#[0-9a-fA-F]{6}$/.test(props.c.color ?? '') ? props.ctx.pano.inkHex : props.c.color)
+const color = computed(() => chartColor(pano.value, variant.value, theme.isDark))
 // The heading's dot is the line chart's colour, a heatmap's tone too.
-const dot = computed(() => chartColor(props.c.color, 'line', theme.isDark))
+const dot = computed(() => chartColor(pano.value, 'line', theme.isDark))
 const bars = computed(() => points.value.map((p) => ({ label: p.label, count: p.value })))
 const line = computed(() => points.value.map((p) => ({ date: p.label, count: p.value })))
 const heatmap = computed(() => (variant.value === 'heatmap' ? heatmapProps(points.value) : null))
@@ -41,7 +43,7 @@ const height = computed(() => (heatmap.value?.granularity === 'hour' ? 'h-56' : 
           :class="{ '@max-xs:[&_.h-5>span:nth-child(even)]:hidden': variant === 'line' }">
     <figcaption v-if="label" class="flex items-center gap-2 mb-3">
       <span class="w-2 h-2 rounded-full shrink-0" :style="{ backgroundColor: dot }" />
-      <span class="text-[10px] leading-[15px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50 truncate">{{ label }}</span>
+      <span class="text-[10px] leading-[15px] font-black uppercase tracking-widest truncate" :class="ctx.pano ? ctx.pano.title : 'text-gray-900 dark:text-zinc-50'">{{ label }}</span>
     </figcaption>
     <div role="img" :aria-label="summary || 'No data points'" class="w-full relative" :class="height">
       <HeatmapChart v-if="heatmap" :data="heatmap.data" :granularity="heatmap.granularity" :range-start="heatmap.rangeStart"

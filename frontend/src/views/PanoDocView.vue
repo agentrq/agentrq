@@ -23,6 +23,7 @@ import { taskRingClass } from '../composables/useTaskStatusStyle'
 import PanoTaskButton from '../components/PanoTaskButton.vue'
 import PanoProgress from '../components/PanoProgress.vue'
 import { renderMarkdown } from '../utils/markdown'
+import { usePanoA2ui } from '../composables/usePanoA2ui'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useTeamStore } from '../stores/teamStore'
 import { useEventBus } from '../useEventBus'
@@ -89,6 +90,12 @@ watch(relatedTasks, (tasks) => {
 const draftBody = computed(() => renderMarkdown(draft.value.markdown || '*Nothing written yet.*'))
 const color = computed(() => panoColor(editing.value ? draft.value.color : doc.value?.color))
 const canSave = computed(() => !busy.value && !!draft.value.title.trim() && !!draft.value.markdown.trim())
+// The a2ui blocks draw as cards in the doc and in the editor's preview, whose
+// media are the files the doc has saved.
+const bodyEl = ref(null)
+const previewEl = ref(null)
+usePanoA2ui(() => bodyEl.value, () => ({ html: doc.value && !editing.value ? body.value : '', files: doc.value?.files ?? [], color: color.value }))
+usePanoA2ui(() => previewEl.value, () => ({ html: preview.value ? draftBody.value : '', files: doc.value?.files ?? [], color: color.value }))
 
 onMounted(async () => {
   if (!id) return
@@ -394,7 +401,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
               <textarea v-show="!preview" id="pano-markdown-input" ref="markdownInput" v-model="draft.markdown" data-test="pano-markdown-input" rows="14"
                 class="w-full min-h-[18rem] bg-transparent text-[14px] leading-relaxed placeholder-black/35 resize-y focus:outline-none"
                 placeholder="Write in markdown. - [ ] starts a checklist item.&#10;&#10;Files you add are linked here, like ![chart](chart.png)."></textarea>
-              <div v-if="preview" data-test="pano-preview" class="md-body min-h-[18rem] text-[14px] [&_img]:max-w-full" v-html="draftBody"></div>
+              <div v-if="preview" ref="previewEl" data-test="pano-preview" class="md-body min-h-[18rem] text-[14px] [&_img]:max-w-full" v-html="draftBody"></div>
             </div>
           </section>
 
@@ -468,7 +475,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
           </p>
           <PanoProgress :doc="doc" class="mt-4 max-w-sm" />
           <div class="my-5 border-t border-black/10"></div>
-          <div data-test="pano-body" class="md-body text-[14px] break-words [&_img]:max-w-full [&_img]:rounded" v-html="body" @click="onBodyClick"></div>
+          <div ref="bodyEl" data-test="pano-body" class="md-body text-[14px] break-words [&_img]:max-w-full [&_img]:rounded" v-html="body" @click="onBodyClick"></div>
           <div v-if="itemMenu" v-click-outside="closeItemMenu" data-test="pano-item-menu" role="menu" @keydown.esc="closeItemMenu()"
             :style="{ top: `${itemMenu.top}px`, left: `${itemMenu.left}px` }"
             class="absolute z-30 w-64 max-h-72 overflow-y-auto custom-scrollbar bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg py-1 text-left shadow-lg">

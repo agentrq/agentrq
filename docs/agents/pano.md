@@ -74,3 +74,12 @@
   by path would rebuild the doc, and its scroll, on every task opened. The
   doc's param is `docId`, never `id`: the task view reads `id` as a workspace
   and would GET the doc's id as one.
+- **A fenced `a2ui` block is an A2UI card the doc draws** (`pano_a2ui.go`,
+  `usePanoA2ui`). The save validates every block, so the page never meets a
+  bad one; its `attachment:<file>` counts as a link, or the file is dropped.
+  Fences follow CommonMark, as marked draws them. Display only, and no
+  Progress or List: the checklist and tables already do those. The page
+  hides a block's `<pre>` behind its card, never replaces it: a body drawn
+  again with the same HTML is not rewritten, and must find it again.
+- **Inside a doc the cards use only the note's tones (`ctx.pano`), never
+  `dark:`**: the paper stays light in dark mode.

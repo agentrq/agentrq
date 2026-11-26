@@ -5,7 +5,7 @@
 -->
 
 <script setup>
-/** Text: markdown without images or links; caption or body. */
+/** Text: markdown without images or links; caption or body. In a Pano doc, in the note's ink. */
 import { computed } from 'vue'
 
 import { displayText, textHtml } from '../../a2ui/render.js'
@@ -18,6 +18,7 @@ const html = computed(() => textHtml(displayText(resolveValue(props.c.text, prop
 
 <template>
   <div data-test="a2ui-text" class="md-body min-w-0 break-words"
-       :class="c.variant === 'caption' ? 'text-[11px] text-gray-500 dark:text-zinc-400' : 'text-[13px] text-gray-800 dark:text-zinc-200'"
+       :class="ctx.pano ? (c.variant === 'caption' ? `text-[11px] ${ctx.pano.muted}` : 'text-[14px]')
+         : c.variant === 'caption' ? 'text-[11px] text-gray-500 dark:text-zinc-400' : 'text-[13px] text-gray-800 dark:text-zinc-200'"
        v-html="html"></div>
 </template>

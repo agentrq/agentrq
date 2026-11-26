@@ -27,7 +27,7 @@
           </p>
           <PanoProgress :doc="doc" class="mt-4 max-w-sm" />
           <div class="my-5 border-t border-black/10"></div>
-          <div data-test="team-pano-body" class="md-body text-[14px] break-words [&_img]:max-w-full [&_img]:rounded" v-html="body"></div>
+          <div ref="bodyEl" data-test="team-pano-body" class="md-body text-[14px] break-words [&_img]:max-w-full [&_img]:rounded" v-html="body"></div>
         </article>
 
         <aside class="space-y-6 min-w-0">
@@ -57,6 +57,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { getTeamPanoDoc, teamFileUrl } from '../api';
 import { expiresLabel, formatFileSize, linkPanoFiles, panoAssignees, panoColor, panoDate } from '../composables/usePano';
 import { renderMarkdown } from '../utils/markdown';
+import { usePanoA2ui } from '../composables/usePanoA2ui';
 import { lostTeam, useTeamMode } from '../composables/useTeamMode';
 import { useToasts } from '../composables/useToasts';
 import { onWebMCPChange } from '../composables/useWebMCPChanges';
@@ -84,6 +85,8 @@ const fileLists = computed(() => [
 // An assigned item's task is the owner's: its status shows, with no link to it.
 const body = computed(() => panoAssignees(linkPanoFiles(renderMarkdown(doc.value.markdown), files.value), { link: false }));
 const color = computed(() => panoColor(doc.value.color));
+const bodyEl = ref(null);
+usePanoA2ui(() => bodyEl.value, () => ({ html: doc.value ? body.value : '', files: doc.value ? files.value : [], color: doc.value ? color.value : panoColor() }));
 const owner = computed(() => ({ userId: doc.value.ownerId, name: doc.value.ownerName || 'A teammate', picture: doc.value.ownerPicture }));
 
 async function load() {
