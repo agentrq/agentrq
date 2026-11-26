@@ -17,7 +17,9 @@ import (
 
 func presetDB(t *testing.T) (*gorm.DB, Repository) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{})
+	// TranslateError as the app opens its database, so a rename onto a
+	// taken name reads as gorm.ErrDuplicatedKey.
+	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{TranslateError: true})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -112,6 +114,72 @@ func TestPresets_DatabaseErrorsComeBack(t *testing.T) {
 	}
 	if err := repo.DeletePreset(ctx, memUserID, memWorkspaceID, "deploy"); err == nil || errors.Is(err, ErrNotFound) {
 		t.Errorf("DeletePreset with no table returned %v, want the database's error", err)
+	}
+	if _, err := repo.UpdatePreset(ctx, memUserID, memWorkspaceID, "deploy", preset(0, 0, 0, "deploy", "y")); err == nil || errors.Is(err, ErrNotFound) {
+		t.Errorf("UpdatePreset with no table returned %v, want the database's error", err)
+	}
+}
+
+func TestUpdatePreset_EditsTheBodyAndRenames(t *testing.T) {
+	_, repo := presetDB(t)
+	ctx := context.Background()
+	for _, p := range []model.Preset{
+		preset(1, memUserID, memWorkspaceID, "deploy", "deploy to staging"),
+		preset(2, memUserID, memOtherWSID, "deploy", "another workspace's"),
+	} {
+		if _, err := repo.CreatePreset(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := repo.UpdatePreset(ctx, memUserID, memWorkspaceID, "deploy", model.Preset{Name: "deploy", Body: "deploy to prod"})
+	if err != nil {
+		t.Fatalf("UpdatePreset returned %v, want no error", err)
+	}
+	if got.ID != 1 || got.Name != "deploy" || got.Body != "deploy to prod" || got.CreatedAt.IsZero() {
+		t.Fatalf("UpdatePreset returned %+v, want preset 1 with the new body", got)
+	}
+
+	got, err = repo.UpdatePreset(ctx, memUserID, memWorkspaceID, "deploy", model.Preset{Name: "ship", Body: "ship it"})
+	if err != nil || got.ID != 1 || got.Name != "ship" || got.Body != "ship it" {
+		t.Fatalf("renaming returned %+v, %v; want preset 1 named ship", got, err)
+	}
+	list, _ := repo.ListPresets(ctx, memUserID, memWorkspaceID)
+	if len(list) != 1 || list[0].Name != "ship" {
+		t.Fatalf("after the rename the list is %+v, want only ship", list)
+	}
+	other, _ := repo.ListPresets(ctx, memUserID, memOtherWSID)
+	if len(other) != 1 || other[0].Body != "another workspace's" {
+		t.Fatalf("the other workspace's presets are %+v, want them untouched", other)
+	}
+}
+
+func TestUpdatePreset_ANameNotThereIsNotFound(t *testing.T) {
+	_, repo := presetDB(t)
+	_, err := repo.UpdatePreset(context.Background(), memUserID, memWorkspaceID, "missing", model.Preset{Name: "missing", Body: "x"})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("editing a missing preset returned %v, want ErrNotFound", err)
+	}
+}
+
+func TestUpdatePreset_RefusesANameTheWorkspaceHas(t *testing.T) {
+	_, repo := presetDB(t)
+	ctx := context.Background()
+	for _, p := range []model.Preset{
+		preset(1, memUserID, memWorkspaceID, "deploy", "first"),
+		preset(2, memUserID, memWorkspaceID, "ship", "second"),
+	} {
+		if _, err := repo.CreatePreset(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := repo.UpdatePreset(ctx, memUserID, memWorkspaceID, "deploy", model.Preset{Name: "ship", Body: "changed"})
+	if !errors.Is(err, ErrPresetExists) {
+		t.Fatalf("renaming deploy to ship returned %v, want ErrPresetExists", err)
+	}
+	list, _ := repo.ListPresets(ctx, memUserID, memWorkspaceID)
+	if len(list) != 2 || list[0].Body != "first" || list[1].Body != "second" {
+		t.Fatalf("the list is %+v, want both presets untouched", list)
 	}
 }
 

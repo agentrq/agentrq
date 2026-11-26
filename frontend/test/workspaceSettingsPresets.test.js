@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 /**
- * The Presets tab, mounted: the workspace's presets listed, one added and one
- * removed at once, with no Save, and the server's sentence when it refuses.
+ * The Presets tab, mounted: the workspace's presets listed, one added, one
+ * edited and one removed at once, with no Save, and the server's sentence when it refuses.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -18,6 +18,7 @@ const WORKSPACE = { id: 'ws1', name: 'ops', notificationSettings: {} }
 const listWorkspacePresets = vi.fn()
 const createWorkspacePreset = vi.fn()
 const deleteWorkspacePreset = vi.fn()
+const updateWorkspacePreset = vi.fn()
 const updateWorkspace = vi.fn()
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -29,6 +30,7 @@ vi.mock('../src/api', async (importOriginal) => ({
   listWorkspacePresets: (...a) => listWorkspacePresets(...a),
   createWorkspacePreset: (...a) => createWorkspacePreset(...a),
   deleteWorkspacePreset: (...a) => deleteWorkspacePreset(...a),
+  updateWorkspacePreset: (...a) => updateWorkspacePreset(...a),
   searchWorkspaceSkills: () => Promise.resolve({ skills: [
     { name: 'release', description: 'Cut a release', workspaceEnabled: true },
     { name: 'review', workspaceEnabled: true },
@@ -67,6 +69,7 @@ beforeEach(() => {
   listWorkspacePresets.mockResolvedValue({ presets: [{ name: 'pull-n-push', body: 'pull latest main, tag and push' }] })
   createWorkspacePreset.mockImplementation((id, name, body) => Promise.resolve({ preset: { name, body } }))
   deleteWorkspacePreset.mockResolvedValue(true)
+  updateWorkspacePreset.mockImplementation((id, name, newName, body) => Promise.resolve({ preset: { name: newName, body } }))
 })
 afterEach(() => {
   app?.unmount()
@@ -118,6 +121,65 @@ describe('the Presets tab', () => {
     page.q('preset-name').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     await settle()
     expect(createWorkspacePreset).not.toHaveBeenCalled()
+  })
+
+  it('edits a preset at once: its message and its name, shown in full in the form', async () => {
+    const long = 'line one\nline two\nline three\nline four'
+    listWorkspacePresets.mockResolvedValue({ presets: [{ name: 'pull-n-push', body: long }] })
+    const page = await mount()
+    expect(page.q('preset-form-title').textContent).toBe('Add a Preset')
+    expect(page.q('preset-cancel')).toBeNull()
+
+    createWorkspacePreset.mockRejectedValueOnce(new Error('a preset named "pull-n-push" exists'))
+    page.fill('preset-name', 'pull-n-push')
+    page.fill('preset-body', 'again')
+    await settle()
+    page.q('preset-add').click()
+    await settle()
+    expect(page.q('presets-error')).not.toBeNull()
+
+    page.q('preset-edit').click()
+    await settle()
+    expect(page.q('presets-error')).toBeNull()
+    expect(page.q('preset-form-title').textContent).toBe('Edit #pull-n-push')
+    expect(page.q('preset-name').value).toBe('pull-n-push')
+    expect(page.q('preset-body').value).toBe(long)
+    expect(document.activeElement).toBe(page.q('preset-body'))
+    expect(page.q('preset-add').textContent.trim()).toBe('Save Preset')
+
+    page.fill('preset-name', 'Ship It')
+    page.fill('preset-body', 'ship it')
+    await settle()
+    page.q('preset-add').click()
+    await settle()
+    expect(updateWorkspacePreset).toHaveBeenCalledWith('ws1', 'pull-n-push', 'ship-it', 'ship it')
+    expect(createWorkspacePreset).toHaveBeenCalledTimes(1)
+    expect(page.names()).toEqual(['#ship-it'])
+    expect(page.q('preset-form-title').textContent).toBe('Add a Preset')
+    expect(page.q('preset-name').value).toBe('')
+    expect(page.q('preset-body').value).toBe('')
+  })
+
+  it('keeps the edit open when the server refuses it, and Cancel goes back to adding', async () => {
+    updateWorkspacePreset.mockRejectedValue(new Error('a preset named "deploy" exists'))
+    const page = await mount()
+    page.q('preset-edit').click()
+    await settle()
+    page.fill('preset-name', 'deploy')
+    await settle()
+    page.q('preset-add').click()
+    await settle()
+    expect(page.q('presets-error').textContent).toBe('a preset named "deploy" exists')
+    expect(page.q('preset-form-title').textContent).toBe('Edit #pull-n-push')
+    expect(page.names()).toEqual(['#pull-n-push'])
+
+    page.q('preset-cancel').click()
+    await settle()
+    expect(page.q('presets-error')).toBeNull()
+    expect(page.q('preset-form-title').textContent).toBe('Add a Preset')
+    expect(page.q('preset-name').value).toBe('')
+    expect(page.q('preset-body').value).toBe('')
+    expect(updateWorkspacePreset).toHaveBeenCalledTimes(1)
   })
 
   it('removes a preset at once', async () => {

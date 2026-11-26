@@ -82,7 +82,7 @@ func TestClientReportableAction(t *testing.T) {
 			t.Errorf("%q = %v, %v; want %v", name, got, ok, want)
 		}
 	}
-	for _, name := range []string{"", "unknown", ActionTaskCreate.String(), "UI_SEARCH", ActionPresetCreate.String(), ActionPresetDelete.String()} {
+	for _, name := range []string{"", "unknown", ActionTaskCreate.String(), "UI_SEARCH", ActionPresetCreate.String(), ActionPresetDelete.String(), ActionPresetUpdate.String()} {
 		if got, ok := ClientReportableAction(name); ok || got != 0 {
 			t.Errorf("%q = %v, %v; want it refused", name, got, ok)
 		}

@@ -604,6 +604,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionA2UIResource, model.ActionIDA2UIResource, "a2ui resource"},
 		{entity.ActionA2UIChart, model.ActionIDA2UIChart, "a2ui chart"},
 		{entity.ActionA2UIProgress, model.ActionIDA2UIProgress, "a2ui progress"},
+		{entity.ActionPresetUpdate, model.ActionIDPresetUpdate, "preset update"},
 	}
 
 	for _, tc := range cases {

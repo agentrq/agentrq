@@ -6,6 +6,7 @@ import { test, expect } from '../lib/fixtures.js'
 import { createTask, nextResponse, watchTraffic } from '../lib/app.js'
 
 const BODY = 'pull latest main, tag and push'
+const DEPLOY = 'deploy to staging, then run the smoke tests'
 
 const theme = (page, dark) => page.evaluate((d) => {
   localStorage.setItem('theme', d ? 'dark' : 'light')
@@ -47,6 +48,27 @@ test('a preset added in settings is put in by #name in a new task and a reply', 
   expect((await refused).status(), 'saving a name the workspace has').toBe(409)
   await expect(page.getByTestId('presets-error')).toHaveText('a preset named "deploy" exists')
 
+  // A saved preset is edited in place: the pencil loads it into the form, and
+  // Save keeps the new message under the same name.
+  await page.getByRole('button', { name: 'Edit #deploy' }).click()
+  await expect(page.getByTestId('preset-form-title')).toHaveText('Edit #deploy')
+  await expect(page.getByTestId('presets-error')).toHaveCount(0)
+  await expect(page.getByTestId('preset-body')).toHaveValue('deploy to staging')
+  await page.getByTestId('preset-body').fill(DEPLOY)
+  await page.screenshot({ path: test.info().outputPath('presets-edit-light.png'), animations: 'disabled' })
+  await theme(page, true)
+  await page.screenshot({ path: test.info().outputPath('presets-edit-dark.png'), animations: 'disabled' })
+  await theme(page, false)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByTestId('preset-add').scrollIntoViewIfNeeded()
+  await page.screenshot({ path: test.info().outputPath('presets-edit-phone.png'), animations: 'disabled' })
+  await page.setViewportSize({ width: 1400, height: 900 })
+  const edited = nextResponse(page, 'PUT', `/workspaces/${workspace.id}/presets/deploy`)
+  await page.getByTestId('preset-add').click()
+  expect((await edited).status(), 'editing the preset').toBe(200)
+  await expect(page.getByTestId('preset-form-title')).toHaveText('Add a Preset')
+  await expect(page.getByTestId('preset-row').filter({ hasText: '#deploy' })).toContainText(DEPLOY)
+
   // The new task form: #pu offers pull-n-push, and Enter puts its message in.
   await page.goto(`/workspaces/${workspace.id}/tasks/new`)
   const description = page.locator('#taskForm textarea')
@@ -69,7 +91,7 @@ test('a preset added in settings is put in by #name in a new task and a reply', 
   await expect(menu.getByRole('option')).toHaveText([/#deploy/, /#pull-n-push/])
   await page.screenshot({ path: test.info().outputPath('presets-reply-light.png'), animations: 'disabled' })
   await menu.getByRole('option').filter({ hasText: '#deploy' }).dispatchEvent('mousedown')
-  await expect(composer).toHaveValue('deploy to staging')
+  await expect(composer).toHaveValue(DEPLOY)
 
   // Removed from settings, it is no longer offered.
   await page.goto(`/workspaces/${workspace.id}/settings?tab=presets`)

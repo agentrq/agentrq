@@ -109,6 +109,7 @@ type Repository interface {
 	ListMemoriesByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Memory, error)
 	ListPresets(ctx context.Context, userID, workspaceID int64) ([]model.Preset, error)
 	CreatePreset(ctx context.Context, p model.Preset) (model.Preset, error)
+	UpdatePreset(ctx context.Context, userID, workspaceID int64, name string, p model.Preset) (model.Preset, error)
 	DeletePreset(ctx context.Context, userID, workspaceID int64, name string) error
 	// GitHub App installations an account imports private skills through.
 	ListGitHubInstallations(ctx context.Context, userID int64) ([]model.GitHubInstallation, error)

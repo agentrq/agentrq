@@ -220,3 +220,85 @@ func TestDeletePreset_ReportsFailures(t *testing.T) {
 		}
 	})
 }
+
+func TestUpdatePreset_EditsTheParentsAndCountsIt(t *testing.T) {
+	e := newMachineTelemetryEnv(t)
+	expectPresetAccess(e, presetFork)
+	e.repo.EXPECT().UpdatePreset(gomock.Any(), testUserID, presetWorkspace, "deploy", model.Preset{Name: "ship-it", Body: "ship to prod"}).
+		Return(storedPreset("ship-it", "ship to prod"), nil)
+
+	rs, err := e.controller.UpdatePreset(context.Background(), entity.UpdatePresetRequest{WorkspaceID: presetFork, UserID: testUserIDStr, Name: "deploy", NewName: "Ship-It", Body: "ship to prod"})
+	if err != nil {
+		t.Fatalf("UpdatePreset returned %v", err)
+	}
+	if rs.Preset.Name != "ship-it" || rs.Preset.Body != "ship to prod" || rs.Preset.ID != 900 {
+		t.Errorf("returned %+v, want the stored ship-it preset", rs.Preset)
+	}
+	if ev := e.only(t); ev.Action != entity.ActionPresetUpdate || ev.WorkspaceID != presetFork {
+		t.Errorf("published %+v, want a preset_update in the fork", ev)
+	}
+}
+
+func TestUpdatePreset_NoNewNameKeepsTheName(t *testing.T) {
+	e := newMachineTelemetryEnv(t)
+	expectPresetAccess(e, presetWorkspace)
+	e.repo.EXPECT().UpdatePreset(gomock.Any(), testUserID, presetWorkspace, "deploy", model.Preset{Name: "deploy", Body: "new body"}).
+		Return(storedPreset("deploy", "new body"), nil)
+	if _, err := e.controller.UpdatePreset(context.Background(), entity.UpdatePresetRequest{WorkspaceID: presetWorkspace, UserID: testUserIDStr, Name: "deploy", Body: "new body"}); err != nil {
+		t.Fatalf("UpdatePreset returned %v", err)
+	}
+}
+
+func TestUpdatePreset_RefusesWhatItCannotKeep(t *testing.T) {
+	for _, tc := range []struct {
+		name, newName, body, want string
+	}{
+		{"an unusable new name", "--", "x", "is not usable"},
+		{"an unusable old name with no new one", "", "x", "is not usable"},
+		{"an empty body", "deploy", " \n", "body is empty"},
+		{"an oversized body", "deploy", strings.Repeat("a", MaxPresetBodyBytes+1), "the limit is 16384"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newMachineTelemetryEnv(t)
+			old := "deploy"
+			if tc.name == "an unusable old name with no new one" {
+				old = "Not Usable!"
+			}
+			_, err := e.controller.UpdatePreset(context.Background(), entity.UpdatePresetRequest{WorkspaceID: presetWorkspace, UserID: testUserIDStr, Name: old, NewName: tc.newName, Body: tc.body})
+			if pe := presetErrorOf(t, err); pe.Conflict || !strings.Contains(pe.Message, tc.want) {
+				t.Errorf("refused with %+v, want %q", pe, tc.want)
+			}
+		})
+	}
+}
+
+func TestUpdatePreset_ReportsFailures(t *testing.T) {
+	req := entity.UpdatePresetRequest{WorkspaceID: presetWorkspace, UserID: testUserIDStr, Name: "deploy", NewName: "ship", Body: "x"}
+	t.Run("another account's workspace is not found", func(t *testing.T) {
+		e := newMachineTelemetryEnv(t)
+		e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), presetWorkspace, testUserID).Return(false, nil)
+		if _, err := e.controller.UpdatePreset(context.Background(), req); !errors.Is(err, base.ErrNotFound) {
+			t.Fatalf("returned %v, want ErrNotFound", err)
+		}
+	})
+	t.Run("a name taken is a conflict, and not counted", func(t *testing.T) {
+		e := newMachineTelemetryEnv(t)
+		expectPresetAccess(e, presetWorkspace)
+		e.repo.EXPECT().UpdatePreset(gomock.Any(), testUserID, presetWorkspace, "deploy", gomock.Any()).Return(model.Preset{}, base.ErrPresetExists)
+		_, err := e.controller.UpdatePreset(context.Background(), req)
+		if pe := presetErrorOf(t, err); !pe.Conflict || pe.Message != `a preset named "ship" exists` {
+			t.Errorf("refused with %+v, want a conflict naming ship", pe)
+		}
+		if len(*e.events) != 0 {
+			t.Errorf("published %+v, want nothing counted", *e.events)
+		}
+	})
+	t.Run("a preset not there is not found", func(t *testing.T) {
+		e := newMachineTelemetryEnv(t)
+		expectPresetAccess(e, presetWorkspace)
+		e.repo.EXPECT().UpdatePreset(gomock.Any(), testUserID, presetWorkspace, "deploy", gomock.Any()).Return(model.Preset{}, base.ErrNotFound)
+		if _, err := e.controller.UpdatePreset(context.Background(), req); !errors.Is(err, base.ErrNotFound) {
+			t.Fatalf("returned %v, want ErrNotFound", err)
+		}
+	})
+}

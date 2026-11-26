@@ -29,6 +29,7 @@ const (
 type PresetController interface {
 	ListPresets(ctx context.Context, req entity.ListPresetsRequest) (*entity.ListPresetsResponse, error)
 	CreatePreset(ctx context.Context, req entity.CreatePresetRequest) (*entity.CreatePresetResponse, error)
+	UpdatePreset(ctx context.Context, req entity.UpdatePresetRequest) (*entity.UpdatePresetResponse, error)
 	DeletePreset(ctx context.Context, req entity.DeletePresetRequest) error
 }
 
@@ -51,15 +52,9 @@ func (c *controller) ListPresets(ctx context.Context, req entity.ListPresetsRequ
 // CreatePreset saves a preset. Its name follows the skill naming rules, so
 // #name and /name are typed the same way.
 func (c *controller) CreatePreset(ctx context.Context, req entity.CreatePresetRequest) (*entity.CreatePresetResponse, error) {
-	name, err := skill.CanonicalName(req.Name)
+	name, err := validPreset(req.Name, req.Body)
 	if err != nil {
-		return nil, &entity.PresetError{Message: fmt.Sprintf("preset name %q is not usable; names are lowercase letters and digits joined by single hyphens, like %q, up to %d characters", req.Name, "pull-n-push", skill.MaxNameLength)}
-	}
-	if strings.TrimSpace(req.Body) == "" {
-		return nil, &entity.PresetError{Message: "preset body is empty"}
-	}
-	if len(req.Body) > MaxPresetBodyBytes {
-		return nil, &entity.PresetError{Message: fmt.Sprintf("preset body is %d bytes; the limit is %d", len(req.Body), MaxPresetBodyBytes)}
+		return nil, err
 	}
 	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
@@ -88,6 +83,48 @@ func (c *controller) CreatePreset(ctx context.Context, req entity.CreatePresetRe
 	}
 	c.emitPresetEvent(ctx, entity.ActionPresetCreate, req.WorkspaceID, uid)
 	return &entity.CreatePresetResponse{Preset: fromModelPreset(saved)}, nil
+}
+
+// UpdatePreset edits a preset's body, and renames it when a new name is
+// given. The new name is checked as CreatePreset checks one.
+func (c *controller) UpdatePreset(ctx context.Context, req entity.UpdatePresetRequest) (*entity.UpdatePresetResponse, error) {
+	newName := req.NewName
+	if newName == "" {
+		newName = req.Name
+	}
+	name, err := validPreset(newName, req.Body)
+	if err != nil {
+		return nil, err
+	}
+	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	if err != nil {
+		return nil, err
+	}
+	saved, err := c.repository.UpdatePreset(ctx, uid, workspaceID, req.Name, model.Preset{Name: name, Body: req.Body})
+	if errors.Is(err, base.ErrPresetExists) {
+		return nil, &entity.PresetError{Message: fmt.Sprintf("a preset named %q exists", name), Conflict: true}
+	}
+	if err != nil {
+		return nil, err
+	}
+	c.emitPresetEvent(ctx, entity.ActionPresetUpdate, req.WorkspaceID, uid)
+	return &entity.UpdatePresetResponse{Preset: fromModelPreset(saved)}, nil
+}
+
+// validPreset returns name in its canonical form, or the PresetError that
+// refuses the name or the body.
+func validPreset(name, body string) (string, error) {
+	canonical, err := skill.CanonicalName(name)
+	if err != nil {
+		return "", &entity.PresetError{Message: fmt.Sprintf("preset name %q is not usable; names are lowercase letters and digits joined by single hyphens, like %q, up to %d characters", name, "pull-n-push", skill.MaxNameLength)}
+	}
+	if strings.TrimSpace(body) == "" {
+		return "", &entity.PresetError{Message: "preset body is empty"}
+	}
+	if len(body) > MaxPresetBodyBytes {
+		return "", &entity.PresetError{Message: fmt.Sprintf("preset body is %d bytes; the limit is %d", len(body), MaxPresetBodyBytes)}
+	}
+	return canonical, nil
 }
 
 func (c *controller) DeletePreset(ctx context.Context, req entity.DeletePresetRequest) error {

@@ -839,6 +839,21 @@ export async function createWorkspacePreset(workspaceId, name, body) {
   return res.json();
 }
 
+// Gives the preset called name a new name and body. Refused with the
+// server's sentence, as createWorkspacePreset is.
+export async function updateWorkspacePreset(workspaceId, name, newName, body) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/presets/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: newName, body }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error?.message || 'Failed to save preset');
+  }
+  return res.json();
+}
+
 export async function deleteWorkspacePreset(workspaceId, name) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/presets/${encodeURIComponent(name)}`, {
     method: 'DELETE',

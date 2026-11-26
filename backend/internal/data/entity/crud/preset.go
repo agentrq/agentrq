@@ -37,6 +37,20 @@ type (
 		Preset Preset
 	}
 
+	// UpdatePresetRequest replaces the body of the preset called Name, and
+	// renames it to NewName when that is set and differs.
+	UpdatePresetRequest struct {
+		WorkspaceID int64
+		UserID      string
+		Name        string
+		NewName     string
+		Body        string
+	}
+
+	UpdatePresetResponse struct {
+		Preset Preset
+	}
+
 	DeletePresetRequest struct {
 		WorkspaceID int64
 		UserID      string

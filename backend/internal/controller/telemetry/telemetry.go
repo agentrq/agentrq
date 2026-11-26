@@ -450,6 +450,8 @@ func crudActionID(a entity.Action) (uint8, bool) {
 		action = model.ActionIDA2UIChart
 	case entity.ActionA2UIProgress:
 		action = model.ActionIDA2UIProgress
+	case entity.ActionPresetUpdate:
+		action = model.ActionIDPresetUpdate
 	default:
 		return 0, false
 	}
