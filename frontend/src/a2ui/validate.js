@@ -225,7 +225,8 @@ function byteLength(v) {
 
 /**
  * Whether messages, a stored card's, may be drawn: { ok, problems }.
- * options.interactive allows the input components, as on the server.
+ * options.interactive allows the input components, as on the server;
+ * options.components, when given, are the only ones allowed (a Pano doc's).
  */
 export function validateMessages(messages, options = {}) {
   const fail = (problem) => ({ ok: false, problems: [problem] })
@@ -256,7 +257,8 @@ export function validateMessages(messages, options = {}) {
     for (const [j, c] of (body.components ?? []).entries()) {
       const cat = `${at}.${kind}.components[${j}]`
       if (++count > MAX_COMPONENTS) return fail(`${cat}: more than ${MAX_COMPONENTS} components`)
-      const problem = checkComponent(c, cat, allowed, catalogId)
+      const only = options.components ? allowed.filter((n) => options.components.includes(n)) : allowed
+      const problem = checkComponent(c, cat, only, catalogId)
       if (problem) return fail(problem)
       if (seen.has(c.id)) return fail(`${cat}: id ${JSON.stringify(c.id)} is used twice`)
       seen.add(c.id)

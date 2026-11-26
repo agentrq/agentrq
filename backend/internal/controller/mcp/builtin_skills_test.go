@@ -165,7 +165,7 @@ func exampleFits(a ToolAction, payload map[string]any) error {
 
 // referenceTopics are the reference files named after a topic rather than a
 // tool, each with the tool its examples call.
-var referenceTopics = map[string]string{"a2ui": "task", "a2ui-buttons": "task", "a2ui-charts": "task"}
+var referenceTopics = map[string]string{"a2ui": "task", "a2ui-buttons": "task", "a2ui-charts": "task", "pano-a2ui": "pano"}
 
 // Every example in the workspace skill is a call the server accepts: in
 // references/<tool>.md, one of that tool's actions with its real payload

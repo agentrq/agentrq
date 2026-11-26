@@ -68,6 +68,28 @@ page, with its files and attachments, until you switch it off, you leave the
 team, or the doc is deleted or expires. They see your edits as you make them,
 but not its comments. Every share and unshare is in the team's activity.
 
+## Charts, tabs and media
+
+A doc can hold rich content beside its markdown: a fenced code block tagged
+`a2ui` holds an [A2UI card](A2UI.md), drawn in the doc's own colours.
+Cards are taped to the note, tabs are its tag pills, charts are drawn in its
+ink, and pictures and videos are taped to the page.
+
+````markdown
+```a2ui
+[{"version":"1.0","createSurface":{"surfaceId":"prs","catalogId":"https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json"}},
+ {"version":"1.0","updateComponents":{"surfaceId":"prs","components":[
+   {"id":"root","component":"Chart","variant":"bar","label":"PRs merged","data":[{"label":"Mon","value":2},{"label":"Tue","value":5}]}]}}]
+```
+````
+
+A block may use `Text`, `Row`, `Column`, `Card`, `Tabs`, `Divider`, `Icon`,
+`Image`, `Video`, `AudioPlayer` and `Chart`. Nothing in it can be clicked
+to answer: progress is the doc's checklist, and a table is markdown. A
+picture, video or recording is one of the doc's own files, named
+`attachment:<filename>`; naming it keeps it with the doc. A block that is
+not a valid card is refused when the doc is saved, naming its line.
+
 ## For agents
 
 The workspace server and the supervisor's CoreMCP both have a `pano` tool. It

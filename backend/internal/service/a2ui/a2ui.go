@@ -15,6 +15,7 @@ package a2ui
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -76,6 +77,12 @@ type Options struct {
 	// Attachments maps each filename attached to the message to its stored
 	// URL, which replaces an `attachment:<filename>` media reference.
 	Attachments map[string]string
+	// Components, when set, are the only components a surface may use: a
+	// page that draws fewer than all of them (a Pano doc) names its own.
+	Components []string
+	// AttachedTo is what media's files belong to, in a refusal: "this reply"
+	// when empty.
+	AttachedTo string
 }
 
 // Surface is an accepted ui: one surface's messages, cleaned and resolved.
@@ -309,6 +316,10 @@ func (v *validator) componentList(at string, list, plain []any) {
 }
 
 func (v *validator) allowed(at, name string) bool {
+	if only := v.opts.Components; only != nil && !slices.Contains(only, name) {
+		v.addf("%s: component %q is not available here; use %s", at, name, strings.Join(only, ", "))
+		return false
+	}
 	ours := v.catalogID == AgentRQCatalogID
 	if slices.Contains(displayComponents, name) || v.opts.Interactive && slices.Contains(interactiveComponents, name) ||
 		ours && slices.Contains(agentrqComponents, name) {
@@ -423,6 +434,7 @@ func (v *validator) unknownProperties(name string, obj map[string]any) []string 
 
 // media replaces each attachment reference with the stored URL.
 func (v *validator) media(at, name string, obj map[string]any) {
+	to := cmp.Or(v.opts.AttachedTo, "this reply")
 	for _, prop := range mediaProperties[name] {
 		val, ok := obj[prop]
 		if !ok {
@@ -430,17 +442,17 @@ func (v *validator) media(at, name string, obj map[string]any) {
 		}
 		s, ok := val.(string)
 		if !ok {
-			v.addf("%s: %s must be attachment:<filename> of a file attached to this reply, as a literal string: media cannot come from a data binding or a function call", at, prop)
+			v.addf("%s: %s must be attachment:<filename> of a file attached to %s, as a literal string: media cannot come from a data binding or a function call", at, prop, to)
 			continue
 		}
 		filename, ok := strings.CutPrefix(s, attachmentPrefix)
 		if !ok || filename == "" {
-			v.addf("%s: %s must be attachment:<filename> of a file attached to this reply: media cannot come from a link", at, prop)
+			v.addf("%s: %s must be attachment:<filename> of a file attached to %s: media cannot come from a link", at, prop, to)
 			continue
 		}
 		u, ok := v.opts.Attachments[filename]
 		if !ok {
-			v.addf("%s: %s names %q, but no file by that name is attached to this reply (attached: %s)", at, prop, filename, attachedNames(v.opts.Attachments))
+			v.addf("%s: %s names %q, but no file by that name is attached to %s (attached: %s)", at, prop, filename, to, attachedNames(v.opts.Attachments))
 			continue
 		}
 		obj[prop] = u

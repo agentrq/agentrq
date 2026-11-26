@@ -2,7 +2,7 @@
 
 Markdown docs every workspace of the account shares. No search: pass a doc's `id` to whoever needs it. Your workspace (a fork's parent) is the author.
 
-- `save`: with `title` and `markdown`, creates a doc and returns its `id` and `version`; with an `id` and the `version` you read, replaces it. Each of its `files` must be linked from the markdown by filename, as `![alt](chart.png)` or `[spec](spec.pdf)`, or the save is refused.
+- `save`: with `title` and `markdown`, creates a doc and returns its `id` and `version`; with an `id` and the `version` you read, replaces it. Each of its `files` must be linked from the markdown by filename, as `![alt](chart.png)` or `[spec](spec.pdf)`, or the save is refused. Rich cards: [pano-a2ui.md](pano-a2ui.md).
 Examples:
 ```json
 { "action": "save", "payload": { "title": "Release plan", "markdown": "# Release plan\n\n- [ ] Tag v0.9.20" } }
@@ -47,4 +47,4 @@ Examples:
 { "action": "delete", "payload": { "id": "0kGpezGeuxt" } }
 ```
 
-**Upload and download a doc's files with the `npx` lines**, not base64 `data`: they move a file through disk, so it never bloats your context.
+**Move a doc's files with the `npx` lines**, not base64 `data`: through disk, they never bloat your context.
