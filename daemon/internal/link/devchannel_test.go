@@ -24,7 +24,7 @@ import (
 )
 
 // devChannelPrompt is Claude Code's development-channels warning for
-// `server:devtest`, as recorded from a real 100×30 terminal.
+// `server:agentrq-workspace`, as recorded from a real 100×30 terminal.
 func devChannelPrompt(t *testing.T) []byte {
 	t.Helper()
 	b, err := os.ReadFile("../stream/testdata/devchannel-prompt.bin")
@@ -61,7 +61,7 @@ func TestALaunchedClaudeCodeConfirmsItsOwnDevChannel(t *testing.T) {
 	h := start(t, b)
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
 		SessionID: 7, Kind: string(supervisor.KindClaudeCode), Dir: t.TempDir(), Workspace: "demo",
-		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "devtest", Cols: 100, Rows: 30,
+		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace", Cols: 100, Rows: 30,
 	}))
 	waitFor(t, func() bool { _, ok := h.link.streams.get(7); return ok }, "the session never streamed")
 
@@ -75,7 +75,7 @@ func TestALaunchedClaudeCodeConfirmsItsOwnDevChannel(t *testing.T) {
 // watching by design.
 func TestARestoredClaudeCodeConfirmsItsOwnDevChannel(t *testing.T) {
 	h := start(t, newBackend(t))
-	restoreClaudeCode(t, h, "devtest")
+	restoreClaudeCode(t, h, "agentrq-workspace")
 
 	if _, err := h.tty.outW.Write(devChannelPrompt(t)); err != nil {
 		t.Fatal(err)
@@ -87,17 +87,17 @@ func TestARestoredClaudeCodeConfirmsItsOwnDevChannel(t *testing.T) {
 func TestADevChannelTheDaemonDidNotPassIsLeftAlone(t *testing.T) {
 	for name, out := range map[string][]byte{
 		"another server": nil,
-		"one more":       []byte("server:devtest plugin:x@y"),
+		"one more":       []byte("server:agentrq-workspace plugin:x@y"),
 	} {
 		t.Run(name, func(t *testing.T) {
 			var logged syncBuffer
 			h := start(t, newBackend(t), logTo(&logged))
-			serverName := "devtest"
+			serverName := "agentrq-workspace"
 			prompt := devChannelPrompt(t)
 			if out == nil {
 				serverName = "mine"
 			} else {
-				prompt = bytes.Replace(prompt, []byte("server:devtest"), out, 1)
+				prompt = bytes.Replace(prompt, []byte("server:agentrq-workspace"), out, 1)
 			}
 			sess := restoreClaudeCode(t, h, serverName)
 
@@ -119,7 +119,7 @@ func TestADevChannelTheDaemonDidNotPassIsLeftAlone(t *testing.T) {
 // Watching stops when the warning never comes, and when the agent ends.
 func TestWatchingForTheDevChannelWarningStops(t *testing.T) {
 	h := start(t, newBackend(t))
-	sess := restoreClaudeCode(t, h, "devtest")
+	sess := restoreClaudeCode(t, h, "agentrq-workspace")
 	blank := stream.NewScreen(100, 30)
 
 	h.link.confirmDevChannel(sess, blank, 5*time.Millisecond) // returns: no warning in time
@@ -146,7 +146,7 @@ func TestAFailedDevChannelConfirmationIsLogged(t *testing.T) {
 		l.Supervisor = supervisor.New(func(context.Context, pty.Spec) (pty.Session, error) { return tty, nil }, 0, 0)
 	})
 	h.sup = h.link.Supervisor
-	sess := restoreClaudeCode(t, h, "devtest")
+	sess := restoreClaudeCode(t, h, "agentrq-workspace")
 
 	screen := stream.NewScreen(100, 30)
 	if _, err := screen.Write(devChannelPrompt(t)); err != nil {
