@@ -20,7 +20,7 @@ const (
 	_envVar       = "ENV"
 	_appName      = "AgentRQ"
 	_appShortName = "agentrq"
-	_appVersion   = "v0.19.8"
+	_appVersion   = "v0.19.9"
 
 	// ErrMissingAppConfig error that shares the app configuration is not provided
 	ErrMissingAppConfig err = "[config] app configuration must be provided in " + _configPath + "/<>.yaml file"
