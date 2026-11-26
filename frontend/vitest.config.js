@@ -124,6 +124,7 @@ export default defineConfig({
         'src/components/TaskLinksPanel.vue',
         'src/components/ChatMinimap.vue',
         'src/components/TaskAttachmentChips.vue',
+        'src/components/AttachmentPreview.vue',
         'src/components/TaskOptionsTools.vue',
         'src/components/PanoTaskButton.vue',
         'src/components/NewTaskButton.vue',
