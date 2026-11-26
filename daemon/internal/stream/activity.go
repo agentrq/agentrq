@@ -56,6 +56,18 @@ func (s *Screen) UsageLimitNotice() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	found := ""
+	for _, text := range s.linesLocked() {
+		if limitNotice.MatchString(text) {
+			found = text
+		}
+	}
+	return found
+}
+
+// linesLocked is the screen's lines, top to bottom, each with the rows the
+// terminal wrapped it across joined and its surrounding blanks trimmed.
+func (s *Screen) linesLocked() []string {
+	var lines []string
 	var line strings.Builder
 	for y := 0; y < s.rows; y++ {
 		if s.term.Cell(s.cols-1, y).Mode&wrapped != 0 {
@@ -63,12 +75,10 @@ func (s *Screen) UsageLimitNotice() string {
 			continue
 		}
 		line.WriteString(s.rowTextLocked(y))
-		if text := strings.TrimSpace(line.String()); limitNotice.MatchString(text) {
-			found = text
-		}
+		lines = append(lines, strings.TrimSpace(line.String()))
 		line.Reset()
 	}
-	return found
+	return lines
 }
 
 // ResetTime is when a usage-limit notice says the limit lifts, read as the

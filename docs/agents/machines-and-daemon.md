@@ -293,6 +293,10 @@ output kept arriving and the keyboard did nothing. Every unit test passed a
 number; the application passes a string. Fixtures that do not match the shape
 the caller actually uses are how a bug like that survives a full green suite.
 
+## Claude Code's development-channels warning is answered by the daemon
+
+Claude Code asks on every `--dangerously-load-development-channels` start and nothing pre-accepts it, so an unwatched session never reached a task (#1446). `link.confirmDevChannel` presses Enter only while the warning lists exactly `supervisor.DevChannel` — loosen that match and the daemon accepts a channel it never passed.
+
 ## Both agent kinds read `.mcp.json`
 
 It is easy to assume only claude-code does — the gateway takes its agent (and

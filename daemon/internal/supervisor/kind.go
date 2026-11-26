@@ -211,7 +211,7 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		return Command{
 			Argv: append(argv,
 				"--dangerously-load-development-channels",
-				"server:"+p.ServerName,
+				DevChannel(p),
 			),
 			NeedsMCPConfig:      true,
 			NeedsClaudeSettings: true,
@@ -263,6 +263,11 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		return Command{}, fmt.Errorf("%w: %q", ErrUnknownKind, kind)
 	}
 }
+
+// DevChannel is the one channel a Claude Code session is started with: its
+// workspace's MCP server. The development-channels warning is confirmed for
+// it alone (#1446).
+func DevChannel(p Params) string { return "server:" + p.ServerName }
 
 // Kinds lists what this daemon will run, for `agentrqd status` and for
 // answering the backend when it asks.

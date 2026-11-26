@@ -479,6 +479,8 @@ Once both files are in place, launch Claude Code from that project directory:
 claude --dangerously-load-development-channels server:agentrq-workspace
 ```
 
+Claude Code asks you to confirm "Loading development channels" on every start: choose **I am using this for local development**. The flag is what lets the workspace push tasks into the session. Sessions that `agentrqd` starts answer it themselves, for their own workspace's channel only.
+
 > **Tip:** The workspace ID, full MCP URL (with token), and ready-to-paste config snippets are all available in the **Setup** modal inside each AgentRQ workspace.
 
 ### Available MCP Tools
