@@ -52,6 +52,8 @@ describe('cleanTitle', () => {
     ['回帰テストテストテストテスト', '回帰テスト'],
     ['Fix login login login bug', 'Fix login bug'],
     ['Update docs docs docs.', 'Update docs'],
+    ['Teste regra SSO com regra SSO com regra SS', 'Teste regra SSO com'],
+    ['Teste regra SSO com regra SSO com regra SSO fim', 'Teste regra SSO com regra SSO fim'],
     ['审计日志中的破解猫猫猫猫猫�', '审计日志中的破解猫'],
   ])('cuts the loop in %j to %j', (answer, title) => {
     expect(cleanTitle(answer)).toBe(title);
