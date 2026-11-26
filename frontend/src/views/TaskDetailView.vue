@@ -204,6 +204,11 @@
             <TaskTimeline class="@min-[48rem]:hidden" compact :transitions="stateTransitions" :current-tone="taskStatusTone(task)" />
           </div>
 
+          <!-- The progress card the person pinned: here, out of the scrolling conversation, and still updated in place -->
+          <A2uiPinnedCard v-for="m in [cardPins.pinnedCard(task.messages)].filter(Boolean)" :key="m.id" class="mb-1" :message="m" :workspace-id="workspaceId"
+                          :collapsed="cardPins.isCollapsed('pinned:' + m.id)" @toggle="cardPins.toggleCollapsed('pinned:' + m.id)" @unpin="cardPins.togglePin(m.id)"
+                          :read-only="cardReadOnly(m)" :busy="cardsSending.has(m.id)" @action="sendCardAction(m, $event)" />
+
           <!-- The agent's plan, pinned here so it stays in view however long the conversation gets -->
           <TaskPlanPanel v-if="taskPlan" class="mb-1" :plan="taskPlan" :messages="task.messages || []" :disabled="offline || isTeamMode" @comment="commentOnPlan" />
 
@@ -301,11 +306,18 @@
                  <span class="text-[9px] font-semibold">Agent · {{ formatDateTime(m.createdAt) }}</span>
                  <!-- How long the agent took over what it is answering; room for it on a wide screen only. -->
                  <span v-if="workedFor[m.id]" class="hidden @min-[40rem]:inline text-[9px] font-semibold text-gray-400 dark:text-zinc-500" title="Time since the message this answers">· worked for {{ workedFor[m.id] }}</span>
+                 <!-- A progress card folds to its top: the title and bar. -->
+                 <button v-if="isProgressCard(m) && !rawMessages.has(m.id)" type="button" @click="cardPins.toggleCollapsed(m.id)" :aria-expanded="!cardPins.isCollapsed(m.id)"
+                         :title="cardPins.isCollapsed(m.id) ? 'Expand card' : 'Collapse card'" data-test="card-collapse"
+                         class="p-0.5 rounded text-gray-400 dark:text-zinc-500 hover:text-gray-800 dark:hover:text-zinc-200 transition-colors">
+                   <svg class="w-3 h-3 transition-transform" :class="cardPins.isCollapsed(m.id) ? '' : 'rotate-180'" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                 </button>
                </div>
                <!-- A card the agent drew, or its question drawn as one; the raw toggle shows its text, which every card carries. -->
                <A2uiSurface v-if="isCardMetadata(m.metadata) && !rawMessages.has(m.id)" :metadata="m.metadata" :text="m.text"
                             :attachments="m.attachments" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200"
-                            :read-only="cardReadOnly(m)" :busy="cardsSending.has(m.id)" @action="sendCardAction(m, $event)" />
+                            :read-only="cardReadOnly(m)" :busy="cardsSending.has(m.id)" @action="sendCardAction(m, $event)"
+                            :class="isProgressCard(m) && cardPins.isCollapsed(m.id) ? FOLDED_CARD : ''" :data-collapsed="isProgressCard(m) && cardPins.isCollapsed(m.id) ? 'true' : undefined" />
                <MarkdownBody v-else-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
                <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
 
@@ -577,6 +589,13 @@
                              class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors p-0.5 rounded" title="Copy raw text">
                        <svg v-if="!copiedMessages.has(m.id)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                        <svg v-else class="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                     </button>
+                     <!-- A progress card pins over the conversation, under the timeline. -->
+                     <button v-if="isProgressCard(m)" type="button" @click.stop="cardPins.togglePin(m.id)" :aria-pressed="cardPins.isPinned(m.id)"
+                             :title="cardPins.isPinned(m.id) ? 'Unpin card' : 'Pin card under the timeline'" data-test="card-pin"
+                             class="transition-colors p-0.5 rounded hover:text-gray-600 dark:hover:text-zinc-300"
+                             :class="cardPins.isPinned(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500'">
+                       <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path :d="PIN_ICON" /></svg>
                      </button>
                      <button v-if="!isTeamMode" type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
                              class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 disabled:opacity-40 transition-colors p-0.5 rounded" title="Fork into a new task from here">
@@ -1078,6 +1097,8 @@ import { withRequestAnswered } from '../composables/useRequestAnswer';
 import { cardReadOnly as cardReadOnlyFor, useCardActions } from '../composables/useCardActions';
 import MarkdownBody from '../components/MarkdownBody.vue';
 import A2uiSurface from '../components/a2ui/A2uiSurface.vue';
+import A2uiPinnedCard from '../components/a2ui/A2uiPinnedCard.vue';
+import { FOLDED_CARD, PIN_ICON, isProgressCard, useCardPins } from '../composables/useCardPins';
 import { CHAT_PRIMARY_BUTTON, CHAT_SECONDARY_BUTTON } from '../utils/formStyles';
 import { isCardMetadata } from '../a2ui/surface.js';
 import TaskPlanPanel from '../components/TaskPlanPanel.vue';
@@ -1292,6 +1313,7 @@ function permMeta(m) {
 }
 
 const rawMessages = ref(new Set());
+const cardPins = useCardPins(taskId);
 function toggleMessageRender(id) {
   const s = new Set(rawMessages.value);
   s.has(id) ? s.delete(id) : s.add(id);
