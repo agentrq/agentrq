@@ -20,6 +20,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ABIVersion is the contract version this package speaks.
@@ -102,12 +103,31 @@ type FAQ struct {
 }
 
 // Out is one event the hook writes. Payload is a string, used as is, or any
-// value, sent as JSON.
+// value, sent as JSON. Subject is an optional one-line name for the event,
+// such as "Jira issue ABC-1234", which a trigger's task title can use; make
+// it with the Subject function, since the server refuses one over
+// MaxSubjectLength characters or on more than one line.
 type Out struct {
 	Name     string `json:"name"`
 	DedupKey string `json:"dedupKey,omitempty"`
+	Subject  string `json:"subject,omitempty"`
 	Payload  any    `json:"payload,omitempty"`
 	FAQ      []FAQ  `json:"faq,omitempty"`
+}
+
+// MaxSubjectLength is the longest Out.Subject the server accepts, in
+// characters.
+const MaxSubjectLength = 76
+
+// Subject is s as an Out.Subject: its runs of whitespace, line breaks
+// included, made single spaces, and cut to MaxSubjectLength characters,
+// ending in "…" when it was cut.
+func Subject(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) <= MaxSubjectLength {
+		return s
+	}
+	return string([]rune(s)[:MaxSubjectLength-1]) + "…"
 }
 
 // Result is the hook's answer.

@@ -113,7 +113,7 @@ func (c *controller) processEvent(ctx context.Context, ev entity.EventPublishedP
 		// subscriber is outside the workflow, so its own chain continues
 		// through global triggers; inheriting the workflow would drag an
 		// unrelated pipeline into a graph that never declared it.
-		c.createTriggeredTask(ctx, trigger, ev.Payload, faqText)
+		c.createTriggeredTask(ctx, trigger, ev, faqText)
 	}
 }
 
@@ -138,13 +138,13 @@ func (c *controller) processWorkflowEvent(ctx context.Context, ev entity.EventPu
 	}
 }
 
-func (c *controller) createTriggeredTask(ctx context.Context, trigger model.EventTrigger, payload string, faqText string) {
-	title := strings.TrimSpace(trigger.Title)
+func (c *controller) createTriggeredTask(ctx context.Context, trigger model.EventTrigger, ev entity.EventPublishedPayload, faqText string) {
+	title := renderTitle(trigger.Title, ev)
 	if title == "" {
 		zlog.Warn().Int64("triggerID", trigger.ID).Msg("[event-consumer] rendered title is empty, skipping")
 		return
 	}
-	body := renderTemplate(trigger.Body, payload, faqText)
+	body := renderTemplate(trigger.Body, ev.Payload, faqText)
 
 	ws, ok := c.targetWorkspace(ctx, trigger.WorkspaceID, "triggerID", trigger.ID)
 	if !ok {
@@ -232,7 +232,7 @@ func (c *controller) targetWorkspace(ctx context.Context, id int64, kind string,
 // Mirrors createTriggeredTask, but stamps the workflow and its hop count onto
 // the task so the run keeps its identity across the task boundary.
 func (c *controller) createWorkflowTask(ctx context.Context, step model.WorkflowStep, ev entity.EventPublishedPayload, faqText string) {
-	title := strings.TrimSpace(step.Title)
+	title := renderTitle(step.Title, ev)
 	if title == "" {
 		zlog.Warn().Int64("stepID", step.ID).Msg("[event-consumer] rendered title is empty, skipping")
 		return
@@ -303,6 +303,27 @@ func (c *controller) createWorkflowTask(ctx context.Context, step model.Workflow
 			Origin:       entity.OriginAPI,
 		},
 	})
+}
+
+// maxTitleLength is the longest task title, in characters: the column's size.
+const maxTitleLength = 255
+
+// renderTitle is a trigger's or step's title for one event: {{EVENT_SUBJECT}}
+// becomes the event's subject, and nothing else is substituted, since a
+// payload may be 64 KiB. A title that is only the placeholder, for an event
+// without a subject, is the event's name; a title left blank stays blank.
+func renderTitle(s string, ev entity.EventPublishedPayload) string {
+	if !strings.Contains(s, "{{EVENT_SUBJECT}}") {
+		return strings.TrimSpace(s)
+	}
+	title := strings.Join(strings.Fields(strings.ReplaceAll(s, "{{EVENT_SUBJECT}}", ev.Subject)), " ")
+	if title == "" {
+		title = ev.Name
+	}
+	if runes := []rune(title); len(runes) > maxTitleLength {
+		title = strings.TrimSpace(string(runes[:maxTitleLength-1])) + "…"
+	}
+	return title
 }
 
 // renderTemplate substitutes {{EVENT_PAYLOAD}} and {{EVENT_FAQ}} in s.

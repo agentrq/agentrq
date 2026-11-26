@@ -18,7 +18,7 @@ import (
 
 var manifest = sdk.Manifest{
 	Name:        "github",
-	Version:     "1.0.1",
+	Version:     "1.1.0",
 	Description: "CI runs, pull requests, issues, releases and pushes. Checks X-Hub-Signature-256.",
 	Inputs: []sdk.Input{
 		{Name: "webhookSecret", Label: "Webhook secret", Type: "string", Secret: true, Required: true},
@@ -134,7 +134,8 @@ func event(kind string, p payload, branches []string) *sdk.Out {
 			return nil
 		}
 		return &sdk.Out{
-			Name: name,
+			Name:    name,
+			Subject: sdk.Subject(fmt.Sprintf("CI %s on %s: %s", verb, r.HeadBranch, r.Name)),
 			Payload: fmt.Sprintf("Workflow `%s` %s on `%s` @ %s in %s\nRun: %s\nCommit: %s (%s)",
 				r.Name, verb, r.HeadBranch, short(r.HeadSHA), repo, r.HTMLURL, firstLine(r.HeadCommit.Message), r.HeadCommit.Author.Name),
 			FAQ: []sdk.FAQ{
@@ -157,7 +158,8 @@ func event(kind string, p payload, branches []string) *sdk.Out {
 			}
 		}
 		return &sdk.Out{
-			Name: name,
+			Name:    name,
+			Subject: sdk.Subject(fmt.Sprintf("GitHub PR #%d: %s", pr.Number, pr.Title)),
 			Payload: fmt.Sprintf("Pull request #%d %s in %s: %s\n`%s` → `%s`\n%s",
 				pr.Number, what, repo, pr.Title, pr.Head.Ref, pr.Base.Ref, pr.HTMLURL),
 			FAQ: []sdk.FAQ{{Q: "Which repository?", A: repo}, {Q: "Which pull request?", A: pr.HTMLURL}},
@@ -166,6 +168,7 @@ func event(kind string, p payload, branches []string) *sdk.Out {
 		is := p.Issue
 		return &sdk.Out{
 			Name:    "issue.opened",
+			Subject: sdk.Subject(fmt.Sprintf("GitHub issue #%d: %s", is.Number, is.Title)),
 			Payload: fmt.Sprintf("Issue #%d opened by %s in %s: %s\n%s", is.Number, is.User.Login, repo, is.Title, is.HTMLURL),
 			FAQ:     []sdk.FAQ{{Q: "Which repository?", A: repo}, {Q: "Which issue?", A: is.HTMLURL}},
 		}
@@ -173,6 +176,7 @@ func event(kind string, p payload, branches []string) *sdk.Out {
 		rel := p.Release
 		return &sdk.Out{
 			Name:    "release.published",
+			Subject: sdk.Subject("GitHub release " + rel.TagName),
 			Payload: fmt.Sprintf("Release %s (%s) published in %s\n%s", rel.TagName, rel.Name, repo, rel.HTMLURL),
 			FAQ:     []sdk.FAQ{{Q: "Which repository?", A: repo}, {Q: "Which tag?", A: rel.TagName}},
 		}
@@ -188,6 +192,7 @@ func event(kind string, p payload, branches []string) *sdk.Out {
 		}
 		return &sdk.Out{
 			Name:    "push",
+			Subject: sdk.Subject(fmt.Sprintf("Push to %s in %s", branch, repo)),
 			Payload: b.String(),
 			FAQ:     []sdk.FAQ{{Q: "Which repository?", A: repo}, {Q: "Which branch?", A: branch}},
 		}

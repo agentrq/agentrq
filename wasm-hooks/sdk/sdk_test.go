@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 var testManifest = Manifest{Name: "t", Version: "1", Inputs: []Input{{Name: "s", Type: "string", Secret: true, Required: true}}, Events: []Event{{Name: "e"}}}
@@ -126,5 +127,25 @@ func TestMainExitsWithRunsCode(t *testing.T) {
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != 2 {
 		t.Errorf("err = %v, want exit 2", err)
+	}
+}
+
+func TestSubject(t *testing.T) {
+	long := strings.Repeat("a", MaxSubjectLength-2) + "ééé"
+	for _, c := range []struct{ name, in, want string }{
+		{"a short line is kept as it is", "Jira issue ABC-1234", "Jira issue ABC-1234"},
+		{"line breaks and runs of spaces become single spaces", "  GitHub issue #12:\n fix\t\tlogin \r\n", "GitHub issue #12: fix login"},
+		{"a subject of exactly the limit is kept", strings.Repeat("é", MaxSubjectLength), strings.Repeat("é", MaxSubjectLength)},
+		{"a long subject is cut by characters and marked", long, strings.Repeat("a", MaxSubjectLength-2) + "é…"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := Subject(c.in)
+			if got != c.want {
+				t.Fatalf("Subject(%q) returned %q, want %q", c.in, got, c.want)
+			}
+			if n := utf8.RuneCountInString(got); n > MaxSubjectLength {
+				t.Fatalf("Subject returned %d characters, over the %d the server accepts", n, MaxSubjectLength)
+			}
+		})
 	}
 }

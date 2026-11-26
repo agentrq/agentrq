@@ -14,7 +14,7 @@ An AgentRQ hook turns a request from an outside service, such as a failed CI run
 A hook is a WASI preview1 command, in any language that targets `wasip1`.
 
 - Run with `manifest`, it prints its manifest as JSON: name, version, inputs and events. It must declare at least one required secret input, and check it.
-- Run with `handle`, it reads `{registrationId, request, inputs, now}` on stdin and prints `{accept, reason, events}`. Each event has a `name` the manifest declares, and optionally a `dedupKey`, a `payload` (a string, or any JSON value) and a `faq`.
+- Run with `handle`, it reads `{registrationId, request, inputs, now}` on stdin and prints `{accept, reason, events}`. Each event has a `name` the manifest declares, and optionally a `dedupKey`, a `subject` (one line of at most 76 characters that a trigger's title takes through `{{EVENT_SUBJECT}}`; `sdk.Subject` makes one), a `payload` (a string, or any JSON value) and a `faq`.
 
 In Go:
 

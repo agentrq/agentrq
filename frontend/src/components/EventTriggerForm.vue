@@ -8,7 +8,8 @@
 /**
  * A trigger: the task this event creates in a workspace. Its instructions can
  * carry what the event was sent with, through {{EVENT_PAYLOAD}} and
- * {{EVENT_FAQ}}; the title is always the text written here.
+ * {{EVENT_FAQ}}; its title only the event's one-line subject, through
+ * {{EVENT_SUBJECT}}, which a hook sets, such as "Jira issue ABC-1234".
  */
 import { computed, nextTick, onMounted, reactive, ref, useId } from 'vue'
 import { insertAtCursor } from '../utils/insertAtCursor'
@@ -29,6 +30,7 @@ const emit = defineEmits(['submit', 'cancel'])
 
 const PAYLOAD = '{{EVENT_PAYLOAD}}'
 const FAQ = '{{EVENT_FAQ}}'
+const SUBJECT = '{{EVENT_SUBJECT}}'
 const VARIABLES = [
   { token: PAYLOAD, label: 'Event payload', test: 'insert-payload', hint: 'What the publisher sent with the event' },
   { token: FAQ, label: 'Event FAQ', test: 'insert-faq', hint: 'The questions and answers sent with the event' },
@@ -54,6 +56,7 @@ const form = reactive({
 const errors = reactive({ workspaceId: '', title: '' })
 const formEl = ref(null)
 const bodyEl = ref(null)
+const titleEl = ref(null)
 const headingId = `trigger-form-${useId()}`
 const yoloId = `${headingId}-yolo`
 
@@ -67,6 +70,15 @@ async function insert(token) {
   await nextTick()
   bodyEl.value.focus()
   bodyEl.value.setSelectionRange(caret, caret)
+}
+
+async function insertSubject() {
+  const { value, caret } = insertAtCursor(form.title, SUBJECT, titleEl.value)
+  form.title = value
+  errors.title = ''
+  await nextTick()
+  titleEl.value.focus()
+  titleEl.value.setSelectionRange(caret, caret)
 }
 
 function validate() {
@@ -126,12 +138,25 @@ onMounted(() => formEl.value.querySelector(editing.value ? 'input' : 'select').f
           </select>
         </FormField>
 
-        <FormField v-slot="f" label="Task title" required :error="errors.title"
-          description="Used word for word. Put event details in the instructions.">
-          <input :id="f.id" v-model="form.title" data-test="trigger-title" type="text" required maxlength="255"
-            autocomplete="off" placeholder="Review the latest deploy"
-            :aria-describedby="f.describedBy" :aria-invalid="f.invalid" :class="fieldClass(f.invalid)"
-            @input="errors.title = ''" />
+        <FormField label="Task title" required :error="errors.title">
+          <template #aside>
+            <button type="button" data-test="insert-subject" :title="`The event's one-line subject, such as Jira issue ABC-1234: inserts ${SUBJECT}`"
+              class="inline-flex items-center gap-1 h-6 px-2 -my-1 rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900 text-[11px] font-semibold text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:border-gray-300 dark:hover:border-zinc-600 transition-colors"
+              @click="insertSubject">
+              <svg class="w-3.5 h-3.5 text-gray-400 dark:text-zinc-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" /></svg>
+              Event subject
+            </button>
+          </template>
+          <template #description>
+            <code class="font-mono text-gray-700 dark:text-zinc-300">{{ SUBJECT }}</code> becomes the event's one-line subject, such as
+            <span class="whitespace-nowrap">Jira issue ABC-1234</span>; the rest is used word for word.
+          </template>
+          <template #default="f">
+            <input :id="f.id" ref="titleEl" v-model="form.title" data-test="trigger-title" type="text" required maxlength="255"
+              autocomplete="off" placeholder="Review the latest deploy"
+              :aria-describedby="f.describedBy" :aria-invalid="f.invalid" :class="fieldClass(f.invalid)"
+              @input="errors.title = ''" />
+          </template>
         </FormField>
       </div>
 

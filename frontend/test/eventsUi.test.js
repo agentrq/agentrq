@@ -285,6 +285,25 @@ describe('EventTriggerForm', () => {
     expect(q(el, 'trigger-payload-hint')).toBeNull()
   })
 
+  it('inserts the event subject into the title at the cursor', async () => {
+    const { el } = await form()
+    const title = q(el, 'trigger-title')
+    q(el, 'trigger-submit').click()
+    await flush()
+    expect(errorFor(title)).not.toBeNull()
+    q(el, 'insert-subject').click()
+    await flush()
+    expect(title.value).toBe('{{EVENT_SUBJECT}}')
+    expect(errorFor(title)).toBeNull()
+    type(title, 'Fix  now')
+    title.setSelectionRange(4, 4)
+    q(el, 'insert-subject').click()
+    await flush()
+    expect(title.value).toBe('Fix {{EVENT_SUBJECT}} now')
+    expect(document.activeElement).toBe(title)
+    expect(title.selectionStart).toBe('Fix {{EVENT_SUBJECT}}'.length)
+  })
+
   it('warns of YOLO, and never sends it for a human', async () => {
     const { el, onSubmit } = await form()
     const select = q(el, 'trigger-workspace')

@@ -15,6 +15,7 @@ import {
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
+import { insertAtCursor } from '../utils/insertAtCursor';
 import { onWebMCPChange } from '../composables/useWebMCPChanges';
 import {
   emittedEventTooltip,
@@ -564,10 +565,13 @@ async function resetLayout() {
 // quoted inside an attribute.
 const TOKEN_PAYLOAD = '{' + '{EVENT_PAYLOAD}' + '}';
 const TOKEN_FAQ = '{' + '{EVENT_FAQ}' + '}';
+// The only token a title takes: the event's one-line subject, which a hook sets.
+const TOKEN_SUBJECT = '{' + '{EVENT_SUBJECT}' + '}';
 
 const stepForm = ref(null);
 const savingStep = ref(false);
 const bodyInputRef = ref(null);
+const titleInputRef = ref(null);
 
 /** Open the editor for a workspace being added to an event. */
 function openStepFormForNew(eventId, workspaceId) {
@@ -619,6 +623,16 @@ function insertToken(token) {
     el.focus();
     el.setSelectionRange(start + token.length, start + token.length);
   });
+}
+
+/** Insert the subject token into the title at the caret, as the trigger form does. */
+async function insertSubject() {
+  const el = titleInputRef.value;
+  const { value, caret } = insertAtCursor(stepForm.value.title, TOKEN_SUBJECT, el);
+  stepForm.value.title = value;
+  await nextTick();
+  el.focus();
+  el.setSelectionRange(caret, caret);
 }
 
 async function saveStepForm() {
@@ -1042,6 +1056,7 @@ onWebMCPChange(async () => {
                   </router-link>
                   <button
                     v-if="node.kind === 'step'"
+                    data-test="step-edit"
                     @click.stop="openStepFormForEdit(node.step)"
                     @mouseenter="tooltipStore.show($event, 'Edit task title and instructions', 'top')"
                     @mouseleave="tooltipStore.hide()"
@@ -1106,10 +1121,25 @@ onWebMCPChange(async () => {
                     Task title <span class="text-red-500">*</span>
                   </label>
                   <input
+                    ref="titleInputRef"
                     v-model="stepForm.title"
                     type="text"
                     placeholder="Update the changelog"
                     class="w-full px-3 py-2 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all" />
+                  <!-- Only the start event can come from a hook: a later hop is
+                       published by an agent, which sends no subject. -->
+                  <div v-if="stepForm.eventId === workflow?.startEventId" class="flex items-center gap-1.5 mt-2">
+                    <span class="text-[10px] text-gray-400 dark:text-zinc-500">Insert:</span>
+                    <button
+                      type="button"
+                      data-test="step-insert-subject"
+                      @click="insertSubject"
+                      @mouseenter="tooltipStore.show($event, 'Replaced with the event\'s one-line subject, such as Jira issue ABC-1234', 'top')"
+                      @mouseleave="tooltipStore.hide()"
+                      class="text-[10px] font-mono text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-1.5 py-0.5 rounded transition-colors">
+                      {{ TOKEN_SUBJECT }}
+                    </button>
+                  </div>
                 </div>
 
                 <div>

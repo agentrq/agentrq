@@ -147,6 +147,9 @@ func TestIssueCreated(t *testing.T) {
 	if e.Name != "jira.issue.created" || e.Payload != want || e.DedupKey != "w-1" {
 		t.Errorf("event = %+v\nwant payload %q", e, want)
 	}
+	if want := "Jira issue ABC-7: Login fails"; e.Subject != want {
+		t.Errorf("the hook gave the subject %q, want %q", e.Subject, want)
+	}
 	wantFAQ := []sdk.FAQ{
 		{Q: "Which Jira issue?", A: "ABC-7"},
 		{Q: "Where is it?", A: "https://acme.atlassian.net/browse/ABC-7"},
@@ -194,6 +197,22 @@ func TestCommentCreated(t *testing.T) {
 	e = one(t, handle(webhook(`{"webhookEvent":"comment_created","comment":{"body":"","author":{"accountId":"c-1"}},"issue":{"key":"ABC-8","fields":{"summary":"S",`+mine+`}}}`)))
 	if e.Payload != "Comment on Jira issue ABC-8: S" {
 		t.Errorf("an empty comment = %q", e.Payload)
+	}
+	if want := "Jira issue ABC-8: S"; e.Subject != want {
+		t.Errorf("a comment's event has the subject %q, want the issue's %q", e.Subject, want)
+	}
+}
+
+func TestAnIssueWithoutAKeyHasNoSubject(t *testing.T) {
+	if got := subject(&issue{}); got != "" {
+		t.Errorf("an issue without a key has the subject %q, want none", got)
+	}
+}
+
+func TestTheSubjectNamesTheIssueWithoutAnEmptySummary(t *testing.T) {
+	e := one(t, handle(webhook(`{"webhookEvent":"comment_created","comment":{"body":"","author":{"accountId":"c-1"}},"issue":{"key":"ABC-9","fields":{"summary":"  ",`+mine+`}}}`)))
+	if want := "Jira issue ABC-9"; e.Subject != want {
+		t.Errorf("an issue with a blank summary has the subject %q, want %q", e.Subject, want)
 	}
 }
 

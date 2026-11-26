@@ -89,6 +89,9 @@ func TestWorkflowRuns(t *testing.T) {
 	if e.Name != "ci.failed" || e.Payload != want || e.DedupKey != "d-1" || len(e.FAQ) != 4 {
 		t.Errorf("event = %+v", e)
 	}
+	if want := "CI failed on main: test"; e.Subject != want {
+		t.Errorf("a failed run has the subject %q, want %q", e.Subject, want)
+	}
 	if e := one(t, handle(delivery("workflow_run", fmt.Sprintf(workflowRun, "main", "timed_out")))); e.Name != "ci.failed" || !strings.Contains(e.Payload.(string), "timed out") {
 		t.Errorf("timed out = %+v", e)
 	}
@@ -114,6 +117,9 @@ func TestPullRequests(t *testing.T) {
 	if want := "Pull request #7 opened by ada in o/r: Add hooks\n`feat/hooks` → `main`\nhttps://github.com/o/r/pull/7"; e.Name != "pr.opened" || e.Payload != want {
 		t.Errorf("opened = %+v", e)
 	}
+	if want := "GitHub PR #7: Add hooks"; e.Subject != want {
+		t.Errorf("a pull request has the subject %q, want %q", e.Subject, want)
+	}
 	e = one(t, handle(delivery("pull_request", fmt.Sprintf(pr, "review_requested", `,"requested_reviewer":{"login":"bob"}`))))
 	if e.Name != "pr.review_requested" || !strings.Contains(e.Payload.(string), "review requested from bob") {
 		t.Errorf("review requested = %+v", e)
@@ -131,9 +137,15 @@ func TestIssuesAndReleases(t *testing.T) {
 	if e.Name != "issue.opened" || e.Payload != "Issue #3 opened by ada in o/r: Bug\nhttps://github.com/o/r/issues/3" {
 		t.Errorf("issue = %+v", e)
 	}
+	if want := "GitHub issue #3: Bug"; e.Subject != want {
+		t.Errorf("an issue has the subject %q, want %q", e.Subject, want)
+	}
 	e = one(t, handle(delivery("release", `{"action":"published","repository":{"full_name":"o/r"},"release":{"tag_name":"v1.0.0","name":"One","html_url":"https://github.com/o/r/releases/tag/v1.0.0"}}`)))
 	if e.Name != "release.published" || e.Payload != "Release v1.0.0 (One) published in o/r\nhttps://github.com/o/r/releases/tag/v1.0.0" {
 		t.Errorf("release = %+v", e)
+	}
+	if want := "GitHub release v1.0.0"; e.Subject != want {
+		t.Errorf("a release has the subject %q, want %q", e.Subject, want)
 	}
 	none(t, handle(delivery("issues", `{"action":"closed","issue":{"number":3}}`)))
 }
@@ -144,6 +156,9 @@ func TestPushes(t *testing.T) {
 	want := "ada pushed 2 commit(s) to `main` in o/r\nhttps://github.com/o/r/compare/a...b\n- aaaaaaa one\n- bbb two"
 	if e.Name != "push" || e.Payload != want {
 		t.Errorf("push = %q", e.Payload)
+	}
+	if want := "Push to main in o/r"; e.Subject != want {
+		t.Errorf("a push has the subject %q, want %q", e.Subject, want)
 	}
 	none(t, handle(delivery("push", fmt.Sprintf(push, "refs/tags/v1", `[{"id":"a","message":"m"}]`))))
 	none(t, handle(delivery("push", fmt.Sprintf(push, "refs/heads/main", `[]`))))

@@ -1317,11 +1317,12 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       name: 'createEventTrigger',
       description:
         'Add a trigger, so publishing this event creates a task. In the body, {{EVENT_PAYLOAD}} ' +
-        'and {{EVENT_FAQ}} are replaced with what the publisher sent; the title is always literal.',
+        'and {{EVENT_FAQ}} are replaced with what the publisher sent; in the title, only {{EVENT_SUBJECT}}, ' +
+        "the event's one-line subject that a hook sets, such as Jira issue ABC-1234.",
       properties: {
         eventId: str('The event to trigger on.'),
         workspaceId: str('Where the task is created.'),
-        title: str('Task title. Substitutions are not applied here.'),
+        title: str('Task title, which may use {{EVENT_SUBJECT}}; nothing else is substituted.'),
         body: str('Task body, which may use {{EVENT_PAYLOAD}} and {{EVENT_FAQ}}.'),
         assignee: str('"agent" or "human". Defaults to "agent".'),
         cronSchedule: str('Optional cron expression.'),

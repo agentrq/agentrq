@@ -113,6 +113,7 @@ type HookPendingEvent struct {
 	HookEvent string           `json:"hookEvent"`
 	EventID   int64            `json:"eventId"`
 	DedupKey  string           `json:"dedupKey,omitempty"`
+	Subject   string           `json:"subject,omitempty"`
 	Payload   string           `json:"payload"`
 	FAQ       []HookPendingFAQ `json:"faq,omitempty"`
 }
