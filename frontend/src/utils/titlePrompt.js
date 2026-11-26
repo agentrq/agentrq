@@ -14,9 +14,10 @@ const INSTRUCTION = 'Write a short title for this task.';
 
 /**
  * The most tokens a title may take. Arabic, Japanese and Korean spend several
- * tokens per word: at 20, most of their titles were cut off mid-word.
+ * tokens per word: at 20, most of their titles were cut off mid-word; 40
+ * fits all but 0.2% of them, where 32 still cut 2% of Arabic ones.
  */
-export const TITLE_MAX_NEW_TOKENS = 48;
+export const TITLE_MAX_NEW_TOKENS = 40;
 
 /** The chat messages asking for a title for what the person typed. */
 export function titleMessages(text) {
