@@ -54,7 +54,7 @@ describe('TaskLinksPanel', () => {
     const { q } = mount(task)
     await settle()
     expect(q('task-links-count').textContent.trim()).toBe('4')
-    expect(q('task-links-summary').textContent).toBe('· gh#1099 · Roadmap · Login · example.com/docs')
+    expect(q('task-links-summary').textContent).toBe('· agentrq#1099 · Roadmap · Login · example.com/docs')
     expect(q('task-links').hasAttribute('data-pinned')).toBe(false)
     expect(q('task-links-body')).toBeNull()
     expect(q('task-links-toggle').textContent).toContain('Links')
@@ -70,7 +70,7 @@ describe('TaskLinksPanel', () => {
     expect(state.followed).toBe(0)
 
     const pr = q('task-links-pr').querySelector('a')
-    expect(pr.textContent.trim()).toBe('gh#1099')
+    expect(pr.textContent.trim()).toBe('#1099agentrq')
     expect(pr.getAttribute('href')).toBe('https://github.com/agentrq/agentrq/pull/1099')
     expect(pr.getAttribute('target')).toBe('_blank')
     expect(pr.querySelector('[data-testid="task-links-github"]')).not.toBeNull()
@@ -120,6 +120,40 @@ describe('TaskLinksPanel', () => {
       document.removeEventListener('click', listen)
     }
     expect(opened).toEqual(['https://github.com/agentrq/agentrq/pull/1099', 'https://example.com/docs'])
+  })
+
+  it('shows an issue as a short GitHub chip, like a pull request', async () => {
+    const { q, state } = mount({ body: 'Closes https://github.com/agentrq/agentrq/issues/1447', messages: [] })
+    await settle()
+    expect(q('task-links-summary').textContent).toBe('· agentrq#1447')
+    q('task-links-toggle').click()
+    await settle()
+    const issue = q('task-links-issue').querySelector('a')
+    expect(issue.textContent.trim()).toBe('#1447agentrq')
+    expect(issue.getAttribute('href')).toBe('https://github.com/agentrq/agentrq/issues/1447')
+    expect(issue.getAttribute('target')).toBe('_blank')
+    expect(issue.querySelector('[data-testid="task-links-github"]')).not.toBeNull()
+    issue.click()
+    expect(state.followed).toBe(1)
+  })
+
+  it('shows the number first and the repository on the right, cutting only a long repository name', async () => {
+    const { q } = mount({ body: 'https://github.com/agentrq/a-very-long-repository-name/pull/12', messages: [] })
+    await settle()
+    expect(q('task-links-summary').textContent).toBe('· a-very-long-repository-name#12')
+    q('task-links-toggle').click()
+    await settle()
+    const number = q('task-links-pr').querySelector('[data-testid="task-links-number"]')
+    expect(number.textContent).toBe('#12')
+    expect(number.className).toContain('shrink-0')
+    const repo = number.nextElementSibling
+    expect(repo.getAttribute('data-testid')).toBe('task-links-repo')
+    expect(repo.textContent).toBe('a-very-long-repository-name')
+    expect(repo.className).toContain('truncate')
+    expect(repo.className).toContain('ml-auto')
+    // Centred on the icon by the glyphs, not the font's line box; the name keeps room for its descenders.
+    expect(number.parentElement.className).toContain('[&>span]:[text-box:trim-both_cap_alphabetic]')
+    expect(repo.className).toContain('py-1 -my-1')
   })
 
   it('lists the Pano docs linked to the task, though the conversation never names them', async () => {

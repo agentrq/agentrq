@@ -4,7 +4,8 @@
 
 /**
  * The links a task's description and conversation mention, sorted into what
- * they point at: a pull request, a Pano doc, another task, or anywhere else.
+ * they point at: a pull request, an issue, a Pano doc, another task, or
+ * anywhere else.
  *
  * Links are read with marked's own lexer, so they are exactly the links the
  * messages render: a URL inside code is not one, and a bare URL ends where the
@@ -15,12 +16,13 @@ import { marked } from 'marked';
 /** The groups, in the order the panel lists them. */
 export const LINK_GROUPS = [
   { kind: 'pr', label: 'Pull requests' },
+  { kind: 'issue', label: 'Issues' },
   { kind: 'pano', label: 'Pano' },
   { kind: 'task', label: 'Tasks' },
   { kind: 'external', label: 'External' },
 ];
 
-const GITHUB_PR = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/|$)/;
+const GITHUB_ITEM = /^\/([^/]+)\/([^/]+)\/(pull|issues)\/(\d+)(?:\/|$)/;
 const TASK_PATHS = [/^\/workspaces\/([^/]+)\/tasks\/([^/]+)\/?$/, /^\/tasks\/[^/]+\/([^/]+)\/([^/]+)\/?$/];
 const PANO_PATH = /^\/pano\/([^/]+)\/?$/;
 
@@ -75,10 +77,13 @@ export function classifyLink(link, origin) {
   const text = readableText(link);
 
   if (url.hostname === 'github.com' || url.hostname === 'www.github.com') {
-    const pr = url.pathname.match(GITHUB_PR);
-    if (pr) {
-      const [, owner, repo, number] = pr;
-      return { kind: 'pr', key: `${owner}/${repo}#${number}`, href: url.href, owner, repo, number };
+    // `repo#123`, the group telling a pull request from an issue. The panel
+    // shows the number first and cuts a long repository name, never the number.
+    const item = url.pathname.match(GITHUB_ITEM);
+    if (item) {
+      const [, owner, repo, path, number] = item;
+      const kind = path === 'pull' ? 'pr' : 'issue';
+      return { kind, key: `${owner}/${repo}#${number}`, href: url.href, owner, repo, number, label: `${repo}#${number}` };
     }
   }
 
@@ -106,9 +111,6 @@ export function classifyLink(link, origin) {
  * task come first among its Pano links, by their title, whether or not the
  * conversation mentions them.
  *
- * A pull request is `gh#123` while the task names only one repository, and
- * `repo#123` once it names more, where `gh` alone would be ambiguous.
- *
  * @param {{ body?: string, messages?: Array<{ text?: string }> }} task
  * @param {{ origin: string, taskId?: string, panoDocs?: Array<{ id: string, title: string }> }} context
  * @returns {{ total: number, groups: Array<{ kind: string, label: string, links: object[] }> }}
@@ -129,9 +131,6 @@ export function taskLinks(task, { origin, taskId, panoDocs = [] }) {
     seen.add(`${found.kind} ${found.key}`);
     byKind[found.kind].push(found);
   }
-
-  const repos = new Set(byKind.pr.map((pr) => `${pr.owner}/${pr.repo}`));
-  for (const pr of byKind.pr) pr.label = `${repos.size > 1 ? pr.repo : 'gh'}#${pr.number}`;
 
   const groups = LINK_GROUPS.map((g) => ({ ...g, links: byKind[g.kind] })).filter((g) => g.links.length);
   return { total: groups.reduce((n, g) => n + g.links.length, 0), groups };
