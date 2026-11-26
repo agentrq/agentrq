@@ -358,7 +358,7 @@ On Windows go-pty looks for a bare `npx` in the working directory, never on PATH
 
 ## A fork runs in a folder the daemon makes, and only a daemon that says so
 
-A fork's folder is `~/.agentrq/forks/<id>`, a worktree when the parent's folder is in a repository and a copy (no `.mcp.json`) otherwise — never the parent's own folder, or its `.mcp.json` entry would connect the fork as the parent. An agentrqd that predates this ignores `StartSession.Fork` and does exactly that, so the backend refuses a fork launch unless the hello listed `wire.CapabilityFork`, and the daemon refuses one whose folder already names the workspace server.
+A fork's folder is `~/.agentrq/forks/<id>` (or `<serve --forks-dir>/<id>`), a worktree when the parent's folder is in a repository and a copy (no `.mcp.json`) otherwise — never the parent's own folder, or its `.mcp.json` entry would connect the fork as the parent. An agentrqd that predates this ignores `StartSession.Fork` and does exactly that, so the backend refuses a fork launch unless the hello listed `wire.CapabilityFork`, and the daemon refuses one whose folder already names the workspace server. A merge sends only the fork's id, so making and removing the folder must both read the supervisor's one forks root (`Supervisor.forks`), never their own.
 
 ## The terminal must never size itself
 

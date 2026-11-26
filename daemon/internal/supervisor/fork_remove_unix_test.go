@@ -24,7 +24,7 @@ func TestRemovingAFolderThatCannotBeDeletedSaysSo(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
 
-	if err := RemoveForkDir(home, forkID); err == nil {
+	if err := RemoveForkDir(forksIn(home), forkID); err == nil {
 		t.Error("a folder that could not be deleted was reported as deleted")
 	}
 }

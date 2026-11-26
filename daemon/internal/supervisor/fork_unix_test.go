@@ -47,7 +47,7 @@ func TestAWorktreeThatGitRefusesSaysWhy(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(forks, 0o700) })
-	_, err = PrepareForkDir(t.Context(), home, root, forkID, nil)
+	_, err = PrepareForkDir(t.Context(), forksIn(home), root, forkID, nil)
 	if err == nil || !strings.Contains(err.Error(), "git worktree add") {
 		t.Fatalf("err = %v, want git's own reason", err)
 	}
@@ -121,7 +121,7 @@ func TestACopyThatFailsLeavesNothingToReuse(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = os.Chmod(filepath.Join(from, name), 0o700) })
 			home := t.TempDir()
-			if _, err := PrepareForkDir(t.Context(), home, from, forkID, nil); err == nil {
+			if _, err := PrepareForkDir(t.Context(), forksIn(home), from, forkID, nil); err == nil {
 				t.Fatal("an unreadable " + name + " was copied")
 			}
 			entries, _ := os.ReadDir(filepath.Join(home, ".agentrq", "forks"))
@@ -145,7 +145,7 @@ func TestAForkWithNowhereToGoIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(forks, 0o700) })
-	if _, err := PrepareForkDir(t.Context(), home, t.TempDir(), forkID, nil); err == nil {
+	if _, err := PrepareForkDir(t.Context(), forksIn(home), t.TempDir(), forkID, nil); err == nil {
 		t.Fatal("a copy was made in a folder that cannot be written")
 	}
 
@@ -154,7 +154,7 @@ func TestAForkWithNowhereToGoIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(home, 0o700) })
-	if _, err := PrepareForkDir(t.Context(), home, t.TempDir(), forkID, nil); err == nil {
+	if _, err := PrepareForkDir(t.Context(), forksIn(home), t.TempDir(), forkID, nil); err == nil {
 		t.Fatal("a forks folder was made where nothing can be written")
 	}
 }
@@ -172,12 +172,12 @@ func TestAForkThatExistsButCannotBeReadIsRefused(t *testing.T) {
 	if _, err := os.ReadDir(forks); err == nil {
 		t.Skip("running as a user who can read anything")
 	}
-	if _, err := PrepareForkDir(t.Context(), home, t.TempDir(), forkID, nil); err == nil {
+	if _, err := PrepareForkDir(t.Context(), forksIn(home), t.TempDir(), forkID, nil); err == nil {
 		t.Fatal("a fork folder that cannot be looked at was taken as missing")
 	}
 }
 
-// The daemon's folder is recognised however its path is spelled. On macOS the
+// The forks folder is recognised however its path is spelled. On macOS the
 // temp dir is under /var, which is really /private/var, and a string compare
 // copied the staging folder into itself until the name was too long.
 func TestTheForksFolderIsLeftOutWhenNamedThroughASymlink(t *testing.T) {
@@ -188,15 +188,15 @@ func TestTheForksFolderIsLeftOutWhenNamedThroughASymlink(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(real, "keep"), "k")
 	home := filepath.Join(via, "users", "me")
-	dir, err := PrepareForkDir(t.Context(), home, via, forkID, nil)
+	dir, err := PrepareForkDir(t.Context(), forksIn(home), via, forkID, nil)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
 	if readFile(t, filepath.Join(dir, "keep")) != "k" {
 		t.Error("keep was not copied")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "users", "me", ".agentrq")); !errors.Is(err, os.ErrNotExist) {
-		t.Error("the daemon's own folder was copied into a fork")
+	if _, err := os.Stat(filepath.Join(dir, "users", "me", ".agentrq", "forks")); !errors.Is(err, os.ErrNotExist) {
+		t.Error("the forks folder was copied into a fork")
 	}
 }
 
@@ -223,7 +223,7 @@ func TestACheckoutThatTakesTooLongLeavesNothingBehind(t *testing.T) {
 	defer func(was time.Duration) { checkoutTimeout = was }(checkoutTimeout)
 	checkoutTimeout = 200 * time.Millisecond
 
-	_, err := PrepareForkDir(t.Context(), home, root, forkID, nil)
+	_, err := PrepareForkDir(t.Context(), forksIn(home), root, forkID, nil)
 	if err == nil || !strings.Contains(err.Error(), "took longer than 200ms") {
 		t.Fatalf("err = %v, want the checkout's time limit named", err)
 	}
@@ -239,7 +239,7 @@ func TestACheckoutThatTakesTooLongLeavesNothingBehind(t *testing.T) {
 		t.Fatal(out)
 	}
 	checkoutTimeout = time.Minute
-	dir, err := PrepareForkDir(t.Context(), home, root, forkID, nil)
+	dir, err := PrepareForkDir(t.Context(), forksIn(home), root, forkID, nil)
 	if err != nil {
 		t.Fatalf("the relaunch: %v", err)
 	}

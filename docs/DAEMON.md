@@ -294,14 +294,19 @@ settings.
 ### A workspace fork gets a folder of its own
 
 A fork runs in `~/.agentrq/forks/<fork id>`, made from its parent's working
-directory on the fork's first launch and reused after that:
+directory on the fork's first launch and reused after that.
+`agentrqd serve --forks-dir <path>` makes forks in `<path>/<fork id>` instead,
+for example on the drive your code is on; the path must be absolute. Keep it
+outside your repositories, or their `git status` lists it. Changing it leaves
+existing forks where they are, and deleting one of those when you merge it is
+then up to you.
 
 - **Parent folder inside a git repository** → a worktree of that repository on
   a new branch, `agentrq/fork-<fork id>`, checked out at `HEAD`. The fork starts
   in the same subfolder its parent does. Uncommitted changes in the parent are
   not in it.
 - **Anywhere else** → a copy of the folder, without its `.mcp.json` (which
-  points at the parent) and without `.agentrq/`.
+  points at the parent), without `.agentrq/` and without the forks folder.
 
 Merging a fork back moves its tasks, never its files: the folder and the
 branch stay where they are, and the fork's working directory shows the path.
@@ -420,7 +425,7 @@ binary back — it is kept for exactly that reason.
 | Tokens | one `0600` file per profile in `.../agentrqd/tokens/` |
 | Local status | `.../agentrqd/status.json`, what `agentrqd status` reads |
 | Workspaces created without a folder | `~/.agentrq/<workspace id>` |
-| Workspace forks | `~/.agentrq/forks/<fork id>`, one folder per fork |
+| Workspace forks | `~/.agentrq/forks/<fork id>`, one folder per fork, or `--forks-dir` |
 
 The config file is **not** a credential and can safely be copied, backed up or
 pasted into a bug report. The tokens directory is.
@@ -433,6 +438,7 @@ pasted into a bug report. The tokens directory is.
 agentrqd enroll --server <url> --code <code> [--profile <id>]
 agentrqd serve  [--profile <id>] [--foreground] [--verbose]
                 [--max-per-profile <n>] [--max-per-machine <n>]
+                [--forks-dir <path>]
 agentrqd stop
 agentrqd status
 agentrqd disable --profile <id>

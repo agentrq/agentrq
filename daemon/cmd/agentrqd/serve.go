@@ -61,6 +61,20 @@ func sessionCaps(perProfile, perMachine int) (int, int, error) {
 	return perProfile, perMachine, nil
 }
 
+// forksDir validates --forks-dir. Empty keeps the default, ~/.agentrq/forks.
+//
+// Absolute only: a relative one would move with whatever folder the daemon
+// was started from, and a merge would then look for a fork somewhere else.
+func forksDir(dir string) (string, error) {
+	if dir == "" {
+		return "", nil
+	}
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("--forks-dir must be an absolute path: %q", dir)
+	}
+	return filepath.Clean(dir), nil
+}
+
 // dialTimeout bounds one connection attempt.
 const dialTimeout = 30 * time.Second
 
@@ -86,11 +100,16 @@ func cmdServe(ctx context.Context, args []string) error {
 	manifestURL := fs.String("release-feed", DefaultManifestURL, "where to look for newer releases")
 	maxPerProfile := fs.Int("max-per-profile", sessionsPerProfile, "most agents one account may run here (0 for no limit)")
 	maxPerMachine := fs.Int("max-per-machine", sessionsPerMachine, "most agents this machine will run at once (0 for no limit)")
+	forksFlag := fs.String("forks-dir", "", "the folder workspace forks are made in (default ~/.agentrq/forks)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	perProfile, perMachine, err := sessionCaps(*maxPerProfile, *maxPerMachine)
+	if err != nil {
+		return err
+	}
+	forks, err := forksDir(*forksFlag)
 	if err != nil {
 		return err
 	}
@@ -128,6 +147,7 @@ func cmdServe(ctx context.Context, args []string) error {
 
 	sup := supervisor.New(pty.Start, perProfile, perMachine)
 	sup.Log = log
+	sup.ForksDir = forks
 
 	// One collector for the machine, shared by every profile. The numbers are
 	// the same hardware whichever account is asking, and measuring once per

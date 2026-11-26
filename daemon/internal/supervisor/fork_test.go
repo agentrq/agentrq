@@ -99,7 +99,7 @@ func TestAForkOfARepositoryIsAWorktreeOnItsOwnBranch(t *testing.T) {
 	home := t.TempDir()
 
 	var shown recordingProgress
-	dir, err := PrepareForkDir(t.Context(), home, filepath.Join(root, "app"), forkID, &shown)
+	dir, err := PrepareForkDir(t.Context(), forksIn(home), filepath.Join(root, "app"), forkID, &shown)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
@@ -131,14 +131,14 @@ func TestAForkOfARepositoryIsAWorktreeOnItsOwnBranch(t *testing.T) {
 func TestAnExistingForkFolderIsReused(t *testing.T) {
 	root := gitRepo(t, map[string]string{"a": "1"})
 	home := t.TempDir()
-	first, err := PrepareForkDir(t.Context(), home, root, forkID, nil)
+	first, err := PrepareForkDir(t.Context(), forksIn(home), root, forkID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(first, "work-in-progress"), "keep me")
 
 	var shown recordingProgress
-	again, err := PrepareForkDir(t.Context(), home, root, forkID, &shown)
+	again, err := PrepareForkDir(t.Context(), forksIn(home), root, forkID, &shown)
 	if err != nil || again != first {
 		t.Fatalf("relaunch = %q err=%v, want the same folder, reused", again, err)
 	}
@@ -154,7 +154,7 @@ func TestAnExistingForkFolderIsReused(t *testing.T) {
 func TestAForkWhoseBranchIsLeftOverChecksItOutAgain(t *testing.T) {
 	root := gitRepo(t, map[string]string{"a": "1"})
 	home := t.TempDir()
-	dir, err := PrepareForkDir(t.Context(), home, root, forkID, nil)
+	dir, err := PrepareForkDir(t.Context(), forksIn(home), root, forkID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestAForkWhoseBranchIsLeftOverChecksItOutAgain(t *testing.T) {
 	}
 
 	var shown recordingProgress
-	again, err := PrepareForkDir(t.Context(), home, root, forkID, &shown)
+	again, err := PrepareForkDir(t.Context(), forksIn(home), root, forkID, &shown)
 	target := filepath.Join(home, ".agentrq", "forks", forkID)
 	if err != nil {
 		t.Fatalf("PrepareForkDir after the folder went: %v", err)
@@ -191,6 +191,9 @@ func TestAForkIsRefusedWhenItsNamesAreNotAcceptable(t *testing.T) {
 		}
 	}
 }
+
+// forksIn is the default forks folder of a home folder.
+func forksIn(home string) string { return filepath.Join(home, ".agentrq", "forks") }
 
 // dotDotDir is a real folder whose name holds "..", which a fork refuses.
 func dotDotDir(t *testing.T) string {
@@ -334,6 +337,62 @@ func TestTheForkFolderIsReportedWithRunning(t *testing.T) {
 	}
 }
 
+// --forks-dir puts the fork's folder there, and needs no home folder (#1444).
+func TestAForkStartsInTheConfiguredForksFolder(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	s := New((&recordingStarter{}).start, 0, 0)
+	s.ForksDir = filepath.Join(t.TempDir(), "forks")
+	sess, err := s.Start(t.Context(), "work", forkRequest(t, 1, t.TempDir()))
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if want := filepath.Join(s.ForksDir, forkID); sess.Dir != want {
+		t.Errorf("dir = %q, want %q", sess.Dir, want)
+	}
+}
+
+// A forks folder inside the folder being copied is not copied into itself,
+// whatever it is called.
+func TestACopyLeavesOutAForksFolderInsideIt(t *testing.T) {
+	from := t.TempDir()
+	forks := filepath.Join(from, "agentrq-forks")
+	writeFile(t, filepath.Join(from, "keep"), "k")
+	writeFile(t, filepath.Join(forks, "old", "f"), "no")
+	dir, err := PrepareForkDir(t.Context(), forks, from, forkID, nil)
+	if err != nil {
+		t.Fatalf("PrepareForkDir: %v", err)
+	}
+	if dir != filepath.Join(forks, forkID) {
+		t.Errorf("dir = %q, want it in %q", dir, forks)
+	}
+	if readFile(t, filepath.Join(dir, "keep")) != "k" {
+		t.Error("keep was not copied")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "agentrq-forks")); !errors.Is(err, os.ErrNotExist) {
+		t.Error("the forks folder was copied into a fork")
+	}
+}
+
+// A worktree in a configured forks folder is removed through git, as one in
+// the default folder is.
+func TestAWorktreeInTheConfiguredForksFolderIsRemoved(t *testing.T) {
+	root := gitRepo(t, map[string]string{"a": "1"})
+	forks := t.TempDir()
+	if _, err := PrepareForkDir(t.Context(), forks, root, forkID, nil); err != nil {
+		t.Fatalf("PrepareForkDir: %v", err)
+	}
+	if err := RemoveForkDir(forks, forkID); err != nil {
+		t.Fatalf("RemoveForkDir: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(forks, forkID)); !os.IsNotExist(err) {
+		t.Errorf("the worktree is still there: %v", err)
+	}
+	if out, _ := runGit(root, "worktree", "list"); strings.Contains(out, forkID) {
+		t.Errorf("git still lists the worktree: %s", out)
+	}
+}
+
 func TestAForkDefaultsToTheUsersHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -358,7 +417,7 @@ func TestAForkOfAPlainFolderIsACopy(t *testing.T) {
 	home := t.TempDir()
 
 	var shown recordingProgress
-	dir, err := PrepareForkDir(t.Context(), home, from, forkID, &shown)
+	dir, err := PrepareForkDir(t.Context(), forksIn(home), from, forkID, &shown)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
@@ -387,7 +446,7 @@ func TestAForkOfTheHomeFolderLeavesTheForksOut(t *testing.T) {
 	home := t.TempDir()
 	writeFile(t, filepath.Join(home, "notes"), "n")
 	writeFile(t, filepath.Join(home, ".agentrq", "forks", "old", "f"), "no")
-	dir, err := PrepareForkDir(t.Context(), home, home, forkID, nil)
+	dir, err := PrepareForkDir(t.Context(), forksIn(home), home, forkID, nil)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
@@ -399,21 +458,21 @@ func TestAForkOfTheHomeFolderLeavesTheForksOut(t *testing.T) {
 	}
 }
 
-// The same when the daemon's folder is deeper inside the one being forked.
+// The same when the forks folder is deeper inside the one being forked.
 func TestAForkOfAnAncestorOfHomeLeavesTheForksOut(t *testing.T) {
 	from := t.TempDir()
 	home := filepath.Join(from, "users", "me")
 	writeFile(t, filepath.Join(home, ".agentrq", "forks", "old", "f"), "no")
 	writeFile(t, filepath.Join(from, "keep"), "k")
-	dir, err := PrepareForkDir(t.Context(), home, from, forkID, nil)
+	dir, err := PrepareForkDir(t.Context(), forksIn(home), from, forkID, nil)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
 	if readFile(t, filepath.Join(dir, "keep")) != "k" {
 		t.Error("keep was not copied")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "users", "me", ".agentrq")); !errors.Is(err, os.ErrNotExist) {
-		t.Error("the daemon's own folder was copied into a fork")
+	if _, err := os.Stat(filepath.Join(dir, "users", "me", ".agentrq", "forks")); !errors.Is(err, os.ErrNotExist) {
+		t.Error("the forks folder was copied into a fork")
 	}
 }
 
@@ -470,13 +529,13 @@ func TestEndpointDiffers(t *testing.T) {
 func TestRemovingAForkOfARepositoryKeepsItsBranch(t *testing.T) {
 	root := gitRepo(t, map[string]string{"a": "1"})
 	home := t.TempDir()
-	dir, err := PrepareForkDir(t.Context(), home, root, forkID, nil)
+	dir, err := PrepareForkDir(t.Context(), forksIn(home), root, forkID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(dir, "untracked"), "work")
 
-	if err := RemoveForkDir(home, forkID); err != nil {
+	if err := RemoveForkDir(forksIn(home), forkID); err != nil {
 		t.Fatalf("RemoveForkDir: %v", err)
 	}
 	if _, err := os.Lstat(filepath.Join(home, ".agentrq", "forks", forkID)); !os.IsNotExist(err) {
@@ -494,10 +553,10 @@ func TestRemovingACopyDeletesIt(t *testing.T) {
 	from := t.TempDir()
 	writeFile(t, filepath.Join(from, "a"), "1")
 	home := t.TempDir()
-	if _, err := PrepareForkDir(t.Context(), home, from, forkID, nil); err != nil {
+	if _, err := PrepareForkDir(t.Context(), forksIn(home), from, forkID, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := RemoveForkDir(home, forkID); err != nil {
+	if err := RemoveForkDir(forksIn(home), forkID); err != nil {
 		t.Fatalf("RemoveForkDir: %v", err)
 	}
 	if _, err := os.Lstat(filepath.Join(home, ".agentrq", "forks", forkID)); !os.IsNotExist(err) {
@@ -513,10 +572,10 @@ func TestRemovingACopyInsideARepositoryLeavesTheRepositoryAlone(t *testing.T) {
 	home := gitRepo(t, map[string]string{"dotfile": "x"})
 	from := t.TempDir()
 	writeFile(t, filepath.Join(from, "a"), "1")
-	if _, err := PrepareForkDir(t.Context(), home, from, forkID, nil); err != nil {
+	if _, err := PrepareForkDir(t.Context(), forksIn(home), from, forkID, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := RemoveForkDir(home, forkID); err != nil {
+	if err := RemoveForkDir(forksIn(home), forkID); err != nil {
 		t.Fatalf("RemoveForkDir: %v", err)
 	}
 	if readFile(t, filepath.Join(home, "dotfile")) != "x" {
@@ -533,14 +592,14 @@ func TestRemovingAForkWhoseFolderIsGoneIsDone(t *testing.T) {
 func TestRemovingAWorktreeGitCannotRemoveFallsBackToDeletingIt(t *testing.T) {
 	root := gitRepo(t, map[string]string{"a": "1"})
 	home := t.TempDir()
-	if _, err := PrepareForkDir(t.Context(), home, root, forkID, nil); err != nil {
+	if _, err := PrepareForkDir(t.Context(), forksIn(home), root, forkID, nil); err != nil {
 		t.Fatal(err)
 	}
 	// A locked worktree is refused by `git worktree remove --force`.
 	if out, err := runGit(root, "worktree", "lock", filepath.Join(home, ".agentrq", "forks", forkID)); err != nil {
 		t.Fatalf("lock: %v %s", err, out)
 	}
-	if err := RemoveForkDir(home, forkID); err != nil {
+	if err := RemoveForkDir(forksIn(home), forkID); err != nil {
 		t.Fatalf("RemoveForkDir: %v", err)
 	}
 	if _, err := os.Lstat(filepath.Join(home, ".agentrq", "forks", forkID)); !os.IsNotExist(err) {

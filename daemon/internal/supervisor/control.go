@@ -60,7 +60,7 @@ func (s *Supervisor) Handle(ctx context.Context, profile string, c wire.Control,
 		if err := json.Unmarshal(c.Body, &req); err != nil {
 			return fmt.Errorf("supervisor: parse removeForkDir: %w", err)
 		}
-		home, err := s.home()
+		forks, err := s.forks()
 		if err != nil {
 			return err
 		}
@@ -68,7 +68,7 @@ func (s *Supervisor) Handle(ctx context.Context, profile string, c wire.Control,
 		if remove == nil {
 			remove = RemoveForkDir
 		}
-		return remove(home, req.ForkID)
+		return remove(forks, req.ForkID)
 
 	default:
 		// An op from a newer backend is ignored rather than fatal. Dropping

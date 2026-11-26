@@ -264,22 +264,41 @@ func TestRemoveForkDirOpDeletesTheForksFolder(t *testing.T) {
 	}
 }
 
-// The removal is the one a test can put in its place, given the home and the
-// fork's id.
+// The removal is the one a test can put in its place, given the forks folder
+// and the fork's id.
 func TestRemoveForkDirOpUsesTheSupervisorsRemover(t *testing.T) {
 	s := New((&recordingStarter{}).start, 0, 0)
 	s.Home = t.TempDir()
-	var gotHome, gotID string
-	s.RemoveDir = func(home, forkID string) error {
-		gotHome, gotID = home, forkID
+	var gotForks, gotID string
+	s.RemoveDir = func(forks, forkID string) error {
+		gotForks, gotID = forks, forkID
 		return nil
 	}
 	c := control(t, wire.OpRemoveForkDir, wire.RemoveForkDir{ForkID: forkID})
 	if err := s.Handle(t.Context(), "work", c, &recordingReporter{}); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
-	if gotHome != s.Home || gotID != forkID {
-		t.Errorf("removed (%q, %q), want (%q, %q)", gotHome, gotID, s.Home, forkID)
+	if want := forksIn(s.Home); gotForks != want || gotID != forkID {
+		t.Errorf("removed (%q, %q), want (%q, %q)", gotForks, gotID, want, forkID)
+	}
+}
+
+// With --forks-dir, a merge removes the folder from there: making and
+// removing a fork's folder read the same setting (#1444).
+func TestRemoveForkDirOpDeletesFromTheConfiguredForksFolder(t *testing.T) {
+	s := New((&recordingStarter{}).start, 0, 0)
+	s.Home = t.TempDir()
+	s.ForksDir = t.TempDir()
+	target := filepath.Join(s.ForksDir, forkID)
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	c := control(t, wire.OpRemoveForkDir, wire.RemoveForkDir{ForkID: forkID})
+	if err := s.Handle(t.Context(), "work", c, &recordingReporter{}); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if _, err := os.Lstat(target); !os.IsNotExist(err) {
+		t.Errorf("the fork's folder is still there: %v", err)
 	}
 }
 
