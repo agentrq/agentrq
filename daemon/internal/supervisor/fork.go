@@ -55,8 +55,8 @@ func (discardProgress) Write(b []byte) (int, error) { return len(b), nil }
 // ForkBranch is the branch a fork's worktree is checked out on.
 func ForkBranch(id string) string { return "agentrq/fork-" + id }
 
-// PrepareForkDir makes the folder a workspace fork runs in, under
-// <home>/.agentrq/forks/<id>, and returns the directory the agent starts in.
+// PrepareForkDir makes the folder a workspace fork runs in, <forks>/<id>, and
+// returns the directory the agent starts in.
 //
 // A git worktree on its own branch when from is inside a repository (the dir
 // is then the same subfolder of it that from is of its repository), a copy of
@@ -65,15 +65,15 @@ func ForkBranch(id string) string { return "agentrq/fork-" + id }
 // Each step is a notice on out before it runs, and what git prints goes to out
 // as it prints it. Cancelling ctx stops the checkout; a worktree that was not
 // finished is removed, so a relaunch does not take it for a finished fork.
-func PrepareForkDir(ctx context.Context, home, from, id string, out Progress) (dir string, err error) {
+func PrepareForkDir(ctx context.Context, forks, from, id string, out Progress) (dir string, err error) {
 	if out == nil {
 		out = discardProgress{}
 	}
 	if !forkIDPattern.MatchString(id) {
 		return "", fmt.Errorf("%w: id=%q", ErrBadFork, id)
 	}
-	if !filepath.IsAbs(home) {
-		return "", fmt.Errorf("%w: home=%q is not an absolute path", ErrBadFork, home)
+	if !filepath.IsAbs(forks) {
+		return "", fmt.Errorf("%w: forks=%q is not an absolute path", ErrBadFork, forks)
 	}
 	from, err = workspaceDir(from)
 	if err != nil {
@@ -85,7 +85,7 @@ func PrepareForkDir(ctx context.Context, home, from, id string, out Progress) (d
 		return "", fmt.Errorf("%w: from=%q contains \"..\"", ErrBadFork, from)
 	}
 
-	target := filepath.Join(home, ".agentrq", "forks", id)
+	target := filepath.Join(forks, id)
 	root, inRepo := gitRoot(from)
 	rel := "."
 	if inRepo {
@@ -107,7 +107,7 @@ func PrepareForkDir(ctx context.Context, home, from, id string, out Progress) (d
 		err = addWorktree(ctx, root, target, id, out)
 	} else {
 		out.Notice("copying " + quoteArg(from) + " to " + quoteArg(target) + ", which is not in a git repository")
-		err = copyTree(from, target, filepath.Join(home, ".agentrq"))
+		err = copyTree(from, target, forks)
 	}
 	if err != nil {
 		return "", err
@@ -118,14 +118,14 @@ func PrepareForkDir(ctx context.Context, home, from, id string, out Progress) (d
 // RemoveForkDir deletes the folder PrepareForkDir made for a fork, and nothing
 // else. A worktree is removed through git, so the repository forgets it; its
 // branch stays, holding the fork's commits. A folder already gone is done.
-func RemoveForkDir(home, id string) error {
+func RemoveForkDir(forks, id string) error {
 	if !forkIDPattern.MatchString(id) {
 		return fmt.Errorf("%w: id=%q", ErrBadFork, id)
 	}
-	if !filepath.IsAbs(home) {
-		return fmt.Errorf("%w: home=%q is not an absolute path", ErrBadFork, home)
+	if !filepath.IsAbs(forks) {
+		return fmt.Errorf("%w: forks=%q is not an absolute path", ErrBadFork, forks)
 	}
-	target := filepath.Join(home, ".agentrq", "forks", id)
+	target := filepath.Join(forks, id)
 	if _, err := os.Lstat(target); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
@@ -249,7 +249,7 @@ func gitEnv() []string {
 
 // copyTree copies from into target, keeping modes and copying symlinks as
 // symlinks. The top-level .mcp.json is left out — its entry points at the
-// parent — as is the daemon's own folder, wherever it turns up.
+// parent — as is the forks folder, wherever it turns up.
 //
 // Built beside target and renamed into place, so a copy that fails half way
 // leaves nothing a relaunch would take for a finished fork.

@@ -35,6 +35,7 @@ const usage = `agentrqd — the AgentRQ machine daemon
   agentrqd enroll --server <url> --code <code> [--profile <id>] [--insecure]
   agentrqd serve [--profile <id>] [--foreground] [--verbose]
                  [--max-per-profile <n>] [--max-per-machine <n>]
+                 [--forks-dir <path>]
   agentrqd stop
   agentrqd rollback
   agentrqd status

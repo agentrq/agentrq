@@ -57,6 +57,24 @@ func TestSessionCaps(t *testing.T) {
 	})
 }
 
+// --forks-dir moves forks off the home folder's drive (#1444). Only an
+// absolute path: a relative one would follow the folder the daemon started in.
+func TestForksDir(t *testing.T) {
+	if got, err := forksDir(""); err != nil || got != "" {
+		t.Errorf("forksDir(\"\") = %q, %v; want the default", got, err)
+	}
+	abs := filepath.Join(t.TempDir(), "forks")
+	if got, err := forksDir(abs + string(filepath.Separator) + "."); err != nil || got != abs {
+		t.Errorf("forksDir(%q) = %q, %v; want %q", abs, got, err, abs)
+	}
+	if _, err := forksDir("forks"); err == nil {
+		t.Error("a relative forks folder was accepted")
+	}
+	if err := cmdServe(context.Background(), []string{"--forks-dir", "forks"}); err == nil || !strings.Contains(err.Error(), "--forks-dir") {
+		t.Errorf("serve with a relative --forks-dir: %v", err)
+	}
+}
+
 // The defaults are what somebody gets without saying anything, and they are
 // the numbers the docs and the usage text promise.
 func TestDefaultCaps(t *testing.T) {

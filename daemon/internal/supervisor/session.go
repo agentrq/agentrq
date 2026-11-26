@@ -188,14 +188,18 @@ type Supervisor struct {
 	perProfile   int
 	wholeMachine int
 
-	// Home is where the forks folder lives; empty means the user's home.
+	// Home is the user's home folder, for ~; empty means os.UserHomeDir.
 	Home string
+	// ForksDir is the folder forks' folders are made in; empty means
+	// <Home>/.agentrq/forks. Making and removing a fork's folder both read
+	// it, so the two agree; a fork made before it changed stays where it is.
+	ForksDir string
 	// RemoveDir deletes a fork's folder; nil is [RemoveForkDir]. A field so
 	// a test can hold a removal open.
-	RemoveDir func(home, forkID string) error
+	RemoveDir func(forks, forkID string) error
 	// PrepareDir makes a fork's folder; nil is [PrepareForkDir]. A field for
 	// the same reason.
-	PrepareDir func(ctx context.Context, home, from, forkID string, out Progress) (dir string, err error)
+	PrepareDir func(ctx context.Context, forks, from, forkID string, out Progress) (dir string, err error)
 	// ClaudeDir is where claude-code keeps its conversations; empty means
 	// $CLAUDE_CONFIG_DIR, or ~/.claude.
 	ClaudeDir string
@@ -234,7 +238,7 @@ func (s *Supervisor) log() *slog.Logger {
 	return slog.Default()
 }
 
-// home is where the forks folder lives.
+// home is the user's home folder.
 func (s *Supervisor) home() (string, error) {
 	if s.Home != "" {
 		return s.Home, nil
@@ -244,6 +248,18 @@ func (s *Supervisor) home() (string, error) {
 		return "", fmt.Errorf("supervisor: no home folder for the fork: %w", err)
 	}
 	return home, nil
+}
+
+// forks is the folder forks' folders are made in.
+func (s *Supervisor) forks() (string, error) {
+	if s.ForksDir != "" {
+		return s.ForksDir, nil
+	}
+	home, err := s.home()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".agentrq", "forks"), nil
 }
 
 // workspaceDir decides whether a folder is one this daemon will write into,
@@ -299,9 +315,9 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	}
 	// A fork's folder is made after the reservation below, not before: it can
 	// take a minute, and a kill that arrives meanwhile has to find the session.
-	var home string
+	var forks string
 	if req.Fork != nil {
-		if home, err = s.home(); err != nil {
+		if forks, err = s.forks(); err != nil {
 			return nil, err
 		}
 		from, err := s.prepareDir(req.Fork.From)
@@ -362,7 +378,7 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 		if prepare == nil {
 			prepare = PrepareForkDir
 		}
-		dir, err := prepare(prepCtx, home, req.Fork.From, req.Fork.ID, launchProgress{sess})
+		dir, err := prepare(prepCtx, forks, req.Fork.From, req.Fork.ID, launchProgress{sess})
 		if err == nil {
 			dir, err = workspaceDir(dir)
 		}
