@@ -57,6 +57,7 @@ export default defineConfig({
         'src/composables/useEscapeKey.js',
         'src/composables/useTaskGroups.js',
         'src/composables/useKanbanOrder.js',
+        'src/composables/useKanbanScheduled.js',
         'src/composables/useAgentIcon.js',
         'src/composables/useTaskStatusStyle.js',
         'src/composables/useTaskTimeline.js',

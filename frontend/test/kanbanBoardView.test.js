@@ -75,6 +75,7 @@ vi.mock('../src/api', async (importOriginal) => ({
 const { default: KanbanBoardView } = await import('../src/views/KanbanBoardView.vue')
 const { default: KanbanView } = await import('../src/views/KanbanView.vue')
 const { useWorkspaceStore } = await import('../src/stores/workspaceStore')
+const { useKanbanScheduled, KANBAN_SCHEDULED_KEY } = await import('../src/composables/useKanbanScheduled')
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30))
 
@@ -135,6 +136,7 @@ describe('KanbanBoardView', () => {
     if (app) app.unmount()
     document.body.innerHTML = ''
     localStorage.clear()
+    useKanbanScheduled().setShowScheduled(false)
     events.value = []
     route.params = { id: 'ws1' }
     push.mockClear()
@@ -160,6 +162,77 @@ describe('KanbanBoardView', () => {
         task('d3', 'completed', { sortOrder: 3, updatedAt: '2026-09-27T10:00:00Z' }),
       ],
     }
+  })
+
+  describe('the Scheduled column', () => {
+    const titles = (el) => [...el.querySelectorAll('h3.uppercase')].map((n) => n.textContent.trim())
+    const cronFetched = () => fetchTasks.mock.calls.some(([, q]) => q.status === 'cron')
+    beforeEach(() => {
+      byStatus.cron = [task('c1', 'cron', { cronSchedule: '0 9 * * *' })]
+    })
+
+    it('is hidden, and not fetched, on every workspace\'s board until turned on', async () => {
+      route.params = {}
+      const { el } = await mount({ workspaces: [{ id: 'ws1', name: 'ops' }] })
+      expect(titles(el)).toEqual(['Not Started', 'Ongoing', 'Blocked', 'Done'])
+      expect(fetchGlobalTasks.mock.calls.some(([q]) => q.status === 'cron')).toBe(false)
+      expect(el.textContent).not.toContain('Task c1')
+    })
+
+    it('comes first once its toggle is on, fetched and remembered, and goes when it is off', async () => {
+      route.params = {}
+      const { el, card } = await mount({ component: KanbanView, workspaces: [{ id: 'ws1', name: 'ops' }] })
+      const toggle = el.querySelector('[data-test=scheduled-toggle]')
+      expect(toggle.getAttribute('aria-pressed')).toBe('false')
+
+      toggle.click()
+      await settle()
+      expect(titles(el)).toEqual(['Scheduled', 'Not Started', 'Ongoing', 'Blocked', 'Done'])
+      expect(fetchGlobalTasks).toHaveBeenCalledWith(expect.objectContaining({ status: 'cron' }))
+      expect(el.textContent).toContain('Task c1')
+      // When it next runs, in place of when it was made.
+      expect(el.querySelector('[data-test=card-next-run]').textContent.trim()).toMatch(/^In /)
+      expect(card('Task c1').textContent).not.toContain('ago')
+      expect(toggle.getAttribute('aria-pressed')).toBe('true')
+      expect(localStorage.getItem(KANBAN_SCHEDULED_KEY)).toBe('1')
+
+      toggle.click()
+      await settle()
+      expect(titles(el)).not.toContain('Scheduled')
+      expect(localStorage.getItem(KANBAN_SCHEDULED_KEY)).toBeNull()
+    })
+
+    it('loads with the board when it was left on', async () => {
+      useKanbanScheduled().setShowScheduled(true)
+      route.params = {}
+      const { el } = await mount({ workspaces: [{ id: 'ws1', name: 'ops' }] })
+      expect(titles(el)[0]).toBe('Scheduled')
+      expect(fetchGlobalTasks).toHaveBeenCalledWith(expect.objectContaining({ status: 'cron' }))
+    })
+
+    it('is always first on one workspace\'s board, toggle or not', async () => {
+      const { el } = await mount()
+      expect(titles(el)).toEqual(['Scheduled', 'Not Started', 'Ongoing', 'Blocked', 'Done'])
+      expect(cronFetched()).toBe(true)
+      expect(el.textContent).toContain('Task c1')
+    })
+
+    it('takes no drag in or out, since a scheduled task\'s status never changes', async () => {
+      useKanbanScheduled().setShowScheduled(true)
+      route.params = {}
+      const { card, drag, inColumn, fire } = await mount({ workspaces: [{ id: 'ws1', name: 'ops' }] })
+      expect(card('Task c1').getAttribute('draggable')).toBe('false')
+
+      fire(card('Task c1'), 'dragstart')
+      await settle()
+      await drag('Task n1', { into: 'Scheduled' })
+      await drag('Task n2', { before: 'Task c1' })
+
+      expect(updateTaskStatus).not.toHaveBeenCalled()
+      expect(updateTaskOrder).not.toHaveBeenCalled()
+      expect(inColumn('Not Started', 'Task n1')).toBe(true)
+      expect(inColumn('Scheduled', 'Task c1')).toBe(true)
+    })
   })
 
   it('lists Done with the most recently finished task first', async () => {
