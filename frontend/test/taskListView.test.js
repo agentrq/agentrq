@@ -56,6 +56,9 @@ const fetchTasks = vi.fn(async () => ({ tasks: fetchTasksPages.shift() || [] }))
 const deleteTask = vi.fn(async () => ({}))
 const moveTask = vi.fn(async () => ({}))
 const updateTaskOrder = vi.fn(async () => ({}))
+const updateTaskAssignee = vi.fn(async () => ({}))
+const updateTaskStatus = vi.fn(async () => ({}))
+const sendPermissionVerdict = vi.fn(async () => ({}))
 const fetchTeamTasks = vi.fn(async () => ({ tasks: [] }))
 const fetchTeamWorkspaces = vi.fn(async () => ({ workspaces: [] }))
 
@@ -68,12 +71,16 @@ vi.mock('../src/api', async (importOriginal) => ({
   deleteTask: (...a) => deleteTask(...a),
   moveTask: (...a) => moveTask(...a),
   updateTaskOrder: (...a) => updateTaskOrder(...a),
+  updateTaskAssignee: (...a) => updateTaskAssignee(...a),
+  updateTaskStatus: (...a) => updateTaskStatus(...a),
+  sendPermissionVerdict: (...a) => sendPermissionVerdict(...a),
   fetchTeamTasks: (...a) => fetchTeamTasks(...a),
   fetchTeamWorkspaces: (...a) => fetchTeamWorkspaces(...a),
 }))
 
 const { default: TaskListView } = await import('../src/views/TaskListView.vue')
 const { default: TaskFeed } = await import('../src/components/TaskFeed.vue')
+const { useWorkspaceStore } = await import('../src/stores/workspaceStore')
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30))
 let apps = []
@@ -320,6 +327,74 @@ describe('a workspace task list', () => {
     rowOf(el, 'task n0').querySelector('[title="Edit Task"]').click()
     expect(push).toHaveBeenCalledWith('/workspaces/w1/tasks/n0/edit')
   })
+})
+
+// The quick actions on a task waiting on you. One an agent made and gave you,
+// not started, is handed over with Assign to agent and stays not started, so
+// the agent's queue sends it, body and all; set ongoing, it was never sent.
+describe('Assign to agent, Deny and Allow', () => {
+  const handed = (id) => ({ ...task(id), assignee: 'human', createdBy: 'agent' })
+  const asking = (id) => ({
+    ...task(id, 'w1', 'ongoing'),
+    messages: [{ id: 'm1', metadata: { type: 'permission_request', status: 'pending', request_id: 'r1' } }],
+  })
+  const views = {
+    'the sidebar list': {
+      mount: async () => {
+        const el = await mount(TaskListView)
+        useWorkspaceStore().updateAgentStatus('w1', true)
+        await settle()
+        return el
+      },
+      serve: (tasks) => { pages = [tasks] },
+      allow: '[data-test="list-allow"]',
+    },
+    'a workspace feed': {
+      mount: () => mount(TaskFeed, { workspaceId: 'w1', filter: 'pending', isAgentConnected: true }),
+      serve: (tasks) => { fetchTasksPages = [tasks] },
+      allow: '[data-test="feed-allow"]',
+    },
+  }
+
+  beforeEach(() => {
+    route.params = { filter: 'pending' }
+    route.path = '/tasks/pending'
+    fetchTasksPages = []
+  })
+
+  for (const [name, view] of Object.entries(views)) {
+    describe(name, () => {
+      it('assigns the task to the agent and leaves it not started', async () => {
+        view.serve([handed('h1')])
+        const el = await view.mount()
+        const btn = rowOf(el, 'task h1').querySelector(view.allow)
+        expect(btn.textContent.trim()).toBe('Assign to agent')
+        btn.click()
+        await settle()
+        expect(updateTaskAssignee).toHaveBeenCalledWith('w1', 'h1', 'agent')
+        expect(updateTaskStatus).not.toHaveBeenCalled()
+      })
+
+      it('rejects it on Deny', async () => {
+        view.serve([handed('h1')])
+        const el = await view.mount()
+        ;[...rowOf(el, 'task h1').querySelectorAll('button')].find((b) => b.textContent.trim() === 'Deny').click()
+        await settle()
+        expect(updateTaskStatus).toHaveBeenCalledWith('w1', 'h1', 'rejected')
+        expect(updateTaskAssignee).not.toHaveBeenCalled()
+      })
+
+      it('keeps Allow for a permission request, and answers it', async () => {
+        view.serve([asking('p1')])
+        const el = await view.mount()
+        const btn = rowOf(el, 'task p1').querySelector(view.allow)
+        expect(btn.textContent.trim()).toBe('Allow')
+        btn.click()
+        await settle()
+        expect(sendPermissionVerdict).toHaveBeenCalledWith('w1', 'p1', 'r1', 'allow')
+      })
+    })
+  }
 })
 
 // Not Started shows the lowest sort order first. The bug: a step set the task
