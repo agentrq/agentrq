@@ -48,7 +48,9 @@ const (
 // sends an SSE comment, and again after each. A client or proxy that finds
 // a connection silent for minutes drops it: Bun's fetch, under Claude Code,
 // gives up after five with "The operation timed out.", and an elicit waits
-// up to an hour.
+// up to an hour. A call that named a progressToken gets a progress
+// notification instead: Claude Code also aborts a call that sends no
+// response or progress for five minutes, and a comment is neither.
 var postKeepalive = 25 * time.Second
 
 // DefaultMaxRequestBodyBytes caps a POST body unless the options say
@@ -480,6 +482,7 @@ func validEventID(id string) bool {
 type post struct {
 	messages   []jsonrpc.Message
 	calls      map[jsonrpc.ID]bool
+	progress   map[jsonrpc.ID]any // the progressToken a call named
 	initialize *jsonrpc.Request
 	listen     bool
 	modern     bool // any request on 2026-07-28 or later
@@ -523,7 +526,7 @@ func (h *StreamableHTTPHandler) servePOST(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	p := post{messages: messages, calls: map[jsonrpc.ID]bool{}}
+	p := post{messages: messages, calls: map[jsonrpc.ID]bool{}, progress: map[jsonrpc.ID]any{}}
 	server.mu.Lock()
 	methods := server.methods
 	server.mu.Unlock()
@@ -585,6 +588,9 @@ func (h *StreamableHTTPHandler) servePOST(w http.ResponseWriter, req *http.Reque
 		r.Extra = &RequestExtra{Header: req.Header}
 		if r.IsCall() {
 			p.calls[r.ID] = true
+			if token := paramsMeta(r.Params)["progressToken"]; token != nil {
+				p.progress[r.ID] = token
+			}
 		}
 	}
 	if !isBatch && len(messages) == 1 {
@@ -638,6 +644,7 @@ func (h *StreamableHTTPHandler) servePOST(w http.ResponseWriter, req *http.Reque
 	}
 
 	st := newStream(w, p.calls, version >= ProtocolVersion20260728, p.listen)
+	st.progress = p.progress
 	if !sess.register(st, p.calls) {
 		for id := range p.calls {
 			writeJSONError(w, http.StatusBadRequest, id, &jsonrpc.Error{Code: jsonrpc.CodeInvalidRequest,
@@ -958,16 +965,18 @@ func (s *httpSession) close() {
 // stream is one HTTP response the server writes SSE events to: a POST's, for
 // the responses to its calls, or a GET's, for pushes.
 type stream struct {
-	mu      sync.Mutex
-	w       http.ResponseWriter // nil once the request is over
-	started bool
-	held    bool
-	queue   [][]byte
-	pending map[jsonrpc.ID]bool // calls still to answer; nil for a GET
-	modern  bool
-	listen  bool
-	done    chan struct{}
-	closed  bool
+	mu       sync.Mutex
+	w        http.ResponseWriter // nil once the request is over
+	started  bool
+	held     bool
+	queue    [][]byte
+	pending  map[jsonrpc.ID]bool // calls still to answer; nil for a GET
+	progress map[jsonrpc.ID]any  // the progressToken a call named
+	ticks    float64             // keepalives sent: progress must only grow
+	modern   bool
+	listen   bool
+	done     chan struct{}
+	closed   bool
 }
 
 func newStream(w http.ResponseWriter, calls map[jsonrpc.ID]bool, modern, listen bool) *stream {
@@ -999,12 +1008,27 @@ func (st *stream) open() {
 }
 
 // keepalive writes an SSE comment, which clients ignore, so a call that
-// takes long is not taken for a dead connection. The headers go out with
-// the first.
+// takes long is not taken for a dead connection; or, for each unanswered
+// call that named a progressToken, a progress notification, so it is not
+// taken for a stalled call either. The headers go out with the first.
 func (st *stream) keepalive() {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.w == nil || st.closed || st.held {
+		return
+	}
+	st.ticks++
+	sent := false
+	for id, token := range st.progress {
+		if !st.pending[id] {
+			continue
+		}
+		params, _ := json.Marshal(&ProgressNotificationParams{ProgressToken: token, Progress: st.ticks})
+		data, _ := jsonrpc.Encode(&jsonrpc.Request{Method: notificationProgress, Params: params})
+		_ = st.event(data)
+		sent = true
+	}
+	if sent {
 		return
 	}
 	st.started = true

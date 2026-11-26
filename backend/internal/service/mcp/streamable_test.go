@@ -1047,6 +1047,52 @@ func TestStreamableCallsInFlight(t *testing.T) {
 			t.Fatalf("the comments read as messages: %v", msgs)
 		}
 	})
+
+	t.Run("a long call that named a progressToken reports progress", func(t *testing.T) {
+		release := make(chan struct{})
+		h := shHandler(shServer(release), nil)
+		h.keepalive = 10 * time.Millisecond
+		hs := httptest.NewServer(h)
+		t.Cleanup(hs.Close)
+		resp, _ := shPost(t, hs.URL, shInit(1, "2025-11-25", "c"))
+		call := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"block","arguments":{},"_meta":{"progressToken":"p3"}}}`
+		req, _ := http.NewRequest(http.MethodPost, hs.URL, strings.NewReader(call))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Mcp-Session-Id", resp.Header.Get("Mcp-Session-Id"))
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		// Two ticks, so the second is seen to count up.
+		var seen []map[string]any
+		r := bufio.NewReader(res.Body)
+		for len(seen) < 2 {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				t.Fatalf("the waiting call sent %v, then %v", seen, err)
+			}
+			if data, ok := strings.CutPrefix(line, "data: "); ok {
+				var msg map[string]any
+				_ = json.Unmarshal([]byte(data), &msg)
+				seen = append(seen, msg)
+			} else if line == ": ok\n" {
+				t.Fatal("the waiting call sent a comment, not progress")
+			}
+		}
+		for i, msg := range seen {
+			params, _ := msg["params"].(map[string]any)
+			if msg["method"] != "notifications/progress" || params["progressToken"] != "p3" || params["progress"] != float64(i+1) {
+				t.Fatalf("progress %d was %v", i, msg)
+			}
+		}
+		close(release)
+		rest, err := io.ReadAll(r)
+		if err != nil || !strings.Contains(string(rest), "released") {
+			t.Fatalf("the call then answered %q %v", rest, err)
+		}
+	})
 }
 
 // A call's own notifications go out on its POST, before its answer.
@@ -1404,6 +1450,29 @@ func TestStreamableStreamUnits(t *testing.T) {
 		st.keepalive()
 		if w.Body.Len() != n {
 			t.Fatalf("a finished stream was kept alive: %q", w.Body.String())
+		}
+	})
+
+	t.Run("progress goes only to the unanswered calls that asked for it", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		one, two, three := jsonrpc.Int64ID(1), jsonrpc.Int64ID(2), jsonrpc.Int64ID(3)
+		st := newStream(w, map[jsonrpc.ID]bool{one: true, two: true, three: true}, false, false)
+		st.progress = map[jsonrpc.ID]any{one: "a", two: float64(7)}
+		_ = st.write([]byte(`{}`), one, 0)
+		w.Body.Reset()
+		st.keepalive()
+		msgs := shData(t, w.Body.String())
+		if len(msgs) != 1 || msgs[0]["method"] != "notifications/progress" || strings.Contains(w.Body.String(), ": ok") {
+			t.Fatalf("the keepalive wrote %q", w.Body.String())
+		}
+		if p := msgs[0]["params"].(map[string]any); p["progressToken"] != float64(7) || p["progress"] != float64(1) {
+			t.Fatalf("the progress was %v", p)
+		}
+		_ = st.write([]byte(`{}`), two, 0)
+		w.Body.Reset()
+		st.keepalive()
+		if w.Body.String() != ": ok\n\n" {
+			t.Fatalf("with no call left to report on, the keepalive wrote %q", w.Body.String())
 		}
 	})
 
