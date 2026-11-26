@@ -82,7 +82,13 @@
                           title="Spin up in a fork">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                   </button>
-                  <span class="text-[10px] text-gray-500 dark:text-zinc-400 font-medium uppercase tracking-wider tabular-nums">
+                  <!-- A scheduled task says when it next runs, not when it was made. -->
+                  <span v-if="t.status === 'cron'" data-test="card-next-run" title="Next run"
+                        class="flex items-center gap-1 text-[10px] text-gray-500 dark:text-zinc-400 font-medium uppercase tracking-wider tabular-nums">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    {{ getNextRunLabel(t.cronSchedule) }}
+                  </span>
+                  <span v-else class="text-[10px] text-gray-500 dark:text-zinc-400 font-medium uppercase tracking-wider tabular-nums">
                     {{ formatTime(t.createdAt) }}
                   </span>
                 </div>
@@ -177,6 +183,8 @@ import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
 import { readCachedTasks, readAllCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
 import { taskAccentClass } from '../composables/useTaskStatusStyle';
 import { getOrder, sortColumn, orderBetween } from '../composables/useKanbanOrder';
+import { useKanbanScheduled } from '../composables/useKanbanScheduled';
+import { useCron } from '../composables/useCron';
 import LoadMoreButton from '../components/LoadMoreButton.vue';
 import OwnerAvatar from '../components/OwnerAvatar.vue';
 import { useTeamStore } from '../stores/teamStore';
@@ -184,6 +192,7 @@ import { inTeamFilter, lostTeam, sharedNameOf, teamEvent, useTeamMode } from '..
 
 const route = useRoute();
 const router = useRouter();
+const { getNextRunLabel } = useCron();
 const { notifyError, notifySuccess } = useToasts();
 const workspaceStore = useWorkspaceStore();
 
@@ -202,7 +211,7 @@ const isTeamMode = computed(() => isGlobal.value && teamMode.value);
 const teamWorkspace = (t) => teamStore.workspacesOf(teamId.value).find((w) => String(w.id) === String(t.workspaceId));
 
 const isArchived = (t) => !!workspaceStore.getWorkspace(workspaceOf(t))?.archivedAt;
-const canDrag = (t) => !isTeamMode.value && !isArchived(t);
+const canDrag = (t) => !isTeamMode.value && !isArchived(t) && t.status !== 'cron';
 const isAgentConnected = (t) => workspaceStore.isAgentConnected(workspaceOf(t));
 const workspaceName = (t) => (isTeamMode.value
   ? sharedNameOf(teamWorkspace(t)) || t.sharedName || '...'
@@ -269,22 +278,27 @@ const handleAction = async (task, action) => {
 // a card already in the column just reorders it. Done is the exception: it is
 // sorted newest first, not by hand (see useKanbanOrder), so a drop within it
 // does nothing and completed/rejected cards keep their exact status.
-// 'cron' tasks (scheduled templates) are intentionally excluded — their status
-// is immutable and they are not part of the kanban workflow.
-const columns = [
+// Scheduled ('cron') tasks are templates with a status that never changes, so
+// their column takes no drag in or out. A workspace's board always shows it;
+// the board of every workspace, where the list runs long, only once its toggle is on.
+const allColumns = [
+  { id: 'scheduled', title: 'Scheduled', statuses: ['cron'], locked: true, dot: 'bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.4)]' },
   { id: 'notstarted', title: 'Not Started', statuses: ['notstarted'], dropStatus: 'notstarted', dot: 'bg-gray-400 dark:bg-zinc-500' },
   { id: 'ongoing', title: 'Ongoing', statuses: ['ongoing'], dropStatus: 'ongoing', dot: 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' },
   { id: 'blocked', title: 'Blocked', statuses: ['blocked'], dropStatus: 'blocked', dot: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]' },
   { id: 'done', title: 'Done', statuses: ['completed', 'rejected'], dropStatus: 'completed', sortBy: 'recent', dot: 'bg-green-500' },
 ];
 
-const columnById = Object.fromEntries(columns.map(c => [c.id, c]));
+const { showScheduled } = useKanbanScheduled();
+const scheduledShown = computed(() => !isGlobal.value || showScheduled.value);
+const columns = computed(() => allColumns.filter(c => c.id !== 'scheduled' || scheduledShown.value));
+const columnById = Object.fromEntries(allColumns.map(c => [c.id, c]));
 
 const PAGE_SIZE = 10;
 const loading = ref(true);
 const tasks = ref([]);
-const offsets = ref(Object.fromEntries(columns.map(c => [c.id, 0])));
-const hasMore = ref(Object.fromEntries(columns.map(c => [c.id, false])));
+const offsets = ref(Object.fromEntries(allColumns.map(c => [c.id, 0])));
+const hasMore = ref(Object.fromEntries(allColumns.map(c => [c.id, false])));
 
 function formatTime(dateStr) {
   if (!dateStr) return 'Just now';
@@ -309,7 +323,7 @@ function formatTime(dateStr) {
 
 const buckets = computed(() => {
   const out = {};
-  for (const c of columns) out[c.id] = sortColumn(c, tasks.value);
+  for (const c of allColumns) out[c.id] = sortColumn(c, tasks.value);
   return out;
 });
 
@@ -391,7 +405,7 @@ async function loadAll() {
   // replaces its own tasks as the server answers for it.
   await paintFromCache();
   if (tasks.value.length > 0) loading.value = false;
-  await Promise.all(columns.map(c => loadColumn(c.id)));
+  await Promise.all(columns.value.map(c => loadColumn(c.id)));
   loading.value = false;
 }
 
@@ -418,7 +432,7 @@ function onDragEnd() {
 }
 
 function onColumnDragOver(e, colId) {
-  if (!draggingId.value) return;
+  if (!draggingId.value || columnById[colId].locked) return;
   e.preventDefault();
   // Only initialize when entering a new column; card-level handler refines position.
   if (dragOverColId.value !== colId) {
@@ -428,7 +442,7 @@ function onColumnDragOver(e, colId) {
 }
 
 function onCardDragOver(e, colId, task) {
-  if (!draggingId.value) return;
+  if (!draggingId.value || columnById[colId].locked) return;
   e.preventDefault();
   const rect = e.currentTarget.getBoundingClientRect();
   const after = e.clientY > rect.top + rect.height / 2;
@@ -455,6 +469,7 @@ async function onDrop(e, colId) {
   if (!task) return;
 
   const col = columnById[colId];
+  if (col.locked) return;
   // Moving in from another column adopts the column's drop-status; reordering
   // within a multi-status column (Done) preserves the card's exact status.
   const newStatus = col.statuses.includes(task.status) ? task.status : col.dropStatus;
@@ -665,8 +680,13 @@ const teamFilters = computed(() => (isTeamMode.value ? `${route.query.workspace 
 
 watch([workspaceId, teamId, teamFilters], () => {
   tasks.value = [];
-  offsets.value = Object.fromEntries(columns.map(c => [c.id, 0]));
-  hasMore.value = Object.fromEntries(columns.map(c => [c.id, false]));
+  offsets.value = Object.fromEntries(allColumns.map(c => [c.id, 0]));
+  hasMore.value = Object.fromEntries(allColumns.map(c => [c.id, false]));
   loadAll();
+});
+
+// Turned on after the board loaded: the column fetches its own tasks.
+watch(scheduledShown, (on) => {
+  if (on) loadColumn('scheduled');
 });
 </script>
