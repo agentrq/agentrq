@@ -1176,6 +1176,11 @@ func staticHandler(web fs.FS) fiber.Handler {
 		if skipStaticHandler(c.Path()) {
 			return c.Next()
 		}
+		// Embedded files all date from year 1, so a Last-Modified never
+		// changes between releases and an If-Modified-Since check is always
+		// a 304: the browser would never see a new sw.js.
+		c.Request().Header.Del(fiber.HeaderIfModifiedSince)
+		defer c.Response().Header.Del(fiber.HeaderLastModified)
 		if c.Get(fiber.HeaderAcceptEncoding) == "" {
 			return files(c)
 		}
