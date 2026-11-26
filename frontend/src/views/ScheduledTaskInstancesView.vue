@@ -80,6 +80,19 @@
               </div>
             </div>
           </div>
+
+          <!-- Attachments, sent with every run -->
+          <div v-if="scheduledTask.attachments && scheduledTask.attachments.length > 0" class="mt-3 flex flex-wrap gap-3">
+            <div v-for="(att, i) in scheduledTask.attachments" :key="i"
+                 @click="selectedAtt = att"
+                 class="flex items-center gap-3 max-w-full min-w-0 px-4 py-2 rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-all cursor-pointer group shadow-sm">
+              <div class="w-6 h-6 shrink-0 flex items-center justify-center overflow-hidden rounded-lg">
+                <img v-if="isInlineImage(att)" :src="attachmentUrl(att)" class="w-full h-full object-cover" />
+                <svg v-else class="w-4 h-4 text-gray-500 group-hover:text-black dark:group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+              </div>
+              <span class="min-w-0 truncate text-[10px] font-bold text-gray-500 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors uppercase tracking-widest" :title="att.filename">{{ att.filename }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -119,6 +132,8 @@
       </div>
 
     </div>
+    <AttachmentPreview :attachment="selectedAtt" :src="selectedAtt ? attachmentUrl(selectedAtt) : ''"
+                       :public-link="selectedAtt?.url || ''" @close="selectedAtt = null" />
   </div>
 
   <div v-else class="h-full flex items-center justify-center bg-transparent">
@@ -134,7 +149,9 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
 import { renderMarkdown } from '../utils/markdown';
-import { fetchTasks, getWorkspace } from '../api';
+import { fetchTasks, getWorkspace, getAttachmentUrl } from '../api';
+import { isInlineImage } from '../composables/useAttachmentDownload';
+import AttachmentPreview from '../components/AttachmentPreview.vue';
 import { useCron } from '../composables/useCron';
 import { taskDotClass } from '../composables/useTaskStatusStyle';
 
@@ -154,6 +171,9 @@ const instances = ref([]);
 const isDescriptionCollapsed = ref(true);
 const isTaskBodyRaw = ref(false);
 const taskBodyCopied = ref(false);
+const selectedAtt = ref(null);
+
+const attachmentUrl = (att) => getAttachmentUrl(workspaceId.value, taskId.value, att.id);
 
 function expandDescription() {
   if (isDescriptionCollapsed.value) {
