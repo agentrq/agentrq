@@ -618,6 +618,7 @@ func (l *Link) stream(conn *Conn, req wire.StartSession) func() string {
 		read = l.streams.run(req.SessionID, pump, tty)
 		announce(pump, sess.Notices(), l.Log)
 	}
+	go l.confirmDevChannel(sess, pump.Screen, devChannelWait)
 	return func() string {
 		select {
 		case <-read:

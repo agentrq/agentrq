@@ -137,6 +137,8 @@ func (l *Link) Restore(ctx context.Context, conn *Conn, s restore.Session) {
 		if cols == 0 || rows == 0 {
 			cols, rows = 80, 24
 		}
-		announce(l.streams.add(s.ID, cols, rows, tty, conn), sess.Notices(), l.Log)
+		pump := l.streams.add(s.ID, cols, rows, tty, conn)
+		announce(pump, sess.Notices(), l.Log)
+		go l.confirmDevChannel(sess, pump.Screen, devChannelWait)
 	}
 }
