@@ -373,6 +373,34 @@ func TestStaticHandlerServesPrecompressedCopies(t *testing.T) {
 	}
 }
 
+// A browser revalidating a file with the date it was given still gets the
+// file: an embedded file's date is the same in every release, so a 304 would
+// keep a new sw.js from ever being seen.
+func TestStaticHandlerNeverAnswersNotModified(t *testing.T) {
+	app := fiber.New()
+	app.Use("/", staticHandler(fstest.MapFS{
+		"sw.js":    {Data: []byte("PLAIN")},
+		"sw.js.gz": {Data: []byte("GZIP")},
+	}))
+
+	for _, accept := range []string{"", "gzip"} {
+		req := httptest.NewRequest(http.MethodGet, "/sw.js", nil)
+		req.Header.Set("If-Modified-Since", "Mon, 01 Jan 0001 00:00:00 GMT")
+		if accept != "" {
+			req.Header.Set("Accept-Encoding", accept)
+		}
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("GET /sw.js with %q: %v", accept, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Last-Modified") != "" {
+			t.Errorf("GET /sw.js with %q: %d, Last-Modified %q; want 200 and none",
+				accept, resp.StatusCode, resp.Header.Get("Last-Modified"))
+		}
+	}
+}
+
 // The whole app serves the web build it is given, the index.html behind every
 // app route included, without reading the working directory.
 func TestTheAppServesItsWebBuild(t *testing.T) {
