@@ -41,6 +41,8 @@ vi.mock('../src/composables/useCachedReads', () => ({
 
 let byStatus = {}
 const updateTaskStatus = vi.fn()
+const updateTaskAssignee = vi.fn(() => Promise.resolve({}))
+const sendPermissionVerdict = vi.fn(() => Promise.resolve({}))
 const updateTaskOrder = vi.fn(() => Promise.resolve({}))
 const fetchTasks = vi.fn((_ws, { status }) => Promise.resolve({ tasks: byStatus[status] || [] }))
 const fetchGlobalTasks = vi.fn(({ status }) => Promise.resolve({ tasks: byStatus[status] || [] }))
@@ -65,6 +67,8 @@ vi.mock('../src/api', async (importOriginal) => ({
   launchAgent: (...args) => launchAgent(...args),
   recordTelemetry: () => {},
   updateTaskStatus: (...args) => updateTaskStatus(...args),
+  updateTaskAssignee: (...args) => updateTaskAssignee(...args),
+  sendPermissionVerdict: (...args) => sendPermissionVerdict(...args),
   updateTaskOrder: (...args) => updateTaskOrder(...args),
 }))
 
@@ -352,16 +356,49 @@ describe('KanbanBoardView across every workspace', () => {
     expect(updateTaskOrder).not.toHaveBeenCalled()
   })
 
-  it('offers Allow and Deny only where that card’s agent is live', async () => {
+  it('offers Assign to agent and Deny only where that card’s agent is live', async () => {
     const asks = { assignee: 'human', createdBy: 'agent' }
     byStatus.notstarted = [
       task('a9', 'notstarted', { workspaceId: 'ws1', sortOrder: 1, ...asks }),
       task('b9', 'notstarted', { workspaceId: 'ws2', sortOrder: 2, ...asks }),
     ]
     const { card } = await mount({ workspaces })
-    const hasAllow = (c) => [...c.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Allow')
-    expect(hasAllow(card('Task a9'))).toBe(true)
-    expect(hasAllow(card('Task b9'))).toBe(false)
+    const hasAssign = (c) => [...c.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Assign to agent')
+    expect(hasAssign(card('Task a9'))).toBe(true)
+    expect(hasAssign(card('Task b9'))).toBe(false)
+  })
+
+  it('assigns an agent’s not-started task to the agent and leaves it not started, for its queue to send', async () => {
+    updateTaskAssignee.mockClear()
+    byStatus.notstarted = [task('a9', 'notstarted', { workspaceId: 'ws1', sortOrder: 1, assignee: 'human', createdBy: 'agent' })]
+    const { card } = await mount({ workspaces })
+    card('Task a9').querySelector('[data-test="card-allow"]').click()
+    await settle()
+    expect(updateTaskAssignee).toHaveBeenCalledWith('ws1', 'a9', 'agent')
+    expect(updateTaskStatus).not.toHaveBeenCalled()
+  })
+
+  it('rejects an agent’s not-started task on Deny', async () => {
+    updateTaskStatus.mockResolvedValue({})
+    byStatus.notstarted = [task('a9', 'notstarted', { workspaceId: 'ws1', sortOrder: 1, assignee: 'human', createdBy: 'agent' })]
+    const { card } = await mount({ workspaces })
+    ;[...card('Task a9').querySelectorAll('button')].find((b) => b.textContent.trim() === 'Deny').click()
+    await settle()
+    expect(updateTaskStatus).toHaveBeenCalledWith('ws1', 'a9', 'rejected')
+  })
+
+  it('keeps Allow for a pending permission request, and answers it', async () => {
+    sendPermissionVerdict.mockClear()
+    byStatus.ongoing = [task('p9', 'ongoing', {
+      workspaceId: 'ws1', sortOrder: 1,
+      messages: [{ id: 'm1', metadata: { type: 'permission_request', status: 'pending', requestId: 'r1' } }],
+    })]
+    const { card } = await mount({ workspaces })
+    const allow = card('Task p9').querySelector('[data-test="card-allow"]')
+    expect(allow.textContent.trim()).toBe('Allow')
+    allow.click()
+    await settle()
+    expect(sendPermissionVerdict).toHaveBeenCalledWith('ws1', 'p9', 'r1', 'allow')
   })
 
   it('opens a card in its own workspace', async () => {
@@ -577,7 +614,7 @@ describe('the team\'s board (/teams/<id>/kanban)', () => {
     // As small as the agent and assignee icons beside it.
     expect(n1.querySelector('[data-test=card-owner]').firstElementChild.className).toMatch(/\bw-3\.5 h-3\.5\b/)
     expect(n1.querySelector('[title="Spin up in a fork"]')).toBe(null)
-    expect([...n1.querySelectorAll('button')].some((b) => /Allow|Deny/.test(b.textContent))).toBe(false)
+    expect([...n1.querySelectorAll('button')].some((b) => /Allow|Assign|Deny/.test(b.textContent))).toBe(false)
 
     fire(n1, 'dragstart')
     fire(n1, 'contextmenu')

@@ -113,8 +113,8 @@
               <!-- Quick actions for Pending -->
               <div v-if="grp.title === 'Action Required' && requiresAllowDeny(t)" class="mt-3" @click.stop>
                 <div class="flex flex-wrap gap-2" v-if="isAgentConnected">
-                  <button @click="handleAction(t, 'allow')" class="px-2.5 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-gray-100 transition-all shadow-sm">
-                    Allow
+                  <button @click="handleAction(t, 'allow')" data-test="feed-allow" class="px-2.5 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-gray-100 transition-all shadow-sm">
+                    {{ isHumanNotStarted(t) ? 'Assign to agent' : 'Allow' }}
                   </button>
                   <button @click="handleAction(t, 'deny')" class="px-2.5 py-1.5 bg-white dark:bg-zinc-800 text-red-600 dark:text-red-400 border border-gray-100 dark:border-zinc-700 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-50 dark:hover:bg-red-900/10 transition-all shadow-sm">
                     Deny
@@ -480,6 +480,9 @@ function getTaskOrder(t) {
 }
 
 
+// A task waiting on the human to hand it over: its Allow assigns it to the agent.
+const isHumanNotStarted = (t) => t?.status === 'notstarted' && t?.assignee === 'human';
+
 function requiresAllowDeny(t) {
   if (!t || typeof t !== 'object') return false;
   if (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending')) return true;
@@ -489,11 +492,12 @@ function requiresAllowDeny(t) {
 
 const handleAction = async (task, action) => {
   try {
-    if (task.status === 'notstarted' && task.assignee === 'human') {
+    if (isHumanNotStarted(task)) {
       if (action === 'allow') {
+        // Left not started: the agent gets it from its queue, body and all,
+        // as soon as it is free. Set ongoing, it would never be sent.
         await updateTaskAssignee(task.workspaceId, task.id, 'agent');
-        await updateTaskStatus(task.workspaceId, task.id, 'ongoing');
-        notifySuccess('Task started and assigned to agent');
+        notifySuccess('Task assigned to agent');
       } else {
         await updateTaskStatus(task.workspaceId, task.id, 'rejected');
         notifySuccess('Task rejected');
