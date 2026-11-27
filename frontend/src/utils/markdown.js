@@ -5,6 +5,8 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
+import './markedAutolinks';
+
 import { COPY_KIND_ATTR, COPY_KIND_CODE, COPY_TEXT_ATTR, FILE_LINK_ATTR, filePathFromUrl } from '../composables/useMarkdownLinks';
 import { MEMORY_LINK_ATTR, memoryLinkTarget } from '../composables/useMemories';
 import { SKILL_LINK_ATTR, inlineCodeFileMatch, skillLinkTarget, skillUri } from '../composables/useSkills';
