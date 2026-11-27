@@ -567,6 +567,8 @@ type (
 
 	RespondToTaskResponse struct {
 		Task Task
+		// Reopened says the reply put a completed task back to ongoing.
+		Reopened bool
 	}
 
 	// ForkTaskRequest copies a task's conversation, from its first message up
@@ -669,6 +671,8 @@ type (
 	ReplyToTaskResponse struct {
 		Task      Task
 		MessageID int64
+		// Reopened says the reply put a completed task back to ongoing.
+		Reopened bool
 	}
 
 	FollowUpTaskRequest struct {
@@ -2828,3 +2832,8 @@ func (e *ForkError) Unwrap() error { return e.Kind }
 func NewForkError(kind error, message string) error {
 	return &ForkError{Kind: kind, Message: message}
 }
+
+// TaskReopenedNotice ends what an agent is told of a reply that put a
+// completed task back to ongoing: the status changed silently, and an agent
+// that acted on the reply left the task ongoing.
+const TaskReopenedNotice = "This reply reopened the task (now ongoing); mark it completed again when done."

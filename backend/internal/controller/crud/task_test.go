@@ -1115,17 +1115,24 @@ func TestReplyToTask_Success(t *testing.T) {
 
 // A message, by reply or by a text response, puts a blocked, completed or
 // rejected task back to ongoing; a notstarted, ongoing or schedule task keeps
-// its status, which is not written. A text response with nothing in it posts
-// no message and changes nothing.
+// its status, which is not written. Only a completed one is reported reopened.
+// A text response with nothing in it posts no message and changes nothing.
 func TestMessage_ResumesTheTask(t *testing.T) {
-	send := map[string]func(c Controller, text string) error{
-		"reply": func(c Controller, text string) error {
-			_, err := c.ReplyToTask(context.Background(), entity.ReplyToTaskRequest{WorkspaceID: 1, TaskID: 10, Text: text, UserID: testUserIDStr})
-			return err
+	// Each says whether the message reopened the task.
+	send := map[string]func(c Controller, text string) (bool, error){
+		"reply": func(c Controller, text string) (bool, error) {
+			rs, err := c.ReplyToTask(context.Background(), entity.ReplyToTaskRequest{WorkspaceID: 1, TaskID: 10, Text: text, UserID: testUserIDStr})
+			if err != nil {
+				return false, err
+			}
+			return rs.Reopened, nil
 		},
-		"respond": func(c Controller, text string) error {
-			_, err := c.RespondToTask(context.Background(), entity.RespondToTaskRequest{WorkspaceID: 1, TaskID: 10, Action: "text", Text: text, UserID: testUserIDStr})
-			return err
+		"respond": func(c Controller, text string) (bool, error) {
+			rs, err := c.RespondToTask(context.Background(), entity.RespondToTaskRequest{WorkspaceID: 1, TaskID: 10, Action: "text", Text: text, UserID: testUserIDStr})
+			if err != nil {
+				return false, err
+			}
+			return rs.Reopened, nil
 		},
 	}
 	expect := func(t *testing.T, e *testEnv, from, want string) {
@@ -1157,8 +1164,12 @@ func TestMessage_ResumesTheTask(t *testing.T) {
 				expect(t, e, from, want)
 				e.idgen.EXPECT().NextID().Return(int64(101))
 				e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(nil)
-				if err := sendFn(e.controller, "hello"); err != nil {
+				reopened, err := sendFn(e.controller, "hello")
+				if err != nil {
 					t.Fatalf("%s: %v", path, err)
+				}
+				if reopened != (from == "completed") {
+					t.Errorf("reopened = %v, want it only for a completed task", reopened)
 				}
 			})
 		}
@@ -1166,8 +1177,12 @@ func TestMessage_ResumesTheTask(t *testing.T) {
 	t.Run("respond/empty", func(t *testing.T) {
 		e := newTestController(t)
 		expect(t, e, "completed", "completed")
-		if err := send["respond"](e.controller, ""); err != nil {
+		reopened, err := send["respond"](e.controller, "")
+		if err != nil {
 			t.Fatalf("respond: %v", err)
+		}
+		if reopened {
+			t.Error("reopened = true, want false: nothing was posted")
 		}
 	})
 }

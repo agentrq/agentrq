@@ -22,8 +22,9 @@ import (
 // and keeps the request it was given.
 type a2uiActionCrud struct {
 	crud.Controller
-	err error
-	got entity.SendA2uiActionRequest
+	err      error
+	got      entity.SendA2uiActionRequest
+	reopened bool
 }
 
 func (m *a2uiActionCrud) SendA2uiAction(_ context.Context, req entity.SendA2uiActionRequest) (*entity.SendA2uiActionResponse, error) {
@@ -31,7 +32,7 @@ func (m *a2uiActionCrud) SendA2uiAction(_ context.Context, req entity.SendA2uiAc
 	if m.err != nil {
 		return nil, m.err
 	}
-	return &entity.SendA2uiActionResponse{Task: entity.Task{ID: req.TaskID, WorkspaceID: req.WorkspaceID}, MessageID: 600, Text: "Approve"}, nil
+	return &entity.SendA2uiActionResponse{Task: entity.Task{ID: req.TaskID, WorkspaceID: req.WorkspaceID}, MessageID: 600, Text: "Approve", Reopened: m.reopened}, nil
 }
 
 var a2uiActionPath = "/workspaces/" + errPathWorkspace + "/tasks/" + errPathTask + "/a2ui/actions"
@@ -69,6 +70,21 @@ func TestSendA2uiAction_DeliversTheClickToTheAgent(t *testing.T) {
 	}
 	if got := errPathEventType(t, ch); got != "reply.received" {
 		t.Errorf("event = %q, want reply.received", got)
+	}
+}
+
+// A click that reopened a completed task tells the agent so, last.
+func TestSendA2uiAction_TellsTheAgentItReopenedTheTask(t *testing.T) {
+	srv := &fakeWorkspaceServer{}
+	app := errPathTaskApp(&handler{crud: &a2uiActionCrud{reopened: true}, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()})
+
+	resp, body := errPathDo(t, app, http.MethodPost, a2uiActionPath, a2uiActionBody(""))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d %s, want 200", resp.StatusCode, body)
+	}
+	if !strings.HasSuffix(srv.notifiedContent, "\n[A2UI action] "+`{"messageId":"`+monoflake.ID(500).String()+`","name":"approve","surfaceId":"deploy"}`+
+		"\nThis reply reopened the task (now ongoing); mark it completed again when done.") {
+		t.Errorf("agent told %q", srv.notifiedContent)
 	}
 }
 

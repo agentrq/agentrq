@@ -348,6 +348,7 @@ func (h *handler) respondToTask() fiber.Handler {
 		if atts := formatAttachments(rq.Attachments); atts != "" {
 			content += "\n" + atts
 		}
+		content += reopenedNotice(rs.Reopened)
 		srv.SendChannelNotification(ctx, rq.TaskID, content, rq.Attachments...)
 
 		// Push SSE event to human subscribers (ack)
@@ -398,6 +399,15 @@ func (h *handler) forkTask() fiber.Handler {
 		c.Status(http.StatusCreated)
 		return c.Send(mapper.FromForkTaskResponseEntityToHTTPResponse(rs))
 	}
+}
+
+// reopenedNotice is the line ending what the agent is told of a reply that
+// reopened a completed task, or nothing.
+func reopenedNotice(reopened bool) string {
+	if !reopened {
+		return ""
+	}
+	return "\n" + entity.TaskReopenedNotice
 }
 
 // replyChannelContent composes what the agent is told when a human replies.
@@ -489,7 +499,7 @@ func (h *handler) replyToTask() fiber.Handler {
 
 		// Notify LLM of the human's reply via MCP channel
 		srv := h.mcpManager.Get(rq.WorkspaceID, rq.UserID)
-		content := replyChannelContent(rq.TaskID, rq.Text, rq.Attachments, h.mcpManager.AgentCommands(rq.WorkspaceID))
+		content := replyChannelContent(rq.TaskID, rq.Text, rq.Attachments, h.mcpManager.AgentCommands(rq.WorkspaceID)) + reopenedNotice(rs.Reopened)
 		srv.SendChannelNotification(ctx, rq.TaskID, content, rq.Attachments...)
 
 		// Push reply.received SSE event to human subscribers
@@ -524,7 +534,7 @@ func (h *handler) sendA2uiAction() fiber.Handler {
 		}
 
 		srv := h.mcpManager.Get(rq.WorkspaceID, rq.UserID)
-		srv.SendChannelNotification(ctx, rq.TaskID, a2uiActionChannelContent(rq, rs.Text))
+		srv.SendChannelNotification(ctx, rq.TaskID, a2uiActionChannelContent(rq, rs.Text)+reopenedNotice(rs.Reopened))
 
 		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
 			Type:    "reply.received",

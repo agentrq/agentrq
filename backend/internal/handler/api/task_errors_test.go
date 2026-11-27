@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -55,6 +56,9 @@ type errPathCrud struct {
 	closeErr error
 
 	attachment *entity.GetAttachmentResponse
+
+	// reopened is what RespondToTask and ReplyToTask report.
+	reopened bool
 }
 
 func (m *errPathCrud) CreateTask(context.Context, entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
@@ -82,14 +86,14 @@ func (m *errPathCrud) RespondToTask(context.Context, entity.RespondToTaskRequest
 	if m.err != nil {
 		return nil, m.err
 	}
-	return &entity.RespondToTaskResponse{Task: m.task}, nil
+	return &entity.RespondToTaskResponse{Task: m.task, Reopened: m.reopened}, nil
 }
 
 func (m *errPathCrud) ReplyToTask(context.Context, entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return &entity.ReplyToTaskResponse{Task: m.task}, nil
+	return &entity.ReplyToTaskResponse{Task: m.task, Reopened: m.reopened}, nil
 }
 
 func (m *errPathCrud) UpdateTaskStatus(context.Context, entity.UpdateTaskStatusRequest) (*entity.UpdateTaskStatusResponse, error) {
@@ -423,6 +427,39 @@ func TestRespondToTask_ListsTheAttachmentsForTheAgent(t *testing.T) {
 	}
 	if len(srv.notifiedAttachments) != 1 || srv.notifiedAttachments[0].ID != "att-1" {
 		t.Errorf("attachments = %+v, want att-1", srv.notifiedAttachments)
+	}
+}
+
+// A reply that reopened a completed task tells the agent so, last; one that
+// did not says nothing of it.
+func TestReply_TellsTheAgentItReopenedTheTask(t *testing.T) {
+	base := map[string]struct{ path, body, want string }{
+		"respond": {"/respond", `{"response":{"action":"text","text":"merge on green ci"}}`, "[Response to task " + errPathTask + "] action=text: merge on green ci"},
+		"reply":   {"/reply", `{"reply":{"text":"merge on green ci"}}`, "[Reply to task " + errPathTask + "] merge on green ci"},
+	}
+	for name, c := range base {
+		for _, reopened := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/reopened=%v", name, reopened), func(t *testing.T) {
+				srv := &fakeWorkspaceServer{}
+				app := errPathTaskApp(&handler{
+					crud:       &errPathCrud{task: entity.Task{ID: 2, WorkspaceID: 1}, reopened: reopened},
+					mcpManager: &fakeMCPManager{server: srv},
+					bus:        eventbus.New(),
+				})
+				resp, body := errPathDo(t, app, http.MethodPost,
+					"/workspaces/"+errPathWorkspace+"/tasks/"+errPathTask+c.path, c.body)
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, body)
+				}
+				want := c.want
+				if reopened {
+					want += "\nThis reply reopened the task (now ongoing); mark it completed again when done."
+				}
+				if srv.notifiedContent != want {
+					t.Errorf("agent was told %q, want %q", srv.notifiedContent, want)
+				}
+			})
+		}
 	}
 }
 

@@ -28,6 +28,8 @@ type (
 		MessageID int64
 		// Text is the reply's text, which the agent is told.
 		Text string
+		// Reopened says the reply put a completed task back to ongoing.
+		Reopened bool
 	}
 )
 

@@ -937,6 +937,24 @@ func TestHandleSlackEventRepliesWithoutAttachmentsItCannotFetch(t *testing.T) {
 	}
 }
 
+// A thread reply that reopened a completed task tells the agent so, last.
+func TestHandleSlackEventTellsTheAgentItReopenedTheTask(t *testing.T) {
+	f := newFlowFixture(t)
+	f.crud.replyToTaskFunc = func(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error) {
+		return &entity.ReplyToTaskResponse{Reopened: true}, nil
+	}
+	f.expectMentionThread(authorizedLink(t, 42), nil)
+	f.repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(42)).Return(model.Workspace{ID: 42, UserID: 100}, nil)
+
+	if err := f.controller().HandleSlackEvent(context.Background(), mention("merge on green ci", "1.1")); err != nil {
+		t.Fatalf("HandleSlackEvent: %v", err)
+	}
+	want := "[Reply to task " + monoflake.ID(9).String() + "] merge on green ci\nThis reply reopened the task (now ongoing); mark it completed again when done."
+	if f.mcp.pushed != want {
+		t.Errorf("pushed %q, want %q", f.mcp.pushed, want)
+	}
+}
+
 func TestHandleSlackEventTellsTheAgentAboutTheFilesItSaved(t *testing.T) {
 	files := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("png"))

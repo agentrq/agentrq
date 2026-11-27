@@ -571,7 +571,7 @@ func (c *controller) HandleSlackEvent(ctx context.Context, payload SlackEventPay
 	ownerID := monoflake.ID(ws.UserID).String()
 
 	ctx = entity.WithOrigin(ctx, entity.OriginSlack)
-	_, err = c.crud.ReplyToTask(ctx, entity.ReplyToTaskRequest{
+	resp, err := c.crud.ReplyToTask(ctx, entity.ReplyToTaskRequest{
 		WorkspaceID: thread.WorkspaceID,
 		TaskID:      thread.TaskID,
 		Text:        text,
@@ -589,6 +589,9 @@ func (c *controller) HandleSlackEvent(ctx context.Context, payload SlackEventPay
 		// ReplyToTask saved the files and wrote their IDs into attachments.
 		if atts := formatSlackAttachments(attachments); atts != "" {
 			content += "\n" + atts
+		}
+		if resp.Reopened {
+			content += "\n" + entity.TaskReopenedNotice
 		}
 		c.mcp.SendChannelNotification(ctx, thread.WorkspaceID, ownerID, thread.TaskID, content, attachments...)
 	}
