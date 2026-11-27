@@ -163,10 +163,11 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const lastToast = () => toasts.value.at(-1);
-// The dialog leaves on an animation frame.
+// The dialog leaves on animation frames, which a busy runner can delay past
+// any fixed wait.
 const dialogGone = async () => {
-  await new Promise((r) => setTimeout(r, 50));
-  return document.querySelector('[role="dialog"]') === null;
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  return true;
 };
 const modalButton = (label) => [...document.querySelectorAll('[role="dialog"] button')].find((b) => text(b) === label);
 

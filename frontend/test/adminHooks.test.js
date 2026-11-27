@@ -285,9 +285,9 @@ describe('AdminHooksView', () => {
     q(el, 'hook-delete').click()
     await flush()
     ;[...document.body.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Cancel').click()
-    // The dialog leaves on the next animation frames.
-    await new Promise((r) => setTimeout(r, 100))
-    expect(document.body.textContent).not.toContain('Delete the hook github?')
+    // The dialog leaves on animation frames, which a busy runner can delay
+    // past any fixed wait.
+    await vi.waitFor(() => expect(document.body.textContent).not.toContain('Delete the hook github?'))
     expect(seen).toHaveLength(1)
   })
 })
