@@ -114,8 +114,8 @@ database:
 		if s.AppShortName() != "agentrq" {
 			t.Errorf("AppShortName mismatch: %s", s.AppShortName())
 		}
-		if s.Version() != "v0.19.9" {
-			t.Errorf("Expected version v0.19.9, got %s", s.Version())
+		if s.Version() != "v0.19.10" {
+			t.Errorf("Expected version v0.19.10, got %s", s.Version())
 		}
 		if Release() != strings.TrimPrefix(s.Version(), "v") {
 			t.Errorf("Release() = %s, want %s without its v", Release(), s.Version())
