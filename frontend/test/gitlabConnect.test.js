@@ -152,6 +152,12 @@ describe('the page GitLab returns to', () => {
     expect(text(q(el, 'gitlab-callback-message'))).toContain('did not send back what AgentRQ needs');
     expect(api.connectGitLab).not.toHaveBeenCalled();
   });
+
+  it('reads the first of a repeated parameter', async () => {
+    api.connectGitLab.mockResolvedValueOnce(CONNECTED);
+    await mount(GitLabCallbackView, '/gitlab/callback?code=c1&code=c2&state=s1');
+    expect(api.connectGitLab).toHaveBeenCalledWith('c1', 's1');
+  });
 });
 
 describe('takeGitLabReturn', () => {
