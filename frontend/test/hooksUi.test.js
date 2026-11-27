@@ -304,8 +304,9 @@ describe('HooksView', () => {
     q(el, 'own-hook-delete').click()
     await flush()
     modalButton('Cancel').click()
-    await new Promise((r) => setTimeout(r, 100))
-    expect(document.body.textContent).not.toContain('Delete the hook sentry?')
+    // The dialog leaves through a transition that ends on animation frames,
+    // which a busy runner can delay past any fixed wait.
+    await vi.waitFor(() => expect(document.body.textContent).not.toContain('Delete the hook sentry?'))
   })
 
   it('shows a failed read', async () => {
@@ -960,8 +961,7 @@ describe('HookRegistrationView', () => {
     q(el, 'reg-delete').click()
     await flush()
     modalButton('Cancel').click()
-    await new Promise((r) => setTimeout(r, 100))
-    expect(document.body.textContent).not.toContain('Delete agentrq CI?')
+    await vi.waitFor(() => expect(document.body.textContent).not.toContain('Delete agentrq CI?'))
     expect(calls(seen).some((c) => c.startsWith('DELETE'))).toBe(false)
   })
 
