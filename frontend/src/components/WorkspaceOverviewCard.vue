@@ -15,12 +15,9 @@
 
     <div class="flex items-start justify-between gap-3">
       <div class="flex items-center gap-3 min-w-0">
-        <!-- Minimal Live Indicator -->
-        <div class="relative flex items-center justify-center shrink-0">
-          <div class="w-2 h-2 rounded-full z-10"
-               :class="workspace.agentConnected ? 'bg-green-500' : 'bg-gray-300 dark:bg-zinc-700'"></div>
-          <div v-if="workspace.agentConnected" class="absolute w-2 h-2 rounded-full bg-green-500 animate-ping opacity-75"></div>
-        </div>
+        <!-- The sidebar's dot for this workspace. -->
+        <div class="w-2 h-2 rounded-full shrink-0" :class="statusDot.dot" :title="statusDot.label"
+             data-test="card-status-dot"></div>
 
         <div class="min-w-0">
           <h3 class="font-black text-sm text-gray-800 dark:text-zinc-200 truncate group-hover:text-black dark:group-hover:text-white transition-colors leading-none flex items-center gap-1.5 min-w-0">
@@ -106,7 +103,7 @@ import { agentDetails, agentSummary } from '../composables/useAgentSummary';
 import { canChooseModel } from '../composables/useAgentModelPicker';
 import { canChooseEffort } from '../composables/useAgentEffortPicker';
 import { taskDotClass } from '../composables/useTaskStatusStyle';
-import { OVERVIEW_TASKS, OVERVIEW_TASKS_NARROW, countChips, isFinished } from '../composables/useWorkspaceOverview';
+import { OVERVIEW_TASKS, OVERVIEW_TASKS_NARROW, countChips, isFinished, workspaceDot } from '../composables/useWorkspaceOverview';
 
 const props = defineProps({
   workspace: { type: Object, required: true },
@@ -125,6 +122,7 @@ const { getNextRunLabel } = useCron();
 const counts = computed(() => props.overview?.counts ?? {});
 const shown = computed(() => (props.overview?.tasks ?? []).slice(0, props.narrow ? OVERVIEW_TASKS_NARROW : OVERVIEW_TASKS));
 const chips = computed(() => countChips(counts.value));
+const statusDot = computed(() => workspaceDot(counts.value, props.workspace.agentConnected === true));
 
 // A scheduled task is about when it runs next; anything else, when it last moved.
 function when(t) {

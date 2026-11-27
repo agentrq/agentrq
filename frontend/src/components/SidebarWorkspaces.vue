@@ -21,7 +21,7 @@ import { useWorkspaceContextMenu, workspaceMenuItems } from '../composables/useW
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useToasts } from '../composables/useToasts'
 import { useFormat } from '../composables/useFormat'
-import { sidebarActivity } from '../composables/useWorkspaceOverview'
+import { sidebarActivity, workspaceDot } from '../composables/useWorkspaceOverview'
 
 const props = defineProps({
   workspaces: { type: Array, default: () => [] },
@@ -37,6 +37,7 @@ const workspaceStore = useWorkspaceStore()
 const { toKebabCase } = useFormat()
 const workspaces = computed(() => props.workspaces)
 const activityOf = (ws) => sidebarActivity(props.overview.get(ws.id)?.counts, ws.agentConnected)
+const dotOf = (ws) => workspaceDot(props.overview.get(ws.id)?.counts, ws.agentConnected)
 
 // Forks nested under their parent, and which parents have them folded away.
 // The fold is a per-browser convenience, remembered like the sidebar's width.
@@ -102,12 +103,9 @@ function onWorkspaceMenuSelect(key) {
             ]">
           <!-- A task waiting on the person, blocked or running marks the
                row with that task's status dot; otherwise the agent's state. -->
-          <div v-if="activityOf(ws).tone" class="w-1.5 h-1.5 rounded-full shrink-0"
-               :class="activityOf(ws).dot" :title="activityOf(ws).label"
-               data-test="sidebar-activity"></div>
-          <div v-else class="w-1.5 h-1.5 rounded-full shrink-0"
-               :class="ws.agentConnected ? 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"
-               :title="ws.agentConnected ? 'Agent Online' : 'Agent Offline'"></div>
+          <div class="w-1.5 h-1.5 rounded-full shrink-0"
+               :class="dotOf(ws).dot" :title="dotOf(ws).label"
+               :data-test="activityOf(ws).tone ? 'sidebar-activity' : undefined"></div>
           <ForkIcon v-if="ws.forkOfId" class="w-3 h-3 shrink-0 -ml-1 opacity-70" />
           <span class="truncate flex-1">{{ toKebabCase(ws.name) }}</span>
           <span v-if="activityOf(ws).queued" data-test="sidebar-queued"

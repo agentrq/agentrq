@@ -28,13 +28,11 @@
         <!-- Title Row -->
         <div class="flex items-center gap-3 min-w-0 flex-1">
           <!-- Agent Status Heartbeat -->
-          <div class="relative flex items-center justify-center shrink-0 cursor-help"
-               @mouseenter="tooltipStore.show($event, isAgentConnected ? 'Agent Online' : 'Agent Offline', 'bottom')"
+          <div class="flex items-center justify-center shrink-0 cursor-help"
+               @mouseenter="tooltipStore.show($event, statusDot.label, 'bottom')"
                @mouseleave="tooltipStore.hide()">
-            <div :class="isAgentConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'" 
-                 class="w-2 h-2 @min-[48rem]:w-2.5 @min-[48rem]:h-2.5 rounded-full z-10 border border-white dark:border-zinc-900 transition-colors duration-500"></div>
-            <div v-if="isAgentConnected"
-                 class="absolute w-2 @min-[48rem]:w-2.5 @min-[48rem]:h-2.5 rounded-full bg-green-500 animate-ping opacity-75"></div>
+            <div :class="statusDot.dot" data-test="workspace-status-dot"
+                 class="w-2 h-2 @min-[48rem]:w-2.5 @min-[48rem]:h-2.5 rounded-full transition-colors duration-500"></div>
           </div>
 
           <div class="flex flex-col min-w-0 flex-1">
@@ -256,7 +254,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed, onUnmounted } from 'vue';
+import { ref, onMounted, watch, computed, onUnmounted, inject } from 'vue';
+import { workspaceDot } from '../composables/useWorkspaceOverview';
 import { useRoute, useRouter } from 'vue-router';
 import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, deleteWorkspace } from '../api';
 import { useEventBus } from '../useEventBus';
@@ -346,6 +345,9 @@ const pendingInputCount = computed(() => tasks.value.filter(t => t.createdBy ===
 // Derived, not stored. A ref set at load time is exactly what made this header
 // dot lie until the page was reloaded.
 const isAgentConnected = computed(() => workspace.value?.agentConnected === true);
+// The sidebar's dot for this workspace, from the shell's task counts.
+const taskOverview = inject('taskOverview', ref(new Map()));
+const statusDot = computed(() => workspaceDot(taskOverview.value.get(workspaceId.value)?.counts, isAgentConnected.value));
 
 // Which session is running here, so the header can offer a way into its
 // terminal. Handed the connected flag as well as the id: it re-asks when an

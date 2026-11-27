@@ -133,6 +133,23 @@ export function sidebarActivity(counts = {}, agentConnected = true) {
 }
 
 /**
+ * A workspace's status dot, the same in the sidebar and the workspace's own
+ * header: its activity when it has any, otherwise the agent's state, still.
+ * Only a running task moves; an idle agent does not.
+ *
+ * @param {Record<string, number>} counts  a workspace's overview counts
+ * @param {boolean} agentConnected  whether the workspace's agent is online
+ * @returns {{ dot: string, label: string }}
+ */
+export function workspaceDot(counts, agentConnected) {
+  const activity = sidebarActivity(counts, agentConnected);
+  if (activity.tone) return { dot: activity.dot, label: activity.label };
+  return agentConnected
+    ? { dot: 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]', label: 'Agent Online' }
+    : { dot: 'bg-gray-300 dark:bg-zinc-600', label: 'Agent Offline' };
+}
+
+/**
  * A card's counts, the ones that are not zero, in the Active tab's order with
  * what needs the person first.
  */

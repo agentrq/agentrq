@@ -520,7 +520,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
 import { progressLabel } from './desktop/useDesktopUpdates'
@@ -795,6 +795,8 @@ const taskOverview = ref(new Map())
 const loadTaskOverview = coalesce(async () => {
   taskOverview.value = indexOverview(await api.fetchTaskOverview())
 })
+// The workspace page's header dot reads the same counts, so it agrees with the sidebar.
+provide('taskOverview', taskOverview)
 const OVERVIEW_EVENTS = new Set(['task.created', 'task.updated', 'task.deleted', 'status.updated', 'respond.ack', 'reply.received'])
 // The installed web app's icon shows how many wait on the person. The desktop
 // shell has its own icon to manage.
