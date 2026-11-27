@@ -312,14 +312,13 @@ const GITHUB_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?(\.
 export const DEFAULT_GITLAB_HOST = 'gitlab.com';
 
 /** A link to a project on host: a group, any subgroups and the project. */
-function gitlabUrl(host) {
-  const h = String(host || DEFAULT_GITLAB_HOST).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`^https:\\/\\/${h}(\\/(?!-(?:\\/|$))[A-Za-z0-9_.-]+){2,}?(\\.git)?(\\/-\\/tree\\/[A-Za-z0-9_.-]+(\\/[A-Za-z0-9_.\\-/]*)?)?\\/?$`, 'i');
-}
+const GITLAB_PATH = /^(\/(?!-(?:\/|$))[A-Za-z0-9_.-]+){2,}?(\.git)?(\/-\/tree\/[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.\-/]*)?)?\/?$/i;
 
 /** Whether a URL is a link to the server's GitLab host. */
 export function isGitLabUrl(url, gitlabHost = DEFAULT_GITLAB_HOST) {
-  return gitlabUrl(gitlabHost).test(String(url ?? '').trim());
+  const s = String(url ?? '').trim();
+  const origin = `https://${gitlabHost || DEFAULT_GITLAB_HOST}`.toLowerCase();
+  return s.slice(0, origin.length).toLowerCase() === origin && GITLAB_PATH.test(s.slice(origin.length));
 }
 
 /**
