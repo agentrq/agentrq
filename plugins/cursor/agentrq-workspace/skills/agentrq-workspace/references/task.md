@@ -14,7 +14,7 @@ Examples:
 { "action": "updateStatus", "payload": { "taskId": "0kGogHmaqvZ", "status": "ongoing" } }
 ```
 
-- `reply`: `text`, optional `attachments` and `ui`, a card: [a2ui.md](a2ui.md). The human sees only these.
+- `reply`: `text`, optional `attachments` and `ui`, a card: [a2ui.md](a2ui.md).
 Examples:
 ```json
 { "action": "reply", "payload": { "taskId": "0kGogHmaqvZ", "text": "Tests pass; opening a PR." } }

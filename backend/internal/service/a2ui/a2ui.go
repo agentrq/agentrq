@@ -33,7 +33,10 @@ const (
 	BasicCatalogID = "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"
 	// AgentRQCatalogID is ours: the basic catalog and the components in
 	// agentrqComponents (catalog/agentrq.json).
-	AgentRQCatalogID = "https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json"
+	AgentRQCatalogID = "https://app.agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json"
+	// LegacyAgentRQCatalogID is ours under its first id, which stored cards
+	// and older agents still name: it stays accepted.
+	LegacyAgentRQCatalogID = "https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json"
 
 	MaxBytes      = 64 << 10
 	MaxComponents = 200
@@ -57,8 +60,10 @@ var (
 	// agentrqComponents are display components only our catalog has.
 	agentrqComponents = []string{"Chart", "Progress"}
 
-	// CatalogIDs are the catalogs a surface may use.
+	// CatalogIDs are the catalogs a renderer advertises.
 	CatalogIDs = []string{BasicCatalogID, AgentRQCatalogID}
+	// acceptedCatalogIDs are the catalogs a surface may use.
+	acceptedCatalogIDs = []string{BasicCatalogID, AgentRQCatalogID, LegacyAgentRQCatalogID}
 
 	// Media properties, which the schema types as DynamicString: a binding or
 	// a call would pass it, so the literal attachment rule is ours.
@@ -251,12 +256,17 @@ func (v *validator) message(i int, m, p any) {
 	v.surface(at, body["surfaceId"].(string))
 	if kind == "createSurface" {
 		id, _ := body["catalogId"].(string)
-		if !slices.Contains(CatalogIDs, id) {
+		if !slices.Contains(acceptedCatalogIDs, id) {
 			v.addf("%s: catalogId must be %q, the basic catalog, or %q, ours, which adds Chart and Progress", at, BasicCatalogID, AgentRQCatalogID)
 			return
 		}
 		v.catalogID = id
 	}
+}
+
+// isOurs says whether id names our catalog, under its id or its first one.
+func isOurs(id any) bool {
+	return id == AgentRQCatalogID || id == LegacyAgentRQCatalogID
 }
 
 func (v *validator) surface(at, id string) {
@@ -303,7 +313,7 @@ func (v *validator) componentList(at string, list, plain []any) {
 			continue
 		}
 		seen[id] = true
-		if c, ok := obj["@catalogId"]; ok && c != BasicCatalogID && (c != AgentRQCatalogID || v.catalogID != AgentRQCatalogID) {
+		if c, ok := obj["@catalogId"]; ok && c != BasicCatalogID && (!isOurs(c) || !isOurs(v.catalogID)) {
 			v.addf("%s: @catalogId must be the surface's catalog, %q, or left out", cat, v.catalogID)
 			continue
 		}
@@ -320,7 +330,7 @@ func (v *validator) allowed(at, name string) bool {
 		v.addf("%s: component %q is not available here; use %s", at, name, strings.Join(only, ", "))
 		return false
 	}
-	ours := v.catalogID == AgentRQCatalogID
+	ours := isOurs(v.catalogID)
 	if slices.Contains(displayComponents, name) || v.opts.Interactive && slices.Contains(interactiveComponents, name) ||
 		ours && slices.Contains(agentrqComponents, name) {
 		return true

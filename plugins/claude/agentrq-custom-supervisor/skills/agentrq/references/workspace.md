@@ -9,7 +9,3 @@ The account's workspaces, and their forks.
 - `stats` — Get workspace statistics for a given time range (`7d` or `30d`)
 - `fork` — Fork a workspace: its own queue and agent, sharing the parent's settings, memory and skills. Move tasks into it for a second agent to work them
 - `mergeFork` — Merge a fork back once its tasks are completed or rejected: its agent is stopped and every task moves to the parent. `deleteFolder` also deletes its folder on the machine, keeping its git branch
-
-## Forking for parallel work
-
-To have a second agent work some of a workspace's tasks, `workspace.fork` it, create those tasks in the fork (its own `workspaceId`) and launch an agent there. When every task in the fork is completed or rejected, `workspace.mergeFork` brings them back to the parent.
