@@ -14,7 +14,8 @@ env.allowLocalModels = false;
 const MODEL_NAME = 'agentrq/task-title-350m-ONNX';
 // A tag, never 'main': the browser caches the model by its URL, so a new
 // upload to 'main' would never reach anyone who already has the old one.
-const MODEL_REVISION = 'v2';
+// v3: v2's weights, vocabulary trimmed and word table stored once (193 MB).
+const MODEL_REVISION = 'v3';
 
 class TitleGenerationPipeline {
   static task = 'text-generation';
