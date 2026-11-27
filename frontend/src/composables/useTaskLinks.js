@@ -13,6 +13,8 @@
  */
 import { marked } from 'marked';
 
+import '../utils/markedAutolinks';
+
 /** The groups, in the order the panel lists them. */
 export const LINK_GROUPS = [
   { kind: 'pr', label: 'Pull requests' },
