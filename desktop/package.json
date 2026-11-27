@@ -1,7 +1,7 @@
 {
   "name": "agentrq-desktop",
   "private": true,
-  "version": "0.19.12",
+  "version": "0.19.13",
   "license": "AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial",
   "description": "AgentRQ desktop app \u2014 AI-powered task queue for autonomous agents",
   "desktopName": "agentrq-desktop.desktop",
