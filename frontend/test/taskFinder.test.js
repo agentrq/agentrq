@@ -9,6 +9,7 @@ import {
   matchTasks,
   resolveTaskById,
   taskRoute,
+  taskWorkspaceName,
 } from '../src/composables/useTaskFinder'
 
 const task = (id, title, extra = {}) => ({ id, title, ...extra })
@@ -172,5 +173,21 @@ describe('taskRoute', () => {
     // The per-workspace lookup knows where it found the task even when the
     // payload does not repeat it.
     expect(taskRoute(task('t1', 'x'), 'ws9')).toBe('/workspaces/ws9/tasks/t1')
+  })
+})
+
+describe('taskWorkspaceName', () => {
+  const workspaces = [{ id: 'ws1', name: 'agentrq-code' }, { id: 'ws2', name: 'docs' }]
+
+  it('names the workspace the task belongs to', () => {
+    expect(taskWorkspaceName(task('t1', 'x', { workspaceId: 'ws2' }), workspaces)).toBe('docs')
+  })
+
+  it('is empty when the workspace is not listed', () => {
+    // A task from a workspace the store has not loaded yet, or one without a
+    // workspace at all, shows its ID alone rather than a wrong name.
+    expect(taskWorkspaceName(task('t1', 'x', { workspaceId: 'ws9' }), workspaces)).toBe('')
+    expect(taskWorkspaceName(task('t1', 'x'), workspaces)).toBe('')
+    expect(taskWorkspaceName(task('t1', 'x', { workspaceId: 'ws1' }), undefined)).toBe('')
   })
 })

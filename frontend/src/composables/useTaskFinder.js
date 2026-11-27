@@ -129,3 +129,15 @@ export function taskRoute(task, workspaceId) {
   const ws = task?.workspaceId ?? workspaceId;
   return `/workspaces/${ws}/tasks/${task.id}`;
 }
+
+/**
+ * The name of the workspace a task belongs to, or '' when it is not one of
+ * `workspaces`: the finder lists tasks from every workspace, and a title alone
+ * does not say which one a row would open.
+ *
+ * @param {{ workspaceId?: string }} task
+ * @param {Array<{ id: string, name: string }>} [workspaces]
+ */
+export function taskWorkspaceName(task, workspaces) {
+  return (workspaces || []).find((w) => w.id === task?.workspaceId)?.name || '';
+}
