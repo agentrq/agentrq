@@ -68,6 +68,8 @@ func TestFromHTTPRequestToImportSkillsRequestEntity(t *testing.T) {
 			&entity.ImportSkillsRequest{URL: "https://example.com/r", Overwrite: true, Skills: []string{"pdf"}, WorkspaceIDs: []int64{20, 21}}},
 		{"everything, into no workspace", "/skills/import", `{"url":"https://example.com/r"}`,
 			&entity.ImportSkillsRequest{URL: "https://example.com/r", WorkspaceIDs: []int64{}}},
+		{"a listing", "/skills/import", `{"url":"https://example.com/r","list":true}`,
+			&entity.ImportSkillsRequest{URL: "https://example.com/r", WorkspaceIDs: []int64{}, List: true}},
 		{"a workspace 0", "/skills/import", `{"url":"https://example.com/r","workspaceIds":["` + b62(20) + `","0"]}`, nil},
 		{"no URL", "/skills/import", `{"overwrite":true}`, nil},
 		{"not JSON", "/skills/import", `{`, nil},
@@ -119,12 +121,14 @@ func TestFromImportSkillsResponseEntityToHTTPResponse(t *testing.T) {
 	// A repository too large to import whole offers candidates, and imports nothing.
 	raw := FromImportSkillsResponseEntityToHTTPResponse(&entity.ImportSkillsResponse{
 		Candidates: []entity.SkillImportCandidate{{Name: "pdf", Path: "skills/pdf", SkillBytes: 4096, Reason: "r"}, {Name: "doc", Path: "skills/doc"}},
+		TooLarge:   true,
 		SourceRepo: "o/r",
 	})
 	checkResponse(t, raw, view.ImportSkillsResponse{
 		Imported:   []view.ImportedSkill{},
 		Skipped:    []view.SkippedSkillEntry{},
 		Candidates: []view.SkillImportCandidate{{Name: "pdf", Path: "skills/pdf", SizeBytes: 4096, Reason: "r"}, {Name: "doc", Path: "skills/doc"}},
+		TooLarge:   true,
 		SourceRepo: "o/r",
 	})
 	if want := `{"imported":[],"skipped":[],"sourceRepo":"","sourceRef":"","sourceCommit":""}`; string(FromImportSkillsResponseEntityToHTTPResponse(&entity.ImportSkillsResponse{})) != want {

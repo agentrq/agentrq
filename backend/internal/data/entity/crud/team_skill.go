@@ -122,12 +122,15 @@ type (
 		URL       string
 		Overwrite bool
 		Skills    []string
+		// List offers the skills as Candidates and imports nothing.
+		List bool
 	}
 
 	ImportTeamSkillsResponse struct {
 		Imported     []TeamSkill
 		Skipped      []SkillImportSkip
 		Candidates   []SkillImportCandidate
+		TooLarge     bool
 		SourceRepo   string
 		SourceRef    string
 		SourceCommit string

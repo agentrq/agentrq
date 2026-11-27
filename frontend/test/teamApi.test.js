@@ -70,6 +70,7 @@ describe('the team API', () => {
     ['createTeamWorkspaceSkill', ['tm1', 'tw1', '---\nname: x\n---'], 'POST', '/teams/tm1/team-workspaces/tw1/skills', { content: '---\nname: x\n---' }],
     ['importTeamWorkspaceSkills', ['tm1', 'tw1', 'https://github.com/a/b'], 'POST', '/teams/tm1/team-workspaces/tw1/skills/import', { url: 'https://github.com/a/b', overwrite: false }],
     ['importTeamWorkspaceSkills', ['tm1', 'tw1', 'u', true, ['skills/x']], 'POST', '/teams/tm1/team-workspaces/tw1/skills/import', { url: 'u', overwrite: true, skills: ['skills/x'] }],
+    ['importTeamWorkspaceSkills', ['tm1', 'tw1', 'u', false, undefined, true], 'POST', '/teams/tm1/team-workspaces/tw1/skills/import', { url: 'u', overwrite: false, list: true }],
     ['getTeamWorkspaceSkill', ['tm1', 'tw1', 's1'], 'GET', '/teams/tm1/team-workspaces/tw1/skills/s1'],
     ['deleteTeamWorkspaceSkill', ['tm1', 'tw1', 's1'], 'DELETE', '/teams/tm1/team-workspaces/tw1/skills/s1'],
     ['getTeamWorkspaceSkillFile', ['tm1', 'tw1', 's1', 'scripts/a b.sh'], 'GET', '/teams/tm1/team-workspaces/tw1/skills/s1/files/scripts/a%20b.sh'],

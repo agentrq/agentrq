@@ -75,7 +75,7 @@ func (s *skillCrud) ImportSkills(_ context.Context, rq entity.ImportSkillsReques
 		Imported:   []entity.Skill{{Name: "tdd", FileCount: 2, TotalBytes: 30}},
 		Skipped:    []entity.SkillImportSkip{{Path: "skills/big", Reason: "too big"}},
 		Candidates: []entity.SkillImportCandidate{{Name: "ship", Path: "ship", SkillBytes: 77710, Reason: "SKILL.md is too big"}, {Name: "careful", Path: "careful", SkillBytes: 3516}},
-		SourceRepo: "obra/superpowers", SourceRef: "main",
+		SourceRepo: "obra/superpowers", SourceRef: "main", TooLarge: rq.List,
 	}, s.err
 }
 
@@ -147,6 +147,9 @@ func TestSkillRoutes(t *testing.T) {
 			`{"url":"https://github.com/garrytan/gstack","skills":["ship","careful"],"workspaceIds":["` + skillWS + `","` + skillTarget + `"]}`, 200,
 			entity.ImportSkillsRequest{UserID: "user-1", URL: "https://github.com/garrytan/gstack", Skills: []string{"ship", "careful"}, WorkspaceIDs: []int64{4242, 4243}},
 			[]string{`"candidates":[{"name":"ship","path":"ship","sizeBytes":77710,"reason":"SKILL.md is too big"},{"name":"careful","path":"careful","sizeBytes":3516}]`}},
+		{"an import lists the skills to choose from", http.MethodPost, account + "/import", `{"url":"https://github.com/obra/superpowers","list":true}`, 200,
+			entity.ImportSkillsRequest{UserID: "user-1", URL: "https://github.com/obra/superpowers", WorkspaceIDs: []int64{}, List: true},
+			[]string{`"tooLarge":true`}},
 		{"a skill is turned off for the whole account", http.MethodPatch, account + "/tdd", `{"enabled":false}`, 200,
 			entity.SetSkillEnabledRequest{UserID: "user-1", Name: "tdd", Enabled: false},
 			[]string{`"skill":{`, `"enabled":false`}},

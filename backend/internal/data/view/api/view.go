@@ -829,6 +829,8 @@ type (
 		Overwrite    bool     `json:"overwrite"`
 		Skills       []string `json:"skills,omitempty"`
 		WorkspaceIDs []string `json:"workspaceIds,omitempty"`
+		// List lists the skills as `candidates` to choose from, importing nothing.
+		List bool `json:"list,omitempty"`
 	}
 
 	// SkillImportCandidate is a skill offered to choose from, by a
@@ -858,10 +860,13 @@ type (
 		Skipped  []SkippedSkillEntry `json:"skipped"`
 		// Candidates, when present, are the skills to choose from; nothing
 		// was imported.
-		Candidates   []SkillImportCandidate `json:"candidates,omitempty"`
-		SourceRepo   string                 `json:"sourceRepo"`
-		SourceRef    string                 `json:"sourceRef"`
-		SourceCommit string                 `json:"sourceCommit"`
+		Candidates []SkillImportCandidate `json:"candidates,omitempty"`
+		// TooLarge says the repository cannot be imported whole: an import
+		// of it must name its skills.
+		TooLarge     bool   `json:"tooLarge,omitempty"`
+		SourceRepo   string `json:"sourceRepo"`
+		SourceRef    string `json:"sourceRef"`
+		SourceCommit string `json:"sourceCommit"`
 	}
 
 	Event struct {

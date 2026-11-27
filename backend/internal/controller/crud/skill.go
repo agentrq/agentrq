@@ -579,7 +579,7 @@ func (c *controller) ImportSkills(ctx context.Context, req entity.ImportSkillsRe
 		return nil, fmt.Errorf("rate limit exceeded")
 	}
 	token, gitlab := c.sourceToken(ctx, uid, req.URL)
-	res, err := c.skillImport.Fetch(ctx, req.URL, req.Skills, token)
+	res, err := c.fetchImport(ctx, req.URL, req.Skills, token, req.List)
 	if err != nil {
 		return nil, c.importFetchErr(err, token, gitlab)
 	}
@@ -604,6 +604,7 @@ func (c *controller) ImportSkills(ctx context.Context, req entity.ImportSkillsRe
 		SourceRepo:   res.Repo,
 		SourceRef:    res.Ref,
 		SourceCommit: res.Commit,
+		TooLarge:     res.TooLarge,
 	}
 	for _, sk := range res.Skipped {
 		out.Skipped = append(out.Skipped, entity.SkillImportSkip{Name: sk.Name, Path: sk.Path, Reason: sk.Reason})
@@ -629,6 +630,15 @@ func (c *controller) ImportSkills(ctx context.Context, req entity.ImportSkillsRe
 		c.emitSkillEvent(ctx, entity.ActionSkillImport, uid, 0, saved.ID)
 	}
 	return out, nil
+}
+
+// fetchImport reads what an import names or, with list, only offers its
+// skills to choose from.
+func (c *controller) fetchImport(ctx context.Context, rawURL string, only []string, token string, list bool) (*skillimport.Result, error) {
+	if list {
+		return c.skillImport.List(ctx, rawURL, token)
+	}
+	return c.skillImport.Fetch(ctx, rawURL, only, token)
 }
 
 // skillWorkspaces checks the workspaces a skill is to be turned on in and

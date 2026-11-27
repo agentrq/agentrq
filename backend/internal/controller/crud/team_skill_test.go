@@ -435,6 +435,17 @@ func TestTeamSkills_TheTeamsPage(t *testing.T) {
 	}
 }
 
+// A member lists a repository's skills for a team workspace as for an
+// account: the importer lists, and nothing is stored.
+func TestTeamSkills_ImportList(t *testing.T) {
+	e := newTeamSkillEnv(t)
+	e.importer.res = &skillimport.Result{Repo: "obra/superpowers", TooLarge: true, Candidates: []skillimport.Candidate{{Name: "big", Path: "skills/big"}}}
+	rs, err := e.c.ImportTeamSkills(e.ctx, entity.ImportTeamSkillsRequest{TeamSkillsRequest: e.member(skOther), URL: "u", List: true})
+	if err != nil || !e.importer.listed || len(rs.Imported) != 0 || len(rs.Candidates) != 1 || !rs.TooLarge {
+		t.Fatalf("the listing gave %+v (%v)", rs, err)
+	}
+}
+
 // A member imports into a team workspace as into an account: a name it has
 // is skipped unless overwritten, and one that cannot be saved is reported.
 func TestTeamSkills_Import(t *testing.T) {

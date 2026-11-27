@@ -1193,6 +1193,8 @@ type (
 		Overwrite    bool
 		Skills       []string
 		WorkspaceIDs []int64
+		// List offers the skills as Candidates and imports nothing.
+		List bool
 	}
 
 	// SkillImportCandidate is a skill a repository too large to import whole
@@ -1205,9 +1207,11 @@ type (
 	}
 
 	ImportSkillsResponse struct {
-		Imported     []Skill
-		Skipped      []SkillImportSkip
-		Candidates   []SkillImportCandidate
+		Imported   []Skill
+		Skipped    []SkillImportSkip
+		Candidates []SkillImportCandidate
+		// TooLarge says an import of the repository must name its skills.
+		TooLarge     bool
 		SourceRepo   string
 		SourceRef    string
 		SourceCommit string

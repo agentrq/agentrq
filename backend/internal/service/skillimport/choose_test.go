@@ -5,6 +5,7 @@
 package skillimport
 
 import (
+	"archive/tar"
 	"context"
 	"encoding/json"
 	"errors"
@@ -78,7 +79,7 @@ func TestFetch_TooLargeOffersItsSkills(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	if res.Repo != "a/r" || res.Ref != "main" || res.Commit != testSHA || len(res.Skills) != 0 {
+	if res.Repo != "a/r" || res.Ref != "main" || res.Commit != testSHA || len(res.Skills) != 0 || !res.TooLarge {
 		t.Fatalf("got %+v", res)
 	}
 	want := []Candidate{
@@ -96,6 +97,55 @@ func TestFetch_TooLargeOffersItsSkills(t *testing.T) {
 	}
 	if !slices.ContainsFunc(gh.requests, func(r string) bool { return r == "/api/repos/a/r/git/trees/"+testSHA }) {
 		t.Errorf("the tree must be listed at the recorded commit: %v", gh.requests)
+	}
+}
+
+// Listing a repository small enough for the archive offers its skills from
+// the archive, reading no file one by one and listing no tree, and imports
+// nothing; a link to one directory offers only what lies under it.
+func TestList_OffersTheArchivesSkills(t *testing.T) {
+	gh := &fakeGitHub{
+		repoBody:   `{"default_branch":"main"}`,
+		commitBody: testSHA,
+		tarball: buildTarball(t, []tarEntry{
+			{name: "r-main/README.md", body: "repo"},
+			{name: "r-main/skills/small/SKILL.md", body: skillMD("small", "d")},
+			{name: "r-main/skills/small/notes.md", body: "n"},
+			{name: "r-main/skills/huge/SKILL.md", body: strings.Repeat("x", skill.MaxSkillFileBytes+1)},
+			{name: "r-main/skills/linked/SKILL.md", typeflag: tar.TypeSymlink},
+			{name: "r-main/other/SKILL.md", body: skillMD("other", "d")},
+		}),
+	}
+	s, done := gh.server(t)
+	defer done()
+
+	res, err := s.List(context.Background(), "https://github.com/a/r", "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	want := []Candidate{
+		{Name: "other", Path: "other", SkillBytes: int64(len(skillMD("other", "d")))},
+		{Name: "huge", Path: "skills/huge", SkillBytes: int64(skill.MaxSkillFileBytes) + 1, Reason: "SKILL.md is 98305 bytes; the limit is 96 KiB"},
+		{Name: "linked", Path: "skills/linked", Reason: "SKILL.md links are not imported"},
+		{Name: "small", Path: "skills/small", SkillBytes: int64(len(skillMD("small", "d")))},
+	}
+	if res.Host != "github" || res.Repo != "a/r" || res.Ref != "main" || res.Commit != testSHA || res.TooLarge || len(res.Skills) != 0 || !slices.Equal(res.Candidates, want) {
+		t.Fatalf("got %+v\nwant candidates %+v", res, want)
+	}
+	for _, r := range gh.requests {
+		if strings.HasPrefix(r, "/raw/") || strings.Contains(r, "/git/trees/") {
+			t.Errorf("listing a small repository must only download its archive, asked %s", r)
+		}
+	}
+
+	res, err = s.List(context.Background(), "https://github.com/a/r/tree/main/skills", "")
+	if err != nil || len(res.Candidates) != 3 || res.Candidates[0].Path != "skills/huge" {
+		t.Fatalf("a directory's listing gave %+v, %v", res, err)
+	}
+
+	gh.tarStatus = http.StatusBadGateway
+	if _, err := s.List(context.Background(), "https://github.com/a/r", ""); err == nil || !strings.Contains(err.Error(), "502") {
+		t.Errorf("a failed download must fail the listing, got %v", err)
 	}
 }
 

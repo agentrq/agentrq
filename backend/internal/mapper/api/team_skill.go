@@ -89,7 +89,7 @@ func FromHTTPRequestToImportTeamSkillsRequestEntity(c fiber.Ctx) *entity.ImportT
 	if at == nil || c.Bind().Body(&rq) != nil || rq.URL == "" {
 		return nil
 	}
-	return &entity.ImportTeamSkillsRequest{TeamSkillsRequest: *at, URL: rq.URL, Overwrite: rq.Overwrite, Skills: rq.Skills}
+	return &entity.ImportTeamSkillsRequest{TeamSkillsRequest: *at, URL: rq.URL, Overwrite: rq.Overwrite, Skills: rq.Skills, List: rq.List}
 }
 
 func fromTeamSkillEntityToView(t entity.TeamSkill) view.TeamWorkspaceSkill {
@@ -137,7 +137,7 @@ func FromTeamSkillFileResponseEntityToHTTPResponse(rs *entity.TeamSkillFileRespo
 func FromImportTeamSkillsResponseEntityToHTTPResponse(rs *entity.ImportTeamSkillsResponse) []byte {
 	out := view.ImportTeamSkillsResponse{
 		Imported: make([]view.TeamWorkspaceSkill, len(rs.Imported)), Skipped: make([]view.SkippedSkillEntry, len(rs.Skipped)),
-		SourceRepo: rs.SourceRepo, SourceRef: rs.SourceRef, SourceCommit: rs.SourceCommit,
+		SourceRepo: rs.SourceRepo, SourceRef: rs.SourceRef, SourceCommit: rs.SourceCommit, TooLarge: rs.TooLarge,
 	}
 	for i, s := range rs.Imported {
 		out.Imported[i] = fromTeamSkillEntityToView(s)

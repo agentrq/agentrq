@@ -76,6 +76,7 @@ type (
 		URL       string   `json:"url"`
 		Overwrite bool     `json:"overwrite"`
 		Skills    []string `json:"skills,omitempty"`
+		List      bool     `json:"list,omitempty"`
 	}
 
 	// ImportTeamSkillsResponse is ImportSkillsResponse, with the skills
@@ -84,6 +85,7 @@ type (
 		Imported     []TeamWorkspaceSkill   `json:"imported"`
 		Skipped      []SkippedSkillEntry    `json:"skipped"`
 		Candidates   []SkillImportCandidate `json:"candidates,omitempty"`
+		TooLarge     bool                   `json:"tooLarge,omitempty"`
 		SourceRepo   string                 `json:"sourceRepo"`
 		SourceRef    string                 `json:"sourceRef"`
 		SourceCommit string                 `json:"sourceCommit"`

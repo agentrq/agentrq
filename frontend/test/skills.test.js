@@ -17,6 +17,7 @@ import {
   mergeSkill,
   orderCandidates,
   importUrlValid,
+  chosenImportPaths,
   isGitLabUrl,
   inlineCodeFileMatch,
   orderSkillFiles,
@@ -346,6 +347,14 @@ describe('choosing from a repository too large to import whole', () => {
   it('chooses only those without a reason', () => {
     expect(choosablePaths(candidates)).toEqual(['b/guard', 'a/guard', 'careful']);
     expect(choosablePaths()).toEqual([]);
+  });
+
+  it('names no skill when every one is on, so the repository is imported whole, unless it is too large to be', () => {
+    const all = ['careful', 'a/guard', 'b/guard'];
+    expect(chosenImportPaths({ candidates }, all)).toBeUndefined();
+    expect(chosenImportPaths({ candidates, tooLarge: true }, all)).toEqual(all);
+    expect(chosenImportPaths({ candidates }, ['careful'])).toEqual(['careful']);
+    expect(chosenImportPaths({ candidates })).toEqual([]);
   });
 });
 

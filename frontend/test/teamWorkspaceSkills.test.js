@@ -353,19 +353,49 @@ describe("the team's Skills page", () => {
 
   it('imports from GitHub, choosing the skills of a repository too large to import whole', async () => {
     api.importTeamWorkspaceSkills
-      .mockResolvedValueOnce({ sourceRepo: 'o/r', candidates: [{ name: 'a', path: 'skills/a', sizeBytes: 10 }, { name: 'b', path: 'skills/b', sizeBytes: 10, reason: 'too large' }] })
+      .mockResolvedValueOnce({ sourceRepo: 'o/r', tooLarge: true, candidates: [{ name: 'a', path: 'skills/a', sizeBytes: 10 }, { name: 'b', path: 'skills/b', sizeBytes: 10, reason: 'too large' }] })
       .mockResolvedValueOnce({ imported: [{ id: 's5', name: 'a' }], skipped: [], sourceRepo: 'o/r', sourceCommit: '0123456789' });
     await mount(SkillsView, { path: '/teams/tm1/skills' });
     await type($('[data-test=tws-import-url]'), 'https://github.com/o/r');
-    await click($('[data-test=tws-import-overwrite]'));
+    expect($('[data-test=tws-import-overwrite]')).toBeNull();
     $('[data-test=tws-import]').closest('form').dispatchEvent(new Event('submit', { cancelable: true }));
     await settle();
-    expect(api.importTeamWorkspaceSkills).toHaveBeenCalledWith('tm1', 'tw1', 'https://github.com/o/r', true, undefined);
+    expect(api.importTeamWorkspaceSkills).toHaveBeenCalledWith('tm1', 'tw1', 'https://github.com/o/r', false, undefined, true);
+    await click($('[data-test=tws-import-overwrite]'));
     expect($$('[data-test=tws-candidate]')).toHaveLength(2);
+    expect(text($('[data-test=tws-import-choice]'))).toContain('o/r is too large to import whole');
+    expect($('[data-test=tws-import-chosen]').disabled).toBe(true);
     await click($('[data-test=tws-choice-all]'));
     await click($('[data-test=tws-import-chosen]'));
-    expect(api.importTeamWorkspaceSkills).toHaveBeenLastCalledWith('tm1', 'tw1', 'https://github.com/o/r', true, ['skills/a']);
+    expect(api.importTeamWorkspaceSkills).toHaveBeenLastCalledWith('tm1', 'tw1', 'https://github.com/o/r', true, ['skills/a'], false);
     expect(text($('[data-test=tws-import-report]'))).toBe('Imported 1 skill from o/r @0123456.');
+  });
+
+  it('lists a repository\'s skills first, all on, and imports only those left on', async () => {
+    const listed = { sourceRepo: 'o/r', candidates: [{ name: 'a', path: 'skills/a' }, { name: 'b', path: 'skills/b' }] };
+    api.importTeamWorkspaceSkills
+      .mockResolvedValueOnce(listed)
+      .mockResolvedValueOnce({ imported: [{ id: 's5', name: 'a' }, { id: 's6', name: 'b' }], skipped: [], sourceRepo: 'o/r' })
+      .mockResolvedValueOnce(listed)
+      .mockResolvedValueOnce({ imported: [{ id: 's6', name: 'b' }], skipped: [], sourceRepo: 'o/r' });
+    await mount(SkillsView, { path: '/teams/tm1/skills' });
+    await type($('[data-test=tws-import-url]'), 'https://github.com/o/r');
+    const submit = async () => {
+      $('[data-test=tws-import]').closest('form').dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle();
+    };
+    await submit();
+    expect(text($('[data-test=tws-import-choice]'))).toContain('Choose the skills to import from o/r');
+    expect($$('[data-test=tws-candidate-switch]').map((b) => b.getAttribute('aria-checked'))).toEqual(['true', 'true']);
+    // Every skill on: the repository is imported whole.
+    await click($('[data-test=tws-import-chosen]'));
+    expect(api.importTeamWorkspaceSkills).toHaveBeenLastCalledWith('tm1', 'tw1', 'https://github.com/o/r', false, undefined, false);
+
+    await submit();
+    await click($$('[data-test=tws-candidate-switch]')[0]);
+    await click($('[data-test=tws-import-chosen]'));
+    expect(api.importTeamWorkspaceSkills).toHaveBeenLastCalledWith('tm1', 'tw1', 'https://github.com/o/r', false, ['skills/b'], false);
+    expect(text($('[data-test=tws-import-report]'))).toContain('Imported 1 skill');
   });
 
   it("opens a skill with its files, SKILL.md first and in the editor", async () => {
