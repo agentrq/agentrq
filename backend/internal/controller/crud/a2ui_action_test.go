@@ -5,6 +5,7 @@
 package crud
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -47,6 +48,8 @@ type a2uiActionEnv struct {
 	events []entity.CRUDEvent
 	// afterAnswer is what the store returns once answer has run.
 	afterAnswer error
+	// status is the task's, blocked when empty.
+	status string
 }
 
 func newA2uiActionEnv(t *testing.T) *a2uiActionEnv {
@@ -74,7 +77,7 @@ func a2uiActionRequest(component, name string) entity.SendA2uiActionRequest {
 // unless the store fails with storeErr first. It returns what was answered.
 func (e *a2uiActionEnv) expectCard(metadata string, storeErr error) *a2uiAnswer {
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10, WorkspaceID: 1, Status: "blocked"}, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10, WorkspaceID: 1, Status: cmp.Or(e.status, "blocked")}, nil)
 	got := &a2uiAnswer{}
 	e.repo.EXPECT().AnswerCard(gomock.Any(), int64(10), int64(500), gomock.Any()).DoAndReturn(
 		func(_ context.Context, _, _ int64, answer func(model.Message) (model.Message, []byte, error)) error {
@@ -112,8 +115,8 @@ func TestSendA2uiAction_PostsTheClickAsThePersonsReply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rs.Text != "Approve" || rs.MessageID != 600 || rs.Task.ID != 10 {
-		t.Errorf("response = %+v, want the label posted as message 600", rs)
+	if rs.Text != "Approve" || rs.MessageID != 600 || rs.Task.ID != 10 || rs.Reopened {
+		t.Errorf("response = %+v, want the label posted as message 600, the blocked task not reopened", rs)
 	}
 	posted := got.reply
 	if posted.ID != 600 || posted.Sender != "human" || posted.Text != "Approve" || posted.TaskID != 10 || posted.UserID != testUserID {
@@ -149,6 +152,26 @@ func TestSendA2uiAction_PostsTheClickAsThePersonsReply(t *testing.T) {
 	}
 	if last := e.events[3]; last.ResourceID != 600 || last.WorkspaceID != 1 || last.UserID != testUserID || last.Actor != entity.ActorHuman {
 		t.Errorf("a2ui_action = %+v, want message 600 by the person", last)
+	}
+}
+
+// A click on a completed task's card reopens it, and says so.
+func TestSendA2uiAction_ReopensACompletedTask(t *testing.T) {
+	e := newA2uiActionEnv(t)
+	e.status = "completed"
+	e.expectCard(a2uiCardMetadata, nil)
+	e.idgen.EXPECT().NextID().Return(int64(600))
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), "Status").DoAndReturn(func(_ context.Context, m model.Task, _ ...string) (model.Task, error) {
+		return m, nil
+	})
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}, nil)
+
+	rs, err := e.c.SendA2uiAction(context.Background(), a2uiActionRequest("ok", "approve"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rs.Reopened {
+		t.Errorf("response = %+v, want the completed task reported reopened", rs)
 	}
 }
 

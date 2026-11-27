@@ -510,6 +510,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 	msgText := req.Text
 	msgSender := "human"
 	var changed []string
+	reopened := false
 
 	switch req.Action {
 	case "allow", "allow_all":
@@ -589,6 +590,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 			Actor:        entity.ActorHuman,
 		})
 		if req.Action == "text" {
+			reopened = m.Status == "completed"
 			changed = resumedByMessage(&m)
 		}
 	}
@@ -611,9 +613,9 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 	uid = monoflake.IDFromBase62(req.UserID).Int64()
 	latest, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
-		return &entity.RespondToTaskResponse{Task: c.fromModelTaskToEntity(updated)}, nil
+		return &entity.RespondToTaskResponse{Task: c.fromModelTaskToEntity(updated), Reopened: reopened}, nil
 	}
-	return &entity.RespondToTaskResponse{Task: c.fromModelTaskToEntity(latest)}, nil
+	return &entity.RespondToTaskResponse{Task: c.fromModelTaskToEntity(latest), Reopened: reopened}, nil
 }
 
 func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTaskStatusRequest) (*entity.UpdateTaskStatusResponse, error) {
@@ -918,7 +920,7 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	if err != nil {
 		return nil, err
 	}
-	return &entity.ReplyToTaskResponse{Task: t, MessageID: msg.ID}, nil
+	return &entity.ReplyToTaskResponse{Task: t, MessageID: msg.ID, Reopened: m.Status == "completed"}, nil
 }
 
 // postHumanMessage stores a person's message on task m, which it resumes, and

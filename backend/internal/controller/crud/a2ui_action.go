@@ -88,7 +88,7 @@ func (c *controller) SendA2uiAction(ctx context.Context, req entity.SendA2uiActi
 		ResourceID:   msg.ID,
 		Actor:        entity.ActorHuman,
 	})
-	return &entity.SendA2uiActionResponse{Task: t, MessageID: msg.ID, Text: msg.Text}, nil
+	return &entity.SendA2uiActionResponse{Task: t, MessageID: msg.ID, Text: msg.Text, Reopened: m.Status == "completed"}, nil
 }
 
 // clickText checks a click against the card stored as metadata, and is the
