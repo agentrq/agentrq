@@ -412,7 +412,7 @@ func manifestOf(h model.Hook) hookrunner.Manifest {
 func toEntity(h model.Hook) entity.Hook {
 	m := manifestOf(h)
 	e := entity.Hook{
-		ID: h.ID, BuiltIn: h.UserID == builtIn, Name: h.Name, Version: h.Version, Description: m.Description,
+		ID: h.ID, BuiltIn: h.UserID == builtIn, Name: h.Name, Version: h.Version, Description: m.Description, Icon: m.Icon,
 		SHA256: h.SHA256, SizeBytes: h.SizeBytes, ABIVersion: int(h.ABIVersion),
 		Inputs: make([]entity.HookInput, len(m.Inputs)), Events: make([]entity.HookEvent, len(m.Events)),
 		Enabled: h.Enabled, CreatedAt: h.CreatedAt, UpdatedAt: h.UpdatedAt,

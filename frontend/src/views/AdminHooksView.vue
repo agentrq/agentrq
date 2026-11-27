@@ -41,6 +41,7 @@
         <div v-for="hook in hooks || []" :key="hook.id" data-test="hook-row"
           class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 rounded-sm p-4 flex flex-col gap-3 shadow-sm">
           <div class="flex flex-wrap items-start gap-3">
+            <HookIcon :name="hook.name" :icon="hook.icon" />
             <div class="flex-1 min-w-[180px]">
               <p class="text-sm font-bold text-gray-900 dark:text-zinc-50">
                 <span class="font-mono">{{ hook.name }}</span>
@@ -100,6 +101,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AdminLayout from '../components/AdminLayout.vue'
 import DeleteModal from '../components/DeleteModal.vue'
+import HookIcon from '../components/HookIcon.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { useToasts } from '../composables/useToasts'
 import { deleteAdminHook, fetchAdminHooks, setAdminHookEnabled, uploadAdminHook } from '../api'

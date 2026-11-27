@@ -17,6 +17,7 @@ import { useToasts } from '../composables/useToasts'
 import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import DeleteModal from '../components/DeleteModal.vue'
 import EventsTabs from '../components/EventsTabs.vue'
+import HookIcon from '../components/HookIcon.vue'
 import LoadingState from '../components/LoadingState.vue'
 import { plural } from '../utils/hooks'
 
@@ -25,6 +26,8 @@ const { notifyError, notifySuccess } = useToasts()
 
 const registrations = ref([])
 const ownHooks = ref([])
+// Each available hook's icon, by id; a registration whose hook is gone has none.
+const icons = ref({})
 const allowUserHooks = ref(false)
 const loading = ref(true)
 const busy = ref(false)
@@ -40,6 +43,7 @@ async function load({ quiet = false } = {}) {
     registrations.value = regs.registrations ?? []
     allowUserHooks.value = !!available.allowUserHooks
     ownHooks.value = (available.hooks ?? []).filter((h) => !h.builtIn)
+    icons.value = Object.fromEntries((available.hooks ?? []).map((h) => [h.id, h.icon ?? '']))
   } catch (e) {
     notifyError(e.message)
   } finally {
@@ -121,9 +125,7 @@ onWebMCPChange(() => load({ quiet: true }))
         <div v-else class="space-y-2">
           <RouterLink v-for="reg in registrations" :key="reg.id" :to="`/events/hooks/${reg.id}`" data-test="reg-row"
             class="flex items-center gap-4 px-4 py-3 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl hover:border-gray-200 dark:hover:border-zinc-700 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 dark:focus-visible:ring-white/20">
-            <div aria-hidden="true" class="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-gray-50 dark:bg-zinc-800 border border-gray-100 dark:border-zinc-700 text-[10px] font-black uppercase text-gray-500 dark:text-zinc-400">
-              {{ reg.hookName.slice(0, 2) }}
-            </div>
+            <HookIcon :name="reg.hookName" :icon="icons[reg.hookId]" />
             <div class="flex-1 min-w-0">
               <p class="text-sm font-bold text-gray-800 dark:text-zinc-200 truncate">
                 {{ reg.name }}
@@ -158,6 +160,7 @@ onWebMCPChange(() => load({ quiet: true }))
           </div>
           <div v-for="h in ownHooks" :key="h.id" data-test="own-hook"
             class="flex items-center gap-3 px-4 py-3 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl">
+            <HookIcon :name="h.name" :icon="h.icon" />
             <div class="flex-1 min-w-0">
               <p class="text-sm font-bold font-mono text-gray-800 dark:text-zinc-200 truncate">{{ h.name }} <span class="font-sans font-normal text-xs text-gray-500 dark:text-zinc-400">{{ h.version }}</span></p>
               <p class="text-xs text-gray-500 dark:text-zinc-400 truncate">{{ plural(h.events.length, 'event') }} · {{ plural(h.inputs.length, 'input') }}</p>

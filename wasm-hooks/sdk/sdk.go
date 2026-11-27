@@ -13,6 +13,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -28,12 +29,26 @@ const ABIVersion = 1
 
 // Manifest is what a hook says about itself.
 type Manifest struct {
-	ABIVersion  int     `json:"abiVersion"`
-	Name        string  `json:"name"`
-	Version     string  `json:"version"`
-	Description string  `json:"description,omitempty"`
-	Inputs      []Input `json:"inputs"`
-	Events      []Event `json:"events"`
+	ABIVersion  int    `json:"abiVersion"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description,omitempty"`
+	// Icon is an optional image the UI shows beside the hook: a base64 data:
+	// URI of an SVG or PNG, at most 16 KiB. Make it with SVGIcon or PNGIcon.
+	Icon   string  `json:"icon,omitempty"`
+	Inputs []Input `json:"inputs"`
+	Events []Event `json:"events"`
+}
+
+// SVGIcon is an SVG image as a Manifest.Icon, such as one embedded with
+// //go:embed icon.svg.
+func SVGIcon(svg string) string {
+	return "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte(svg))
+}
+
+// PNGIcon is a PNG image as a Manifest.Icon.
+func PNGIcon(png []byte) string {
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
 }
 
 // Input is a value each registration of the hook provides. A hook must

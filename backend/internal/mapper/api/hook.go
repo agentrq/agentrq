@@ -19,7 +19,7 @@ import (
 func FromHookEntityToHookView(e entity.Hook) view.Hook {
 	v := view.Hook{
 		ID: monoflake.ID(e.ID).String(), BuiltIn: e.BuiltIn, Name: e.Name, Version: e.Version,
-		Description: e.Description, SHA256: e.SHA256, SizeBytes: e.SizeBytes, ABIVersion: e.ABIVersion,
+		Description: e.Description, Icon: e.Icon, SHA256: e.SHA256, SizeBytes: e.SizeBytes, ABIVersion: e.ABIVersion,
 		Inputs: make([]view.HookInput, len(e.Inputs)), Events: make([]view.HookEvent, len(e.Events)),
 		Enabled: e.Enabled, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
 	}

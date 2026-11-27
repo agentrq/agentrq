@@ -62,6 +62,9 @@ func TestBuiltInHooksRunOnTheServer(t *testing.T) {
 		if !maps.Equal(got, want) {
 			t.Errorf("the %s hook's inputs have placeholders %v, want %v", name, got, want)
 		}
+		if !strings.HasPrefix(m.Icon, "data:image/svg+xml;base64,") {
+			t.Errorf("the %s hook has no SVG icon: %.40q", name, m.Icon)
+		}
 	}
 
 	wasm := buildHook(t, "github")

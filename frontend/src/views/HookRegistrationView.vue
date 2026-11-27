@@ -19,6 +19,7 @@ import {
 import { useToasts } from '../composables/useToasts'
 import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import DeleteModal from '../components/DeleteModal.vue'
+import HookIcon from '../components/HookIcon.vue'
 import HookRegistrationForm from '../components/HookRegistrationForm.vue'
 import LoadingState from '../components/LoadingState.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
@@ -178,7 +179,10 @@ const small = 'px-2 py-1 text-[11px] font-bold rounded-md border border-gray-200
             <RouterLink to="/events" class="hover:underline">Events</RouterLink> /
             <RouterLink to="/events/hooks" class="hover:underline">Hooks</RouterLink>
           </p>
-          <h1 data-test="reg-title" class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">{{ reg.name }}</h1>
+          <div class="flex items-center gap-2 min-w-0">
+            <HookIcon :name="reg.hookName" :icon="hook?.icon" />
+            <h1 data-test="reg-title" class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">{{ reg.name }}</h1>
+          </div>
           <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
             <span class="font-mono">{{ reg.hookName }}</span><template v-if="hook">{{ ` ${hook.version} · ${hook.builtIn ? 'built-in' : 'yours'}` }}</template>
             · id <span class="font-mono">{{ reg.id }}</span>

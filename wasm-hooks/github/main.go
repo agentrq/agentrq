@@ -8,6 +8,7 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -16,9 +17,13 @@ import (
 	"github.com/agentrq/agentrq/wasm-hooks/sdk"
 )
 
+//go:embed icon.svg
+var icon string
+
 var manifest = sdk.Manifest{
 	Name:        "github",
-	Version:     "1.1.1",
+	Version:     "1.2.0",
+	Icon:        sdk.SVGIcon(icon),
 	Description: "CI runs, pull requests, issues, releases and pushes. Checks X-Hub-Signature-256.",
 	Inputs: []sdk.Input{
 		{Name: "webhookSecret", Label: "Webhook secret", Type: "string", Secret: true, Required: true},

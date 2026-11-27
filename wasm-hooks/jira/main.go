@@ -9,6 +9,7 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -19,9 +20,13 @@ import (
 	"github.com/agentrq/agentrq/wasm-hooks/sdk"
 )
 
+//go:embed icon.svg
+var icon string
+
 var manifest = sdk.Manifest{
 	Name:        "jira",
-	Version:     "1.1.0",
+	Version:     "1.2.0",
+	Icon:        sdk.SVGIcon(icon),
 	Description: "Jira Cloud issues and comments, from an admin webhook (checks X-Hub-Signature) or an Automation rule's Send web request (checks a bearer token).",
 	Inputs: []sdk.Input{
 		{Name: "webhookSecret", Label: "Secret (the webhook's secret, or the rule's Authorization: Bearer token)", Type: "string", Secret: true, Required: true},

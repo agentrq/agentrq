@@ -164,6 +164,16 @@ describe('AdminHooksView', () => {
     expect(q(rows[1], 'hook-enabled').getAttribute('aria-checked')).toBe('false')
   })
 
+  it("shows a hook's icon, and its name's first letters when it has none", async () => {
+    const icon = 'data:image/png;base64,iVBORw0KGgo='
+    serve({ [`GET ${HOOKS}`]: [[{ hooks: [github({ icon }), github({ id: 'g2', name: 'generic' })] }, 200]] })
+    const el = await mount()
+    const rows = qa(el, 'hook-row')
+    expect(q(rows[0], 'hook-icon').getAttribute('src')).toBe(icon)
+    expect(q(rows[1], 'hook-icon')).toBeNull()
+    expect(rows[1].textContent).toContain('ge')
+  })
+
   it('says so when there is none', async () => {
     serve({ [`GET ${HOOKS}`]: [[{ hooks: [] }, 200]] })
     const el = await mount()

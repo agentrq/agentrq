@@ -8,19 +8,21 @@ import "time"
 
 // Hook is a WebAssembly hook as its manifest describes it.
 type Hook struct {
-	ID          string      `json:"id"`
-	BuiltIn     bool        `json:"builtIn"`
-	Name        string      `json:"name"`
-	Version     string      `json:"version"`
-	Description string      `json:"description"`
-	SHA256      string      `json:"sha256"`
-	SizeBytes   int64       `json:"sizeBytes"`
-	ABIVersion  int         `json:"abiVersion"`
-	Inputs      []HookInput `json:"inputs"`
-	Events      []HookEvent `json:"events"`
-	Enabled     bool        `json:"enabled"`
-	CreatedAt   time.Time   `json:"createdAt"`
-	UpdatedAt   time.Time   `json:"updatedAt"`
+	ID          string `json:"id"`
+	BuiltIn     bool   `json:"builtIn"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	// Icon is a data: URI of an SVG or PNG image, or "": show it in an <img>.
+	Icon       string      `json:"icon"`
+	SHA256     string      `json:"sha256"`
+	SizeBytes  int64       `json:"sizeBytes"`
+	ABIVersion int         `json:"abiVersion"`
+	Inputs     []HookInput `json:"inputs"`
+	Events     []HookEvent `json:"events"`
+	Enabled    bool        `json:"enabled"`
+	CreatedAt  time.Time   `json:"createdAt"`
+	UpdatedAt  time.Time   `json:"updatedAt"`
 }
 
 // HookInput is a value each registration of a hook provides.

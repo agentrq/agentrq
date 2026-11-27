@@ -149,3 +149,12 @@ func TestSubject(t *testing.T) {
 		})
 	}
 }
+
+func TestIconsAreDataURIs(t *testing.T) {
+	if got, want := SVGIcon("<svg/>"), "data:image/svg+xml;base64,PHN2Zy8+"; got != want {
+		t.Errorf("SVGIcon = %q, want %q", got, want)
+	}
+	if got, want := PNGIcon([]byte{0x89, 'P', 'N', 'G'}), "data:image/png;base64,iVBORw=="; got != want {
+		t.Errorf("PNGIcon = %q, want %q", got, want)
+	}
+}
