@@ -8,8 +8,11 @@
 
 export const BASIC_CATALOG_ID = 'https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json'
 // Ours: the basic catalog and AGENTRQ_COMPONENTS.
-export const AGENTRQ_CATALOG_ID = 'https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json'
-const CATALOG_IDS = [BASIC_CATALOG_ID, AGENTRQ_CATALOG_ID]
+export const AGENTRQ_CATALOG_ID = 'https://app.agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json'
+// Ours under its first id, which stored cards still name.
+export const LEGACY_AGENTRQ_CATALOG_ID = 'https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json'
+const CATALOG_IDS = [BASIC_CATALOG_ID, AGENTRQ_CATALOG_ID, LEGACY_AGENTRQ_CATALOG_ID]
+const isOurs = (id) => id === AGENTRQ_CATALOG_ID || id === LEGACY_AGENTRQ_CATALOG_ID
 // The server's 64 KiB is of the ui as the agent sent it; stored, each
 // attachment:<filename> has become a longer link, so a stored card gets twice.
 export const MAX_BYTES = 2 * (64 << 10)
@@ -178,7 +181,8 @@ function checkComponent(c, at, allowed, catalogId) {
   }
   const missing = required.find((k) => !(k in c))
   if (missing) return `${at}: ${missing} is required`
-  if (c['@catalogId'] !== undefined && ![BASIC_CATALOG_ID, catalogId].includes(c['@catalogId'])) return `${at}: @catalogId must be the surface's catalog`
+  const named = c['@catalogId']
+  if (named !== undefined && named !== BASIC_CATALOG_ID && !(isOurs(named) && isOurs(catalogId))) return `${at}: @catalogId must be the surface's catalog`
   const media = (MEDIA[c.component] ?? []).find((p) => p in c && !isStoredMediaUrl(c[p]))
   if (media) return `${at}: ${media} must be a stored file`
   return ''
@@ -251,7 +255,7 @@ export function validateMessages(messages, options = {}) {
     if (kind === 'createSurface') {
       if (!CATALOG_IDS.includes(body.catalogId)) return fail(`${at}.${kind}: catalogId must be the basic catalog or ours`)
       catalogId = body.catalogId
-      if (catalogId === AGENTRQ_CATALOG_ID) allowed = [...allowed, ...AGENTRQ_COMPONENTS]
+      if (isOurs(catalogId)) allowed = [...allowed, ...AGENTRQ_COMPONENTS]
     }
     const seen = new Set()
     for (const [j, c] of (body.components ?? []).entries()) {

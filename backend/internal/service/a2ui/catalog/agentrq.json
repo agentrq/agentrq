@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json",
+  "$id": "https://app.agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json",
   "title": "AgentRQ catalog",
   "description": "Every component and function of the A2UI v1.0 basic catalog, and the components below. A surface whose createSurface names this catalogId may use both.",
   "components": {

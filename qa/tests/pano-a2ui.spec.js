@@ -11,7 +11,7 @@ import { unique, watchTraffic } from '../lib/app.js'
 // set to a folder, it keeps a picture of the doc in each colour there.
 
 const API = '/api/v1'
-const CATALOG = 'https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json'
+const CATALOG = 'https://app.agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json'
 
 async function ok(res, what) {
   if (!res.ok()) throw new Error(`${what} answered ${res.status()}: ${await res.text()}`)

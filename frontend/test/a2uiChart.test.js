@@ -16,7 +16,7 @@ import BarChart from '../src/components/BarChart.vue'
 import ChartSVG from '../src/components/ChartSVG.vue'
 import HeatmapChart from '../src/components/HeatmapChart.vue'
 import { chartColor, chartPoints, chartSummary, heatmapProps } from '../src/a2ui/chart.js'
-import { AGENTRQ_CATALOG_ID, BASIC_CATALOG_ID, MAX_CHART_POINTS, validateMessages } from '../src/a2ui/validate.js'
+import { AGENTRQ_CATALOG_ID, BASIC_CATALOG_ID, LEGACY_AGENTRQ_CATALOG_ID, MAX_CHART_POINTS, validateMessages } from '../src/a2ui/validate.js'
 import { useThemeStore } from '../src/stores/themeStore'
 
 const v = (body) => ({ version: '1.0', ...body })
@@ -80,6 +80,12 @@ describe('a Chart, checked', () => {
     const t = { id: 't', component: 'Text', text: 'x', '@catalogId': AGENTRQ_CATALOG_ID }
     expect(ok([t], { catalogId: BASIC_CATALOG_ID }).problems[0]).toMatch(/@catalogId must be the surface's catalog/)
     expect(ok([{ id: 't', component: 'Text', text: { '@call': 'formatString', args: { value: 'x' }, catalogId: AGENTRQ_CATALOG_ID } }]).ok).toBe(true)
+  })
+
+  it('takes our catalog under its first id too, as stored cards name it', () => {
+    expect(AGENTRQ_CATALOG_ID).toBe('https://app.agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json')
+    expect(ok([chart({ '@catalogId': AGENTRQ_CATALOG_ID })], { catalogId: LEGACY_AGENTRQ_CATALOG_ID }).ok).toBe(true)
+    expect(ok([chart({ '@catalogId': LEGACY_AGENTRQ_CATALOG_ID })]).ok).toBe(true)
   })
 })
 

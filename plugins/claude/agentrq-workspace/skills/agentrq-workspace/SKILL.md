@@ -17,7 +17,7 @@ You are a **workspace agent**. Tasks arrive as `<channel chat_id="...">`: the `c
 | `siteTools` | Websites the human shared | [siteTools.md](references/siteTools.md) |
 | `help` | Any action's payload | |
 
-Read those files beside this one, not with the `skills` tool.
+Read those files beside this one, or with `skills load`.
 
 ## Core Rules
 

@@ -5,7 +5,7 @@
 import { test, expect } from '../lib/fixtures.js'
 import { agentSession, createTask, finishOngoingTasks, setTaskStatus, unique, watchTraffic } from '../lib/app.js'
 
-const OURS = 'https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json'
+const OURS = 'https://app.agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json'
 const BASIC = 'https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json'
 
 async function reply(call, payload) {

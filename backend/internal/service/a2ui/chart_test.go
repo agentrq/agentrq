@@ -28,6 +28,12 @@ func ourCard(components ...string) json.RawMessage {
 	return ui(create, update(append([]string{root}, components...)...))
 }
 
+// legacyCard is ourCard naming our catalog by its first id, as stored cards
+// and older agents do.
+func legacyCard(components ...string) json.RawMessage {
+	return json.RawMessage(strings.Replace(string(ourCard(components...)), AgentRQCatalogID, LegacyAgentRQCatalogID, 1))
+}
+
 // days is a heatmap's points, one a day for n days from 2026-01-01.
 func days(n int, layout string, step time.Duration) string {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -55,6 +61,8 @@ func TestValidate_AcceptsCharts(t *testing.T) {
 		"our @catalogId":    ourCard(`{"id":"c","component":"Text","text":"x","@catalogId":"` + AgentRQCatalogID + `"}`),
 		"basic @catalogId":  ourCard(`{"id":"c","component":"Text","text":"x","@catalogId":"` + BasicCatalogID + `"}`),
 		"a basic component": ourCard(`{"id":"c","component":"Divider"}`),
+		"our first id":      legacyCard(chart("bar", `[{"label":"a","value":1}]`)),
+		"either id inside":  legacyCard(`{"id":"c","component":"Text","text":"x","@catalogId":"` + AgentRQCatalogID + `"}`),
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {

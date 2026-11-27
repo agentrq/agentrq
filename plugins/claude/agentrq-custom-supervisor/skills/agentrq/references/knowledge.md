@@ -11,7 +11,7 @@ A workspace's memory, read-only.
 
 The account's skills as a workspace sees them, read-only.
 
-- `search` — Find the account's skills as a workspace sees them, with whether each is on there, by name or description (`q`, at least 3 characters): name, description, source and size, with `limit`/`offset` paging and a `total`. Content is not included
+- `search` — Find skills, with whether each is on in the workspace, by name or description (`q`, at least 3 characters): name, description, source and size, with `limit`/`offset` paging and a `total`. Content is not included
 - `get` — Read one file of a skill by its `skill://<name>/<path>` URI; `skill://<name>` alone reads its `SKILL.md`, with the list of its other files
 
 ## pano

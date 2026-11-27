@@ -77,7 +77,7 @@ ink, and pictures and videos are taped to the page.
 
 ````markdown
 ```a2ui
-[{"version":"1.0","createSurface":{"surfaceId":"prs","catalogId":"https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json"}},
+[{"version":"1.0","createSurface":{"surfaceId":"prs","catalogId":"https://app.agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json"}},
  {"version":"1.0","updateComponents":{"surfaceId":"prs","components":[
    {"id":"root","component":"Chart","variant":"bar","label":"PRs merged","data":[{"label":"Mon","value":2},{"label":"Tue","value":5}]}]}}]
 ```
