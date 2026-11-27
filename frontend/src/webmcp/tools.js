@@ -249,12 +249,12 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Go to an in-app path (?query ok); IDs from getCurrentPage/list tools.\n' +
+        'Go to an in-app path (?query ok); IDs: getCurrentPage/list tools.\n' +
         '- "/" workspaces, "/workspaces/new".\n' +
         '- "/kanban", "/tasks/<filter>" (active|notstarted|pending|ongoing|completed|scheduled) of all ' +
         'workspaces; add "/<workspaceId>/<taskId>" to open one, then "/instances".\n' +
-        '- "/workspaces/<id>" ("?filter=" as above); under it "/{board,analytics,settings}", ' +
-        '"/settings/skills/<name>", "/tasks/{new,<taskId>}", plus "/instances" or "/edit". Its ' +
+        '- "/workspaces/<id>" ("?filter=" as above); under it "/{board[/chat/<t>],analytics,settings}", ' +
+        '"/settings/skills/<name>", "/tasks/{new,<taskId>}" + "/instances"|"/edit". Its ' +
         '"?tab=" general|setup|automations|notifications|memories|presets|skills|sharing|slack|input|storage|danger.\n' +
         '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/{pano,events/hooks}/new", ' +
         '"/{pano[/<id>],kanban}/chat/<w>/<t>".\n' +

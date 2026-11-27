@@ -14,7 +14,7 @@
         <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">{{ isTeamMode ? 'Every shared workspace\'s tasks on one board.' : 'Every workspace\'s tasks on one board.' }}</p>
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <ScheduledColumnToggle :tall="isTeamMode" />
+        <ScheduledColumnToggle v-if="!route.params.taskId" :tall="isTeamMode" />
         <TeamTaskFilters v-if="isTeamMode" />
         <NewTaskButton v-else />
       </div>
@@ -42,8 +42,7 @@ const { isTeamMode, link } = useTeamMode();
 // that lands here (a direct link, a resize) gets the task list instead, with
 // the card that was open beside the board open in it.
 watch(isMobile, (mobile) => {
-  if (!mobile) return;
   const { workspaceId, taskId } = route.params;
-  router.replace(link(taskId ? `/tasks/active/${workspaceId}/${taskId}` : '/tasks/active'));
+  if (mobile) router.replace(link(taskId ? `/tasks/active/${workspaceId}/${taskId}` : '/tasks/active'));
 }, { immediate: true });
 </script>

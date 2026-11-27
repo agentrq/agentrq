@@ -257,6 +257,7 @@ describe('the navigate tool\'s map of the interface', () => {
     '/tasks/scheduled/ws1/t1/instances',
     '/workspaces/ws1?filter=completed',
     '/workspaces/ws1/board',
+    '/workspaces/ws1/board/chat/t1',
     '/workspaces/ws1/analytics',
     '/workspaces/ws1/settings?tab=skills',
     '/workspaces/ws1/settings/skills/tdd',

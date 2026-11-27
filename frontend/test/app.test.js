@@ -37,6 +37,7 @@ describe('routes', () => {
       '/tasks/:filter/:workspaceId/:taskId/instances',
       '/workspaces/:id',
       '/workspaces/:id/board',
+      '/workspaces/:id/board/chat/:taskId',
       '/workspaces/:id/analytics',
       '/workspaces/:id/settings',
       '/workspaces/:id/settings/skills/:name',
@@ -155,7 +156,8 @@ describe('routes', () => {
     // a route that somehow carries no component would otherwise be skipped
     // silently, and skipping is the one failure this test cannot report.
     // A route with named views (the Pano's chat) has a loader for each.
-    const extraViews = routes.filter((route) => route.components).reduce((n, route) => n + Object.keys(route.components).length - 1, 0)
+    const records = (list) => list.flatMap((route) => [route, ...records(route.children ?? [])])
+    const extraViews = records(routes).filter((route) => route.components).reduce((n, route) => n + Object.keys(route.components).length - 1, 0)
     // A redirect has none: it is no page.
     expect(resolved.length).toBe(flatten(routes.filter((r) => !r.redirect)).length + extraViews)
     for (const [path, module] of resolved) {

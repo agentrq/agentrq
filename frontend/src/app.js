@@ -29,6 +29,8 @@ import { startSentry } from './utils/sentry'
 const PanoView = () => import('./views/PanoView.vue')
 // The Kanban board, shared by its two routes below.
 const KanbanView = () => import('./views/KanbanView.vue')
+// A workspace's board, shared by its two routes below.
+const KanbanBoardView = () => import('./views/KanbanBoardView.vue')
 
 // `meta.remount` marks a page that reads its params once, in setup. Vue Router
 // reuses the mounted page when only the params change, so without a fresh
@@ -49,7 +51,9 @@ export const routes = [
     path: '/workspaces/:id',
     component: () => import('./views/WorkspaceDetailView.vue'),
     children: [
-      { path: 'board', component: () => import('./views/KanbanBoardView.vue') },
+      { path: 'board', component: KanbanBoardView },
+      // A card opened beside the board, as on /kanban below.
+      { path: 'board/chat/:taskId', components: { default: KanbanBoardView, chat: () => import('./views/TaskDetailView.vue') } },
       { path: 'analytics', component: () => import('./views/WorkspaceAnalyticsView.vue') },
       { path: 'settings', component: () => import('./views/WorkspaceSettingsView.vue') },
       // One skill, drawn by the settings screen in place of its Skills tab.

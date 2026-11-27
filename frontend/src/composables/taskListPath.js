@@ -21,5 +21,6 @@ function listPath(route) {
   if (params.docId) return { path: `/pano/${params.docId}` };
   if (route.path.startsWith('/pano/')) return { path: '/pano' };
   if (/(^|\/)kanban\/chat\//.test(route.path)) return { path: '/kanban', query: route.query };
+  if (route.path.includes('/board/chat/')) return { path: `/workspaces/${params.id}/board` };
   return { path: `/workspaces/${params.id}` };
 }

@@ -34,3 +34,27 @@ test('a Kanban card opens its task chat beside the board, and the back arrow clo
   await expect(card, 'the board, still there').toBeVisible()
   traffic.expectClean({ allow: ['404 /plan'] })
 })
+
+test('a workspace board opens a card\'s chat beside it, hiding the Scheduled column until it closes', async ({ page, workspace }) => {
+  const traffic = watchTraffic(page)
+  const task = await createTask(page, workspace.id, unique('a card chatted with on its workspace board'), 'ongoing', { assignee: 'human' })
+  await replyToTask(page, workspace.id, task.id, 'Can you take the next step?')
+  await page.goto(`/workspaces/${workspace.id}/board`)
+  const scheduled = page.getByRole('heading', { name: 'Scheduled', exact: true })
+  await expect(scheduled, 'the Scheduled column, before a chat opens').toBeVisible()
+
+  const card = page.locator('[draggable]', { hasText: task.title })
+  await card.click()
+  await expect(page).toHaveURL(`/workspaces/${workspace.id}/board/chat/${task.id}`)
+  const chat = page.locator('[data-pano-chat]')
+  await expect(chat.getByText('Can you take the next step?'), 'the task\'s thread in the chat column').toBeVisible()
+  await expect(card, 'the board, still beside the chat').toBeVisible()
+  await expect(scheduled, 'the Scheduled column, hidden while the chat is open').toHaveCount(0)
+  await page.screenshot({ path: test.info().outputPath('workspace-board-chat-light.png') })
+
+  await chat.locator('[data-test="task-back"]').click()
+  await expect(page).toHaveURL(`/workspaces/${workspace.id}/board`)
+  await expect(chat, 'the chat column, closed').toHaveCount(0)
+  await expect(scheduled, 'the Scheduled column, back').toBeVisible()
+  traffic.expectClean({ allow: ['404 /plan'] })
+})
