@@ -23,54 +23,15 @@
       </p>
     </div>
 
-    <!-- Import from GitHub or GitLab -->
-    <!-- Boxed from sm up; on a phone a box in a box leaves too little room. -->
-    <form class="sm:p-4 sm:bg-gray-50 sm:dark:bg-zinc-800/50 sm:rounded-sm sm:border border-gray-100 dark:border-zinc-800 space-y-3" @submit.prevent="runImport">
-      <label for="skill-import-url" class="block text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Import from GitHub or GitLab</label>
-      <div class="flex flex-col sm:flex-row gap-2">
-        <input id="skill-import-url" v-model="importUrl" type="url" autocomplete="off" spellcheck="false"
-               placeholder="https://github.com/obra/superpowers"
-               class="min-w-0 flex-1 px-3 py-2 text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg text-gray-900 dark:text-zinc-100 placeholder-gray-300 dark:placeholder-zinc-600 focus:outline-none focus:border-gray-400 dark:focus:border-zinc-500" />
-        <button type="submit" data-test="skill-import" :disabled="importing || !importUrl.trim()"
-                class="shrink-0 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-[11px] font-black uppercase tracking-widest disabled:opacity-40">
-          {{ importing && !choice ? 'Discovering…' : 'Discover' }}
-        </button>
-      </div>
-      <p v-if="importUrl.trim() && !importUrlValid(importUrl, gitlabHost)" class="text-[10px] text-amber-600 dark:text-amber-400">
-        Expected https://github.com/owner/repo or https://{{ gitlabHost }}/group/project, optionally …/tree/&lt;ref&gt;/&lt;path&gt;
-      </p>
-      <GitHubConnection />
-      <GitLabConnection />
+    <!-- Import from GitHub or GitLab, as a team workspace's skills do. -->
+    <SkillImportForm :run="runImport" @imported="loadSkills()">
       <!-- Where the imported skills are turned on: chosen on the Skills page;
            in a workspace, that workspace alone. -->
-      <SkillWorkspaceChoices v-if="!workspaceId" v-model="importWorkspaceIds" :workspaces="workspaceChoices"
-                             data-test="skill-import-workspaces" item-test="skill-import-workspace" />
-      <p v-if="importError" class="text-[11px] font-bold text-red-600 dark:text-red-400 break-words">{{ importError }}</p>
-      <!-- The repository's skills, to switch off those not to import. -->
-      <SkillImportChoice v-if="choice" v-model="chosen" :choice="choice" :importing="importing"
-                         @import="importChosen" @cancel="choice = null">
-        <template #options>
-          <label class="flex items-center gap-2 text-[11px] text-gray-600 dark:text-zinc-300">
-            <input v-model="importOverwrite" data-test="skill-import-overwrite" type="checkbox" class="rounded-sm border-gray-300 dark:border-zinc-600" />
-            Overwrite skills you already have
-          </label>
-        </template>
-      </SkillImportChoice>
-      <div v-if="importReport" data-test="skill-import-report" class="space-y-2 text-[11px] text-gray-700 dark:text-zinc-300">
-        <p class="font-bold">
-          Imported {{ importReport.imported.length }} {{ importReport.imported.length === 1 ? 'skill' : 'skills' }}
-          from {{ importReport.sourceRepo }}<span v-if="importReport.sourceCommit">@{{ importReport.sourceCommit.slice(0, 7) }}</span>.
-        </p>
-        <div v-if="importReport.skipped.length">
-          <p class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Skipped ({{ importReport.skipped.length }})</p>
-          <ul class="mt-1 space-y-1">
-            <li v-for="(s, i) in importReport.skipped" :key="i" class="break-words">
-              <span class="font-mono font-bold">{{ s.path || s.name }}</span> — {{ s.reason }}
-            </li>
-          </ul>
-        </div>
-      </div>
-    </form>
+      <template #options>
+        <SkillWorkspaceChoices v-if="!workspaceId" v-model="importWorkspaceIds" :workspaces="workspaceChoices"
+                               data-test="skill-import-workspaces" item-test="skill-import-workspace" />
+      </template>
+    </SkillImportForm>
 
     <!-- The team workspaces' own skills, once the workspace is shared into one. -->
     <WorkspaceTeamSkills v-if="workspaceId && teamWorkspaces.length" :workspace-id="workspaceId" :skills="teamSkills"
@@ -126,11 +87,8 @@
           <button type="button" role="switch" data-test="skill-card-enabled"
                   :aria-checked="skillSwitchOn(s, workspaceId)" :aria-label="`${workspaceId ? 'On in this workspace' : 'Available to agents'}: ${s.name}`"
                   :title="switchTitle(s)"
-                  :disabled="pendingEnabled.has(s.name)" @click="toggleEnabled(s)"
-                  class="relative block w-11 h-6 rounded-full border transition-colors disabled:opacity-50"
-                  :class="skillSwitchOn(s, workspaceId) ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
-            <span class="absolute top-[3px] w-4 h-4 rounded-full transition-all"
-                  :class="skillSwitchOn(s, workspaceId) ? 'left-[23px] bg-white dark:bg-zinc-900' : 'left-[3px] bg-white dark:bg-zinc-400'"></span>
+                  :disabled="pendingEnabled.has(s.name)" @click="toggleEnabled(s)" :class="SWITCH">
+            <span :class="SWITCH_KNOB"></span>
           </button>
           </span>
         </template>
@@ -157,13 +115,9 @@ import {
 import {
   SKILL_FILE,
   SkillsState,
-  choosablePaths,
-  chosenImportPaths,
   contentWorkspaceId,
   formatSkillSize,
-  importUrlValid,
   mergeSkill,
-  orderCandidates,
   orderSkills,
   skillEnabledMessage,
   skillPagePath,
@@ -179,12 +133,10 @@ import { useToasts } from '../composables/useToasts';
 import { onWebMCPChange } from '../composables/useWebMCPChanges';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useEventBus } from '../useEventBus';
-import { useGitLabHost } from '../composables/useGitLabHost';
-import GitHubConnection from './GitHubConnection.vue';
-import GitLabConnection from './GitLabConnection.vue';
+import { SWITCH, SWITCH_KNOB } from '../utils/formStyles';
 import GiveSkillModal from './GiveSkillModal.vue';
 import SkillCard from './SkillCard.vue';
-import SkillImportChoice from './SkillImportChoice.vue';
+import SkillImportForm from './SkillImportForm.vue';
 import SkillWorkspaceChoices from './SkillWorkspaceChoices.vue';
 import WorkspaceTeamSkills from './WorkspaceTeamSkills.vue';
 
@@ -317,58 +269,18 @@ async function toggleEnabled(s) {
 }
 
 // ── Importing ───────────────────────────────────────────────────────────────
-const importUrl = ref('');
-const importOverwrite = ref(false);
-const importing = ref(false);
-const importReport = ref(null);
-const importError = ref('');
-// An import lists the repository's skills first: the link they came from,
-// and which of them are switched on — all that can be, unless the repository
-// is too large to import whole.
-const choice = ref(null);
-const chosen = ref([]);
-
 // The workspaces to turn what is imported on in: ticked on the Skills page; in
 // a workspace's tab, that workspace — a fork's parent, whose skills the fork uses.
 const workspaceChoices = computed(() => skillWorkspaceChoices(workspaceStore.workspaces));
 const importWorkspaceIds = ref([]);
-// The GitLab a link may name besides GitHub, for the hint.
-const gitlabHost = useGitLabHost();
 
 function importTargets() {
   if (!props.workspaceId) return [...importWorkspaceIds.value];
   return [contentWorkspaceId(workspaceStore.getWorkspace(props.workspaceId), props.workspaceId)];
 }
 
-async function doImport(url, skills, list = false) {
-  importing.value = true;
-  importError.value = '';
-  importReport.value = null;
-  try {
-    const res = await importSkills(url, importOverwrite.value, skills, importTargets(), list);
-    if (res.candidates?.length) {
-      const candidates = orderCandidates(res.candidates);
-      choice.value = { url, repo: res.sourceRepo, candidates, tooLarge: !!res.tooLarge };
-      chosen.value = res.tooLarge ? [] : choosablePaths(candidates);
-      return;
-    }
-    choice.value = null;
-    importReport.value = res;
-    await loadSkills();
-  } catch (err) {
-    importError.value = err.message;
-  } finally {
-    importing.value = false;
-  }
-}
-
-function runImport() {
-  choice.value = null;
-  return doImport(importUrl.value.trim(), undefined, true);
-}
-
-function importChosen() {
-  return doImport(choice.value.url, chosenImportPaths(choice.value, chosen.value));
+function runImport(url, overwrite, skills, list) {
+  return importSkills(url, overwrite, skills, importTargets(), list);
 }
 
 onMounted(() => {

@@ -124,46 +124,10 @@
           </div>
         </form>
 
-        <!-- Import from GitHub or GitLab, as the account's Skills page does. -->
-        <form class="sm:p-4 sm:bg-gray-50 sm:dark:bg-zinc-800/50 sm:rounded-sm sm:border border-gray-100 dark:border-zinc-800 space-y-3" @submit.prevent="runImport">
-          <label for="tws-import-url" class="block text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Import from GitHub or GitLab</label>
-          <div class="flex flex-col sm:flex-row gap-2">
-            <input id="tws-import-url" v-model="importUrl" data-test="tws-import-url" type="url" autocomplete="off" spellcheck="false"
-                   placeholder="https://github.com/obra/superpowers"
-                   class="min-w-0 flex-1 px-3 py-2 text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg text-gray-900 dark:text-zinc-100 placeholder-gray-300 dark:placeholder-zinc-600 focus:outline-none focus:border-gray-400 dark:focus:border-zinc-500" />
-            <button type="submit" data-test="tws-import" :disabled="importing || !importUrl.trim()"
-                    class="shrink-0 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-[11px] font-black uppercase tracking-widest disabled:opacity-40">
-              {{ importing && !choice ? 'Discovering…' : 'Discover' }}
-            </button>
-          </div>
-          <p v-if="importUrl.trim() && !importUrlValid(importUrl, gitlabHost)" class="text-[10px] text-amber-600 dark:text-amber-400">
-            Expected https://github.com/owner/repo or https://{{ gitlabHost }}/group/project, optionally …/tree/&lt;ref&gt;/&lt;path&gt;
-          </p>
-          <!-- A private repository is read through the importing member's own connections. -->
-          <GitHubConnection />
-          <GitLabConnection />
-          <p v-if="importError" data-test="tws-import-error" class="text-[11px] font-bold text-red-600 dark:text-red-400 break-words">{{ importError }}</p>
-          <SkillImportChoice v-if="choice" v-model="chosen" :choice="choice" :importing="importing" test-prefix="tws"
-                             @import="importChosen" @cancel="choice = null">
-            <template #options>
-              <label class="flex items-center gap-2 text-[11px] text-gray-600 dark:text-zinc-300">
-                <input v-model="importOverwrite" data-test="tws-import-overwrite" type="checkbox" class="rounded-sm border-gray-300 dark:border-zinc-600" />
-                Overwrite team skills of the same name
-              </label>
-            </template>
-          </SkillImportChoice>
-          <div v-if="importReport" data-test="tws-import-report" class="space-y-2 text-[11px] text-gray-700 dark:text-zinc-300">
-            <p class="font-bold">
-              Imported {{ importReport.imported.length }} {{ importReport.imported.length === 1 ? 'skill' : 'skills' }}
-              from {{ importReport.sourceRepo }}<span v-if="importReport.sourceCommit">@{{ importReport.sourceCommit.slice(0, 7) }}</span>.
-            </p>
-            <ul v-if="importReport.skipped.length" class="space-y-1">
-              <li v-for="(s, i) in importReport.skipped" :key="i" class="break-words">
-                <span class="font-mono font-bold">{{ s.path || s.name }}</span> — {{ s.reason }}
-              </li>
-            </ul>
-          </div>
-        </form>
+        <!-- Import from GitHub or GitLab, as the account's Skills page does;
+             another team workspace starts it afresh. -->
+        <SkillImportForm :key="current.id" :run="runImport" test-prefix="tws" overwrite-label="Overwrite team skills of the same name"
+                         @imported="loadSkills({ quiet: true })" />
 
         <p v-if="skills === null" class="text-[11px] text-gray-400 dark:text-zinc-500 ml-1">Loading skills…</p>
         <p v-else-if="listError" data-test="tws-list-error" class="text-[11px] font-bold text-red-600 dark:text-red-400">{{ listError }}</p>
@@ -205,11 +169,8 @@ import {
   saveTeamWorkspaceSkillFile,
 } from '../api';
 import DeleteModal from './DeleteModal.vue';
-import GitHubConnection from './GitHubConnection.vue';
-import { SKILL_FILE, choosablePaths, chosenImportPaths, formatSkillSize, importUrlValid, orderCandidates } from '../composables/useSkills';
-import { useGitLabHost } from '../composables/useGitLabHost';
-import GitLabConnection from './GitLabConnection.vue';
-import SkillImportChoice from './SkillImportChoice.vue';
+import SkillImportForm from './SkillImportForm.vue';
+import { SKILL_FILE, formatSkillSize } from '../composables/useSkills';
 import { lostTeam, sameSharedName, sharedNameOf, useTeamMode } from '../composables/useTeamMode';
 import { useToasts } from '../composables/useToasts';
 import { onWebMCPChange } from '../composables/useWebMCPChanges';
@@ -309,45 +270,8 @@ async function create() {
 }
 
 // ── Importing ───────────────────────────────────────────────────────────────
-const importUrl = ref('');
-const importOverwrite = ref(false);
-const importing = ref(false);
-const importReport = ref(null);
-const importError = ref('');
-const choice = ref(null);
-const chosen = ref([]);
-// The GitLab a link may name besides GitHub, for the hint.
-const gitlabHost = useGitLabHost();
-
-async function doImport(url, picked, list = false) {
-  importing.value = true;
-  importError.value = '';
-  importReport.value = null;
-  try {
-    const res = await importTeamWorkspaceSkills(teamId.value, current.value.id, url, importOverwrite.value, picked, list);
-    if (res?.candidates?.length) {
-      const candidates = orderCandidates(res.candidates);
-      choice.value = { url, repo: res.sourceRepo, candidates, tooLarge: !!res.tooLarge };
-      chosen.value = res.tooLarge ? [] : choosablePaths(candidates);
-      return;
-    }
-    choice.value = null;
-    importReport.value = { imported: res?.imported || [], skipped: res?.skipped || [], sourceRepo: res?.sourceRepo || '', sourceCommit: res?.sourceCommit || '' };
-    await loadSkills({ quiet: true });
-  } catch (err) {
-    importError.value = err.message;
-  } finally {
-    importing.value = false;
-  }
-}
-
-function runImport() {
-  choice.value = null;
-  return doImport(importUrl.value.trim(), undefined, true);
-}
-
-function importChosen() {
-  return doImport(choice.value.url, chosenImportPaths(choice.value, chosen.value));
+function runImport(url, overwrite, skills, list) {
+  return importTeamWorkspaceSkills(teamId.value, current.value.id, url, overwrite, skills, list);
 }
 
 // ── One skill, and its files ────────────────────────────────────────────────
@@ -487,8 +411,6 @@ watch(() => current.value?.id, (id) => {
   openId.value = '';
   skill.value = null;
   editor.value = null;
-  choice.value = null;
-  importReport.value = null;
   if (id) loadSkills();
 }, { immediate: true });
 </script>

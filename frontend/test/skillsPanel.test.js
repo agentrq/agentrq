@@ -214,11 +214,11 @@ describe('the Skills tab', () => {
     expect(switchOf(rows[0]).getAttribute('role')).toBe('switch');
     expect(switchOf(rows[0]).getAttribute('aria-label')).toBe('Import tdd');
     // The skill cards' look: dark when on, grey when off.
-    expect(switchOf(rows[0]).classList.contains('bg-gray-900')).toBe(true);
+    expect(switchOf(rows[0]).className).toContain('aria-checked:bg-gray-900');
 
     await click(switchOf(rows[0]));
     expect(switchOf(rows[0]).getAttribute('aria-checked')).toBe('false');
-    expect(switchOf(rows[0]).classList.contains('bg-gray-200')).toBe(true);
+    expect(switchOf(rows[0]).getAttribute('aria-checked')).toBe('false');
     const importChosen = el.querySelector('[data-test="skill-import-chosen"]');
     expect(text(importChosen)).toBe('Import 1');
     // A disabled switch stays off.
@@ -328,6 +328,78 @@ describe('the Skills tab', () => {
     expect(el.querySelector('[data-test="skill-import-choice"]')).toBeNull();
     expect(text(el.querySelector('[data-test="skill-import-report"]'))).toContain('Imported 1 skill');
     expect(api.searchWorkspaceSkills).toHaveBeenCalledTimes(2);
+  });
+
+  it('says what is wrong with the link under its field when Discover is pressed, not while typing', async () => {
+    const el = await mount();
+    const input = el.querySelector('#skill-import-url');
+    const discover = el.querySelector('[data-test="skill-import"]');
+    expect(discover.disabled).toBe(false);
+    await click(discover);
+    expect(api.importSkills).not.toHaveBeenCalled();
+    expect(text(el.querySelector('[data-test="field-error"]'))).toBe('Enter a link to a GitHub or GitLab repository.');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.getAttribute('aria-describedby')).toContain('skill-import-url-error');
+    expect(document.activeElement).toBe(input);
+
+    // Typing puts the error away; a link the importer cannot take says why.
+    input.value = 'https://example.com/a/b';
+    input.dispatchEvent(new Event('input'));
+    await settle();
+    expect(el.querySelector('[data-test="field-error"]')).toBeNull();
+    expect(input.getAttribute('aria-invalid')).toBeNull();
+    el.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    expect(text(el.querySelector('[data-test="field-error"]'))).toContain('Expected https://github.com/owner/repo or https://gitlab.com/group/project');
+    expect(api.importSkills).not.toHaveBeenCalled();
+  });
+
+  it('says a link the server refused under its field, and an import that failed below the list', async () => {
+    api.importSkills.mockRejectedValueOnce(new Error('obra/nothing was not found'));
+    const el = await mount();
+    await submitImport(el, 'https://github.com/obra/nothing');
+    expect(text(el.querySelector('[data-test="field-error"]'))).toBe('obra/nothing was not found');
+    expect(document.activeElement).toBe(el.querySelector('#skill-import-url'));
+    expect(el.querySelector('[data-test="skill-import-error"]')).toBeNull();
+
+    await submitImport(el, 'https://github.com/obra/superpowers');
+    expect(el.querySelector('[data-test="field-error"]')).toBeNull();
+    api.importSkills.mockRejectedValueOnce(new Error('the chosen skills are larger than 16 MB; choose fewer'));
+    await click(el.querySelector('[data-test="skill-import-chosen"]'));
+    const failed = el.querySelector('[data-test="skill-import-error"]');
+    expect(failed.getAttribute('role')).toBe('alert');
+    expect(text(failed)).toBe('the chosen skills are larger than 16 MB; choose fewer');
+    // The list stays, to choose fewer.
+    expect(el.querySelector('[data-test="skill-import-choice"]')).not.toBeNull();
+  });
+
+  it('lands on the list when it appears, and puts it away when the link changes', async () => {
+    const el = await mount();
+    await submitImport(el, 'https://github.com/obra/superpowers');
+    const choice = el.querySelector('[data-test="skill-import-choice"]');
+    expect(document.activeElement).toBe(choice.querySelector('p'));
+    const input = el.querySelector('#skill-import-url');
+    input.value = 'https://github.com/obra/other';
+    input.dispatchEvent(new Event('input'));
+    await settle();
+    expect(el.querySelector('[data-test="skill-import-choice"]')).toBeNull();
+  });
+
+  it('switches nothing while an import runs', async () => {
+    const el = await mount();
+    await submitImport(el, 'https://github.com/obra/superpowers');
+    let answer;
+    api.importSkills.mockImplementationOnce(() => new Promise((r) => { answer = r; }));
+    await click(el.querySelector('[data-test="skill-import-chosen"]'));
+    const choice = el.querySelector('[data-test="skill-import-choice"]');
+    expect([...choice.querySelectorAll('[role="switch"]')].every((b) => b.disabled)).toBe(true);
+    expect(text(el.querySelector('[data-test="skill-import-chosen"]'))).toBe('Importing…');
+    // The form's own button still says Discover while the list imports.
+    expect(text(el.querySelector('[data-test="skill-import"]'))).toBe('Discover');
+    answer(IMPORTED);
+    await settle();
+    expect(text(el.querySelector('[data-test="skill-import-report"]'))).toContain('Imported 1 skill');
+    expect(el.querySelector('[data-test="skill-import-report"]').getAttribute('role')).toBe('status');
   });
 
   it('puts a choice away on cancel', async () => {
@@ -474,18 +546,20 @@ describe('the Skills page\'s list', () => {
 
   it('imports into the workspaces ticked, none to start with', async () => {
     const el = await mount('');
-    expect(ticked(el)).toEqual([]);
-    // Overwriting is asked beside the import it applies to, once there is one.
+    // Where to turn them on and overwriting are asked beside the import they
+    // apply to, once there is one.
+    expect(el.querySelector('[data-test="skill-import-workspaces"]')).toBeNull();
     expect(el.querySelector('[data-test="skill-import-overwrite"]')).toBeNull();
     await submitImport(el, 'https://github.com/obra/superpowers');
+    expect(ticked(el)).toEqual([]);
     expect(text(el.querySelector('[data-test="skill-import-choice"]'))).toContain('Overwrite skills you already have');
     await click(el.querySelector('[data-test="skill-import-overwrite"]'));
     await click(el.querySelector('[data-test="skill-import-chosen"]'));
     expect(api.importSkills).toHaveBeenLastCalledWith('https://github.com/obra/superpowers', true, undefined, [], false);
 
-    workspaceBoxes(el)[2].querySelector('input').click();
-    await settle();
     el.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    workspaceBoxes(el)[2].querySelector('input').click();
     await settle();
     await click(el.querySelector('[data-test="skill-import-chosen"]'));
     expect(api.importSkills).toHaveBeenLastCalledWith('https://github.com/obra/superpowers', true, undefined, ['ws2'], false);
