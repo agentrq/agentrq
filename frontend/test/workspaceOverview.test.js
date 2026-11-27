@@ -46,6 +46,7 @@ import {
   coalesce,
   countChips,
   sidebarActivity,
+  workspaceDot,
   filterWorkspaceGroups,
   groupWorkspaces,
   indexOverview,
@@ -261,6 +262,30 @@ describe('a workspace card', () => {
     expect(text(el)).toContain('No active tasks');
     expect(el.querySelector('[data-test="card-fork"]').getAttribute('title')).toBe('Fork of api');
     expect(el.querySelector('[data-test="workspace-card"]').className).toContain('opacity-60');
+  });
+});
+
+describe('a card\'s status dot', () => {
+  const dot = () => el.querySelector('[data-test="card-status-dot"]');
+
+  it('stays still for an idle online agent, and is grey for an offline one', async () => {
+    await mountComponent(WorkspaceOverviewCard, { workspace: { id: 'a', name: 'api', agentConnected: true } });
+    expect(dot().className).toContain('bg-green-500');
+    expect(dot().className).not.toMatch(/animate-/);
+    expect(dot().getAttribute('title')).toBe('Agent Online');
+    app.unmount();
+    await mountComponent(WorkspaceOverviewCard, { workspace: { id: 'a', name: 'api', agentConnected: false } });
+    expect(dot().className).toContain('bg-gray-300');
+    expect(dot().getAttribute('title')).toBe('Agent Offline');
+  });
+
+  it('pulses only while a task is ongoing', async () => {
+    await mountComponent(WorkspaceOverviewCard, {
+      workspace: { id: 'a', name: 'api', agentConnected: true },
+      overview: { counts: { ongoing: 1 }, tasks: [] },
+    });
+    expect(dot().className).toContain('animate-pulse');
+    expect(dot().getAttribute('title')).toBe('Task ongoing');
   });
 });
 
@@ -497,5 +522,17 @@ describe('sidebarActivity', () => {
   it('marks nothing without such tasks', () => {
     expect(sidebarActivity({ ongoing: 0, notstarted: 2, completed: 4 })).toEqual({ tone: null, dot: '', label: '', queued: 0 });
     expect(sidebarActivity()).toEqual({ tone: null, dot: '', label: '', queued: 0 });
+  });
+});
+
+describe('workspaceDot', () => {
+  it('is the activity mark when there is one', () => {
+    expect(workspaceDot({ pending: 1 }, true)).toEqual({ dot: 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]', label: 'Waiting on you' });
+    expect(workspaceDot({ ongoing: 1 }, true)).toEqual({ dot: 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse', label: 'Task ongoing' });
+  });
+
+  it('is otherwise the agent\'s state, without motion', () => {
+    expect(workspaceDot({}, true)).toEqual({ dot: 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]', label: 'Agent Online' });
+    expect(workspaceDot(undefined, false)).toEqual({ dot: 'bg-gray-300 dark:bg-zinc-600', label: 'Agent Offline' });
   });
 });
