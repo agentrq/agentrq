@@ -70,6 +70,13 @@ func (r *repo) UpdateHookDelivery(ctx context.Context, d model.HookDelivery) err
 	return r.Repository.UpdateHookDelivery(ctx, d)
 }
 
+func (r *repo) DeleteHookDelivery(ctx context.Context, d model.HookDelivery) error {
+	if err := r.err("DeleteHookDelivery"); err != nil {
+		return err
+	}
+	return r.Repository.DeleteHookDelivery(ctx, d)
+}
+
 func (r *repo) RouteHookDelivery(ctx context.Context, d model.HookDelivery, events []model.HookPendingEvent) ([]model.HookPendingEvent, error) {
 	if err := r.err("RouteHookDelivery"); err != nil {
 		return nil, err
@@ -167,6 +174,16 @@ func (f qFixture) delivery(t *testing.T, id int64) model.HookDelivery {
 	return d
 }
 
+// gone reports whether the delivery is no longer stored.
+func (f qFixture) gone(t *testing.T, id int64) bool {
+	t.Helper()
+	_, err := f.repo.Repository.GetHookDelivery(context.Background(), id)
+	if err != nil && !errors.Is(err, base.ErrNotFound) {
+		t.Fatal(err)
+	}
+	return err != nil
+}
+
 // published returns what went out on the events topic, and the telemetry
 // actions sent.
 func (f qFixture) published() (events []entity.EventPublishedPayload, actions []entity.Action) {
@@ -183,6 +200,18 @@ func (f qFixture) published() (events []entity.EventPublishedPayload, actions []
 	return events, actions
 }
 
+// outcomes returns the outcomes hook_receive was sent with, in order.
+func (f qFixture) outcomes() (out []string) {
+	f.pub.mu.Lock()
+	defer f.pub.mu.Unlock()
+	for _, req := range f.pub.got {
+		if e, ok := req.Event.(entity.CRUDEvent); ok && e.Action == entity.ActionHookReceive {
+			out = append(out, e.SubAction)
+		}
+	}
+	return out
+}
+
 func TestReceiveQueuesARequest(t *testing.T) {
 	f := qSetup(t)
 	id := f.receive(t)
@@ -194,7 +223,8 @@ func TestReceiveQueuesARequest(t *testing.T) {
 		d.BodySHA256 != "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93" || d.EventNames != "[]" {
 		t.Errorf("delivery = %+v, request %+v", d, req)
 	}
-	if _, actions := f.published(); !slices.Equal(actions, []entity.Action{entity.ActionHookReceive}) {
+	// Counted once it ends, not as it arrives.
+	if _, actions := f.published(); len(actions) != 0 {
 		t.Errorf("telemetry = %v", actions)
 	}
 	select {
@@ -374,8 +404,8 @@ func TestDeliveryPublished(t *testing.T) {
 	if events[0].Subject != "CI failed on main: test" || events[1].Subject != "" {
 		t.Errorf("the events were published with the subjects %q and %q, want the hook's %q and none", events[0].Subject, events[1].Subject, "CI failed on main: test")
 	}
-	if !slices.Equal(actions, []entity.Action{entity.ActionHookReceive, entity.ActionHookPublish}) {
-		t.Errorf("telemetry = %v", actions)
+	if !slices.Equal(actions, []entity.Action{entity.ActionHookPublish, entity.ActionHookReceive}) || !slices.Equal(f.outcomes(), []string{"published"}) {
+		t.Errorf("telemetry = %v, outcomes %v", actions, f.outcomes())
 	}
 
 	// The provider sends it again: the keyed event is a duplicate, the
@@ -390,6 +420,9 @@ func TestDeliveryPublished(t *testing.T) {
 	f.ctl().drain(ctx)
 	if d = f.delivery(t, id); d.Status != model.HookDeliveryDuplicate || d.Request != nil {
 		t.Errorf("duplicate = %+v", d)
+	}
+	if got := f.outcomes(); !slices.Equal(got, []string{"published", "published", "duplicate"}) {
+		t.Errorf("outcomes = %v", got)
 	}
 }
 
@@ -416,10 +449,7 @@ func TestDeliveryDecidedByTheHook(t *testing.T) {
 		reason string
 		action entity.Action
 	}{
-		"rejected":         {hookrunner.Result{Reason: "bad signature"}, model.HookDeliveryRejected, "bad signature", entity.ActionHookReject},
-		"nothing to fire":  {hookrunner.Result{Accept: true, Reason: "a ping"}, model.HookDeliveryIgnored, "a ping", 0},
-		"nothing routed":   {hookrunner.Result{Accept: true, Events: []hookrunner.EventOut{{Name: "release.published"}}}, model.HookDeliveryIgnored, "none of its events is routed", 0},
-		"its reason first": {hookrunner.Result{Accept: true, Reason: "filtered", Events: []hookrunner.EventOut{{Name: "release.published"}}}, model.HookDeliveryIgnored, "filtered", 0},
+		"rejected": {hookrunner.Result{Reason: "bad signature"}, model.HookDeliveryRejected, "bad signature", entity.ActionHookReject},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := qSetup(t)
@@ -431,8 +461,35 @@ func TestDeliveryDecidedByTheHook(t *testing.T) {
 				t.Errorf("delivery = %+v", d)
 			}
 			events, actions := f.published()
-			if len(events) != 0 || (tc.action != 0) != slices.Contains(actions, tc.action) {
-				t.Errorf("published %v, telemetry %v", events, actions)
+			if len(events) != 0 || (tc.action != 0) != slices.Contains(actions, tc.action) || !slices.Equal(f.outcomes(), []string{"rejected"}) {
+				t.Errorf("published %v, telemetry %v, outcomes %v", events, actions, f.outcomes())
+			}
+		})
+	}
+}
+
+// A delivery with nothing to fire is not kept, and counted as ignored.
+func TestDeliveryIgnoredIsNotKept(t *testing.T) {
+	ctx := context.Background()
+	for name, res := range map[string]hookrunner.Result{
+		"nothing to fire": {Accept: true, Reason: "a ping"},
+		"nothing routed":  {Accept: true, Events: []hookrunner.EventOut{{Name: "release.published"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := qSetup(t)
+			f.run.res = res
+			id := f.receive(t)
+			f.ctl().drain(ctx)
+			if !f.gone(t, id) {
+				t.Errorf("delivery kept: %+v", f.delivery(t, id))
+			}
+			ds, err := f.c.ListDeliveries(ctx, user, f.reg.ID, 0, 10)
+			if err != nil || len(ds) != 0 {
+				t.Errorf("log = %+v, %v", ds, err)
+			}
+			events, actions := f.published()
+			if len(events) != 0 || !slices.Equal(actions, []entity.Action{entity.ActionHookReceive}) || !slices.Equal(f.outcomes(), []string{"ignored"}) {
+				t.Errorf("published %v, telemetry %v, outcomes %v", events, actions, f.outcomes())
 			}
 		})
 	}
@@ -466,6 +523,9 @@ func TestDeliveryFailsAtOnce(t *testing.T) {
 			d := f.delivery(t, id)
 			if d.Status != model.HookDeliveryFailed || !strings.Contains(d.Error, tc.reason) || d.Request == nil || d.Attempts != 1 {
 				t.Fatalf("delivery = %+v", d)
+			}
+			if got := f.outcomes(); !slices.Equal(got, []string{"failed"}) {
+				t.Errorf("outcomes = %v", got)
 			}
 			ds, err := f.c.ListDeliveries(ctx, user, f.reg.ID, 0, 10)
 			if err != nil || len(ds) != 1 || ds[0].Status != "failed" || !ds[0].Replayable || ds[0].EventNames == nil {
@@ -560,11 +620,11 @@ func TestDeliveryRetriedThenFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.ctl().drain(ctx)
-	if d := f.delivery(t, id); d.Status != model.HookDeliveryIgnored || d.Attempts != 1 {
-		t.Errorf("replayed = %+v", d)
+	if !f.gone(t, id) {
+		t.Errorf("replayed = %+v", f.delivery(t, id))
 	}
 	if err := f.c.ReplayDelivery(ctx, user, f.reg.ID, id); !errors.Is(err, base.ErrNotFound) {
-		t.Errorf("replay of an ignored delivery = %v", err)
+		t.Errorf("replay of a deleted delivery = %v", err)
 	}
 }
 
@@ -771,10 +831,13 @@ func TestDrainSurvivesTheRepository(t *testing.T) {
 	// A failed write of the outcome is logged; the lease brings it back.
 	f := qSetup(t)
 	id := f.receive(t)
-	f.repo.fail["UpdateHookDelivery"] = errBoom
+	f.repo.fail["DeleteHookDelivery"] = errBoom
 	f.ctl().drain(ctx)
 	if d := f.delivery(t, id); d.Status != model.HookDeliveryProcessing {
 		t.Errorf("delivery = %+v", d)
+	}
+	if outcomes := f.outcomes(); len(outcomes) != 0 {
+		t.Errorf("counted before it was deleted: %v", outcomes)
 	}
 	// A routed delivery that cannot be read is left for its lease.
 	f = qSetup(t)
@@ -811,8 +874,8 @@ func TestDrainTakesEveryBatch(t *testing.T) {
 	}
 	f.ctl().drain(context.Background())
 	for _, id := range ids {
-		if d := f.delivery(t, id); d.Status != model.HookDeliveryIgnored {
-			t.Fatalf("%d = %+v", id, d)
+		if !f.gone(t, id) {
+			t.Fatalf("%d = %+v", id, f.delivery(t, id))
 		}
 	}
 	// Claimed already: another worker's, left alone.
@@ -836,7 +899,7 @@ func TestStartWorksTheQueueAndSweeps(t *testing.T) {
 	for {
 		var n int64
 		f.repo.db.Model(&model.HookDelivery{}).Where("id = ?", old).Count(&n)
-		if d := f.delivery(t, id); d.Status == model.HookDeliveryIgnored && n == 0 {
+		if f.gone(t, id) && n == 0 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -846,7 +909,7 @@ func TestStartWorksTheQueueAndSweeps(t *testing.T) {
 	}
 	// Woken by a new request.
 	id = f.receive(t)
-	for f.delivery(t, id).Status != model.HookDeliveryIgnored {
+	for !f.gone(t, id) {
 		if time.Now().After(deadline) {
 			t.Fatal("a new request was not worked")
 		}

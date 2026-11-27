@@ -26,6 +26,10 @@ only while `hooks.allowUserHooks` is on.
   while `claims` is still the one claimed; without that, both route it. Never
   fence on `attempts`: a routed claim doesn't count one and a replay resets it,
   so a stalled worker's value comes round again.
+- **A delivery with nothing to fire is deleted, not stored.** A provider
+  sends far more requests than a registration routes; a row for each would
+  fill the table. Its only trace is `hook_receive{sub_action="ignored"}` on
+  Prometheus.
 - **The raw request is cleared once a delivery is processed**, except a failed
   one, which keeps it until the retention passes so it can be replayed. Replay
   relies on that, not on the column: a nil `[]byte` is stored as an empty blob,

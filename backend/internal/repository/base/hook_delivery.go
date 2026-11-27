@@ -102,6 +102,16 @@ func saveHookDelivery(db *gorm.DB, d model.HookDelivery) error {
 	return res.Error
 }
 
+// DeleteHookDelivery removes a delivery while its claim is still the latest,
+// or returns ErrLeaseLost.
+func (r *repository) DeleteHookDelivery(ctx context.Context, d model.HookDelivery) error {
+	res := r.conn(ctx).Where("id = ? AND claims = ?", d.ID, d.Claims).Delete(&model.HookDelivery{})
+	if res.Error == nil && res.RowsAffected == 0 {
+		return ErrLeaseLost
+	}
+	return res.Error
+}
+
 // RouteHookDelivery commits a delivery's events in one transaction: it marks
 // each dedup key, keeping only the events whose key is new or that have
 // none, stores those as pending and clears the request. The delivery is

@@ -973,6 +973,9 @@ type (
 		Origin       Origin       `json:"origin"` // 1: API, 2: MCP, 3: Scheduler, 4: Slack
 		// TeamID is the team a team skill event goes to, its members.
 		TeamID int64 `json:"teamId,omitempty"`
+		// SubAction labels the action on Prometheus, from a fixed list:
+		// a hook request's outcome.
+		SubAction string `json:"subAction,omitempty"`
 	}
 
 	// Push subscription entities
@@ -1874,8 +1877,10 @@ const (
 	// fire its events through. Emitted by the backend; workspace 0, since a
 	// registration belongs to the account.
 	ActionHookRegister Action = 111
-	// A request to a hook URL with the right token, queued. Emitted by the
-	// backend, like the two below; workspace 0, like a registration.
+	// A request to a hook URL with the right token, once its delivery has
+	// ended, under its outcome (HookReceiveOutcomes). Emitted by the
+	// backend, like the two below; workspace 0, like a registration. Counted
+	// on Prometheus only, never stored: there is one per provider request.
 	ActionHookReceive Action = 112
 	// A queued request the hook refused, such as for a wrong signature.
 	ActionHookReject Action = 113
@@ -1979,6 +1984,10 @@ const (
 	ActionUISelectionQuote Action = 152
 	ActionUISelectionCopy  Action = 153
 )
+
+// HookReceiveOutcomes are how a request to a hook URL ends: the sub-actions
+// ActionHookReceive is counted under, named as its delivery's status.
+var HookReceiveOutcomes = []string{"published", "rejected", "ignored", "duplicate", "failed"}
 
 // ClientReportableAction resolves an action name a browser is allowed to
 // report into its Action.
