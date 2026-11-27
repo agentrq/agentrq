@@ -44,6 +44,7 @@ export default defineConfig({
         'src/stores/workspaceStore.js',
         'src/desktop/*.js',
         'src/composables/useChatScroll.js',
+        'src/composables/useSelectionQuote.js',
         'src/composables/useChatMinimap.js',
         'src/composables/useStreamToasts.js',
         'src/composables/useHiddenTabNotifications.js',

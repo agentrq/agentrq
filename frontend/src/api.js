@@ -1425,6 +1425,9 @@ export const TELEMETRY_UI_OVERVIEW_TASK_OPEN = 'ui_overview_task_open';
 export const TELEMETRY_UI_PRESET_INSERT = 'ui_preset_insert';
 // Autoscroll paused for a task from its chat minimap.
 export const TELEMETRY_UI_AUTOSCROLL_PAUSE = 'ui_autoscroll_pause';
+// Text selected in an agent's message, quoted into the reply or copied.
+export const TELEMETRY_UI_SELECTION_QUOTE = 'ui_selection_quote';
+export const TELEMETRY_UI_SELECTION_COPY = 'ui_selection_copy';
 export const TELEMETRY_UI_SPIN_UP = 'ui_spin_up';
 // A dictation done by a phone's own speech recognition rather than Whisper.
 export const TELEMETRY_UI_DICTATION_END = 'ui_dictation_end';

@@ -237,6 +237,22 @@
     <!-- Scrollable chat area -->
     <div ref="scrollContainer" class="flex-1 min-w-0 overflow-y-auto px-1 @min-[40rem]:px-4 pt-0 pb-6 flex flex-col gap-4 scroll-smooth custom-scrollbar overflow-x-hidden relative" style="overscroll-behavior-y: contain;">
 
+      <!-- Under text selected in an agent's message: quote it into the reply, or copy it.
+           mousedown.prevent keeps the selection while a button is pressed. -->
+      <div v-if="selectionToolbar" data-test="selection-toolbar" @mousedown.prevent
+           class="absolute z-40 -translate-x-full mt-1.5 flex items-center gap-0.5 p-0.5 rounded-md border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-sm"
+           :style="{ top: `${selectionToolbar.top}px`, left: `${selectionToolbar.right}px` }">
+        <button v-if="canReply" type="button" @click="quoteSelection" title="Quote in reply" aria-label="Quote in reply" data-test="selection-quote"
+                class="p-1.5 rounded text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-zinc-700 transition-colors">
+          <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.583 17.321C3.553 16.227 3 15 3 13.011c0-3.5 2.457-6.637 6.03-8.188l.893 1.378c-3.335 1.804-3.987 4.145-4.247 5.621.537-.278 1.24-.375 1.929-.311 1.804.167 3.226 1.648 3.226 3.489a3.5 3.5 0 01-3.5 3.5c-1.073 0-2.099-.49-2.748-1.179zm10 0C13.553 16.227 13 15 13 13.011c0-3.5 2.457-6.637 6.03-8.188l.893 1.378c-3.335 1.804-3.987 4.145-4.247 5.621.537-.278 1.24-.375 1.929-.311 1.804.167 3.226 1.648 3.226 3.489a3.5 3.5 0 01-3.5 3.5c-1.073 0-2.099-.49-2.748-1.179z"/></svg>
+        </button>
+        <button type="button" @click="copySelection" title="Copy" aria-label="Copy" data-test="selection-copy"
+                class="p-1.5 rounded text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-zinc-700 transition-colors">
+          <svg v-if="!copiedMessages.has('selection')" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          <svg v-else data-test="selection-copied" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></svg>
+        </button>
+      </div>
+
       <!-- Drag & Drop Overlay -->
       <div v-if="isDragging" class="absolute inset-0 bg-white/95 dark:bg-zinc-900/95 z-50 flex flex-col items-center justify-center border-4 border-dashed border-gray-300 dark:border-zinc-700 m-4 rounded-xl transition-all duration-200 animate-in fade-in zoom-in-95">
         <div class="flex flex-col items-center gap-3 text-center pointer-events-none">
@@ -317,9 +333,9 @@
                <A2uiSurface v-if="isCardMetadata(m.metadata) && !rawMessages.has(m.id)" :metadata="m.metadata" :text="m.text"
                             :attachments="m.attachments" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200"
                             :read-only="cardReadOnly(m)" :busy="cardsSending.has(m.id)" @action="sendCardAction(m, $event)"
-                            :class="isProgressCard(m) && cardPins.isCollapsed(m.id) ? FOLDED_CARD : ''" :data-collapsed="isProgressCard(m) && cardPins.isCollapsed(m.id) ? 'true' : undefined" />
-               <MarkdownBody v-else-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
-               <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
+                            :class="isProgressCard(m) && cardPins.isCollapsed(m.id) ? FOLDED_CARD : ''" :data-collapsed="isProgressCard(m) && cardPins.isCollapsed(m.id) ? 'true' : undefined" data-quote-source />
+               <MarkdownBody v-else-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" data-quote-source />
+               <div v-else data-quote-source class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
 
                <!-- Permission Request (agent message) -->
                <div v-if="m.metadata?.type === 'permission_request'" class="mt-4 border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden shadow-sm">
@@ -1001,7 +1017,7 @@ import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { isInlineImage } from '../composables/useAttachmentDownload';
 import AttachmentPreview from '../components/AttachmentPreview.vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, sendA2uiAction, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT, TELEMETRY_UI_PLAN_COMMENT, TELEMETRY_UI_TASK_LINK_OPEN, TELEMETRY_UI_AUTOSCROLL_PAUSE } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, sendA2uiAction, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT, TELEMETRY_UI_PLAN_COMMENT, TELEMETRY_UI_TASK_LINK_OPEN, TELEMETRY_UI_AUTOSCROLL_PAUSE, TELEMETRY_UI_SELECTION_QUOTE, TELEMETRY_UI_SELECTION_COPY } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
@@ -1056,6 +1072,7 @@ import ComposerBox from '../components/ComposerBox.vue';
 import ComposerNotice from '../components/ComposerNotice.vue';
 import { foldReactions, summarizeReactions, emojiKeyboardHint, openEmojiKeyboard } from '../composables/useEmojiReactions';
 import { insertAtCursor } from '../utils/insertAtCursor';
+import { useSelectionQuote, lineEnding, quoteText, appendQuote } from '../composables/useSelectionQuote';
 import { pasteFiles } from '../utils/pasteFiles';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 import TaskTimeline from '../components/TaskTimeline.vue';
@@ -1231,6 +1248,26 @@ const {
   toggleRecording: sttToggle,
 } = useSpeechToText(replyText, workspaceId, textareaRef);
 const scrollContainer = ref(null);
+
+// Text selected in an agent's message gets a toolbar under it.
+const { toolbar: selectionToolbar, clear: clearSelection } = useSelectionQuote(scrollContainer);
+
+/** Quotes the selection into the reply, in the OS's line endings, and leaves the cursor under it. */
+function quoteSelection() {
+  const eol = lineEnding(platformStore.$state);
+  replyText.value = appendQuote(replyText.value, quoteText(selectionToolbar.value.text, eol), eol);
+  clearSelection();
+  recordUiAction(TELEMETRY_UI_SELECTION_QUOTE, route);
+  nextTick(() => {
+    const el = textareaRef.value;
+    el?.focus();
+    el?.setSelectionRange(el.value.length, el.value.length);
+  });
+}
+
+function copySelection() {
+  copyMessageText('selection', selectionToolbar.value.text, TELEMETRY_UI_SELECTION_COPY);
+}
 
 const isDragging = ref(false);
 let dragCounter = 0;

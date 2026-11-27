@@ -119,6 +119,8 @@ func TestActionString(t *testing.T) {
 		{ActionPresetDelete, "preset_delete"},
 		{ActionUIPresetInsert, "ui_preset_insert"},
 		{ActionUIAutoscrollPause, "ui_autoscroll_pause"},
+		{ActionUISelectionQuote, "ui_selection_quote"},
+		{ActionUISelectionCopy, "ui_selection_copy"},
 		{ActionA2UIReply, "a2ui_reply"},
 		{ActionA2UIAction, "a2ui_action"},
 		{ActionA2UIElicit, "a2ui_elicit"},

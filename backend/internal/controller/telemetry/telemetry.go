@@ -452,6 +452,10 @@ func crudActionID(a entity.Action) (uint8, bool) {
 		action = model.ActionIDA2UIProgress
 	case entity.ActionPresetUpdate:
 		action = model.ActionIDPresetUpdate
+	case entity.ActionUISelectionQuote:
+		action = model.ActionIDUISelectionQuote
+	case entity.ActionUISelectionCopy:
+		action = model.ActionIDUISelectionCopy
 	default:
 		return 0, false
 	}

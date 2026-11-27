@@ -43,6 +43,8 @@ var clientReportable = map[string]entity.Action{
 	"ui_overview_task_open":   entity.ActionUIOverviewTaskOpen,
 	"ui_preset_insert":        entity.ActionUIPresetInsert,
 	"ui_autoscroll_pause":     entity.ActionUIAutoscrollPause,
+	"ui_selection_quote":      entity.ActionUISelectionQuote,
+	"ui_selection_copy":       entity.ActionUISelectionCopy,
 }
 
 func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
