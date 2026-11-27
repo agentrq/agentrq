@@ -33,4 +33,19 @@ describe('taskListPath', () => {
     const route = { path: '/pano/chat/ws1/t1', params: { workspaceId: 'ws1', taskId: 't1' }, query: {} };
     expect(taskListPath(route)).toEqual({ path: '/pano' });
   });
+
+  it('goes to the Kanban board a card was opened beside, keeping its filters', () => {
+    const route = { path: '/kanban/chat/ws1/t1', params: { workspaceId: 'ws1', taskId: 't1' }, query: { workspace: 'Web' } };
+    expect(taskListPath(route)).toEqual({ path: '/kanban', query: { workspace: 'Web' } });
+  });
+
+  it("goes to the workspace's board a card was opened beside", () => {
+    const route = { path: '/workspaces/ws1/board/chat/t1', params: { id: 'ws1', taskId: 't1' }, query: {} };
+    expect(taskListPath(route)).toEqual({ path: '/workspaces/ws1/board' });
+  });
+
+  it("goes to the team's Kanban board from a card opened beside it", () => {
+    const route = { path: '/teams/tm1/kanban/chat/ws1/t1', params: { teamId: 'tm1', workspaceId: 'ws1', taskId: 't1' }, query: {} };
+    expect(taskListPath(route)).toEqual({ path: '/teams/tm1/kanban', query: {} });
+  });
 });

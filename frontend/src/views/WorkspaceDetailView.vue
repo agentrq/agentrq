@@ -299,15 +299,16 @@ const findTaskHint = computed(() =>
 const workspaceId = computed(() => route.params.id);
 const selectedTaskId = computed(() => route.params.taskId);
 
+// The board, with or without a card's chat open beside it.
+const isBoard = computed(() => /\/board(\/chat\/[^/]+)?$/.test(route.path));
 // Full-width sub-views replace the task list/detail split pane.
 const sectionLabel = computed(() => {
   if (route.path.endsWith('/settings') || route.path.includes('/settings/skills/')) return 'Settings';
   if (route.path.endsWith('/analytics')) return 'Analytics';
-  if (route.path.endsWith('/board')) return 'Board';
+  if (isBoard.value) return 'Board';
   return '';
 });
 const isFullPane = computed(() => !!sectionLabel.value);
-const isBoard = computed(() => route.path.endsWith('/board'));
 
 const workspaceStore = useWorkspaceStore();
 // The store first, because it is the copy the event stream keeps current. The
@@ -437,7 +438,7 @@ watch(() => route.query.filter, (newFilter) => {
 // The kanban board is desktop-only; if a narrow viewport lands on /board
 // (direct link or window resize), fall back to the list view.
 watch([isMobileWindow, isBoard], ([mobile, board]) => {
-  if (mobile && board) router.replace(`/workspaces/${workspaceId.value}`);
+  if (mobile && board) router.replace(`/workspaces/${workspaceId.value}${selectedTaskId.value ? `/tasks/${selectedTaskId.value}` : ''}`);
 }, { immediate: true });
 
 watch(workspaceId, (newId) => {

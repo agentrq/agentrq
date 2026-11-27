@@ -56,6 +56,25 @@ afterEach(() => {
 });
 
 describe('the Pano chat card', () => {
+  it('shows the chat of a nested route, as a workspace\'s board has', async () => {
+    const el = document.createElement('div');
+    document.body.append(el);
+    const view = (text) => ({ render: () => h('p', { 'data-test': 'chat' }, text) });
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/workspaces/:id', component: view('the workspace'), children: [
+        { path: 'board/chat/:taskId', components: { default: view('the board'), chat: view('the task') } },
+      ] }],
+    });
+    await router.push('/workspaces/ws1/board/chat/t1');
+    const app = createApp({ render: () => [h('nav'), h(PanoChatColumn), h('main')] });
+    app.use(router);
+    app.mount(el);
+    apps.push(app);
+    await settle();
+    expect(el.querySelector('[data-pano-chat] [data-test="chat"]').textContent).toBe('the task');
+  });
+
   it('shows the chat view at a phone\'s width, with the side panel\'s grip', async () => {
     const { el, aside, handle } = await mount();
     expect(el.querySelector('[data-test="chat"]').textContent).toBe('the task');

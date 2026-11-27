@@ -11,11 +11,15 @@
  * the desktop side panel is. Alone, and full width, on a small screen, where
  * App.vue hides the page.
  */
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref } from 'vue'
+import { useRoute, viewDepthKey } from 'vue-router'
 import { usePanoChatWidth } from '../composables/usePano'
 import ResizeHandle from './ResizeHandle.vue'
 
 const asideRef = ref(null)
+const route = useRoute()
+// The chat is the deepest route's, which a workspace's board nests.
+provide(viewDepthKey, computed(() => route.matched.length - 1))
 const chatWidth = usePanoChatWidth()
 
 /** The room the column and the page share; the sidebar is not theirs. */

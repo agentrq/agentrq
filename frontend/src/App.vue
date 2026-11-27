@@ -172,7 +172,7 @@
               class="hidden md:flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
               :class="[
                 (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
-                $route.path === '/kanban' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+                $route.path.startsWith('/kanban') ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
               ]">
             <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h3a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM15 5a1 1 0 011-1h3a1 1 0 011 1v9a1 1 0 01-1 1h-3a1 1 0 01-1-1V5z" />
@@ -1284,7 +1284,7 @@ watch(() => route.fullPath, (fullPath) => {
   else if (path === '/admin/login') document.title = 'Admin | AgentRQ';
   else if (path === '/admin/stats') document.title = 'Admin stats | AgentRQ';
   else if (path === '/admin/hooks') document.title = 'Admin hooks | AgentRQ';
-  else if (path === '/kanban') document.title = 'Kanban | AgentRQ';
+  else if (path.startsWith('/kanban')) document.title = 'Kanban | AgentRQ';
   else if (path.startsWith('/events')) document.title = 'Events | AgentRQ';
   else if (path.startsWith('/workflows')) document.title = 'Workflows | AgentRQ';
   else if (path.startsWith('/machines')) document.title = 'Machines | AgentRQ';

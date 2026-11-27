@@ -27,6 +27,10 @@ import { startSentry } from './utils/sentry'
 
 // The Pano's board, shared by its two routes below.
 const PanoView = () => import('./views/PanoView.vue')
+// The Kanban board, shared by its two routes below.
+const KanbanView = () => import('./views/KanbanView.vue')
+// A workspace's board, shared by its two routes below.
+const KanbanBoardView = () => import('./views/KanbanBoardView.vue')
 
 // `meta.remount` marks a page that reads its params once, in setup. Vue Router
 // reuses the mounted page when only the params change, so without a fresh
@@ -47,7 +51,9 @@ export const routes = [
     path: '/workspaces/:id',
     component: () => import('./views/WorkspaceDetailView.vue'),
     children: [
-      { path: 'board', component: () => import('./views/KanbanBoardView.vue') },
+      { path: 'board', component: KanbanBoardView },
+      // A card opened beside the board, as on /kanban below.
+      { path: 'board/chat/:taskId', components: { default: KanbanBoardView, chat: () => import('./views/TaskDetailView.vue') } },
       { path: 'analytics', component: () => import('./views/WorkspaceAnalyticsView.vue') },
       { path: 'settings', component: () => import('./views/WorkspaceSettingsView.vue') },
       // One skill, drawn by the settings screen in place of its Skills tab.
@@ -60,7 +66,11 @@ export const routes = [
   { path: '/workspaces/:id/tasks/:taskId/edit', component: () => import('./views/TaskFormView.vue'), meta: { remount: true } },
 
   // Every workspace's tasks as one board: the workspace board, with no workspace.
-  { path: '/kanban', component: () => import('./views/KanbanView.vue') },
+  { path: '/kanban', component: KanbanView },
+  // A card opened beside the board on a large screen, in the Pano's chat
+  // column (App.vue's `chat` view). One KanbanView for both, so opening a
+  // card does not reload the board.
+  { path: '/kanban/chat/:workspaceId/:taskId', components: { default: KanbanView, chat: () => import('./views/TaskDetailView.vue') } },
 
   { path: '/events', component: () => import('./views/EventsView.vue') },
   // The Hooks tab, ranked above an event's own page by its static segment.
@@ -132,7 +142,7 @@ export const routes = [
 // The pages a team shows too, under /teams/<teamId>: the same page, of the
 // team's shared work. Of a workspace's pages only its task, which the team's
 // board opens.
-const TEAM_PAGES = ['/tasks/:filter', '/workspaces/:id', '/kanban']
+const TEAM_PAGES = ['/tasks/:filter', '/workspaces/:id', '/kanban', '/kanban/chat/:workspaceId/:taskId']
 // A team workspace's skills. Only a team has a Skills page: your own skills
 // are reached from each workspace, on its Skills tab.
 const TEAM_ONLY_PAGES = [

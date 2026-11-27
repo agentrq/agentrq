@@ -306,7 +306,8 @@ const allColumns = [
 ];
 
 const { showScheduled } = useKanbanScheduled();
-const scheduledShown = computed(() => !isGlobal.value || showScheduled.value);
+// Hidden while a card's chat is open beside the board, which needs the room.
+const scheduledShown = computed(() => !route.params.taskId && (!isGlobal.value || showScheduled.value));
 const columns = computed(() => allColumns.filter(c => c.id !== 'scheduled' || scheduledShown.value));
 const columnById = Object.fromEntries(allColumns.map(c => [c.id, c]));
 
@@ -549,9 +550,13 @@ async function onDrop(e, colId) {
   }
 }
 
+// A card opens beside the board on a large screen, in the Pano's chat
+// column, and as its own page otherwise.
 function openTask(t) {
   if (draggingId.value) return;
-  router.push(link({ path: `/workspaces/${workspaceOf(t)}/tasks/${t.id}`, query: route.query }));
+  const beside = workspaceId.value ? `/workspaces/${workspaceId.value}/board/chat/${t.id}` : `/kanban/chat/${workspaceOf(t)}/${t.id}`;
+  const wide = globalThis.matchMedia?.('(min-width: 1024px)').matches;
+  router.push(link({ path: wide ? beside : `/workspaces/${workspaceOf(t)}/tasks/${t.id}`, query: route.query }));
 }
 
 // ---- Context menu / move task ----
