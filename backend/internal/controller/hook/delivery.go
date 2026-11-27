@@ -138,7 +138,6 @@ func (c *controller) Receive(ctx context.Context, in entity.HookIncoming) (int64
 		return 0, err
 	}
 	c.nudge()
-	c.emitAction(ctx, entity.ActionHookReceive, entity.ActorHook, reg.UserID, reg.ID)
 	return d.ID, nil
 }
 
@@ -365,11 +364,14 @@ func (c *controller) process(ctx context.Context, id int64) {
 		events = append(events, model.HookPendingEvent{HookEvent: e.Name, EventID: eventID, DedupKey: e.DedupKey, Subject: e.Subject, Payload: e.Payload, FAQ: faq})
 	}
 	if len(events) == 0 {
-		reason := res.Reason
-		if reason == "" && len(res.Events) > 0 {
-			reason = "none of its events is routed"
+		// Nothing to do, so nothing is kept: a provider sends far more
+		// requests than a registration routes. Counted once deleted, since
+		// a failed delete is run again at the lease's end.
+		if err := c.repo.DeleteHookDelivery(ctx, d); err != nil {
+			zlog.Error().Err(err).Int64("delivery", d.ID).Msg("hooks: delete ignored delivery")
+			return
 		}
-		c.finish(ctx, d, start, model.HookDeliveryIgnored, reason)
+		c.received(ctx, d, model.HookDeliveryIgnored)
 		return
 	}
 	d.Error, d.DurationMs = "", c.since(start)
@@ -382,9 +384,11 @@ func (c *controller) process(ctx context.Context, id int64) {
 		c.retry(ctx, d, start, err)
 		return
 	}
-	if len(kept) > 0 {
-		c.publish(ctx, d.ID)
+	if len(kept) == 0 {
+		c.received(ctx, d, model.HookDeliveryDuplicate)
+		return
 	}
+	c.publish(ctx, d.ID)
 }
 
 // publish fires a routed delivery's pending events, then marks it published.
@@ -433,6 +437,7 @@ func (c *controller) publish(ctx context.Context, id int64) {
 		return
 	}
 	c.emitAction(ctx, entity.ActionHookPublish, entity.ActorHook, d.UserID, d.RegistrationID)
+	c.received(ctx, d, model.HookDeliveryPublished)
 }
 
 // retry queues a delivery for its next attempt, or fails it past the last.
@@ -449,19 +454,32 @@ func (c *controller) retry(ctx context.Context, d model.HookDelivery, start time
 // fail ends a delivery as failed, keeping its request so it can be replayed.
 func (c *controller) fail(ctx context.Context, d model.HookDelivery, start time.Time, reason string) {
 	d.Status, d.Error, d.DurationMs = model.HookDeliveryFailed, reason, c.since(start)
-	c.saveDelivery(ctx, d)
+	if c.saveDelivery(ctx, d) {
+		c.received(ctx, d, model.HookDeliveryFailed)
+	}
 }
 
 // finish ends a delivery the hook decided, clearing its request.
 func (c *controller) finish(ctx context.Context, d model.HookDelivery, start time.Time, status int16, reason string) {
 	d.Status, d.Request, d.Error, d.DurationMs = status, nil, reason, c.since(start)
-	c.saveDelivery(ctx, d)
+	if c.saveDelivery(ctx, d) {
+		c.received(ctx, d, status)
+	}
 }
 
-func (c *controller) saveDelivery(ctx context.Context, d model.HookDelivery) {
+// received counts a request to a hook URL once its delivery has ended, under
+// its outcome; on Prometheus only.
+func (c *controller) received(ctx context.Context, d model.HookDelivery, status int16) {
+	c.emitSubAction(ctx, entity.ActionHookReceive, statusNames[status], entity.ActorHook, d.UserID, d.RegistrationID)
+}
+
+// saveDelivery writes d, and reports whether it was written.
+func (c *controller) saveDelivery(ctx context.Context, d model.HookDelivery) bool {
 	if err := c.repo.UpdateHookDelivery(ctx, d); err != nil {
 		zlog.Error().Err(err).Int64("delivery", d.ID).Msg("hooks: save delivery")
+		return false
 	}
+	return true
 }
 
 func (c *controller) since(start time.Time) int32 {

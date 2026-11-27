@@ -445,6 +445,11 @@ func (c *controller) toRegistration(reg model.HookRegistration, h model.Hook, to
 
 // emitAction sends a registration's telemetry; nil PubSub sends none.
 func (c *controller) emitAction(ctx context.Context, action entity.Action, actor entity.Actor, userID, registrationID int64) {
+	c.emitSubAction(ctx, action, "", actor, userID, registrationID)
+}
+
+// emitSubAction sends a registration's telemetry under a sub-action.
+func (c *controller) emitSubAction(ctx context.Context, action entity.Action, subAction string, actor entity.Actor, userID, registrationID int64) {
 	if c.pubsub == nil {
 		return
 	}
@@ -454,7 +459,7 @@ func (c *controller) emitAction(ctx context.Context, action entity.Action, actor
 	}
 	_, _ = c.pubsub.Publish(ctx, pubsub.PublishRequest{PubSubID: entity.PubSubTopicCRUD, Event: entity.CRUDEvent{
 		Action: action, UserID: userID, ResourceType: entity.ResourceHookRegistration,
-		ResourceID: registrationID, Actor: actor, Origin: origin,
+		ResourceID: registrationID, Actor: actor, Origin: origin, SubAction: subAction,
 	}})
 }
 

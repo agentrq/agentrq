@@ -7,6 +7,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -99,7 +100,13 @@ func New(p Params) Controller {
 func (c *controller) primeActions() {
 	for id := 0; id < 256; id++ {
 		if _, ok := crudActionID(entity.Action(id)); ok {
-			c.actions.WithLabelValues(entity.Action(id).String(), "")
+			subs, ok := crudSubActions[entity.Action(id)]
+			if !ok {
+				subs = []string{""}
+			}
+			for _, sub := range subs {
+				c.actions.WithLabelValues(entity.Action(id).String(), sub)
+			}
 		}
 		action := mcpAction(id)
 		switch {
@@ -117,13 +124,39 @@ func (c *controller) primeActions() {
 	}
 }
 
+// notStored are the actions counted on Prometheus only, never written to the
+// database: ones so frequent that a row each would outgrow what they tell.
+var notStored = map[fmt.Stringer]struct{}{
+	entity.ActionHookReceive: {},
+}
+
+// crudSubActions are the sub-action labels a CRUD action may be counted
+// under; any other is "unknown", so a caller cannot grow the label set.
+var crudSubActions = map[entity.Action][]string{
+	entity.ActionHookReceive: entity.HookReceiveOutcomes,
+}
+
+// crudSubAction is the label a CRUD event's sub-action is counted under.
+type crudSubAction struct {
+	action entity.Action
+	name   string
+}
+
+func (s crudSubAction) String() string {
+	if s.name == "" || slices.Contains(crudSubActions[s.action], s.name) {
+		return s.name
+	}
+	return "unknown"
+}
+
 // enqueue counts a telemetry row on Prometheus under the action's name and,
-// for an MCP call, its tool's, then queues it unless storage is off.
-func (c *controller) enqueue(t model.Telemetry, action fmt.Stringer, tool mcpTool) {
+// for an MCP call, its tool's, then queues it unless storage is off or the
+// action is never stored.
+func (c *controller) enqueue(t model.Telemetry, action, tool fmt.Stringer) {
 	if c.actions != nil {
 		c.actions.WithLabelValues(action.String(), tool.String()).Inc()
 	}
-	if c.skipStorage {
+	if _, skip := notStored[action]; c.skipStorage || skip {
 		return
 	}
 	c.queue <- t
@@ -200,7 +233,7 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		OccurredAt:  time.Now().Unix(),
 		Action:      action,
 		Actor:       uint8(event.Actor),
-	}, event.Action, "")
+	}, event.Action, crudSubAction{event.Action, event.SubAction})
 	// A scheduled task is also a task create.
 	if event.Action == entity.ActionTaskFromScheduled {
 		c.enqueue(model.Telemetry{
@@ -209,7 +242,7 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 			OccurredAt:  time.Now().Unix(),
 			Action:      model.ActionIDTaskCreate,
 			Actor:       uint8(event.Actor),
-		}, entity.ActionTaskCreate, "")
+		}, entity.ActionTaskCreate, crudSubAction{})
 	}
 }
 

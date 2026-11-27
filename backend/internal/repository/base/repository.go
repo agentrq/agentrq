@@ -144,6 +144,7 @@ type Repository interface {
 	ClaimRoutedHookDelivery(ctx context.Context, id int64, now, leaseUntil time.Time) (bool, error)
 	GetHookDelivery(ctx context.Context, id int64) (model.HookDelivery, error)
 	UpdateHookDelivery(ctx context.Context, d model.HookDelivery) error
+	DeleteHookDelivery(ctx context.Context, d model.HookDelivery) error
 	RouteHookDelivery(ctx context.Context, d model.HookDelivery, events []model.HookPendingEvent) ([]model.HookPendingEvent, error)
 	ListHookDeliveries(ctx context.Context, registrationID, userID, beforeID int64, limit int) ([]model.HookDelivery, error)
 	ReplayHookDelivery(ctx context.Context, id, registrationID, userID int64, now time.Time) error

@@ -109,10 +109,13 @@ The server answers `202 Accepted` as soon as a request with a valid URL arrives,
 | `queued`, `processing` | Waiting for, or in, the hook. |
 | `published` | Accepted, and its events fired. |
 | `routed` | Accepted, and its events are about to fire. |
-| `ignored` | Genuine, but nothing to do: none of its events is routed, or the hook said so, such as a run on a branch outside **Branches**. |
 | `rejected` | The hook refused it, usually a wrong secret or signature. The reason is shown. |
 | `duplicate` | The sender delivered the same request again. |
 | `failed` | The hook crashed or ran out of time on six tries, over about two and a half hours. **Replay** runs it again. |
+
+A request with nothing to do is not listed: none of its events is routed, or the hook said so, such as a run on a branch outside **Branches**. It is dropped once the hook has run.
+
+With Prometheus on, every request is counted once it ends, as `agentrq_telemetry_actions_total{action="hook_receive"}` with its outcome as `sub_action`: `published`, `rejected`, `ignored`, `duplicate` or `failed`. These counts are not stored in the database.
 
 A URL with no token, a wrong token, or a deleted or disabled registration answers `404`, and the request is not saved. Requests are kept for 7 days by default.
 

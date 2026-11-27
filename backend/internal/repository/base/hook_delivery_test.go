@@ -227,6 +227,9 @@ func TestHookDeliveryWritesNeedTheLease(t *testing.T) {
 			if _, err := r.RouteHookDelivery(ctx, stale, []model.HookPendingEvent{{HookEvent: "e", DedupKey: "k"}}); !errors.Is(err, ErrLeaseLost) {
 				t.Errorf("route = %v", err)
 			}
+			if err := r.DeleteHookDelivery(ctx, stale); !errors.Is(err, ErrLeaseLost) {
+				t.Errorf("delete = %v", err)
+			}
 			// The worker holding the lease still routes it, and its key is new.
 			d, _ := r.GetHookDelivery(ctx, 40)
 			if d.Status != model.HookDeliveryProcessing || d.Attempts != 2 {
@@ -383,6 +386,32 @@ func TestListAndReplayHookDeliveries(t *testing.T) {
 		if err := r.ReplayHookDelivery(ctx, tc.id, tc.reg, tc.user, t0); !errors.Is(err, ErrNotFound) {
 			t.Errorf("replay %+v = %v", tc, err)
 		}
+	}
+}
+
+// The worker holding the lease deletes a delivery; a second delete finds
+// nothing.
+func TestDeleteHookDelivery(t *testing.T) {
+	ctx := context.Background()
+	for name, r := range deliveryRepos(t) {
+		t.Run(name, func(t *testing.T) {
+			if err := r.CreateHookDelivery(ctx, delivery(45, 1, model.HookDeliveryQueued, t0)); err != nil {
+				t.Fatal(err)
+			}
+			if ok, err := r.ClaimHookDelivery(ctx, 45, t0, t0.Add(time.Minute)); !ok || err != nil {
+				t.Fatalf("claim = %v, %v", ok, err)
+			}
+			d, _ := r.GetHookDelivery(ctx, 45)
+			if err := r.DeleteHookDelivery(ctx, d); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := r.GetHookDelivery(ctx, 45); !errors.Is(err, ErrNotFound) {
+				t.Errorf("after delete = %v", err)
+			}
+			if err := r.DeleteHookDelivery(ctx, d); !errors.Is(err, ErrLeaseLost) {
+				t.Errorf("second delete = %v", err)
+			}
+		})
 	}
 }
 

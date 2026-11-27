@@ -151,6 +151,7 @@ func TestPrometheus_SeriesStartAtZero(t *testing.T) {
 		{"mcp_tool_call", ""},
 		{"mcp_method_call", ""},
 		{"unknown", ""},
+		{"hook_receive", ""},
 	} {
 		if _, ok := got[key]; ok {
 			t.Errorf("%s/%q is primed, want no series", key[0], key[1])
@@ -159,8 +160,14 @@ func TestPrometheus_SeriesStartAtZero(t *testing.T) {
 	// Every action recordCRUD counts, and every tool and method, is primed.
 	for a := 0; a < 256; a++ {
 		if _, ok := crudActionID(entity.Action(a)); ok {
-			if _, ok := got[[2]string{entity.Action(a).String(), ""}]; !ok {
-				t.Errorf("%s has no series", entity.Action(a))
+			subs, ok := crudSubActions[entity.Action(a)]
+			if !ok {
+				subs = []string{""}
+			}
+			for _, sub := range subs {
+				if _, ok := got[[2]string{entity.Action(a).String(), sub}]; !ok {
+					t.Errorf("%s/%q has no series", entity.Action(a), sub)
+				}
 			}
 		}
 	}
@@ -245,6 +252,28 @@ func TestPrometheus_SkipStorageStillCounts(t *testing.T) {
 	}
 	if got := countOf(c, "mcp_tool_call", "getTask"); got != 1 {
 		t.Errorf("mcp_tool_call counted %v, want 1", got)
+	}
+	if got := len(queued(c)); got != 0 {
+		t.Fatalf("queued %d rows, want 0", got)
+	}
+}
+
+// hook_receive is counted under its outcome, starting at 0, and never
+// stored; an outcome not in the list is "unknown".
+func TestPrometheus_HookReceiveOutcomes(t *testing.T) {
+	c, _ := promController(t)
+	for _, o := range entity.HookReceiveOutcomes {
+		if got := countOf(c, "hook_receive", o); got != 0 {
+			t.Fatalf("%s primed at %v, want 0", o, got)
+		}
+	}
+	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionHookReceive, SubAction: "ignored"})
+	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionHookReceive, SubAction: "made-up"})
+	if got := countOf(c, "hook_receive", "ignored"); got != 1 {
+		t.Errorf("ignored counted %v, want 1", got)
+	}
+	if got := countOf(c, "hook_receive", "unknown"); got != 1 {
+		t.Errorf("unknown counted %v, want 1", got)
 	}
 	if got := len(queued(c)); got != 0 {
 		t.Fatalf("queued %d rows, want 0", got)
