@@ -115,6 +115,10 @@ type Repository interface {
 	ListGitHubInstallations(ctx context.Context, userID int64) ([]model.GitHubInstallation, error)
 	ReplaceGitHubInstallations(ctx context.Context, userID int64, rows []model.GitHubInstallation) error
 	DeleteGitHubInstallation(ctx context.Context, userID, installationID int64) error
+	GetGitLabConnection(ctx context.Context, userID int64) (model.GitLabConnection, error)
+	SaveGitLabConnection(ctx context.Context, row model.GitLabConnection) error
+	RenewGitLabConnection(ctx context.Context, row model.GitLabConnection, oldRefresh string) (bool, error)
+	DeleteGitLabConnection(ctx context.Context, userID int64) error
 	DeleteMemory(ctx context.Context, userID, workspaceID int64, name string) error
 
 	// Hook — WebAssembly modules that turn outside requests into events.

@@ -289,7 +289,7 @@ func (c *controller) writeTeamSkillFile(ctx context.Context, a base.TeamSkillAcc
 			return nil, 0, false, err
 		}
 	}
-	if s.SourceType == skillSourceGitHub {
+	if imported(s.SourceType) {
 		s.LocallyModified = true
 	}
 	if t.ID == 0 {
@@ -365,7 +365,7 @@ func (c *controller) deleteTeamSkillFile(ctx context.Context, a base.TeamSkillAc
 	}
 	s := model.Skill{ID: t.ID, CreatedAt: t.CreatedAt, UpdatedAt: time.Now(), Name: t.Name, Description: t.Description,
 		SourceType: t.SourceType, SourceRepo: t.SourceRepo, SourceRef: t.SourceRef, SourceCommit: t.SourceCommit,
-		SourcePath: t.SourcePath, LocallyModified: t.LocallyModified || t.SourceType == skillSourceGitHub}
+		SourcePath: t.SourcePath, LocallyModified: t.LocallyModified || imported(t.SourceType)}
 	saved, storageID, err := c.repository.DeleteTeamSkillFile(ctx, a, s, path)
 	if err != nil {
 		return nil, teamSkillErr(err, t.Name)
@@ -559,7 +559,7 @@ func (c *controller) DeleteTeamSkill(ctx context.Context, req entity.TeamSkillsR
 	return nil
 }
 
-// ImportTeamSkills imports skills from GitHub into one of the team's team
+// ImportTeamSkills imports skills from GitHub or GitLab into one of the team's team
 // workspaces, as ImportSkills does into an account: a name the team
 // workspace has already is skipped unless Overwrite replaces it.
 func (c *controller) ImportTeamSkills(ctx context.Context, req entity.ImportTeamSkillsRequest) (*entity.ImportTeamSkillsResponse, error) {
@@ -576,10 +576,10 @@ func (c *controller) ImportTeamSkills(ctx context.Context, req entity.ImportTeam
 	if c.limiter != nil && !c.limiter.AllowSkillImport(req.UserID) {
 		return nil, fmt.Errorf("rate limit exceeded")
 	}
-	token := c.importToken(ctx, req.UserID, req.URL)
+	token, gitlab := c.sourceToken(ctx, req.UserID, req.URL)
 	res, err := c.skillImport.Fetch(ctx, req.URL, req.Skills, token)
 	if err != nil {
-		return nil, c.importFetchErr(err, token)
+		return nil, c.importFetchErr(err, token, gitlab)
 	}
 	owned := make(map[string]base.TeamSkillRow, len(rows))
 	for _, r := range rows {
@@ -615,7 +615,7 @@ func (c *controller) ImportTeamSkills(ctx context.Context, req entity.ImportTeam
 func (c *controller) importTeamSkill(ctx context.Context, a base.TeamSkillAccess, teamWorkspaceID int64, existing base.TeamSkillRow, taken bool, sk skillimport.Skill, res *skillimport.Result) (entity.TeamSkill, error) {
 	now := time.Now()
 	s := model.Skill{ID: c.idgen.NextID(), CreatedAt: now, UpdatedAt: now, TeamWorkspaceID: teamWorkspaceID, Name: sk.Name, Description: sk.Description,
-		SourceType: skillSourceGitHub, SourceRepo: res.Repo, SourceRef: res.Ref, SourceCommit: res.Commit, SourcePath: sk.Dir}
+		SourceType: importSource(res), SourceRepo: res.Repo, SourceRef: res.Ref, SourceCommit: res.Commit, SourcePath: sk.Dir}
 	if taken {
 		s.ID = existing.ID
 	}

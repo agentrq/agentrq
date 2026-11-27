@@ -12,6 +12,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/avatar"
 	"github.com/agentrq/agentrq/backend/internal/service/githubapp"
+	"github.com/agentrq/agentrq/backend/internal/service/gitlabapp"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/image"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
@@ -43,6 +44,11 @@ type (
 		// GitHubApp lets an import read private repositories. Nil, or not
 		// configured, reads public ones only.
 		GitHubApp githubapp.Service
+		// GitLabApp lets an import read the private projects of an account
+		// that connected GitLab. Nil, or not configured, turns that off.
+		GitLabApp gitlabapp.Service
+		// TokenKey encrypts the GitLab tokens kept for a connection.
+		TokenKey string
 		// TaskAgents names the agents in a task's history. Nil leaves them
 		// unnamed.
 		TaskAgents TaskAgentNames
@@ -63,6 +69,7 @@ type (
 		PresetController
 		SkillController
 		GitHubController
+		GitLabController
 		PanoController
 		SiteShareController
 		ACPController
@@ -96,6 +103,8 @@ type (
 		loginIconStorage storage.Service
 		skillImport      skillimport.Service
 		githubApp        githubapp.Service
+		gitlabApp        gitlabapp.Service
+		tokenKey         string
 		taskAgents       TaskAgentNames
 	}
 )
@@ -123,6 +132,8 @@ func New(p Params) Controller {
 		loginIconStorage: p.LoginIconStorage,
 		skillImport:      p.SkillImport,
 		githubApp:        p.GitHubApp,
+		gitlabApp:        p.GitLabApp,
+		tokenKey:         p.TokenKey,
 		taskAgents:       p.TaskAgents,
 	}
 }

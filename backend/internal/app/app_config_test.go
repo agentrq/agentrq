@@ -138,7 +138,7 @@ func TestLoadStoresTheConfigThenPrefersIt(t *testing.T) {
 			for _, r := range rows {
 				keys = append(keys, r.ConfigKey)
 			}
-			want := "app artifacts auth ddos githubApp hooks machines mcp memory network pano prometheus pubsub ratelimit s3 sentry sentryFrontend skills slack smtp ssl storage teams telemetry webPush"
+			want := "app artifacts auth ddos githubApp gitlabApp hooks machines mcp memory network pano prometheus pubsub ratelimit s3 sentry sentryFrontend skills slack smtp ssl storage teams telemetry webPush"
 			if got := strings.Join(keys, " "); got != want {
 				t.Fatalf("stored blocks = %s\nwant %s", got, want)
 			}
@@ -280,6 +280,8 @@ func TestCheckConfig(t *testing.T) {
 		{"sentryFrontend", `{"enabled":true}`, "sentryFrontend.dsn: required when sentryFrontend is enabled"},
 		{"prometheus", `{"enabled":true}`, "prometheus.token: must be 32 characters"},
 		{"prometheus", `{"enabled":true,"token":"short"}`, "prometheus.token: must be 32 characters"},
+		{"gitlabApp", `{"host":"https://gitlab.com"}`, "gitlabApp.host: "},
+		{"gitlabApp", `{"enabled":true,"clientId":""}`, "gitlabApp: clientId and clientSecret are required"},
 	} {
 		svc, err := config.Overlay(base, map[string][]byte{tc.key: []byte(tc.block)})
 		if err != nil {

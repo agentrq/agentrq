@@ -115,8 +115,8 @@ type (
 		Version *int64
 	}
 
-	// ImportTeamSkillsRequest imports skills from GitHub into a team
-	// workspace, as ImportSkillsRequest does into an account.
+	// ImportTeamSkillsRequest imports skills from GitHub or GitLab into a
+	// team workspace, as ImportSkillsRequest does into an account.
 	ImportTeamSkillsRequest struct {
 		TeamSkillsRequest
 		URL       string

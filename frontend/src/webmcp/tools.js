@@ -584,10 +584,11 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       name: 'importSkills',
       description:
         'Import skills from a public GitHub repository into the account, e.g. https://github.com/obra/superpowers ' +
-        'or a /tree/<ref>/<path> link to part of one, turning them on in the workspaces named. Returns what was imported and what was skipped, with why. ' +
+        'or a /tree/<ref>/<path> link to part of one, or from a project on the server\'s GitLab (getGitLabConnection; a private one once the account connected GitLab), ' +
+        'e.g. https://gitlab.com/group/project/-/tree/<ref>/<path>, turning them on in the workspaces named. Returns what was imported and what was skipped, with why. ' +
         'A repository too large to import whole imports nothing and returns `candidates`; import again naming the wanted ones in `skills`.',
       properties: {
-        url: str('The GitHub link.'),
+        url: str('The GitHub or GitLab link.'),
         overwrite: bool('Replace skills the account already has under the same name.'),
         skills: { type: 'array', items: { type: 'string' }, description: 'Import only these skills, by the `path` a candidate gives.' },
         workspaceIds: { type: 'array', items: { type: 'string' }, description: 'The workspaces to turn the imported skills on in. Leave it out to turn them on nowhere yet.' },
@@ -597,6 +598,16 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       destructive: true,
       screen: before(accountSkillsPage),
       run: ({ url, overwrite, skills, workspaceIds }) => api.importSkills(url, overwrite, skills, workspaceIds),
+    }),
+    tool({
+      name: 'getGitLabConnection',
+      description:
+        'The GitLab host this server imports skills from (gitlab.com unless its admin chose another), whether this ' +
+        'account can connect GitLab to import its private projects, and the GitLab account connected. Connecting is ' +
+        'done by a person on GitLab, from authorizeUrl.',
+      properties: {},
+      readOnly: true,
+      run: () => api.getGitLabConnection(),
     }),
     tool({
       name: 'getGitHubConnection',
@@ -617,6 +628,16 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       destructive: true,
       screen: before(accountSkillsPage),
       run: ({ installationId }) => api.disconnectGitHub(installationId),
+    }),
+    tool({
+      name: 'disconnectGitLab',
+      description:
+        'Stop importing skills through the account\'s GitLab connection; its private projects can no longer be imported. ' +
+        'AgentRQ asks GitLab to revoke its access.',
+      properties: {},
+      destructive: true,
+      screen: before(accountSkillsPage),
+      run: () => api.disconnectGitLab(),
     }),
     tool({
       name: 'deleteSkill',

@@ -105,7 +105,7 @@ const busy = ref(false)
 /** The names a block is known by, where its key does not read as one. */
 const TITLES = {
   ddos: 'DDoS', mcp: 'MCP', pubsub: 'Pub/Sub', ratelimit: 'Rate limit',
-  prometheus: 'Prometheus', s3: 'S3', sentry: 'Sentry', sentryFrontend: 'Sentry (frontend)', smtp: 'SMTP', ssl: 'SSL', webPush: 'Web push', githubApp: 'GitHub App',
+  prometheus: 'Prometheus', s3: 'S3', sentry: 'Sentry', sentryFrontend: 'Sentry (frontend)', smtp: 'SMTP', ssl: 'SSL', webPush: 'Web push', githubApp: 'GitHub App', gitlabApp: 'GitLab app',
 }
 
 function title(key) {
@@ -123,7 +123,7 @@ const CATEGORIES = [
   ['Security', ['auth', 'network', 'ssl', 'ddos', 'ratelimit']],
   ['Messaging', ['smtp', 'slack', 'webPush']],
   ['Storage', ['storage', 's3', 'artifacts']],
-  ['Features', ['skills', 'githubApp', 'memory', 'pano', 'hooks', 'machines', 'teams']],
+  ['Features', ['skills', 'githubApp', 'gitlabApp', 'memory', 'pano', 'hooks', 'machines', 'teams']],
   ['Protocols', ['mcp', 'pubsub']],
   ['Monitoring', ['sentry', 'sentryFrontend', 'prometheus', 'telemetry']],
 ]

@@ -922,6 +922,33 @@ export async function importSkills(url, overwrite = false, skills = [], workspac
   return res.json();
 }
 
+// The GitLab host skills are imported from and, when the server's GitLab
+// application is set up, where to connect and the GitLab account connected:
+// { host, enabled, authorizeUrl?, username? }.
+export async function getGitLabConnection() {
+  const res = await apiFetch(`${API_BASE_URL}/gitlab`);
+  if (!res.ok) throw await skillError(res, 'Failed to fetch the GitLab connection');
+  return res.json();
+}
+
+// Finishes a connect with what GitLab sent back to /gitlab/callback.
+export async function connectGitLab(code, state) {
+  const res = await apiFetch(`${API_BASE_URL}/gitlab/connection`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, state }),
+  });
+  if (!res.ok) throw await skillError(res, 'Failed to connect GitLab');
+  return res.json();
+}
+
+// Forgets the account's GitLab connection, and revokes it on GitLab.
+export async function disconnectGitLab() {
+  const res = await apiFetch(`${API_BASE_URL}/gitlab/connection`, { method: 'DELETE' });
+  if (!res.ok) throw await skillError(res, 'Failed to disconnect GitLab');
+  return true;
+}
+
 // Whether the server's GitHub App is offered, where to install it, and the
 // GitHub accounts this account imports private skills from through it.
 export async function getGitHubConnection() {
@@ -1815,8 +1842,8 @@ export function createTeamWorkspaceSkill(teamId, teamWorkspaceId, content) {
   return teamCall(teamWorkspaceSkillsPath(teamId, teamWorkspaceId), 'Failed to create the skill', { method: 'POST', body: { content } });
 }
 
-// Imports skills from GitHub into a team workspace, as importSkills does into
-// the account: { imported, skipped, candidates?, sourceRepo, sourceRef, sourceCommit }.
+// Imports skills from GitHub or GitLab into a team workspace, as importSkills
+// does into the account: { imported, skipped, candidates?, sourceRepo, sourceRef, sourceCommit }.
 export function importTeamWorkspaceSkills(teamId, teamWorkspaceId, url, overwrite = false, skills = []) {
   const body = { url, overwrite };
   if (skills?.length) body.skills = skills;

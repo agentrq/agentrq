@@ -150,11 +150,29 @@ func (c *controller) importToken(ctx context.Context, uid int64, rawURL string) 
 	return ""
 }
 
-// importFetchErr is the refusal for an import GitHub would not serve. A
+// sourceToken is the token an import of rawURL by uid reads with, and
+// whether the link is to GitLab: the account's GitHub App installation on the
+// repository's owner, or its GitLab connection.
+func (c *controller) sourceToken(ctx context.Context, uid int64, rawURL string) (string, bool) {
+	src, err := c.skillImport.Parse(rawURL)
+	switch {
+	case err != nil:
+		// Fetch refuses the link, with the reason.
+		return "", false
+	case src.GitLab:
+		return c.gitlabToken(ctx, uid), true
+	}
+	return c.importToken(ctx, uid, rawURL), false
+}
+
+// importFetchErr is the refusal for an import the host would not serve. A
 // repository not found anonymously may be private, which connecting GitHub
-// can fix when the server has the app.
-func (c *controller) importFetchErr(err error, token string) error {
-	if errors.Is(err, skillimport.ErrNotFound) && token == "" && c.githubEnabled() {
+// or GitLab can fix when the server allows it.
+func (c *controller) importFetchErr(err error, token string, gitlab bool) error {
+	if errors.Is(err, skillimport.ErrNotFound) && token == "" && gitlab && c.gitlabEnabled() {
+		return skillErr(SkillInvalid, "%v. If it is private, choose Connect GitLab beside the import", err)
+	}
+	if errors.Is(err, skillimport.ErrNotFound) && token == "" && !gitlab && c.githubEnabled() {
 		return skillErr(SkillInvalid, "%v. If it is private, choose Connect GitHub beside the import and give the GitHub App access to it", err)
 	}
 	if errors.Is(err, skillimport.ErrInvalidURL) || errors.Is(err, skillimport.ErrNotFound) {

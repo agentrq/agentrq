@@ -166,8 +166,9 @@ describe('the catalogue as a whole', () => {
         // a skill turned off, for the account or in a workspace, is hidden
         // from those agents.
         'importSkills',
-        // Not a delete, but private repositories stop importing.
+        // Not deletes, but private repositories stop importing.
         'disconnectGitHub',
+        'disconnectGitLab',
         'setSkillEnabled',
         'setWorkspaceSkillEnabled',
         // Not deletes either, and the most destructive things here: each
@@ -225,6 +226,8 @@ describe('parity with the interface', () => {
     // Takes the one-time code GitHub hands the person's browser on its way
     // back from installing the app; there is nothing an agent could pass it.
     connectGitHub: 'finishes a GitHub install in the person\'s browser, with GitHub\'s one-time code',
+    // Likewise GitLab's, on its way back from approving the application.
+    connectGitLab: 'finishes a GitLab connect in the person\'s browser, with GitLab\'s one-time code',
     // Builds a URL for an <img>/<a>; the bytes are fetched by the browser with
     // the session cookie, which an agent cannot replay outside the page.
     getAttachmentUrl: 'returns a URL the page renders, not an action',
@@ -389,6 +392,8 @@ describe('each tool calls the interface the way the UI does', () => {
     ['deleteSkill', { name: 'tdd' }, 'deleteSkill', ['tdd']],
     ['getGitHubConnection', {}, 'getGitHubConnection', []],
     ['disconnectGitHub', { installationId: 99 }, 'disconnectGitHub', [99]],
+    ['getGitLabConnection', {}, 'getGitLabConnection', []],
+    ['disconnectGitLab', {}, 'disconnectGitLab', []],
     ['setSkillEnabled', { name: 'tdd', enabled: false }, 'setSkillEnabled', ['tdd', false]],
     ['searchWorkspaceSkills', { workspaceId: 'ws1', q: 'debug' }, 'searchWorkspaceSkills', ['ws1', { q: 'debug', limit: undefined, offset: undefined }]],
     ['getWorkspaceSkill', { workspaceId: 'ws1', name: 'tdd' }, 'getWorkspaceSkill', ['ws1', 'tdd']],

@@ -213,12 +213,13 @@ export function skillFullness(bytes) {
 
 /**
  * Where a skill came from: "manual", or its repository and the commit it was
- * imported at (the ref when GitHub did not say which commit).
+ * imported at (the ref when the host did not say which commit).
  */
 export function skillSource(skill) {
-  if (skill?.sourceType !== 'github' || !skill.sourceRepo) return 'manual';
+  const host = { github: 'GitHub', gitlab: 'GitLab' }[skill?.sourceType];
+  if (!host || !skill.sourceRepo) return 'manual';
   const at = skill.sourceCommit ? skill.sourceCommit.slice(0, 7) : skill.sourceRef;
-  return at ? `GitHub ${skill.sourceRepo}@${at}` : `GitHub ${skill.sourceRepo}`;
+  return at ? `${host} ${skill.sourceRepo}@${at}` : `${host} ${skill.sourceRepo}`;
 }
 
 /**
@@ -307,12 +308,27 @@ export function skillBreadcrumb(skill, path = SKILL_FILE) {
 
 const GITHUB_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?(\.git)?(\/tree\/[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.\-/]*)?)?\/?$/i;
 
+/** The GitLab the server imports from when it names none. */
+export const DEFAULT_GITLAB_HOST = 'gitlab.com';
+
+/** A link to a project on host: a group, any subgroups and the project. */
+function gitlabUrl(host) {
+  const h = String(host || DEFAULT_GITLAB_HOST).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^https:\\/\\/${h}(\\/(?!-(?:\\/|$))[A-Za-z0-9_.-]+){2,}?(\\.git)?(\\/-\\/tree\\/[A-Za-z0-9_.-]+(\\/[A-Za-z0-9_.\\-/]*)?)?\\/?$`, 'i');
+}
+
+/** Whether a URL is a link to the server's GitLab host. */
+export function isGitLabUrl(url, gitlabHost = DEFAULT_GITLAB_HOST) {
+  return gitlabUrl(gitlabHost).test(String(url ?? '').trim());
+}
+
 /**
- * Whether a URL looks like something the importer takes, for a hint while
- * typing. The server decides; this only saves a round trip on a typo.
+ * Whether a URL looks like something the importer takes, a GitHub link or
+ * one to the server's GitLab host, for a hint while typing. The server
+ * decides; this only saves a round trip on a typo.
  */
-export function githubImportUrlValid(url) {
-  return GITHUB_URL.test(String(url ?? '').trim());
+export function importUrlValid(url, gitlabHost = DEFAULT_GITLAB_HOST) {
+  return GITHUB_URL.test(String(url ?? '').trim()) || isGitLabUrl(url, gitlabHost);
 }
 
 /**
