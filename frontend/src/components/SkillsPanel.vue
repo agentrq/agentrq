@@ -30,21 +30,15 @@
       <div class="flex flex-col sm:flex-row gap-2">
         <input id="skill-import-url" v-model="importUrl" type="url" autocomplete="off" spellcheck="false"
                placeholder="https://github.com/obra/superpowers"
-               class="min-w-0 flex-1 px-3 py-2 text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-sm text-gray-900 dark:text-zinc-100 placeholder-gray-300 dark:placeholder-zinc-600 focus:outline-none focus:border-gray-400 dark:focus:border-zinc-500" />
+               class="min-w-0 flex-1 px-3 py-2 text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg text-gray-900 dark:text-zinc-100 placeholder-gray-300 dark:placeholder-zinc-600 focus:outline-none focus:border-gray-400 dark:focus:border-zinc-500" />
         <button type="submit" data-test="skill-import" :disabled="importing || !importUrl.trim()"
                 class="shrink-0 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-[11px] font-black uppercase tracking-widest disabled:opacity-40">
-          {{ importing ? 'Importing…' : 'Import' }}
+          {{ importing && !choice ? 'Discovering…' : 'Discover' }}
         </button>
       </div>
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <label class="flex items-center gap-2 text-[11px] text-gray-600 dark:text-zinc-300">
-          <input v-model="importOverwrite" type="checkbox" class="rounded-sm border-gray-300 dark:border-zinc-600" />
-          Overwrite skills you already have
-        </label>
-        <span v-if="importUrl.trim() && !importUrlValid(importUrl, gitlabHost)" class="text-[10px] text-amber-600 dark:text-amber-400">
-          Expected https://github.com/owner/repo or https://{{ gitlabHost }}/group/project, optionally …/tree/&lt;ref&gt;/&lt;path&gt;
-        </span>
-      </div>
+      <p v-if="importUrl.trim() && !importUrlValid(importUrl, gitlabHost)" class="text-[10px] text-amber-600 dark:text-amber-400">
+        Expected https://github.com/owner/repo or https://{{ gitlabHost }}/group/project, optionally …/tree/&lt;ref&gt;/&lt;path&gt;
+      </p>
       <GitHubConnection />
       <GitLabConnection />
       <!-- Where the imported skills are turned on: chosen on the Skills page;
@@ -52,42 +46,16 @@
       <SkillWorkspaceChoices v-if="!workspaceId" v-model="importWorkspaceIds" :workspaces="workspaceChoices"
                              data-test="skill-import-workspaces" item-test="skill-import-workspace" />
       <p v-if="importError" class="text-[11px] font-bold text-red-600 dark:text-red-400 break-words">{{ importError }}</p>
-      <!-- A repository too large to import whole: choose what to take. -->
-      <div v-if="choice" data-test="skill-import-choice" class="space-y-2 text-[11px] text-gray-700 dark:text-zinc-300">
-        <p class="font-bold break-words">
-          {{ choice.repo }} is too large to import whole. Choose the skills to import:
-        </p>
-        <div class="flex flex-wrap items-center gap-3">
-          <button type="button" data-test="skill-choice-all" @click="chosen = choosablePaths(choice.candidates)"
-                  class="text-[9px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100">Select all</button>
-          <button type="button" data-test="skill-choice-none" @click="chosen = []"
-                  class="text-[9px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100">Select none</button>
-          <span class="text-[10px] text-gray-400 dark:text-zinc-500">{{ chosen.length }} of {{ choosablePaths(choice.candidates).length }} selected</span>
-        </div>
-        <ul class="max-h-72 overflow-y-auto space-y-1 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-sm p-2">
-          <li v-for="c in choice.candidates" :key="c.path" data-test="skill-candidate">
-            <label class="flex items-start gap-2 min-w-0" :class="c.reason ? 'opacity-50' : 'cursor-pointer'">
-              <input v-model="chosen" type="checkbox" :value="c.path" :disabled="!!c.reason" class="mt-0.5 shrink-0 rounded-sm border-gray-300 dark:border-zinc-600" />
-              <span class="min-w-0 flex-1">
-                <span class="flex flex-wrap items-baseline gap-x-2">
-                  <span data-test="skill-candidate-name" class="font-mono font-bold break-all">{{ c.name }}</span>
-                  <span v-if="c.sizeBytes" class="text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">{{ formatSkillSize(c.sizeBytes) }}</span>
-                  <span v-if="c.path && c.path !== c.name" class="text-[10px] font-mono text-gray-400 dark:text-zinc-500 break-all">{{ c.path }}</span>
-                </span>
-                <span v-if="c.reason" class="block break-words text-amber-600 dark:text-amber-400">{{ c.reason }}</span>
-              </span>
-            </label>
-          </li>
-        </ul>
-        <div class="flex items-center gap-2">
-          <button type="button" data-test="skill-import-chosen" :disabled="importing || !chosen.length" @click="importChosen"
-                  class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-[11px] font-black uppercase tracking-widest disabled:opacity-40">
-            {{ importing ? 'Importing…' : `Import ${chosen.length} selected` }}
-          </button>
-          <button type="button" @click="choice = null"
-                  class="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100">Cancel</button>
-        </div>
-      </div>
+      <!-- The repository's skills, to switch off those not to import. -->
+      <SkillImportChoice v-if="choice" v-model="chosen" :choice="choice" :importing="importing"
+                         @import="importChosen" @cancel="choice = null">
+        <template #options>
+          <label class="flex items-center gap-2 text-[11px] text-gray-600 dark:text-zinc-300">
+            <input v-model="importOverwrite" data-test="skill-import-overwrite" type="checkbox" class="rounded-sm border-gray-300 dark:border-zinc-600" />
+            Overwrite skills you already have
+          </label>
+        </template>
+      </SkillImportChoice>
       <div v-if="importReport" data-test="skill-import-report" class="space-y-2 text-[11px] text-gray-700 dark:text-zinc-300">
         <p class="font-bold">
           Imported {{ importReport.imported.length }} {{ importReport.imported.length === 1 ? 'skill' : 'skills' }}
@@ -190,6 +158,7 @@ import {
   SKILL_FILE,
   SkillsState,
   choosablePaths,
+  chosenImportPaths,
   contentWorkspaceId,
   formatSkillSize,
   importUrlValid,
@@ -215,6 +184,7 @@ import GitHubConnection from './GitHubConnection.vue';
 import GitLabConnection from './GitLabConnection.vue';
 import GiveSkillModal from './GiveSkillModal.vue';
 import SkillCard from './SkillCard.vue';
+import SkillImportChoice from './SkillImportChoice.vue';
 import SkillWorkspaceChoices from './SkillWorkspaceChoices.vue';
 import WorkspaceTeamSkills from './WorkspaceTeamSkills.vue';
 
@@ -352,8 +322,9 @@ const importOverwrite = ref(false);
 const importing = ref(false);
 const importReport = ref(null);
 const importError = ref('');
-// A repository too large to import whole offers its skills instead: the link
-// they came from, and which of them are ticked.
+// An import lists the repository's skills first: the link they came from,
+// and which of them are switched on — all that can be, unless the repository
+// is too large to import whole.
 const choice = ref(null);
 const chosen = ref([]);
 
@@ -369,15 +340,16 @@ function importTargets() {
   return [contentWorkspaceId(workspaceStore.getWorkspace(props.workspaceId), props.workspaceId)];
 }
 
-async function doImport(url, skills) {
+async function doImport(url, skills, list = false) {
   importing.value = true;
   importError.value = '';
   importReport.value = null;
   try {
-    const res = await importSkills(url, importOverwrite.value, skills, importTargets());
+    const res = await importSkills(url, importOverwrite.value, skills, importTargets(), list);
     if (res.candidates?.length) {
-      choice.value = { url, repo: res.sourceRepo, candidates: orderCandidates(res.candidates) };
-      chosen.value = [];
+      const candidates = orderCandidates(res.candidates);
+      choice.value = { url, repo: res.sourceRepo, candidates, tooLarge: !!res.tooLarge };
+      chosen.value = res.tooLarge ? [] : choosablePaths(candidates);
       return;
     }
     choice.value = null;
@@ -392,11 +364,11 @@ async function doImport(url, skills) {
 
 function runImport() {
   choice.value = null;
-  return doImport(importUrl.value.trim());
+  return doImport(importUrl.value.trim(), undefined, true);
 }
 
 function importChosen() {
-  return doImport(choice.value.url, [...chosen.value]);
+  return doImport(choice.value.url, chosenImportPaths(choice.value, chosen.value));
 }
 
 onMounted(() => {

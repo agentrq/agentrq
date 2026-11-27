@@ -343,6 +343,16 @@ export function choosablePaths(candidates = []) {
   return candidates.filter((c) => !c.reason).map((c) => c.path);
 }
 
+/**
+ * The skills an import of a listed repository names: none when every one
+ * that can be is switched on, so the repository is imported whole, unless it
+ * is too large to be.
+ */
+export function chosenImportPaths(choice, chosen = []) {
+  if (!choice.tooLarge && choosablePaths(choice.candidates).every((p) => chosen.includes(p))) return undefined;
+  return [...chosen];
+}
+
 /** What the panel should be showing. */
 export const SkillsState = {
   Loading: 'loading',

@@ -50,10 +50,17 @@ type fakeImporter struct {
 	url   string
 	only  []string
 	token string
+	// listed says the last call was a List.
+	listed bool
 }
 
 func (f *fakeImporter) Fetch(ctx context.Context, rawURL string, only []string, token string) (*skillimport.Result, error) {
-	f.url, f.only, f.token = rawURL, only, token
+	f.url, f.only, f.token, f.listed = rawURL, only, token, false
+	return f.res, f.err
+}
+
+func (f *fakeImporter) List(ctx context.Context, rawURL string, token string) (*skillimport.Result, error) {
+	f.url, f.only, f.token, f.listed = rawURL, nil, token, true
 	return f.res, f.err
 }
 
@@ -632,6 +639,26 @@ func TestSkills_ImportOffersAndChooses(t *testing.T) {
 
 	_, err = e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u", Skills: make([]string, skillimport.MaxSelected+1)})
 	wantSkillErr(t, err, SkillInvalid, "at most 256 skills")
+}
+
+// A listing asks the importer to list, passes on what it offers and whether
+// the repository is too large to import whole, and stores nothing.
+func TestSkills_ImportList(t *testing.T) {
+	e := newSkillEnv(t)
+	e.importer.res = &skillimport.Result{
+		Repo: "obra/superpowers", Ref: "main", Commit: "abc", TooLarge: true,
+		Candidates: []skillimport.Candidate{{Name: "careful", Path: "careful", SkillBytes: 3516}},
+	}
+	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u", List: true})
+	if err != nil || !e.importer.listed || len(rs.Imported) != 0 || len(rs.Candidates) != 1 || !rs.TooLarge || rs.SourceRepo != "obra/superpowers" {
+		t.Fatalf("got %+v, %v; listed %v", rs, err, e.importer.listed)
+	}
+	if got, _ := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{UserID: skUserStr}); len(got.Skills) != 0 {
+		t.Errorf("a listing must store nothing, have %+v", got.Skills)
+	}
+	if _, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u"}); err != nil || e.importer.listed {
+		t.Errorf("an import must fetch, not list: %v", err)
+	}
 }
 
 // A storage failure part-way through an import leaves no blob behind.

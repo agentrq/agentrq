@@ -130,10 +130,13 @@ type (
 		Commit  string
 		Skills  []Skill
 		Skipped []Skip
-		// Candidates are set instead of Skills when the repository is too
-		// large to import whole and no skills were chosen: the import is
-		// asked again, naming the ones wanted.
+		// Candidates are set instead of Skills when the skills were listed,
+		// or the repository is too large to import whole and no skills were
+		// chosen: the import is asked again, naming the ones wanted.
 		Candidates []Candidate
+		// TooLarge says the repository cannot be imported whole: an import
+		// of it must name its skills.
+		TooLarge bool
 	}
 
 	// Service imports skills from GitHub and GitLab.
@@ -142,6 +145,10 @@ type (
 		// directories of the skills wanted. token, when set, reads the
 		// repository through the host's API: a private one needs it.
 		Fetch(ctx context.Context, rawURL string, only []string, token string) (*Result, error)
+		// List offers the skills a link names as Candidates, as Fetch does
+		// for a repository too large to import whole, and reads them no
+		// further: a person chooses which to import.
+		List(ctx context.Context, rawURL string, token string) (*Result, error)
 		// Parse reads a link the way Fetch would, without fetching anything.
 		Parse(rawURL string) (Source, error)
 	}
@@ -312,6 +319,15 @@ func (s *service) Parse(rawURL string) (Source, error) {
 func (e tooLargeError) Error() string { return e.msg }
 
 func (s *service) Fetch(ctx context.Context, rawURL string, only []string, token string) (*Result, error) {
+	return s.fetch(ctx, rawURL, only, token, false)
+}
+
+func (s *service) List(ctx context.Context, rawURL string, token string) (*Result, error) {
+	return s.fetch(ctx, rawURL, nil, token, true)
+}
+
+// fetch imports what a link names or, with list, offers its skills.
+func (s *service) fetch(ctx context.Context, rawURL string, only []string, token string, list bool) (*Result, error) {
 	src, err := s.Parse(rawURL)
 	if err != nil {
 		return nil, err
@@ -358,7 +374,7 @@ func (s *service) Fetch(ctx context.Context, rawURL string, only []string, token
 		}
 		if len(only) == 0 {
 			res := offer(entries, manifests, src)
-			res.Host, res.Repo, res.Ref, res.Commit = s.hostKind(), repo, src.Ref, commit
+			res.Host, res.Repo, res.Ref, res.Commit, res.TooLarge = s.hostKind(), repo, src.Ref, commit, true
 			return res, nil
 		}
 		if err := s.readChosen(ctx, repo, archiveRef, entries, manifests, src, only); err != nil {
@@ -367,6 +383,11 @@ func (s *service) Fetch(ctx context.Context, rawURL string, only []string, token
 	}
 	if err != nil {
 		return nil, err
+	}
+	if list {
+		res := offer(entries, manifests, src)
+		res.Host, res.Repo, res.Ref, res.Commit = s.hostKind(), repo, src.Ref, commit
+		return res, nil
 	}
 	res := collect(entries, manifests, src, only)
 	res.Host, res.Repo, res.Ref, res.Commit = s.hostKind(), repo, src.Ref, commit
@@ -589,7 +610,7 @@ func (s *service) download(ctx context.Context, repo, ref, subPath string) ([]en
 			continue
 		}
 		if hdr.Size > fileLimit(name) {
-			entries = append(entries, entry{path: name, reason: tooBig(hdr.Size, name)})
+			entries = append(entries, entry{path: name, reason: tooBig(hdr.Size, name), size: hdr.Size})
 			continue
 		}
 		content, err := io.ReadAll(tr)
@@ -602,7 +623,7 @@ func (s *service) download(ctx context.Context, repo, ref, subPath string) ([]en
 		if collected += int64(len(content)); collected > s.maxCollected {
 			return nil, nil, tooLarge
 		}
-		entries = append(entries, entry{path: name, content: content})
+		entries = append(entries, entry{path: name, content: content, size: int64(len(content))})
 	}
 	return entries, manifests, nil
 }

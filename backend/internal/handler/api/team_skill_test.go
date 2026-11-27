@@ -93,6 +93,7 @@ func (s *teamSkillCrud) ImportTeamSkills(_ context.Context, rq entity.ImportTeam
 	return &entity.ImportTeamSkillsResponse{
 		Imported: []entity.TeamSkill{aTeamSkill()}, Skipped: []entity.SkillImportSkip{{Name: "big", Reason: "too big"}},
 		Candidates: []entity.SkillImportCandidate{{Name: "ship", Path: "ship", SkillBytes: 7}}, SourceRepo: "o/r", SourceRef: "main",
+		TooLarge: rq.List,
 	}, s.err
 }
 
@@ -162,6 +163,9 @@ func TestTeamSkillRoutes(t *testing.T) {
 		{"importing", http.MethodPost, tw + "/import", `{"url":"https://github.com/o/r","overwrite":true,"skills":["a"]}`, 200,
 			entity.ImportTeamSkillsRequest{TeamSkillsRequest: member, URL: "https://github.com/o/r", Overwrite: true, Skills: []string{"a"}},
 			`"skipped":[{"name":"big","reason":"too big"}],"candidates":[{"name":"ship","path":"ship","sizeBytes":7}],"sourceRepo":"o/r","sourceRef":"main","sourceCommit":""}`},
+		{"listing", http.MethodPost, tw + "/import", `{"url":"https://github.com/o/r","list":true}`, 200,
+			entity.ImportTeamSkillsRequest{TeamSkillsRequest: member, URL: "https://github.com/o/r", List: true},
+			`"candidates":[{"name":"ship","path":"ship","sizeBytes":7}],"tooLarge":true,"sourceRepo":"o/r"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &teamSkillCrud{}

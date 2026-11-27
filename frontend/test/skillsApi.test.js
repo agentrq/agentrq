@@ -95,11 +95,13 @@ describe('importSkills', () => {
     await importSkills('https://github.com/a/b', true, [], []);
     await importSkills('https://github.com/a/b', false, ['ship', 'tools/guard']);
     await importSkills('https://github.com/a/b', false, undefined, ['ws1', 'ws2']);
+    await importSkills('https://github.com/a/b', false, undefined, [], true);
     expect(seen).toEqual([
       ['/api/v1/skills/import', 'POST', { url: 'https://github.com/a/b', overwrite: false }],
       ['/api/v1/skills/import', 'POST', { url: 'https://github.com/a/b', overwrite: true }],
       ['/api/v1/skills/import', 'POST', { url: 'https://github.com/a/b', overwrite: false, skills: ['ship', 'tools/guard'] }],
       ['/api/v1/skills/import', 'POST', { url: 'https://github.com/a/b', overwrite: false, workspaceIds: ['ws1', 'ws2'] }],
+      ['/api/v1/skills/import', 'POST', { url: 'https://github.com/a/b', overwrite: false, list: true }],
     ]);
   });
 

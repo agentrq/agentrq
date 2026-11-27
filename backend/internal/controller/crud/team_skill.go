@@ -577,7 +577,7 @@ func (c *controller) ImportTeamSkills(ctx context.Context, req entity.ImportTeam
 		return nil, fmt.Errorf("rate limit exceeded")
 	}
 	token, gitlab := c.sourceToken(ctx, req.UserID, req.URL)
-	res, err := c.skillImport.Fetch(ctx, req.URL, req.Skills, token)
+	res, err := c.fetchImport(ctx, req.URL, req.Skills, token, req.List)
 	if err != nil {
 		return nil, c.importFetchErr(err, token, gitlab)
 	}
@@ -587,7 +587,7 @@ func (c *controller) ImportTeamSkills(ctx context.Context, req entity.ImportTeam
 	}
 	out := &entity.ImportTeamSkillsResponse{
 		Imported: []entity.TeamSkill{}, Skipped: []entity.SkillImportSkip{},
-		SourceRepo: res.Repo, SourceRef: res.Ref, SourceCommit: res.Commit,
+		SourceRepo: res.Repo, SourceRef: res.Ref, SourceCommit: res.Commit, TooLarge: res.TooLarge,
 	}
 	for _, sk := range res.Skipped {
 		out.Skipped = append(out.Skipped, entity.SkillImportSkip{Name: sk.Name, Path: sk.Path, Reason: sk.Reason})

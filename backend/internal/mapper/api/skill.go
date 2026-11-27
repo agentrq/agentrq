@@ -106,7 +106,7 @@ func FromHTTPRequestToImportSkillsRequestEntity(c fiber.Ctx) *entity.ImportSkill
 			return nil
 		}
 	}
-	return &entity.ImportSkillsRequest{URL: rq.URL, Overwrite: rq.Overwrite, Skills: rq.Skills, WorkspaceIDs: workspaceIDs}
+	return &entity.ImportSkillsRequest{URL: rq.URL, Overwrite: rq.Overwrite, Skills: rq.Skills, WorkspaceIDs: workspaceIDs, List: rq.List}
 }
 
 func FromSearchSkillsResponseEntityToHTTPResponse(rs *entity.SearchSkillsResponse) []byte {
@@ -143,6 +143,7 @@ func FromImportSkillsResponseEntityToHTTPResponse(rs *entity.ImportSkillsRespons
 		SourceRepo:   rs.SourceRepo,
 		SourceRef:    rs.SourceRef,
 		SourceCommit: rs.SourceCommit,
+		TooLarge:     rs.TooLarge,
 	}
 	for i, s := range rs.Imported {
 		out.Imported[i] = view.ImportedSkill{Name: s.Name, FileCount: s.FileCount, TotalBytes: s.TotalBytes}

@@ -907,12 +907,15 @@ export async function getSkillFile(name, path) {
 }
 
 // `skills` names the skills to import by their directory, as the `candidates`
-// of a repository too large to import whole give them; `workspaceIds` are the
-// workspaces to turn them on in.
-export async function importSkills(url, overwrite = false, skills = [], workspaceIds = []) {
+// of a listing or of a repository too large to import whole give them;
+// `workspaceIds` are the workspaces to turn them on in. With `list`, nothing is
+// imported: the repository's skills come back as `candidates`, with
+// `tooLarge` when an import of it must name them.
+export async function importSkills(url, overwrite = false, skills = [], workspaceIds = [], list = false) {
   const body = { url, overwrite };
   if (skills?.length) body.skills = skills;
   if (workspaceIds?.length) body.workspaceIds = workspaceIds;
+  if (list) body.list = true;
   const res = await apiFetch(`${API_BASE_URL}/skills/import`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1846,10 +1849,11 @@ export function createTeamWorkspaceSkill(teamId, teamWorkspaceId, content) {
 }
 
 // Imports skills from GitHub or GitLab into a team workspace, as importSkills
-// does into the account: { imported, skipped, candidates?, sourceRepo, sourceRef, sourceCommit }.
-export function importTeamWorkspaceSkills(teamId, teamWorkspaceId, url, overwrite = false, skills = []) {
+// does into the account, `list` too: { imported, skipped, candidates?, tooLarge?, sourceRepo, sourceRef, sourceCommit }.
+export function importTeamWorkspaceSkills(teamId, teamWorkspaceId, url, overwrite = false, skills = [], list = false) {
   const body = { url, overwrite };
   if (skills?.length) body.skills = skills;
+  if (list) body.list = true;
   return teamCall(`${teamWorkspaceSkillsPath(teamId, teamWorkspaceId)}/import`, 'Failed to import skills', { method: 'POST', body });
 }
 
