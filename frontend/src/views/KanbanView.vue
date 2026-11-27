@@ -25,7 +25,7 @@
 
 <script setup>
 import { watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useViewport } from '../composables/useViewport';
 import KanbanBoardView from './KanbanBoardView.vue';
 import NewTaskButton from '../components/NewTaskButton.vue';
@@ -33,13 +33,17 @@ import ScheduledColumnToggle from '../components/ScheduledColumnToggle.vue';
 import TeamTaskFilters from '../components/TeamTaskFilters.vue';
 import { useTeamMode } from '../composables/useTeamMode';
 
+const route = useRoute();
 const router = useRouter();
 const { isMobile } = useViewport();
 const { isTeamMode, link } = useTeamMode();
 
 // Desktop and large screens only, like the workspace board: a narrow viewport
-// that lands here (a direct link, a resize) gets the task list instead.
+// that lands here (a direct link, a resize) gets the task list instead, with
+// the card that was open beside the board open in it.
 watch(isMobile, (mobile) => {
-  if (mobile) router.replace(link('/tasks/active'));
+  if (!mobile) return;
+  const { workspaceId, taskId } = route.params;
+  router.replace(link(taskId ? `/tasks/active/${workspaceId}/${taskId}` : '/tasks/active'));
 }, { immediate: true });
 </script>

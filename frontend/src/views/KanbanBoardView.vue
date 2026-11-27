@@ -549,9 +549,13 @@ async function onDrop(e, colId) {
   }
 }
 
+// On the all-workspaces board a card opens beside it on a large screen, in
+// the Pano's chat column, and as its own page otherwise.
 function openTask(t) {
   if (draggingId.value) return;
-  router.push(link({ path: `/workspaces/${workspaceOf(t)}/tasks/${t.id}`, query: route.query }));
+  const wide = !workspaceId.value && globalThis.matchMedia?.('(min-width: 1024px)').matches;
+  const path = wide ? `/kanban/chat/${workspaceOf(t)}/${t.id}` : `/workspaces/${workspaceOf(t)}/tasks/${t.id}`;
+  router.push(link({ path, query: route.query }));
 }
 
 // ---- Context menu / move task ----

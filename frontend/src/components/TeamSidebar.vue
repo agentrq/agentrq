@@ -72,7 +72,7 @@ const page = () => mePath(route.path);
 
 const items = [
   { label: 'Tasks', to: '/tasks/active', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', active: () => page().startsWith('/tasks/') && !route.query.workspace },
-  { label: 'Kanban', to: '/kanban', desktopOnly: true, icon: 'M4 5a1 1 0 011-1h3a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM15 5a1 1 0 011-1h3a1 1 0 011 1v9a1 1 0 01-1 1h-3a1 1 0 01-1-1V5z', active: () => page() === '/kanban' },
+  { label: 'Kanban', to: '/kanban', desktopOnly: true, icon: 'M4 5a1 1 0 011-1h3a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM15 5a1 1 0 011-1h3a1 1 0 011 1v9a1 1 0 01-1 1h-3a1 1 0 01-1-1V5z', active: () => page().startsWith('/kanban') },
   { label: 'Pano', to: '/pano', icon: 'M5 4h14a1 1 0 0 1 1 1v10l-5 5H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM20 15h-4a1 1 0 0 0-1 1v4', active: () => page().startsWith('/pano') },
 ];
 

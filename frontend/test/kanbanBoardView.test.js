@@ -521,6 +521,18 @@ describe('KanbanBoardView across every workspace', () => {
     expect(push).toHaveBeenCalledWith({ path: '/workspaces/ws2/tasks/b1', query: {} })
   })
 
+  it('opens a card beside the board on a large screen', async () => {
+    const matchMedia = globalThis.matchMedia
+    globalThis.matchMedia = (q) => ({ matches: q === '(min-width: 1024px)' })
+    try {
+      const { card } = await mount({ workspaces })
+      card('Task b1').click()
+    } finally {
+      globalThis.matchMedia = matchMedia
+    }
+    expect(push).toHaveBeenCalledWith({ path: '/kanban/chat/ws2/b1', query: {} })
+  })
+
   it('keeps a moved card on the board, under its new workspace', async () => {
     const { el, card } = await mount({ workspaces })
     card('Task b1').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
@@ -574,6 +586,20 @@ describe('KanbanBoardView across every workspace', () => {
       window.innerWidth = width
     }
     expect(replace).toHaveBeenCalledWith({ path: '/tasks/active', query: {} })
+  })
+
+  it('sends a phone-width screen to the card that was open beside the board', async () => {
+    replace.mockClear()
+    const width = window.innerWidth
+    window.innerWidth = 390
+    route.params = { workspaceId: 'ws2', taskId: 'b1' }
+    try {
+      await mount({ component: KanbanView, workspaces })
+    } finally {
+      window.innerWidth = width
+      route.params = {}
+    }
+    expect(replace).toHaveBeenCalledWith({ path: '/tasks/active/ws2/b1', query: {} })
   })
 })
 

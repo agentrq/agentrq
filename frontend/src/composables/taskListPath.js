@@ -20,5 +20,6 @@ function listPath(route) {
   if (params.filter) return { path: `/tasks/${params.filter}`, query: route.query };
   if (params.docId) return { path: `/pano/${params.docId}` };
   if (route.path.startsWith('/pano/')) return { path: '/pano' };
+  if (/(^|\/)kanban\/chat\//.test(route.path)) return { path: '/kanban', query: route.query };
   return { path: `/workspaces/${params.id}` };
 }

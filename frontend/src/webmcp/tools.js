@@ -257,10 +257,10 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         '"/settings/skills/<name>", "/tasks/{new,<taskId>}", plus "/instances" or "/edit". Its ' +
         '"?tab=" general|setup|automations|notifications|memories|presets|skills|sharing|slack|input|storage|danger.\n' +
         '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/{pano,events/hooks}/new", ' +
-        '"/pano/[<id>/]chat/<workspaceId>/<taskId>".\n' +
+        '"/{pano[/<id>],kanban}/chat/<w>/<t>".\n' +
         '- "/machines[/<id>]", "/sessions/<id>" (terminal).\n' +
         '- "/extensions[/<name>/<pageId>]" (desktop).\n' +
-        '- "/team/new", "/invitations"; a team: "/teams/<id>" + "/{tasks/*,kanban,skills*,workspaces/<w>/tasks/<t>,analytics,settings,pano[/<id>]}"; ' +
+        '- "/team/new", "/invitations"; a team: "/teams/<id>" + "/{tasks/*,kanban[/chat/<w>/<t>],skills*,workspaces/<w>/tasks/<t>,analytics,settings,pano[/<id>]}"; ' +
         'settings "?tab=members|invitations|activity|workspaces|danger".\n' +
         'Others refused.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },

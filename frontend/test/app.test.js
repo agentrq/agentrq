@@ -45,6 +45,7 @@ describe('routes', () => {
       '/workspaces/:id/tasks/new',
       '/workspaces/:id/tasks/:taskId/edit',
       '/kanban',
+      '/kanban/chat/:workspaceId/:taskId',
       '/events',
       '/events/hooks',
       '/events/hooks/new',
@@ -82,6 +83,7 @@ describe('routes', () => {
       '/teams/:teamId/workspaces/:id',
       '/teams/:teamId/workspaces/:id/tasks/:taskId',
       '/teams/:teamId/kanban',
+      '/teams/:teamId/kanban/chat/:workspaceId/:taskId',
       '/teams/:teamId/skills',
       '/teams/:teamId/skills/:name',
     ])
