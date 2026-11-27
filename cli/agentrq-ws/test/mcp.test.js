@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { ServerError } from '../src/errors.js'
-import { McpClient, contentToText, isLostSession, parseResponseBody, pruneUndefined } from '../src/mcp.js'
+import { McpClient, contentToText, isLostSession, parseResponseBody, pruneUndefined, retryAfterMs } from '../src/mcp.js'
 import { fakeFetch, response, sse, withSession } from './fake-server.js'
 
 const client = (fetchImpl) => new McpClient({ url: 'https://workspace.test', fetchImpl })
@@ -204,6 +204,52 @@ test('a non-session failure is not retried', async () => {
   })
   await assert.rejects(() => client(withSession(inner)).callTool('getTask', {}), /HTTP 500/)
   assert.equal(attempts, 1)
+})
+
+test('a rate-limited call waits out Retry-After and is sent again', async () => {
+  let toolCalls = 0
+  const waits = []
+  const inner = fakeFetch({
+    onCall: () => 'after the limit',
+    onRequest: (record) => {
+      if (record.body && record.body.method === 'tools/call') {
+        toolCalls += 1
+        if (toolCalls < 3) return response('{"error":{"code":429,"message":"user ratelimited"}}', { status: 429, headers: { 'Retry-After': '20' } })
+      }
+      return null
+    },
+  })
+  const mcpClient = new McpClient({ url: 'https://workspace.test', fetchImpl: withSession(inner), sleep: async (ms) => waits.push(ms) })
+  assert.equal((await mcpClient.callTool('getTask', {})).text, 'after the limit')
+  assert.equal(toolCalls, 3)
+  assert.deepEqual(waits, [20_000, 20_000])
+})
+
+test('a rate limit that outlasts the wait fails with the server answer', async () => {
+  const waits = []
+  const fetchImpl = async () => response('user ratelimited', { status: 429, headers: { 'Retry-After': '25' } })
+  const mcpClient = new McpClient({ url: 'https://workspace.test', fetchImpl, sleep: async (ms) => waits.push(ms) })
+  await assert.rejects(() => mcpClient.callTool('getTask', {}), /HTTP 429: user ratelimited/)
+  assert.deepEqual(waits, [25_000, 25_000])
+})
+
+test('the real sleep is used when none is given', async () => {
+  let calls = 0
+  const fetchImpl = async () => {
+    calls += 1
+    return calls === 1 ? response('', { status: 429, headers: { 'Retry-After': '0.001' } }) : response('{"jsonrpc":"2.0","id":1,"result":{}}')
+  }
+  const mcpClient = new McpClient({ url: 'https://workspace.test', fetchImpl, maxRateLimitWaitMs: 1000 })
+  assert.deepEqual(await mcpClient.request('initialize', {}), {})
+  assert.equal(calls, 2)
+})
+
+test('retryAfterMs reads whole seconds, rounds up, and falls back to one second', () => {
+  assert.equal(retryAfterMs('20'), 20_000)
+  assert.equal(retryAfterMs('1.5'), 2000)
+  assert.equal(retryAfterMs(null), 1000)
+  assert.equal(retryAfterMs('0'), 1000)
+  assert.equal(retryAfterMs('Wed, 21 Oct 2015 07:28:00 GMT'), 1000)
 })
 
 test('listTools returns the advertised tools, and copes with none', async () => {

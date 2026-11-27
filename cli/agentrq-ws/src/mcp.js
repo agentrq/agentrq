@@ -85,11 +85,20 @@ export function contentToText(result) {
  * and to audit than a dependency tree.
  */
 export class McpClient {
-  constructor({ url, headers = {}, fetchImpl = globalThis.fetch, protocolVersion = PROTOCOL_VERSION }) {
+  constructor({
+    url,
+    headers = {},
+    fetchImpl = globalThis.fetch,
+    protocolVersion = PROTOCOL_VERSION,
+    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    maxRateLimitWaitMs = MAX_RATE_LIMIT_WAIT_MS,
+  }) {
     this.url = url
     this.extraHeaders = headers
     this.fetchImpl = fetchImpl
     this.protocolVersion = protocolVersion
+    this.sleep = sleep
+    this.maxRateLimitWaitMs = maxRateLimitWaitMs
     this.sessionId = null
     this.initialized = false
     this.nextId = 1
@@ -109,17 +118,28 @@ export class McpClient {
 
   async post(payload) {
     let response
-    try {
-      response = await this.fetchImpl(this.url, {
-        method: 'POST',
-        headers: this.headersFor(),
-        body: JSON.stringify(payload),
-      })
-    } catch (err) {
-      throw new ServerError(`cannot reach the workspace server at ${this.url}: ${err.message}`)
+    let body
+    let waited = 0
+    for (;;) {
+      try {
+        response = await this.fetchImpl(this.url, {
+          method: 'POST',
+          headers: this.headersFor(),
+          body: JSON.stringify(payload),
+        })
+      } catch (err) {
+        throw new ServerError(`cannot reach the workspace server at ${this.url}: ${err.message}`)
+      }
+      body = await response.text()
+      // The rate limit counts every request the user makes, browser and agents
+      // included, and refuses before the call runs, so sending it again is safe.
+      if (response.status !== 429) break
+      const wait = retryAfterMs(response.headers && response.headers.get && response.headers.get('retry-after'))
+      if (waited + wait > this.maxRateLimitWaitMs) break
+      waited += wait
+      await this.sleep(wait)
     }
 
-    const body = await response.text()
     if (!response.ok) {
       // Always name the status: a swallowed request otherwise looks exactly
       // like a successful one from the caller's side.
@@ -239,6 +259,18 @@ export class McpClient {
     }
     return { text, result }
   }
+}
+
+/** How long a command waits out the server's rate limit, in all, before failing. */
+export const MAX_RATE_LIMIT_WAIT_MS = 60_000
+
+/**
+ * The wait a 429's Retry-After asks for. The server sends whole seconds; a
+ * missing or unreadable value waits one second.
+ */
+export function retryAfterMs(value) {
+  const seconds = Number(value)
+  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) * 1000 : 1000
 }
 
 /** True when an error says the server no longer knows our session. */
