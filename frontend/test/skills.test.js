@@ -17,6 +17,7 @@ import {
   mergeSkill,
   orderCandidates,
   importUrlValid,
+  importUrlError,
   chosenImportPaths,
   isGitLabUrl,
   inlineCodeFileMatch,
@@ -330,6 +331,18 @@ describe('renderMarkdown in a skill', () => {
   });
 });
 
+describe('importUrlError', () => {
+  it('asks for a link, says what a link must look like, and takes one the importer takes', () => {
+    expect(importUrlError()).toBe('Enter a link to a GitHub or GitLab repository.');
+    expect(importUrlError('  ')).toBe('Enter a link to a GitHub or GitLab repository.');
+    expect(importUrlError('https://github.com/obra/superpowers')).toBe('');
+    expect(importUrlError('https://gitlab.example.com/g/p', 'gitlab.example.com')).toBe('');
+    expect(importUrlError('https://example.com/a/b', 'gitlab.example.com')).toBe(
+      'Expected https://github.com/owner/repo or https://gitlab.example.com/group/project, optionally …/tree/<ref>/<path>',
+    );
+  });
+});
+
 describe('choosing from a repository too large to import whole', () => {
   const candidates = [
     { name: 'ship', path: 'ship', sizeBytes: 9, reason: 'too big' },
@@ -342,6 +355,8 @@ describe('choosing from a repository too large to import whole', () => {
   it('orders those that can be chosen first, then by name and path', () => {
     expect(orderCandidates(candidates).map((c) => c.path)).toEqual(['careful', 'a/guard', 'b/guard', 'audit', 'ship']);
     expect(orderCandidates()).toEqual([]);
+    const numbered = [{ name: 'step-10', path: 'b' }, { name: 'step-2', path: 'a' }];
+    expect(orderCandidates(numbered).map((c) => c.name)).toEqual(['step-2', 'step-10']);
   });
 
   it('chooses only those without a reason', () => {

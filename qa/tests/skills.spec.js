@@ -6,10 +6,10 @@ import { test, expect } from '../lib/fixtures.js'
 import { nextResponse, watchTraffic } from '../lib/app.js'
 
 // Skills belong to the account. A workspace's Skills tab lists every one with
-// that workspace's switch; an import the server refuses shows its reason as
-// the server wrote it. The tab's import turns skills on in this workspace
-// alone, so it offers no choice of workspaces.
-test('the skills tab lists the account\'s skills and shows why an import was refused', async ({ page, workspace }) => {
+// that workspace's switch; a link the importer cannot take is said under its
+// field when Discover is pressed, and nothing is sent. The tab's import turns
+// skills on in this workspace alone, so it offers no choice of workspaces.
+test('the skills tab lists the account\'s skills and says why a link cannot be imported', async ({ page, workspace }) => {
   const traffic = watchTraffic(page)
   const listed = nextResponse(page, 'GET', `/workspaces/${workspace.id}/skills`)
   await page.goto(`/workspaces/${workspace.id}/settings`)
@@ -18,17 +18,16 @@ test('the skills tab lists the account\'s skills and shows why an import was ref
   await expect(page.getByLabel('Import from GitHub'), 'the import form').toBeVisible()
   await expect(page.getByTestId('skill-import-workspaces'), 'a choice of workspaces to import into').toHaveCount(0)
 
+  let sent = 0
+  page.on('request', (r) => { if (r.url().includes('/skills/import')) sent += 1 })
   await page.getByLabel('Import from GitHub').fill('https://example.com/owner/repo')
-  const refused = nextResponse(page, 'POST', '/skills/import')
   await page.getByTestId('skill-import').click()
-  const res = await refused
-  expect(res.status(), 'importing from a link that is not GitHub').toBeGreaterThanOrEqual(400)
-  expect(res.status()).toBeLessThan(500)
-  expect(res.request().postDataJSON().workspaceIds, 'the import names the workspace to turn it on in').toEqual([workspace.id])
-  const { error } = await res.json()
-  await expect(page.getByText(error.message), 'the refusal, as the server wrote it').toBeVisible()
+  await expect(page.getByTestId('field-error'), 'what a link must look like, under the field').toContainText('Expected https://github.com/owner/repo')
+  await expect(page.getByLabel('Import from GitHub'), 'the field is marked invalid').toHaveAttribute('aria-invalid', 'true')
+  await expect(page.getByLabel('Import from GitHub'), 'and has the focus back').toBeFocused()
+  expect(sent, 'a link the importer cannot take is not sent').toBe(0)
 
-  traffic.expectClean({ allow: [`${res.status()} /skills/import`] })
+  traffic.expectClean()
 })
 
 // A workspace's skills, from its task list's Skills button: the sidebar has

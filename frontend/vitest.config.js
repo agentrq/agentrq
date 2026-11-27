@@ -205,6 +205,7 @@ export default defineConfig({
         'src/components/FieldError.vue',
         'src/components/ChoiceCards.vue',
         'src/components/SkillImportChoice.vue',
+        'src/components/SkillImportForm.vue',
         'src/components/ToggleSwitch.vue',
         'src/components/SegmentedControl.vue',
         'src/components/BarChart.vue',

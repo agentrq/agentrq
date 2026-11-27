@@ -12,10 +12,12 @@
  * it, are 42px (a 20px line, 10px padding, a 1px border), 44px under a
  * finger. The task chat is smaller on purpose, like its messages: a field is
  * 32px (13px type, an 18px line, 6px padding), as its queued-message editor.
+ * A `compact` field is 36px, on a phone as well, beside the compact buttons.
  */
 export const CONTROL_SIZE = {
   form: 'rounded-lg px-3 py-2.5 pointer-coarse:min-h-11 text-sm leading-5',
   chat: 'rounded-sm px-2 py-1.5 text-[13px] leading-[18px]',
+  compact: 'rounded-sm px-3 py-2 text-xs leading-[18px]',
 };
 
 const BASE =
@@ -121,6 +123,38 @@ export const CANCEL_BUTTON = `${BUTTON} px-4 ${CANCEL_COLORS} ${DISABLED_BUTTON}
 export const ACTIONS =
   'flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 sm:gap-3 px-4 sm:px-5 py-3 ' +
   'border-t border-gray-100 dark:border-zinc-800 bg-gray-50/60 dark:bg-zinc-950/40 rounded-b-xl';
+
+/**
+ * The image preview's buttons, for a panel's own actions rather than a
+ * form's: 36px and a 4px corner, as Update Workspace's, sentence case.
+ * The primary is the page's ink (black, white on dark), the secondary
+ * bordered.
+ */
+const COMPACT_BUTTON =
+  'inline-flex items-center justify-center gap-2 px-5 py-2 rounded-sm border text-[10px] leading-[18px] font-semibold transition-all ' +
+  'disabled:opacity-30 disabled:cursor-not-allowed outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 dark:focus-visible:ring-white/25';
+
+export const COMPACT_PRIMARY_BUTTON =
+  `${COMPACT_BUTTON} bg-black dark:bg-white text-white dark:text-black border-transparent hover:bg-gray-800 dark:hover:bg-gray-100`;
+
+export const COMPACT_SECONDARY_BUTTON =
+  `${COMPACT_BUTTON} border-gray-300 dark:border-zinc-700 text-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-zinc-800`;
+
+/**
+ * The on/off switch of the skill cards, styled by its own aria-checked so the
+ * look cannot disagree with what a screen reader is told: a 44×24 track, dark
+ * when on, and a 16px knob that slides 20px. Put SWITCH_KNOB in a span inside.
+ */
+export const SWITCH =
+  'group relative block shrink-0 w-11 h-6 rounded-full border transition-colors motion-reduce:transition-none ' +
+  'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600 ' +
+  'aria-checked:bg-gray-900 aria-checked:border-gray-900 dark:aria-checked:bg-white dark:aria-checked:border-white ' +
+  'disabled:opacity-50 disabled:cursor-not-allowed ' +
+  'outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-900/30 dark:focus-visible:ring-white/30 dark:focus-visible:ring-offset-zinc-900';
+
+export const SWITCH_KNOB =
+  'absolute top-[3px] left-[3px] size-4 rounded-full bg-white dark:bg-zinc-400 transition-transform motion-reduce:transition-none ' +
+  'group-aria-checked:translate-x-5 dark:group-aria-checked:bg-zinc-900';
 
 /** The card a form sits in. */
 export const FORM_CARD = 'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-sm';

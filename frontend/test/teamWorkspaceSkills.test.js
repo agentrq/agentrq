@@ -398,6 +398,27 @@ describe("the team's Skills page", () => {
     expect(text($('[data-test=tws-import-report]'))).toContain('Imported 1 skill');
   });
 
+  it('reports an import whatever the answer leaves out, naming a skipped skill by its path or name', async () => {
+    api.importTeamWorkspaceSkills
+      .mockResolvedValueOnce({ sourceRepo: 'o/r', candidates: [{ name: 'a', path: 'skills/a' }, { name: 'b', path: 'skills/b' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ sourceRepo: 'o/r', candidates: [{ name: 'a', path: 'skills/a' }] })
+      .mockResolvedValueOnce({ imported: [], skipped: [{ name: 'a', reason: 'taken' }, { path: 'skills/b', name: 'b', reason: 'too big' }], sourceRepo: 'o/r' });
+    await mount(SkillsView, { path: '/teams/tm1/skills' });
+    await type($('[data-test=tws-import-url]'), 'https://github.com/o/r');
+    const discover = async () => {
+      $('[data-test=tws-import]').closest('form').dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle();
+    };
+    await discover();
+    await click($('[data-test=tws-import-chosen]'));
+    expect(text($('[data-test=tws-import-report]'))).toBe('Imported 0 skills from.');
+    await discover();
+    await click($('[data-test=tws-import-chosen]'));
+    expect(text($('[data-test=tws-import-report]'))).toContain('a — taken');
+    expect(text($('[data-test=tws-import-report]'))).toContain('skills/b — too big');
+  });
+
   it("opens a skill with its files, SKILL.md first and in the editor", async () => {
     await mount(SkillsView, { path: '/teams/tm1/skills' });
     await click($('[data-test=tws-open]'));

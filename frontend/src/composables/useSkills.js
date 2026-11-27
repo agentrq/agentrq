@@ -331,11 +331,23 @@ export function importUrlValid(url, gitlabHost = DEFAULT_GITLAB_HOST) {
 }
 
 /**
+ * What is wrong with an import link, said under the field when Discover is
+ * pressed, or '' when the importer may take it.
+ */
+export function importUrlError(url, gitlabHost = DEFAULT_GITLAB_HOST) {
+  if (!String(url ?? '').trim()) return 'Enter a link to a GitHub or GitLab repository.';
+  if (importUrlValid(url, gitlabHost)) return '';
+  return `Expected https://github.com/owner/repo or https://${gitlabHost}/group/project, optionally …/tree/<ref>/<path>`;
+}
+
+/**
  * The skills a repository too large to import whole offers, those that can be
- * chosen first, each by name. A candidate with a reason cannot be imported.
+ * chosen first, each by name, numbers in order (skill-2 before skill-10). A
+ * candidate with a reason cannot be imported.
  */
 export function orderCandidates(candidates = []) {
-  return [...candidates].sort((a, b) => Number(!!a.reason) - Number(!!b.reason) || a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
+  const byText = (x, y) => x.localeCompare(y, undefined, { numeric: true });
+  return [...candidates].sort((a, b) => Number(!!a.reason) - Number(!!b.reason) || byText(a.name, b.name) || byText(a.path, b.path));
 }
 
 /** The paths of the candidates that can be chosen. */
