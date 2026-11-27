@@ -18,7 +18,7 @@
                     :class="[activeTab === tab.id ? 'bg-gray-900 text-white dark:bg-white dark:text-zinc-900 shadow-lg shadow-black/5' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800']"
                     class="flex items-center gap-3 px-4 py-2.5 rounded-sm text-[10px] font-bold uppercase tracking-widest transition-all text-left">
               <div class="w-4 h-4 flex items-center justify-center shrink-0">
-                <div v-if="tab.icon.startsWith('<')" v-html="tab.icon" class="w-full h-full flex items-center justify-center"></div>
+                <div v-if="tab.icon.startsWith('<')" v-html="tab.icon" class="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"></div>
                 <svg v-else class="w-full h-full" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" :d="tab.icon" />
                 </svg>
