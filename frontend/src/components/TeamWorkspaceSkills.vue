@@ -124,9 +124,9 @@
           </div>
         </form>
 
-        <!-- Import from GitHub, as the account's Skills page does. -->
+        <!-- Import from GitHub or GitLab, as the account's Skills page does. -->
         <form class="sm:p-4 sm:bg-gray-50 sm:dark:bg-zinc-800/50 sm:rounded-sm sm:border border-gray-100 dark:border-zinc-800 space-y-3" @submit.prevent="runImport">
-          <label for="tws-import-url" class="block text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Import from GitHub</label>
+          <label for="tws-import-url" class="block text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Import from GitHub or GitLab</label>
           <div class="flex flex-col sm:flex-row gap-2">
             <input id="tws-import-url" v-model="importUrl" data-test="tws-import-url" type="url" autocomplete="off" spellcheck="false"
                    placeholder="https://github.com/obra/superpowers"
@@ -141,12 +141,13 @@
               <input v-model="importOverwrite" data-test="tws-import-overwrite" type="checkbox" class="rounded-sm border-gray-300 dark:border-zinc-600" />
               Overwrite team skills of the same name
             </label>
-            <span v-if="importUrl.trim() && !githubImportUrlValid(importUrl)" class="text-[10px] text-amber-600 dark:text-amber-400">
-              Expected https://github.com/owner/repo, optionally /tree/&lt;ref&gt;/&lt;path&gt;
+            <span v-if="importUrl.trim() && !importUrlValid(importUrl, gitlabHost)" class="text-[10px] text-amber-600 dark:text-amber-400">
+              Expected https://github.com/owner/repo or https://{{ gitlabHost }}/group/project, optionally …/tree/&lt;ref&gt;/&lt;path&gt;
             </span>
           </div>
-          <!-- A private repository is read through the importing member's own connection. -->
+          <!-- A private repository is read through the importing member's own connections. -->
           <GitHubConnection />
+          <GitLabConnection />
           <p v-if="importError" data-test="tws-import-error" class="text-[11px] font-bold text-red-600 dark:text-red-400 break-words">{{ importError }}</p>
           <div v-if="choice" data-test="tws-import-choice" class="space-y-2 text-[11px] text-gray-700 dark:text-zinc-300">
             <p class="font-bold break-words">{{ choice.repo }} is too large to import whole. Choose the skills to import:</p>
@@ -164,7 +165,7 @@
                   <span class="min-w-0 flex-1">
                     <span class="flex flex-wrap items-baseline gap-x-2">
                       <span class="font-mono font-bold break-all">{{ c.name }}</span>
-                      <span class="text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">{{ formatSkillSize(c.sizeBytes) }}</span>
+                      <span v-if="c.sizeBytes" class="text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">{{ formatSkillSize(c.sizeBytes) }}</span>
                     </span>
                     <span v-if="c.reason" class="block break-words text-amber-600 dark:text-amber-400">{{ c.reason }}</span>
                   </span>
@@ -234,7 +235,9 @@ import {
 } from '../api';
 import DeleteModal from './DeleteModal.vue';
 import GitHubConnection from './GitHubConnection.vue';
-import { SKILL_FILE, choosablePaths, formatSkillSize, githubImportUrlValid, orderCandidates } from '../composables/useSkills';
+import { SKILL_FILE, choosablePaths, formatSkillSize, importUrlValid, orderCandidates } from '../composables/useSkills';
+import { useGitLabHost } from '../composables/useGitLabHost';
+import GitLabConnection from './GitLabConnection.vue';
 import { lostTeam, sameSharedName, sharedNameOf, useTeamMode } from '../composables/useTeamMode';
 import { useToasts } from '../composables/useToasts';
 import { onWebMCPChange } from '../composables/useWebMCPChanges';
@@ -341,6 +344,8 @@ const importReport = ref(null);
 const importError = ref('');
 const choice = ref(null);
 const chosen = ref([]);
+// The GitLab a link may name besides GitHub, for the hint.
+const gitlabHost = useGitLabHost();
 
 async function doImport(url, picked) {
   importing.value = true;

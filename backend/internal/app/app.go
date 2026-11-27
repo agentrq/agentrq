@@ -61,6 +61,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/githubapp"
+	"github.com/agentrq/agentrq/backend/internal/service/gitlabapp"
 	"github.com/agentrq/agentrq/backend/internal/service/hookrunner"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/image"
@@ -143,6 +144,9 @@ type (
 		Slack slacksvc.Config `yaml:"slack"`
 		// GitHubApp lets skills be imported from private repositories.
 		GitHubApp githubapp.Config `yaml:"githubApp"`
+		// GitLabApp is the GitLab skills are imported from, and the OAuth
+		// application that reads its private projects.
+		GitLabApp gitlabapp.Config `yaml:"gitlabApp"`
 		WebPush   pushctrl.Config  `yaml:"webPush"`
 		Ddos      struct {
 			Enabled              bool          `yaml:"enabled"`
@@ -431,8 +435,10 @@ func New(cfg Config) (*App, error) {
 		Avatars:          avatarSvc,
 		PubSub:           pubsubSvc,
 		Limiter:          rateLimiter,
-		SkillImport:      skillimport.New(),
+		SkillImport:      skillimport.New(cfg.GitLabApp.Host),
 		GitHubApp:        githubapp.New(cfg.GitHubApp),
+		GitLabApp:        gitlabapp.New(cfg.GitLabApp, cfg.App.BaseURL),
+		TokenKey:         cfg.Auth.WorkspaceTokenKey,
 		TaskAgents:       taskAgentCtrl,
 	})
 	hookCtrl := hook.New(hook.Params{
@@ -1551,6 +1557,7 @@ func migratedModels() []any {
 		&model.Memory{},
 		&model.Preset{},
 		&model.GitHubInstallation{},
+		&model.GitLabConnection{},
 		&model.Skill{},
 		&model.SkillFile{},
 		&model.SkillShare{},

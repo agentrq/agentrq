@@ -49,6 +49,7 @@ const api = vi.hoisted(() => ({
   setWorkspaceTeamSkill: vi.fn(),
   giveSkillToTeam: vi.fn(),
   // The server has no GitHub App: the import offers public repositories only.
+  getGitLabConnection: vi.fn(() => Promise.resolve({ host: 'gitlab.com', enabled: false })),
   getGitHubConnection: vi.fn(() => Promise.resolve({ enabled: false, installations: [] })),
   disconnectGitHub: vi.fn(),
 }));

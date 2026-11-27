@@ -51,6 +51,7 @@ type SkillController interface {
 const (
 	skillSourceManual = "manual"
 	skillSourceGitHub = "github"
+	skillSourceGitLab = "gitlab"
 )
 
 // SkillErrorKind says what sort of refusal a SkillError is, which is what the
@@ -386,7 +387,7 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 			return nil, err
 		}
 	}
-	if s.SourceType == skillSourceGitHub {
+	if imported(s.SourceType) {
 		s.LocallyModified = true
 	}
 	s.UpdatedAt = now
@@ -541,7 +542,7 @@ func (c *controller) DeleteSkillFile(ctx context.Context, req entity.DeleteSkill
 	if err != nil {
 		return nil, err
 	}
-	if s.SourceType == skillSourceGitHub {
+	if imported(s.SourceType) {
 		s.LocallyModified = true
 	}
 	s.UpdatedAt = time.Now()
@@ -553,7 +554,7 @@ func (c *controller) DeleteSkillFile(ctx context.Context, req entity.DeleteSkill
 	return &entity.DeleteSkillFileResponse{Skill: fromModelSkill(saved, on[s.ID], scope)}, nil
 }
 
-// ImportSkills copies every skill in a GitHub repository (or one directory of
+// ImportSkills copies every skill in a GitHub or GitLab repository (or one directory of
 // it) into the account, or only the skills req.Skills names, and turns each on
 // in the workspaces req.WorkspaceIDs lists. A repository too large to import
 // whole imports nothing and offers its skills to choose from instead. A skill
@@ -577,10 +578,10 @@ func (c *controller) ImportSkills(ctx context.Context, req entity.ImportSkillsRe
 	if c.limiter != nil && !c.limiter.AllowSkillImport(uid) {
 		return nil, fmt.Errorf("rate limit exceeded")
 	}
-	token := c.importToken(ctx, uid, req.URL)
+	token, gitlab := c.sourceToken(ctx, uid, req.URL)
 	res, err := c.skillImport.Fetch(ctx, req.URL, req.Skills, token)
 	if err != nil {
-		return nil, c.importFetchErr(err, token)
+		return nil, c.importFetchErr(err, token, gitlab)
 	}
 
 	own, _, err := c.repository.SearchSkills(ctx, uid, "", base.SkillFilter{}, 0, 0)
@@ -666,6 +667,20 @@ func withWorkspaces(on, more []int64) []int64 {
 	return out
 }
 
+// imported reports whether a skill's source is a repository it was imported
+// from, so that a change to it is a local one.
+func imported(sourceType string) bool {
+	return sourceType == skillSourceGitHub || sourceType == skillSourceGitLab
+}
+
+// importSource is the source type of what an import read.
+func importSource(res *skillimport.Result) string {
+	if res.Host == skillSourceGitLab {
+		return skillSourceGitLab
+	}
+	return skillSourceGitHub
+}
+
 func (c *controller) importSkill(ctx context.Context, uid int64, existing model.Skill, taken bool, sk skillimport.Skill, res *skillimport.Result, workspaces []int64) (model.Skill, error) {
 	now := time.Now()
 	s := model.Skill{ID: c.idgen.NextID(), CreatedAt: now}
@@ -676,7 +691,7 @@ func (c *controller) importSkill(ctx context.Context, uid int64, existing model.
 	s.UpdatedAt = now
 	s.UserID = uid
 	s.Name, s.Description = sk.Name, sk.Description
-	s.SourceType, s.SourceRepo, s.SourceRef, s.SourceCommit, s.SourcePath = skillSourceGitHub, res.Repo, res.Ref, res.Commit, sk.Dir
+	s.SourceType, s.SourceRepo, s.SourceRef, s.SourceCommit, s.SourcePath = importSource(res), res.Repo, res.Ref, res.Commit, sk.Dir
 
 	files := make([]model.SkillFile, 0, len(sk.Files))
 	var written []string

@@ -2,15 +2,16 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
-// Package skillimport reads skills out of a GitHub repository: a public one,
-// or a private one given a token that reads it.
+// Package skillimport reads skills out of a GitHub or GitLab repository: a
+// public one, or a private one given a token that reads it.
 //
 // It fetches one tarball rather than walking the contents API: unauthenticated
 // API calls are limited to 60 an hour per IP, which one repository of skills
 // can exhaust on its own. And it never fetches a URL it was given — it parses
-// the owner, repository and ref out of it and builds the codeload and API URLs
-// itself, so an import cannot be pointed at anything but GitHub. A token goes
-// to the API alone, which serves a private repository's archive and files too.
+// the owner, repository and ref out of it and builds the API URLs itself, so
+// an import cannot be pointed at anything but GitHub or the one GitLab host
+// the server names. A token goes to the API alone, which serves a private
+// repository's archive and files too.
 package skillimport
 
 import (
@@ -47,6 +48,8 @@ const (
 	MaxSelected = 256
 	// maxTreeBytes caps GitHub's listing of a repository's files.
 	maxTreeBytes = 32 * 1024 * 1024
+	// maxTreePages caps the pages of GitLab's file list read, 100 to a page.
+	maxTreePages = 200
 	// maxRawFiles caps the files one import reads one by one, and
 	// rawParallel how many it reads at a time.
 	maxRawFiles = 1024
@@ -54,13 +57,16 @@ const (
 )
 
 var (
-	// ErrInvalidURL is a URL that is not a public GitHub repository link.
-	ErrInvalidURL = errors.New("invalid GitHub URL")
-	// ErrNotFound is a repository or ref GitHub does not serve publicly.
-	ErrNotFound = errors.New("not found on GitHub")
+	// ErrInvalidURL is a URL that is not a GitHub or GitLab repository link.
+	ErrInvalidURL = errors.New("invalid repository URL")
+	// ErrNotFound is a repository or ref the host does not serve.
+	ErrNotFound = errors.New("repository not found")
 
 	segmentPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
-	shaPattern     = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	// hostPattern is a host name with an optional port, and nothing else.
+	hostPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$`)
+	pagePattern = regexp.MustCompile(`^[0-9]{1,6}$`)
+	shaPattern  = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 	// manifestPaths are the plugin manifests that list a repository's skills,
 	// in the order they are looked for: AgentRQ's own, then Muse's, whose
@@ -69,8 +75,11 @@ var (
 )
 
 type (
-	// Source is what a GitHub URL names.
+	// Source is what a repository URL names. On GitLab, Owner is the whole
+	// namespace, subgroups included.
 	Source struct {
+		// GitLab is set for a link to the server's GitLab host.
+		GitLab  bool
 		Owner   string
 		Repo    string
 		Ref     string
@@ -114,6 +123,8 @@ type (
 
 	// Result is everything an import found.
 	Result struct {
+		// Host is "github" or "gitlab".
+		Host    string
 		Repo    string
 		Ref     string
 		Commit  string
@@ -125,12 +136,14 @@ type (
 		Candidates []Candidate
 	}
 
-	// Service imports skills from GitHub.
+	// Service imports skills from GitHub and GitLab.
 	Service interface {
 		// Fetch imports the skills a link names; only, when not empty, is the
 		// directories of the skills wanted. token, when set, reads the
-		// repository through GitHub's API: a private one needs it.
+		// repository through the host's API: a private one needs it.
 		Fetch(ctx context.Context, rawURL string, only []string, token string) (*Result, error)
+		// Parse reads a link the way Fetch would, without fetching anything.
+		Parse(rawURL string) (Source, error)
 	}
 
 	service struct {
@@ -138,7 +151,12 @@ type (
 		apiBase      string
 		codeloadBase string
 		rawBase      string
-		// token is sent to apiBase, and nowhere else.
+		// gitlabHost is the one GitLab links may name, and gitlabAPI its API.
+		gitlabHost string
+		gitlabAPI  string
+		// gitlab is set on the copy that fetches from GitLab.
+		gitlab bool
+		// token is sent to the host's API, and nowhere else.
 		token string
 		// Byte budgets for one download: compressed, extracted, and held in
 		// memory. Fields rather than constants so tests can reach them.
@@ -169,13 +187,20 @@ type (
 	}
 )
 
-// New returns an importer that talks to github.com.
-func New() Service {
+// DefaultGitLabHost is the GitLab an importer reads when none is named.
+const DefaultGitLabHost = "gitlab.com"
+
+// New returns an importer that talks to github.com and to gitlabHost, a host
+// name such as gitlab.com; empty is DefaultGitLabHost.
+func New(gitlabHost string) Service {
+	gitlabHost = GitLabHost(gitlabHost)
 	return &service{
 		client:       &http.Client{Timeout: requestTimeout},
 		apiBase:      "https://api.github.com",
 		codeloadBase: "https://codeload.github.com",
 		rawBase:      "https://raw.githubusercontent.com",
+		gitlabHost:   gitlabHost,
+		gitlabAPI:    "https://" + gitlabHost + "/api/v4",
 		maxDownload:  maxDownloadBytes,
 		maxExtracted: maxExtractedBytes,
 		maxCollected: maxCollectedBytes,
@@ -215,17 +240,86 @@ func ParseURL(raw string) (Source, error) {
 	return src, nil
 }
 
+// GitLabHost is the host an importer configured with host reads: host
+// itself, lower case, or DefaultGitLabHost when it is empty.
+func GitLabHost(host string) string {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return DefaultGitLabHost
+	}
+	return host
+}
+
+// CheckGitLabHost refuses a GitLab host that is not a bare host name: the
+// importer builds https://<host>/api/v4 from it.
+func CheckGitLabHost(host string) error {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return nil
+	}
+	if !hostPattern.MatchString(host) {
+		return fmt.Errorf("%q is not a host name, such as gitlab.com or gitlab.example.com:8443", host)
+	}
+	return nil
+}
+
+// ParseGitLabURL reads the namespace, project, ref and directory out of a
+// link to a project on host. Accepted: https://<host>/<group>[/<subgroup>…]/<project>,
+// optionally ending in .git, /-/tree/<ref> or /-/tree/<ref>/<path>. As on
+// GitHub, the first segment after /-/tree/ is always the ref.
+func ParseGitLabURL(raw, host string) (Source, error) {
+	example := fmt.Errorf("%w: use a link like https://%s/group/project", ErrInvalidURL, host)
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme != "https" || !strings.EqualFold(u.Host, host) || u.User != nil {
+		return Source{}, example
+	}
+	project, rest, _ := strings.Cut(strings.Trim(u.Path, "/"), "/-/")
+	parts := strings.Split(project, "/")
+	if len(parts) < 2 {
+		return Source{}, fmt.Errorf("%w: the link must name a group and a project", ErrInvalidURL)
+	}
+	src := Source{GitLab: true, Owner: strings.Join(parts[:len(parts)-1], "/"), Repo: strings.TrimSuffix(parts[len(parts)-1], ".git")}
+	if rest != "" {
+		tree := strings.Split(rest, "/")
+		if tree[0] != "tree" || len(tree) < 2 {
+			return Source{}, fmt.Errorf("%w: link to the project, or to a directory in it with /-/tree/<ref>/<path>", ErrInvalidURL)
+		}
+		src.Ref, src.SubPath = tree[1], strings.Join(tree[2:], "/")
+	}
+	for _, seg := range append(append(parts[:len(parts)-1:len(parts)-1], src.Repo, src.Ref), strings.Split(src.SubPath, "/")...) {
+		if seg != "" && (!segmentPattern.MatchString(seg) || seg == "." || seg == "..") {
+			return Source{}, fmt.Errorf("%w: %q is not a valid part of a GitLab link", ErrInvalidURL, seg)
+		}
+	}
+	if src.Repo == "" || slices.Contains(parts[:len(parts)-1], "") {
+		return Source{}, fmt.Errorf("%w: the link must name a group and a project", ErrInvalidURL)
+	}
+	return src, nil
+}
+
+// Parse reads a GitHub link, or a link to the importer's GitLab host.
+func (s *service) Parse(rawURL string) (Source, error) {
+	if u, err := url.Parse(strings.TrimSpace(rawURL)); err == nil && strings.EqualFold(u.Host, s.gitlabHost) {
+		return ParseGitLabURL(rawURL, s.gitlabHost)
+	}
+	src, err := ParseURL(rawURL)
+	if err != nil {
+		return Source{}, fmt.Errorf("%w: use a link like https://github.com/owner/repo or https://%s/group/project", ErrInvalidURL, s.gitlabHost)
+	}
+	return src, nil
+}
+
 func (e tooLargeError) Error() string { return e.msg }
 
 func (s *service) Fetch(ctx context.Context, rawURL string, only []string, token string) (*Result, error) {
-	src, err := ParseURL(rawURL)
+	src, err := s.Parse(rawURL)
 	if err != nil {
 		return nil, err
 	}
-	if token != "" {
-		withToken := *s
-		withToken.token = token
-		s = &withToken
+	if token != "" || src.GitLab {
+		cp := *s
+		cp.token, cp.gitlab = token, src.GitLab
+		s = &cp
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*requestTimeout)
 	defer cancel()
@@ -264,7 +358,7 @@ func (s *service) Fetch(ctx context.Context, rawURL string, only []string, token
 		}
 		if len(only) == 0 {
 			res := offer(entries, manifests, src)
-			res.Repo, res.Ref, res.Commit = repo, src.Ref, commit
+			res.Host, res.Repo, res.Ref, res.Commit = s.hostKind(), repo, src.Ref, commit
 			return res, nil
 		}
 		if err := s.readChosen(ctx, repo, archiveRef, entries, manifests, src, only); err != nil {
@@ -275,8 +369,49 @@ func (s *service) Fetch(ctx context.Context, rawURL string, only []string, token
 		return nil, err
 	}
 	res := collect(entries, manifests, src, only)
-	res.Repo, res.Ref, res.Commit = repo, src.Ref, commit
+	res.Host, res.Repo, res.Ref, res.Commit = s.hostKind(), repo, src.Ref, commit
 	return res, nil
+}
+
+// hostKind is the Result.Host of what s fetches.
+func (s *service) hostKind() string {
+	if s.gitlab {
+		return "gitlab"
+	}
+	return "github"
+}
+
+// hostName is the host as a person names it, in errors.
+func (s *service) hostName() string {
+	if s.gitlab {
+		return "GitLab"
+	}
+	return "GitHub"
+}
+
+// api is the base of the host's API, the one place a token is sent.
+func (s *service) api() string {
+	if s.gitlab {
+		return s.gitlabAPI
+	}
+	return s.apiBase
+}
+
+// treeLink is how a link names a branch, in advice.
+func (s *service) treeLink() string {
+	if s.gitlab {
+		return "/-/tree/<branch>"
+	}
+	return "/tree/<branch>"
+}
+
+// project is the API path of a repository: repos/<owner>/<repo> on GitHub,
+// projects/<url-escaped path> on GitLab.
+func (s *service) project(repo string) string {
+	if s.gitlab {
+		return s.gitlabAPI + "/projects/" + url.PathEscape(repo)
+	}
+	return s.apiBase + "/repos/" + repo
 }
 
 func (s *service) get(ctx context.Context, u, accept string) (*http.Response, error) {
@@ -290,38 +425,46 @@ func (s *service) get(ctx context.Context, u, accept string) (*http.Response, er
 	req.Header.Set("User-Agent", "agentrq-skill-import")
 	// Go drops the header on a redirect to another host, as from the API's
 	// tarball to codeload, which is sent a token of its own in the URL.
-	if s.token != "" && strings.HasPrefix(u, s.apiBase+"/") {
+	if s.token != "" && strings.HasPrefix(u, s.api()+"/") {
 		req.Header.Set("Authorization", "Bearer "+s.token)
 	}
 	return s.client.Do(req)
 }
 
 func (s *service) defaultBranch(ctx context.Context, repo string) (string, error) {
-	resp, err := s.get(ctx, s.apiBase+"/repos/"+repo, "application/vnd.github+json")
+	resp, err := s.get(ctx, s.project(repo), "application/vnd.github+json")
 	if err != nil {
-		return "", fmt.Errorf("reach GitHub: %w", err)
+		return "", fmt.Errorf("reach %s: %w", s.hostName(), err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		if s.token != "" {
+	// GitLab answers 401 for a private project asked about with no token.
+	if resp.StatusCode == http.StatusNotFound || (s.gitlab && resp.StatusCode == http.StatusUnauthorized) {
+		switch {
+		case s.token != "" && s.gitlab:
+			return "", fmt.Errorf("%w: project %s does not exist, or the access token cannot read it", ErrNotFound, repo)
+		case s.token != "":
 			return "", fmt.Errorf("%w: repository %s does not exist, or the GitHub App was not given it", ErrNotFound, repo)
 		}
 		return "", fmt.Errorf("%w: repository %s does not exist or is not public", ErrNotFound, repo)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("GitHub answered %d looking up %s; name a branch with /tree/<branch> to skip this lookup", resp.StatusCode, repo)
+		return "", fmt.Errorf("%s answered %d looking up %s; name a branch with %s to skip this lookup", s.hostName(), resp.StatusCode, repo, s.treeLink())
 	}
 	var body struct {
 		DefaultBranch string `json:"default_branch"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil || !segmentPattern.MatchString(body.DefaultBranch) {
-		return "", fmt.Errorf("GitHub did not say which branch %s uses; name one with /tree/<branch>", repo)
+		return "", fmt.Errorf("%s did not say which branch %s uses; name one with %s", s.hostName(), repo, s.treeLink())
 	}
 	return body.DefaultBranch, nil
 }
 
 func (s *service) commitSHA(ctx context.Context, repo, ref string) string {
-	resp, err := s.get(ctx, s.apiBase+"/repos/"+repo+"/commits/"+ref, "application/vnd.github.sha")
+	u, accept := s.project(repo)+"/commits/"+ref, "application/vnd.github.sha"
+	if s.gitlab {
+		u, accept = s.project(repo)+"/repository/commits/"+url.PathEscape(ref), ""
+	}
+	resp, err := s.get(ctx, u, accept)
 	if err != nil {
 		return ""
 	}
@@ -329,8 +472,17 @@ func (s *service) commitSHA(ctx context.Context, repo, ref string) string {
 	if resp.StatusCode != http.StatusOK {
 		return ""
 	}
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 64))
-	sha := strings.TrimSpace(string(b))
+	var sha string
+	if s.gitlab {
+		var body struct {
+			ID string `json:"id"`
+		}
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body)
+		sha = body.ID
+	} else {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 64))
+		sha = strings.TrimSpace(string(b))
+	}
 	if !shaPattern.MatchString(sha) {
 		return ""
 	}
@@ -361,19 +513,22 @@ func (l *limitedReader) Read(p []byte) (int, error) {
 // and the plugin manifests at its root, wherever subPath points.
 func (s *service) download(ctx context.Context, repo, ref, subPath string) ([]entry, map[string][]byte, error) {
 	archive := s.codeloadBase + "/" + repo + "/tar.gz/" + ref
-	if s.token != "" {
+	switch {
+	case s.gitlab:
+		archive = s.project(repo) + "/repository/archive.tar.gz?sha=" + url.QueryEscape(ref)
+	case s.token != "":
 		archive = s.apiBase + "/repos/" + repo + "/tarball/" + ref
 	}
 	resp, err := s.get(ctx, archive, "")
 	if err != nil {
-		return nil, nil, fmt.Errorf("download from GitHub: %w", err)
+		return nil, nil, fmt.Errorf("download from %s: %w", s.hostName(), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil, fmt.Errorf("%w: %s has no branch, tag or commit %q", ErrNotFound, repo, ref)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("GitHub answered %d downloading %s", resp.StatusCode, repo)
+		return nil, nil, fmt.Errorf("%s answered %d downloading %s", s.hostName(), resp.StatusCode, repo)
 	}
 
 	// The whole archive is read whatever directory the link names, so a
@@ -384,7 +539,7 @@ func (s *service) download(ctx context.Context, repo, ref, subPath string) ([]en
 		if errors.Is(err, errTooLarge) {
 			return nil, nil, tooLarge
 		}
-		return nil, nil, fmt.Errorf("GitHub sent an archive that could not be read: %w", err)
+		return nil, nil, fmt.Errorf("%s sent an archive that could not be read: %w", s.hostName(), err)
 	}
 	tr := tar.NewReader(&limitedReader{r: gz, left: s.maxExtracted})
 
@@ -404,9 +559,10 @@ func (s *service) download(ctx context.Context, repo, ref, subPath string) ([]en
 			if errors.Is(err, errTooLarge) {
 				return nil, nil, tooLarge
 			}
-			return nil, nil, fmt.Errorf("GitHub sent an archive that could not be read: %w", err)
+			return nil, nil, fmt.Errorf("%s sent an archive that could not be read: %w", s.hostName(), err)
 		}
-		// Every entry sits under one <repo>-<ref>/ directory.
+		// Every entry sits under one <repo>-<ref>/ directory (GitLab's adds
+		// the commit).
 		_, name, ok := strings.Cut(hdr.Name, "/")
 		isManifest := hdr.Typeflag == tar.TypeReg && hdr.Size <= skill.MaxSubFileBytes && slices.Contains(manifestPaths, name)
 		if !ok || name == "" || (!strings.HasPrefix(name, prefix) && !isManifest) {
@@ -418,7 +574,7 @@ func (s *service) download(ctx context.Context, repo, ref, subPath string) ([]en
 				if errors.Is(err, errTooLarge) {
 					return nil, nil, tooLarge
 				}
-				return nil, nil, fmt.Errorf("GitHub sent an archive that could not be read: %w", err)
+				return nil, nil, fmt.Errorf("%s sent an archive that could not be read: %w", s.hostName(), err)
 			}
 			manifests[name] = content
 			continue
@@ -432,8 +588,8 @@ func (s *service) download(ctx context.Context, repo, ref, subPath string) ([]en
 		default:
 			continue
 		}
-		if limit := fileLimit(name); hdr.Size > limit {
-			entries = append(entries, entry{path: name, reason: fmt.Sprintf("is %d bytes; the limit is %d KiB", hdr.Size, limit/1024)})
+		if hdr.Size > fileLimit(name) {
+			entries = append(entries, entry{path: name, reason: tooBig(hdr.Size, name)})
 			continue
 		}
 		content, err := io.ReadAll(tr)
@@ -441,7 +597,7 @@ func (s *service) download(ctx context.Context, repo, ref, subPath string) ([]en
 			if errors.Is(err, errTooLarge) {
 				return nil, nil, tooLarge
 			}
-			return nil, nil, fmt.Errorf("GitHub sent an archive that could not be read: %w", err)
+			return nil, nil, fmt.Errorf("%s sent an archive that could not be read: %w", s.hostName(), err)
 		}
 		if collected += int64(len(content)); collected > s.maxCollected {
 			return nil, nil, tooLarge
@@ -555,31 +711,13 @@ func offer(entries []entry, manifests map[string][]byte, src Source) *Result {
 // the archive would download everything. Contents are read later, and only
 // for the skills chosen.
 func (s *service) listTree(ctx context.Context, repo, ref, subPath string) ([]entry, map[string][]byte, error) {
-	resp, err := s.get(ctx, s.apiBase+"/repos/"+repo+"/git/trees/"+ref+"?recursive=1", "application/vnd.github+json")
+	list := s.githubTree
+	if s.gitlab {
+		list = s.gitlabTree
+	}
+	tree, err := list(ctx, repo, ref)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reach GitHub: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil, fmt.Errorf("%w: %s has no branch, tag or commit %q", ErrNotFound, repo, ref)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("GitHub answered %d listing the files of %s", resp.StatusCode, repo)
-	}
-	var body struct {
-		Truncated bool `json:"truncated"`
-		Tree      []struct {
-			Path string `json:"path"`
-			Mode string `json:"mode"`
-			Type string `json:"type"`
-			Size int64  `json:"size"`
-		} `json:"tree"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxTreeBytes)).Decode(&body); err != nil {
-		return nil, nil, fmt.Errorf("GitHub sent a file list for %s that could not be read: %w", repo, err)
-	}
-	if body.Truncated {
-		return nil, nil, fmt.Errorf("%s has more files than GitHub will list at once", repo)
+		return nil, nil, err
 	}
 
 	prefix := ""
@@ -588,7 +726,7 @@ func (s *service) listTree(ctx context.Context, repo, ref, subPath string) ([]en
 	}
 	var entries []entry
 	manifests := map[string][]byte{}
-	for _, t := range body.Tree {
+	for _, t := range tree {
 		if t.Type != "blob" {
 			continue
 		}
@@ -608,11 +746,92 @@ func (s *service) listTree(ctx context.Context, repo, ref, subPath string) ([]en
 		case t.Mode == "120000":
 			e.reason, e.unread = "links are not imported", false
 		case t.Size > fileLimit(e.path):
-			e.reason, e.unread = fmt.Sprintf("is %d bytes; the limit is %d KiB", t.Size, fileLimit(e.path)/1024), false
+			e.reason, e.unread = tooBig(t.Size, e.path), false
 		}
 		entries = append(entries, e)
 	}
 	return entries, manifests, nil
+}
+
+// listedFile is one path in a repository's file list.
+type listedFile struct {
+	Path string `json:"path"`
+	Mode string `json:"mode"`
+	Type string `json:"type"`
+	// Size is 0 on GitLab, which does not list it: a file's size is then
+	// learnt by reading it.
+	Size int64 `json:"size"`
+}
+
+// githubTree lists a repository's files in one call.
+func (s *service) githubTree(ctx context.Context, repo, ref string) ([]listedFile, error) {
+	resp, err := s.get(ctx, s.apiBase+"/repos/"+repo+"/git/trees/"+ref+"?recursive=1", "application/vnd.github+json")
+	if err != nil {
+		return nil, fmt.Errorf("reach GitHub: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: %s has no branch, tag or commit %q", ErrNotFound, repo, ref)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub answered %d listing the files of %s", resp.StatusCode, repo)
+	}
+	var body struct {
+		Truncated bool         `json:"truncated"`
+		Tree      []listedFile `json:"tree"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxTreeBytes)).Decode(&body); err != nil {
+		return nil, fmt.Errorf("GitHub sent a file list for %s that could not be read: %w", repo, err)
+	}
+	if body.Truncated {
+		return nil, fmt.Errorf("%s has more files than GitHub will list at once", repo)
+	}
+	return body.Tree, nil
+}
+
+// gitlabTree lists a project's files, a page of 100 at a time, up to
+// maxTreePages pages.
+func (s *service) gitlabTree(ctx context.Context, repo, ref string) ([]listedFile, error) {
+	var tree []listedFile
+	for page := "1"; page != ""; {
+		if len(tree) >= maxTreePages*100 {
+			return nil, fmt.Errorf("%s has more files than GitLab will list at once", repo)
+		}
+		u := s.project(repo) + "/repository/tree?recursive=true&per_page=100&ref=" + url.QueryEscape(ref) + "&page=" + url.QueryEscape(page)
+		items, next, err := s.gitlabTreePage(ctx, repo, ref, u)
+		if err != nil {
+			return nil, err
+		}
+		tree, page = append(tree, items...), next
+	}
+	return tree, nil
+}
+
+func (s *service) gitlabTreePage(ctx context.Context, repo, ref, u string) ([]listedFile, string, error) {
+	resp, err := s.get(ctx, u, "")
+	if err != nil {
+		return nil, "", fmt.Errorf("reach GitLab: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, "", fmt.Errorf("%w: %s has no branch, tag or commit %q", ErrNotFound, repo, ref)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("GitLab answered %d listing the files of %s", resp.StatusCode, repo)
+	}
+	var items []listedFile
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxTreeBytes)).Decode(&items); err != nil {
+		return nil, "", fmt.Errorf("GitLab sent a file list for %s that could not be read: %w", repo, err)
+	}
+	next := resp.Header.Get("X-Next-Page")
+	if next != "" && !pagePattern.MatchString(next) {
+		next = ""
+	}
+	return items, next, nil
+}
+
+func tooBig(size int64, p string) string {
+	return fmt.Sprintf("is %d bytes; the limit is %d KiB", size, fileLimit(p)/1024)
 }
 
 // readChosen downloads what the chosen skills keep: SKILL.md, their Markdown,
@@ -641,7 +860,16 @@ func (s *service) readChosen(ctx context.Context, repo, ref string, entries []en
 				return fmt.Errorf("the chosen skills are larger than %d MB; choose fewer", s.maxCollected>>20)
 			}
 		}
-		return s.readEntries(ctx, repo, ref, prefix, entries, batch)
+		if err := s.readEntries(ctx, repo, ref, prefix, entries, batch); err != nil {
+			return err
+		}
+		// A size the list did not give (GitLab's) is counted once read.
+		for _, i := range batch {
+			if budget -= int64(len(entries[i].content)) - entries[i].size; budget < 0 {
+				return fmt.Errorf("the chosen skills are larger than %d MB; choose fewer", s.maxCollected>>20)
+			}
+		}
+		return nil
 	}
 
 	for d, idx := range byDir {
@@ -688,6 +916,10 @@ func (s *service) readEntries(ctx context.Context, repo, ref, prefix string, ent
 			defer func() { <-sem }()
 			content, err := s.readRaw(ctx, repo, ref, prefix+entries[i].path)
 			entries[i].content, entries[i].unread, errs[n] = content, false, err
+			if n := int64(len(content)); n > fileLimit(entries[i].path) {
+				// Read only up to the limit: its true size is unknown.
+				entries[i].content, entries[i].reason = nil, fmt.Sprintf("is over %d KiB, the limit", fileLimit(entries[i].path)/1024)
+			}
 		}()
 	}
 	wg.Wait()
@@ -701,16 +933,19 @@ func (s *service) readRaw(ctx context.Context, repo, ref, p string) ([]byte, err
 		segs[i] = url.PathEscape(segs[i])
 	}
 	u, accept := s.rawBase+"/"+repo+"/"+ref+"/"+strings.Join(segs, "/"), ""
-	if s.token != "" {
+	switch {
+	case s.gitlab:
+		u = s.project(repo) + "/repository/files/" + url.PathEscape(p) + "/raw?ref=" + url.QueryEscape(ref)
+	case s.token != "":
 		u, accept = s.apiBase+"/repos/"+repo+"/contents/"+strings.Join(segs, "/")+"?ref="+url.QueryEscape(ref), "application/vnd.github.raw"
 	}
 	resp, err := s.get(ctx, u, accept)
 	if err != nil {
-		return nil, fmt.Errorf("download from GitHub: %w", err)
+		return nil, fmt.Errorf("download from %s: %w", s.hostName(), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub answered %d downloading %s from %s", resp.StatusCode, p, repo)
+		return nil, fmt.Errorf("%s answered %d downloading %s from %s", s.hostName(), resp.StatusCode, p, repo)
 	}
 	content, err := io.ReadAll(io.LimitReader(resp.Body, fileLimit(p)+1))
 	if err != nil {

@@ -36,16 +36,20 @@ description: Use when reviewing a pull request, before leaving any comments.
 
 Anything over a limit is refused, never truncated. The error says what to change.
 
-## Importing from GitHub
+## Importing from GitHub or GitLab
 
-On the **Skills** page, or in a workspace's **Settings → Skills**, paste a public GitHub link, tick the workspaces to turn the skills on in, and choose **Import**. From a workspace, that workspace is ticked already. Accepted forms:
+On the **Skills** page, or in a workspace's **Settings → Skills**, paste a public GitHub or GitLab link, tick the workspaces to turn the skills on in, and choose **Import**. From a workspace, that workspace is ticked already. Accepted forms:
 
 ```
 https://github.com/obra/superpowers
 https://github.com/obra/superpowers.git
 https://github.com/obra/superpowers/tree/main
 https://github.com/obra/superpowers/tree/main/skills/systematic-debugging
+https://gitlab.com/group/subgroup/project
+https://gitlab.com/group/project/-/tree/main/skills/tdd
 ```
+
+GitLab links are to the one GitLab host the server's admin set, gitlab.com unless they chose another. Groups and subgroups can be any depth. As on GitHub, the first part after `/-/tree/` is the branch, tag or commit, so a branch with a `/` in its name cannot be linked.
 
 **Which directories are skills:**
 - If the repository has a plugin manifest, `.agentrq/plugin.json` or else Muse's `.muse-plugin/plugin.json`, its `capabilities.skills` list decides.
@@ -65,7 +69,7 @@ Everything else is left out, including one of those meta files unless something 
 
 Every skill in obra/superpowers fits these limits, so importing it brings in all of them.
 
-**Large repositories.** A repository whose download is over 20 MB compressed or 64 MB unpacked, such as garrytan/gstack, is not imported whole. The tab lists its skills instead, with each `SKILL.md`'s size and, greyed out, any that are over a limit. Tick the ones you want and choose **Import selected**: only their files are downloaded.
+**Large repositories.** A repository whose download is over 20 MB compressed or 64 MB unpacked, such as garrytan/gstack, is not imported whole. The tab lists its skills instead, with each `SKILL.md`'s size (GitLab does not list sizes, so a GitLab project shows none) and, greyed out, any that are over a limit. Tick the ones you want and choose **Import selected**: only their files are downloaded.
 
 **Overwrite existing** replaces the account's skill of the same name. It stays on in the workspaces it was on in, and is turned on in the ones ticked now.
 
@@ -82,6 +86,18 @@ When your server's admin has set up a GitHub App (see below), the import shows *
 2. **Repository permissions**: Contents, read-only. Nothing else is needed, and webhooks can stay off.
 3. Generate a client secret and a private key.
 4. On **/admin/config → GitHub App**, fill in the App ID, the slug (the name in `github.com/apps/<slug>`), the client ID and secret, and paste the private key. Then turn on **enabled**. The same settings can come from the `AGENTRQ_GITHUB_APP_*` environment variables on first start.
+
+### Private GitLab projects
+
+When your server's admin has set up a GitLab application (see below), the import shows **Private projects** with a **Connect GitLab** link. It opens GitLab, where you allow AgentRQ to read your projects. GitLab then brings you back, and your GitLab username is listed beside the import. From then on, a link to any project you can read on that GitLab imports like a public one, into the account or, with your own connection, into a team workspace.
+
+- The connection reads with the `read_api` scope only. GitLab's access tokens last two hours, so AgentRQ keeps the connection's tokens, encrypted, and renews them when an import needs it.
+- **×** beside your username disconnects: AgentRQ forgets the tokens and asks GitLab to revoke them. You can also revoke AgentRQ under **Edit profile → Applications** on GitLab; the next import then reads anonymously.
+
+**Setting up the GitLab application (admins).** On the GitLab host, register an OAuth application under **Edit profile → Applications** (or, for the whole instance, **Admin → Applications**):
+1. **Redirect URI**: `<your AgentRQ URL>/gitlab/callback`.
+2. **Confidential**: on. **Scopes**: `read_api` only.
+3. On **/admin/config → GitLab app**, set the host (gitlab.com by default; a self-managed one such as `gitlab.example.com`), the Application ID as the client ID, and the Secret. Then turn on **enabled**. The same settings can come from the `AGENTRQ_GITLAB_APP_*` environment variables on first start. The host applies to public imports too, even while **enabled** is off.
 
 ## Turning a skill on and off
 

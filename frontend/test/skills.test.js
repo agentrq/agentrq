@@ -16,7 +16,8 @@ import {
   formatSkillSize,
   mergeSkill,
   orderCandidates,
-  githubImportUrlValid,
+  importUrlValid,
+  isGitLabUrl,
   inlineCodeFileMatch,
   orderSkillFiles,
   orderSkills,
@@ -176,6 +177,8 @@ describe('ordering, size and source', () => {
     expect(skillSource({ sourceType: 'github', sourceRepo: 'obra/superpowers', sourceCommit: '0123456789abcdef', sourceRef: 'main' })).toBe('GitHub obra/superpowers@0123456');
     expect(skillSource({ sourceType: 'github', sourceRepo: 'obra/superpowers', sourceRef: 'main' })).toBe('GitHub obra/superpowers@main');
     expect(skillSource({ sourceType: 'github', sourceRepo: 'obra/superpowers' })).toBe('GitHub obra/superpowers');
+    expect(skillSource({ sourceType: 'gitlab', sourceRepo: 'grp/sub/proj', sourceCommit: 'abcdef0123456' })).toBe('GitLab grp/sub/proj@abcdef0');
+    expect(skillSource({ sourceType: 'other', sourceRepo: 'a/b' })).toBe('manual');
   });
 
   it('lays files out as a tree: SKILL.md, then folders, then files, and leaves out a collapsed folder\'s contents', () => {
@@ -242,17 +245,27 @@ describe('skillBody', () => {
   });
 });
 
-describe('githubImportUrlValid', () => {
+describe('importUrlValid', () => {
   it('accepts the links the importer takes', () => {
-    for (const url of ['https://github.com/obra/superpowers', 'https://github.com/obra/superpowers.git', 'https://github.com/obra/superpowers/', 'https://github.com/obra/superpowers/tree/main', 'https://github.com/obra/superpowers/tree/v1.2/skills/tdd', ' https://GitHub.com/obra/superpowers ']) {
-      expect(githubImportUrlValid(url)).toBe(true);
+    for (const url of ['https://github.com/obra/superpowers', 'https://github.com/obra/superpowers.git', 'https://github.com/obra/superpowers/', 'https://github.com/obra/superpowers/tree/main', 'https://github.com/obra/superpowers/tree/v1.2/skills/tdd', ' https://GitHub.com/obra/superpowers ',
+      'https://gitlab.com/grp/proj', 'https://gitlab.com/grp/sub/proj.git', 'https://GitLab.com/grp/proj/', 'https://gitlab.com/grp/sub/proj/-/tree/main', 'https://gitlab.com/grp/proj/-/tree/v1.2/skills/tdd']) {
+      expect(importUrlValid(url)).toBe(true);
     }
   });
 
   it('refuses the rest', () => {
-    for (const url of ['http://github.com/obra/superpowers', 'https://gitlab.com/a/b', 'https://github.com/obra', 'https://github.com/obra/superpowers/blob/main/README.md', 'obra/superpowers', '', null]) {
-      expect(githubImportUrlValid(url)).toBe(false);
+    for (const url of ['http://github.com/obra/superpowers', 'https://bitbucket.org/a/b', 'https://github.com/obra', 'https://github.com/obra/superpowers/blob/main/README.md', 'obra/superpowers', '', null,
+      'http://gitlab.com/grp/proj', 'https://gitlab.com/grp', 'https://gitlab.com/grp/proj/-/blob/main/README.md', 'https://gitlabxcom/grp/proj', 'https://gitlab.com/grp/proj/-']) {
+      expect(importUrlValid(url)).toBe(false);
     }
+  });
+
+  it('takes GitLab links on the server\'s own host only', () => {
+    expect(importUrlValid('https://git.example.com:8443/grp/proj', 'git.example.com:8443')).toBe(true);
+    expect(isGitLabUrl('https://git.example.com:8443/grp/proj', 'git.example.com:8443')).toBe(true);
+    expect(importUrlValid('https://gitlab.com/grp/proj', 'git.example.com:8443')).toBe(false);
+    expect(isGitLabUrl('https://github.com/o/r')).toBe(false);
+    expect(isGitLabUrl('https://gitlab.com/grp/proj', '')).toBe(true);
   });
 });
 

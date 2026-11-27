@@ -91,6 +91,12 @@ githubApp:
   clientSecret: "${AGENTRQ_GITHUB_APP_CLIENT_SECRET:}"
   privateKey: "${AGENTRQ_GITHUB_APP_PRIVATE_KEY:}"
 
+gitlabApp:
+  enabled: ${AGENTRQ_GITLAB_APP_ENABLED:false}
+  host: "${AGENTRQ_GITLAB_APP_HOST:gitlab.com}"
+  clientId: "${AGENTRQ_GITLAB_APP_CLIENT_ID:}"
+  clientSecret: "${AGENTRQ_GITLAB_APP_CLIENT_SECRET:}"
+
 webPush:
   vapidPublicKey: ${AGENTRQ_WEBPUSH_VAPID_PUBLIC_KEY:}
   vapidPrivateKey: ${AGENTRQ_WEBPUSH_VAPID_PRIVATE_KEY:}

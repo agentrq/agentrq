@@ -29,6 +29,7 @@ const api = vi.hoisted(() => ({
   listTeamWorkspaceSkills: vi.fn(),
   createTeamWorkspaceSkill: vi.fn(),
   importTeamWorkspaceSkills: vi.fn(),
+  getGitLabConnection: vi.fn(() => Promise.resolve({ host: 'gitlab.com', enabled: false })),
   getTeamWorkspaceSkill: vi.fn(),
   deleteTeamWorkspaceSkill: vi.fn(),
   getTeamWorkspaceSkillFile: vi.fn(),

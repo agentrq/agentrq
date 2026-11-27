@@ -135,7 +135,7 @@ func orDefault(status int) int {
 }
 
 func TestNew(t *testing.T) {
-	s := New().(*service)
+	s := New("").(*service)
 	if s.apiBase != "https://api.github.com" || s.codeloadBase != "https://codeload.github.com" || s.rawBase != "https://raw.githubusercontent.com" || s.client.Timeout == 0 {
 		t.Errorf("New must talk to github.com with a timeout, got %+v", s)
 	}
@@ -392,7 +392,7 @@ func TestFetch_Errors(t *testing.T) {
 		want string
 		is   error
 	}{
-		{name: "bad url", url: "https://gitlab.com/a/b", is: ErrInvalidURL},
+		{name: "bad url", url: "https://bitbucket.org/a/b", is: ErrInvalidURL},
 		{name: "repo missing", url: "https://github.com/a/b", gh: fakeGitHub{repoStatus: 404}, is: ErrNotFound},
 		{name: "repo lookup rate limited", url: "https://github.com/a/b", gh: fakeGitHub{repoStatus: 403}, want: "name a branch"},
 		{name: "repo body garbage", url: "https://github.com/a/b", gh: fakeGitHub{repoBody: "{"}, want: "did not say which branch"},

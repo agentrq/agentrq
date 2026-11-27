@@ -23,10 +23,10 @@
       </p>
     </div>
 
-    <!-- Import from GitHub -->
+    <!-- Import from GitHub or GitLab -->
     <!-- Boxed from sm up; on a phone a box in a box leaves too little room. -->
     <form class="sm:p-4 sm:bg-gray-50 sm:dark:bg-zinc-800/50 sm:rounded-sm sm:border border-gray-100 dark:border-zinc-800 space-y-3" @submit.prevent="runImport">
-      <label for="skill-import-url" class="block text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Import from GitHub</label>
+      <label for="skill-import-url" class="block text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Import from GitHub or GitLab</label>
       <div class="flex flex-col sm:flex-row gap-2">
         <input id="skill-import-url" v-model="importUrl" type="url" autocomplete="off" spellcheck="false"
                placeholder="https://github.com/obra/superpowers"
@@ -41,11 +41,12 @@
           <input v-model="importOverwrite" type="checkbox" class="rounded-sm border-gray-300 dark:border-zinc-600" />
           Overwrite skills you already have
         </label>
-        <span v-if="importUrl.trim() && !githubImportUrlValid(importUrl)" class="text-[10px] text-amber-600 dark:text-amber-400">
-          Expected https://github.com/owner/repo, optionally /tree/&lt;ref&gt;/&lt;path&gt;
+        <span v-if="importUrl.trim() && !importUrlValid(importUrl, gitlabHost)" class="text-[10px] text-amber-600 dark:text-amber-400">
+          Expected https://github.com/owner/repo or https://{{ gitlabHost }}/group/project, optionally …/tree/&lt;ref&gt;/&lt;path&gt;
         </span>
       </div>
       <GitHubConnection />
+      <GitLabConnection />
       <!-- Where the imported skills are turned on: chosen on the Skills page;
            in a workspace, that workspace alone. -->
       <SkillWorkspaceChoices v-if="!workspaceId" v-model="importWorkspaceIds" :workspaces="workspaceChoices"
@@ -70,7 +71,7 @@
               <span class="min-w-0 flex-1">
                 <span class="flex flex-wrap items-baseline gap-x-2">
                   <span data-test="skill-candidate-name" class="font-mono font-bold break-all">{{ c.name }}</span>
-                  <span class="text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">{{ formatSkillSize(c.sizeBytes) }}</span>
+                  <span v-if="c.sizeBytes" class="text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">{{ formatSkillSize(c.sizeBytes) }}</span>
                   <span v-if="c.path && c.path !== c.name" class="text-[10px] font-mono text-gray-400 dark:text-zinc-500 break-all">{{ c.path }}</span>
                 </span>
                 <span v-if="c.reason" class="block break-words text-amber-600 dark:text-amber-400">{{ c.reason }}</span>
@@ -118,7 +119,7 @@
     <div v-else-if="view === SkillsState.Empty" class="p-6 bg-gray-50 dark:bg-zinc-800/50 rounded-sm border border-gray-100 dark:border-zinc-800 text-center">
       <p class="text-[11px] font-bold text-gray-700 dark:text-zinc-200">No skills yet.</p>
       <p class="mt-1 text-[11px] text-gray-500 dark:text-zinc-400">
-        Import some from GitHub above, or let an agent write one with <code>saveSkill</code>.
+        Import some from GitHub or GitLab above, or let an agent write one with <code>saveSkill</code>.
       </p>
     </div>
 
@@ -191,7 +192,7 @@ import {
   choosablePaths,
   contentWorkspaceId,
   formatSkillSize,
-  githubImportUrlValid,
+  importUrlValid,
   mergeSkill,
   orderCandidates,
   orderSkills,
@@ -209,7 +210,9 @@ import { useToasts } from '../composables/useToasts';
 import { onWebMCPChange } from '../composables/useWebMCPChanges';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useEventBus } from '../useEventBus';
+import { useGitLabHost } from '../composables/useGitLabHost';
 import GitHubConnection from './GitHubConnection.vue';
+import GitLabConnection from './GitLabConnection.vue';
 import GiveSkillModal from './GiveSkillModal.vue';
 import SkillCard from './SkillCard.vue';
 import SkillWorkspaceChoices from './SkillWorkspaceChoices.vue';
@@ -358,6 +361,8 @@ const chosen = ref([]);
 // a workspace's tab, that workspace — a fork's parent, whose skills the fork uses.
 const workspaceChoices = computed(() => skillWorkspaceChoices(workspaceStore.workspaces));
 const importWorkspaceIds = ref([]);
+// The GitLab a link may name besides GitHub, for the hint.
+const gitlabHost = useGitLabHost();
 
 function importTargets() {
   if (!props.workspaceId) return [...importWorkspaceIds.value];

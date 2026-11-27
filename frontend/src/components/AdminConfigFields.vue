@@ -248,6 +248,9 @@ const URLS = {
   githubApp: () => [
     { label: 'Callback URL', hint: 'Set this as the GitHub App\'s callback URL, and turn on "Request user authorization (OAuth) during installation". Give the app read-only Contents permission.', url: at('/github/callback') },
   ],
+  gitlabApp: () => [
+    { label: 'Callback URL', hint: 'Set this as the GitLab OAuth application\'s Redirect URI, confidential, with the read_api scope only.', url: at('/gitlab/callback') },
+  ],
   slack: () => [
     { label: 'Redirect URL', hint: 'Add this under OAuth & Permissions, Redirect URLs, in the Slack app.', url: at('/slack/oauth/callback') },
     { label: 'Events request URL', hint: 'The Request URL under Event Subscriptions.', url: at('/slack/events') },

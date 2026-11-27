@@ -133,6 +133,7 @@ export const routes = [
 
   // GitHub's return from installing the GitHub App, for private skill imports.
   { path: '/github/callback', component: () => import('./views/GitHubCallbackView.vue') },
+  { path: '/gitlab/callback', component: () => import('./views/GitLabCallbackView.vue') },
   { path: '/workflows', component: () => import('./views/WorkflowsView.vue') },
   { path: '/workflows/:id', component: () => import('./views/WorkflowDetailView.vue'), meta: { remount: true } },
 

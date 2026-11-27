@@ -70,8 +70,8 @@ type (
 		Version *int64 `json:"version,omitempty"`
 	}
 
-	// ImportTeamSkillsRequest imports skills from GitHub into a team
-	// workspace.
+	// ImportTeamSkillsRequest imports skills from GitHub or GitLab into a
+	// team workspace.
 	ImportTeamSkillsRequest struct {
 		URL       string   `json:"url"`
 		Overwrite bool     `json:"overwrite"`

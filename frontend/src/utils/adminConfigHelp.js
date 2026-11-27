@@ -94,6 +94,11 @@ export const CONFIG_HELP = {
   'githubApp.clientId': 'The GitHub App\'s client ID.',
   'githubApp.clientSecret': 'A client secret generated on the GitHub App\'s General page.',
   'githubApp.privateKey': 'A private key generated on that page: paste the whole .pem file.',
+  gitlabApp: 'The GitLab skills are imported from besides GitHub, and an OAuth application of this server\'s own on it, so people can connect GitLab and import from their private projects.',
+  'gitlabApp.enabled': 'Offers "Connect GitLab" beside skill imports. Off, public projects can still be imported.',
+  'gitlabApp.host': 'The GitLab host import links may name, such as gitlab.example.com or gitlab.example.com:8443. Default gitlab.com. Public imports read it even while connecting is off; a connection made to another host is not used.',
+  'gitlabApp.clientId': 'The Application ID of the OAuth application, registered under Edit profile > Applications on that GitLab, or by an admin for the instance, with the read_api scope.',
+  'gitlabApp.clientSecret': 'The OAuth application\'s Secret.',
 
   webPush: 'Notifications sent to people\'s browsers and phones.',
   'webPush.vapidPublicKey': 'The public key of the VAPID key pair browsers subscribe with.',

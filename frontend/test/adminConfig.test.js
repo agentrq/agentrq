@@ -518,6 +518,17 @@ describe('AdminConfigView sign-in providers', () => {
     expect(el.textContent).toContain('GitHub App')
   })
 
+  it("shows the GitLab app's callback URL, under Features", async () => {
+    const configs = [withProviders([])[0], { key: 'gitlabApp', value: { enabled: false, host: 'gitlab.com', clientId: '', clientSecret: MASK } }]
+    const { el } = await openAuth({ [`GET ${CONFIGS}`]: [[{ configurations: configs }, 200]] })
+    await openTab(el, 'gitlabApp')
+    const urls = qa(el, 'config-callback-url')
+    expect(urls.map((u) => [u.querySelector('p').textContent, u.querySelector('code').textContent])).toEqual([
+      ['Callback URL', 'https://app.example/gitlab/callback'],
+    ])
+    expect(el.textContent).toContain('GitLab app')
+  })
+
   it("shows the Slack app's redirect and request URLs, and copies one", async () => {
     const configs = [withProviders([])[0], { key: 'slack', value: { appId: '', clientId: '', clientSecret: MASK, enabled: false, signingSecret: MASK } }]
     const { el } = await openAuth({ [`GET ${CONFIGS}`]: [[{ configurations: configs }, 200]] })

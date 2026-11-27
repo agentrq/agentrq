@@ -1198,7 +1198,7 @@ paths:
   /skills/import:
     post:
       tags: [Skills]
-      summary: Import skills from a GitHub repository
+      summary: Import skills from a GitHub or GitLab repository
       description: >
         Downloads the repository once and imports every skill in it. A plugin
         manifest, `.agentrq/plugin.json` or else `.muse-plugin/plugin.json`,
@@ -1213,7 +1213,9 @@ paths:
         skill imported belongs to the account, and is turned on in each
         workspace of `workspaceIds`. A private repository is read through the
         account's connection to the server's GitHub App (`/github`), when it
-        has one on the repository's owner.
+        has one on the repository's owner. A GitLab project is read from the
+        server's GitLab host (`/gitlab`); a private one through the account's
+        GitLab connection, when it has one.
       requestBody:
         required: true
         content:
@@ -1227,7 +1229,10 @@ paths:
                   example: https://github.com/obra/superpowers
                   description: >
                     `https://github.com/<owner>/<repo>`, optionally ending in
-                    `.git`, `/tree/<ref>` or `/tree/<ref>/<path>`.
+                    `.git`, `/tree/<ref>` or `/tree/<ref>/<path>`; or
+                    `https://<gitlab host>/<group>[/<subgroup>…]/<project>`,
+                    optionally ending in `.git`, `/-/tree/<ref>` or
+                    `/-/tree/<ref>/<path>`.
                 overwrite:
                   type: boolean
                   default: false
@@ -1256,15 +1261,77 @@ paths:
               schema: { $ref: '#/components/schemas/SkillImportReport' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422':
-          description: Not a GitHub repository link, or one GitHub does not serve to the account
+          description: Not a GitHub or GitLab repository link, or one the host does not serve to the account
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '502':
-          description: GitHub could not be reached, or would not list a repository too large to import whole
+          description: GitHub or GitLab could not be reached, or would not list a repository too large to import whole
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /gitlab:
+    get:
+      tags: [Skills]
+      summary: The account's connection to the server's GitLab
+      description: >
+        The GitLab host skills are imported from, which the server's admin
+        sets (gitlab.com by default), and, while the admin has set up an
+        OAuth application on it, the link to connect the account and the
+        GitLab account connected. GitLab returns from that link to
+        `<baseUrl>/gitlab/callback` in the web app, which posts what it sent
+        to `/gitlab/connection`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitLabConnection' }
+
+  /gitlab/connection:
+    post:
+      tags: [Skills]
+      summary: Finish connecting GitLab
+      description: >
+        Takes the code and state GitLab returned with, and keeps the token
+        GitLab grants for them, encrypted, in place of the account's earlier
+        connection. The state must have been made for this account, within the
+        last 30 minutes. Imports of the account's private projects on the
+        server's GitLab then read with it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, state]
+              properties:
+                code: { type: string }
+                state: { type: string }
+      responses:
+        '200':
+          description: The connection, as `/gitlab` answers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitLabConnection' }
+        '422':
+          description: Connecting is not configured, the state is not this account's or has expired, or a field is missing
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '502':
+          description: GitLab refused the code, or could not be reached
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      tags: [Skills]
+      summary: Disconnect GitLab
+      description: Forgets the account's GitLab connection, and asks GitLab to revoke its token.
+      responses:
+        '204': { description: Disconnected }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /github:
     get:
@@ -4084,8 +4151,8 @@ paths:
       - $ref: '#/components/parameters/TeamWorkspaceId'
     post:
       tags: [Team mode]
-      summary: Import skills from a GitHub repository into a team workspace
-      description: As `/skills/import` does into the account, a private repository through the importing member's own GitHub connection. A name the team workspace has already is skipped unless `overwrite`; one over its cap is skipped with the reason.
+      summary: Import skills from a GitHub or GitLab repository into a team workspace
+      description: As `/skills/import` does into the account, a private GitHub repository through the importing member's own GitHub connection, a private GitLab project through their own GitLab connection. A name the team workspace has already is skipped unless `overwrite`; one over its cap is skipped with the reason.
       requestBody:
         required: true
         content:
@@ -4367,6 +4434,13 @@ components:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
 
   schemas:
+    GitLabConnection:
+      type: object
+      properties:
+        host: { type: string, example: gitlab.com, description: The GitLab links to import from may name. }
+        enabled: { type: boolean, description: Whether the account can connect GitLab, for its private projects. }
+        authorizeUrl: { type: string, description: Where to approve the connection on GitLab; set while enabled. }
+        username: { type: string, description: The GitLab account connected; absent when none is. }
     GitHubConnection:
       type: object
       properties:
@@ -4776,10 +4850,10 @@ components:
           type: string
           maxLength: 1024
           description: From the SKILL.md frontmatter; what an agent matches on to load it.
-        sourceType: { type: string, enum: [manual, github] }
-        sourceRepo: { type: string, description: '`owner/repo`, for an imported skill.' }
+        sourceType: { type: string, enum: [manual, github, gitlab] }
+        sourceRepo: { type: string, description: '`owner/repo` (on GitLab `group/project`), for an imported skill.' }
         sourceRef: { type: string }
-        sourceCommit: { type: string, description: The commit imported; empty when GitHub did not say. }
+        sourceCommit: { type: string, description: The commit imported; empty when the host did not say. }
         sourcePath: { type: string, description: The skill's directory in the repository. }
         locallyModified:
           type: boolean

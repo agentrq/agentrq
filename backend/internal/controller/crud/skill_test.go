@@ -57,6 +57,11 @@ func (f *fakeImporter) Fetch(ctx context.Context, rawURL string, only []string, 
 	return f.res, f.err
 }
 
+// Parse reads links as an importer for gitlab.example does.
+func (f *fakeImporter) Parse(rawURL string) (skillimport.Source, error) {
+	return skillimport.New("gitlab.example").Parse(rawURL)
+}
+
 type skillEnv struct {
 	c        *controller
 	db       *gorm.DB
@@ -71,7 +76,7 @@ func newSkillEnv(t *testing.T) *skillEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.TeamSkillChoice{}, &model.SkillShare{}, &model.WorkspaceSkill{}, &model.WorkspaceShare{}, &model.TeamMember{}, &model.GitHubInstallation{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.TeamSkillChoice{}, &model.SkillShare{}, &model.WorkspaceSkill{}, &model.WorkspaceShare{}, &model.TeamMember{}, &model.GitHubInstallation{}, &model.GitLabConnection{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, ws := range []model.Workspace{
@@ -587,7 +592,7 @@ func TestSkills_ImportErrors(t *testing.T) {
 
 	e.importer.err = fmt.Errorf("%w: use a link like …", skillimport.ErrInvalidURL)
 	_, err := e.c.ImportSkills(e.ctx, req)
-	wantSkillErr(t, err, SkillInvalid, "invalid GitHub URL")
+	wantSkillErr(t, err, SkillInvalid, "invalid repository URL")
 
 	e.importer.err = fmt.Errorf("%w: repository a/b does not exist", skillimport.ErrNotFound)
 	_, err = e.c.ImportSkills(e.ctx, req)

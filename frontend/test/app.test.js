@@ -74,6 +74,8 @@ describe('routes', () => {
       '/sessions/:id',
       // GitHub's return from installing the GitHub App.
       '/github/callback',
+      // GitLab's return from approving the server's GitLab application.
+      '/gitlab/callback',
       '/workflows',
       '/workflows/:id',
       '/login',
