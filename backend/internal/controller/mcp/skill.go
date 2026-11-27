@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/agentrq/agentrq/backend/internal/service/mcp"
@@ -195,9 +196,21 @@ func (ps *WorkspaceServer) handleLoadSkill(ctx context.Context, req *mcp.CallToo
 		return skillFailure(err, "load "+skill.URI(name, p)), nil, nil
 	}
 	if !found {
-		// Not an error: a stale link or a guessed name, which searchSkills
-		// answers.
-		return textResult("No skill or file at %s. Call skills search to see the skills this workspace has.", skill.URI(name, p)), nil, nil
+		// The built-in workspace skill, which help and its SKILL.md send an
+		// agent to, may be read too when the account has no file there.
+		if content, ok := builtinSkills.Files()[skill.URI(name, p)]; ok {
+			file = SkillFile{Content: string(content)}
+			for uri := range builtinSkills.Files() {
+				if rest, ok := strings.CutPrefix(uri, skill.URI(name, "")); ok {
+					file.Files = append(file.Files, rest)
+				}
+			}
+			slices.Sort(file.Files)
+		} else {
+			// Not an error: a stale link or a guessed name, which
+			// searchSkills answers.
+			return textResult("No skill or file at %s. Call skills search to see the skills this workspace has.", skill.URI(name, p)), nil, nil
+		}
 	}
 	content := file.Content
 	switch {

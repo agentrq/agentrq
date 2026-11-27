@@ -38,7 +38,7 @@ when `plugins/{claude,cursor}/agentrq-workspace/README.md` or its `SKILL.md` lac
 a row for a tool. The server also serves that `SKILL.md` over the MCP Skills
 extension as `skill://agentrq` (the name its frontmatter gives), from a copy in
 `controller/mcp/skills/agentrq`: edit the plugin's folder and copy it over, or
-the same test fails. Like the supervisor skill, every file stays within 2000
+the same test fails. `skills load` reads it too when the account has no file at that URI, since `help` and the guide send agents there with it. Like the supervisor skill, every file stays within 2000
 characters: a short `SKILL.md` and `references/`. The setup tab's `.claude/settings.local.json` snippet needs nothing —
 it allows the server with one `mcp__<server>__*` wildcard.
 

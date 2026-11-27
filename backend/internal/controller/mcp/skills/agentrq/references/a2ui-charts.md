@@ -1,6 +1,6 @@
 # A2UI charts and progress
 
-`Chart` draws numbers as the workspace analytics pages do; `Progress`, a bar. Both are in our catalog: `createSurface`'s `catalogId` is `https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json`, which has every basic component too.
+`Chart` draws numbers as the workspace analytics pages do; `Progress`, a bar. Both are in our catalog: `createSurface`'s `catalogId` is `https://agentrq.com/a2ui/v1_0/catalogs/agentrq/catalog.json`, which has every basic component too. That id is a name, never fetched: read the catalog at `/a2ui/v1_0/catalogs/agentrq/catalog.json` on the AgentRQ web app's host (`app.agentrq.com` when hosted), not agentrq.com.
 
 - `variant`: `line` (a value over time, the default), `bar` (values side by side), or `heatmap`: a value per day, labels `YYYY-MM-DD`, up to 366 days; or per hour, `YYYY-MM-DD HH:00`, up to 31 days.
 - `data`: `[{"label", "value"}]` in order, values zero or more, at most 744; or `{"@path": "/points"}` in the data model.

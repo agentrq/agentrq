@@ -9,8 +9,8 @@ import { apiPort } from '../lib/settings.js'
 // The workspace server serves the AgentRQ workspace skill over the MCP Skills
 // extension, so an agent with no plugin installed still gets it. This walks
 // what such an agent does: find the skill, read its SKILL.md, follow each of
-// its links to a reference file, and see that the skills tool is the
-// account's, not the way to these files.
+// its links to a reference file, and read one with the skills tool too, as
+// help task.reply's guide link sends it to.
 
 const origin = `http://localhost:${apiPort}`
 const skillURI = 'skill://agentrq/SKILL.md'
@@ -67,7 +67,7 @@ test('an agent reads the workspace skill and every reference it links, over MCP'
     expect(text, `${uri} has examples`).toContain('Examples:\n```json\n{ "action": ')
   }
 
-  // The skills tool holds the account's skills, so it does not serve these.
-  const loaded = await rpc('tools/call', { name: 'skills', arguments: { action: 'load', payload: { uri: 'skill://agentrq/references/task.md' } } })
-  expect(loaded.content[0].text, 'the skills tool on a built-in file').toContain('No skill or file at skill://agentrq/references/task.md')
+  // The skills tool reads them too when the account has no agentrq skill.
+  const loaded = await rpc('tools/call', { name: 'skills', arguments: { action: 'load', payload: { uri: 'skill://agentrq/references/a2ui.md' } } })
+  expect(loaded.content[0].text, 'the skills tool on a built-in file').toBe(await read('skill://agentrq/references/a2ui.md'))
 })

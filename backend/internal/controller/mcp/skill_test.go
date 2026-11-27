@@ -209,6 +209,39 @@ func TestLoadSkill_MissIsNotAnError(t *testing.T) {
 	}
 }
 
+// The built-in workspace skill, which help task.reply and its SKILL.md send
+// an agent to, loads with the skills tool when the account has no file there;
+// an account skill of the same name still wins.
+func TestLoadSkill_FallsBackToTheBuiltinSkill(t *testing.T) {
+	ctx := context.Background()
+	ps, _ := skillServer(t, tddSkills())
+
+	want := string(builtinSkills.Files()["skill://agentrq/references/a2ui.md"])
+	if text, isErr := call(ps.handleLoadSkill(ctx, nil, LoadSkillParams{URI: "skill://agentrq/references/a2ui.md"})); isErr || want == "" || text != want {
+		t.Errorf("a2ui.md: %v %q", isErr, text)
+	}
+
+	text, isErr := call(ps.handleLoadSkill(ctx, nil, LoadSkillParams{URI: "skill://agentrq"}))
+	skillMD := string(builtinSkills.Files()["skill://agentrq/SKILL.md"])
+	if isErr || !strings.HasPrefix(text, skillMD+"\n\n---\nFiles in this skill:\nskill://agentrq/references/a2ui-buttons.md\n") {
+		t.Errorf("SKILL.md: %v %q", isErr, text)
+	}
+	for uri := range builtinSkills.Files() {
+		if uri != "skill://agentrq/SKILL.md" && !strings.Contains(text, "\n"+uri+"\n") {
+			t.Errorf("SKILL.md's footer lacks %s", uri)
+		}
+	}
+
+	if text, _ := call(ps.handleLoadSkill(ctx, nil, LoadSkillParams{URI: "skill://agentrq/references/nope.md"})); !strings.HasPrefix(text, "No skill or file at skill://agentrq/references/nope.md") {
+		t.Errorf("missing built-in file: %q", text)
+	}
+
+	own, _ := skillServer(t, &fakeSkills{files: map[string]map[string]string{"agentrq": {"references/a2ui.md": "ours"}}})
+	if text, _ := call(own.handleLoadSkill(ctx, nil, LoadSkillParams{URI: "skill://agentrq/references/a2ui.md"})); text != "ours" {
+		t.Errorf("the account's own agentrq skill: %q", text)
+	}
+}
+
 func TestSaveSkill(t *testing.T) {
 	store := tddSkills()
 	ps, tools := skillServer(t, store)
