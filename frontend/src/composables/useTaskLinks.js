@@ -4,8 +4,8 @@
 
 /**
  * The links a task's description and conversation mention, sorted into what
- * they point at: a pull request, an issue, a GitHub Actions run, a Pano doc,
- * another task, or anywhere else.
+ * they point at: a pull or merge request, an issue, a GitHub Actions run or
+ * GitLab pipeline, a Pano doc, another task, or anywhere else.
  *
  * Links are read with marked's own lexer, so they are exactly the links the
  * messages render: a URL inside code is not one, and a bare URL ends where the
@@ -27,6 +27,10 @@ export const LINK_GROUPS = [
 
 const GITHUB_ITEM = /^\/([^/]+)\/([^/]+)\/(pull|issues|actions\/runs)\/(\d+)(?:\/|$)/;
 const GITHUB_KINDS = { pull: 'pr', issues: 'issue', 'actions/runs': 'run' };
+// GitLab's own `/-/` separator marks a project's page on any host, so a
+// self-hosted GitLab is recognised too; the namespace may hold subgroups.
+const GITLAB_ITEM = /^\/(.+)\/([^/]+)\/-\/(merge_requests|issues|work_items|pipelines)\/(\d+)(?:\/|$)/;
+const GITLAB_KINDS = { merge_requests: 'pr', issues: 'issue', work_items: 'issue', pipelines: 'run' };
 const TASK_PATHS = [/^\/workspaces\/([^/]+)\/tasks\/([^/]+)\/?$/, /^\/tasks\/[^/]+\/([^/]+)\/([^/]+)\/?$/];
 const PANO_PATH = /^\/pano\/([^/]+)\/?$/;
 
@@ -88,8 +92,17 @@ export function classifyLink(link, origin) {
     if (item) {
       const [, owner, repo, path, number] = item;
       const kind = GITHUB_KINDS[path];
-      return { kind, key: `${owner}/${repo}#${number}`, href: url.href, owner, repo, number, label: `${repo}#${number}` };
+      return { kind, key: `${owner}/${repo}#${number}`, href: url.href, mark: 'github', owner, repo, number, sigil: '#', label: `${repo}#${number}` };
     }
+  }
+
+  // GitLab writes a merge request `!12`, and an issue or pipeline `#12`.
+  const gitlab = url.pathname.match(GITLAB_ITEM);
+  if (gitlab) {
+    const [, owner, repo, path, number] = gitlab;
+    const kind = GITLAB_KINDS[path];
+    const sigil = kind === 'pr' ? '!' : '#';
+    return { kind, key: `${url.host}/${owner}/${repo}${sigil}${number}`, href: url.href, mark: 'gitlab', owner, repo, number, sigil, label: `${repo}${sigil}${number}` };
   }
 
   if (url.origin === origin) {

@@ -25,23 +25,41 @@ describe('linksInText', () => {
 describe('classifyLink', () => {
   it('recognises a GitHub pull request, and its files tab', () => {
     expect(classifyLink({ href: 'https://github.com/agentrq/agentrq/pull/1099/files' }, origin)).toEqual({
-      kind: 'pr', key: 'agentrq/agentrq#1099', href: 'https://github.com/agentrq/agentrq/pull/1099/files', owner: 'agentrq', repo: 'agentrq', number: '1099', label: 'agentrq#1099',
+      kind: 'pr', key: 'agentrq/agentrq#1099', href: 'https://github.com/agentrq/agentrq/pull/1099/files', mark: 'github', owner: 'agentrq', repo: 'agentrq', sigil: '#', number: '1099', label: 'agentrq#1099',
     })
     expect(classifyLink({ href: 'https://www.github.com/a/b/pull/7' }, origin).kind).toBe('pr')
   })
 
   it('recognises a GitHub issue, and a comment on it', () => {
     expect(classifyLink({ href: 'https://github.com/agentrq/agentrq/issues/1447#issuecomment-1' }, origin)).toEqual({
-      kind: 'issue', key: 'agentrq/agentrq#1447', href: 'https://github.com/agentrq/agentrq/issues/1447#issuecomment-1', owner: 'agentrq', repo: 'agentrq', number: '1447', label: 'agentrq#1447',
+      kind: 'issue', key: 'agentrq/agentrq#1447', href: 'https://github.com/agentrq/agentrq/issues/1447#issuecomment-1', mark: 'github', owner: 'agentrq', repo: 'agentrq', sigil: '#', number: '1447', label: 'agentrq#1447',
     })
   })
 
   it('recognises a GitHub Actions run, and a job or attempt inside it, as the run', () => {
     expect(classifyLink({ href: 'https://github.com/agentrq/agentrq/actions/runs/19734520384' }, origin)).toEqual({
-      kind: 'run', key: 'agentrq/agentrq#19734520384', href: 'https://github.com/agentrq/agentrq/actions/runs/19734520384', owner: 'agentrq', repo: 'agentrq', number: '19734520384', label: 'agentrq#19734520384',
+      kind: 'run', key: 'agentrq/agentrq#19734520384', href: 'https://github.com/agentrq/agentrq/actions/runs/19734520384', mark: 'github', owner: 'agentrq', repo: 'agentrq', sigil: '#', number: '19734520384', label: 'agentrq#19734520384',
     })
     expect(classifyLink({ href: 'https://github.com/a/b/actions/runs/5/job/6' }, origin)).toMatchObject({ kind: 'run', key: 'a/b#5' })
     expect(classifyLink({ href: 'https://github.com/a/b/actions/runs/5/attempts/2' }, origin)).toMatchObject({ kind: 'run', key: 'a/b#5' })
+  })
+
+  it('recognises a GitLab merge request, issue and pipeline, on gitlab.com or its own host, under subgroups', () => {
+    expect(classifyLink({ href: 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/123/diffs' }, origin)).toEqual({
+      kind: 'pr', key: 'gitlab.com/gitlab-org/gitlab!123', href: 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/123/diffs', mark: 'gitlab', owner: 'gitlab-org', repo: 'gitlab', number: '123', sigil: '!', label: 'gitlab!123',
+    })
+    expect(classifyLink({ href: 'https://gitlab.com/a/b/-/issues/4#note_1' }, origin)).toMatchObject({ kind: 'issue', key: 'gitlab.com/a/b#4', mark: 'gitlab', label: 'b#4' })
+    expect(classifyLink({ href: 'https://gitlab.com/a/b/-/work_items/5' }, origin)).toMatchObject({ kind: 'issue', label: 'b#5' })
+    expect(classifyLink({ href: 'https://git.example.com/group/sub/proj/-/pipelines/678' }, origin)).toMatchObject({
+      kind: 'run', key: 'git.example.com/group/sub/proj#678', owner: 'group/sub', repo: 'proj', number: '678', label: 'proj#678',
+    })
+  })
+
+  it('treats any other GitLab page, and a job, as external', () => {
+    expect(classifyLink({ href: 'https://gitlab.com/a/b/-/merge_requests' }, origin).kind).toBe('external')
+    expect(classifyLink({ href: 'https://gitlab.com/a/b/-/issues/new' }, origin).kind).toBe('external')
+    expect(classifyLink({ href: 'https://gitlab.com/a/b/-/jobs/9' }, origin).kind).toBe('external')
+    expect(classifyLink({ href: 'https://gitlab.com/a/b' }, origin).kind).toBe('external')
   })
 
   it('treats any other GitHub page as external', () => {
@@ -132,6 +150,14 @@ describe('taskLinks', () => {
     expect(kinds(result)).toEqual([['pr', ['back#7']], ['issue', ['back#3']], ['run', ['back#7']]])
     expect(result.groups[2].label).toBe('Actions')
     expect(result.groups[2].links[0].href).toBe('https://github.com/a/back/actions/runs/7/job/70')
+  })
+
+  it('groups GitLab merge requests, issues and pipelines with GitHub\'s, apart from a GitHub repository of the same name', () => {
+    const task = {
+      body: 'https://gitlab.com/a/back/-/merge_requests/7 and https://github.com/a/back/pull/7',
+      messages: [{ text: 'https://gitlab.com/a/back/-/pipelines/9 for https://gitlab.com/a/back/-/issues/3, https://gitlab.com/a/back/-/merge_requests/7/diffs' }],
+    }
+    expect(kinds(taskLinks(task, { origin }))).toEqual([['pr', ['back!7', 'back#7']], ['issue', ['back#3']], ['run', ['back#9']]])
   })
 
   it('has nothing for a task without links, or without a task', () => {
