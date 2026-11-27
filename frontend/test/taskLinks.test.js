@@ -36,9 +36,19 @@ describe('classifyLink', () => {
     })
   })
 
+  it('recognises a GitHub Actions run, and a job or attempt inside it, as the run', () => {
+    expect(classifyLink({ href: 'https://github.com/agentrq/agentrq/actions/runs/19734520384' }, origin)).toEqual({
+      kind: 'run', key: 'agentrq/agentrq#19734520384', href: 'https://github.com/agentrq/agentrq/actions/runs/19734520384', owner: 'agentrq', repo: 'agentrq', number: '19734520384', label: 'agentrq#19734520384',
+    })
+    expect(classifyLink({ href: 'https://github.com/a/b/actions/runs/5/job/6' }, origin)).toMatchObject({ kind: 'run', key: 'a/b#5' })
+    expect(classifyLink({ href: 'https://github.com/a/b/actions/runs/5/attempts/2' }, origin)).toMatchObject({ kind: 'run', key: 'a/b#5' })
+  })
+
   it('treats any other GitHub page as external', () => {
     expect(classifyLink({ href: 'https://github.com/a/b/issues' }, origin)).toMatchObject({ kind: 'external', label: 'github.com/a/b/issues' })
     expect(classifyLink({ href: 'https://github.com/a/b/issues/new' }, origin).kind).toBe('external')
+    expect(classifyLink({ href: 'https://github.com/a/b/actions' }, origin).kind).toBe('external')
+    expect(classifyLink({ href: 'https://github.com/a/b/actions/workflows/ci.yml' }, origin).kind).toBe('external')
   })
 
   it('recognises tasks on this server, absolute or relative, in both route shapes', () => {
@@ -111,6 +121,17 @@ describe('taskLinks', () => {
     const result = taskLinks(task, { origin })
     expect(kinds(result)).toEqual([['pr', ['front#1']], ['issue', ['back#2']]])
     expect(result.groups[1].label).toBe('Issues')
+  })
+
+  it('lists Actions runs after issues, a run and its jobs once, apart from a pull request of the same number', () => {
+    const task = {
+      body: 'https://github.com/a/back/actions/runs/7/job/70 failed on https://github.com/a/back/pull/7',
+      messages: [{ text: 'Rerun: https://github.com/a/back/actions/runs/7 and https://github.com/a/back/issues/3' }],
+    }
+    const result = taskLinks(task, { origin })
+    expect(kinds(result)).toEqual([['pr', ['back#7']], ['issue', ['back#3']], ['run', ['back#7']]])
+    expect(result.groups[2].label).toBe('Actions')
+    expect(result.groups[2].links[0].href).toBe('https://github.com/a/back/actions/runs/7/job/70')
   })
 
   it('has nothing for a task without links, or without a task', () => {

@@ -137,6 +137,22 @@ describe('TaskLinksPanel', () => {
     expect(state.followed).toBe(1)
   })
 
+  it('shows an Actions run as a short GitHub chip, like a pull request', async () => {
+    const { q, state } = mount({ body: 'CI: https://github.com/agentrq/agentrq/actions/runs/19734520384/job/56', messages: [] })
+    await settle()
+    expect(q('task-links-summary').textContent).toBe('· agentrq#19734520384')
+    q('task-links-toggle').click()
+    await settle()
+    const run = q('task-links-run').querySelector('a')
+    expect(run.textContent.trim()).toBe('#19734520384agentrq')
+    expect(run.getAttribute('href')).toBe('https://github.com/agentrq/agentrq/actions/runs/19734520384/job/56')
+    expect(run.getAttribute('target')).toBe('_blank')
+    expect(run.querySelector('[data-testid="task-links-github"]')).not.toBeNull()
+    expect(q('task-links-run').textContent).toContain('Actions')
+    run.click()
+    expect(state.followed).toBe(1)
+  })
+
   it('shows the number first and the repository on the right, cutting only a long repository name', async () => {
     const { q } = mount({ body: 'https://github.com/agentrq/a-very-long-repository-name/pull/12', messages: [] })
     await settle()

@@ -4,8 +4,8 @@
 
 /**
  * The links a task's description and conversation mention, sorted into what
- * they point at: a pull request, an issue, a Pano doc, another task, or
- * anywhere else.
+ * they point at: a pull request, an issue, a GitHub Actions run, a Pano doc,
+ * another task, or anywhere else.
  *
  * Links are read with marked's own lexer, so they are exactly the links the
  * messages render: a URL inside code is not one, and a bare URL ends where the
@@ -19,12 +19,14 @@ import '../utils/markedAutolinks';
 export const LINK_GROUPS = [
   { kind: 'pr', label: 'Pull requests' },
   { kind: 'issue', label: 'Issues' },
+  { kind: 'run', label: 'Actions' },
   { kind: 'pano', label: 'Pano' },
   { kind: 'task', label: 'Tasks' },
   { kind: 'external', label: 'External' },
 ];
 
-const GITHUB_ITEM = /^\/([^/]+)\/([^/]+)\/(pull|issues)\/(\d+)(?:\/|$)/;
+const GITHUB_ITEM = /^\/([^/]+)\/([^/]+)\/(pull|issues|actions\/runs)\/(\d+)(?:\/|$)/;
+const GITHUB_KINDS = { pull: 'pr', issues: 'issue', 'actions/runs': 'run' };
 const TASK_PATHS = [/^\/workspaces\/([^/]+)\/tasks\/([^/]+)\/?$/, /^\/tasks\/[^/]+\/([^/]+)\/([^/]+)\/?$/];
 const PANO_PATH = /^\/pano\/([^/]+)\/?$/;
 
@@ -79,12 +81,13 @@ export function classifyLink(link, origin) {
   const text = readableText(link);
 
   if (url.hostname === 'github.com' || url.hostname === 'www.github.com') {
-    // `repo#123`, the group telling a pull request from an issue. The panel
-    // shows the number first and cuts a long repository name, never the number.
+    // `repo#123`, the group telling a pull request, an issue and a workflow
+    // run apart; a run's job or attempt is the run. The panel shows the number
+    // first and cuts a long repository name, never the number.
     const item = url.pathname.match(GITHUB_ITEM);
     if (item) {
       const [, owner, repo, path, number] = item;
-      const kind = path === 'pull' ? 'pr' : 'issue';
+      const kind = GITHUB_KINDS[path];
       return { kind, key: `${owner}/${repo}#${number}`, href: url.href, owner, repo, number, label: `${repo}#${number}` };
     }
   }
