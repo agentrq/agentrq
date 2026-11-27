@@ -5,10 +5,12 @@
 package hookrunner
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // ABIVersion is the contract between the server and a hook: a WASI preview1
@@ -19,7 +21,14 @@ const (
 	maxInputs   = 32
 	maxEvents   = 64
 	maxTextSize = 512
+	// MaxIconSize caps a manifest's icon, data: URI and all: it is sent with
+	// every hook the API lists.
+	MaxIconSize = 16 << 10
 )
+
+// The kinds of image an icon may be. The UI shows it in an <img>, where an
+// SVG's scripts never run.
+var iconPrefixes = []string{"data:image/svg+xml;base64,", "data:image/png;base64,"}
 
 var (
 	hookNameRe  = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
@@ -37,12 +46,14 @@ const (
 
 // Manifest is what a hook says about itself.
 type Manifest struct {
-	ABIVersion  int     `json:"abiVersion"`
-	Name        string  `json:"name"`
-	Version     string  `json:"version"`
-	Description string  `json:"description,omitempty"`
-	Inputs      []Input `json:"inputs"`
-	Events      []Event `json:"events"`
+	ABIVersion  int    `json:"abiVersion"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description,omitempty"`
+	// Icon is an optional data: URI of an SVG or PNG image, base64 encoded.
+	Icon   string  `json:"icon,omitempty"`
+	Inputs []Input `json:"inputs"`
+	Events []Event `json:"events"`
 }
 
 // Input is a value a registration of the hook provides, such as its webhook
@@ -93,6 +104,8 @@ func (m Manifest) validate() error {
 		return errors.New("version must be 1 to 32 characters")
 	case len(m.Description) > maxTextSize:
 		return fmt.Errorf("description is over %d bytes", maxTextSize)
+	case m.Icon != "" && !validIcon(m.Icon):
+		return fmt.Errorf("icon must be a base64 data: URI of an SVG or PNG image, at most %d bytes", MaxIconSize)
 	case len(m.Inputs) > maxInputs:
 		return fmt.Errorf("more than %d inputs", maxInputs)
 	case len(m.Events) == 0 || len(m.Events) > maxEvents:
@@ -128,6 +141,19 @@ func (m Manifest) validate() error {
 		seen[e.Name] = true
 	}
 	return nil
+}
+
+func validIcon(icon string) bool {
+	if len(icon) > MaxIconSize {
+		return false
+	}
+	for _, prefix := range iconPrefixes {
+		if data, ok := strings.CutPrefix(icon, prefix); ok {
+			_, err := base64.StdEncoding.DecodeString(data)
+			return data != "" && err == nil
+		}
+	}
+	return false
 }
 
 func (in Input) validate() error {

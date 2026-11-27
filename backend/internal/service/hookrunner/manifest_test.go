@@ -34,6 +34,18 @@ func TestParseManifestAcceptsAValidOne(t *testing.T) {
 	}
 }
 
+func TestParseManifestAcceptsAnIcon(t *testing.T) {
+	for _, icon := range []string{"data:image/svg+xml;base64,PHN2Zy8+", "data:image/png;base64,iVBORw0KGgo="} {
+		m := validManifest()
+		m.Icon = icon
+		b, _ := json.Marshal(m)
+		got, err := parseManifest(b)
+		if err != nil || got.Icon != icon {
+			t.Errorf("icon %q: manifest = %+v, err = %v", icon, got, err)
+		}
+	}
+}
+
 func TestParseManifestRefuses(t *testing.T) {
 	long := strings.Repeat("x", maxTextSize+1)
 	for _, tc := range []struct {
@@ -46,6 +58,13 @@ func TestParseManifestRefuses(t *testing.T) {
 		{"no version", func(m *Manifest) { m.Version = "" }, "version"},
 		{"a long version", func(m *Manifest) { m.Version = strings.Repeat("1", 33) }, "version"},
 		{"a long description", func(m *Manifest) { m.Description = long }, "description"},
+		{"an icon that is a URL", func(m *Manifest) { m.Icon = "https://example.com/icon.svg" }, "icon"},
+		{"an icon of another type", func(m *Manifest) { m.Icon = "data:text/html;base64,PGI+" }, "icon"},
+		{"an icon not base64", func(m *Manifest) { m.Icon = "data:image/svg+xml;base64,<svg/>" }, "icon"},
+		{"an empty icon", func(m *Manifest) { m.Icon = "data:image/png;base64," }, "icon"},
+		{"a large icon", func(m *Manifest) {
+			m.Icon = "data:image/png;base64," + strings.Repeat("A", MaxIconSize)
+		}, "icon"},
 		{"too many inputs", func(m *Manifest) {
 			for i := range maxInputs {
 				m.Inputs = append(m.Inputs, Input{Name: "i" + strings.Repeat("x", i), Type: InputString})

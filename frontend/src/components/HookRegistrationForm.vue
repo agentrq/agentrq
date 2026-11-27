@@ -19,6 +19,7 @@ import { ACTIONS, CANCEL_BUTTON, FORM_CARD, HELP, LABEL, PRIMARY_BUTTON, fieldCl
 import { focusFirstInvalid, formKeyAction, submitHint } from '../utils/forms'
 import ChoiceCards from './ChoiceCards.vue'
 import FormField from './FormField.vue'
+import HookIcon from './HookIcon.vue'
 import SegmentedControl from './SegmentedControl.vue'
 
 const props = defineProps({
@@ -177,11 +178,16 @@ const INLINE_BUTTON = 'inline-flex items-center justify-center gap-1.5 px-3 text
           </p>
         </template>
         <template #option="{ option }">
-          <span class="flex flex-wrap items-baseline gap-x-2 text-sm font-bold font-mono text-gray-900 dark:text-zinc-50">
-            {{ option.hook.name }}
-            <span class="font-sans text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">{{ option.hook.builtIn ? 'built-in' : 'yours' }}</span>
+          <span class="flex items-start gap-3">
+            <HookIcon :name="option.hook.name" :icon="option.hook.icon" />
+            <span class="min-w-0">
+              <span class="flex flex-wrap items-baseline gap-x-2 text-sm font-bold font-mono text-gray-900 dark:text-zinc-50">
+                {{ option.hook.name }}
+                <span class="font-sans text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">{{ option.hook.builtIn ? 'built-in' : 'yours' }}</span>
+              </span>
+              <span class="block text-xs text-gray-500 dark:text-zinc-400 mt-0.5">{{ option.hook.version }}<template v-if="option.hook.description"> · {{ option.hook.description }}</template></span>
+            </span>
           </span>
-          <span class="block text-xs text-gray-500 dark:text-zinc-400 mt-0.5">{{ option.hook.version }}<template v-if="option.hook.description"> · {{ option.hook.description }}</template></span>
         </template>
       </ChoiceCards>
 

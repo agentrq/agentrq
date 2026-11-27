@@ -55,3 +55,5 @@ only while `hooks.allowUserHooks` is on.
 - **A module is uploaded gzipped and unpacked by the handler with a cap.** A Go
   hook is over the 4 MB body limit; don't raise it, and don't let Fiber decode
   the body: it has no cap.
+- **A hook's icon is shown only in an `<img>`, never inlined.** It is a hook
+  author's SVG; in the page it could run script, in an `<img>` it cannot.

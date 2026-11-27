@@ -150,7 +150,7 @@ func secret() hookrunner.Input {
 }
 
 func manifest(name, version string, inputs []hookrunner.Input, events ...string) hookrunner.Manifest {
-	m := hookrunner.Manifest{ABIVersion: 1, Name: name, Version: version, Description: name + " " + version, Inputs: inputs}
+	m := hookrunner.Manifest{ABIVersion: 1, Name: name, Version: version, Description: name + " " + version, Icon: "data:image/svg+xml;base64,PHN2Zy8+", Inputs: inputs}
 	for _, e := range events {
 		m.Events = append(m.Events, hookrunner.Event{Name: e, Description: "on " + e})
 	}
@@ -225,7 +225,7 @@ func TestCreateBuiltIn(t *testing.T) {
 	}
 	key := "u-0/hook-101/" + digest("github-1") + ".wasm"
 	if h.ID != 101 || !h.BuiltIn || h.Name != "github" || h.Version != "1.0.0" || h.Description != "github 1.0.0" ||
-		h.SHA256 != digest("github-1") || h.SizeBytes != 8 || h.ABIVersion != 1 || !h.Enabled || h.CreatedAt.IsZero() ||
+		h.Icon != "data:image/svg+xml;base64,PHN2Zy8+" || h.SHA256 != digest("github-1") || h.SizeBytes != 8 || h.ABIVersion != 1 || !h.Enabled || h.CreatedAt.IsZero() ||
 		len(h.Inputs) != 2 || h.Inputs[0] != (entity.HookInput{Name: "webhookSecret", Type: "string", Secret: true, Required: true}) ||
 		h.Inputs[1].Items != "string" || h.Inputs[1].Placeholder != "main, release/*" || len(h.Events) != 2 || h.Events[1] != (entity.HookEvent{Name: "push", Description: "on push"}) {
 		t.Errorf("hook = %+v", h)

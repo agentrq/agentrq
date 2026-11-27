@@ -36,6 +36,7 @@ import EventsView from '../src/views/EventsView.vue'
 
 const API = '/api/v1'
 
+const ICON = 'data:image/svg+xml;base64,PHN2Zy8+'
 const github = (over = {}) => ({
   id: 'gh1', builtIn: true, name: 'github', version: '1.0.0', description: 'GitHub webhooks', enabled: true,
   inputs: [
@@ -264,6 +265,21 @@ describe('HooksView', () => {
     expect(push).toHaveBeenCalledWith('/events/hooks/new')
   })
 
+  it("shows each registration's hook icon, or its name's first letters when the hook has none or is gone", async () => {
+    serve(list(
+      [reg(), reg({ id: 'r2', hookId: 'own1', hookName: 'sentry' }), reg({ id: 'r3', hookId: 'gone', hookName: 'jira' })],
+      { hooks: [github({ icon: ICON }), own({ icon: '' })], allowUserHooks: true },
+    ))
+    const el = await mount(HooksView)
+    const rows = qa(el, 'reg-row')
+    expect(q(rows[0], 'hook-icon').getAttribute('src')).toBe(ICON)
+    expect(q(rows[1], 'hook-icon')).toBeNull()
+    expect(rows[1].textContent).toContain('se')
+    expect(q(rows[2], 'hook-icon')).toBeNull()
+    expect(rows[2].textContent).toContain('ji')
+    expect(q(q(el, 'own-hook'), 'hook-icon')).toBeNull()
+  })
+
   it('says so when there is none, and reloads on a WebMCP change', async () => {
     const seen = serve(list([]))
     const el = await mount(HooksView)
@@ -479,6 +495,13 @@ describe('HookRegistrationForm', () => {
     keydown(q(el, 'reg-name'), 'Enter', { metaKey: true })
     await flush()
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it("shows each hook's icon in the picker", async () => {
+    const { el } = await form({ hooks: [github({ icon: ICON }), own()] })
+    const options = qa(el, 'reg-hook')
+    expect(q(options[0], 'hook-icon').getAttribute('src')).toBe(ICON)
+    expect(q(options[1], 'hook-icon')).toBeNull()
   })
 
   it('says when no hook is available', async () => {
@@ -718,6 +741,16 @@ describe('HookRegistrationView', () => {
     expect(qa(el, 'reg-route-risky')).toHaveLength(1)
     expect(q(el, 'reg-route-risky').textContent).toContain('YOLO')
     expect(q(el, 'reg-no-deliveries').textContent).toContain('No requests yet')
+  })
+
+  it("shows the hook's icon beside the title, or none once the hook is gone", async () => {
+    serve(page({ [`GET ${API}/hooks`]: [[{ hooks: [github({ icon: ICON })], allowUserHooks: false }, 200]] }))
+    let el = await mount(HookRegistrationView)
+    expect(q(el, 'hook-icon').getAttribute('src')).toBe(ICON)
+    apps.splice(0).forEach((app) => app.unmount())
+    serve(page({ [`GET ${API}/hooks`]: [[{ hooks: [], allowUserHooks: false }, 200]] }))
+    el = await mount(HookRegistrationView)
+    expect(q(el, 'hook-icon')).toBeNull()
   })
 
   it('shows the URL with its token right after the registration is made', async () => {

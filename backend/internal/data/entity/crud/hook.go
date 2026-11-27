@@ -14,14 +14,16 @@ type Hook struct {
 	Name        string
 	Version     string
 	Description string
-	SHA256      string
-	SizeBytes   int64
-	ABIVersion  int
-	Inputs      []HookInput
-	Events      []HookEvent
-	Enabled     bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// Icon is a data: URI of an SVG or PNG image, or "".
+	Icon       string
+	SHA256     string
+	SizeBytes  int64
+	ABIVersion int
+	Inputs     []HookInput
+	Events     []HookEvent
+	Enabled    bool
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // HookInput is a value each registration of a hook provides.

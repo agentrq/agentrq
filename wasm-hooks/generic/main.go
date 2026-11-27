@@ -8,14 +8,19 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 
 	"github.com/agentrq/agentrq/wasm-hooks/sdk"
 )
 
+//go:embed icon.svg
+var icon string
+
 var manifest = sdk.Manifest{
 	Name:        "generic",
-	Version:     "1.0.0",
+	Version:     "1.1.0",
+	Icon:        sdk.SVGIcon(icon),
 	Description: "Any caller with a shared token. Passes the body through.",
 	Inputs: []sdk.Input{
 		{Name: "token", Label: "Token", Type: "string", Secret: true, Required: true},
