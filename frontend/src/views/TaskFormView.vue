@@ -157,6 +157,7 @@ import { usePresetMenu } from '../composables/usePresets';
 import { useComposerFit } from '../composables/useComposerFit';
 import ResizeHandle from '../components/ResizeHandle.vue';
 import { pasteFiles } from '../utils/pasteFiles';
+import { boardReturnPath } from '../utils/boardReturn';
 
 const route = useRoute();
 const router = useRouter();
@@ -371,8 +372,14 @@ async function submitEditProtocol() {
 
 useEscapeKey(() => goBack());
 
+// Opened from a Kanban board, the form goes back to it. Read now: the router
+// overwrites `history.state` once the form navigates away.
+const fromBoard = boardReturnPath(window.history.state?.back);
+
 function goBack(isScheduled = false) {
-  if (isScheduled) {
+  if (fromBoard) {
+    router.push(fromBoard);
+  } else if (isScheduled) {
     router.push({ path: `/workspaces/${workspaceId}`, query: { scheduled: 'true' } });
   } else {
     router.push(`/workspaces/${workspaceId}`);

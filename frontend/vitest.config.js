@@ -182,6 +182,7 @@ export default defineConfig({
         'src/utils/markdown.js',
         'src/utils/insertAtCursor.js',
         'src/utils/pasteFiles.js',
+        'src/utils/boardReturn.js',
         'src/composables/useNativeDictation.js',
         'src/composables/useEmojiReactions.js',
         'src/utils/workspaceForm.js',
