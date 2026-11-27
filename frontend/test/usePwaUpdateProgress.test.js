@@ -407,12 +407,85 @@ describe('withUpdateProgress offering the update itself', () => {
     expect(reload).toHaveBeenCalledTimes(1)
   })
 
-  it('does not reload when asked not to', async () => {
-    const container = fakeContainer()
+  it('reloads an uncontrolled page that asked for the update', async () => {
+    const container = fakeContainer({ controller: null })
+    const reload = vi.fn()
+    const sw = withUpdateProgress(registered(), container, reload)
+
+    await sw.updateServiceWorker(true)
+    container.dispatchEvent(new Event('controllerchange'))
+
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not reload an uncontrolled page that was asked not to', async () => {
+    const container = fakeContainer({ controller: null })
     const reload = vi.fn()
     const sw = withUpdateProgress(registered(), container, reload)
 
     await sw.updateServiceWorker(false)
+    container.dispatchEvent(new Event('controllerchange'))
+
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('reloads a tab whose update another tab started', () => {
+    // Its old version's files are gone from the cache and the server, so its
+    // next lazy page would fail to load.
+    const container = fakeContainer()
+    const reload = vi.fn()
+    withUpdateProgress(registered(), container, reload)
+
+    container.dispatchEvent(new Event('controllerchange'))
+    container.dispatchEvent(new Event('controllerchange'))
+
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('reloads at once when "Update now" finds another tab already started the update', async () => {
+    const base = registered()
+    const reload = vi.fn()
+    const container = readyContainer(fakeRegistration())
+    const sw = withUpdateProgress(base, container, reload)
+    await settle()
+
+    await sw.updateServiceWorker(true)
+    container.dispatchEvent(new Event('controllerchange'))
+
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect(base.updateServiceWorker).not.toHaveBeenCalled()
+  })
+
+  it('asks the waiting worker to take over when there is one', async () => {
+    const base = registered()
+    const reload = vi.fn()
+    const sw = withUpdateProgress(base, readyContainer(fakeRegistration({ waiting: fakeWorker('installed') })), reload)
+    await settle()
+
+    await sw.updateServiceWorker(true)
+
+    expect(base.updateServiceWorker).toHaveBeenCalledWith(true)
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('reloads an uncontrolled tab showing the offer when another tab updates', () => {
+    // A hard reload starts with no controller, yet Workbox still offers it the update.
+    const container = fakeContainer({ controller: null })
+    const reload = vi.fn()
+    const base = registered()
+    withUpdateProgress(base, container, reload)
+    base.needRefresh.value = true
+
+    container.dispatchEvent(new Event('controllerchange'))
+
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not reload a first visit that the new worker claims', () => {
+    const container = fakeContainer({ controller: null })
+    const reload = vi.fn()
+    withUpdateProgress(registered(), container, reload)
+
     container.dispatchEvent(new Event('controllerchange'))
 
     expect(reload).not.toHaveBeenCalled()
