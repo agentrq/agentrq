@@ -77,11 +77,30 @@ export function withUpdateProgress(
   const progress = ref(null)
   let watched = null
 
+  // A new version takes over every open tab, not only the one whose "Update
+  // now" was clicked. A tab left on the old version under the new worker can
+  // no longer load its own lazy pages, so every tab an older worker controlled
+  // reloads too, as does one offered the update or that asked for it. A first
+  // visit the worker claims has nothing older to leave.
+  const controlledAtStart = Boolean(container.controller)
+  let restartAsked = false
+  let reloading = false
+  const restart = () => {
+    if (reloading) return
+    reloading = true
+    reload()
+  }
+  container.addEventListener('controllerchange', () => {
+    if (controlledAtStart || restartAsked || registered.needRefresh.value) restart()
+  })
+  let current = null
+
   const endDownload = () => {
     if (progress.value?.phase === 'downloading') progress.value = null
   }
 
   container.ready?.then((registration) => {
+    current = registration
     const offer = () => {
       // An uncontrolled page has no older version running to replace.
       if (!registration.waiting || !container.controller) return
@@ -132,7 +151,13 @@ export function withUpdateProgress(
       // Up until the page reloads under the new version.
       progress.value = { phase: 'restarting', percent: null, version: '' }
       // Workbox reloads only for an offer it made, and this one may not be.
-      if (reloadPage) container.addEventListener('controllerchange', () => reload(), { once: true })
+      if (reloadPage) restartAsked = true
+      // Another tab already started it: nothing is left waiting to take over
+      // here, so no takeover is coming to reload this one.
+      if (reloadPage && current && !current.waiting) {
+        restart()
+        return
+      }
       try {
         await registered.updateServiceWorker(reloadPage)
       } catch {
