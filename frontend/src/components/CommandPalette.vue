@@ -17,7 +17,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { fetchGlobalTasks, getTask, TELEMETRY_UI_SEARCH, TELEMETRY_UI_SEARCH_OPEN } from '../api';
 import { createOncePerEpisode, recordUiAction } from '../composables/useUiTelemetry';
-import { looksLikeTaskId, matchTasks, resolveTaskById, taskRoute } from '../composables/useTaskFinder';
+import { looksLikeTaskId, matchTasks, resolveTaskById, taskRoute, taskWorkspaceName } from '../composables/useTaskFinder';
 import { searchCachedTasks } from '../composables/useCachedReads';
 import { sharedCache } from '../composables/useCachedTasks';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -227,7 +227,10 @@ async function submit() {
                       :class="i === highlighted ? 'bg-gray-50 dark:bg-zinc-800' : 'hover:bg-gray-50/60 dark:hover:bg-zinc-800/60'">
                 <span class="grow min-w-0">
                   <span class="block truncate text-[13px] font-medium text-gray-900 dark:text-zinc-100">{{ task.title }}</span>
-                  <span class="block truncate text-[10px] font-mono text-gray-400 dark:text-zinc-500">{{ task.id }}</span>
+                  <span class="block truncate text-[10px] text-gray-400 dark:text-zinc-500">
+                    <span class="font-mono">{{ task.id }}</span>
+                    <template v-if="taskWorkspaceName(task, workspaceStore.workspaces)"> · {{ taskWorkspaceName(task, workspaceStore.workspaces) }}</template>
+                  </span>
                 </span>
                 <span class="shrink-0 text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">{{ task.status }}</span>
               </button>
