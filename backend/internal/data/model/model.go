@@ -935,6 +935,9 @@ const (
 	ActionIDA2UIProgress
 	// A workspace preset edited; emitted by the backend.
 	ActionIDPresetUpdate
+	// Text selected in an agent's message, quoted into the reply or copied.
+	ActionIDUISelectionQuote
+	ActionIDUISelectionCopy
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

@@ -591,6 +591,8 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionPresetDelete, model.ActionIDPresetDelete, "preset delete"},
 		{entity.ActionUIPresetInsert, model.ActionIDUIPresetInsert, "ui preset insert"},
 		{entity.ActionUIAutoscrollPause, model.ActionIDUIAutoscrollPause, "ui autoscroll pause"},
+		{entity.ActionUISelectionQuote, model.ActionIDUISelectionQuote, "ui selection quote"},
+		{entity.ActionUISelectionCopy, model.ActionIDUISelectionCopy, "ui selection copy"},
 		{entity.ActionTeamInviteEmailSent, model.ActionIDTeamInviteEmailSent, "team invite email sent"},
 		{entity.ActionTeamInviteEmailFailed, model.ActionIDTeamInviteEmailFailed, "team invite email failed"},
 		{entity.ActionTeamInviteRevoke, model.ActionIDTeamInviteRevoke, "team invite revoke"},

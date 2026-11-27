@@ -1966,6 +1966,10 @@ const (
 	// A workspace preset edited from the settings page: its body, its name
 	// or both. Emitted by the backend.
 	ActionPresetUpdate Action = 151
+	// Text selected in an agent's message, quoted into the reply or copied
+	// from the toolbar under it. Browser-reported: it happens only in the tab.
+	ActionUISelectionQuote Action = 152
+	ActionUISelectionCopy  Action = 153
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -2018,6 +2022,10 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionUIPresetInsert, true
 	case "ui_autoscroll_pause":
 		return ActionUIAutoscrollPause, true
+	case "ui_selection_quote":
+		return ActionUISelectionQuote, true
+	case "ui_selection_copy":
+		return ActionUISelectionCopy, true
 	}
 	return 0, false
 }
@@ -2272,6 +2280,10 @@ func (a Action) String() string {
 		return "a2ui_progress"
 	case ActionPresetUpdate:
 		return "preset_update"
+	case ActionUISelectionQuote:
+		return "ui_selection_quote"
+	case ActionUISelectionCopy:
+		return "ui_selection_copy"
 	}
 	return "unknown"
 }
