@@ -153,6 +153,21 @@ describe('TaskLinksPanel', () => {
     expect(state.followed).toBe(1)
   })
 
+  it('shows a GitLab merge request, issue and pipeline with the GitLab mark, a merge request as !number', async () => {
+    const { q } = mount({ body: 'https://gitlab.com/a/proj/-/merge_requests/12 https://gitlab.com/a/proj/-/issues/3 https://gitlab.com/a/proj/-/pipelines/45', messages: [] })
+    await settle()
+    expect(q('task-links-summary').textContent).toBe('· proj!12 · proj#3 · proj#45')
+    q('task-links-toggle').click()
+    await settle()
+    for (const [kind, text] of [['pr', '!12proj'], ['issue', '#3proj'], ['run', '#45proj']]) {
+      const chip = q(`task-links-${kind}`).querySelector('a')
+      expect(chip.textContent.trim()).toBe(text)
+      expect(chip.getAttribute('target')).toBe('_blank')
+      expect(chip.querySelector('[data-testid="task-links-gitlab"]')).not.toBeNull()
+      expect(chip.querySelector('[data-testid="task-links-github"]')).toBeNull()
+    }
+  })
+
   it('shows the number first and the repository on the right, cutting only a long repository name', async () => {
     const { q } = mount({ body: 'https://github.com/agentrq/a-very-long-repository-name/pull/12', messages: [] })
     await settle()

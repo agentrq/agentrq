@@ -26,7 +26,7 @@
             <RouterLink v-if="link.to" :to="link.to" :title="link.to" :class="chip" class="block truncate" @click="emit('follow')">{{ link.label }}</RouterLink>
             <a v-else-if="link.number" :href="link.href" target="_blank" rel="noopener noreferrer" :title="link.href"
                :class="chip" class="flex items-center gap-1 h-[calc(1.5em+6px)] font-mono [&>span]:[text-box:trim-both_cap_alphabetic]" @click="emit('follow')">
-              <svg class="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true" data-testid="task-links-github"><path :d="GITHUB_MARK" /></svg><span class="shrink-0" data-testid="task-links-number">#{{ link.number }}</span><span class="ml-auto pl-1 py-1 -my-1 truncate min-w-0 text-gray-400 dark:text-zinc-500" data-testid="task-links-repo">{{ link.repo }}</span></a>
+              <svg class="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true" :data-testid="`task-links-${link.mark}`"><path :d="MARKS[link.mark]" /></svg><span class="shrink-0" data-testid="task-links-number">{{ link.sigil }}{{ link.number }}</span><span class="ml-auto pl-1 py-1 -my-1 truncate min-w-0 text-gray-400 dark:text-zinc-500" data-testid="task-links-repo">{{ link.repo }}</span></a>
             <a v-else :href="link.href" target="_blank" rel="noopener noreferrer" :title="link.href" :class="chip" class="block truncate" @click="emit('follow')">{{ link.label }}</a>
           </li>
         </ul>
@@ -37,7 +37,8 @@
 
 <script setup>
 /**
- * Every link the task mentions: pull requests, issues, Actions runs, Pano
+ * Every link the task mentions: pull and merge requests, issues, Actions runs
+ * and GitLab pipelines, Pano
  * docs, other tasks and the rest, so none has to be dug out of a long
  * conversation. The Pano docs linked to the task are listed too, mentioned or
  * not.
@@ -51,6 +52,10 @@ import { computed, ref } from 'vue';
 import { serverOrigin } from '../api';
 import { taskLinks } from '../composables/useTaskLinks';
 import { GITHUB_MARK } from '../utils/githubConnect';
+
+// The GitLab mark, from Simple Icons (CC0).
+const GITLAB_MARK = 'm23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z';
+const MARKS = { github: GITHUB_MARK, gitlab: GITLAB_MARK };
 
 const props = defineProps({
   task: { type: Object, required: true },
