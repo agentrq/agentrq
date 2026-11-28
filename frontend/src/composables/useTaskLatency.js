@@ -4,6 +4,7 @@
 
 import { computed, ref, unref, watch } from 'vue';
 import { customWindowFor } from './useStatsRange';
+import { withClock } from './useTimeFormat';
 
 /**
  * The task latency panel on both analytics screens: how long the tasks closed
@@ -82,7 +83,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
  */
 export function bucketLabel(periodStart, granularity) {
   const d = new Date(periodStart * 1000);
-  if (granularity === 'hour') return `${String(d.getHours()).padStart(2, '0')}:00`;
+  if (granularity === 'hour') return d.toLocaleTimeString('en-US', withClock({ hour: '2-digit', minute: '2-digit' }));
   if (granularity === 'month') return `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
   return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }

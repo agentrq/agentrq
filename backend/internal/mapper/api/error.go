@@ -39,6 +39,7 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 	var hookErr *entity.HookError
 	var teamErr *entity.TeamError
 	var presetErr *entity.PresetError
+	var settingsErr *entity.AccountSettingsError
 	var a2uiErr *entity.A2uiActionError
 	if errors.Is(err, base.ErrNotFound) {
 		code = http.StatusNotFound
@@ -75,6 +76,9 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 			code = http.StatusConflict
 		}
 		msg = presetErr.Message
+	} else if errors.As(err, &settingsErr) {
+		code = http.StatusUnprocessableEntity
+		msg = settingsErr.Message
 	} else if errors.As(err, &a2uiErr) {
 		code = http.StatusUnprocessableEntity
 		if a2uiErr.Conflict {

@@ -14,17 +14,29 @@ import (
 	"github.com/mustafaturan/monoflake"
 )
 
+// presetWorkspaceID is the workspace a preset route names, and 0 on the
+// account's routes, which have no :id. An :id that is not an id is refused
+// rather than read as 0, which would reach the account's presets.
+func presetWorkspaceID(c fiber.Ctx) (int64, bool) {
+	raw := c.Params("id")
+	if raw == "" {
+		return 0, true
+	}
+	id := monoflake.IDFromBase62(raw).Int64()
+	return id, id != 0
+}
+
 func FromHTTPRequestToListPresetsRequestEntity(c fiber.Ctx) *entity.ListPresetsRequest {
-	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
-	if workspaceID == 0 {
+	workspaceID, ok := presetWorkspaceID(c)
+	if !ok {
 		return nil
 	}
 	return &entity.ListPresetsRequest{WorkspaceID: workspaceID}
 }
 
 func FromHTTPRequestToCreatePresetRequestEntity(c fiber.Ctx) *entity.CreatePresetRequest {
-	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
-	if workspaceID == 0 {
+	workspaceID, ok := presetWorkspaceID(c)
+	if !ok {
 		return nil
 	}
 	var payload view.CreatePresetRequest
@@ -35,8 +47,8 @@ func FromHTTPRequestToCreatePresetRequestEntity(c fiber.Ctx) *entity.CreatePrese
 }
 
 func FromHTTPRequestToDeletePresetRequestEntity(c fiber.Ctx) *entity.DeletePresetRequest {
-	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
-	if workspaceID == 0 {
+	workspaceID, ok := presetWorkspaceID(c)
+	if !ok {
 		return nil
 	}
 	// Fiber hands back the raw path segment.
@@ -48,8 +60,8 @@ func FromHTTPRequestToDeletePresetRequestEntity(c fiber.Ctx) *entity.DeletePrese
 }
 
 func FromHTTPRequestToUpdatePresetRequestEntity(c fiber.Ctx) *entity.UpdatePresetRequest {
-	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
-	if workspaceID == 0 {
+	workspaceID, ok := presetWorkspaceID(c)
+	if !ok {
 		return nil
 	}
 	name, err := url.PathUnescape(c.Params("name"))

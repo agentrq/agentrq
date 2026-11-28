@@ -232,6 +232,7 @@ func New(p Params) (Handler, error) {
 	h.registerEventRoutes()
 	h.registerMachineRoutes()
 	h.registerPanoRoutes()
+	h.registerAccountRoutes()
 	h.registerHookRoutes()
 	h.registerTeamRoutes()
 	h.registerTeamViewRoutes()

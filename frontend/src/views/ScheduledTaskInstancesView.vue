@@ -154,6 +154,7 @@ import { isInlineImage } from '../composables/useAttachmentDownload';
 import AttachmentPreview from '../components/AttachmentPreview.vue';
 import { useCron } from '../composables/useCron';
 import { taskDotClass } from '../composables/useTaskStatusStyle';
+import { withClock } from '../composables/useTimeFormat';
 
 const { formatCron, getNextRunLabel, getNextRunDateTime } = useCron();
 
@@ -237,13 +238,13 @@ function formatDate(dateStr) {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return '—';
-  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString([], withClock({ month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
 }
 
 function formatDateShort(dateStr) {
   if (!dateStr) return '';
   const date = new Date(dateStr);
-  const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const timeStr = date.toLocaleTimeString('en-US', withClock({ hour: '2-digit', minute: '2-digit' }));
   const dateStrShort = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   return `${dateStrShort} ${timeStr}`;
 }

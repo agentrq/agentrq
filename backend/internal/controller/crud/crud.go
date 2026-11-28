@@ -67,6 +67,7 @@ type (
 		EventController
 		MemoryController
 		PresetController
+		AccountSettingsController
 		SkillController
 		GitHubController
 		GitLabController

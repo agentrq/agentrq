@@ -130,7 +130,7 @@ export function buttonEnabled(c, ctx) {
   return failedChecks(c, ctx).length === 0
 }
 
-/** The <input> type and value a DateTimeInput draws, from its ISO 8601 value. */
+/** The picker a DateTimeInput draws, named by its <input> type, and its value, from its ISO 8601 value. */
 export function dateInput(c, value) {
   const s = typeof value === 'string' ? value : ''
   if (c.enableTime && !c.enableDate) return { type: 'time', value: /^\d{2}:\d{2}/.exec(s.replace(/^.*T/, ''))?.[0] ?? '' }

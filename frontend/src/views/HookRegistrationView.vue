@@ -24,6 +24,7 @@ import HookRegistrationForm from '../components/HookRegistrationForm.vue'
 import LoadingState from '../components/LoadingState.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { statusStyle, takeTokenUrl } from '../utils/hooks'
+import { withClock } from '../composables/useTimeFormat'
 
 const PAGE = 50
 
@@ -155,7 +156,7 @@ const counts = computed(() => ({
 const shown = computed(() => filter.value === 'all' ? deliveries.value : deliveries.value.filter((d) => d.status === filter.value))
 
 function when(iso) {
-  return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleString(undefined, withClock({ month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))
 }
 
 onMounted(load)

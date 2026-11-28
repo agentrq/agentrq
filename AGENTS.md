@@ -144,6 +144,9 @@ area they belong to — while adding a route, or a single API call.
   `middleware/clientip` reads `X-Real-IP`/`X-Forwarded-For`, and only from
   `AGENTRQ_TRUSTED_PROXIES`; it puts the client in `RemoteAddr`. A header read
   anywhere else is one the client writes, and spoofing it escapes the throttle.
+- **Every time shown goes through `withClock`** (`useTimeFormat.js`), and a
+  time is picked with `ClockInput`/`DateTimeInput`. `hour12`, or a native
+  time or datetime-local input, shows the browser's clock, not the account's.
 - **Never relax backend CORS to accommodate the desktop app.** It does not need
   it — see [the desktop note](docs/agents/desktop.md) — and doing so widens the
   attack surface of every deployment.

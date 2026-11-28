@@ -7,8 +7,8 @@ import * as api from '../api';
 import { useSlashCommands } from './useSlashCommands';
 
 /**
- * A workspace's presets: messages kept in its settings, which the composer
- * puts in place of `#name`. The `#` menu is the `/` menu with two differences:
+ * Presets: messages kept in a workspace's settings, or in the account's for
+ * every workspace, which the composer puts in place of `#name`. The `#` menu is the `/` menu with two differences:
  * it opens on the word being typed at the end of the message, not only at its
  * start, and choosing one puts the preset's body in place of `#name` rather
  * than the name.
@@ -40,34 +40,50 @@ function firstLine(body) {
   return body.split('\n').find((line) => line.trim() !== '')?.trim() ?? '';
 }
 
-/** A workspace's presets as menu entries. */
-export function presetCommands(presets) {
+// Where a preset is kept, which the menu shows as an icon beside it.
+export const PRESET_WORKSPACE = 'workspace';
+export const PRESET_ACCOUNT = 'account';
+
+/** Presets as menu entries, each with where it is kept. */
+export function presetCommands(presets, scope = PRESET_WORKSPACE) {
   if (!Array.isArray(presets)) return [];
   return presets
     .filter((p) => p && typeof p.name === 'string' && p.name !== '' && typeof p.body === 'string')
-    .map((p) => ({ name: p.name, body: p.body, description: firstLine(p.body), hint: 'preset' }));
+    .map((p) => ({ name: p.name, body: p.body, description: firstLine(p.body), scope }));
 }
 
 /**
- * The workspace's presets as menu entries, loaded again whenever the workspace
- * changes. Only the newest load may write, so a quick switch cannot leave the
- * previous workspace's presets behind; a failed load leaves the menu empty.
+ * A workspace's presets, then the account's, as one menu. Where both have a
+ * name, the workspace's wins: it is the nearer of the two.
  */
-export function usePresetCommands(workspaceId, { load = (id) => api.listWorkspacePresets(id) } = {}) {
+export function mergePresetCommands(workspacePresets, accountPresets) {
+  const own = presetCommands(workspacePresets);
+  const names = new Set(own.map((c) => c.name));
+  return [...own, ...presetCommands(accountPresets, PRESET_ACCOUNT).filter((c) => !names.has(c.name))];
+}
+
+/**
+ * The workspace's presets and the account's as menu entries, loaded again
+ * whenever the workspace changes. Only the newest load may write, so a quick
+ * switch cannot leave the previous workspace's presets behind; a list that
+ * fails to load is left out.
+ */
+export function usePresetCommands(workspaceId, {
+  load = (id) => api.listWorkspacePresets(id),
+  loadAccount = () => api.listAccountPresets(),
+} = {}) {
   const commands = ref([]);
   let seq = 0;
+  // A load that throws before it returns a promise is a failed one too.
+  const presetsOf = (request) => Promise.resolve().then(request).then((res) => res?.presets, () => []);
   watch(
     () => toValue(workspaceId),
     async (id) => {
       const mine = ++seq;
       commands.value = [];
       if (!id) return;
-      try {
-        const res = await load(id);
-        if (mine === seq) commands.value = presetCommands(res?.presets);
-      } catch {
-        // Already empty.
-      }
+      const [own, account] = await Promise.all([presetsOf(() => load(id)), presetsOf(loadAccount)]);
+      if (mine === seq) commands.value = mergePresetCommands(own, account);
     },
     { immediate: true }
   );
@@ -85,11 +101,12 @@ export function usePresetMenu({
   text,
   workspaceId,
   load,
+  loadAccount,
   record = (action, id) => api.recordTelemetry(action, id),
 }) {
   return useSlashCommands({
     text,
-    commands: usePresetCommands(workspaceId, load ? { load } : undefined),
+    commands: usePresetCommands(workspaceId, { ...(load && { load }), ...(loadAccount && { loadAccount }) }),
     query: presetQuery,
     apply: applyPreset,
     onAccept: () => record(api.TELEMETRY_UI_PRESET_INSERT, toValue(workspaceId)),
@@ -100,13 +117,14 @@ export function usePresetMenu({
  * The settings tab's list: load, add, edit and remove, with the server's sentence
  * when it refuses. Each change applies at once; there is no Save.
  *
- * @param {import('vue').Ref<string>|(() => string)} workspaceId
+ * @param {import('vue').Ref<string>|(() => string)} workspaceId  '' for the account's own
  */
 export function useWorkspacePresets(workspaceId, {
-  list = (id) => api.listWorkspacePresets(id),
-  create = (id, name, body) => api.createWorkspacePreset(id, name, body),
-  update = (id, name, newName, body) => api.updateWorkspacePreset(id, name, newName, body),
-  remove = (id, name) => api.deleteWorkspacePreset(id, name),
+  list = (id) => (id ? api.listWorkspacePresets(id) : api.listAccountPresets()),
+  create = (id, name, body) => (id ? api.createWorkspacePreset(id, name, body) : api.createAccountPreset(name, body)),
+  update = (id, name, newName, body) =>
+    (id ? api.updateWorkspacePreset(id, name, newName, body) : api.updateAccountPreset(name, newName, body)),
+  remove = (id, name) => (id ? api.deleteWorkspacePreset(id, name) : api.deleteAccountPreset(name)),
 } = {}) {
   const presets = ref([]);
   const loading = ref(false);
@@ -115,7 +133,6 @@ export function useWorkspacePresets(workspaceId, {
 
   async function load() {
     const id = toValue(workspaceId);
-    if (!id) return;
     loading.value = true;
     try {
       const res = await list(id);

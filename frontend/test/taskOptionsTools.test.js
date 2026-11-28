@@ -210,13 +210,14 @@ describe('the schedule menu', () => {
     expect(opts.scheduleType.value).toBe('repeated')
     await click(days[6])
     expect(opts.selectedDays.value).not.toContain(opts.daysOptions[6].value)
-    const time = el.querySelector('input[type=time]')
-    time.value = '07:30'
-    time.dispatchEvent(new Event('input'))
+    expect(el.querySelector('input[type=time], input[type=datetime-local]')).toBeNull()
+    const minute = $(el, 'task-repeat-time').querySelector('[data-test="clock-minute"]')
+    minute.value = '30'
+    minute.dispatchEvent(new Event('change'))
     await settle()
-    expect(opts.repeatTime.value).toBe('07:30')
+    expect(opts.repeatTime.value).toBe('09:30')
     await click($(el, 'task-schedule'))
-    expect(el.querySelector('input[type=time]')).toBeNull()
+    expect($(el, 'task-repeat-time')).toBeNull()
   })
 })
 

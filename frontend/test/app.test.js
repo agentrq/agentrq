@@ -70,6 +70,7 @@ describe('routes', () => {
       '/teams/:teamId/pano/:docId',
       '/teams/:teamId/settings',
       '/invitations',
+      '/settings',
       '/invite',
       '/sessions/:id',
       // GitHub's return from installing the GitHub App.

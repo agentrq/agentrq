@@ -1556,6 +1556,7 @@ func migratedModels() []any {
 		&model.TaskStateTransition{},
 		&model.Memory{},
 		&model.Preset{},
+		&model.AccountSetting{},
 		&model.GitHubInstallation{},
 		&model.GitLabConnection{},
 		&model.Skill{},

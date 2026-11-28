@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
 import { CronExpressionParser } from 'cron-parser';
+import { withClock } from './useTimeFormat';
 
 const daysOptions = [
   { label: 'Sun', value: 0 }, { label: 'Mon', value: 1 }, { label: 'Tue', value: 2 },
@@ -37,9 +38,7 @@ export function useCron() {
         interval = CronExpressionParser.parse(cron);
       }
       const next = interval.next().toDate();
-      const h = String(next.getHours()).padStart(2, '0');
-      const min = String(next.getMinutes()).padStart(2, '0');
-      const timeStr = `${h}:${min}`;
+      const timeStr = next.toLocaleTimeString('en-US', withClock({ hour: '2-digit', minute: '2-digit' }));
 
       const [cMin, cHour, cDom, cMonth, cDow] = parts;
       
@@ -86,16 +85,8 @@ export function useCron() {
       }
       const next = interval.next().toDate();
       
-      // Localized format
-      const options = { 
-        month: 'short', 
-        day: 'numeric', 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: false // Brutalist preference for 24h
-      };
-      
-      return next.toLocaleString(undefined, options);
+      // Localized, on the account's clock.
+      return next.toLocaleString(undefined, withClock({ month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
     } catch (e) {
       console.warn('cron-parser error (getNextRunDateTime):', e.message, 'for cron:', cron);
       return '';

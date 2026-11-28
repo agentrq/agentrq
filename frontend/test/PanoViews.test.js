@@ -593,7 +593,10 @@ describe('the chat box\'s task options', () => {
     const { el } = await mount('/pano', [...WORKSPACES, SUP]);
     await click($(el, 'task-schedule'));
     await click($(el, 'task-schedule-onetime'));
-    await type($(el, 'task-onetime-date'), '2030-03-04T05:06');
+    const when = $(el, 'task-onetime-date');
+    await type(when.querySelector('[data-test="datetime-date"]'), '2030-03-04');
+    await change(when.querySelector('[data-test="clock-hour"]'), '5');
+    await change(when.querySelector('[data-test="clock-minute"]'), '6');
     await send(el);
     const d = new Date('2030-03-04T05:06');
     expect(sent()[5]).toBe('cron');
@@ -853,7 +856,7 @@ describe('a doc', () => {
       got.resolve({ doc: DOC });
       await settle();
       expect(text($(el, 'pano-title'))).toBe('Release plan');
-      expect(text($(el, 'pano-meta'))).toMatch(/^By You · updated \w{3} \d+, \d\d:\d\d by Home$/);
+      expect(text($(el, 'pano-meta'))).toMatch(/^By You · updated \w{3} \d+, \d\d:\d\d( [AP]M)? by Home$/);
       expect($(el, 'pano-body').querySelector('img').getAttribute('src')).toBe('https://x/storage/chart');
       expect([...$(el, 'pano-body').querySelectorAll('input')].map((b) => b.disabled)).toEqual([false, false]);
       expect($(el, 'pano-progress')).not.toBeNull();

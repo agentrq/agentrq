@@ -111,6 +111,9 @@ type Repository interface {
 	CreatePreset(ctx context.Context, p model.Preset) (model.Preset, error)
 	UpdatePreset(ctx context.Context, userID, workspaceID int64, name string, p model.Preset) (model.Preset, error)
 	DeletePreset(ctx context.Context, userID, workspaceID int64, name string) error
+	// An account's settings, a row per group it has saved.
+	ListAccountSettings(ctx context.Context, userID int64) ([]model.AccountSetting, error)
+	SaveAccountSetting(ctx context.Context, s model.AccountSetting) error
 	// GitHub App installations an account imports private skills through.
 	ListGitHubInstallations(ctx context.Context, userID int64) ([]model.GitHubInstallation, error)
 	ReplaceGitHubInstallations(ctx context.Context, userID int64, rows []model.GitHubInstallation) error

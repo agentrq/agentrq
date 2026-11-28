@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { nextTick, ref } from 'vue';
 import {
   applyPreset,
+  mergePresetCommands,
   presetCommands,
   presetQuery,
   usePresetCommands,
@@ -18,6 +19,9 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
 
 const PULL = { name: 'pull-n-push', body: 'pull latest main, tag and push' };
 const DEPLOY = { name: 'deploy', body: '\n  deploy to staging\nthen check' };
+const STANDUP = { name: 'standup', body: 'post the standup' };
+// The account's presets, for tests about the workspace's: none.
+const noAccountPresets = () => Promise.resolve({ presets: [] });
 
 describe('presetQuery', () => {
   it.each([
@@ -58,16 +62,36 @@ describe('applyPreset', () => {
 describe('presetCommands', () => {
   it('makes menu entries showing the first line of each body', () => {
     expect(presetCommands([PULL, DEPLOY])).toEqual([
-      { name: 'pull-n-push', body: PULL.body, description: 'pull latest main, tag and push', hint: 'preset' },
-      { name: 'deploy', body: DEPLOY.body, description: 'deploy to staging', hint: 'preset' },
+      { name: 'pull-n-push', body: PULL.body, description: 'pull latest main, tag and push', scope: 'workspace' },
+      { name: 'deploy', body: DEPLOY.body, description: 'deploy to staging', scope: 'workspace' },
     ]);
   });
 
   it('leaves out what is not a preset, and a blank body shows no description', () => {
     expect(presetCommands([null, { name: '' , body: 'x' }, { name: 'x' }, { name: 'blank', body: '  ' }])).toEqual([
-      { name: 'blank', body: '  ', description: '', hint: 'preset' },
+      { name: 'blank', body: '  ', description: '', scope: 'workspace' },
     ]);
     expect(presetCommands(undefined)).toEqual([]);
+  });
+
+  it('shows the hint it is given', () => {
+    expect(presetCommands([STANDUP], 'account')[0].scope).toBe('account');
+  });
+});
+
+describe('mergePresetCommands', () => {
+  it('puts the workspace\'s first, tags the account\'s, and the workspace\'s wins a name both have', () => {
+    const accountDeploy = { name: 'deploy', body: 'the account\'s deploy' };
+    expect(mergePresetCommands([PULL, DEPLOY], [accountDeploy, STANDUP]).map((c) => [c.name, c.scope, c.body])).toEqual([
+      ['pull-n-push', 'workspace', PULL.body],
+      ['deploy', 'workspace', DEPLOY.body],
+      ['standup', 'account', STANDUP.body],
+    ]);
+  });
+
+  it('reads a missing list as none', () => {
+    expect(mergePresetCommands(undefined, [STANDUP]).map((c) => c.name)).toEqual(['standup']);
+    expect(mergePresetCommands([PULL], undefined).map((c) => c.name)).toEqual(['pull-n-push']);
   });
 });
 
@@ -75,7 +99,7 @@ describe('usePresetCommands', () => {
   it('loads the workspace\'s presets, and again when it changes', async () => {
     const id = ref('ws1');
     const load = vi.fn((ws) => Promise.resolve({ presets: ws === 'ws1' ? [PULL] : [DEPLOY] }));
-    const commands = usePresetCommands(id, { load });
+    const commands = usePresetCommands(id, { load, loadAccount: noAccountPresets });
     await settle();
     expect(commands.value.map((c) => c.name)).toEqual(['pull-n-push']);
     id.value = 'ws2';
@@ -88,7 +112,7 @@ describe('usePresetCommands', () => {
     const id = ref('ws1');
     const pending = {};
     const load = (ws) => new Promise((resolve) => { pending[ws] = resolve; });
-    const commands = usePresetCommands(id, { load });
+    const commands = usePresetCommands(id, { load, loadAccount: noAccountPresets });
     id.value = 'ws2';
     await nextTick();
     pending.ws2({ presets: [DEPLOY] });
@@ -98,21 +122,43 @@ describe('usePresetCommands', () => {
     expect(commands.value.map((c) => c.name)).toEqual(['deploy']);
   });
 
-  it('offers nothing with no workspace or when the load fails', async () => {
+  it('offers nothing with no workspace, and leaves out a list that fails to load', async () => {
     const load = vi.fn();
-    expect(usePresetCommands(ref(''), { load }).value).toEqual([]);
+    const loadAccount = vi.fn();
+    expect(usePresetCommands(ref(''), { load, loadAccount }).value).toEqual([]);
     expect(load).not.toHaveBeenCalled();
-    const failed = usePresetCommands(ref('ws1'), { load: () => Promise.reject(new Error('network unreachable')) });
+    expect(loadAccount).not.toHaveBeenCalled();
+    const failed = usePresetCommands(ref('ws1'), {
+      load: () => Promise.reject(new Error('network unreachable')),
+      loadAccount: () => Promise.resolve({ presets: [STANDUP] }),
+    });
     await settle();
-    expect(failed.value).toEqual([]);
+    expect(failed.value.map((c) => c.name)).toEqual(['standup']);
+    const threw = usePresetCommands(ref('ws1'), {
+      load: () => { throw new Error('no such export'); },
+      loadAccount: () => Promise.resolve({ presets: [STANDUP] }),
+    });
+    await settle();
+    expect(threw.value.map((c) => c.name)).toEqual(['standup']);
+    const accountFailed = usePresetCommands(ref('ws1'), {
+      load: () => Promise.resolve({ presets: [PULL] }),
+      loadAccount: () => Promise.reject(new Error('network unreachable')),
+    });
+    await settle();
+    expect(accountFailed.value.map((c) => c.name)).toEqual(['pull-n-push']);
   });
 
   it('loads through the API by default', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ presets: [PULL] }), { status: 200 }));
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((url) => Promise.resolve(
+      new Response(JSON.stringify({ presets: String(url).includes('/account/') ? [STANDUP] : [PULL] }), { status: 200 })
+    ));
     const commands = usePresetCommands(ref('ws1'));
     await settle();
-    expect(fetchSpy.mock.calls[0][0]).toContain('/workspaces/ws1/presets');
-    expect(commands.value.map((c) => c.name)).toEqual(['pull-n-push']);
+    expect(fetchSpy.mock.calls.map(([url]) => url)).toEqual([
+      expect.stringMatching(/\/workspaces\/ws1\/presets$/),
+      expect.stringMatching(/\/account\/presets$/),
+    ]);
+    expect(commands.value.map((c) => [c.name, c.scope])).toEqual([['pull-n-push', 'workspace'], ['standup', 'account']]);
     fetchSpy.mockRestore();
   });
 });
@@ -121,7 +167,7 @@ describe('usePresetMenu', () => {
   it('opens on #, and choosing puts the body in and counts it against the workspace', async () => {
     const text = ref('then #pu');
     const record = vi.fn();
-    const menu = usePresetMenu({ text, workspaceId: ref('ws1'), load: () => Promise.resolve({ presets: [DEPLOY, PULL] }), record });
+    const menu = usePresetMenu({ text, workspaceId: ref('ws1'), load: () => Promise.resolve({ presets: [DEPLOY, PULL] }), loadAccount: noAccountPresets, record });
     await settle();
     expect(menu.open.value).toBe(true);
     expect(menu.matches.value.map((c) => c.name)).toEqual(['pull-n-push']);
@@ -134,7 +180,7 @@ describe('usePresetMenu', () => {
 
   it('records through the API by default', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
-    const menu = usePresetMenu({ text: ref('#'), workspaceId: ref('ws1'), load: () => Promise.resolve({ presets: [PULL] }) });
+    const menu = usePresetMenu({ text: ref('#'), workspaceId: ref('ws1'), load: () => Promise.resolve({ presets: [PULL] }), loadAccount: noAccountPresets });
     await settle();
     menu.accept();
     const telemetry = fetchSpy.mock.calls.find(([url]) => String(url).endsWith('/telemetry'));
@@ -217,11 +263,8 @@ describe('useWorkspacePresets', () => {
     expect(p.error.value).toBe('Failed to remove preset');
   });
 
-  it('loads nothing with no workspace, and reads an empty answer as no presets', async () => {
+  it('reads an empty answer as no presets', async () => {
     const list = vi.fn().mockResolvedValue(null);
-    const none = useWorkspacePresets(() => '', { list });
-    await none.load();
-    expect(list).not.toHaveBeenCalled();
     const empty = useWorkspacePresets(() => 'ws1', { list });
     await empty.load();
     expect(empty.presets.value).toEqual([]);
@@ -245,6 +288,28 @@ describe('useWorkspacePresets', () => {
       expect.stringMatching(/^PUT .*\/workspaces\/ws1\/presets\/pull-n-push$/),
       expect.stringMatching(/^DELETE .*\/workspaces\/ws1\/presets\/pull-n-push$/),
     ]);
+    fetchSpy.mockRestore();
+  });
+
+  it('works on the account\'s own presets with no workspace', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((url, init = {}) => {
+      if (init.method === 'POST') return Promise.resolve(new Response(JSON.stringify({ preset: STANDUP }), { status: 201 }));
+      if (init.method === 'PUT') return Promise.resolve(new Response(JSON.stringify({ preset: { ...STANDUP, body: 'new' } }), { status: 200 }));
+      if (init.method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }));
+      return Promise.resolve(new Response(JSON.stringify({ presets: [] }), { status: 200 }));
+    });
+    const p = useWorkspacePresets(() => '');
+    await p.load();
+    await p.add('standup', STANDUP.body);
+    await p.edit('standup', 'standup', 'new');
+    await p.remove('standup');
+    expect(fetchSpy.mock.calls.map(([url, init]) => `${init?.method || 'GET'} ${url}`)).toEqual([
+      expect.stringMatching(/^GET .*\/account\/presets$/),
+      expect.stringMatching(/^POST .*\/account\/presets$/),
+      expect.stringMatching(/^PUT .*\/account\/presets\/standup$/),
+      expect.stringMatching(/^DELETE .*\/account\/presets\/standup$/),
+    ]);
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body)).toEqual({ name: 'standup', body: STANDUP.body });
     fetchSpy.mockRestore();
   });
 });

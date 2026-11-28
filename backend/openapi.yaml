@@ -30,6 +30,7 @@ servers:
 
 tags:
   - name: Auth
+  - name: Account
   - name: Workspaces
   - name: Tasks
   - name: Attachments
@@ -782,6 +783,149 @@ paths:
                 type: object
                 properties:
                   memory: { $ref: '#/components/schemas/Memory' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /account/settings:
+    get:
+      tags: [Account]
+      summary: The account's settings
+      description: >
+        Settings that hold in every workspace of the account. An account that
+        never saved any reads as the defaults.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: { $ref: '#/components/schemas/AccountSettings' }
+    put:
+      tags: [Account]
+      summary: Save the account's settings
+      description: >
+        Saves the settings it is sent and returns them all; a setting left out
+        keeps its value. An unknown setting or a value it may not hold refuses
+        the whole save.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: The fields to save, in their groups, as AccountSettings has them.
+              properties:
+                display:
+                  type: object
+                  properties:
+                    timeFormat: { type: string, enum: [browser, 12h, 24h] }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: { $ref: '#/components/schemas/AccountSettings' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /account/presets:
+    get:
+      tags: [Account]
+      summary: The account's own presets
+      description: >
+        Messages the composer puts in place of `#name` in every workspace,
+        ordered by name. Where a workspace has its own preset of the same name, the composer uses the workspace's.
+        Their `workspaceId` is blank.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  presets:
+                    type: array
+                    items: { $ref: '#/components/schemas/Preset' }
+    post:
+      tags: [Account]
+      summary: Save an account preset
+      description: >
+        The rules for a workspace's preset; the account keeps up to 100 of its
+        own.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, body]
+              properties:
+                name: { type: string, maxLength: 64 }
+                body: { type: string }
+      responses:
+        '201':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preset: { $ref: '#/components/schemas/Preset' }
+        '409':
+          description: The account has a preset by that name.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /account/presets/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: { type: string, maxLength: 64 }
+    put:
+      tags: [Account]
+      summary: Edit an account preset
+      description: >
+        Replaces the preset's body, and renames it when `name` is given and
+        differs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                name: { type: string, maxLength: 64 }
+                body: { type: string }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preset: { $ref: '#/components/schemas/Preset' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The account has a preset by the new name.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+    delete:
+      tags: [Account]
+      summary: Remove an account preset
+      responses:
+        '204': { description: Deleted }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
@@ -4724,6 +4868,22 @@ components:
           description: >
             Present only when a single memory was requested by name; the list
             omits it.
+
+    AccountSettings:
+      type: object
+      description: >
+        Settings that hold in every workspace of an account, in groups. A field
+        the account never saved has its default.
+      properties:
+        display:
+          type: object
+          description: How the app shows things.
+          properties:
+            timeFormat:
+              type: string
+              enum: [browser, 12h, 24h]
+              default: browser
+              description: The clock times are shown with; `browser` follows the browser's language.
 
     Preset:
       type: object

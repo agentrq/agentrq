@@ -148,7 +148,7 @@
                 $route.path === '/' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
               ]">
             <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              <path stroke-linecap="round" stroke-linejoin="round" :d="WORKSPACE_ICON" />
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Workspaces</span>
           </router-link>
@@ -413,6 +413,16 @@
 
               <div class="h-px bg-gray-100 dark:bg-zinc-800 mx-1 my-1"></div>
 
+              <!-- The account's own settings, which hold in every workspace. -->
+              <router-link to="/settings" role="menuitem" data-test="account-settings-link" @click="isUserMenuOpen = false"
+                           class="group/settings w-full flex items-center gap-2.5 px-[3px] py-1.5 rounded-lg text-[13px] text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
+                <svg class="w-4 h-4 shrink-0 text-gray-400 dark:text-zinc-500 group-hover/settings:text-gray-600 dark:group-hover/settings:text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 011.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.559.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.894.149c-.424.07-.764.383-.929.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 01-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.398.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 01-.12-1.45l.527-.737c.25-.35.272-.806.108-1.204-.165-.397-.506-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.108-1.204l-.526-.738a1.125 1.125 0 01.12-1.45l.773-.773a1.125 1.125 0 011.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Settings
+              </router-link>
+
               <button v-if="platformStore.isWeb && canInstall" @click="installApp" role="menuitem" class="group/install w-full flex items-center gap-2.5 px-[3px] py-1.5 rounded-lg text-[13px] text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
                 <svg class="w-4 h-4 shrink-0 text-gray-400 dark:text-zinc-500 group-hover/install:text-gray-600 dark:group-hover/install:text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -525,6 +535,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
 import { progressLabel } from './desktop/useDesktopUpdates'
 import { withUpdateProgress } from './composables/usePwaUpdateProgress'
+import { loadTimeFormat } from './composables/useTimeFormat'
 import { fetchUser, fetchWorkspaces, API_BASE_URL, TELEMETRY_UI_COPY_CODE, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_SIDE_PANEL_OPEN, TELEMETRY_UI_SIDE_PANEL_LINK } from './api'
 // The whole module, because the WebMCP catalogue mirrors it function for
 // function — naming each one here would be a second list to keep in step.
@@ -564,7 +575,7 @@ import TeamSwitcher from './components/TeamSwitcher.vue'
 import TeamSidebar from './components/TeamSidebar.vue'
 import TeamModeBar from './components/TeamModeBar.vue'
 import { useTeamStore } from './stores/teamStore'
-import { useTeamMode, mePath } from './composables/useTeamMode'
+import { useTeamMode, mePath, WORKSPACE_ICON } from './composables/useTeamMode'
 import { coalesce, indexOverview } from './composables/useWorkspaceOverview'
 import { setBadge, waitingOnYou } from './composables/useAppBadge'
 import DesktopTitleBar from './components/DesktopTitleBar.vue'
@@ -1225,6 +1236,7 @@ const loadUser = async () => {
     // showing: the app reads from the network either way.
     if (user.value?.id) {
       teamStore.load()
+      loadTimeFormat()
       const db = await connectCache(user.value.id)
       startRetentionSweep(db)
       offerWebMCPTools()
@@ -1293,6 +1305,7 @@ watch(() => route.fullPath, (fullPath) => {
   else if (path.startsWith('/pano')) document.title = 'Pano | AgentRQ';
   else if (path.startsWith('/skills')) document.title = 'Skills | AgentRQ';
   else if (path.startsWith('/sessions/')) document.title = 'Terminal | AgentRQ';
+  else if (path === '/settings') document.title = 'Settings | AgentRQ';
   else if (path.startsWith('/tasks/')) {
     const filter = route.params.filter || '';
     const title = filter ? filter.charAt(0).toUpperCase() + filter.slice(1) : 'All';

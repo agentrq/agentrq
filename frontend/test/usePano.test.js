@@ -2,6 +2,7 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
+import { timeFormat } from '../src/composables/useTimeFormat';
 import { describe, it, expect, vi } from 'vitest';
 import { reactive } from 'vue';
 
@@ -254,9 +255,13 @@ describe('pointing links at the doc\'s files', () => {
 });
 
 describe('dates and sizes', () => {
-  it('shows a date as month, day and 24-hour time', () => {
+  it('shows a date as month, day and time, on the account\'s clock', () => {
     const iso = new Date(2026, 9, 13, 14, 5).toISOString();
+    timeFormat.value = '24h';
     expect(panoDate(iso)).toBe('Oct 13, 14:05');
+    timeFormat.value = '12h';
+    expect(panoDate(iso)).toBe('Oct 13, 02:05 PM');
+    timeFormat.value = 'browser';
   });
 
   it('shows a size in B, KB or MB', () => {
