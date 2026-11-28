@@ -261,4 +261,13 @@ describe('the account settings page', () => {
     finish(new Error('x'))
     await settle()
   })
+
+  it('says when the next export is allowed, past the daily cap, on the account\'s clock', async () => {
+    route.query = { tab: 'profile' }
+    exportAccountData.mockRejectedValue(Object.assign(new Error('Your data can be exported 2 times a day'), { retryAt: new Date(2026, 10, 29, 14, 5) }))
+    const { q } = await mount()
+    q('export-data').click()
+    await settle()
+    expect(useToasts().toasts.value.at(-1).message).toBe('Your data can be exported 2 times a day. Try again after Sun 14:05.')
+  })
 })

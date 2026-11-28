@@ -222,6 +222,14 @@ type (
 		UpdatedAt time.Time
 	}
 
+	// AccountExport is one download of an account's data, kept to count them
+	// against account.maxExportsPerDay.
+	AccountExport struct {
+		ID        int64     `gorm:"primaryKey;autoIncrement:false"`
+		UserID    int64     `gorm:"index:idx_account_exports_user_id_created_at,priority:1"`
+		CreatedAt time.Time `gorm:"index:idx_account_exports_user_id_created_at,priority:2"`
+	}
+
 	// Preset is a message kept for a workspace, which the composer puts in
 	// place of #name. A fork uses its parent's, so a merge moves none.
 	// Workspace 0 is the account's own, offered in every workspace.
@@ -955,6 +963,8 @@ const (
 	ActionIDMachineSessionRefuse
 	// An account's own settings saved; emitted by the backend, workspace 0.
 	ActionIDAccountSettingsUpdate
+	// An account's data downloaded; emitted by the backend, workspace 0.
+	ActionIDAccountExport
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

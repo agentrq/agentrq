@@ -140,6 +140,8 @@ export const CONFIG_HELP = {
 
   machines: 'Machines running agentrqd for an account.',
   'machines.maxSessions': 'The most agents one account may run on one machine. A machine page can set a lower cap, never a higher one. 0 is no cap. Counted in the database, so across all instances; agentrqd still applies its own --max-per-profile.',
+  account: 'What an account may do with its own data.',
+  'account.maxExportsPerDay': 'How many times one account may download all its data from Settings › Profile in any 24 hours. 0 is no cap. Counted in the database, so across all instances. Each download is emailed to the account when SMTP is set up.',
   teams: 'Teams let accounts read the workspaces their members share with them. Limits here are counted across all instances.',
   'teams.maxInvitesPerDay': 'The invitations one team may create in any 24 hours, revoked ones included. 0 turns invitations off.',
   'teams.maxInvitesPerUserPerDay': 'The invitations one account may create in any 24 hours, across all its teams. 0 is no such cap.',

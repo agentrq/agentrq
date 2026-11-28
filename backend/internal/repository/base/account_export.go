@@ -14,6 +14,26 @@ import (
 // The reads an account's data export is made of: everything the account
 // owns, in an order that does not change between two exports.
 
+// RecordAccountExport keeps one download of the account's data, to count.
+func (r *repository) RecordAccountExport(ctx context.Context, e model.AccountExport) error {
+	return r.conn(ctx).Create(&e).Error
+}
+
+// ForgetAccountExport removes a download RecordAccountExport kept, one that
+// was refused.
+func (r *repository) ForgetAccountExport(ctx context.Context, id int64) error {
+	return r.conn(ctx).Where("id = ?", id).Delete(&model.AccountExport{}).Error
+}
+
+// ListAccountExportsSince returns when the account downloaded its data since
+// a time, oldest first.
+func (r *repository) ListAccountExportsSince(ctx context.Context, userID int64, since time.Time) ([]time.Time, error) {
+	times := []time.Time{}
+	err := r.conn(ctx).Model(&model.AccountExport{}).Where("user_id = ? AND created_at > ?", userID, since).
+		Order("created_at asc, id asc").Pluck("created_at", &times).Error
+	return times, err
+}
+
 // ExportPresets returns every preset of the account, its own and its
 // workspaces'.
 func (r *repository) ExportPresets(ctx context.Context, userID int64) ([]model.Preset, error) {

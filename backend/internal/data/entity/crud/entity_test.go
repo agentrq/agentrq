@@ -63,6 +63,7 @@ func TestActionString(t *testing.T) {
 		{ActionMachineSessionResume, "machine_session_resume"},
 		{ActionMachineSessionRefuse, "machine_session_refuse"},
 		{ActionAccountSettingsUpdate, "account_settings_update"},
+		{ActionAccountExport, "account_export"},
 		{ActionMachineEnrolCodeCreate, "machine_enrol_code_create"},
 		{ActionAgentConcurrencySelect, "agent_concurrency_select"},
 		{ActionAgentLaunchClaudeCode, "agent_launch_claude_code"},
@@ -190,5 +191,14 @@ func TestAccountSettingsError_IsItsMessage(t *testing.T) {
 	err := error(&AccountSettingsError{Message: `timeFormat "13h" is not one of "browser", "12h" or "24h"`})
 	if err.Error() != `timeFormat "13h" is not one of "browser", "12h" or "24h"` {
 		t.Errorf("Error() = %q, want the message", err.Error())
+	}
+}
+
+func TestAccountExportThrottledSaysTheCap(t *testing.T) {
+	if got := (&AccountExportThrottled{Limit: 1}).Error(); got != "Your data can be exported once a day" {
+		t.Errorf("a cap of 1 says %q", got)
+	}
+	if got := (&AccountExportThrottled{Limit: 3}).Error(); got != "Your data can be exported 3 times a day" {
+		t.Errorf("a cap of 3 says %q", got)
 	}
 }

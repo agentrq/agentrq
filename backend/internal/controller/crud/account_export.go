@@ -14,6 +14,16 @@ import (
 	"github.com/mustafaturan/monoflake"
 )
 
+// AccountMaxExportsPerDay is account.maxExportsPerDay: how many times one
+// account may download its data in any 24 hours. 0 is no cap.
+var AccountMaxExportsPerDay = DefaultAccountMaxExportsPerDay
+
+// DefaultAccountMaxExportsPerDay is the cap a server starts with.
+const DefaultAccountMaxExportsPerDay = 2
+
+// exportWindow is the window AccountMaxExportsPerDay counts over.
+const exportWindow = 24 * time.Hour
+
 // exportTaskPage is how many tasks, with their messages, an export reads at
 // a time.
 const exportTaskPage = 500
@@ -24,7 +34,8 @@ type AccountExportController interface {
 	ExportAccountData(ctx context.Context, req entity.ExportAccountDataRequest) (*entity.AccountExport, error)
 }
 
-// ExportAccountData reads the account's settings, presets, workspaces
+// ExportAccountData counts the download against AccountMaxExportsPerDay,
+// then reads the account's settings, presets, workspaces
 // (archived too), memories, Pano docs and every task with its conversation.
 // Attachments and skill files are left out: their public links are their
 // credential, and they are downloaded where they are shown.
@@ -34,6 +45,9 @@ func (c *controller) ExportAccountData(ctx context.Context, req entity.ExportAcc
 		return nil, fmt.Errorf("invalid request")
 	}
 	now := time.Now().UTC()
+	if err := c.countAccountExport(ctx, uid, now); err != nil {
+		return nil, err
+	}
 	out := &entity.AccountExport{
 		Version:    entity.AccountExportVersion,
 		ExportedAt: now,
@@ -103,7 +117,43 @@ func (c *controller) ExportAccountData(ctx context.Context, req entity.ExportAcc
 		}
 		after = tasks[len(tasks)-1].ID
 	}
+	// The account is emailed that its data was taken, from this event.
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionAccountExport,
+		UserID:       uid,
+		ResourceType: entity.ResourceUser,
+		ResourceID:   uid,
+		Actor:        entity.ActorHuman,
+	})
 	return out, nil
+}
+
+// countAccountExport keeps this download and refuses it when it is past the
+// cap. Kept first and counted after, so two downloads at once cannot both
+// slip under it; a refused one is forgotten again.
+func (c *controller) countAccountExport(ctx context.Context, uid int64, now time.Time) error {
+	limit := AccountMaxExportsPerDay
+	if limit <= 0 {
+		return nil
+	}
+	id := c.idgen.NextID()
+	if err := c.repository.RecordAccountExport(ctx, model.AccountExport{ID: id, UserID: uid, CreatedAt: now}); err != nil {
+		return err
+	}
+	times, err := c.repository.ListAccountExportsSince(ctx, uid, now.Add(-exportWindow))
+	if err != nil {
+		return err
+	}
+	if len(times) <= limit {
+		return nil
+	}
+	if err := c.repository.ForgetAccountExport(ctx, id); err != nil {
+		return err
+	}
+	// This one is the newest. Of the others, a slot frees when all but
+	// limit-1 of them have aged out.
+	others := times[:len(times)-1]
+	return &entity.AccountExportThrottled{Limit: limit, RetryAt: others[len(others)-limit].Add(exportWindow)}
 }
 
 // appendExportTasks adds a page of tasks to out, each with its messages.

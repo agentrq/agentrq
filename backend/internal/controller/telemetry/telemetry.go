@@ -495,6 +495,8 @@ func crudActionID(a entity.Action) (uint8, bool) {
 		action = model.ActionIDMachineSessionRefuse
 	case entity.ActionAccountSettingsUpdate:
 		action = model.ActionIDAccountSettingsUpdate
+	case entity.ActionAccountExport:
+		action = model.ActionIDAccountExport
 	default:
 		return 0, false
 	}

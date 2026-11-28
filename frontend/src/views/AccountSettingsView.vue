@@ -156,6 +156,10 @@ onMounted(async () => {
   user.value = await fetchUser().catch(() => null);
 });
 
+// When the next export is allowed, on the account's clock: a weekday too,
+// since it is often tomorrow.
+const retryTime = (at) => at.toLocaleString('en-US', withClock({ weekday: 'short', hour: '2-digit', minute: '2-digit' }));
+
 async function exportData() {
   exporting.value = true;
   try {
@@ -170,7 +174,8 @@ async function exportData() {
     setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
     notifySuccess('Your data is downloading');
   } catch (e) {
-    notifyError(e?.message || 'Failed to export your data');
+    const message = e?.message || 'Failed to export your data';
+    notifyError(e?.retryAt ? `${message}. Try again after ${retryTime(e.retryAt)}.` : message);
   } finally {
     exporting.value = false;
   }

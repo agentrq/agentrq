@@ -841,7 +841,9 @@ paths:
         agentrq-export-YYYY-MM-DD.json.gz: its profile, settings, presets,
         workspaces (archived ones too), memories, Pano docs, and every task
         with its messages. Attachments and skill files are left out; their
-        public links are their only credential.
+        public links are their only credential. An account may download it
+        account.maxExportsPerDay times in any 24 hours, and is emailed each
+        time when SMTP is set up.
       responses:
         '200':
           description: The export, as an attachment
@@ -854,6 +856,17 @@ paths:
                 type: string
                 format: binary
                 description: An AccountExport as JSON, gzipped.
+        '429':
+          description: >
+            The account already downloaded its data account.maxExportsPerDay
+            times in the last 24 hours. Retry-After says in how many seconds
+            the next download is allowed.
+          headers:
+            Retry-After:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
 
   /account/presets:
     get:
