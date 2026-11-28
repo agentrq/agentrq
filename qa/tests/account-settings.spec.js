@@ -124,7 +124,7 @@ test('account settings pick the clock for every time and keep presets for every 
 
 // Connections is a tab because the run's GitHub App is set up; Profile shows
 // who is signed in and downloads everything the account holds as a gzipped
-// JSON file, the workspace's task among it.
+// JSON file, the workspace's task among it, twice a day.
 test('account settings connect GitHub and download the account\'s data', async ({ page, workspace }) => {
   const traffic = watchTraffic(page)
   const task = await createTask(page, workspace.id, 'Export check')
@@ -154,5 +154,16 @@ test('account settings connect GitHub and download the account\'s data', async (
   expect(data.profile.email).toBe(me.email)
   expect(data.workspaces.map((w) => w.id)).toContain(workspace.id)
   expect(data.tasks.find((t) => t.id === task.id)?.title).toBe('Export check')
-  traffic.expectClean()
+
+  // Twice a day by default: the second is taken, the third refused, saying
+  // when the next one is allowed.
+  expect((await page.request.get('/api/v1/account/export')).status(), 'the second export').toBe(200)
+  const refused = nextResponse(page, 'GET', '/account/export')
+  await page.getByTestId('export-data').click()
+  const third = await refused
+  expect(third.status(), 'the third export').toBe(429)
+  expect(Number(third.headers()['retry-after'])).toBeGreaterThan(23 * 3600)
+  await expect(page.getByText(/^Your data can be exported 2 times a day\. Try again after \w{3} \d{2}:\d{2}( [AP]M)?\.$/)).toBeVisible()
+  await shots(page, 'account-settings-export-limit', page.getByTestId('export-data'))
+  traffic.expectClean({ allow: ['429 /account/export'] })
 })

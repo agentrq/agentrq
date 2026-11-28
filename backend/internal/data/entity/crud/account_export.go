@@ -4,7 +4,25 @@
 
 package crud
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
+
+// AccountExportThrottled is an export refused because the account already
+// took account.maxExportsPerDay of them in the last 24 hours; RetryAt is
+// when the oldest of those ages out.
+type AccountExportThrottled struct {
+	Limit   int
+	RetryAt time.Time
+}
+
+func (e *AccountExportThrottled) Error() string {
+	if e.Limit == 1 {
+		return "Your data can be exported once a day"
+	}
+	return fmt.Sprintf("Your data can be exported %d times a day", e.Limit)
+}
 
 // AccountExportVersion is the shape of an export; it changes when a field
 // changes meaning or goes, not when one is added.

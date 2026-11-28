@@ -27,12 +27,22 @@ type welcomeData struct {
 	BaseURL string
 }
 
-// handleUserEvent sends the welcome email when an account is created, the
-// one place a user is created at sign-up.
+// handleUserEvent emails an account about itself, when SMTP is set up: a
+// welcome when it is created, the one place a user is created at sign-up,
+// and a notice each time its data is downloaded.
 func (c *controller) handleUserEvent(ctx context.Context, event entity.CRUDEvent) {
-	if event.Action != entity.ActionUserCreate || !c.smtpEnabled {
+	if !c.smtpEnabled {
 		return
 	}
+	switch event.Action {
+	case entity.ActionUserCreate:
+		c.sendWelcome(ctx, event)
+	case entity.ActionAccountExport:
+		c.sendAccountExportNotice(ctx, event)
+	}
+}
+
+func (c *controller) sendWelcome(ctx context.Context, event entity.CRUDEvent) {
 	u, err := c.repo.SystemGetUser(ctx, event.ResourceID)
 	if err != nil {
 		zlog.Error().Err(err).Int64("userID", event.ResourceID).Msg("[notification] failed to get user")

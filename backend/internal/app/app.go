@@ -183,6 +183,11 @@ type (
 			// unless the machine sets its own; 0 is no cap.
 			MaxSessions int `yaml:"maxSessions"`
 		} `yaml:"machines"`
+		Account struct {
+			// How many times one account may download its data in any 24
+			// hours; 0 is no cap.
+			MaxExportsPerDay int `yaml:"maxExportsPerDay"`
+		} `yaml:"account"`
 		Teams struct {
 			// How many invitations one team may create in any 24 hours; 0
 			// turns invitations off.
@@ -1557,6 +1562,7 @@ func migratedModels() []any {
 		&model.Memory{},
 		&model.Preset{},
 		&model.AccountSetting{},
+		&model.AccountExport{},
 		&model.GitHubInstallation{},
 		&model.GitLabConnection{},
 		&model.Skill{},
@@ -1620,6 +1626,7 @@ func applyLimits(cfg Config) error {
 	crud.TeamSkillsPerWorkspace = cmp.Or(cfg.Teams.MaxSkillsPerWorkspace, crud.DefaultTeamSkillsPerWorkspace)
 	// Not cmp.Or: 0 is no cap here, not "unset".
 	crud.MachineMaxSessions = cfg.Machines.MaxSessions
+	crud.AccountMaxExportsPerDay = cfg.Account.MaxExportsPerDay
 	return nil
 }
 
@@ -1636,6 +1643,8 @@ func checkLimits(cfg Config) error {
 		return fmt.Errorf("pano.maxTtlDays: %d is negative", cfg.Pano.MaxTTLDays)
 	case cfg.Machines.MaxSessions < 0:
 		return fmt.Errorf("machines.maxSessions: %d is negative", cfg.Machines.MaxSessions)
+	case cfg.Account.MaxExportsPerDay < 0:
+		return fmt.Errorf("account.maxExportsPerDay: %d is negative", cfg.Account.MaxExportsPerDay)
 	case cfg.Teams.MaxInvitesPerDay < 0:
 		return fmt.Errorf("teams.maxInvitesPerDay: %d is negative", cfg.Teams.MaxInvitesPerDay)
 	case cfg.Teams.MaxInvitesPerUserPerDay < 0:

@@ -927,9 +927,16 @@ export async function updateAccountSettings(settings) {
 // Everything the account owns, as the gzipped JSON file the server names:
 // { blob, filename }. Read through the session like every other call, so it
 // downloads in the desktop app too, where a plain link carries no cookie.
+// Past the server's daily cap the error carries `retryAt`, a Date, from the
+// Retry-After the server answers with.
 export async function exportAccountData() {
   const res = await apiFetch(`${API_BASE_URL}/account/export`);
-  if (!res.ok) throw await responseError(res, 'Failed to export your data');
+  if (!res.ok) {
+    const err = await responseError(res, 'Failed to export your data');
+    const wait = Number(res.headers.get('Retry-After'));
+    if (res.status === 429 && wait > 0) err.retryAt = new Date(Date.now() + wait * 1000);
+    throw err;
+  }
   const named = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '');
   return { blob: await res.blob(), filename: named?.[1] || 'agentrq-export.json.gz' };
 }

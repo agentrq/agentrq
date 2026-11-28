@@ -1993,6 +1993,9 @@ const (
 	// An account's own settings saved from its settings page, such as its
 	// 12h or 24h clock. Emitted by the backend; no workspace.
 	ActionAccountSettingsUpdate Action = 156
+	// An account's data downloaded from its settings page. Emitted by the
+	// backend; no workspace. The account is emailed that it was asked for.
+	ActionAccountExport Action = 157
 )
 
 // HookReceiveOutcomes are how a request to a hook URL ends: the sub-actions
@@ -2328,6 +2331,8 @@ func (a Action) String() string {
 		return "machine_session_refuse"
 	case ActionAccountSettingsUpdate:
 		return "account_settings_update"
+	case ActionAccountExport:
+		return "account_export"
 	}
 	return "unknown"
 }

@@ -7,7 +7,11 @@ package api
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
+	"math"
 	"net/http"
+	"strconv"
+	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
@@ -39,6 +43,10 @@ func (h *handler) exportAccountData() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		rs, err := h.crud.ExportAccountData(ctx, entity.ExportAccountDataRequest{UserID: c.Locals("user_id").(string), Email: email, Name: name})
+		var throttled *entity.AccountExportThrottled
+		if errors.As(err, &throttled) {
+			c.Set(fiber.HeaderRetryAfter, strconv.Itoa(retryAfterSeconds(throttled.RetryAt, time.Now())))
+		}
 		if err != nil {
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
@@ -53,6 +61,12 @@ func (h *handler) exportAccountData() fiber.Handler {
 		c.Set(fiber.HeaderCacheControl, "no-store")
 		return c.Send(file.Bytes())
 	}
+}
+
+// retryAfterSeconds is how long until at, in whole seconds rounded up, and 1
+// at least: a Retry-After of 0 would invite a retry that is refused again.
+func retryAfterSeconds(at, now time.Time) int {
+	return max(1, int(math.Ceil(at.Sub(now).Seconds())))
 }
 
 func (h *handler) getAccountSettings() fiber.Handler {

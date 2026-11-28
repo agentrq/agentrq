@@ -100,3 +100,35 @@ func TestExportAccountData_AFailedReadIsNoFile(t *testing.T) {
 		t.Errorf("a failure was offered as a download: %q", got)
 	}
 }
+
+func TestExportAccountData_PastTheCapIs429WithWhenToRetry(t *testing.T) {
+	retry := time.Now().Add(90 * time.Minute)
+	res := exportRequest(t, &exportCrud{err: &entity.AccountExportThrottled{Limit: 2, RetryAt: retry}}, map[string]any{"user_id": "user-1"})
+	body, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusTooManyRequests || !strings.Contains(string(body), `"message":"Your data can be exported 2 times a day"`) {
+		t.Fatalf("answered %d %s, want 429 with the cap", res.StatusCode, body)
+	}
+	if got := res.Header.Get(fiber.HeaderRetryAfter); got != "5400" && got != "5399" {
+		t.Errorf("Retry-After %q, want about 5400 seconds", got)
+	}
+	if got := res.Header.Get(fiber.HeaderContentDisposition); got != "" {
+		t.Errorf("a refusal was offered as a download: %q", got)
+	}
+}
+
+func TestRetryAfterSeconds(t *testing.T) {
+	now := time.Date(2026, 11, 28, 18, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		at   time.Time
+		want int
+	}{
+		{now.Add(90 * time.Minute), 5400},
+		{now.Add(1500 * time.Millisecond), 2},
+		{now, 1},
+		{now.Add(-time.Minute), 1},
+	} {
+		if got := retryAfterSeconds(tc.at, now); got != tc.want {
+			t.Errorf("retryAfterSeconds(%v) = %d, want %d", tc.at.Sub(now), got, tc.want)
+		}
+	}
+}

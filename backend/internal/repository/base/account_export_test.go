@@ -20,7 +20,7 @@ func exportDB(t *testing.T) (*gorm.DB, Repository) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Preset{}, &model.Memory{}, &model.PanoDoc{}, &model.Task{}, &model.Message{}); err != nil {
+	if err := db.AutoMigrate(&model.AccountExport{}, &model.Preset{}, &model.Memory{}, &model.PanoDoc{}, &model.Task{}, &model.Message{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db, New(&mockDB{db: db})
@@ -110,5 +110,37 @@ func TestExportMessages_OldestFirstWithinEachTask(t *testing.T) {
 	none, err := repo.ExportMessages(ctx, nil)
 	if err != nil || none == nil || len(none) != 0 {
 		t.Fatalf("ExportMessages of no tasks returned %+v, %v; want an empty list", none, err)
+	}
+}
+
+func TestAccountExports_RecordListAndForget(t *testing.T) {
+	_, repo := exportDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	for _, e := range []model.AccountExport{
+		{ID: 1, UserID: memUserID, CreatedAt: now.Add(-25 * time.Hour)},
+		{ID: 2, UserID: memUserID, CreatedAt: now.Add(-time.Hour)},
+		{ID: 3, UserID: memUserID, CreatedAt: now.Add(-2 * time.Hour)},
+		{ID: 4, UserID: memOtherUserID, CreatedAt: now},
+	} {
+		if err := repo.RecordAccountExport(ctx, e); err != nil {
+			t.Fatalf("RecordAccountExport(%d) returned %v", e.ID, err)
+		}
+	}
+	since := now.Add(-24 * time.Hour)
+	got, err := repo.ListAccountExportsSince(ctx, memUserID, since)
+	if err != nil || len(got) != 2 || !got[0].Equal(now.Add(-2*time.Hour)) || !got[1].Equal(now.Add(-time.Hour)) {
+		t.Fatalf("ListAccountExportsSince returned %v, %v; want the two of the last day, oldest first", got, err)
+	}
+	if err := repo.ForgetAccountExport(ctx, 2); err != nil {
+		t.Fatalf("ForgetAccountExport returned %v", err)
+	}
+	got, err = repo.ListAccountExportsSince(ctx, memUserID, since)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("after forgetting one, ListAccountExportsSince returned %v, %v; want one", got, err)
+	}
+	none, err := repo.ListAccountExportsSince(ctx, 99, since)
+	if err != nil || none == nil || len(none) != 0 {
+		t.Fatalf("an account with no exports read %v, %v; want an empty list", none, err)
 	}
 }

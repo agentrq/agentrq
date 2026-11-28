@@ -40,4 +40,20 @@ describe('exportAccountData', () => {
     serve(new Response('nope', { status: 500 }));
     await expect(exportAccountData()).rejects.toThrow('Failed to export your data');
   });
+
+  it('says when the next export is allowed, past the daily cap', async () => {
+    const before = Date.now();
+    serve(new Response(JSON.stringify({ error: { message: 'Your data can be exported 2 times a day' } }), { status: 429, headers: { 'Retry-After': '5400' } }));
+    const err = await exportAccountData().catch((e) => e);
+    expect(err.message).toBe('Your data can be exported 2 times a day');
+    expect(err.retryAt.getTime()).toBeGreaterThanOrEqual(before + 5400 * 1000);
+    expect(err.retryAt.getTime()).toBeLessThanOrEqual(Date.now() + 5400 * 1000);
+  });
+
+  it('names no retry time without a usable Retry-After, or for another refusal', async () => {
+    serve(new Response('{}', { status: 429 }));
+    expect((await exportAccountData().catch((e) => e)).retryAt).toBeUndefined();
+    serve(new Response('{}', { status: 500, headers: { 'Retry-After': '60' } }));
+    expect((await exportAccountData().catch((e) => e)).retryAt).toBeUndefined();
+  });
 });

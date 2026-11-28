@@ -177,6 +177,12 @@ hooks:
 machines:
   maxSessions: ${AGENTRQ_MACHINES_MAX_SESSIONS:8}
 
+# What an account may do with its own data. One account may download all its data at
+# most maxExportsPerDay times in any 24 hours; 0 is no cap. Each download is emailed
+# to the account when SMTP is set up.
+account:
+  maxExportsPerDay: ${AGENTRQ_ACCOUNT_MAX_EXPORTS_PER_DAY:2}
+
 teams:
   maxInvitesPerDay: ${AGENTRQ_TEAMS_MAX_INVITES_PER_DAY:10}
   maxInvitesPerUserPerDay: ${AGENTRQ_TEAMS_MAX_INVITES_PER_USER_PER_DAY:20}

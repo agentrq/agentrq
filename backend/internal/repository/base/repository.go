@@ -115,7 +115,10 @@ type Repository interface {
 	ListAccountSettings(ctx context.Context, userID int64) ([]model.AccountSetting, error)
 	SaveAccountSetting(ctx context.Context, s model.AccountSetting) error
 	// What an account's data export reads: everything it owns, in a fixed
-	// order; tasks a page at a time.
+	// order; tasks a page at a time. Each download is kept to count them.
+	RecordAccountExport(ctx context.Context, e model.AccountExport) error
+	ForgetAccountExport(ctx context.Context, id int64) error
+	ListAccountExportsSince(ctx context.Context, userID int64, since time.Time) ([]time.Time, error)
 	ExportPresets(ctx context.Context, userID int64) ([]model.Preset, error)
 	ExportMemories(ctx context.Context, userID int64) ([]model.Memory, error)
 	ExportPanoDocs(ctx context.Context, userID int64, now time.Time) ([]model.PanoDoc, error)

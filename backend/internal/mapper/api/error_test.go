@@ -36,3 +36,15 @@ func TestFromErrorToHTTPResponse_ARefusedLaunch(t *testing.T) {
 		}
 	}
 }
+
+// An export past the daily cap is 429 with the cap in the sentence.
+func TestFromErrorToHTTPResponse_AnExportPastTheCap(t *testing.T) {
+	body, status := FromErrorToHTTPResponse(&entity.AccountExportThrottled{Limit: 2})
+	var e httpError
+	if err := json.Unmarshal(body, &e); err != nil {
+		t.Fatal(err)
+	}
+	if status != http.StatusTooManyRequests || e.Error.Code != http.StatusTooManyRequests || e.Error.Message != "Your data can be exported 2 times a day" {
+		t.Errorf("status %d, body %s; want 429 with the cap", status, body)
+	}
+}

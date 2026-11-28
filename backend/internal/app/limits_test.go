@@ -25,6 +25,7 @@ func resetLimits(t *testing.T) {
 		crud.PanoMaxTTLDays = crud.DefaultPanoMaxTTLDays
 		crud.TeamSkillsPerWorkspace = crud.DefaultTeamSkillsPerWorkspace
 		crud.MachineMaxSessions = crud.DefaultMachineMaxSessions
+		crud.AccountMaxExportsPerDay = crud.DefaultAccountMaxExportsPerDay
 	})
 }
 
@@ -46,6 +47,9 @@ func loadLimits(t *testing.T) (Config, error) {
 	if err := svc.Populate("machines", &cfg.Machines); err != nil {
 		return cfg, err
 	}
+	if err := svc.Populate("account", &cfg.Account); err != nil {
+		return cfg, err
+	}
 	return cfg, svc.Populate("pano", &cfg.Pano)
 }
 
@@ -56,8 +60,10 @@ func TestLimitsDefaultWhenNoEnvIsSet(t *testing.T) {
 		t.Setenv(env, "")
 	}
 	// Unset, not empty: an empty value reads 0, which is no cap here.
-	t.Setenv("AGENTRQ_MACHINES_MAX_SESSIONS", "")
-	os.Unsetenv("AGENTRQ_MACHINES_MAX_SESSIONS")
+	for _, env := range []string{"AGENTRQ_MACHINES_MAX_SESSIONS", "AGENTRQ_ACCOUNT_MAX_EXPORTS_PER_DAY"} {
+		t.Setenv(env, "")
+		os.Unsetenv(env)
+	}
 	cfg, err := loadLimits(t)
 	if err != nil {
 		t.Fatal(err)
@@ -73,6 +79,28 @@ func TestLimitsDefaultWhenNoEnvIsSet(t *testing.T) {
 	}
 	if crud.MachineMaxSessions != crud.DefaultMachineMaxSessions {
 		t.Errorf("machines.maxSessions = %d, want the default %d", crud.MachineMaxSessions, crud.DefaultMachineMaxSessions)
+	}
+	if crud.AccountMaxExportsPerDay != 2 {
+		t.Errorf("account.maxExportsPerDay = %d, want the default 2", crud.AccountMaxExportsPerDay)
+	}
+}
+
+// 0 is no cap, not "use the default".
+func TestAccountMaxExportsPerDayIsReadFromItsEnvVar(t *testing.T) {
+	for _, n := range []string{"5", "0"} {
+		resetLimits(t)
+		t.Setenv("ENV", "development")
+		t.Setenv("AGENTRQ_ACCOUNT_MAX_EXPORTS_PER_DAY", n)
+		cfg, err := loadLimits(t)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := applyLimits(cfg); err != nil {
+			t.Fatal(err)
+		}
+		if got := strconv.Itoa(crud.AccountMaxExportsPerDay); got != n {
+			t.Errorf("account.maxExportsPerDay = %s, want the %s set in AGENTRQ_ACCOUNT_MAX_EXPORTS_PER_DAY", got, n)
+		}
 	}
 }
 
@@ -160,8 +188,8 @@ func TestLimitsRefuseAValueThatIsNotANumber(t *testing.T) {
 func TestApplyLimitsRefusesValuesItCannotHonour(t *testing.T) {
 	resetLimits(t)
 	for name, tc := range map[string]struct {
-		mem, size, files, ttl, sessions int
-		want                            string
+		mem, size, files, ttl, sessions, exports int
+		want                                     string
 	}{
 		"memory over the database cap": {mem: model.MaxMemoryContentBytes + 1, want: "memory.maxFileSize"},
 		"negative memory":              {mem: -1, want: "memory.maxFileSize"},
@@ -169,10 +197,12 @@ func TestApplyLimitsRefusesValuesItCannotHonour(t *testing.T) {
 		"negative skill file count":    {files: -1, want: "skills.maxFiles"},
 		"negative Pano TTL":            {ttl: -1, want: "pano.maxTtlDays"},
 		"negative machine cap":         {sessions: -1, want: "machines.maxSessions"},
+		"negative export cap":          {exports: -1, want: "account.maxExportsPerDay"},
 	} {
 		var cfg Config
 		cfg.Memory.MaxFileSize, cfg.Skills.MaxFileSize, cfg.Skills.MaxFiles, cfg.Pano.MaxTTLDays = tc.mem, tc.size, tc.files, tc.ttl
 		cfg.Machines.MaxSessions = tc.sessions
+		cfg.Account.MaxExportsPerDay = tc.exports
 		if err := applyLimits(cfg); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want one naming %s", name, err, tc.want)
 		}

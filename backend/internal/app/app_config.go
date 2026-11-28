@@ -28,7 +28,7 @@ func LoadConfig(cfgSvc config.Service) (Config, error) {
 	for key, dst := range map[string]any{
 		"app": &cfg.App, "auth": &cfg.Auth, "smtp": &cfg.SMTP, "ssl": &cfg.SSL, "slack": &cfg.Slack, "githubApp": &cfg.GitHubApp, "gitlabApp": &cfg.GitLabApp,
 		"webPush": &cfg.WebPush, "network": &cfg.Network, "storage": &cfg.Storage, "memory": &cfg.Memory,
-		"skills": &cfg.Skills, "pano": &cfg.Pano, "hooks": &cfg.Hooks, "machines": &cfg.Machines, "teams": &cfg.Teams, "mcp": &cfg.MCP,
+		"skills": &cfg.Skills, "pano": &cfg.Pano, "hooks": &cfg.Hooks, "machines": &cfg.Machines, "account": &cfg.Account, "teams": &cfg.Teams, "mcp": &cfg.MCP,
 		"idgen": &cfg.Idgen, "ddos": &cfg.Ddos, "ratelimit": &cfg.Ratelimit, "sentry": &cfg.Sentry,
 		"sentryFrontend": &cfg.SentryFrontend,
 		"prometheus":     &cfg.Prometheus, "telemetry": &cfg.Telemetry,

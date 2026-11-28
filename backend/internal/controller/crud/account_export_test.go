@@ -15,6 +15,21 @@ import (
 	"github.com/golang/mock/gomock"
 )
 
+// noExportCap turns the daily cap off for a test about what is read.
+func noExportCap(t *testing.T) {
+	t.Helper()
+	before := AccountMaxExportsPerDay
+	AccountMaxExportsPerDay = 0
+	t.Cleanup(func() { AccountMaxExportsPerDay = before })
+}
+
+func exportCap(t *testing.T, n int) {
+	t.Helper()
+	before := AccountMaxExportsPerDay
+	AccountMaxExportsPerDay = n
+	t.Cleanup(func() { AccountMaxExportsPerDay = before })
+}
+
 func exportRequest() entity.ExportAccountDataRequest {
 	return entity.ExportAccountDataRequest{UserID: testUserIDStr, Email: "ada@example.com", Name: "Ada"}
 }
@@ -29,6 +44,7 @@ func expectExportReads(e *machineTelemetryEnv) {
 }
 
 func TestExportAccountData_GathersEverythingTheAccountOwns(t *testing.T) {
+	noExportCap(t)
 	e := newMachineTelemetryEnv(t)
 	at := time.Date(2026, 11, 28, 10, 0, 0, 0, time.UTC)
 	archived := at.Add(time.Hour)
@@ -80,9 +96,13 @@ func TestExportAccountData_GathersEverythingTheAccountOwns(t *testing.T) {
 	if rs.Tasks[1].Messages == nil || len(rs.Tasks[1].Messages) != 0 {
 		t.Errorf("a task with no messages has %v, want an empty list", rs.Tasks[1].Messages)
 	}
+	if ev := e.only(t); ev.Action != entity.ActionAccountExport || ev.UserID != testUserID || ev.ResourceType != entity.ResourceUser || ev.ResourceID != testUserID || ev.WorkspaceID != 0 || ev.Actor != entity.ActorHuman {
+		t.Errorf("published %+v, want an account_export of the account by the human, with no workspace", ev)
+	}
 }
 
 func TestExportAccountData_ReadsEveryPageOfTasks(t *testing.T) {
+	noExportCap(t)
 	e := newMachineTelemetryEnv(t)
 	expectExportReads(e)
 	full := make([]model.Task, exportTaskPage)
@@ -102,6 +122,7 @@ func TestExportAccountData_ReadsEveryPageOfTasks(t *testing.T) {
 }
 
 func TestExportAccountData_AnAccountWithNothingIsEmptyLists(t *testing.T) {
+	noExportCap(t)
 	e := newMachineTelemetryEnv(t)
 	expectExportReads(e)
 	e.repo.EXPECT().ExportTasks(gomock.Any(), testUserID, int64(0), exportTaskPage).Return([]model.Task{}, nil)
@@ -115,6 +136,7 @@ func TestExportAccountData_AnAccountWithNothingIsEmptyLists(t *testing.T) {
 }
 
 func TestExportAccountData_RefusesNoAccount(t *testing.T) {
+	noExportCap(t)
 	e := newMachineTelemetryEnv(t)
 	if _, err := e.controller.ExportAccountData(context.Background(), entity.ExportAccountDataRequest{}); err == nil {
 		t.Fatal("ExportAccountData with no account succeeded")
@@ -163,10 +185,115 @@ func TestExportAccountData_StopsAtTheFirstFailedRead(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			noExportCap(t)
 			e := newMachineTelemetryEnv(t)
 			tc.expect(e)
 			if _, err := e.controller.ExportAccountData(context.Background(), exportRequest()); !errors.Is(err, failed) {
 				t.Fatalf("ExportAccountData returned %v, want the failed read's error", err)
+			}
+		})
+	}
+}
+
+func TestExportAccountData_CountsEachDownloadAgainstTheCap(t *testing.T) {
+	exportCap(t, 2)
+	e := newMachineTelemetryEnv(t)
+	e.idgen.EXPECT().NextID().Return(int64(77))
+	var kept model.AccountExport
+	e.repo.EXPECT().RecordAccountExport(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, x model.AccountExport) error {
+		kept = x
+		return nil
+	})
+	var since time.Time
+	e.repo.EXPECT().ListAccountExportsSince(gomock.Any(), testUserID, gomock.Any()).DoAndReturn(func(_ context.Context, _ int64, s time.Time) ([]time.Time, error) {
+		since = s
+		return []time.Time{kept.CreatedAt.Add(-time.Hour), kept.CreatedAt}, nil
+	})
+	expectExportReads(e)
+	e.repo.EXPECT().ExportTasks(gomock.Any(), testUserID, int64(0), exportTaskPage).Return([]model.Task{}, nil)
+
+	if _, err := e.controller.ExportAccountData(context.Background(), exportRequest()); err != nil {
+		t.Fatalf("the second download of the day returned %v", err)
+	}
+	if kept.ID != 77 || kept.UserID != testUserID || kept.CreatedAt.IsZero() {
+		t.Errorf("kept %+v", kept)
+	}
+	if want := kept.CreatedAt.Add(-24 * time.Hour); !since.Equal(want) {
+		t.Errorf("counted since %v, want 24 hours before the download, %v", since, want)
+	}
+}
+
+func TestExportAccountData_RefusesADownloadPastTheCap(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		limit   int
+		earlier []time.Duration // before this download, oldest first
+		retry   time.Duration   // after this download
+		message string
+	}{
+		{"twice a day, the third", 2, []time.Duration{20 * time.Hour, time.Hour}, 4 * time.Hour, "Your data can be exported 2 times a day"},
+		{"once a day, the second", 1, []time.Duration{3 * time.Hour}, 21 * time.Hour, "Your data can be exported once a day"},
+		{"two at once past the cap: the slot the newer earlier one frees", 1, []time.Duration{3 * time.Hour, 2 * time.Hour}, 22 * time.Hour, "Your data can be exported once a day"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			exportCap(t, tc.limit)
+			e := newMachineTelemetryEnv(t)
+			e.idgen.EXPECT().NextID().Return(int64(77))
+			var now time.Time
+			e.repo.EXPECT().RecordAccountExport(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, x model.AccountExport) error {
+				now = x.CreatedAt
+				return nil
+			})
+			e.repo.EXPECT().ListAccountExportsSince(gomock.Any(), testUserID, gomock.Any()).DoAndReturn(func(context.Context, int64, time.Time) ([]time.Time, error) {
+				times := []time.Time{}
+				for _, d := range tc.earlier {
+					times = append(times, now.Add(-d))
+				}
+				return append(times, now), nil
+			})
+			e.repo.EXPECT().ForgetAccountExport(gomock.Any(), int64(77)).Return(nil)
+
+			_, err := e.controller.ExportAccountData(context.Background(), exportRequest())
+			var throttled *entity.AccountExportThrottled
+			if !errors.As(err, &throttled) {
+				t.Fatalf("returned %v, want AccountExportThrottled", err)
+			}
+			if throttled.Limit != tc.limit || !throttled.RetryAt.Equal(now.Add(tc.retry)) || err.Error() != tc.message {
+				t.Errorf("refused with %+v %q, want limit %d, retry %v after, %q", throttled, err, tc.limit, tc.retry, tc.message)
+			}
+			if len(*e.events) != 0 {
+				t.Errorf("a refused download published %+v", *e.events)
+			}
+		})
+	}
+}
+
+func TestExportAccountData_ACountThatFailsIsNoDownload(t *testing.T) {
+	failed := errors.New("database unavailable")
+	for _, tc := range []struct {
+		name   string
+		expect func(e *machineTelemetryEnv)
+	}{
+		{"keeping it", func(e *machineTelemetryEnv) {
+			e.repo.EXPECT().RecordAccountExport(gomock.Any(), gomock.Any()).Return(failed)
+		}},
+		{"counting", func(e *machineTelemetryEnv) {
+			e.repo.EXPECT().RecordAccountExport(gomock.Any(), gomock.Any()).Return(nil)
+			e.repo.EXPECT().ListAccountExportsSince(gomock.Any(), testUserID, gomock.Any()).Return(nil, failed)
+		}},
+		{"forgetting a refused one", func(e *machineTelemetryEnv) {
+			e.repo.EXPECT().RecordAccountExport(gomock.Any(), gomock.Any()).Return(nil)
+			e.repo.EXPECT().ListAccountExportsSince(gomock.Any(), testUserID, gomock.Any()).Return([]time.Time{{}, {}, {}}, nil)
+			e.repo.EXPECT().ForgetAccountExport(gomock.Any(), int64(77)).Return(failed)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			exportCap(t, 2)
+			e := newMachineTelemetryEnv(t)
+			e.idgen.EXPECT().NextID().Return(int64(77))
+			tc.expect(e)
+			if _, err := e.controller.ExportAccountData(context.Background(), exportRequest()); !errors.Is(err, failed) {
+				t.Fatalf("returned %v, want the failed write's error", err)
 			}
 		})
 	}
