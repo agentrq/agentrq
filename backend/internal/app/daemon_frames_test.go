@@ -27,6 +27,7 @@ type recordedState struct {
 	versions   []entity.RecordMachineVersionRequest
 	forkDirs   []entity.RecordForkDirectoryRequest
 	activity   []entity.RecordSessionActivityRequest
+	decided    entity.ReconcileSessionsResponse
 	err        error
 }
 
@@ -60,9 +61,12 @@ func (r *recordedState) RecordMachineVersion(_ context.Context, req entity.Recor
 	return r.err
 }
 
-func (r *recordedState) ReconcileSessions(_ context.Context, req entity.ReconcileSessionsRequest) error {
+func (r *recordedState) ReconcileSessions(_ context.Context, req entity.ReconcileSessionsRequest) (*entity.ReconcileSessionsResponse, error) {
 	r.reconciled = append(r.reconciled, req)
-	return r.err
+	if r.err != nil {
+		return nil, r.err
+	}
+	return &r.decided, nil
 }
 
 type countingViewer struct {
@@ -140,6 +144,78 @@ func TestSessionStateIsRecorded(t *testing.T) {
 	if got.EndedAt == nil {
 		t.Error("an exited session was recorded with no end time")
 	}
+}
+
+// A state report is scoped to the machine on the socket, never one the
+// payload could name.
+func TestSessionStateCarriesTheSocketsMachine(t *testing.T) {
+	rec := &recordedState{}
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
+	session := &machine.Session{Identity: machine.Identity{MachineID: 11, UserID: 5}}
+	if err := handle(context.Background(), session, controlFrame(t, wire.SessionState{
+		SessionID: 9, State: machine.SessionRunning,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if rec.reqs[0].MachineID != 11 {
+		t.Errorf("machine = %d, want the socket's 11", rec.reqs[0].MachineID)
+	}
+}
+
+// What the server took back is announced, and what it would not is killed on
+// the daemon's own socket; a kill that cannot be sent is tried again at the
+// next heartbeat rather than failing the others.
+func TestReconcileStopsAndAnnounces(t *testing.T) {
+	rec := &recordedState{decided: entity.ReconcileSessionsResponse{
+		Resumed: []entity.SessionView{{ID: monoflake.ID(2).String(), Status: machine.SessionRunning}},
+		Stop:    []int64{3, 4},
+	}}
+	var sent []wire.Frame
+	send := func(f wire.Frame) error {
+		sent = append(sent, f)
+		if len(sent) == 1 {
+			return errors.New("socket closed")
+		}
+		return nil
+	}
+	var events []eventbus.Event
+	notify := func(_ string, e eventbus.Event) { events = append(events, e) }
+
+	reconcile(context.Background(), rec, machine.Identity{MachineID: 11, UserID: 5}, send, notify, []uint64{2, 3, 4})
+
+	if got := rec.reconciled[0]; got.MachineID != 11 {
+		t.Errorf("reconciled %+v, want the socket's machine", got)
+	}
+	var killed []uint64
+	for _, f := range sent {
+		c, err := wire.ParseControl(f)
+		if err != nil || c.Op != wire.OpKillSession {
+			t.Fatalf("sent %+v, %v; want a kill", c, err)
+		}
+		var k wire.KillSession
+		if err := json.Unmarshal(c.Body, &k); err != nil {
+			t.Fatal(err)
+		}
+		killed = append(killed, k.SessionID)
+	}
+	if len(killed) != 2 || killed[0] != 3 || killed[1] != 4 {
+		t.Errorf("killed %v, want [3 4]", killed)
+	}
+	if len(events) != 1 || events[0].Type != "session.updated" {
+		t.Fatalf("announced %+v, want one session update", events)
+	}
+	if p := events[0].Payload.(map[string]any); p["id"] != monoflake.ID(2).String() || p["status"] != machine.SessionRunning {
+		t.Errorf("announced %+v, want session 2 running", p)
+	}
+}
+
+// A reconcile that fails decides nothing, so nothing is killed.
+func TestAFailedReconcileKillsNothing(t *testing.T) {
+	rec := &recordedState{err: errors.New("database unavailable"), decided: entity.ReconcileSessionsResponse{Stop: []int64{3}}}
+	reconcile(context.Background(), rec, machine.Identity{MachineID: 11}, func(wire.Frame) error {
+		t.Error("a kill was sent after a failed reconcile")
+		return nil
+	}, nil, []uint64{3})
 }
 
 // A session that has only just started has not ended. Stamping an end time on

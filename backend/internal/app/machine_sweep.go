@@ -13,7 +13,7 @@ import (
 )
 
 // machineSweepInterval is how often the agents of machines away too long are
-// ended, and finished sessions still stored are removed. A session outlives
+// marked away, and away and finished sessions past keeping are removed. A session outlives
 // the threshold by at most this much.
 const machineSweepInterval = 5 * time.Minute
 
@@ -24,13 +24,14 @@ const sweepJitter = 2 * time.Minute
 
 // machineSweeper is the part of the crud controller the sweep runs.
 type machineSweeper interface {
-	DeleteStaleSessions(ctx context.Context) (int64, error)
+	MarkStaleSessionsAway(ctx context.Context) (int64, error)
+	DeleteExpiredAwaySessions(ctx context.Context) (int64, error)
 	DeleteFinishedSessions(ctx context.Context) (int64, error)
 }
 
-// startMachineSweep ends the sessions of stale machines every interval, plus
-// up to jitter, until ctx ends. Every backend instance runs it; the delete is
-// idempotent.
+// startMachineSweep marks the sessions of stale machines away every interval,
+// plus up to jitter, until ctx ends. Every backend instance runs it; each step
+// is idempotent.
 func startMachineSweep(ctx context.Context, m machineSweeper, every, jitter time.Duration) {
 	go func() {
 		timer := time.NewTimer(sweepWait(every, jitter))
@@ -53,10 +54,15 @@ func sweepWait(every, jitter time.Duration) time.Duration {
 }
 
 func sweepMachines(ctx context.Context, m machineSweeper) {
-	if n, err := m.DeleteStaleSessions(ctx); err != nil {
-		zlog.Error().Err(err).Msg("machines: ending the sessions of stale machines failed; retried at the next sweep")
+	if n, err := m.MarkStaleSessionsAway(ctx); err != nil {
+		zlog.Error().Err(err).Msg("machines: marking the sessions of stale machines away failed; retried at the next sweep")
 	} else if n > 0 {
-		zlog.Info().Int64("deleted", n).Msg("machines: ended the sessions of stale machines")
+		zlog.Info().Int64("marked", n).Msg("machines: marked the sessions of stale machines away")
+	}
+	if n, err := m.DeleteExpiredAwaySessions(ctx); err != nil {
+		zlog.Error().Err(err).Msg("machines: removing expired away sessions failed; retried at the next sweep")
+	} else if n > 0 {
+		zlog.Info().Int64("deleted", n).Msg("machines: removed expired away sessions")
 	}
 	if n, err := m.DeleteFinishedSessions(ctx); err != nil {
 		zlog.Error().Err(err).Msg("machines: removing finished sessions failed; retried at the next sweep")

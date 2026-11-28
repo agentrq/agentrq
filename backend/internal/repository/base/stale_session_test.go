@@ -25,9 +25,22 @@ func sessionIDs(t *testing.T, db *gorm.DB) []int64 {
 	return ids
 }
 
-// A machine away too long, or deleted, loses its live sessions; a machine
-// still heard from, and a finished session, keep theirs.
-func TestDeleteStaleSessions(t *testing.T) {
+func sessionStatuses(t *testing.T, db *gorm.DB) map[int64]string {
+	t.Helper()
+	var rows []model.Session
+	if err := db.Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	out := map[int64]string{}
+	for _, r := range rows {
+		out[r.ID] = r.Status
+	}
+	return out
+}
+
+// A machine away too long, or deleted, has its live sessions marked away; a
+// machine still heard from, and a finished session, keep theirs as they are.
+func TestMarkStaleSessionsAway(t *testing.T) {
 	db := forkFolderDB(t)
 	repo := New(&mockDB{db: db})
 	ctx := context.Background()
@@ -55,25 +68,47 @@ func TestDeleteStaleSessions(t *testing.T) {
 		}
 	}
 
-	n, err := repo.DeleteStaleSessions(ctx, now.Add(-30*time.Minute))
+	n, err := repo.MarkStaleSessionsAway(ctx, now.Add(-30*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n != 4 {
-		t.Errorf("deleted %d sessions, want 4", n)
+		t.Errorf("marked %d sessions, want 4", n)
 	}
-	if got, want := sessionIDs(t, db), []int64{10, 13}; !reflect.DeepEqual(got, want) {
-		t.Errorf("sessions left = %v, want %v", got, want)
+	want := map[int64]string{10: "running", 11: "away", 12: "away", 13: "exited", 14: "away", 15: "away"}
+	if got := sessionStatuses(t, db); !reflect.DeepEqual(got, want) {
+		t.Errorf("sessions = %v, want %v", got, want)
 	}
 }
 
-func TestDeleteStaleSessionsDatabaseUnavailable(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{})
+// An away session goes once it is older than the cut-off, or its machine is
+// gone; a newer one, and any other state, stays.
+func TestDeleteExpiredAwaySessions(t *testing.T) {
+	db := forkFolderDB(t)
+	repo := New(&mockDB{db: db})
+	now := time.Now()
+	if err := db.Create(&model.Machine{ID: 1, UserID: memUserID, TokenHash: "a"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []model.Session{
+		{ID: 10, MachineID: 1, UserID: memUserID, Status: "away", UpdatedAt: now.Add(-8 * 24 * time.Hour)},
+		{ID: 11, MachineID: 1, UserID: memUserID, Status: "away", UpdatedAt: now.Add(-time.Hour)},
+		{ID: 12, MachineID: 4, UserID: memUserID, Status: "away", UpdatedAt: now.Add(-time.Hour)}, // its machine was deleted
+		{ID: 13, MachineID: 1, UserID: memUserID, Status: "running", UpdatedAt: now.Add(-8 * 24 * time.Hour)},
+	} {
+		if err := db.Create(&s).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := repo.DeleteExpiredAwaySessions(context.Background(), now.Add(-7*24*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := New(&mockDB{db: db}).DeleteStaleSessions(context.Background(), time.Now()); err == nil {
-		t.Error("no sessions table, and no error")
+	if n != 2 {
+		t.Errorf("deleted %d sessions, want 2", n)
+	}
+	if got, want := sessionIDs(t, db), []int64{11, 13}; !reflect.DeepEqual(got, want) {
+		t.Errorf("sessions left = %v, want %v", got, want)
 	}
 }
 

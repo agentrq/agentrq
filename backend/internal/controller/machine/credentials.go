@@ -147,6 +147,16 @@ const OnlineThreshold = 90 * time.Second
 // longer counted as running in its workspaces.
 const StaleThreshold = 30 * time.Minute
 
+// AwayRetention is how long a stale machine's agents can still be taken back
+// when it wakes. After it their rows are gone, and a machine waking later has
+// its agents stopped.
+const AwayRetention = 7 * 24 * time.Hour
+
+// StartGrace is how long a starting session is kept although the daemon did
+// not name it: a heartbeat sent just before the start does not, and deleting
+// the row would get the agent stopped when the next one does.
+const StartGrace = time.Minute
+
 // IsOnline reports whether a machine was heard from recently enough.
 //
 // Derived rather than stored, and that is the whole point: a stored flag says
@@ -173,6 +183,10 @@ const (
 	SessionExited   = "exited"
 	SessionKilled   = "killed"
 	SessionFailed   = "failed"
+	// SessionAway is a live session of a machine away past StaleThreshold.
+	// Not live: it blocks no launch or merge, and only the server makes it
+	// running again, when that machine names it.
+	SessionAway = "away"
 )
 
 // SessionTerminal reports whether a session can still change.

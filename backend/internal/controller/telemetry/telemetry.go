@@ -489,6 +489,10 @@ func crudActionID(a entity.Action) (uint8, bool) {
 		action = model.ActionIDUISelectionQuote
 	case entity.ActionUISelectionCopy:
 		action = model.ActionIDUISelectionCopy
+	case entity.ActionMachineSessionResume:
+		action = model.ActionIDMachineSessionResume
+	case entity.ActionMachineSessionRefuse:
+		action = model.ActionIDMachineSessionRefuse
 	default:
 		return 0, false
 	}

@@ -13,19 +13,22 @@ import (
 	"time"
 )
 
-// fakeMachineSweeper answers every stale sweep with n and err, and every
-// finished sweep with finished and finishedErr, and counts the sweeps.
+// fakeMachineSweeper answers every stale sweep with n and err, every expiry
+// with expired and expiredErr, and every finished sweep with finished and
+// finishedErr, and counts the sweeps.
 type fakeMachineSweeper struct {
 	mu          sync.Mutex
 	n           int64
 	err         error
+	expired     int64
+	expiredErr  error
 	finished    int64
 	finishedErr error
 	calls       int
 	swept       chan struct{}
 }
 
-func (f *fakeMachineSweeper) DeleteStaleSessions(context.Context) (int64, error) {
+func (f *fakeMachineSweeper) MarkStaleSessionsAway(context.Context) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
@@ -38,6 +41,10 @@ func (f *fakeMachineSweeper) DeleteStaleSessions(context.Context) (int64, error)
 	return f.n, f.err
 }
 
+func (f *fakeMachineSweeper) DeleteExpiredAwaySessions(context.Context) (int64, error) {
+	return f.expired, f.expiredErr
+}
+
 func (f *fakeMachineSweeper) DeleteFinishedSessions(context.Context) (int64, error) {
 	return f.finished, f.finishedErr
 }
@@ -48,7 +55,9 @@ func TestSweepMachines(t *testing.T) {
 		f    *fakeMachineSweeper
 		want string
 	}{
-		{"a sweep that ended sessions says how many", &fakeMachineSweeper{n: 2}, `"deleted":2,"message":"machines: ended the sessions of stale machines"`},
+		{"a sweep that marked sessions away says how many", &fakeMachineSweeper{n: 2}, `"marked":2,"message":"machines: marked the sessions of stale machines away"`},
+		{"a sweep that removed expired away sessions says how many", &fakeMachineSweeper{expired: 4}, `"deleted":4,"message":"machines: removed expired away sessions"`},
+		{"a failed expiry says so", &fakeMachineSweeper{expiredErr: errors.New("database unavailable")}, `"message":"machines: removing expired away sessions failed; retried at the next sweep"`},
 		{"a sweep that failed says so", &fakeMachineSweeper{err: errors.New("database unavailable")}, `"error":"database unavailable"`},
 		{"a sweep that found nothing says nothing", &fakeMachineSweeper{}, ""},
 		{"a sweep that removed finished sessions says how many", &fakeMachineSweeper{finished: 3}, `"deleted":3,"message":"machines: removed finished sessions"`},

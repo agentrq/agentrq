@@ -290,9 +290,12 @@ type Repository interface {
 	RecordMachineVersion(ctx context.Context, id int64, version string) error
 	CountLiveSessionsByUser(ctx context.Context, userID int64) (map[int64]int, error)
 	CountOnlineMachinesPerUser(ctx context.Context, since time.Time) (map[int64]int, error)
-	ReconcileSessions(ctx context.Context, machineID int64, running []int64, at time.Time) error
+	ReconcileSessions(ctx context.Context, machineID int64, running []int64, startedAfter time.Time) error
+	SessionsOnMachine(ctx context.Context, machineID int64, ids []int64) ([]model.Session, error)
+	ResumeSession(ctx context.Context, id, machineID int64) (bool, error)
 	DeleteFinishedSession(ctx context.Context, id int64) error
-	DeleteStaleSessions(ctx context.Context, seenBefore time.Time) (int64, error)
+	MarkStaleSessionsAway(ctx context.Context, seenBefore time.Time) (int64, error)
+	DeleteExpiredAwaySessions(ctx context.Context, awayBefore time.Time) (int64, error)
 	DeleteFinishedSessions(ctx context.Context) (int64, error)
 	ListSessionsByMachine(ctx context.Context, machineID, userID int64) ([]model.Session, error)
 	ActiveSessionForWorkspace(ctx context.Context, workspaceID, userID int64) (model.Session, error)
@@ -300,7 +303,7 @@ type Repository interface {
 	ForkFolderMachines(ctx context.Context, workspaceID, userID int64) ([]int64, error)
 	ListRevokedWorkspaceIDs(ctx context.Context, since time.Time) ([]int64, error)
 	WorkspaceNamesByID(ctx context.Context, ids []int64, userID int64) (map[int64]string, error)
-	UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time, restored bool) error
+	UpdateSessionState(ctx context.Context, id, machineID int64, status string, exitCode *int, endedAt *time.Time, restored bool) error
 	RecordSessionActivity(ctx context.Context, machineID int64, sessions []entity.SessionActivity) error
 	ListLiveSessionsByUser(ctx context.Context, userID int64) ([]model.Session, error)
 	LatestOngoingAgentTasks(ctx context.Context, userID int64) (map[int64]int64, error)

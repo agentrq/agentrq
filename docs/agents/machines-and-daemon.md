@@ -522,10 +522,20 @@ happened is the audit log; the rows are not it, and keeping them turns the
 machine page into a list of everything that has ever run and the table into one
 that grows forever.
 
-**A machine away for 30 minutes, or deleted, loses its live session rows**
-(`DeleteStaleSessions`, swept every 5 minutes plus up to 2 of jitter, and `DeleteMachine`): no daemon
-is left to end them, and a row left "running" blocks the workspace's merge and
-next launch forever.
+**A machine away for 30 minutes has its live rows marked `away`**
+(`MarkStaleSessionsAway`, swept every 5 minutes plus up to 2 of jitter): a row
+left "running" blocks the workspace's merge and next launch forever, and
+`away` blocks nothing. A sleeping laptop's agents are suspended, not dead, so
+on wake **the server decides, never the daemon**: an `away` row it names comes
+back only if its workspace is still its owner's with no other agent, and
+otherwise gets a `killSession`, or it works on unseen with its token. A named
+id with no row is left alone and never rebuilt from a daemon's word: every
+profile's socket names the sessions of **all** the daemon's profiles.
+`away` rows go after 7 days or with their machine, and a `starting` row under a
+minute old survives a reconcile (a heartbeat can cross the launch).
+
+**A state report changes only its own machine's rows, and never revives
+`away`.** By id alone, any daemon could end another account's sessions.
 
 The consequence to keep in mind: a failure is visible in the moment, over the
 event stream, and not afterwards. If that needs to change, add a retention

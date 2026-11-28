@@ -310,13 +310,14 @@ func TestUpdateSessionStateCountsOpenAndClose(t *testing.T) {
 			env := newMachineTelemetryEnv(t)
 			env.repo.EXPECT().GetSession(gomock.Any(), int64(500), testUserID).
 				Return(model.Session{ID: 500, UserID: testUserID, WorkspaceID: testWorkspaceID}, nil)
-			env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(500), tc.status, gomock.Any(), gomock.Any(), false).Return(nil)
+			env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(500), int64(7), tc.status, gomock.Any(), gomock.Any(), false).Return(nil)
 			if tc.terminal {
 				env.repo.EXPECT().DeleteFinishedSession(gomock.Any(), int64(500)).Return(nil)
 			}
 
 			err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 				SessionID: monoflake.ID(500).String(),
+				MachineID: 7,
 				UserID:    testUserIDStr,
 				Status:    tc.status,
 			})
@@ -345,10 +346,11 @@ func TestUpdateSessionStateCountsOpenAndClose(t *testing.T) {
 // "starting" is the row being written, which CreateSession already counted.
 func TestUpdateSessionStateDoesNotCountStarting(t *testing.T) {
 	env := newMachineTelemetryEnv(t)
-	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(500), machinerules.SessionStarting, gomock.Any(), gomock.Any(), false).Return(nil)
+	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(500), int64(7), machinerules.SessionStarting, gomock.Any(), gomock.Any(), false).Return(nil)
 
 	err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 		SessionID: monoflake.ID(500).String(),
+		MachineID: 7,
 		UserID:    testUserIDStr,
 		Status:    machinerules.SessionStarting,
 	})
@@ -369,10 +371,11 @@ func TestUpdateSessionStateWithoutAUserStillRecordsTheState(t *testing.T) {
 	// (see TestUpdateSessionStateSurvivesAnUnreadableSession).
 	for _, user := range []string{"", "0"} {
 		env := newMachineTelemetryEnv(t)
-		env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(500), machinerules.SessionRunning, gomock.Any(), gomock.Any(), false).Return(nil)
+		env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(500), int64(7), machinerules.SessionRunning, gomock.Any(), gomock.Any(), false).Return(nil)
 
 		err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 			SessionID: monoflake.ID(500).String(),
+			MachineID: 7,
 			UserID:    user,
 			Status:    machinerules.SessionRunning,
 		})
@@ -390,10 +393,11 @@ func TestUpdateSessionStateWithoutAUserStillRecordsTheState(t *testing.T) {
 func TestUpdateSessionStateSurvivesAnUnreadableSession(t *testing.T) {
 	env := newMachineTelemetryEnv(t)
 	env.repo.EXPECT().GetSession(gomock.Any(), int64(500), testUserID).Return(model.Session{}, errors.New("session not found"))
-	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(500), machinerules.SessionRunning, gomock.Any(), gomock.Any(), false).Return(nil)
+	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(500), int64(7), machinerules.SessionRunning, gomock.Any(), gomock.Any(), false).Return(nil)
 
 	err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 		SessionID: monoflake.ID(500).String(),
+		MachineID: 7,
 		UserID:    testUserIDStr,
 		Status:    machinerules.SessionRunning,
 	})
@@ -410,11 +414,12 @@ func TestUpdateSessionStateDoesNotCountAFailedWrite(t *testing.T) {
 	env := newMachineTelemetryEnv(t)
 	env.repo.EXPECT().GetSession(gomock.Any(), int64(500), testUserID).
 		Return(model.Session{ID: 500, UserID: testUserID, WorkspaceID: testWorkspaceID}, nil)
-	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(500), machinerules.SessionRunning, gomock.Any(), gomock.Any(), false).
+	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(500), int64(7), machinerules.SessionRunning, gomock.Any(), gomock.Any(), false).
 		Return(errors.New("database unavailable"))
 
 	err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 		SessionID: monoflake.ID(500).String(),
+		MachineID: 7,
 		UserID:    testUserIDStr,
 		Status:    machinerules.SessionRunning,
 	})
@@ -556,6 +561,8 @@ func TestMachineActionsStringify(t *testing.T) {
 		entity.ActionMachineSessionOpen:     "machine_session_open",
 		entity.ActionMachineSessionClose:    "machine_session_close",
 		entity.ActionMachineSessionKill:     "machine_session_kill",
+		entity.ActionMachineSessionResume:   "machine_session_resume",
+		entity.ActionMachineSessionRefuse:   "machine_session_refuse",
 		entity.ActionMachineTerminalOpen:    "machine_terminal_open",
 		entity.ActionMachineTerminalClose:   "machine_terminal_close",
 		entity.ActionMachineEnrolCodeCreate: "machine_enrol_code_create",

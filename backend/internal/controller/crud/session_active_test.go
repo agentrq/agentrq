@@ -87,12 +87,13 @@ func TestAFinishedSessionIsRemoved(t *testing.T) {
 		t.Run(status, func(t *testing.T) {
 			env := newTestController(t)
 			env.repo.EXPECT().
-				UpdateSessionState(gomock.Any(), int64(9), status, gomock.Any(), gomock.Any(), gomock.Any()).
+				UpdateSessionState(gomock.Any(), int64(9), int64(7), status, gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(nil)
 			env.repo.EXPECT().DeleteFinishedSession(gomock.Any(), int64(9)).Return(nil)
 
 			if err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 				SessionID: monoflake.ID(9).String(), Status: status,
+				MachineID: 7,
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -106,13 +107,14 @@ func TestALiveSessionIsKept(t *testing.T) {
 		t.Run(status, func(t *testing.T) {
 			env := newTestController(t)
 			env.repo.EXPECT().
-				UpdateSessionState(gomock.Any(), int64(9), status, gomock.Any(), gomock.Any(), gomock.Any()).
+				UpdateSessionState(gomock.Any(), int64(9), int64(7), status, gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(nil)
 			// No DeleteFinishedSession expectation: gomock fails the test if
 			// one is called, which is the assertion.
 
 			if err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 				SessionID: monoflake.ID(9).String(), Status: status,
+				MachineID: 7,
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -125,13 +127,14 @@ func TestALiveSessionIsKept(t *testing.T) {
 func TestAFailedCleanupDoesNotFailTheReport(t *testing.T) {
 	env := newTestController(t)
 	env.repo.EXPECT().
-		UpdateSessionState(gomock.Any(), int64(9), "exited", gomock.Any(), gomock.Any(), gomock.Any()).
+		UpdateSessionState(gomock.Any(), int64(9), int64(7), "exited", gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil)
 	env.repo.EXPECT().DeleteFinishedSession(gomock.Any(), int64(9)).
 		Return(errors.New("database is busy"))
 
 	if err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 		SessionID: monoflake.ID(9).String(), Status: "exited",
+		MachineID: 7,
 	}); err != nil {
 		t.Errorf("a failed cleanup failed the state report: %v", err)
 	}
@@ -143,8 +146,8 @@ func TestTheStateIsWrittenBeforeTheRowGoes(t *testing.T) {
 	env := newTestController(t)
 	written := false
 	env.repo.EXPECT().
-		UpdateSessionState(gomock.Any(), int64(9), "exited", gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ any, _ int64, _ string, _ *int, _ any, _ bool) error {
+		UpdateSessionState(gomock.Any(), int64(9), int64(7), "exited", gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ any, _, _ int64, _ string, _ *int, _ any, _ bool) error {
 			written = true
 			return nil
 		})
@@ -158,6 +161,7 @@ func TestTheStateIsWrittenBeforeTheRowGoes(t *testing.T) {
 
 	if err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 		SessionID: monoflake.ID(9).String(), Status: "exited",
+		MachineID: 7,
 	}); err != nil {
 		t.Fatal(err)
 	}

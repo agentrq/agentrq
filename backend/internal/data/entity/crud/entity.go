@@ -1983,6 +1983,10 @@ const (
 	// from the toolbar under it. Browser-reported: it happens only in the tab.
 	ActionUISelectionQuote Action = 152
 	ActionUISelectionCopy  Action = 153
+	// A woken machine's agent taken back as running, or stopped because the
+	// server would not take it back. Emitted by the backend.
+	ActionMachineSessionResume Action = 154
+	ActionMachineSessionRefuse Action = 155
 )
 
 // HookReceiveOutcomes are how a request to a hook URL ends: the sub-actions
@@ -2301,6 +2305,10 @@ func (a Action) String() string {
 		return "ui_selection_quote"
 	case ActionUISelectionCopy:
 		return "ui_selection_copy"
+	case ActionMachineSessionResume:
+		return "machine_session_resume"
+	case ActionMachineSessionRefuse:
+		return "machine_session_refuse"
 	}
 	return "unknown"
 }
@@ -2499,6 +2507,14 @@ type (
 	ReconcileSessionsRequest struct {
 		MachineID int64
 		Running   []int64
+	}
+
+	// ReconcileSessionsResponse is what the server decided about the
+	// sessions the daemon named. Resumed were away and are running again;
+	// Stop are those it would not take back, which the daemon is to kill.
+	ReconcileSessionsResponse struct {
+		Resumed []SessionView
+		Stop    []int64
 	}
 
 	// ActiveSessionRequest asks whether a workspace already has an agent
@@ -2716,6 +2732,10 @@ type (
 
 	UpdateSessionStateRequest struct {
 		SessionID string
+		// MachineID is the machine reporting, from its authenticated socket
+		// (or the launch that just sent to it), never a payload: a session
+		// of any other machine is left alone.
+		MachineID int64
 		// UserID is who owns the session, and is only used to count it.
 		//
 		// The state report authenticates a machine rather than a workspace and
