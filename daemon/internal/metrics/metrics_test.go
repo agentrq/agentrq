@@ -270,11 +270,15 @@ func TestTheRealMachineAnswers(t *testing.T) {
 	if err != nil {
 		t.Skipf("no partition list on this platform: %v", err)
 	}
-	if len(parts) == 0 {
-		t.Error("this machine reported no filesystems at all")
+	// A container lists no physical filesystem at all — its root is an
+	// overlay, skipped as pseudo — so the usage is read for a folder that
+	// always exists instead.
+	mount := t.TempDir()
+	if len(parts) > 0 {
+		mount = parts[0].Mount
 	}
-	if _, _, err := realUsage(parts[0].Mount); err != nil {
-		t.Errorf("usage of %q: %v", parts[0].Mount, err)
+	if total, _, err := realUsage(mount); err != nil || total <= 0 {
+		t.Errorf("usage of %q = %d bytes, %v; want a size", mount, total, err)
 	}
 
 	avg, err := realLoad()
