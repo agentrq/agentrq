@@ -100,6 +100,12 @@ const CapabilityAutocompact = "autocompact"
 // An older one starts the gateway in the MCP mode the server no longer serves.
 const CapabilityACPVersion = "acpVersion"
 
+// CapabilityProfileSessions is a daemon whose [Hello.Sessions] and
+// [Heartbeat.Sessions] name only the sessions of the profile on that socket.
+// An older one names every profile's, so a session it names that the backend
+// has no row for may well be another account's, and must be left alone.
+const CapabilityProfileSessions = "profileSessions"
+
 // CapabilityRestart is a daemon that honours [OpRestart], and CapabilityUpdate
 // one that can also install an [OpUpdateNow]. An older daemon ignores the op,
 // so the backend refuses to send either unless it is listed here and the

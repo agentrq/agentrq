@@ -173,7 +173,7 @@ func (l *Link) once(ctx context.Context) error {
 		// What this daemon is actually supervising. Empty after a restart,
 		// which is how the backend learns that rows it thinks are running
 		// are not.
-		Sessions:     l.Supervisor.Running(),
+		Sessions:     l.Supervisor.Running(l.Profile),
 		Capabilities: l.capabilities(),
 	})}); err != nil {
 		return fmt.Errorf("hello: %w", err)
@@ -231,7 +231,7 @@ func (l *Link) heartbeat(ctx context.Context, conn *Conn) {
 		if !ok {
 			return false
 		}
-		hb.Sessions = l.Supervisor.Running()
+		hb.Sessions = l.Supervisor.Running(l.Profile)
 		hb.Activity = l.streams.activity(hb.Sessions)
 		if err := conn.Control(wire.Control{Op: wire.OpHeartbeat, Body: mustJSON(hb)}); err != nil {
 			l.Log.Debug("heartbeat not sent", "error", err)
@@ -290,7 +290,7 @@ func (l *Link) serve(ctx context.Context, ws *websocket.Conn, conn *Conn) error 
 // machine is on it.
 func (l *Link) dispatch(ctx context.Context, conn *Conn, f wire.Frame) {
 	if f.Type != wire.TypeControl {
-		if err := l.Supervisor.HandleFrame(f); err != nil {
+		if err := l.Supervisor.HandleFrame(l.Profile, f); err != nil {
 			l.Log.Warn("could not deliver a frame to its session",
 				"type", f.Type.String(), "session", f.SessionID, "error", err)
 		}
@@ -446,7 +446,7 @@ func (l *Link) recoverFrom(ctx context.Context, conn *Conn, err error) {
 
 // capabilities is what the hello says this daemon can do.
 func (l *Link) capabilities() []string {
-	caps := []string{wire.CapabilityFork, wire.CapabilityForkCleanup, wire.CapabilityClaudeOptions, wire.CapabilityAutocompact, wire.CapabilityACPVersion}
+	caps := []string{wire.CapabilityFork, wire.CapabilityForkCleanup, wire.CapabilityClaudeOptions, wire.CapabilityAutocompact, wire.CapabilityACPVersion, wire.CapabilityProfileSessions}
 	if l.Restarter != nil {
 		caps = append(caps, wire.CapabilityRestart)
 	}

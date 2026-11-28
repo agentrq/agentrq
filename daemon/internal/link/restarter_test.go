@@ -76,7 +76,7 @@ func launch(t *testing.T, b *fakeBackend, h *harness, id uint64) {
 		SessionID: id, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a",
 		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
 	}))
-	waitFor(t, func() bool { return slices.Contains(h.link.Supervisor.Running(), id) }, "the session never started")
+	waitFor(t, func() bool { return slices.Contains(h.link.Supervisor.Running("work"), id) }, "the session never started")
 }
 
 func states(t *testing.T, b *fakeBackend, id uint64) []wire.SessionState {
@@ -154,7 +154,7 @@ func TestARestartHandsOverWithoutEndingTheSessions(t *testing.T) {
 	if live := h.link.Supervisor.Live(); len(live) != 0 {
 		t.Errorf("%d sessions still running at the handover", len(live))
 	}
-	if got := h.link.Supervisor.Running(); !slices.Equal(got, []uint64{7}) {
+	if got := h.link.Supervisor.Running("work"); !slices.Equal(got, []uint64{7}) {
 		t.Errorf("Running() = %v, want the session still named", got)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -187,7 +187,7 @@ func TestARestartKeepsClaudeCodesModelAndEffort(t *testing.T) {
 		SessionID: 7, Kind: "claude-code", Dir: t.TempDir(), Workspace: "demo", Model: "opus", Effort: "high", Autocompact: "700k", AllowUnverified: true,
 		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
 	}))
-	waitFor(t, func() bool { return slices.Contains(h.link.Supervisor.Running(), uint64(7)) }, "the session never started")
+	waitFor(t, func() bool { return slices.Contains(h.link.Supervisor.Running("work"), uint64(7)) }, "the session never started")
 
 	b.send(t, controlFrame(t, wire.OpRestart, struct{}{}))
 	waitFor(t, func() bool { return rig.count() == 1 }, "the daemon never restarted")
@@ -220,7 +220,7 @@ func TestARestartKeepsTheGatewaysNativeACPMode(t *testing.T) {
 		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Agent: "a", ACPVersion: "1",
 		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
 	}))
-	waitFor(t, func() bool { return slices.Contains(h.link.Supervisor.Running(), uint64(7)) }, "the session never started")
+	waitFor(t, func() bool { return slices.Contains(h.link.Supervisor.Running("work"), uint64(7)) }, "the session never started")
 
 	b.send(t, controlFrame(t, wire.OpRestart, struct{}{}))
 	waitFor(t, func() bool { return rig.count() == 1 }, "the daemon never restarted")
@@ -253,7 +253,7 @@ func TestARestartThatFailsBringsTheAgentsBack(t *testing.T) {
 		}
 		return false
 	}, "the session never came back")
-	waitFor(t, func() bool { return slices.Equal(h.link.Supervisor.Running(), []uint64{7}) },
+	waitFor(t, func() bool { return slices.Equal(h.link.Supervisor.Running("work"), []uint64{7}) },
 		"Running() still names the session that is not coming back")
 	if _, err := os.Stat(restore.Path(rig.state)); !os.IsNotExist(err) {
 		t.Error("the note was left to restore the sessions a second time")
@@ -269,7 +269,7 @@ func TestARecoveryWithAnUnreadableNoteStopsNamingTheSessions(t *testing.T) {
 
 	b.send(t, controlFrame(t, wire.OpRestart, struct{}{}))
 	waitFor(t, func() bool { return len(b.controls(t, wire.OpError)) > 0 }, "the failure was never reported")
-	waitFor(t, func() bool { return len(h.link.Supervisor.Running()) == 0 }, "a session nothing will start is still named")
+	waitFor(t, func() bool { return len(h.link.Supervisor.Running("work")) == 0 }, "a session nothing will start is still named")
 }
 
 func TestADaemonThatCannotRestartSaysSo(t *testing.T) {
@@ -397,14 +397,14 @@ func TestASessionThatCannotComeBackIsNoLongerNamed(t *testing.T) {
 	b := newBackend(t)
 	h := start(t, b)
 	conn := &Conn{out: make(chan []byte, 8), done: make(chan struct{})}
-	h.sup.Expect(9, 10)
+	h.sup.Expect("work", 9, 10)
 
 	h.link.Restore(context.Background(), conn, restore.Session{ID: 9, Profile: "work", Kind: "nothing-runs-this"})
 	h.link.Restore(context.Background(), conn, restore.Session{
 		ID: 10, Profile: "work", Kind: string(supervisor.KindACPGateway), Dir: "/definitely/not/a/directory", Model: "m", Agent: "a",
 	})
 
-	if got := h.sup.Running(); len(got) != 0 {
+	if got := h.sup.Running("work"); len(got) != 0 {
 		t.Errorf("Running() = %v", got)
 	}
 }

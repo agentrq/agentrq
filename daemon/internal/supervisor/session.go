@@ -212,9 +212,10 @@ type Supervisor struct {
 	sessions map[uint64]*Session
 	profiles map[uint64]string // session id → profile
 	// returning are the sessions a handover stopped and a restart will start
-	// again. [Supervisor.Running] still names them, or a heartbeat between
-	// the stop and the restart would have the backend delete their rows.
-	returning map[uint64]bool
+	// again, with their profiles. [Supervisor.Running] still names them, or a
+	// heartbeat between the stop and the restart would have the backend
+	// delete their rows.
+	returning map[uint64]string
 }
 
 // New makes a supervisor.
@@ -226,7 +227,7 @@ func New(start Starter, perProfile, wholeMachine int) *Supervisor {
 		finishedRetention: FinishedRetention,
 		sessions:          map[uint64]*Session{},
 		profiles:          map[uint64]string{},
-		returning:         map[uint64]bool{},
+		returning:         map[uint64]string{},
 	}
 }
 
@@ -341,6 +342,11 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	s.mu.Lock()
 	s.pruneFinishedLocked(time.Now())
 	if _, taken := s.sessions[req.ID]; taken {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("%w: %d", ErrAlreadyExists, req.ID)
+	}
+	// Another profile's session coming back after a handover keeps its id.
+	if owner, back := s.returning[req.ID]; back && owner != profile {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("%w: %d", ErrAlreadyExists, req.ID)
 	}
@@ -677,21 +683,30 @@ func (s *Supervisor) Count() int {
 	return len(s.sessions)
 }
 
-// Running lists the sessions that are still alive.
+// Running lists one profile's sessions that are still alive.
 //
 // Finished ones are excluded on purpose: this answers "what is this daemon
 // actually supervising", which is what a reconnecting backend needs in order
 // to correct rows it believes are running.
-func (s *Supervisor) Running() []uint64 {
+//
+// Only the profile's own: every profile reports to its own server, perhaps of
+// another account, which has no business learning another profile's agents.
+func (s *Supervisor) Running(profile string) []uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ids := make([]uint64, 0, len(s.sessions)+len(s.returning))
 	for id, sess := range s.sessions {
+		if s.profiles[id] != profile {
+			continue
+		}
 		if state, _, _ := sess.State(); !state.Terminal() {
 			ids = append(ids, id)
 		}
 	}
-	for id := range s.returning {
+	for id, p := range s.returning {
+		if p != profile {
+			continue
+		}
 		if sess, ok := s.sessions[id]; ok {
 			if state, _, _ := sess.State(); !state.Terminal() {
 				continue // a process that outlived the wait, listed above
@@ -701,6 +716,17 @@ func (s *Supervisor) Running() []uint64 {
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids
+}
+
+// Owns reports whether a session belongs to profile. A session it does not
+// know is nobody's.
+func (s *Supervisor) Owns(profile string, id uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.sessions[id]; !ok {
+		return false
+	}
+	return s.profiles[id] == profile
 }
 
 // Ended closes once the session has finished and its outcome is recorded.
@@ -761,7 +787,7 @@ func (s *Supervisor) HandOver(ctx context.Context, wait time.Duration) []*Sessio
 		sess.mu.Lock()
 		sess.handedOver = true
 		sess.mu.Unlock()
-		s.returning[sess.ID] = true
+		s.returning[sess.ID] = s.profiles[sess.ID]
 	}
 	s.mu.Unlock()
 
@@ -793,14 +819,14 @@ func (s *Supervisor) HandOver(ctx context.Context, wait time.Duration) []*Sessio
 	return live
 }
 
-// Expect names sessions a previous daemon handed over, from its note, until
-// they are started again: the first hello must list them or the backend
-// deletes the rows they come back to.
-func (s *Supervisor) Expect(ids ...uint64) {
+// Expect names a profile's sessions a previous daemon handed over, from its
+// note, until they are started again: the profile's first hello must list
+// them or the backend deletes the rows they come back to.
+func (s *Supervisor) Expect(profile string, ids ...uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, id := range ids {
-		s.returning[id] = true
+		s.returning[id] = profile
 	}
 }
 

@@ -39,7 +39,7 @@ func TestHandOverStopsTheSessionsAndKeepsNamingThem(t *testing.T) {
 	if live := s.Live(); len(live) != 0 {
 		t.Errorf("%d sessions are still running", len(live))
 	}
-	if got := s.Running(); !slices.Equal(got, []uint64{2, 4}) {
+	if got := s.Running("work"); !slices.Equal(got, []uint64{2, 4}) {
 		t.Errorf("Running() = %v, want both sessions still named", got)
 	}
 
@@ -48,12 +48,12 @@ func TestHandOverStopsTheSessionsAndKeepsNamingThem(t *testing.T) {
 	if _, err := s.Start(t.Context(), "work", gatewayRequest(t, 4)); err != nil {
 		t.Fatalf("starting a handed-over session again: %v", err)
 	}
-	if got := s.Running(); !slices.Equal(got, []uint64{2, 4}) {
+	if got := s.Running("work"); !slices.Equal(got, []uint64{2, 4}) {
 		t.Errorf("Running() = %v after one came back", got)
 	}
 
 	s.Abandon()
-	if got := s.Running(); !slices.Equal(got, []uint64{4}) {
+	if got := s.Running("work"); !slices.Equal(got, []uint64{4}) {
 		t.Errorf("Running() = %v after abandoning the rest, want only the one running", got)
 	}
 }
@@ -100,7 +100,7 @@ func TestHandOverGivesUpOnAProcessThatWillNotGo(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 3*time.Second {
 		t.Errorf("HandOver waited %v", elapsed)
 	}
-	if got := s.Running(); !slices.Equal(got, []uint64{9}) {
+	if got := s.Running("work"); !slices.Equal(got, []uint64{9}) {
 		t.Errorf("Running() = %v, want the session once", got)
 	}
 	if _, err := s.Get(9); err != nil {
@@ -130,8 +130,8 @@ func TestAnExpectedSessionAlreadyRunningIsNamedOnce(t *testing.T) {
 	if _, err := s.Start(t.Context(), "work", gatewayRequest(t, 5)); err != nil {
 		t.Fatal(err)
 	}
-	s.Expect(5, 6)
-	if got := s.Running(); !slices.Equal(got, []uint64{5, 6}) {
+	s.Expect("work", 5, 6)
+	if got := s.Running("work"); !slices.Equal(got, []uint64{5, 6}) {
 		t.Errorf("Running() = %v", got)
 	}
 }

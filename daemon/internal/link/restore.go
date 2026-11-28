@@ -41,11 +41,9 @@ func Restored(ctx context.Context, dir string, sup *supervisor.Supervisor, log *
 
 	log.Warn("restoring sessions after a restart; their scrollback and in-flight work are gone",
 		"reason", note.Reason, "count", len(note.Sessions), "from", note.FromVersion)
-	ids := make([]uint64, 0, len(note.Sessions))
 	for _, s := range note.Sessions {
-		ids = append(ids, s.ID)
+		sup.Expect(s.Profile, s.ID)
 	}
-	sup.Expect(ids...)
 	return note.Sessions
 }
 

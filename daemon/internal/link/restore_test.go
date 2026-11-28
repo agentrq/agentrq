@@ -45,7 +45,7 @@ func TestRestoredReadsTheNoteOnceAndRemovesIt(t *testing.T) {
 	}
 	// Named before it is started, or the first hello has the backend delete
 	// the row it is about to come back to.
-	if running := sup.Running(); len(running) != 1 || running[0] != 9 {
+	if running := sup.Running("work"); len(running) != 1 || running[0] != 9 {
 		t.Errorf("Running() = %v, want the session that is coming back", running)
 	}
 	// A note left behind starts somebody's agents again on every subsequent
@@ -391,4 +391,29 @@ func TestTheViewerCountTracksBothOfThem(t *testing.T) {
 
 	b.send(t, controlFrame(t, wire.OpDetach, wire.KillSession{SessionID: 7}))
 	waitFor(t, func() bool { return h.link.Viewers(7) == 1 }, "one leaving took both counts with it")
+}
+
+// A note covers every profile, and each profile names only its own sessions
+// coming back.
+func TestRestoredNamesEachSessionUnderItsProfile(t *testing.T) {
+	dir := t.TempDir()
+	if err := restore.Write(dir, restore.File{
+		Reason: "update",
+		Sessions: []restore.Session{
+			{ID: 9, Profile: "work", Kind: "acp-gateway"},
+			{ID: 4, Profile: "home", Kind: "acp-gateway"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sup := idleSupervisor()
+	if got := Restored(context.Background(), dir, sup, quietLog()); len(got) != 2 {
+		t.Fatalf("restored %+v", got)
+	}
+	if got := sup.Running("work"); len(got) != 1 || got[0] != 9 {
+		t.Errorf(`Running("work") = %v, want [9]`, got)
+	}
+	if got := sup.Running("home"); len(got) != 1 || got[0] != 4 {
+		t.Errorf(`Running("home") = %v, want [4]`, got)
+	}
 }

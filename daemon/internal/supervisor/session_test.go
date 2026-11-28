@@ -27,6 +27,7 @@ type fakePTY struct {
 	closed   bool
 	exitCode int
 	waitErr  error
+	closeErr error
 	written  []byte
 	cols     uint16
 	rows     uint16
@@ -90,8 +91,9 @@ func (f *fakePTY) Close() error {
 		f.closed = true
 		close(f.done)
 	}
+	err := f.closeErr
 	f.mu.Unlock()
-	return nil
+	return err
 }
 
 func (f *fakePTY) exit(code int, err error) {
@@ -505,14 +507,14 @@ func TestRunningListsOnlyLiveSessions(t *testing.T) {
 	}
 
 	// Sorted, so a backend comparing two hellos is comparing like with like.
-	if got := s.Running(); len(got) != 3 || got[0] != 3 || got[1] != 5 || got[2] != 9 {
+	if got := s.Running("work"); len(got) != 3 || got[0] != 3 || got[1] != 5 || got[2] != 9 {
 		t.Fatalf("Running = %v", got)
 	}
 
 	if err := s.Kill(5); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
-	got := s.Running()
+	got := s.Running("work")
 	for _, id := range got {
 		if id == 5 {
 			t.Errorf("a killed session is still reported as running: %v", got)
