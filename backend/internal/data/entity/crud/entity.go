@@ -2506,7 +2506,14 @@ type (
 
 	ReconcileSessionsRequest struct {
 		MachineID int64
-		Running   []int64
+		// UserID owns the machine, from its socket like MachineID.
+		UserID  int64
+		Running []int64
+		// Scoped is a daemon whose list names only this machine's sessions
+		// (wire.CapabilityProfileSessions). Only then is a named session the
+		// server has no row of stopped: from an older daemon it may be
+		// another profile's, another account's.
+		Scoped bool
 	}
 
 	// ReconcileSessionsResponse is what the server decided about the

@@ -130,6 +130,11 @@ func (s *Session) Heartbeat(ctx context.Context) error {
 // Send writes a frame to this daemon.
 func (s *Session) Send(f wire.Frame) error { return s.conn.Send(f) }
 
+// HasCapability reports whether this daemon's hello listed capability.
+func (s *Session) HasCapability(capability string) bool {
+	return s.registry != nil && s.registry.HasCapability(s.Identity.MachineID, capability)
+}
+
 // SetCapabilities records what this daemon's hello said it can do.
 func (s *Session) SetCapabilities(caps []string) {
 	if s.registry != nil {

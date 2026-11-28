@@ -127,3 +127,34 @@ func TestUpdateSessionStateNeedsTheMachine(t *testing.T) {
 		t.Error("a state report with no machine was recorded")
 	}
 }
+
+// From a daemon whose list is this machine's alone, a named session the
+// server has no row of is stopped and counted for the machine's owner; from
+// an older one it is left alone, as it may be another profile's.
+func TestReconcileSessionsStopsAnUnknownSessionOnlyWhenScoped(t *testing.T) {
+	for _, scoped := range []bool{true, false} {
+		env := newMachineTelemetryEnv(t)
+		env.repo.EXPECT().ReconcileSessions(gomock.Any(), int64(11), []int64{3}, gomock.Any()).Return(nil)
+		env.repo.EXPECT().SessionsOnMachine(gomock.Any(), int64(11), []int64{3}).Return(nil, nil)
+
+		res, err := env.controller.ReconcileSessions(t.Context(), entity.ReconcileSessionsRequest{
+			MachineID: 11, UserID: 77, Running: []int64{3}, Scoped: scoped,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !scoped {
+			if len(res.Stop) != 0 || len(*env.events) != 0 {
+				t.Errorf("unscoped: stop %v, events %+v; want nothing", res.Stop, *env.events)
+			}
+			continue
+		}
+		if !reflect.DeepEqual(res.Stop, []int64{3}) {
+			t.Errorf("scoped: stop = %v, want [3]", res.Stop)
+		}
+		ev := env.only(t)
+		if ev.Action != entity.ActionMachineSessionRefuse || ev.ResourceID != 3 || ev.UserID != 77 || ev.WorkspaceID != 0 {
+			t.Errorf("scoped: refusal = %+v", ev)
+		}
+	}
+}

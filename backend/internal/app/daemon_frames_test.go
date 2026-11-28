@@ -181,10 +181,10 @@ func TestReconcileStopsAndAnnounces(t *testing.T) {
 	var events []eventbus.Event
 	notify := func(_ string, e eventbus.Event) { events = append(events, e) }
 
-	reconcile(context.Background(), rec, machine.Identity{MachineID: 11, UserID: 5}, send, notify, []uint64{2, 3, 4})
+	reconcile(context.Background(), rec, machine.Identity{MachineID: 11, UserID: 5}, true, send, notify, []uint64{2, 3, 4})
 
-	if got := rec.reconciled[0]; got.MachineID != 11 {
-		t.Errorf("reconciled %+v, want the socket's machine", got)
+	if got := rec.reconciled[0]; got.MachineID != 11 || got.UserID != 5 || !got.Scoped {
+		t.Errorf("reconciled %+v, want the socket's machine and owner, scoped", got)
 	}
 	var killed []uint64
 	for _, f := range sent {
@@ -212,7 +212,7 @@ func TestReconcileStopsAndAnnounces(t *testing.T) {
 // A reconcile that fails decides nothing, so nothing is killed.
 func TestAFailedReconcileKillsNothing(t *testing.T) {
 	rec := &recordedState{err: errors.New("database unavailable"), decided: entity.ReconcileSessionsResponse{Stop: []int64{3}}}
-	reconcile(context.Background(), rec, machine.Identity{MachineID: 11}, func(wire.Frame) error {
+	reconcile(context.Background(), rec, machine.Identity{MachineID: 11}, false, func(wire.Frame) error {
 		t.Error("a kill was sent after a failed reconcile")
 		return nil
 	}, nil, []uint64{3})
@@ -365,6 +365,10 @@ func TestWhatTheDaemonIsRunningReconcilesTheRows(t *testing.T) {
 	}
 	if len(got.Running) != 2 || got.Running[0] != 9 || got.Running[1] != 3 {
 		t.Errorf("running = %v", got.Running)
+	}
+	// A hello on a socket with no registry has listed nothing it can do.
+	if got.Scoped {
+		t.Error("a daemon that did not list profileSessions was taken as scoped")
 	}
 
 	// And a daemon that came back with nothing says so, which is the case that
