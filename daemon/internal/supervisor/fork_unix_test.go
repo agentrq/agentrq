@@ -282,3 +282,44 @@ func TestAForkKilledWhileItChecksOutStopsTheCheckout(t *testing.T) {
 		t.Errorf("specs %d, count %d: the stopped start left something behind", len(st.specs), s.Count())
 	}
 }
+
+// .claude's links stay links and its FIFOs are left out, as in a copy; a file
+// or folder that cannot be read is said, and the rest copied all the same.
+func TestAForksClaudeFolderKeepsLinksAndSaysWhatItCouldNotCopy(t *testing.T) {
+	root := gitRepo(t, map[string]string{"a": "1"})
+	claude := filepath.Join(root, ".claude")
+	writeFile(t, filepath.Join(claude, "skills", "s", "SKILL.md"), "skill\n")
+	if err := os.Symlink("skills/s", filepath.Join(claude, "link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(filepath.Join(claude, "pipe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(claude, "secret"), "x")
+	writeFile(t, filepath.Join(claude, "locked", "f"), "x")
+	for _, name := range []string{"secret", "locked"} {
+		if err := os.Chmod(filepath.Join(claude, name), 0o000); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(claude, "locked"), 0o755) })
+
+	var shown recordingProgress
+	dir, err := PrepareForkDir(t.Context(), forksIn(t.TempDir()), root, forkID, &shown)
+	if err != nil {
+		t.Fatalf("PrepareForkDir: %v", err)
+	}
+	if link, err := os.Readlink(filepath.Join(dir, ".claude", "link")); err != nil || link != "skills/s" {
+		t.Errorf("symlink = %q (%v), want it copied as a link", link, err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, ".claude", "pipe")); !errors.Is(err, os.ErrNotExist) {
+		t.Error("a FIFO was copied")
+	}
+	n := noticeContaining(shown.noticed(), "could not copy")
+	if !strings.Contains(n, "secret") || !strings.Contains(n, "locked") {
+		t.Errorf("notice = %q, want the file and folder it could not copy", n)
+	}
+	if readFile(t, filepath.Join(dir, ".claude", "skills", "s", "SKILL.md")) != "skill\n" {
+		t.Error("what came after an error was not copied")
+	}
+}

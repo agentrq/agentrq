@@ -34,6 +34,8 @@ A fork's agent runs in a folder of its own, which `agentrqd` makes the first tim
 - If the parent's folder is inside a git repository, the fork gets a **git worktree** on a new branch, `agentrq/fork-<fork id>`.
 - Otherwise the fork gets a **copy** of the parent's folder.
 
+Either way, the fork's folder also gets the parent's `.mcp.json` and `.claude` folder, which a worktree would otherwise leave behind when they are not committed. The parent's AgentRQ workspace server is taken out of the copied `.mcp.json`, so the fork's agent connects only as the fork; the rest of the servers are kept. Files the worktree already has are not overwritten, `.claude/worktrees` is not copied, and neither is your home folder's `~/.claude`.
+
 The folder is at `~/.agentrq/forks/<fork id>` on that machine (`agentrqd serve --forks-dir <path>` puts forks elsewhere, such as on another drive), and the fork's settings page shows its path. The fork's terminal opens with how the folder was made (the `git worktree add` command, the copy, or that an existing folder was reused) and then the command its agent was started with. The parent must have a working directory set, because that is where the fork's folder is made from.
 
 To run a fork, the machine needs `agentrqd` 0.9.3 or newer, the first release that makes fork folders. On an older one, the launch is refused with "update agentrqd on this machine to run a fork (it needs 0.9.3 or newer)". If the parent's repository commits its own `.mcp.json` with an AgentRQ workspace entry, a worktree would inherit that entry and point the fork's agent at the parent, so that launch is refused too, with a message naming the file.

@@ -61,6 +61,8 @@ func ForkBranch(id string) string { return "agentrq/fork-" + id }
 // A git worktree on its own branch when from is inside a repository (the dir
 // is then the same subfolder of it that from is of its repository), a copy of
 // from otherwise. An existing folder is reused as it is, which is a relaunch.
+// A new one also gets the parent's untracked agent configuration: see
+// [copyAgentConfig].
 //
 // Each step is a notice on out before it runs, and what git prints goes to out
 // as it prints it. Cancelling ctx stops the checkout; a worktree that was not
@@ -112,6 +114,7 @@ func PrepareForkDir(ctx context.Context, forks, from, id string, out Progress) (
 	if err != nil {
 		return "", err
 	}
+	copyAgentConfig(from, dir, out)
 	return dir, nil
 }
 
@@ -249,7 +252,8 @@ func gitEnv() []string {
 
 // copyTree copies from into target, keeping modes and copying symlinks as
 // symlinks. The top-level .mcp.json is left out — its entry points at the
-// parent — as is the forks folder, wherever it turns up.
+// parent, and [copyAgentConfig] writes it without that — as is the forks
+// folder, wherever it turns up.
 //
 // Built beside target and renamed into place, so a copy that fails half way
 // leaves nothing a relaunch would take for a finished fork.
