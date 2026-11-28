@@ -1,0 +1,158 @@
+name: Auto-merge
+
+# Merges a pull request once every other check on its head commit has passed,
+# but only a pull request that mustafaturan armed with the `automerge` label.
+# The label is the switch: nothing is merged without it, and a label added by
+# anybody else is taken off again. So is the label on an armed pull request
+# when somebody else pushes to it, so nobody can slip a commit in after it was
+# armed.
+#
+# pull_request_target, so it runs with this repository's secrets for a fork's
+# pull request too. It never checks out the pull request's code, only asks the
+# API about it, and that is what makes that safe.
+#
+# The merge uses the workflow's own token, and a push made with it starts no
+# workflow. So after the merge, every workflow that runs on a push to the base
+# branch and can be run by hand is dispatched on it instead: a dispatch is the
+# one event that token may start. Path filters do not apply to a dispatch, so
+# they all run; the publish jobs skip a version already published.
+#
+# The literals `automerge` and `mustafaturan` are repeated in each `if:`
+# because the env context cannot be read there.
+on:
+  pull_request_target:
+    types: [labeled, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  disarm:
+    name: Disarm auto-merge
+    if: >-
+      github.event.sender.login != 'mustafaturan' &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'automerge') ||
+       (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'automerge')))
+    runs-on: ubuntu-latest
+    # Shares the merge's group, so a waiting merge is cancelled with it.
+    concurrency:
+      group: automerge-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Remove the label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SENDER: ${{ github.event.sender.login }}
+        run: |
+          gh pr edit "$PR" --remove-label automerge
+          echo "::notice::Auto-merge disarmed: only mustafaturan can arm it, and $SENDER ${{ github.event.action }} the pull request."
+
+  merge:
+    name: Merge when CI passes
+    if: >-
+      github.event.sender.login == 'mustafaturan' &&
+      !github.event.pull_request.draft &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'automerge') ||
+       (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'automerge')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # One wait per pull request: a new push starts a new wait for the new head.
+    concurrency:
+      group: automerge-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      actions: write
+      checks: read
+      contents: write
+      statuses: read
+      pull-requests: write
+    steps:
+      - name: Wait for CI, then merge
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # Late checks register a minute or two after a push: an early look
+          # would find nothing pending and merge before they ran.
+          sleep 90
+          deadline=$((SECONDS + 75 * 60))
+          while :; do
+            # Every check run on the head commit except this workflow's own.
+            runs=$(gh api --paginate "repos/$GH_REPO/commits/$SHA/check-runs?per_page=100" \
+              --jq '.check_runs[] | select(.name != "Merge when CI passes" and .name != "Disarm auto-merge") | "\(.status) \(.conclusion)"')
+            total=$(printf '%s\n' "$runs" | grep -c . || true)
+            pending=$(printf '%s\n' "$runs" | grep -vc '^completed ' || true)
+            [ -z "$runs" ] && pending=0
+            failed=$(printf '%s\n' "$runs" | grep '^completed ' | grep -vcE ' (success|skipped|neutral)$' || true)
+
+            # Commit statuses, from integrations that do not use check runs.
+            status=$(gh api "repos/$GH_REPO/commits/$SHA/status" --jq '"\(.total_count) \(.state)"')
+            case "$status" in
+              "0 "*) ;;
+              *" pending") pending=$((pending + 1)) ;;
+              *" success") ;;
+              *) failed=$((failed + 1)) ;;
+            esac
+
+            echo "checks: $total, pending: $pending, failed: $failed"
+            if [ "$failed" -gt 0 ]; then
+              echo "::warning::CI failed on $SHA, so the pull request was not merged. Push a fix, or remove and re-add the label after a re-run."
+              exit 0
+            fi
+            if [ "$total" -gt 0 ] && [ "$pending" -eq 0 ]; then
+              break
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::warning::CI still running after 75 minutes; re-add the label to wait again."
+              exit 0
+            fi
+            sleep 30
+          done
+
+          # The label may have come off while CI ran.
+          if ! gh pr view "$PR" --json labels --jq '.labels[].name' | grep -qx automerge; then
+            echo "::notice::The automerge label was removed; not merging."
+            exit 0
+          fi
+
+          # Pinned to the commit CI passed on: a push since then fails the merge.
+          gh pr merge "$PR" --squash --match-head-commit "$SHA"
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+
+      # Only the workflow files, and from the base branch, never the pull
+      # request's: they are what the merge pushed to.
+      - name: Check out the base branch's workflows
+        if: steps.merge.outputs.merged == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          sparse-checkout: .github/workflows
+          persist-credentials: false
+
+      - name: Dispatch the base branch's push workflows
+        if: steps.merge.outputs.merged == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -f "$f" ] || continue
+            on_push=$(BASE="$BASE" yq '(.on.push.branches // []) | contains([strenv(BASE)])' "$f")
+            [ "$on_push" = "true" ] || continue
+            if [ "$(yq '.on | has("workflow_dispatch")' "$f")" != "true" ]; then
+              echo "::warning::$f runs on a push to $BASE but has no workflow_dispatch, so it was not run."
+              continue
+            fi
+            echo "dispatching $f on $BASE"
+            gh workflow run "$(basename "$f")" --ref "$BASE"
+          done
