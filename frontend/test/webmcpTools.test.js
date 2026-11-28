@@ -263,6 +263,9 @@ describe('parity with the interface', () => {
     // The catalogue is at the 128 tools a shared site may announce, and
     // updateAccountSettings answers every setting, as this does.
     fetchAccountSettings: 'what updateAccountSettings answers; no room for a tool of its own',
+    // A file saved to the person's own disk; an agent reads the same data
+    // through the tools that already list it, and the catalogue is full.
+    exportAccountData: 'saves a file to the person\'s disk; its data is read through other tools',
     fetchAdminConfigurations: 'needs the operator session above; the same non-grant',
     updateAdminConfiguration: 'needs the operator session above; the same non-grant',
     uploadAdminLoginIcon: 'needs the operator session above; the same non-grant',

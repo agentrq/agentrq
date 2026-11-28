@@ -2,8 +2,11 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 
+import { readFileSync } from 'node:fs'
+import { gunzipSync } from 'node:zlib'
+
 import { test, expect } from '../lib/fixtures.js'
-import { createTask, nextResponse, openSidebar } from '../lib/app.js'
+import { createTask, nextResponse, openSidebar, watchTraffic } from '../lib/app.js'
 
 const theme = (page, dark) => page.evaluate((d) => {
   localStorage.setItem('theme', d ? 'dark' : 'light')
@@ -117,4 +120,39 @@ test('account settings pick the clock for every time and keep presets for every 
     await when.getByTestId('clock-hour').selectOption(format === '12h' ? '9' : '21')
     await shots(page, `schedule-onetime-${format}`)
   }
+})
+
+// Connections is a tab because the run's GitHub App is set up; Profile shows
+// who is signed in and downloads everything the account holds as a gzipped
+// JSON file, the workspace's task among it.
+test('account settings connect GitHub and download the account\'s data', async ({ page, workspace }) => {
+  const traffic = watchTraffic(page)
+  const task = await createTask(page, workspace.id, 'Export check')
+
+  await page.goto('/settings?tab=connections')
+  await expect(page.getByTestId('settings-tab-connections')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('github-connection')).toBeVisible()
+  await expect(page.getByTestId('gitlab-connection')).toHaveCount(0)
+  await shots(page, 'account-settings-connections', page.getByTestId('settings-connections'))
+
+  await page.getByTestId('settings-tab-profile').click()
+  await expect(page).toHaveURL(/tab=profile/)
+  const me = await (await page.request.get('/api/v1/auth/user')).json()
+  await expect(page.getByTestId('profile-email')).toHaveValue(me.email)
+  await expect(page.getByTestId('profile-name')).toHaveValue(me.name)
+  await expect(page.getByTestId('profile-email')).toHaveAttribute('readonly', '')
+  await shots(page, 'account-settings-profile', page.getByTestId('export-data'))
+
+  const download = page.waitForEvent('download')
+  const exported = nextResponse(page, 'GET', '/account/export')
+  await page.getByTestId('export-data').click()
+  expect((await exported).status(), 'the export').toBe(200)
+  const file = await download
+  expect(file.suggestedFilename()).toMatch(/^agentrq-export-\d{4}-\d{2}-\d{2}\.json\.gz$/)
+  const data = JSON.parse(gunzipSync(readFileSync(await file.path())).toString('utf-8'))
+  expect(data.version).toBe(1)
+  expect(data.profile.email).toBe(me.email)
+  expect(data.workspaces.map((w) => w.id)).toContain(workspace.id)
+  expect(data.tasks.find((t) => t.id === task.id)?.title).toBe('Export check')
+  traffic.expectClean()
 })

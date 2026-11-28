@@ -832,6 +832,29 @@ paths:
                   settings: { $ref: '#/components/schemas/AccountSettings' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
+  /account/export:
+    get:
+      tags: [Account]
+      summary: Download all of the account's data
+      description: >
+        Everything the account owns, as a gzipped JSON file to save, named
+        agentrq-export-YYYY-MM-DD.json.gz: its profile, settings, presets,
+        workspaces (archived ones too), memories, Pano docs, and every task
+        with its messages. Attachments and skill files are left out; their
+        public links are their only credential.
+      responses:
+        '200':
+          description: The export, as an attachment
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="agentrq-export-2026-11-28.json.gz"' }
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+                description: An AccountExport as JSON, gzipped.
+
   /account/presets:
     get:
       tags: [Account]
@@ -4869,6 +4892,87 @@ components:
             Present only when a single memory was requested by name; the list
             omits it.
 
+    AccountExport:
+      type: object
+      description: >
+        An account's data, as the file GET /account/export gzips. Ids are the API's; a workspaceId, parentId or
+        forkOfId of "" is none (for a preset, the account's own).
+      properties:
+        version: { type: integer, description: Changes when a field changes meaning or goes. }
+        exportedAt: { type: string, format: date-time }
+        profile:
+          type: object
+          properties:
+            id: { type: string }
+            email: { type: string }
+            name: { type: string }
+        settings: { $ref: '#/components/schemas/AccountSettings' }
+        presets:
+          type: array
+          items:
+            type: object
+            properties:
+              workspaceId: { type: string }
+              name: { type: string }
+              body: { type: string }
+              createdAt: { type: string, format: date-time }
+        workspaces:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              description: { type: string }
+              icon: { type: string }
+              workingDirectory: { type: string }
+              selfLearningLoopNote: { type: string }
+              forkOfId: { type: string }
+              createdAt: { type: string, format: date-time }
+              archivedAt: { type: string, format: date-time, nullable: true }
+        memories:
+          type: array
+          items:
+            type: object
+            properties:
+              workspaceId: { type: string }
+              name: { type: string }
+              content: { type: string }
+              updatedAt: { type: string, format: date-time }
+        panoDocs:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              markdown: { type: string }
+              createdAt: { type: string, format: date-time }
+              updatedAt: { type: string, format: date-time }
+        tasks:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              workspaceId: { type: string }
+              parentId: { type: string }
+              title: { type: string }
+              body: { type: string }
+              status: { type: string }
+              createdBy: { type: string }
+              assignee: { type: string }
+              cronSchedule: { type: string }
+              createdAt: { type: string, format: date-time }
+              updatedAt: { type: string, format: date-time }
+              messages:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    sender: { type: string }
+                    text: { type: string }
+                    createdAt: { type: string, format: date-time }
     AccountSettings:
       type: object
       description: >
