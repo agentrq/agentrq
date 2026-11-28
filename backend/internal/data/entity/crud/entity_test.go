@@ -62,6 +62,7 @@ func TestActionString(t *testing.T) {
 		{ActionMachineSessionKill, "machine_session_kill"},
 		{ActionMachineSessionResume, "machine_session_resume"},
 		{ActionMachineSessionRefuse, "machine_session_refuse"},
+		{ActionAccountSettingsUpdate, "account_settings_update"},
 		{ActionMachineEnrolCodeCreate, "machine_enrol_code_create"},
 		{ActionAgentConcurrencySelect, "agent_concurrency_select"},
 		{ActionAgentLaunchClaudeCode, "agent_launch_claude_code"},
@@ -182,5 +183,12 @@ func TestAgentWorkspaceContext(t *testing.T) {
 	}
 	if got := GetAgentWorkspace(WithAgentWorkspace(context.Background(), 42)); got != 42 {
 		t.Errorf("GetAgentWorkspace = %d, want 42", got)
+	}
+}
+
+func TestAccountSettingsError_IsItsMessage(t *testing.T) {
+	err := error(&AccountSettingsError{Message: `timeFormat "13h" is not one of "browser", "12h" or "24h"`})
+	if err.Error() != `timeFormat "13h" is not one of "browser", "12h" or "24h"` {
+		t.Errorf("Error() = %q, want the message", err.Error())
 	}
 }

@@ -8,7 +8,8 @@ import "time"
 
 type (
 	// Preset is a message kept for a workspace, put in the composer by
-	// typing #name.
+	// typing #name. In every request, workspace 0 is the account's own
+	// presets, offered in each of its workspaces.
 	Preset struct {
 		ID          int64
 		CreatedAt   time.Time

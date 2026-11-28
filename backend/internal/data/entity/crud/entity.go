@@ -1987,6 +1987,9 @@ const (
 	// server would not take it back. Emitted by the backend.
 	ActionMachineSessionResume Action = 154
 	ActionMachineSessionRefuse Action = 155
+	// An account's own settings saved from its settings page, such as its
+	// 12h or 24h clock. Emitted by the backend; no workspace.
+	ActionAccountSettingsUpdate Action = 156
 )
 
 // HookReceiveOutcomes are how a request to a hook URL ends: the sub-actions
@@ -2309,6 +2312,8 @@ func (a Action) String() string {
 		return "machine_session_resume"
 	case ActionMachineSessionRefuse:
 		return "machine_session_refuse"
+	case ActionAccountSettingsUpdate:
+		return "account_settings_update"
 	}
 	return "unknown"
 }

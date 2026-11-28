@@ -29,6 +29,7 @@
  */
 
 import { MIN_FORK_VERSION } from '../composables/useMachineFormat.js'
+import { DISPLAY_SETTINGS, TIME_FORMAT, TIME_FORMATS } from '../composables/useTimeFormat.js'
 
 /** JSON Schema fragments, named once so the catalogue reads as intent. */
 const str = (description) => ({ type: 'string', description })
@@ -36,6 +37,7 @@ const bool = (description) => ({ type: 'boolean', description })
 const int = (description) => ({ type: 'integer', description })
 
 const WORKSPACE_ID = str('The workspace ID (base62), as it appears in the URL.')
+const PRESET_WORKSPACE_ID = str('The workspace ID (base62), as it appears in the URL; leave it out for the account\'s own presets.')
 const TASK_ID = str('The task ID (base62), as it appears in the URL.')
 const MACHINE_ID = str('The machine ID (base62), as it appears in the URL.')
 // What the machines pages show in red next to an old version.
@@ -73,6 +75,8 @@ function tool({ name, description, properties = {}, required = [], readOnly = fa
 const seg = (id) => encodeURIComponent(id ?? '')
 const workspacePage = ({ workspaceId }) => `/workspaces/${seg(workspaceId)}`
 const settingsPage = (tab) => ({ workspaceId }) => `/workspaces/${seg(workspaceId)}/settings${tab ? `?tab=${tab}` : ''}`
+// A workspace's presets tab, or the account settings' one for its own.
+const presetsPage = (args) => (args.workspaceId ? settingsPage('presets')(args) : '/settings?tab=presets')
 const taskPage = ({ workspaceId, taskId }) => `/workspaces/${seg(workspaceId)}/tasks/${seg(taskId)}`
 const machinePage = ({ machineId }) => `/machines/${seg(machineId)}`
 const eventPage = ({ eventId }) => `/events/${seg(eventId)}`
@@ -252,17 +256,17 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'Go to an in-app path (?query ok); IDs: getCurrentPage/list tools.\n' +
         '- "/" workspaces, "/workspaces/new".\n' +
         '- "/kanban", "/tasks/<filter>" (active|notstarted|pending|ongoing|completed|scheduled) of all ' +
-        'workspaces; add "/<workspaceId>/<taskId>" to open one, then "/instances".\n' +
+        'workspaces; + "/<w>/<t>" opens one, + "/instances".\n' +
         '- "/workspaces/<id>" ("?filter=" as above); under it "/{board[/chat/<t>],analytics,settings}", ' +
-        '"/settings/skills/<name>", "/tasks/{new,<taskId>}" + "/instances"|"/edit". Its ' +
+        '"/settings/skills/<n>", "/tasks/{new,<t>}" + "/instances"|"/edit". Its ' +
         '"?tab=" general|setup|automations|notifications|memories|presets|skills|sharing|slack|input|storage|danger.\n' +
-        '- "/events", "/events/hooks", "/workflows", "/pano", each plus "/<id>"; "/{pano,events/hooks}/new", ' +
+        '- "/events", "/events/hooks", "/workflows", "/pano", each + "/<id>"; "/{pano,events/hooks}/new", ' +
         '"/{pano[/<id>],kanban}/chat/<w>/<t>".\n' +
         '- "/machines[/<id>]", "/sessions/<id>" (terminal).\n' +
-        '- "/extensions[/<name>/<pageId>]" (desktop).\n' +
-        '- "/team/new", "/invitations"; a team: "/teams/<id>" + "/{tasks/*,kanban[/chat/<w>/<t>],skills*,workspaces/<w>/tasks/<t>,analytics,settings,pano[/<id>]}"; ' +
+        '- "/extensions[/<n>/<page>]" (desktop).\n' +
+        '- "/team/new", "/invitations", "/settings" (account; ?tab=general|presets); team: "/teams/<id>" + "/{tasks/*,kanban[/chat/<w>/<t>],skills*,workspaces/<w>/tasks/<t>,analytics,settings,pano[/<id>]}"; ' +
         'settings "?tab=members|invitations|activity|workspaces|danger".\n' +
-        'Others refused.',
+        'Else refused.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
       required: ['path'],
       run: async ({ path }) => {
@@ -500,51 +504,66 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       readOnly: true,
       run: ({ workspaceId, name }) => api.getWorkspaceMemory(workspaceId, name),
     }),
+    // A workspace's presets, and with no workspaceId the account's own, which
+    // every workspace offers too: the API has a function for each.
     tool({
       name: 'listWorkspacePresets',
       description:
-        'A workspace\'s presets: messages a person puts in the composer by typing #name, each with its name and body.',
-      properties: { workspaceId: WORKSPACE_ID },
-      required: ['workspaceId'],
+        'Presets: messages a person puts in the composer by typing #name, each with its name and body. A workspace\'s, ' +
+        'or with no workspaceId the account\'s own, offered in every workspace; a workspace\'s preset wins over an account one of the same name.',
+      properties: { workspaceId: PRESET_WORKSPACE_ID },
       readOnly: true,
-      run: ({ workspaceId }) => api.listWorkspacePresets(workspaceId),
+      run: ({ workspaceId }) => (workspaceId ? api.listWorkspacePresets(workspaceId) : api.listAccountPresets()),
     }),
     tool({
       name: 'createWorkspacePreset',
       description:
-        'Save a preset in a workspace. The name is lowercase letters and digits joined by single hyphens, like ' +
-        'pull-n-push, unique in the workspace; the body is what #name puts in the composer.',
+        'Save a preset in a workspace, or with no workspaceId in the account. The name is lowercase letters and digits ' +
+        'joined by single hyphens, like pull-n-push, unique where it is kept; the body is what #name puts in the composer.',
       properties: {
-        workspaceId: WORKSPACE_ID,
+        workspaceId: PRESET_WORKSPACE_ID,
         name: str('The preset\'s name, typed after #.'),
         body: str('The message the preset puts in the composer.'),
       },
-      required: ['workspaceId', 'name', 'body'],
-      screen: before(settingsPage('presets')),
-      run: ({ workspaceId, name, body }) => api.createWorkspacePreset(workspaceId, name, body),
+      required: ['name', 'body'],
+      screen: before(presetsPage),
+      run: ({ workspaceId, name, body }) =>
+        (workspaceId ? api.createWorkspacePreset(workspaceId, name, body) : api.createAccountPreset(name, body)),
     }),
     tool({
       name: 'updateWorkspacePreset',
       description:
-        'Edit a workspace\'s preset: replace its body, and rename it when newName differs. The new name follows the ' +
-        'createWorkspacePreset rules and must not be taken.',
+        'Edit a preset, a workspace\'s or with no workspaceId the account\'s: replace its body, and rename it when newName ' +
+        'differs. The new name follows the createWorkspacePreset rules and must not be taken.',
       properties: {
-        workspaceId: WORKSPACE_ID,
+        workspaceId: PRESET_WORKSPACE_ID,
         name: str('The preset\'s name, as listWorkspacePresets reports it.'),
         newName: str('The name it should have; its current name to keep it.'),
         body: str('The message the preset puts in the composer.'),
       },
-      required: ['workspaceId', 'name', 'newName', 'body'],
-      screen: before(settingsPage('presets')),
-      run: ({ workspaceId, name, newName, body }) => api.updateWorkspacePreset(workspaceId, name, newName, body),
+      required: ['name', 'newName', 'body'],
+      screen: before(presetsPage),
+      run: ({ workspaceId, name, newName, body }) =>
+        (workspaceId ? api.updateWorkspacePreset(workspaceId, name, newName, body) : api.updateAccountPreset(name, newName, body)),
     }),
     tool({
       name: 'deleteWorkspacePreset',
-      description: 'Remove a workspace\'s preset by name.',
-      properties: { workspaceId: WORKSPACE_ID, name: str('The preset\'s name, as listWorkspacePresets reports it.') },
-      required: ['workspaceId', 'name'],
-      screen: before(settingsPage('presets')),
-      run: ({ workspaceId, name }) => api.deleteWorkspacePreset(workspaceId, name),
+      description: 'Remove a preset by name, a workspace\'s or with no workspaceId the account\'s.',
+      properties: { workspaceId: PRESET_WORKSPACE_ID, name: str('The preset\'s name, as listWorkspacePresets reports it.') },
+      required: ['name'],
+      screen: before(presetsPage),
+      run: ({ workspaceId, name }) =>
+        (workspaceId ? api.deleteWorkspacePreset(workspaceId, name) : api.deleteAccountPreset(name)),
+    }),
+    tool({
+      name: 'updateAccountSettings',
+      description:
+        'Save the account\'s settings, which hold in every workspace, and return them: timeFormat is the clock every time ' +
+        'in the app is shown with, browser (the browser\'s language decides), 12h or 24h.',
+      properties: { timeFormat: { type: 'string', enum: TIME_FORMATS, description: 'The clock times are shown with.' } },
+      required: ['timeFormat'],
+      screen: before(() => '/settings'),
+      run: ({ timeFormat }) => api.updateAccountSettings({ [DISPLAY_SETTINGS]: { [TIME_FORMAT]: timeFormat } }),
     }),
     // Skills belong to the account; a workspace turns each on or off, and its
     // agents see one only while that and the account-wide switch are both on.

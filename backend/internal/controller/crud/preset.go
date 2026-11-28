@@ -15,6 +15,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
+	"github.com/mustafaturan/monoflake"
 )
 
 const (
@@ -25,7 +26,8 @@ const (
 )
 
 // PresetController keeps a workspace's presets: messages the composer puts in
-// place of #name. A fork reads and writes its parent's.
+// place of #name. A fork reads and writes its parent's. Workspace 0 is the
+// account's own presets, offered in every workspace.
 type PresetController interface {
 	ListPresets(ctx context.Context, req entity.ListPresetsRequest) (*entity.ListPresetsResponse, error)
 	CreatePreset(ctx context.Context, req entity.CreatePresetRequest) (*entity.CreatePresetResponse, error)
@@ -34,7 +36,7 @@ type PresetController interface {
 }
 
 func (c *controller) ListPresets(ctx context.Context, req entity.ListPresetsRequest) (*entity.ListPresetsResponse, error) {
-	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.presetOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +58,7 @@ func (c *controller) CreatePreset(ctx context.Context, req entity.CreatePresetRe
 	if err != nil {
 		return nil, err
 	}
-	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.presetOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +67,11 @@ func (c *controller) CreatePreset(ctx context.Context, req entity.CreatePresetRe
 		return nil, err
 	}
 	if len(existing) >= MaxPresetsPerWorkspace {
-		return nil, &entity.PresetError{Message: fmt.Sprintf("a workspace keeps up to %d presets; remove one first", MaxPresetsPerWorkspace)}
+		keeper := "a workspace"
+		if workspaceID == 0 {
+			keeper = "an account"
+		}
+		return nil, &entity.PresetError{Message: fmt.Sprintf("%s keeps up to %d presets; remove one first", keeper, MaxPresetsPerWorkspace)}
 	}
 	saved, err := c.repository.CreatePreset(ctx, model.Preset{
 		ID:          c.idgen.NextID(),
@@ -96,7 +102,7 @@ func (c *controller) UpdatePreset(ctx context.Context, req entity.UpdatePresetRe
 	if err != nil {
 		return nil, err
 	}
-	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.presetOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +115,21 @@ func (c *controller) UpdatePreset(ctx context.Context, req entity.UpdatePresetRe
 	}
 	c.emitPresetEvent(ctx, entity.ActionPresetUpdate, req.WorkspaceID, uid)
 	return &entity.UpdatePresetResponse{Preset: fromModelPreset(saved)}, nil
+}
+
+// presetOwner returns the account and the workspace whose presets a request
+// reads and writes. Workspace 0 is the account's own presets, which need no
+// workspace access; any other is checked as a memory request is, and a fork
+// resolves to its parent.
+func (c *controller) presetOwner(ctx context.Context, workspaceID int64, userID string) (int64, int64, error) {
+	if workspaceID != 0 {
+		return c.memoryOwner(ctx, workspaceID, userID)
+	}
+	uid := monoflake.IDFromBase62(userID).Int64()
+	if uid == 0 {
+		return 0, 0, fmt.Errorf("invalid request")
+	}
+	return uid, 0, nil
 }
 
 // validPreset returns name in its canonical form, or the PresetError that
@@ -128,7 +149,7 @@ func validPreset(name, body string) (string, error) {
 }
 
 func (c *controller) DeletePreset(ctx context.Context, req entity.DeletePresetRequest) error {
-	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.presetOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return err
 	}
@@ -140,7 +161,7 @@ func (c *controller) DeletePreset(ctx context.Context, req entity.DeletePresetRe
 }
 
 // emitPresetEvent counts a preset change against the workspace it was made
-// on, a fork included.
+// on, a fork included; an account preset's counts against workspace 0.
 func (c *controller) emitPresetEvent(ctx context.Context, action entity.Action, workspaceID, userID int64) {
 	c.emitEvent(ctx, entity.CRUDEvent{
 		Action:       action,

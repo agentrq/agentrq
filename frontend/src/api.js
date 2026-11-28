@@ -816,18 +816,18 @@ export async function getWorkspaceMemory(workspaceId, name) {
   return res.json();
 }
 
-// A workspace's presets: messages the composer puts in place of #name. A
-// fork has its parent's.
-export async function listWorkspacePresets(workspaceId) {
-  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/presets`);
+// Presets: messages the composer puts in place of #name. A workspace's and
+// the account's own share these, each under its own base URL.
+async function listPresets(base) {
+  const res = await apiFetch(base);
   if (!res.ok) throw new Error('Failed to fetch presets');
   return res.json();
 }
 
 // Refused with the server's sentence: a name taken, unusable, or a body too
 // long.
-export async function createWorkspacePreset(workspaceId, name, body) {
-  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/presets`, {
+async function createPreset(base, name, body) {
+  const res = await apiFetch(base, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, body }),
@@ -840,9 +840,9 @@ export async function createWorkspacePreset(workspaceId, name, body) {
 }
 
 // Gives the preset called name a new name and body. Refused with the
-// server's sentence, as createWorkspacePreset is.
-export async function updateWorkspacePreset(workspaceId, name, newName, body) {
-  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/presets/${encodeURIComponent(name)}`, {
+// server's sentence, as createPreset is.
+async function updatePreset(base, name, newName, body) {
+  const res = await apiFetch(`${base}/${encodeURIComponent(name)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: newName, body }),
@@ -854,12 +854,74 @@ export async function updateWorkspacePreset(workspaceId, name, newName, body) {
   return res.json();
 }
 
-export async function deleteWorkspacePreset(workspaceId, name) {
-  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/presets/${encodeURIComponent(name)}`, {
+async function deletePreset(base, name) {
+  const res = await apiFetch(`${base}/${encodeURIComponent(name)}`, {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error('Failed to remove preset');
   return true;
+}
+
+const workspacePresets = (workspaceId) => `${API_BASE_URL}/workspaces/${workspaceId}/presets`;
+const ACCOUNT_PRESETS = `${API_BASE_URL}/account/presets`;
+
+// A workspace's presets. A fork has its parent's.
+export function listWorkspacePresets(workspaceId) {
+  return listPresets(workspacePresets(workspaceId));
+}
+
+export function createWorkspacePreset(workspaceId, name, body) {
+  return createPreset(workspacePresets(workspaceId), name, body);
+}
+
+export function updateWorkspacePreset(workspaceId, name, newName, body) {
+  return updatePreset(workspacePresets(workspaceId), name, newName, body);
+}
+
+export function deleteWorkspacePreset(workspaceId, name) {
+  return deletePreset(workspacePresets(workspaceId), name);
+}
+
+// The account's own presets, offered in every workspace. Where a workspace
+// has one of the same name, the workspace's wins.
+export function listAccountPresets() {
+  return listPresets(ACCOUNT_PRESETS);
+}
+
+export function createAccountPreset(name, body) {
+  return createPreset(ACCOUNT_PRESETS, name, body);
+}
+
+export function updateAccountPreset(name, newName, body) {
+  return updatePreset(ACCOUNT_PRESETS, name, newName, body);
+}
+
+export function deleteAccountPreset(name) {
+  return deletePreset(ACCOUNT_PRESETS, name);
+}
+
+// The settings that hold in every workspace of the account, in groups:
+// { display: { timeFormat } }, which is 'browser', '12h' or '24h'.
+export async function fetchAccountSettings() {
+  const res = await apiFetch(`${API_BASE_URL}/account/settings`);
+  if (!res.ok) throw new Error('Failed to fetch account settings');
+  return res.json();
+}
+
+// Saves the fields it is sent, as { display: { timeFormat: '12h' } }; a group
+// or field left out keeps its value. Answers them all. Refused with the
+// server's sentence.
+export async function updateAccountSettings(settings) {
+  const res = await apiFetch(`${API_BASE_URL}/account/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error?.message || 'Failed to save account settings');
+  }
+  return res.json();
 }
 
 // Skills belong to the account. Read through a workspace, each also says

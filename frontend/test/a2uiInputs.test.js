@@ -16,6 +16,7 @@ import { resolve } from 'node:path'
 
 import A2uiSurface from '../src/components/a2ui/A2uiSurface.vue'
 import { BASIC_CATALOG_ID, INTERACTIVE_COMPONENTS } from '../src/a2ui/validate.js'
+import { timeFormat } from '../src/composables/useTimeFormat'
 
 const card = (components, dataModel, extra = {}) => ({
   type: 'a2ui',
@@ -51,6 +52,7 @@ const type = async (input, value, event = 'input') => {
   input.dispatchEvent(new Event(event))
   await nextTick()
 }
+const pick = (select, value) => type(select, value, 'change')
 const blur = async (input) => {
   input.dispatchEvent(new Event('blur'))
   await nextTick()
@@ -421,16 +423,30 @@ describe('DateTimeInput', () => {
     expect(input.value).toBe('2026-12-02')
   })
 
-  it('picks a time, or both, and labels itself when the card does not', async () => {
+  it('picks a time, or both, on the account\'s clock, and labels itself when the card does not', async () => {
+    timeFormat.value = '24h'
     const noLabel = picker({ enableTime: true }, { when: '2026-11-25T10:30:00Z' })
     delete noLabel.messages[1].updateComponents.components[1].label
     let { el } = mount(noLabel)
-    let input = q(el, 'a2ui-datetime').querySelector('input')
-    expect([input.type, input.value]).toEqual(['time', '10:30'])
-    expect(q(el, 'a2ui-datetime').querySelector('label').textContent).toContain('Date')
-    el = mount(picker({ enableDate: true, enableTime: true }, { when: '2026-11-25T10:30:00Z' })).el
-    input = q(el, 'a2ui-datetime').querySelector('input')
-    expect([input.type, input.value, input.min]).toEqual(['datetime-local', '2026-11-25T10:30', ''])
+    let field = q(el, 'a2ui-datetime')
+    expect(field.querySelector('input')).toBeNull()
+    expect([q(field, 'clock-hour').value, q(field, 'clock-minute').value]).toEqual(['10', '30'])
+    expect(field.querySelector('[role="group"]').getAttribute('aria-label')).toBe('Time')
+    expect(field.querySelector('label').textContent).toContain('Date')
+    await pick(q(field, 'clock-hour'), '14')
+    expect([q(field, 'clock-hour').value, q(field, 'clock-minute').value]).toEqual(['14', '30'])
+    field = q(mount(picker({ enableTime: true }, {})).el, 'a2ui-datetime')
+    expect([q(field, 'clock-hour').value, q(field, 'clock-minute').value]).toEqual(['', ''])
+
+    timeFormat.value = '12h'
+    el = mount(picker({ enableDate: true, enableTime: true, min: '2026-11-01T08:00' }, { when: '2026-11-25T10:30:00Z' })).el
+    field = q(el, 'a2ui-datetime')
+    expect(field.querySelector('input[type=datetime-local]')).toBeNull()
+    expect([q(field, 'datetime-date').value, q(field, 'datetime-date').min, q(field, 'datetime-date').max]).toEqual(['2026-11-25', '2026-11-01', ''])
+    expect([q(field, 'clock-hour').value, q(field, 'clock-period').value]).toEqual(['10', 'AM'])
+    await pick(q(field, 'clock-period'), 'PM')
+    expect([q(field, 'datetime-date').value, q(field, 'clock-hour').value, q(field, 'clock-period').value]).toEqual(['2026-11-25', '10', 'PM'])
+    timeFormat.value = 'browser'
   })
 
   it("shows its checks' messages once changed", async () => {

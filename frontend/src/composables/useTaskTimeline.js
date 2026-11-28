@@ -15,6 +15,7 @@
  */
 
 import { taskAccentClass } from './useTaskStatusStyle';
+import { withClock } from './useTimeFormat';
 
 const CLOSED = new Set(['completed', 'rejected']);
 
@@ -110,7 +111,7 @@ export function timelineWorkedLabel(transitions, segments) {
  * @returns {string}
  */
 export function formatTransitionTime(at, now) {
-  const time = at.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const time = at.toLocaleTimeString('en-US', withClock({ hour: '2-digit', minute: '2-digit' }));
   if (at.toDateString() === now.toDateString()) return time;
   return `${at.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`;
 }

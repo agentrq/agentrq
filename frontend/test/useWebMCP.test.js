@@ -300,6 +300,7 @@ describe('the navigate tool\'s map of the interface', () => {
     '/teams/tm1/skills',
     '/teams/tm1/skills/tdd',
     '/invitations',
+    '/settings?tab=presets',
   ];
   const router = createRouter({ history: createMemoryHistory(), routes });
 

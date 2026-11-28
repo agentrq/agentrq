@@ -1086,6 +1086,7 @@ import { usePlatformStore } from '../stores/platformStore';
 import { useSidePanel } from '../composables/useSidePanel';
 import { cacheTask, cacheTaskUpdate, sharedCache } from '../composables/useCachedTasks';
 import { OFFLINE_NOTICE, readCachedTask, useOffline } from '../composables/useCachedReads';
+import { withClock } from '../composables/useTimeFormat';
 
 const { notifyError, notifySuccess, notifyInfo } = useToasts();
 const tooltipStore = useTooltipStore();
@@ -2171,12 +2172,12 @@ function formatDateTime(dateStr) {
     return 'JUST NOW';
   }
 
-  return date.toLocaleString('en-US', {
+  return date.toLocaleString('en-US', withClock({
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
-  });
+  }));
 }
 
 // A status change, from whichever side made it, is a new transition: fetch

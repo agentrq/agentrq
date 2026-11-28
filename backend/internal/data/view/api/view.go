@@ -759,6 +759,31 @@ type (
 		Preset Preset `json:"preset"`
 	}
 
+	// AccountSettings hold in every workspace of an account, in groups.
+	AccountSettings struct {
+		Display DisplaySettings `json:"display"`
+	}
+
+	// DisplaySettings are how the app shows things.
+	DisplaySettings struct {
+		// TimeFormat is "browser", "12h" or "24h".
+		TimeFormat string `json:"timeFormat"`
+	}
+
+	// UpdateAccountSettingsRequest saves the fields it carries; a group or
+	// field left out keeps its value.
+	UpdateAccountSettingsRequest struct {
+		Display *UpdateDisplaySettings `json:"display"`
+	}
+
+	UpdateDisplaySettings struct {
+		TimeFormat *string `json:"timeFormat"`
+	}
+
+	AccountSettingsResponse struct {
+		Settings AccountSettings `json:"settings"`
+	}
+
 	GetMemoryResponse struct {
 		Memory Memory `json:"memory"`
 	}

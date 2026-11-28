@@ -6,6 +6,7 @@ import { computed, ref, watch } from 'vue'
 import { clampWidth } from './useSidePanel'
 import { useTaskOptions } from './useTaskOptions'
 import { useClearContext } from './useClearContext'
+import { withClock } from './useTimeFormat'
 
 /**
  * The Pano: the account's board of markdown docs, written by every workspace's
@@ -146,10 +147,10 @@ export function linkPanoFiles(html, files = []) {
   return holder.innerHTML
 }
 
-/** A date the way the Pano shows one: "Oct 13, 14:05". */
+/** A date the way the Pano shows one: "Oct 13, 14:05", on the account's clock. */
 export function panoDate(iso) {
   const at = new Date(iso)
-  const time = at.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const time = at.toLocaleTimeString('en-US', withClock({ hour: '2-digit', minute: '2-digit' }))
   return `${at.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`
 }
 

@@ -4,8 +4,9 @@
   SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-AgentRQ-Commercial
 -->
 
-<!-- A workspace's presets: messages the composer puts in place of #name.
-     Adding, editing and removing apply at once; there is no Save for the page. -->
+<!-- A workspace's presets, or with no workspace the account's own: messages
+     the composer puts in place of #name. Adding, editing and removing apply at
+     once; there is no Save for the page. -->
 <template>
   <div data-test="presets" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
     <div class="space-y-4">
@@ -15,6 +16,7 @@
       </div>
       <p class="text-[11px] text-gray-500 dark:text-zinc-400 leading-relaxed px-1 font-medium">
         Type <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">#</code> and a preset's name in a task or reply, and its message takes the name's place.
+        <span v-if="!workspaceId" data-test="presets-account-note">These are offered in every workspace; where a workspace has its own preset of the same name, that one is used.</span>
       </p>
 
       <p v-if="error" data-test="presets-error" class="text-[11px] font-bold text-red-600 dark:text-red-400 ml-1">{{ error }}</p>
@@ -89,7 +91,8 @@ import { useFormat } from '../composables/useFormat';
 const { toKebabCase } = useFormat();
 
 const props = defineProps({
-  workspaceId: { type: String, required: true },
+  // '' for the account's own presets.
+  workspaceId: { type: String, default: '' },
 });
 
 const { presets, loading, error, saving, load, add, edit, remove } = useWorkspacePresets(() => props.workspaceId);

@@ -260,6 +260,9 @@ describe('parity with the interface', () => {
     uploadAdminHook: 'needs the operator session above; the same non-grant',
     setAdminHookEnabled: 'needs the operator session above; the same non-grant',
     deleteAdminHook: 'needs the operator session above; the same non-grant',
+    // The catalogue is at the 128 tools a shared site may announce, and
+    // updateAccountSettings answers every setting, as this does.
+    fetchAccountSettings: 'what updateAccountSettings answers; no room for a tool of its own',
     fetchAdminConfigurations: 'needs the operator session above; the same non-grant',
     updateAdminConfiguration: 'needs the operator session above; the same non-grant',
     uploadAdminLoginIcon: 'needs the operator session above; the same non-grant',
@@ -374,6 +377,11 @@ describe('each tool calls the interface the way the UI does', () => {
       ['ws1', 'pull-n-push', 'ship', 'ship it'],
     ],
     ['deleteWorkspacePreset', { workspaceId: 'ws1', name: 'pull-n-push' }, 'deleteWorkspacePreset', ['ws1', 'pull-n-push']],
+    ['listWorkspacePresets', {}, 'listAccountPresets', []],
+    ['createWorkspacePreset', { name: 'standup', body: 'post the standup' }, 'createAccountPreset', ['standup', 'post the standup']],
+    ['updateWorkspacePreset', { name: 'standup', newName: 'daily', body: 'post it' }, 'updateAccountPreset', ['standup', 'daily', 'post it']],
+    ['deleteWorkspacePreset', { name: 'standup' }, 'deleteAccountPreset', ['standup']],
+    ['updateAccountSettings', { timeFormat: '12h' }, 'updateAccountSettings', [{ display: { timeFormat: '12h' } }]],
     [
       'getWorkspaceMemory',
       { workspaceId: 'ws1', name: 'MEMORY.md' },
@@ -887,5 +895,13 @@ describe('the page every write tool shows', () => {
     expect(by('setWorkspaceSkillEnabled')).toBe('/workspaces/w1/settings?tab=skills');
     expect(by('setWorkspaceSlackChannel')).toBe('/workspaces/w1/settings?tab=slack');
     expect(by('updateWorkspace')).toBe('/workspaces/w1/settings');
+  });
+
+  it('opens a workspace\'s presets, or the account\'s with no workspace', () => {
+    const page = (name, input) => writes.find((t) => t.name === name).screen.before(input);
+
+    expect(page('createWorkspacePreset', { workspaceId: 'w1' })).toBe('/workspaces/w1/settings?tab=presets');
+    expect(page('deleteWorkspacePreset', {})).toBe('/settings?tab=presets');
+    expect(page('updateAccountSettings', {})).toBe('/settings');
   });
 });

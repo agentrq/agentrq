@@ -122,6 +122,8 @@ export const routes = [
   // A team's settings (?tab=).
   { path: '/teams/:teamId/settings', component: () => import('./views/TeamSettingsView.vue') },
   { path: '/invitations', component: () => import('./views/InvitationsView.vue') },
+  // The account's own settings (?tab=), which hold in every workspace.
+  { path: '/settings', component: () => import('./views/AccountSettingsView.vue') },
   // An invitation link. Public, because it may be opened signed out: the page
   // itself offers the sign-in, and comes back here after it.
   { path: '/invite', component: () => import('./views/InvitationAcceptView.vue'), meta: { public: true } },

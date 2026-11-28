@@ -4,17 +4,23 @@
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { useCron } from '../src/composables/useCron.js'
+import { timeFormat } from '../src/composables/useTimeFormat.js'
 
 const { formatCron } = useCron()
 
 // Labels show the next run in the reader's zone, so the clock is pinned to the
 // day `local` converts on, or a DST change between the two moves the hour.
 const TODAY = Date.UTC(2026, 0, 15)
+// On a 24-hour clock, the account's choice; a 12-hour one is tested below.
 beforeAll(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(TODAY)
+  timeFormat.value = '24h'
 })
-afterAll(() => vi.useRealTimers())
+afterAll(() => {
+  vi.useRealTimers()
+  timeFormat.value = 'browser'
+})
 
 // The reader's own clock time of a UTC hour on TODAY, as the labels show it.
 const local = (utcHour, utcMin = 0) => {
@@ -48,5 +54,15 @@ describe('formatCron labels every schedule the task form can create', () => {
     expect(formatCron('*/5 * * * *')).toBe('*/5 * * * *')
     expect(formatCron('30 * * * *')).toBe('30 * * * *')
     expect(formatCron('0 9-17 * * *')).toBe('0 9-17 * * *')
+  })
+})
+
+describe('formatCron on a 12-hour clock', () => {
+  it('shows the time with AM or PM', () => {
+    timeFormat.value = '12h'
+    const d = new Date(TODAY + 9.5 * 3600000)
+    const want = `${String(d.getHours() % 12 || 12).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() < 12 ? 'AM' : 'PM'}`
+    expect(formatCron('30 9 * * *')).toBe(`Daily at ${want}`)
+    timeFormat.value = '24h'
   })
 })

@@ -182,6 +182,7 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue';
 import { renderMarkdown } from '../utils/markdown';
+import { withClock } from '../composables/useTimeFormat';
 import {
   TRAJECTORY_LANES,
   buildTrajectory,
@@ -427,13 +428,13 @@ function formatDateTime(dateStr) {
     return 'JUST NOW';
   }
 
-  return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleString('en-US', withClock({ month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
 }
 
 function formatAbsolute(dateStr) {
   if (!dateStr) return '';
-  return new Date(dateStr).toLocaleString('en-US', {
+  return new Date(dateStr).toLocaleString('en-US', withClock({
     month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
-  });
+  }));
 }
 </script>

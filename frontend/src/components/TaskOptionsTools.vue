@@ -20,6 +20,8 @@ import { useSpeechToText } from '../composables/useSpeechToText'
 import { clearContextTooltip } from '../composables/useClearContext'
 import AgentModelPicker from './AgentModelPicker.vue'
 import AgentEffortPicker from './AgentEffortPicker.vue'
+import ClockInput from './ClockInput.vue'
+import DateTimeInput from './DateTimeInput.vue'
 
 const props = defineProps({
   /** The `useTaskOptions` this row edits. */
@@ -163,8 +165,8 @@ function handleFileUpload(event) {
                        <div class="min-h-[100px]">
                          <div v-if="scheduleType === 'onetime'" class="animate-in fade-in slide-in-from-top-2 duration-200">
                            <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest mb-2 block">Launch Date/Time</label>
-                           <input type="datetime-local" data-test="task-onetime-date" v-model="oneTimeDate"
-                                  class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-3 py-2 text-xs font-semibold text-gray-900 dark:text-zinc-50 outline-none w-full" />
+                           <DateTimeInput data-test="task-onetime-date" v-model="oneTimeDate"
+                                          class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-3 py-2 text-xs font-semibold text-gray-900 dark:text-zinc-50 w-full" />
                          </div>
 
                          <div v-if="scheduleType === 'repeated'" class="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
@@ -185,10 +187,10 @@ function handleFileUpload(event) {
                                </select>
                              </div>
 
-                             <div v-if="!['15min', '30min', 'hourly', '2hour'].includes(repeatPreset)" class="flex flex-col gap-1.5 w-[90px]">
+                             <div v-if="!['15min', '30min', 'hourly', '2hour'].includes(repeatPreset)" class="flex flex-col gap-1.5 w-[110px]">
                                <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Time</label>
-                               <input type="time" v-model="repeatTime"
-                                      class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-2 py-1.5 text-[10px] font-semibold text-gray-900 dark:text-zinc-50 outline-none w-full" />
+                               <ClockInput data-test="task-repeat-time" v-model="repeatTime"
+                                           class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-2 py-1.5 text-[10px] font-semibold text-gray-900 dark:text-zinc-50 w-full" />
                              </div>
                            </div>
 

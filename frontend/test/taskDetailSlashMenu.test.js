@@ -61,6 +61,7 @@ vi.mock('../src/api', () => ({
     { name: 'review', description: 'skill review', workspaceEnabled: true },
     { name: 'hidden', workspaceEnabled: false },
   ] }),
+  listAccountPresets: () => Promise.resolve({ presets: [] }),
   listWorkspacePresets: () => Promise.resolve({ presets: [
     { name: 'pull-n-push', body: 'pull latest main, tag and push' },
     { name: 'deploy', body: 'deploy to staging' },
@@ -180,8 +181,8 @@ describe('the reply box\'s # menu', () => {
     input.dispatchEvent(new Event('input'))
     await settle()
     expect(rows(view.el)).toEqual([
-      '#pull-n-pushpull latest main, tag and pushpreset',
-      '#deploydeploy to stagingpreset',
+      '#pull-n-pushpull latest main, tag and pushWorkspace preset',
+      '#deploydeploy to stagingWorkspace preset',
     ])
     input.value = 'then #pu'
     input.dispatchEvent(new Event('input'))

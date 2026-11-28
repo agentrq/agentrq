@@ -493,6 +493,8 @@ func crudActionID(a entity.Action) (uint8, bool) {
 		action = model.ActionIDMachineSessionResume
 	case entity.ActionMachineSessionRefuse:
 		action = model.ActionIDMachineSessionRefuse
+	case entity.ActionAccountSettingsUpdate:
+		action = model.ActionIDAccountSettingsUpdate
 	default:
 		return 0, false
 	}

@@ -22,6 +22,7 @@ import TaskLatencyPanel from '../src/components/TaskLatencyPanel.vue';
 import AccountStats from '../src/components/AccountStats.vue';
 import { useThemeStore } from '../src/stores/themeStore';
 import * as api from '../src/api';
+import { timeFormat } from '../src/composables/useTimeFormat';
 
 const DAY = 86400;
 const T0 = Date.UTC(2026, 8, 20) / 1000; // 2026-09-20 00:00 UTC
@@ -64,9 +65,14 @@ describe('formatting', () => {
     expect(niceScale(1)).toEqual({ max: 1, step: 0.2 });
   });
 
-  it('labels hours locally and days and months in UTC', () => {
+  it('labels hours locally, on the account\'s clock, and days and months in UTC', () => {
     const at = T0 + 14 * 3600;
-    expect(bucketLabel(at, 'hour')).toBe(`${String(new Date(at * 1000).getHours()).padStart(2, '0')}:00`);
+    const hour = new Date(at * 1000).getHours();
+    timeFormat.value = '24h';
+    expect(bucketLabel(at, 'hour')).toBe(`${String(hour).padStart(2, '0')}:00`);
+    timeFormat.value = '12h';
+    expect(bucketLabel(at, 'hour')).toBe(`${String(hour % 12 || 12).padStart(2, '0')}:00 ${hour < 12 ? 'AM' : 'PM'}`);
+    timeFormat.value = 'browser';
     expect(bucketLabel(T0, 'day')).toBe('Sep 20');
     expect(bucketLabel(T0, 'month')).toBe('Sep 2026');
   });

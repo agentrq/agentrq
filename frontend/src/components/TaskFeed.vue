@@ -160,6 +160,7 @@ import { useToasts } from '../composables/useToasts';
 import { canSpinUp, useSpinUp } from '../composables/useSpinUp';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import SpinUpPopover from './SpinUpPopover.vue';
+import { withClock } from '../composables/useTimeFormat';
 
 const { formatCron, getNextRunLabel, getNextRunDate } = useCron();
 
@@ -470,7 +471,7 @@ function formatTime(dateStr) {
   if (!dateStr) return 'Just now';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return 'Just now';
-  return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  return d.toLocaleTimeString([], withClock({ hour: '2-digit', minute: '2-digit' }));
 }
 
 function getTaskOrder(t) {

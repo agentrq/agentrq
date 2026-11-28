@@ -41,6 +41,20 @@ describe('SlashCommandMenu', () => {
     expect(rows[1].textContent).toContain('skill')
   })
 
+  it('marks a preset with where it is kept, as an icon and no text', () => {
+    const root = mount([
+      { name: 'deploy', description: 'deploy to staging', scope: 'workspace' },
+      { name: 'standup', description: 'post the standup', scope: 'account' },
+      { name: 'review', description: 'Needs a PR', input: { hint: '<pr>' } },
+    ])
+    const rows = [...root.querySelectorAll('[role=option]')]
+    const icon = (r) => r.querySelector('[data-test^=preset-]')
+    expect(rows.map((r) => icon(r)?.dataset.test ?? null)).toEqual(['preset-workspace-icon', 'preset-account-icon', null])
+    expect(rows.slice(0, 2).map((r) => icon(r).getAttribute('aria-label'))).toEqual(['Workspace preset', 'Account preset'])
+    // The icon's title is its tooltip; there is no hint text beside it.
+    expect(rows.map((r) => r.querySelector('.ml-auto').textContent.replace(icon(r)?.textContent ?? '', '').trim())).toEqual(['', '', '<pr>'])
+  })
+
   it('highlights on hover, accepts on press, and scrolls the highlight into view', async () => {
     const root = mount([{ name: 'a', skill: true }, { name: 'b', skill: true, team: true }])
     const rows = root.querySelectorAll('[role=option]')

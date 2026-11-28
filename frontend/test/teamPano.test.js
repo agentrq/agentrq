@@ -254,7 +254,7 @@ describe('a doc shared with the team', () => {
     await mount(TeamPanoDocView, { path: '/teams/tm1/pano/d1' });
     expect(api.getTeamPanoDoc).toHaveBeenCalledWith('tm1', 'd1');
     expect(text($('[data-test=team-pano-title]'))).toBe('Plan');
-    expect(text($('[data-test=team-pano-meta]'))).toMatch(/^AAlice · updated \w{3} \d+, \d\d:\d\d$/);
+    expect(text($('[data-test=team-pano-meta]'))).toMatch(/^AAlice · updated \w{3} \d+, \d\d:\d\d( [AP]M)?$/);
     const body = $('[data-test=team-pano-body]');
     expect(body.querySelector('h1').textContent).toBe('Goal');
     expect(body.querySelector('img').getAttribute('src')).toBe('/api/v1/teams/tm1/pano/d1/files/f1');

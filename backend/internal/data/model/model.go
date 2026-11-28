@@ -211,8 +211,20 @@ type (
 		AllowAllCommands bool   `gorm:"default:false"`
 	}
 
+	// AccountSetting is one group of an account's settings, by name, such as
+	// display_settings, its fields a JSON object: {"timeFormat":"12h"}. A
+	// group with no row, or a field it lacks, has its default, so a new group
+	// or field needs no migration.
+	AccountSetting struct {
+		UserID    int64  `gorm:"primaryKey;autoIncrement:false"`
+		Name      string `gorm:"primaryKey;type:varchar(64)"`
+		Value     string `gorm:"type:text"`
+		UpdatedAt time.Time
+	}
+
 	// Preset is a message kept for a workspace, which the composer puts in
 	// place of #name. A fork uses its parent's, so a merge moves none.
+	// Workspace 0 is the account's own, offered in every workspace.
 	// One name per workspace: the unique index carries every column.
 	Preset struct {
 		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
@@ -941,6 +953,8 @@ const (
 	// A woken machine's agent taken back, or stopped; emitted by the backend.
 	ActionIDMachineSessionResume
 	ActionIDMachineSessionRefuse
+	// An account's own settings saved; emitted by the backend, workspace 0.
+	ActionIDAccountSettingsUpdate
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,
