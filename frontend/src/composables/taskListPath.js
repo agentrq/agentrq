@@ -24,3 +24,17 @@ function listPath(route) {
   if (route.path.includes('/board/chat/')) return { path: `/workspaces/${params.id}/board` };
   return { path: `/workspaces/${params.id}` };
 }
+
+/**
+ * The task's own page, for a task opened beside a board or a doc (a `chat`
+ * route); null when the task already has the page to itself.
+ *
+ * @param {{ path: string, params: Record<string, string> }} route
+ */
+export function taskPagePath(route) {
+  if (!/\/chat\//.test(route.path)) return null;
+  const { params } = route;
+  const path = `/workspaces/${params.workspaceId || params.id}/tasks/${params.taskId}`;
+  const team = teamIdOf(route);
+  return team ? withTeam(path, team) : { path };
+}

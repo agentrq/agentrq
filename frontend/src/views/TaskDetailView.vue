@@ -131,6 +131,17 @@
               </button>
             </div>
 
+            <!-- Beside a board or a doc: opens the task on its own page. -->
+            <button v-if="taskPage" type="button" data-test="task-expand" @click.stop="tooltipStore.hide(); router.push(taskPage)"
+                    aria-label="Open full task"
+                    @mouseenter="tooltipStore.show($event, 'Open full task', 'bottom')"
+                    @mouseleave="tooltipStore.hide()"
+                    class="w-7 h-7 rounded-lg border border-gray-200 dark:border-zinc-700/50 bg-gray-100 dark:bg-zinc-800 text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-all flex items-center justify-center">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+              </svg>
+            </button>
+
             <!-- Opens the desktop side panel beside the task. Gone while it is
                  open: the panel has its own close button, right there. -->
             <button v-if="platformStore.isDesktop && !sidePanel.state.open" type="button" data-side-panel-toggle @click.stop="sidePanel.open()"
@@ -1046,7 +1057,7 @@ import { recordUiAction } from '../composables/useUiTelemetry';
 import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate, upsertToolCall } from '../composables/useTaskEvents';
 import { taskDotClass, taskStatusTone } from '../composables/useTaskStatusStyle';
-import { taskListPath } from '../composables/taskListPath';
+import { taskListPath, taskPagePath } from '../composables/taskListPath';
 import { forkNotice, forkedTaskPath } from '../composables/useTaskFork';
 import { useTaskRename } from '../composables/useTaskRename';
 import { getTeamTask, teamFileUrl } from '../api';
@@ -1097,6 +1108,8 @@ const route = useRoute();
 const router = useRouter();
 const workspaceId = computed(() => route.params.id || route.params.workspaceId);
 const taskId = computed(() => route.params.taskId);
+// Beside a board or a doc, the task's own page; null on that page.
+const taskPage = computed(() => taskPagePath(route));
 
 // Prefer the store's copy: it is the one the shell keeps current from the event
 // stream. A workspace fetched once at load meant `agentConnected` was frozen at
