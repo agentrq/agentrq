@@ -402,6 +402,10 @@ func TestHelloDescribesTheMachine(t *testing.T) {
 	if !slices.Contains(hello.Capabilities, wire.CapabilityACPVersion) {
 		t.Errorf("capabilities = %v, want %q", hello.Capabilities, wire.CapabilityACPVersion)
 	}
+	// Nor one whose sessions are only this profile's.
+	if !slices.Contains(hello.Capabilities, wire.CapabilityProfileSessions) {
+		t.Errorf("capabilities = %v, want %q", hello.Capabilities, wire.CapabilityProfileSessions)
+	}
 }
 
 // Who the daemon claims to be travels on the upgrade request.

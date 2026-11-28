@@ -59,7 +59,7 @@ func TestInputReachesTheTerminalUntouched(t *testing.T) {
 	var want []byte
 	for _, in := range []string{"escape", "escape then key", "ctrl-c", "enter is CR", "arrow up", "invalid utf8", "nul", "every byte"} {
 		payload := inputs[in]
-		if err := s.HandleFrame(inputFrame(t, 1, payload)); err != nil {
+		if err := s.HandleFrame("work", inputFrame(t, 1, payload)); err != nil {
 			t.Fatalf("%s: HandleFrame: %v", in, err)
 		}
 		want = append(want, payload...)
@@ -90,7 +90,7 @@ func TestResizeReachesTheTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.HandleFrame(f); err != nil {
+	if err := s.HandleFrame("work", f); err != nil {
 		t.Fatalf("HandleFrame: %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestResizeRefusesANonWindow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := s.HandleFrame(f); err == nil {
+		if err := s.HandleFrame("work", f); err == nil {
 			t.Errorf("HandleFrame accepted %+v", size)
 		}
 	}
@@ -127,7 +127,7 @@ func TestTheDaemonRefusesFramesThatTravelTheOtherWay(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := s.HandleFrame(f); err == nil {
+		if err := s.HandleFrame("work", f); err == nil {
 			t.Errorf("the daemon accepted a %s frame", typ)
 		}
 	}
@@ -145,12 +145,12 @@ func TestInputToAFinishedSessionIsDistinguishedFromAnUnknownOne(t *testing.T) {
 		return state.Terminal()
 	}, "never finished")
 
-	err := s.HandleFrame(inputFrame(t, 1, []byte("too late")))
+	err := s.HandleFrame("work", inputFrame(t, 1, []byte("too late")))
 	if !errors.Is(err, ErrSessionNotRunning) {
 		t.Errorf("error = %v, want ErrSessionNotRunning", err)
 	}
 
-	err = s.HandleFrame(inputFrame(t, 999, []byte("x")))
+	err = s.HandleFrame("work", inputFrame(t, 999, []byte("x")))
 	if !errors.Is(err, ErrNoSuchSession) {
 		t.Errorf("error = %v, want ErrNoSuchSession", err)
 	}
@@ -160,7 +160,7 @@ func TestEmptyInputIsHarmless(t *testing.T) {
 	s, st := startedSession(t)
 	_, p := st.last()
 	f := wire.Frame{Type: wire.TypeInput, SessionID: 1}
-	if err := s.HandleFrame(f); err != nil {
+	if err := s.HandleFrame("work", f); err != nil {
 		t.Errorf("HandleFrame with no payload = %v", err)
 	}
 	if len(p.writes()) != 0 {
@@ -171,7 +171,7 @@ func TestEmptyInputIsHarmless(t *testing.T) {
 func TestMalformedResizeIsAnError(t *testing.T) {
 	s, _ := startedSession(t)
 	f := wire.Frame{Type: wire.TypeResize, SessionID: 1, Payload: []byte("{not json")}
-	if err := s.HandleFrame(f); err == nil {
+	if err := s.HandleFrame("work", f); err == nil {
 		t.Error("HandleFrame accepted a malformed resize")
 	}
 }

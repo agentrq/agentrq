@@ -22,7 +22,14 @@ var ErrSessionNotRunning = errors.New("supervisor: session is not running")
 // Only input and resize arrive this way. Output, replay and exit travel the
 // other direction, and a backend sending one of those would be a backend that
 // has misunderstood the protocol — so they are refused rather than ignored.
-func (s *Supervisor) HandleFrame(f wire.Frame) error {
+//
+// Only into the profile's own sessions: a server reaches the agents of the
+// profile it is connected for, and typing into another profile's would be
+// driving somebody else's agent.
+func (s *Supervisor) HandleFrame(profile string, f wire.Frame) error {
+	if !s.Owns(profile, f.SessionID) {
+		return fmt.Errorf("%w: %d", ErrNoSuchSession, f.SessionID)
+	}
 	switch f.Type {
 	case wire.TypeInput:
 		return s.writeInput(f.SessionID, f.Payload)

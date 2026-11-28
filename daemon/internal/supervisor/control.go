@@ -45,8 +45,12 @@ func (s *Supervisor) Handle(ctx context.Context, profile string, c wire.Control,
 		if err := json.Unmarshal(c.Body, &req); err != nil {
 			return fmt.Errorf("supervisor: parse killSession: %w", err)
 		}
-		if err := s.Kill(req.SessionID); err != nil && !errors.Is(err, ErrNoSuchSession) {
-			return err
+		// Only the profile's own. Another profile's session is somebody
+		// else's, perhaps on another server, and is answered as gone.
+		if s.Owns(profile, req.SessionID) {
+			if err := s.Kill(req.SessionID); err != nil && !errors.Is(err, ErrNoSuchSession) {
+				return err
+			}
 		}
 		// Reported even when the session was already gone: the backend asked
 		// for it to be dead, and it is.

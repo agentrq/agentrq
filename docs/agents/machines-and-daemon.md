@@ -66,6 +66,11 @@ pseudo-terminals, and streams them to the browser.
   `~/.agentrq/<id>`, because only the machine knows its home. The write check
   is what turns a read-only folder into "the folder is not set for this
   workspace" instead of a `.mcp.json` error.
+- **A profile sees and drives only its own sessions.** Profiles share one
+  supervisor but may belong to different accounts or servers, so `Running`,
+  `Expect`, input, resize and kill all take the profile; by id alone a server
+  could type into another account's agent. `profileSessions` tells the backend
+  a hello's list is scoped.
 - Machine and session events ride the **user's global** stream
   (`bus.Publish(0, userID, …)`), not a workspace's: a machine does not belong
   to a workspace, and the person watching the machines page may have none open.
