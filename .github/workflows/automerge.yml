@@ -1,7 +1,8 @@
 name: Auto-merge
 
 # Merges a pull request once every other check on its head commit has passed,
-# but only a pull request that mustafaturan armed with the `automerge` label.
+# and deletes its branch, but only a pull request that mustafaturan armed
+# with the `automerge` label.
 # The label is the switch: nothing is merged without it, and a label added by
 # anybody else is taken off again. So is the label on an armed pull request
 # when somebody else pushes to it, so nobody can slip a commit in after it was
@@ -126,6 +127,27 @@ jobs:
           # Pinned to the commit CI passed on: a push since then fails the merge.
           gh pr merge "$PR" --squash --match-head-commit "$SHA"
           echo "merged=true" >> "$GITHUB_OUTPUT"
+
+      # Only a branch of this repository, and never a long-lived one. A pull
+      # request stacked on the branch is moved onto the base first: deleting
+      # the branch under it would close it.
+      - name: Delete the head branch
+        if: >-
+          steps.merge.outputs.merged == 'true' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          !contains(fromJSON('["main", "dev", "cla-signatures"]'), github.event.pull_request.head.ref)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          for n in $(gh pr list --base "$HEAD_REF" --state open --json number --jq '.[].number'); do
+            echo "moving #$n onto $BASE"
+            gh api -X PATCH "repos/$GH_REPO/pulls/$n" -f base="$BASE" > /dev/null
+          done
+          gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$HEAD_REF"
 
       # Only the workflow files, and from the base branch, never the pull
       # request's: they are what the merge pushed to.
