@@ -178,12 +178,10 @@ describe('useChatMinimap', () => {
     expect(spy).toHaveBeenCalledWith('scroll', expect.any(Function))
   })
 
-  it('shows only from three messages, and only while the chat scrolls', async () => {
+  it('shows whenever the chat scrolls, with any number of messages, and never while it fits', async () => {
     const el = pane([0, 500, 1000])
     const { api, entries, flush } = setup(el)
-    flush()
-    expect(api.shown.value).toBe(false) // two messages
-    entries.value = [...entries.value, { id: 'm2' }]
+    entries.value = []
     await nextTick()
     flush()
     expect(api.shown.value).toBe(true)
