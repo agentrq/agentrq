@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
-  TIME_FORMATS, browserHourCycle, loadTimeFormat, saveTimeFormat, timeFormat, withClock,
+  TIME_FORMATS, browserHourCycle, hourCycleOf, hourLabel, loadTimeFormat, saveTimeFormat, timeFormat, withClock,
 } from '../src/composables/useTimeFormat';
 
 const AT = new Date(2026, 9, 13, 14, 5);
@@ -29,6 +29,23 @@ describe('withClock', () => {
   it('reads the account\'s clock when none is named', () => {
     timeFormat.value = '24h';
     expect(withClock({ minute: '2-digit' })).toEqual({ minute: '2-digit', hourCycle: 'h23' });
+  });
+});
+
+describe('hourCycleOf and hourLabel', () => {
+  it('names the cycle of each clock', () => {
+    expect(hourCycleOf('12h')).toBe('h12');
+    expect(hourCycleOf('24h')).toBe('h23');
+    expect(hourCycleOf('browser')).toBe(browserHourCycle());
+    timeFormat.value = '24h';
+    expect(hourCycleOf()).toBe('h23');
+  });
+
+  it('labels an hour on each clock', () => {
+    expect([0, 6, 12, 18].map((h) => hourLabel(h, '24h'))).toEqual(['00', '06', '12', '18']);
+    expect([0, 6, 12, 18].map((h) => hourLabel(h, '12h'))).toEqual(['12a', '6a', '12p', '6p']);
+    timeFormat.value = '24h';
+    expect(hourLabel(9)).toBe('09');
   });
 });
 

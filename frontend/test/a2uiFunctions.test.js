@@ -4,7 +4,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { FUNCTIONS, callFunction, interpolate, patternProblem, toBoolean } from '../src/a2ui/functions.js'
+import { FUNCTIONS, callFunction, interpolate, onClock, patternProblem, toBoolean } from '../src/a2ui/functions.js'
+import { TIME_FORMAT_12H, TIME_FORMAT_24H, TIME_FORMAT_BROWSER, timeFormat } from '../src/composables/useTimeFormat.js'
 
 const data = {
   user: { name: 'Ada', count: 2847, price: 1234.5 },
@@ -17,7 +18,10 @@ const ctx = (extra = {}) => ({ surface: { dataModel: data }, scope: [], locale: 
 const call = (name, args, extra) => callFunction(name, args, ctx(extra))
 
 describe('a2ui functions', () => {
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    vi.restoreAllMocks()
+    timeFormat.value = TIME_FORMAT_BROWSER
+  })
 
   it('has the 14 basic functions and @index', () => {
     expect(Object.keys(FUNCTIONS).sort()).toEqual([
@@ -113,15 +117,17 @@ describe('a2ui functions', () => {
   })
 
   it('formatDate takes TR35 patterns', () => {
+    timeFormat.value = TIME_FORMAT_12H
     const d = new Date(2026, 0, 16, 14, 30, 5)
     const f = (format, value = d) => call('formatDate', { value, format })
     expect(f('MMM dd, yyyy')).toBe('Jan 16, 2026')
-    expect(f('HH:mm:ss')).toBe('14:30:05')
     expect(f('h:mm a')).toBe('2:30 PM')
     expect(f('hh a', new Date(2026, 0, 16, 0, 5))).toBe('12 AM')
     expect(f('EEEE, d MMMM')).toBe('Friday, 16 January')
+    expect(f("'at' h 'o''clock' ''")).toBe("at 2 PM o'clock '")
+    timeFormat.value = TIME_FORMAT_24H
+    expect(f('HH:mm:ss')).toBe('14:30:05')
     expect(f('E yy M/d m s H')).toBe('Fri 26 1/16 30 5 14')
-    expect(f("'at' h 'o''clock' ''")).toBe("at 2 o'clock '")
     expect(f('yyyy-MM-dd', d.toISOString())).toBe('2026-01-16')
     expect(f('yyyy', d.getTime())).toBe('2026')
     expect(f('yyyy', 'not a date')).toBe('')
@@ -130,7 +136,34 @@ describe('a2ui functions', () => {
     expect(call('formatDate', { value: d, format: 3 })).toBe('')
   })
 
+  it('formatDate draws the hour on the account clock, whatever clock the pattern names', () => {
+    const d = new Date(2026, 0, 16, 14, 30, 5)
+    const f = (format) => call('formatDate', { value: d, format })
+    timeFormat.value = TIME_FORMAT_24H
+    expect(f('h:mm a')).toBe('14:30')
+    expect(f('hh:mm:ss a, MMM d')).toBe('14:30:05, Jan 16')
+    expect(f('a h:mm')).toBe('14:30')
+    expect(f("h'h' a")).toBe('14h')
+    expect(f('a')).toBe('')
+    timeFormat.value = TIME_FORMAT_12H
+    expect(f('HH:mm')).toBe('02:30 PM')
+    expect(f('HH:mm:ss, MMM d')).toBe('02:30:05 PM, Jan 16')
+    expect(f('H.mm')).toBe('2.30 PM')
+    expect(f('HH:mm a')).toBe('02:30 PM') // already names its period
+    expect(f('MMM d')).toBe('Jan 16') // no hour, no period
+  })
+
+  it('redraws a pattern on a clock', () => {
+    expect(onClock('h:mm a', 'h23')).toBe('H:mm')
+    expect(onClock('HH:mm', 'h12')).toBe('hh:mm a')
+    expect(onClock("'a' HH", 'h12')).toBe("'a' hh a")
+    expect(onClock('HH:', 'h12')).toBe('hh a:') // a separator with no minutes after it
+    timeFormat.value = TIME_FORMAT_24H
+    expect(onClock('h a')).toBe('H')
+  })
+
   it('formatDate falls back to AM/PM when the locale names no period', () => {
+    timeFormat.value = TIME_FORMAT_12H
     vi.spyOn(Intl.DateTimeFormat.prototype, 'formatToParts').mockReturnValue([])
     expect(call('formatDate', { value: new Date(2026, 0, 1, 9), format: 'a' })).toBe('AM')
     expect(call('formatDate', { value: new Date(2026, 0, 1, 21), format: 'a' })).toBe('PM')

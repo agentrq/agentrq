@@ -69,6 +69,7 @@
 
 <script setup>
 import { computed, ref } from 'vue';
+import { hourLabel } from '../composables/useTimeFormat';
 
 const props = defineProps({
   data: { type: Array, default: () => [] }, // [{ bucket, count }]
@@ -176,14 +177,8 @@ function levelClass(cell) {
 
 const rowLabels = computed(() => {
   if (props.granularity === 'hour') {
-    // 24 rows (hours), label every 6 hours
-    return Array.from({ length: 24 }, (_, h) => {
-      if (h === 0) return '12a';
-      if (h === 6) return '6a';
-      if (h === 12) return '12p';
-      if (h === 18) return '6p';
-      return '';
-    });
+    // 24 rows (hours), label every 6 hours, on the account's clock
+    return Array.from({ length: 24 }, (_, h) => (h % 6 === 0 ? hourLabel(h) : ''));
   }
   // 7 rows (Sun..Sat), label Mon/Wed/Fri like a GitHub-style contribution graph
   return DAY_NAMES.map((name, i) => ([1, 3, 5].includes(i) ? name : ''));
