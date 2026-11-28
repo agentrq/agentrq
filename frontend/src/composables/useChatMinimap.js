@@ -9,9 +9,6 @@ const PREVIEW_CHARS = 280;
 // The dots drawn either side of the one being read, so a long thread never
 // runs off the pane.
 export const MINIMAP_REACH = 6;
-// The fewest messages worth a minimap; it also waits for the chat to scroll,
-// as a chat that fits on the screen has nowhere to jump to.
-export const MINIMAP_MIN = 3;
 
 /**
  * The messages the person sent, as minimap entries. Messages not yet sent
@@ -87,7 +84,9 @@ export function activeMessageId(container) {
 export function useChatMinimap(containerRef, entriesRef, schedule = (fn) => requestAnimationFrame(fn)) {
   const activeId = ref(null);
   const overflows = ref(false);
-  const shown = computed(() => overflows.value && entriesRef.value.length >= MINIMAP_MIN);
+  // Shown whenever the chat scrolls, however few messages there are: its
+  // autoscroll pause is wanted as soon as a reply runs past the screen.
+  const shown = computed(() => overflows.value);
   let queued = false;
 
   const update = () => {

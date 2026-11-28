@@ -178,6 +178,15 @@ describe('TaskDetailView and pausing autoscroll', () => {
     expect(recordTelemetry).toHaveBeenCalledTimes(1)
   })
 
+  it('offers the pause as soon as the chat scrolls, before you have sent anything', async () => {
+    messages = [{ id: 'a1', sender: 'agent', text: 'a long answer', createdAt: at(1) }]
+    const el = await mount()
+    expect(toggle(el).getAttribute('aria-pressed')).toBe('false')
+    toggle(el).click()
+    await settle()
+    expect(toggle(el).getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('pauses on a jump to a message, until resumed', async () => {
     const el = await mount()
     const dot = el.querySelector('[data-minimap-dot="h1"]')
