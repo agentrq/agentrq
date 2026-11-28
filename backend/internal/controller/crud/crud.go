@@ -68,6 +68,7 @@ type (
 		MemoryController
 		PresetController
 		AccountSettingsController
+		AccountExportController
 		SkillController
 		GitHubController
 		GitLabController

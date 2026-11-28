@@ -924,6 +924,16 @@ export async function updateAccountSettings(settings) {
   return res.json();
 }
 
+// Everything the account owns, as the gzipped JSON file the server names:
+// { blob, filename }. Read through the session like every other call, so it
+// downloads in the desktop app too, where a plain link carries no cookie.
+export async function exportAccountData() {
+  const res = await apiFetch(`${API_BASE_URL}/account/export`);
+  if (!res.ok) throw await responseError(res, 'Failed to export your data');
+  const named = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '');
+  return { blob: await res.blob(), filename: named?.[1] || 'agentrq-export.json.gz' };
+}
+
 // Skills belong to the account. Read through a workspace, each also says
 // whether it is on there (`workspaceEnabled`).
 // A skill's name is one URL segment and a file's path several, each encoded on
