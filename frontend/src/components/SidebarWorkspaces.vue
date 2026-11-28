@@ -16,7 +16,7 @@ import ContextMenu from './ContextMenu.vue'
 import ForkIcon from './ForkIcon.vue'
 import ForkNameModal from './ForkNameModal.vue'
 import MergeForkModal from './MergeForkModal.vue'
-import { parentName, useForkActions, workspaceTree } from '../composables/useWorkspaceForks'
+import { forkShortName, parentName, useForkActions, workspaceTree } from '../composables/useWorkspaceForks'
 import { useWorkspaceContextMenu, workspaceMenuItems } from '../composables/useWorkspaceContextMenu'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useToasts } from '../composables/useToasts'
@@ -107,7 +107,7 @@ function onWorkspaceMenuSelect(key) {
                :class="dotOf(ws).dot" :title="dotOf(ws).label"
                :data-test="activityOf(ws).tone ? 'sidebar-activity' : undefined"></div>
           <ForkIcon v-if="ws.forkOfId" class="w-3 h-3 shrink-0 -ml-1 opacity-70" />
-          <span class="truncate flex-1">{{ toKebabCase(ws.name) }}</span>
+          <span class="truncate flex-1">{{ ws === group.workspace ? toKebabCase(ws.name) : forkShortName(ws, group.workspace) }}</span>
           <span v-if="activityOf(ws).queued" data-test="sidebar-queued"
                 :title="`${activityOf(ws).queued} queued for the agent`"
                 class="shrink-0 min-w-4 px-1 rounded text-[10px] leading-4 text-center font-medium tabular-nums bg-black/5 dark:bg-white/10 text-gray-500 dark:text-zinc-400">{{ activityOf(ws).queued }}</span>

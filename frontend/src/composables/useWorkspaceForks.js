@@ -63,6 +63,19 @@ export function parentName(fork, workspaces = []) {
 }
 
 /**
+ * A fork's name under its parent, without the parent's name in front:
+ * "ops-try" under "ops" reads "try". The whole name when it does not start
+ * with the parent's, or nothing would be left.
+ */
+export function forkShortName(fork, parent) {
+  const name = toKebabCase(fork?.name);
+  const prefix = toKebabCase(parent?.name) + '-';
+  return prefix.length > 1 && name.startsWith(prefix) && name.length > prefix.length
+    ? name.slice(prefix.length)
+    : name;
+}
+
+/**
  * The workspaces as the sidebar draws them: each parent, then its forks.
  *
  * A fork whose parent is not in the list — archived, or not loaded yet — is
