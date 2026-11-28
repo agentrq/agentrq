@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  # The auto-merge workflow dispatches this after a merge, whose push starts
+  # no workflow.
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
