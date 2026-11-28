@@ -38,8 +38,18 @@ export function browserHourCycle(locale) {
  * @param {Intl.DateTimeFormatOptions} options
  */
 export function withClock(options, format = timeFormat.value) {
-  const hourCycle = format === TIME_FORMAT_12H ? 'h12' : format === TIME_FORMAT_24H ? 'h23' : browserHourCycle();
-  return { ...options, hourCycle };
+  return { ...options, hourCycle: hourCycleOf(format) };
+}
+
+/** The hour cycle the account's clock draws with: h12 or h23. */
+export function hourCycleOf(format = timeFormat.value) {
+  return format === TIME_FORMAT_12H ? 'h12' : format === TIME_FORMAT_24H ? 'h23' : browserHourCycle();
+}
+
+/** An hour on the account's clock, for a short label: "00" on 24h, "12a" on 12h. */
+export function hourLabel(hour, format = timeFormat.value) {
+  if (hourCycleOf(format) === 'h23') return String(hour).padStart(2, '0');
+  return `${hour % 12 || 12}${hour < 12 ? 'a' : 'p'}`;
 }
 
 /** Reads the account's clock; a failed read leaves the browser's. */

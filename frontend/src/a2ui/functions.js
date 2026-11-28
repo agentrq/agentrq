@@ -8,6 +8,7 @@
 // throws: a value it cannot work with gives an empty result.
 
 import { getPointer, resolvePath } from './pointer.js'
+import { hourCycleOf } from '../composables/useTimeFormat.js'
 
 // The spec's limits on a regex: pattern length in code points, and the
 // length of the input it is tried on.
@@ -128,12 +129,43 @@ function dayPeriod(date, locale) {
 // A Unicode TR35 pattern's tokens: quoted literals, then runs of one letter.
 const DATE_TOKENS = /'(?:[^']|'')*'|y+|M+|d+|E+|H+|h+|m+|s+|a+/g
 
+/**
+ * The pattern redrawn on the account's clock, whichever clock the agent wrote
+ * it in: 24h prints H and drops the day period, 12h prints h and adds one
+ * after the time when the pattern had none, so no hour is left ambiguous.
+ */
+export function onClock(format, cycle = hourCycleOf()) {
+  const parts = format.split(/('(?:[^']|'')*'|y+|M+|d+|E+|H+|h+|m+|s+|a+)/).filter((p) => p !== '')
+  // A part's pattern letter; '' for a literal, quoted or not.
+  const letter = (p) => (/^[yMdEHhmsa]/.test(p) ? p[0] : '')
+  if (cycle === 'h23') {
+    const out = parts.map((p) => (letter(p) === 'h' ? 'H'.repeat(p.length) : p))
+    for (let i = out.length - 1; i >= 0; i--) {
+      if (letter(out[i]) !== 'a') continue
+      // The space that set the period off goes with it.
+      const before = i > 0 && !letter(out[i - 1]) && out[i - 1][0] !== "'"
+      const after = i + 1 < out.length && !letter(out[i + 1]) && out[i + 1][0] !== "'"
+      if (before && /\s$/.test(out[i - 1])) out[i - 1] = out[i - 1].replace(/\s+$/, '')
+      else if (after) out[i + 1] = out[i + 1].replace(/^\s+/, '')
+      out.splice(i, 1)
+    }
+    return out.join('')
+  }
+  const out = parts.map((p) => (letter(p) === 'H' ? 'h'.repeat(p.length) : p))
+  if (!out.some((p) => letter(p) === 'h') || out.some((p) => letter(p) === 'a')) return out.join('')
+  // After the hour and the minutes and seconds written right after it.
+  let end = out.findLastIndex((p) => letter(p) === 'h')
+  while (/^[:.]$/.test(out[end + 1] ?? '') && /^[ms]$/.test(letter(out[end + 2] ?? ''))) end += 2
+  out.splice(end + 1, 0, ' a')
+  return out.join('')
+}
+
 function formatDate({ value, format }, ctx) {
   if (value === null || value === undefined || value === '' || typeof format !== 'string') return ''
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return ''
   const loc = ctx.locale
-  return format.replace(DATE_TOKENS, (tok) => {
+  return onClock(format).replace(DATE_TOKENS, (tok) => {
     const n = tok.length
     switch (tok[0]) {
       case "'":

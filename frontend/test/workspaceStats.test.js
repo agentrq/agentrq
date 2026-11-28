@@ -10,6 +10,7 @@ import ChartSVG from '../src/components/ChartSVG.vue';
 import WorkspaceStats from '../src/components/WorkspaceStats.vue';
 import { useThemeStore } from '../src/stores/themeStore';
 import * as api from '../src/api';
+import { timeFormat } from '../src/composables/useTimeFormat';
 
 describe('HeatmapChart', () => {
   let container;
@@ -33,6 +34,7 @@ describe('HeatmapChart', () => {
   it('renders hour granularity columns and labels', async () => {
     const now = Math.floor(Date.now() / 1000);
     const dayAgo = now - 86400;
+    timeFormat.value = '12h';
 
     const app = createApp({
       render() {
@@ -50,6 +52,13 @@ describe('HeatmapChart', () => {
 
     expect(container.textContent).toContain('12a');
     expect(container.textContent).toContain('12p');
+
+    timeFormat.value = '24h';
+    await nextTick();
+    expect(container.textContent).toContain('00');
+    expect(container.textContent).toContain('18');
+    expect(container.textContent).not.toContain('12a');
+    timeFormat.value = 'browser';
     app.unmount();
   });
 

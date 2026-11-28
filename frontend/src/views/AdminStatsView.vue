@@ -81,7 +81,7 @@
 
           <p class="text-[11px] text-gray-400 dark:text-zinc-500">
             MCP connections are counted on the server instance that answered; machines online are counted across all of them.
-            <span v-if="updatedAt" data-test="admin-updated">Updated {{ updatedAt.toLocaleTimeString() }}.</span>
+            <span v-if="updatedAt" data-test="admin-updated">Updated {{ updatedAt.toLocaleTimeString([], withClock({ hour: '2-digit', minute: '2-digit', second: '2-digit' })) }}.</span>
           </p>
         </template>
       </div>
@@ -98,6 +98,7 @@ import { computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AdminLayout from '../components/AdminLayout.vue'
 import { useAdminStats } from '../composables/useAdminStats'
+import { withClock } from '../composables/useTimeFormat'
 
 const router = useRouter()
 const { stats, error, loading, updatedAt, start, stop, refresh } = useAdminStats({

@@ -24,6 +24,7 @@ import { adminLogin, adminLogout, fetchAdminStats } from '../src/api'
 import { useAdminStats } from '../src/composables/useAdminStats'
 import LoginView from '../src/views/LoginView.vue'
 import AdminStatsView from '../src/views/AdminStatsView.vue'
+import { timeFormat } from '../src/composables/useTimeFormat'
 
 const SOME = {
   mcpConnections: 4,
@@ -220,6 +221,20 @@ describe('AdminStatsView', () => {
     const shares = [...el.querySelectorAll('[data-test="admin-row"] [style]')].map((s) => s.style.width)
     expect(shares).toEqual(['67%', '33%'])
     expect(q(el, 'admin-updated').textContent).toMatch(/^Updated /)
+  })
+
+  it('shows when it was updated on the account clock', async () => {
+    serve({ [STATS]: [SOME, 200] })
+    timeFormat.value = '24h'
+    try {
+      const el = await mount(AdminStatsView)
+      expect(q(el, 'admin-updated').textContent).toMatch(/^Updated \d{2}:\d{2}:\d{2}\.$/)
+      timeFormat.value = '12h'
+      await nextTick()
+      expect(q(el, 'admin-updated').textContent).toMatch(/^Updated \d{2}:\d{2}:\d{2}\s?(AM|PM)\.$/i)
+    } finally {
+      timeFormat.value = 'browser'
+    }
   })
 
   it('says so when nothing is connected', async () => {
