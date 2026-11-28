@@ -534,8 +534,9 @@ left "running" blocks the workspace's merge and next launch forever, and
 on wake **the server decides, never the daemon**: an `away` row it names comes
 back only if its workspace is still its owner's with no other agent, and
 otherwise gets a `killSession`, or it works on unseen with its token. A named
-id with no row is left alone and never rebuilt from a daemon's word: every
-profile's socket names the sessions of **all** the daemon's profiles.
+id with no row is never rebuilt from a daemon's word; it is killed only when
+the hello listed `profileSessions`, since an older daemon names **all** its
+profiles' sessions on every profile's socket.
 `away` rows go after 7 days or with their machine, and a `starting` row under a
 minute old survives a reconcile (a heartbeat can cross the launch).
 

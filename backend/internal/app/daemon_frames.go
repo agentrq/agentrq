@@ -81,7 +81,7 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 				zlog.Warn().Err(err).Int64("machine_id", s.Identity.MachineID).Msg("[machine] could not record the running version")
 			}
 			s.SetCapabilities(hello.Capabilities)
-			reconcile(ctx, rec, s.Identity, s.Send, notify, hello.Sessions)
+			reconcile(ctx, rec, s.Identity, s.HasCapability(wire.CapabilityProfileSessions), s.Send, notify, hello.Sessions)
 			announceVersion(notify, s.Identity, hello.Version)
 			return nil
 		case wire.OpUpdateAvailable:
@@ -99,7 +99,7 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 				return nil
 			}
 			recordMetrics(ctx, rec, s.Identity.MachineID, hb)
-			reconcile(ctx, rec, s.Identity, s.Send, notify, hb.Sessions)
+			reconcile(ctx, rec, s.Identity, s.HasCapability(wire.CapabilityProfileSessions), s.Send, notify, hb.Sessions)
 			recordActivity(ctx, rec, s.Identity.MachineID, hb.Activity, time.Now())
 			announceMachine(notify, s.Identity, hb)
 			return nil
@@ -216,14 +216,19 @@ func recordActivity(ctx context.Context, rec daemonRecorder, machineID int64, ac
 // behind would otherwise sit as "running" forever and block the workspace's
 // next launch. Scoped to the machine on the socket, so a daemon can only
 // correct its own.
-func reconcile(ctx context.Context, rec daemonRecorder, id machine.Identity, send func(wire.Frame) error, notify notifier, running []uint64) {
+//
+// scoped is a daemon whose list is this machine's alone; see
+// wire.CapabilityProfileSessions.
+func reconcile(ctx context.Context, rec daemonRecorder, id machine.Identity, scoped bool, send func(wire.Frame) error, notify notifier, running []uint64) {
 	ids := make([]int64, 0, len(running))
 	for _, sid := range running {
 		ids = append(ids, int64(sid))
 	}
 	res, err := rec.ReconcileSessions(ctx, entity.ReconcileSessionsRequest{
 		MachineID: id.MachineID,
+		UserID:    id.UserID,
 		Running:   ids,
+		Scoped:    scoped,
 	})
 	if err != nil {
 		zlog.Warn().Err(err).Int64("machine_id", id.MachineID).Msg("[machine] could not reconcile sessions")

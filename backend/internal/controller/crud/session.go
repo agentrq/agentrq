@@ -314,9 +314,10 @@ func (c *controller) ForkFolderMachines(ctx context.Context, req entity.ActiveSe
 // otherwise, or it would keep working unseen with its token. A check that
 // fails to run decides nothing, and the next heartbeat asks again.
 //
-// A named id with no row here is left alone and never rebuilt from the
-// daemon's word: an agentrqd names the sessions of all its profiles on every
-// profile's socket, so it may well be another machine's, or account's.
+// A named id with no row here is never rebuilt from the daemon's word. It is
+// stopped when the daemon names only this machine's sessions, and left alone
+// otherwise: an older agentrqd names the sessions of all its profiles on
+// every profile's socket, so it may well be another machine's, or account's.
 func (c *controller) ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) (*entity.ReconcileSessionsResponse, error) {
 	if req.MachineID == 0 {
 		return nil, fmt.Errorf("invalid machine id")
@@ -335,6 +336,13 @@ func (c *controller) ReconcileSessions(ctx context.Context, req entity.Reconcile
 	out := &entity.ReconcileSessionsResponse{}
 	for _, id := range req.Running {
 		s, ok := byID[id]
+		if !ok && req.Scoped {
+			// Never rebuilt from the daemon's word: an agent nobody can list
+			// or stop, working on with its token.
+			out.Stop = append(out.Stop, id)
+			c.emitSessionWake(ctx, model.Session{ID: id, MachineID: req.MachineID, UserID: req.UserID}, entity.ActionMachineSessionRefuse)
+			continue
+		}
 		if !ok || s.Status != machinerules.SessionAway {
 			continue
 		}

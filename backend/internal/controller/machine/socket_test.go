@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/agentrq/agentrq/daemon/wire"
 )
 
 // fakeAuth records what the socket asked it to do.
@@ -269,5 +271,26 @@ func TestALateCloseDoesNotClearAReconnectedMachinesPairing(t *testing.T) {
 func TestHeartbeatIntervalLeavesRoomBeforeOffline(t *testing.T) {
 	if HeartbeatInterval*2 > OnlineThreshold {
 		t.Errorf("HeartbeatInterval %v is too close to OnlineThreshold %v", HeartbeatInterval, OnlineThreshold)
+	}
+}
+
+// A session answers for what its own hello said, and one with no registry
+// has said nothing.
+func TestSessionHasCapability(t *testing.T) {
+	r := NewRegistry("pod-a")
+	c := &fakeConn{}
+	s, err := NewSession(t.Context(), r, &fakeAuth{}, Identity{MachineID: 7, UserID: 42}, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.HasCapability(wire.CapabilityProfileSessions) {
+		t.Error("a daemon that has not said hello has a capability")
+	}
+	s.SetCapabilities([]string{wire.CapabilityProfileSessions})
+	if !s.HasCapability(wire.CapabilityProfileSessions) || s.HasCapability("other") {
+		t.Error("the hello's capabilities were not kept as said")
+	}
+	if (&Session{}).HasCapability(wire.CapabilityProfileSessions) {
+		t.Error("a session with no registry has a capability")
 	}
 }
