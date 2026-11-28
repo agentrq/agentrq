@@ -976,6 +976,9 @@ type (
 		// SubAction labels the action on Prometheus, from a fixed list:
 		// a hook request's outcome.
 		SubAction string `json:"subAction,omitempty"`
+		// Hook labels a hook action on Prometheus: a built-in hook's name,
+		// "custom" for an account's own, "unknown" when it is not known.
+		Hook string `json:"hook,omitempty"`
 	}
 
 	// Push subscription entities
@@ -1995,6 +1998,17 @@ const (
 // HookReceiveOutcomes are how a request to a hook URL ends: the sub-actions
 // ActionHookReceive is counted under, named as its delivery's status.
 var HookReceiveOutcomes = []string{"published", "rejected", "ignored", "duplicate", "failed"}
+
+// The hook label of a hook action that is not a built-in hook's name: an
+// account's own hook, whose name is its owner's to choose, and a
+// registration whose hook is not known where the action happened.
+const (
+	HookLabelCustom  = "custom"
+	HookLabelUnknown = "unknown"
+)
+
+// HookActions are the actions counted under a hook label.
+var HookActions = []Action{ActionHookRegister, ActionHookReceive, ActionHookReject, ActionHookPublish}
 
 // ClientReportableAction resolves an action name a browser is allowed to
 // report into its Action.

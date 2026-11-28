@@ -137,7 +137,7 @@ func TestTheAppServesTelemetryActionsWithPrometheus(t *testing.T) {
 	a.pubsub.Publish(context.Background(), pubsub.PublishRequest{PubSubID: entity.PubSubTopicCRUD, Event: entity.CRUDEvent{
 		Action: entity.ActionTaskCreate, UserID: 1, WorkspaceID: 1,
 	}})
-	want := `agentrq_telemetry_actions_total{action="task_create",app_version="` + appVersion(t) + `",sub_action=""} 1`
+	want := `agentrq_telemetry_actions_total{action="task_create",app_version="` + appVersion(t) + `",hook="",sub_action=""} 1`
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		rr := httptest.NewRecorder()

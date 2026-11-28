@@ -5,6 +5,7 @@
 package telemetry
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
@@ -21,7 +22,11 @@ func promController(t *testing.T) (*controller, *prometheus.Registry) {
 }
 
 func countOf(c *controller, action, subAction string) float64 {
-	return testutil.ToFloat64(c.actions.WithLabelValues(action, subAction))
+	return hookCountOf(c, action, subAction, "")
+}
+
+func hookCountOf(c *controller, action, subAction, hook string) float64 {
+	return testutil.ToFloat64(c.actions.WithLabelValues(action, subAction, hook))
 }
 
 // Without a registerer nothing is counted, and recording still queues.
@@ -51,7 +56,11 @@ func TestPrometheus_CRUDActionsUseTheirNames(t *testing.T) {
 		if action.String() == "unknown" {
 			t.Errorf("action %d is stored but has no name", a)
 		}
-		if got := countOf(c, action.String(), ""); got != 1 {
+		hook := ""
+		if slices.Contains(entity.HookActions, action) {
+			hook = entity.HookLabelUnknown
+		}
+		if got := hookCountOf(c, action.String(), "", hook); got != 1 {
 			t.Errorf("%s counted %v, want 1", action, got)
 		}
 	}
@@ -86,26 +95,42 @@ func total(t *testing.T, reg *prometheus.Registry) float64 {
 	return sum
 }
 
-// series reads every action/sub_action series the registry holds, with its value.
+// series reads every action/sub_action series the registry holds, with its
+// value, for no hook.
 func series(t *testing.T, reg *prometheus.Registry) map[[2]string]float64 {
+	t.Helper()
+	out := map[[2]string]float64{}
+	for k, v := range hookSeries(t, reg) {
+		if k[2] == "" {
+			out[[2]string{k[0], k[1]}] = v
+		}
+	}
+	return out
+}
+
+// hookSeries reads every action/sub_action/hook series the registry holds,
+// with its value.
+func hookSeries(t *testing.T, reg *prometheus.Registry) map[[3]string]float64 {
 	t.Helper()
 	families, err := reg.Gather()
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := map[[2]string]float64{}
+	out := map[[3]string]float64{}
 	for _, f := range families {
 		if f.GetName() != "agentrq_telemetry_actions_total" {
 			continue
 		}
 		for _, m := range f.GetMetric() {
-			var key [2]string
+			var key [3]string
 			for _, l := range m.GetLabel() {
 				switch l.GetName() {
 				case "action":
 					key[0] = l.GetValue()
 				case "sub_action":
 					key[1] = l.GetValue()
+				case "hook":
+					key[2] = l.GetValue()
 				}
 			}
 			out[key] = m.GetCounter().GetValue()
@@ -157,16 +182,27 @@ func TestPrometheus_SeriesStartAtZero(t *testing.T) {
 			t.Errorf("%s/%q is primed, want no series", key[0], key[1])
 		}
 	}
-	// Every action recordCRUD counts, and every tool and method, is primed.
+	// Every action recordCRUD counts, and every tool and method, is primed;
+	// a hook action only under a hook.
+	all := hookSeries(t, reg)
 	for a := 0; a < 256; a++ {
 		if _, ok := crudActionID(entity.Action(a)); ok {
 			subs, ok := crudSubActions[entity.Action(a)]
 			if !ok {
 				subs = []string{""}
 			}
+			hooks := []string{""}
+			if slices.Contains(entity.HookActions, entity.Action(a)) {
+				hooks = []string{entity.HookLabelCustom, entity.HookLabelUnknown}
+				if _, ok := got[[2]string{entity.Action(a).String(), subs[0]}]; ok {
+					t.Errorf("%s is primed with no hook", entity.Action(a))
+				}
+			}
 			for _, sub := range subs {
-				if _, ok := got[[2]string{entity.Action(a).String(), sub}]; !ok {
-					t.Errorf("%s/%q has no series", entity.Action(a), sub)
+				for _, hook := range hooks {
+					if _, ok := all[[3]string{entity.Action(a).String(), sub, hook}]; !ok {
+						t.Errorf("%s/%q/%q has no series", entity.Action(a), sub, hook)
+					}
 				}
 			}
 		}
@@ -267,15 +303,54 @@ func TestPrometheus_HookReceiveOutcomes(t *testing.T) {
 			t.Fatalf("%s primed at %v, want 0", o, got)
 		}
 	}
-	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionHookReceive, SubAction: "ignored"})
-	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionHookReceive, SubAction: "made-up"})
-	if got := countOf(c, "hook_receive", "ignored"); got != 1 {
+	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionHookReceive, SubAction: "ignored", Hook: "github"})
+	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionHookReceive, SubAction: "made-up", Hook: "github"})
+	if got := hookCountOf(c, "hook_receive", "ignored", "github"); got != 1 {
 		t.Errorf("ignored counted %v, want 1", got)
 	}
-	if got := countOf(c, "hook_receive", "unknown"); got != 1 {
+	if got := hookCountOf(c, "hook_receive", "unknown", "github"); got != 1 {
 		t.Errorf("unknown counted %v, want 1", got)
 	}
 	if got := len(queued(c)); got != 0 {
 		t.Fatalf("queued %d rows, want 0", got)
+	}
+}
+
+// A hook action is counted under the hook the event names: a built-in's name,
+// or "custom"; with none named it is "unknown". Any other action has no hook,
+// whatever its event says.
+func TestPrometheus_HookLabel(t *testing.T) {
+	c, reg := promController(t)
+	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionHookReceive, SubAction: "published", Hook: "github"})
+	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionHookReceive, SubAction: "rejected", Hook: entity.HookLabelCustom})
+	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionHookPublish})
+	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionTaskCreate, Hook: "github"})
+	for _, tc := range []struct{ action, sub, hook string }{
+		{"hook_receive", "published", "github"},
+		{"hook_receive", "rejected", "custom"},
+		{"hook_publish", "", "unknown"},
+		{"task_create", "", ""},
+	} {
+		if got := hookCountOf(c, tc.action, tc.sub, tc.hook); got != 1 {
+			t.Errorf("%s/%s/%s counted %v, want 1", tc.action, tc.sub, tc.hook, got)
+		}
+	}
+	// A hook first counted has its other series created at 0 with it, once.
+	got := hookSeries(t, reg)
+	for _, key := range [][3]string{
+		{"hook_receive", "failed", "github"},
+		{"hook_register", "", "github"},
+		{"hook_reject", "", "github"},
+	} {
+		if v, ok := got[key]; !ok || v != 0 {
+			t.Errorf("%v = %v (exists %v), want 0", key, v, ok)
+		}
+	}
+	c.recordCRUD(entity.CRUDEvent{Action: entity.ActionHookReceive, SubAction: "published", Hook: "github"})
+	if got := hookCountOf(c, "hook_receive", "published", "github"); got != 2 {
+		t.Errorf("published/github counted %v, want 2", got)
+	}
+	if sum := total(t, reg); sum != 5 {
+		t.Fatalf("counted %v, want 5", sum)
 	}
 }

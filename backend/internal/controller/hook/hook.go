@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -141,6 +142,9 @@ type controller struct {
 	retention      time.Duration
 	now            func() time.Time
 	q              *queue
+	// hookLabels maps a registration's id to its hook's label on telemetry,
+	// filled wherever the hook is read anyway, so counting one reads nothing.
+	hookLabels sync.Map
 }
 
 // New returns a hooks controller.

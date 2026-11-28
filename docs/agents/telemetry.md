@@ -17,6 +17,10 @@ makes them self-evidently true. A few happen entirely in the browser and are
   provider request. Add one there, not a counter of its own. A CRUD action's
   `sub_action` comes only from `crudSubActions` (a hook request's outcome),
   each primed at 0; any other value counts as `unknown`.
+- **A hook action's `hook` label comes from memory, never a query** on the
+  emit path: a built-in's own name, `custom` for an account's own hook (its
+  owner picks the name, which would grow the label set), `unknown` for a
+  registration this instance hasn't read since it started.
 - **With Prometheus on, every recorded action is also counted** as
   `agentrq_telemetry_actions_total`, labelled by the action's *name*, never its
   stored ID. A stored action without a `String()` name reads `unknown` there,

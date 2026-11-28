@@ -132,6 +132,7 @@ func (c *controller) CreateRegistration(ctx context.Context, userID int64, req e
 	if err := c.repo.CreateHookRegistration(ctx, reg); err != nil {
 		return entity.HookRegistration{}, err
 	}
+	c.rememberHook(reg.ID, h)
 	c.emitAction(ctx, entity.ActionHookRegister, entity.ActorHuman, userID, reg.ID)
 	return c.toRegistrationOf(ctx, reg, h, token)
 }
@@ -184,7 +185,11 @@ func (c *controller) UpdateRegistration(ctx context.Context, userID, id int64, r
 }
 
 func (c *controller) DeleteRegistration(ctx context.Context, userID, id int64) error {
-	return c.repo.DeleteHookRegistration(ctx, id, userID)
+	if err := c.repo.DeleteHookRegistration(ctx, id, userID); err != nil {
+		return err
+	}
+	c.hookLabels.Delete(id)
+	return nil
 }
 
 // RotateToken gives a registration a new token, so the old URL stops working
@@ -407,6 +412,7 @@ func (c *controller) toRegistration(reg model.HookRegistration, h model.Hook, to
 	if err != nil {
 		return entity.HookRegistration{}, err
 	}
+	c.rememberHook(reg.ID, h)
 	e := entity.HookRegistration{
 		ID: reg.ID, HookID: reg.HookID, HookName: h.Name, HookAvailable: h.ID != 0 && h.Enabled,
 		Name: reg.Name, Enabled: reg.Enabled, Inputs: map[string]any{}, SecretsSet: []string{},
@@ -460,7 +466,31 @@ func (c *controller) emitSubAction(ctx context.Context, action entity.Action, su
 	_, _ = c.pubsub.Publish(ctx, pubsub.PublishRequest{PubSubID: entity.PubSubTopicCRUD, Event: entity.CRUDEvent{
 		Action: action, UserID: userID, ResourceType: entity.ResourceHookRegistration,
 		ResourceID: registrationID, Actor: actor, Origin: origin, SubAction: subAction,
+		Hook: c.hookLabel(registrationID),
 	}})
+}
+
+// rememberHook keeps the label a registration's telemetry is counted under:
+// a built-in hook's own name, which the operator chose, or "custom" for an
+// account's own hook, whose name would let any account grow the label set.
+// A hook not found is not remembered.
+func (c *controller) rememberHook(registrationID int64, h model.Hook) {
+	switch {
+	case h.ID == 0:
+	case h.UserID == builtIn:
+		c.hookLabels.Store(registrationID, h.Name)
+	default:
+		c.hookLabels.Store(registrationID, entity.HookLabelCustom)
+	}
+}
+
+// hookLabel is the label rememberHook kept for a registration, or "unknown"
+// for one this instance has not read since it started.
+func (c *controller) hookLabel(registrationID int64) string {
+	if label, ok := c.hookLabels.Load(registrationID); ok {
+		return label.(string)
+	}
+	return entity.HookLabelUnknown
 }
 
 // newToken returns a fresh agentrq_hook_token and its bcrypt hash. Each
