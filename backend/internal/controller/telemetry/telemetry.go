@@ -52,6 +52,9 @@ type (
 		interval  time.Duration
 		// actions counts recorded actions for Prometheus; nil when it is off.
 		actions *prometheus.CounterVec
+		// hooksPrimed are the hook labels whose series are created already;
+		// touched only by recordCRUD's goroutine.
+		hooksPrimed map[string]struct{}
 		// skipStorage writes no telemetry or MCP client row.
 		skipStorage bool
 
@@ -78,13 +81,14 @@ func New(p Params) Controller {
 		batchSize:   p.BatchSize,
 		interval:    p.Interval,
 		seenClients: make(map[int64]struct{}),
+		hooksPrimed: make(map[string]struct{}),
 		skipStorage: p.SkipStorage,
 	}
 	if p.Registerer != nil {
 		c.actions = prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "agentrq_telemetry_actions_total",
-			Help: "Telemetry actions recorded, by action name and, for MCP calls, the tool, resource or prompt.",
-		}, []string{"action", "sub_action"})
+			Help: "Telemetry actions recorded, by action name and, for MCP calls, the tool, resource or prompt; for hook actions, the hook.",
+		}, []string{"action", "sub_action", "hook"})
 		p.Registerer.MustRegister(c.actions)
 		c.primeActions()
 	}
@@ -96,30 +100,46 @@ func New(p Params) Controller {
 // after each restart a rare action would read as never having happened. The
 // names come from the same lookups recording uses: tool calls under each tool,
 // method calls under each resource, prompt or method ("resource:", "prompt:"
-// or "skills/list"), and every other action under no tool.
+// or "skills/list"), and every other action under no tool. Hook actions are
+// primed under "custom" and "unknown" here, and under a built-in hook's name
+// when that name is first counted: the names are the operator's uploads, not
+// a list known at startup.
 func (c *controller) primeActions() {
 	for id := 0; id < 256; id++ {
-		if _, ok := crudActionID(entity.Action(id)); ok {
-			subs, ok := crudSubActions[entity.Action(id)]
-			if !ok {
-				subs = []string{""}
-			}
-			for _, sub := range subs {
-				c.actions.WithLabelValues(entity.Action(id).String(), sub)
-			}
+		if _, ok := crudActionID(entity.Action(id)); ok && !slices.Contains(entity.HookActions, entity.Action(id)) {
+			c.actions.WithLabelValues(entity.Action(id).String(), "", "")
 		}
 		action := mcpAction(id)
 		switch {
 		case action.String() == "unknown":
 		case !action.named():
-			c.actions.WithLabelValues(action.String(), "")
+			c.actions.WithLabelValues(action.String(), "", "")
 		default:
 			method := uint8(action) == model.ActionIDMCPMethodCall
 			for name := range subActionIDByToolName {
 				if strings.ContainsAny(name, ":/") == method {
-					c.actions.WithLabelValues(action.String(), name)
+					c.actions.WithLabelValues(action.String(), name, "")
 				}
 			}
+		}
+	}
+	c.primeHook(entity.HookLabelCustom)
+	c.primeHook(entity.HookLabelUnknown)
+}
+
+// primeHook creates every hook action's series under a hook label at 0, once.
+func (c *controller) primeHook(hook string) {
+	if _, ok := c.hooksPrimed[hook]; ok {
+		return
+	}
+	c.hooksPrimed[hook] = struct{}{}
+	for _, action := range entity.HookActions {
+		subs, ok := crudSubActions[action]
+		if !ok {
+			subs = []string{""}
+		}
+		for _, sub := range subs {
+			c.actions.WithLabelValues(action.String(), sub, hook)
 		}
 	}
 }
@@ -153,8 +173,16 @@ func (s crudSubAction) String() string {
 // for an MCP call, its tool's, then queues it unless storage is off or the
 // action is never stored.
 func (c *controller) enqueue(t model.Telemetry, action, tool fmt.Stringer) {
+	c.enqueueHook(t, action, tool, "")
+}
+
+// enqueueHook is enqueue for an action counted under a hook label too.
+func (c *controller) enqueueHook(t model.Telemetry, action, tool fmt.Stringer, hook string) {
 	if c.actions != nil {
-		c.actions.WithLabelValues(action.String(), tool.String()).Inc()
+		if hook != "" {
+			c.primeHook(hook)
+		}
+		c.actions.WithLabelValues(action.String(), tool.String(), hook).Inc()
 	}
 	if _, skip := notStored[action]; c.skipStorage || skip {
 		return
@@ -227,13 +255,13 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 	if !ok {
 		return
 	}
-	c.enqueue(model.Telemetry{
+	c.enqueueHook(model.Telemetry{
 		UserID:      event.UserID,
 		WorkspaceID: event.WorkspaceID,
 		OccurredAt:  time.Now().Unix(),
 		Action:      action,
 		Actor:       uint8(event.Actor),
-	}, event.Action, crudSubAction{event.Action, event.SubAction})
+	}, event.Action, crudSubAction{event.Action, event.SubAction}, hookLabel(event))
 	// A scheduled task is also a task create.
 	if event.Action == entity.ActionTaskFromScheduled {
 		c.enqueue(model.Telemetry{
@@ -244,6 +272,18 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 			Actor:       uint8(event.Actor),
 		}, entity.ActionTaskCreate, crudSubAction{})
 	}
+}
+
+// hookLabel is the hook label a CRUD event is counted under: "" for any but
+// a hook action, and "unknown" for a hook action that names no hook.
+func hookLabel(event entity.CRUDEvent) string {
+	switch {
+	case !slices.Contains(entity.HookActions, event.Action):
+		return ""
+	case event.Hook == "":
+		return entity.HookLabelUnknown
+	}
+	return event.Hook
 }
 
 // crudActionID is the stored action a CRUD event is recorded as, and false

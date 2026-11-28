@@ -322,6 +322,7 @@ func (c *controller) process(ctx context.Context, id int64) {
 		c.retry(ctx, d, start, err)
 		return
 	}
+	c.rememberHook(reg.ID, h)
 	inputs, err := c.inputsOf(reg)
 	if err != nil {
 		c.fail(ctx, d, start, "its inputs cannot be read; save the registration again")
