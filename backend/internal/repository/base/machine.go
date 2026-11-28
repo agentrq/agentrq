@@ -190,7 +190,9 @@ func (r *repository) GetSession(ctx context.Context, id, userID int64) (model.Se
 // ListSessionsByMachine returns a machine's sessions, newest first.
 func (r *repository) ListSessionsByMachine(ctx context.Context, machineID, userID int64) ([]model.Session, error) {
 	var out []model.Session
-	err := r.conn(ctx).Where("machine_id = ? AND user_id = ?", machineID, userID).
+	// An away session is left out: the page answers "what is running here",
+	// and the machine has not said so for half an hour.
+	err := r.conn(ctx).Where("machine_id = ? AND user_id = ? AND status <> ?", machineID, userID, "away").
 		Order("created_at DESC").Find(&out).Error
 	return out, err
 }
@@ -327,7 +329,11 @@ func (r *repository) LatestOngoingAgentTasks(ctx context.Context, userID int64) 
 // A narrow update rather than a full save: state reports arrive while a person
 // may be renaming things, and writing every column would overwrite whatever
 // landed in between.
-func (r *repository) UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time, restored bool) error {
+//
+// Scoped to the machine that reports it, so a daemon can only ever change its
+// own sessions. An away session takes only an end: making it live again is
+// ResumeSession's, after the server's own checks, never a daemon's report.
+func (r *repository) UpdateSessionState(ctx context.Context, id, machineID int64, status string, exitCode *int, endedAt *time.Time, restored bool) error {
 	fields := map[string]any{"status": status, "updated_at": time.Now()}
 	if exitCode != nil {
 		fields["exit_code"] = *exitCode
@@ -342,7 +348,11 @@ func (r *repository) UpdateSessionState(ctx context.Context, id int64, status st
 	if restored {
 		fields["restored"] = true
 	}
-	return r.conn(ctx).Model(&model.Session{}).Where("id = ?", id).Updates(fields).Error
+	q := r.conn(ctx).Model(&model.Session{}).Where("id = ? AND machine_id = ?", id, machineID)
+	if !slices.Contains([]string{"exited", "killed", "failed"}, status) {
+		q = q.Where("status <> ?", "away")
+	}
+	return q.Updates(fields).Error
 }
 
 // RecordMachineVersion stores what a daemon says it is running, and clears an
@@ -421,14 +431,18 @@ func (r *repository) DeleteFinishedSessions(ctx context.Context) (int64, error) 
 // ReconcileSessions ends the sessions a machine is no longer running.
 //
 // The daemon says what it is supervising; anything this machine still has
-// marked live and the daemon did not name has ended without anybody being
-// told — most often because the daemon restarted. Left alone, those rows sit
-// as "running" forever and block the workspace's next launch.
+// marked live or away and the daemon did not name has ended without anybody
+// being told — most often because the daemon restarted. Left alone, those
+// rows sit as "running" forever and block the workspace's next launch.
+//
+// A session still starting since startedAfter is kept: the heartbeat may have
+// been sent before the daemon heard of it.
 //
 // Scoped to one machine, so a daemon can only ever correct its own rows.
-func (r *repository) ReconcileSessions(ctx context.Context, machineID int64, running []int64, at time.Time) error {
+func (r *repository) ReconcileSessions(ctx context.Context, machineID int64, running []int64, startedAfter time.Time) error {
 	q := r.conn(ctx).
-		Where("machine_id = ? AND status IN ?", machineID, []string{"starting", "running"})
+		Where("machine_id = ? AND status IN ?", machineID, []string{"starting", "running", "away"}).
+		Where("NOT (status = ? AND created_at > ?)", "starting", startedAfter)
 	if len(running) > 0 {
 		q = q.Where("id NOT IN ?", running)
 	}
@@ -438,17 +452,49 @@ func (r *repository) ReconcileSessions(ctx context.Context, machineID int64, run
 	return q.Delete(&model.Session{}).Error
 }
 
-// DeleteStaleSessions deletes the live sessions of every machine not heard
-// from since seenBefore, or deleted, and says how many it deleted.
+// SessionsOnMachine reads the sessions among ids that belong to a machine.
+// One query for a whole heartbeat.
+func (r *repository) SessionsOnMachine(ctx context.Context, machineID int64, ids []int64) ([]model.Session, error) {
+	var out []model.Session
+	if len(ids) == 0 {
+		return out, nil
+	}
+	err := r.conn(ctx).Where("machine_id = ? AND id IN ?", machineID, ids).Find(&out).Error
+	return out, err
+}
+
+// ResumeSession makes an away session of a machine running again, and says
+// whether it did. Only an away row moves, so two heartbeats cannot both
+// resume one.
+func (r *repository) ResumeSession(ctx context.Context, id, machineID int64) (bool, error) {
+	res := r.conn(ctx).Model(&model.Session{}).
+		Where("id = ? AND machine_id = ? AND status = ?", id, machineID, "away").
+		Updates(map[string]any{"status": "running", "updated_at": time.Now()})
+	return res.RowsAffected == 1, res.Error
+}
+
+// MarkStaleSessionsAway marks away the live sessions of every machine not
+// heard from since seenBefore, or deleted, and says how many it marked.
 //
-// Nothing else ever ends them: the daemon that would report or reconcile them
-// is gone, and a kill cannot reach it, so they block the workspace's merge and
-// next launch for as long as the machine stays away.
-func (r *repository) DeleteStaleSessions(ctx context.Context, seenBefore time.Time) (int64, error) {
+// Nothing else frees their workspaces: the daemon that would report or
+// reconcile them is gone, and a kill cannot reach it. Marked rather than
+// deleted, so the server still knows them if the machine wakes.
+func (r *repository) MarkStaleSessionsAway(ctx context.Context, seenBefore time.Time) (int64, error) {
 	seen := r.conn(ctx).Model(&model.Machine{}).Select("id").
 		Where("last_seen_at >= ?", seenBefore)
-	res := r.conn(ctx).
+	res := r.conn(ctx).Model(&model.Session{}).
 		Where("status IN ? AND machine_id NOT IN (?)", []string{"starting", "running"}, seen).
+		Updates(map[string]any{"status": "away", "updated_at": time.Now()})
+	return res.RowsAffected, res.Error
+}
+
+// DeleteExpiredAwaySessions deletes the away sessions marked before
+// awayBefore, or whose machine is gone, and says how many it deleted. A
+// machine waking after that has its agents stopped.
+func (r *repository) DeleteExpiredAwaySessions(ctx context.Context, awayBefore time.Time) (int64, error) {
+	machines := r.conn(ctx).Model(&model.Machine{}).Select("id")
+	res := r.conn(ctx).
+		Where("status = ? AND (updated_at < ? OR machine_id NOT IN (?))", "away", awayBefore, machines).
 		Delete(&model.Session{})
 	return res.RowsAffected, res.Error
 }

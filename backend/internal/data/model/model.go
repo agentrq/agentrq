@@ -938,6 +938,9 @@ const (
 	// Text selected in an agent's message, quoted into the reply or copied.
 	ActionIDUISelectionQuote
 	ActionIDUISelectionCopy
+	// A woken machine's agent taken back, or stopped; emitted by the backend.
+	ActionIDMachineSessionResume
+	ActionIDMachineSessionRefuse
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall,

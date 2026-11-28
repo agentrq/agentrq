@@ -325,7 +325,7 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 		// The row exists and the daemon never heard about it. Marking it
 		// failed is what stops it sitting in "starting" forever and
 		// blocking the workspace's next launch.
-		l.markSessionFailed(session.Session.ID, err.Error())
+		l.markSessionFailed(machineID, session.Session.ID, err.Error())
 		zlog.Error().Err(err).
 			Interface("start", start.Redacted()).
 			Msg("[launch] could not reach the machine")
@@ -438,10 +438,11 @@ func (l *Launcher) sendStart(machineID int64, start wire.StartSession) error {
 }
 
 // markSessionFailed records that a session never got started.
-func (l *Launcher) markSessionFailed(sessionID, reason string) {
+func (l *Launcher) markSessionFailed(machineID int64, sessionID, reason string) {
 	now := time.Now()
 	if err := l.Crud.UpdateSessionState(context.Background(), entity.UpdateSessionStateRequest{
 		SessionID: sessionID,
+		MachineID: machineID,
 		Status:    machinectrl.SessionFailed,
 		EndedAt:   &now,
 		Error:     reason,

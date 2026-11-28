@@ -82,6 +82,8 @@ func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
 		"machine_session_open",
 		"machine_session_close",
 		"machine_session_kill",
+		"machine_session_resume",
+		"machine_session_refuse",
 		"machine_terminal_open",
 		"machine_terminal_close",
 		"machine_enrol_code_create",

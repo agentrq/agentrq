@@ -27,7 +27,7 @@ type daemonRecorder interface {
 	RecordMachineMetrics(ctx context.Context, req entity.RecordMachineMetricsRequest) error
 	RecordAvailableVersion(ctx context.Context, req entity.RecordAvailableVersionRequest) error
 	RecordMachineVersion(ctx context.Context, req entity.RecordMachineVersionRequest) error
-	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
+	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) (*entity.ReconcileSessionsResponse, error)
 	RecordForkDirectory(ctx context.Context, req entity.RecordForkDirectoryRequest) error
 	RecordSessionActivity(ctx context.Context, req entity.RecordSessionActivityRequest) error
 }
@@ -81,7 +81,7 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 				zlog.Warn().Err(err).Int64("machine_id", s.Identity.MachineID).Msg("[machine] could not record the running version")
 			}
 			s.SetCapabilities(hello.Capabilities)
-			reconcile(ctx, rec, s.Identity.MachineID, hello.Sessions)
+			reconcile(ctx, rec, s.Identity, s.Send, notify, hello.Sessions)
 			announceVersion(notify, s.Identity, hello.Version)
 			return nil
 		case wire.OpUpdateAvailable:
@@ -99,7 +99,7 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 				return nil
 			}
 			recordMetrics(ctx, rec, s.Identity.MachineID, hb)
-			reconcile(ctx, rec, s.Identity.MachineID, hb.Sessions)
+			reconcile(ctx, rec, s.Identity, s.Send, notify, hb.Sessions)
 			recordActivity(ctx, rec, s.Identity.MachineID, hb.Activity, time.Now())
 			announceMachine(notify, s.Identity, hb)
 			return nil
@@ -126,6 +126,7 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 
 		req := entity.UpdateSessionStateRequest{
 			SessionID: monoflake.ID(int64(st.SessionID)).String(),
+			MachineID: s.Identity.MachineID,
 			// From the authenticated socket, never the payload — the same rule
 			// the heartbeat follows. It is what lets the controller find the
 			// session's workspace in order to count it.
@@ -207,22 +208,40 @@ func recordActivity(ctx context.Context, rec daemonRecorder, machineID int64, ac
 	}
 }
 
-// reconcile ends the sessions this machine is no longer running.
+// reconcile ends the sessions this machine is no longer running, announces
+// those the server took back after the machine was away, and asks the daemon
+// to kill those it would not.
 //
 // A daemon that restarted comes back supervising nothing, and the rows it left
 // behind would otherwise sit as "running" forever and block the workspace's
 // next launch. Scoped to the machine on the socket, so a daemon can only
 // correct its own.
-func reconcile(ctx context.Context, rec daemonRecorder, machineID int64, running []uint64) {
+func reconcile(ctx context.Context, rec daemonRecorder, id machine.Identity, send func(wire.Frame) error, notify notifier, running []uint64) {
 	ids := make([]int64, 0, len(running))
-	for _, id := range running {
-		ids = append(ids, int64(id))
+	for _, sid := range running {
+		ids = append(ids, int64(sid))
 	}
-	if err := rec.ReconcileSessions(ctx, entity.ReconcileSessionsRequest{
-		MachineID: machineID,
+	res, err := rec.ReconcileSessions(ctx, entity.ReconcileSessionsRequest{
+		MachineID: id.MachineID,
 		Running:   ids,
-	}); err != nil {
-		zlog.Warn().Err(err).Int64("machine_id", machineID).Msg("[machine] could not reconcile sessions")
+	})
+	if err != nil {
+		zlog.Warn().Err(err).Int64("machine_id", id.MachineID).Msg("[machine] could not reconcile sessions")
+		return
+	}
+	for _, v := range res.Resumed {
+		zlog.Info().Int64("machine_id", id.MachineID).Str("session", v.ID).Msg("[machine] took back a session after the machine was away")
+		announceSession(notify, id, entity.UpdateSessionStateRequest{SessionID: v.ID}, wire.SessionState{State: v.Status})
+	}
+	for _, sid := range res.Stop {
+		// Neither can fail: a plain struct, and a control message with its op.
+		body, _ := json.Marshal(wire.KillSession{SessionID: uint64(sid)})
+		frame, _ := wire.ControlFrame(wire.Control{Op: wire.OpKillSession, Body: body})
+		zlog.Warn().Int64("machine_id", id.MachineID).Int64("session", sid).
+			Msg("[machine] stopping a session the server would not take back")
+		if err := send(frame); err != nil {
+			zlog.Warn().Err(err).Int64("machine_id", id.MachineID).Msg("[machine] could not stop a session; asked again at the next heartbeat")
+		}
 	}
 }
 

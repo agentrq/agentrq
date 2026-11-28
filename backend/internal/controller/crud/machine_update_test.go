@@ -180,14 +180,15 @@ func TestRestoredIsStickyAcrossLaterReports(t *testing.T) {
 	env := newTestController(t)
 	id := monoflake.ID(9).String()
 
-	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(9), "running", gomock.Any(), gomock.Any(), true).Return(nil)
-	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(9), "exited", gomock.Any(), gomock.Any(), false).Return(nil)
+	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(9), int64(7), "running", gomock.Any(), gomock.Any(), true).Return(nil)
+	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(9), int64(7), "exited", gomock.Any(), gomock.Any(), false).Return(nil)
 	// The exit is written and then the row is removed: what is running here is
 	// the question the row answers, and a finished session is not an answer.
 	env.repo.EXPECT().DeleteFinishedSession(gomock.Any(), int64(9)).Return(nil)
 
 	if err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 		SessionID: id, Status: "running", Restored: true,
+		MachineID: 7,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -195,6 +196,7 @@ func TestRestoredIsStickyAcrossLaterReports(t *testing.T) {
 	// what it was told, and the later report says nothing about restoration.
 	if err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 		SessionID: id, Status: "exited",
+		MachineID: 7,
 	}); err != nil {
 		t.Fatal(err)
 	}

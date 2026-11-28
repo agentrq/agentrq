@@ -60,6 +60,8 @@ func TestActionString(t *testing.T) {
 		{ActionMachineTerminalClose, "machine_terminal_close"},
 		{ActionMachineEnable, "machine_enable"},
 		{ActionMachineSessionKill, "machine_session_kill"},
+		{ActionMachineSessionResume, "machine_session_resume"},
+		{ActionMachineSessionRefuse, "machine_session_refuse"},
 		{ActionMachineEnrolCodeCreate, "machine_enrol_code_create"},
 		{ActionAgentConcurrencySelect, "agent_concurrency_select"},
 		{ActionAgentLaunchClaudeCode, "agent_launch_claude_code"},

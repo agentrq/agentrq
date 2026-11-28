@@ -167,27 +167,6 @@ func TestAReportWithNoTimeIsStampedOnArrival(t *testing.T) {
 	}
 }
 
-// The daemon is the authority on what is alive on its own machine.
-func TestReconcileSessions(t *testing.T) {
-	env := newTestController(t)
-	env.repo.EXPECT().
-		ReconcileSessions(gomock.Any(), int64(11), []int64{9, 3}, gomock.Any()).
-		Return(nil)
-
-	if err := env.controller.ReconcileSessions(t.Context(), entity.ReconcileSessionsRequest{
-		MachineID: 11, Running: []int64{9, 3},
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestReconcileSessionsRefusesAnEmptyMachine(t *testing.T) {
-	env := newTestController(t)
-	if err := env.controller.ReconcileSessions(t.Context(), entity.ReconcileSessionsRequest{}); err == nil {
-		t.Error("sessions were reconciled against no machine at all")
-	}
-}
-
 // Finished sessions still stored are removed, and the count is passed on.
 func TestDeleteFinishedSessions(t *testing.T) {
 	env := newTestController(t)
@@ -199,12 +178,12 @@ func TestDeleteFinishedSessions(t *testing.T) {
 	}
 }
 
-// A machine away longer than the threshold loses its live sessions.
-func TestDeleteStaleSessions(t *testing.T) {
+// A machine away longer than the threshold has its live sessions marked away.
+func TestMarkStaleSessionsAway(t *testing.T) {
 	env := newTestController(t)
 	before := time.Now().Add(-machinerules.StaleThreshold)
 	env.repo.EXPECT().
-		DeleteStaleSessions(gomock.Any(), gomock.Any()).
+		MarkStaleSessionsAway(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, seenBefore time.Time) (int64, error) {
 			if seenBefore.Before(before) || seenBefore.After(time.Now().Add(-machinerules.StaleThreshold)) {
 				t.Errorf("seenBefore = %v, want %v ago", seenBefore, machinerules.StaleThreshold)
@@ -212,8 +191,27 @@ func TestDeleteStaleSessions(t *testing.T) {
 			return 2, nil
 		})
 
-	n, err := env.controller.DeleteStaleSessions(t.Context())
+	n, err := env.controller.MarkStaleSessionsAway(t.Context())
 	if err != nil || n != 2 {
-		t.Errorf("DeleteStaleSessions = %d, %v; want 2, nil", n, err)
+		t.Errorf("MarkStaleSessionsAway = %d, %v; want 2, nil", n, err)
+	}
+}
+
+// Away sessions are forgotten after the retention.
+func TestDeleteExpiredAwaySessions(t *testing.T) {
+	env := newTestController(t)
+	before := time.Now().Add(-machinerules.AwayRetention)
+	env.repo.EXPECT().
+		DeleteExpiredAwaySessions(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, awayBefore time.Time) (int64, error) {
+			if awayBefore.Before(before) || awayBefore.After(time.Now().Add(-machinerules.AwayRetention)) {
+				t.Errorf("awayBefore = %v, want %v ago", awayBefore, machinerules.AwayRetention)
+			}
+			return 1, nil
+		})
+
+	n, err := env.controller.DeleteExpiredAwaySessions(t.Context())
+	if err != nil || n != 1 {
+		t.Errorf("DeleteExpiredAwaySessions = %d, %v; want 1, nil", n, err)
 	}
 }

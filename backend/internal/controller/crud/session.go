@@ -24,8 +24,9 @@ type SessionController interface {
 	UpdateSessionState(ctx context.Context, req entity.UpdateSessionStateRequest) error
 	GetSession(ctx context.Context, req entity.GetSessionRequest) (*entity.GetSessionResponse, error)
 	ListSessions(ctx context.Context, req entity.ListSessionsRequest) (*entity.ListSessionsResponse, error)
-	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
-	DeleteStaleSessions(ctx context.Context) (int64, error)
+	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) (*entity.ReconcileSessionsResponse, error)
+	MarkStaleSessionsAway(ctx context.Context) (int64, error)
+	DeleteExpiredAwaySessions(ctx context.Context) (int64, error)
 	DeleteFinishedSessions(ctx context.Context) (int64, error)
 	ActiveSessionForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) (*entity.SessionView, error)
 	ForkFolderMachines(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error)
@@ -111,6 +112,9 @@ func (c *controller) UpdateSessionState(ctx context.Context, req entity.UpdateSe
 	if id == 0 {
 		return fmt.Errorf("invalid session id")
 	}
+	if req.MachineID == 0 {
+		return fmt.Errorf("invalid machine id")
+	}
 	// Read before the update, and before the delete below, because a session
 	// that has finished is removed — after that there is nothing left to ask
 	// which workspace it was working in. Only when there is a user to scope
@@ -124,7 +128,7 @@ func (c *controller) UpdateSessionState(ctx context.Context, req entity.UpdateSe
 			}
 		}
 	}
-	if err := c.repository.UpdateSessionState(ctx, id, req.Status, req.ExitCode, req.EndedAt, req.Restored); err != nil {
+	if err := c.repository.UpdateSessionState(ctx, id, req.MachineID, req.Status, req.ExitCode, req.EndedAt, req.Restored); err != nil {
 		return err
 	}
 	if counted != nil {
@@ -294,25 +298,111 @@ func (c *controller) ForkFolderMachines(ctx context.Context, req entity.ActiveSe
 	return out, nil
 }
 
-// ReconcileSessions ends the sessions a machine is no longer running.
+// ReconcileSessions ends the sessions a machine is no longer running, and
+// decides what becomes of those it names that the server does not count as
+// running.
 //
 // The daemon is the authority on what is alive on its own machine: it says
 // what it is supervising, and anything else still marked live has ended
 // without anybody being told. Most often that is a daemon that restarted,
 // which comes back supervising nothing — and those rows would otherwise sit as
 // "running" forever and block the workspace's next launch.
-func (c *controller) ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error {
+//
+// It is not the authority on what may run. A named session the server marked
+// away on this machine is resumed only when its workspace is still its
+// owner's and no other agent has been launched into it since, and stopped
+// otherwise, or it would keep working unseen with its token. A check that
+// fails to run decides nothing, and the next heartbeat asks again.
+//
+// A named id with no row here is left alone and never rebuilt from the
+// daemon's word: an agentrqd names the sessions of all its profiles on every
+// profile's socket, so it may well be another machine's, or account's.
+func (c *controller) ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) (*entity.ReconcileSessionsResponse, error) {
 	if req.MachineID == 0 {
-		return fmt.Errorf("invalid machine id")
+		return nil, fmt.Errorf("invalid machine id")
 	}
-	return c.repository.ReconcileSessions(ctx, req.MachineID, req.Running, time.Now())
+	if err := c.repository.ReconcileSessions(ctx, req.MachineID, req.Running, time.Now().Add(-machinerules.StartGrace)); err != nil {
+		return nil, err
+	}
+	rows, err := c.repository.SessionsOnMachine(ctx, req.MachineID, req.Running)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[int64]model.Session, len(rows))
+	for _, s := range rows {
+		byID[s.ID] = s
+	}
+	out := &entity.ReconcileSessionsResponse{}
+	for _, id := range req.Running {
+		s, ok := byID[id]
+		if !ok || s.Status != machinerules.SessionAway {
+			continue
+		}
+		resume, err := c.mayResume(ctx, s)
+		if err != nil {
+			continue
+		}
+		if !resume {
+			out.Stop = append(out.Stop, id)
+			c.emitSessionWake(ctx, s, entity.ActionMachineSessionRefuse)
+			continue
+		}
+		if moved, err := c.repository.ResumeSession(ctx, id, req.MachineID); err != nil || !moved {
+			continue
+		}
+		s.Status = machinerules.SessionRunning
+		out.Resumed = append(out.Resumed, toSessionView(s))
+		c.emitSessionWake(ctx, s, entity.ActionMachineSessionResume)
+	}
+	return out, nil
 }
 
-// DeleteStaleSessions ends the agents of every machine away for longer than
-// machinerules.StaleThreshold, of every account, so their workspaces can be
-// merged and launched again. The machines stay enrolled.
-func (c *controller) DeleteStaleSessions(ctx context.Context) (int64, error) {
-	return c.repository.DeleteStaleSessions(ctx, time.Now().Add(-machinerules.StaleThreshold))
+// mayResume reports whether an away session may run again: its workspace is
+// still its owner's, and has no other agent.
+func (c *controller) mayResume(ctx context.Context, s model.Session) (bool, error) {
+	if s.WorkspaceID == 0 {
+		return false, nil
+	}
+	if _, err := c.repository.GetWorkspace(ctx, s.WorkspaceID, s.UserID); err != nil {
+		if errors.Is(err, base.ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	_, err := c.repository.ActiveSessionForWorkspace(ctx, s.WorkspaceID, s.UserID)
+	if err == nil {
+		return false, nil
+	}
+	if errors.Is(err, base.ErrNotFound) {
+		return true, nil
+	}
+	return false, err
+}
+
+// emitSessionWake counts a woken machine's session resumed or refused.
+func (c *controller) emitSessionWake(ctx context.Context, s model.Session, action entity.Action) {
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       action,
+		WorkspaceID:  s.WorkspaceID,
+		UserID:       s.UserID,
+		ResourceType: entity.ResourceSession,
+		ResourceID:   s.ID,
+		Actor:        entity.ActorAgent,
+	})
+}
+
+// MarkStaleSessionsAway frees the workspaces of every machine away for longer
+// than machinerules.StaleThreshold, of every account, so they can be merged
+// and launched again. The machines stay enrolled, and their sessions are
+// remembered as away in case they wake.
+func (c *controller) MarkStaleSessionsAway(ctx context.Context) (int64, error) {
+	return c.repository.MarkStaleSessionsAway(ctx, time.Now().Add(-machinerules.StaleThreshold))
+}
+
+// DeleteExpiredAwaySessions forgets the away sessions older than
+// machinerules.AwayRetention, or whose machine is gone.
+func (c *controller) DeleteExpiredAwaySessions(ctx context.Context) (int64, error) {
+	return c.repository.DeleteExpiredAwaySessions(ctx, time.Now().Add(-machinerules.AwayRetention))
 }
 
 // DeleteFinishedSessions removes the sessions of every account that have

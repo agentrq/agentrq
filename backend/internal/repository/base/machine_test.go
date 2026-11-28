@@ -211,6 +211,8 @@ func TestSessionReads(t *testing.T) {
 		{ID: 11, MachineID: 1, UserID: memUserID, WorkspaceID: 7, Status: "running", CreatedAt: now.Add(time.Minute)},
 		{ID: 12, MachineID: 2, UserID: memUserID, WorkspaceID: 8, Status: "starting", CreatedAt: now},
 		{ID: 13, MachineID: 1, UserID: memOtherUserID, WorkspaceID: 9, Status: "running", CreatedAt: now},
+		// Away is not live, and not listed: the machine has not said so.
+		{ID: 14, MachineID: 1, UserID: memUserID, WorkspaceID: 7, Status: "away", CreatedAt: now.Add(time.Hour)},
 	} {
 		if _, err := repo.CreateSession(ctx, s); err != nil {
 			t.Fatal(err)
@@ -257,10 +259,10 @@ func TestSessionReads(t *testing.T) {
 func TestUpdateSessionState(t *testing.T) {
 	_, repo := machineDB(t)
 	ctx := context.Background()
-	if _, err := repo.CreateSession(ctx, model.Session{ID: 10, UserID: memUserID, Status: "starting"}); err != nil {
+	if _, err := repo.CreateSession(ctx, model.Session{ID: 10, MachineID: 1, UserID: memUserID, Status: "starting"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.UpdateSessionState(ctx, 10, "running", nil, nil, true); err != nil {
+	if err := repo.UpdateSessionState(ctx, 10, 1, "running", nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	s, _ := repo.GetSession(ctx, 10, memUserID)
@@ -269,12 +271,47 @@ func TestUpdateSessionState(t *testing.T) {
 	}
 
 	code, ended := 3, time.Now()
-	if err := repo.UpdateSessionState(ctx, 10, "exited", &code, &ended, false); err != nil {
+	if err := repo.UpdateSessionState(ctx, 10, 1, "exited", &code, &ended, false); err != nil {
 		t.Fatal(err)
 	}
 	s, _ = repo.GetSession(ctx, 10, memUserID)
 	if s.Status != "exited" || !s.Restored || s.ExitCode == nil || *s.ExitCode != 3 || s.EndedAt == nil {
 		t.Errorf("after exit = %+v, want exited with 3, still restored", s)
+	}
+}
+
+// Another machine's report changes nothing, and an away session takes an end
+// but never a live state.
+func TestUpdateSessionStateScoped(t *testing.T) {
+	_, repo := machineDB(t)
+	ctx := context.Background()
+	for _, s := range []model.Session{
+		{ID: 10, MachineID: 1, UserID: memUserID, Status: "running"},
+		{ID: 11, MachineID: 1, UserID: memUserID, Status: "away"},
+		{ID: 12, MachineID: 1, UserID: memUserID, Status: "away"},
+	} {
+		if _, err := repo.CreateSession(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ended := time.Now()
+	for _, u := range []struct {
+		id, machine int64
+		status      string
+		ended       *time.Time
+	}{
+		{10, 2, "exited", &ended},
+		{11, 1, "running", nil},
+		{12, 1, "killed", &ended},
+	} {
+		if err := repo.UpdateSessionState(ctx, u.id, u.machine, u.status, nil, u.ended, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id, want := range map[int64]string{10: "running", 11: "away", 12: "killed"} {
+		if s, _ := repo.GetSession(ctx, id, memUserID); s.Status != want {
+			t.Errorf("session %d = %q, want %q", id, s.Status, want)
+		}
 	}
 }
 
@@ -300,29 +337,35 @@ func TestDeleteFinishedSession(t *testing.T) {
 	}
 }
 
-// A hello ends this machine's live sessions the daemon did not name, and no
-// other machine's; naming none ends all of them.
+// A hello ends this machine's live and away sessions the daemon did not name,
+// and no other machine's; naming none ends all of them. A session still
+// starting since the cut-off is kept.
 func TestReconcileSessions(t *testing.T) {
 	db, repo := machineDB(t)
 	ctx := context.Background()
 	for _, s := range []model.Session{
 		{ID: 10, MachineID: 1, UserID: memUserID, Status: "running"},
-		{ID: 11, MachineID: 1, UserID: memUserID, Status: "starting"},
+		{ID: 11, MachineID: 1, UserID: memUserID, Status: "starting", CreatedAt: time.Now().Add(-time.Hour)},
 		{ID: 12, MachineID: 1, UserID: memUserID, Status: "exited"},
 		{ID: 13, MachineID: 2, UserID: memUserID, Status: "running"},
 		{ID: 14, MachineID: 3, UserID: memUserID, Status: "running"},
+		{ID: 15, MachineID: 1, UserID: memUserID, Status: "away"},
+		{ID: 16, MachineID: 1, UserID: memUserID, Status: "away"},
+		{ID: 17, MachineID: 1, UserID: memUserID, Status: "starting", CreatedAt: time.Now()},
+		{ID: 18, MachineID: 1, UserID: memUserID, Status: "running", CreatedAt: time.Now()},
 	} {
 		if _, err := repo.CreateSession(ctx, s); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := repo.ReconcileSessions(ctx, 1, []int64{10}, time.Now()); err != nil {
+	cutoff := time.Now().Add(-time.Minute)
+	if err := repo.ReconcileSessions(ctx, 1, []int64{10, 16}, cutoff); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.ReconcileSessions(ctx, 3, nil, time.Now()); err != nil {
+	if err := repo.ReconcileSessions(ctx, 3, nil, cutoff); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := sessionIDs(t, db), []int64{10, 12, 13}; !reflect.DeepEqual(got, want) {
+	if got, want := sessionIDs(t, db), []int64{10, 12, 13, 16, 17}; !reflect.DeepEqual(got, want) {
 		t.Errorf("sessions left = %v, want %v", got, want)
 	}
 }
@@ -350,6 +393,10 @@ func TestMachineRepositoryPassesOnFailures(t *testing.T) {
 	_, checks["GetSession"] = repo.GetSession(ctx, 1, 2)
 	_, checks["ActiveSessionForWorkspace"] = repo.ActiveSessionForWorkspace(ctx, 1, 2)
 	_, checks["CountLiveSessionsByUser"] = repo.CountLiveSessionsByUser(ctx, 1)
+	_, checks["SessionsOnMachine"] = repo.SessionsOnMachine(ctx, 1, []int64{2})
+	_, checks["ResumeSession"] = repo.ResumeSession(ctx, 1, 2)
+	_, checks["MarkStaleSessionsAway"] = repo.MarkStaleSessionsAway(ctx, now)
+	_, checks["DeleteExpiredAwaySessions"] = repo.DeleteExpiredAwaySessions(ctx, now)
 	for name, err := range checks {
 		if err == nil {
 			t.Errorf("%s: no table, and no error", name)
@@ -357,5 +404,52 @@ func TestMachineRepositoryPassesOnFailures(t *testing.T) {
 		if errors.Is(err, ErrNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Errorf("%s: a broken database read as not found: %v", name, err)
 		}
+	}
+}
+
+// The sessions named are read for one machine only, and naming none reads
+// nothing.
+func TestSessionsOnMachine(t *testing.T) {
+	_, repo := machineDB(t)
+	ctx := context.Background()
+	for _, s := range []model.Session{
+		{ID: 10, MachineID: 1, UserID: memUserID, Status: "away"},
+		{ID: 11, MachineID: 2, UserID: memUserID, Status: "running"},
+	} {
+		if _, err := repo.CreateSession(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := repo.SessionsOnMachine(ctx, 1, []int64{10, 11, 12})
+	if err != nil || len(got) != 1 || got[0].ID != 10 {
+		t.Errorf("machine 1's named sessions = %+v, %v; want only 10", got, err)
+	}
+	if got, err := repo.SessionsOnMachine(ctx, 1, nil); err != nil || len(got) != 0 {
+		t.Errorf("naming none = %+v, %v; want nothing", got, err)
+	}
+}
+
+// Only an away session of the same machine resumes, and only once.
+func TestResumeSession(t *testing.T) {
+	_, repo := machineDB(t)
+	ctx := context.Background()
+	for _, s := range []model.Session{
+		{ID: 10, MachineID: 1, UserID: memUserID, Status: "away"},
+		{ID: 11, MachineID: 1, UserID: memUserID, Status: "exited"},
+	} {
+		if _, err := repo.CreateSession(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		id, machine int64
+		want        bool
+	}{{10, 2, false}, {10, 1, true}, {10, 1, false}, {11, 1, false}} {
+		if got, err := repo.ResumeSession(ctx, c.id, c.machine); err != nil || got != c.want {
+			t.Errorf("resume %d on machine %d = %v, %v; want %v", c.id, c.machine, got, err, c.want)
+		}
+	}
+	if s, _ := repo.GetSession(ctx, 10, memUserID); s.Status != "running" {
+		t.Errorf("session 10 = %q, want running", s.Status)
 	}
 }
