@@ -83,12 +83,15 @@ afterEach(() => {
 describe('the sidebar', () => {
   const sidebar = () => mount(SidebarWorkspaces, { workspaces: [PARENT, FORK, WEB, SUPERVISOR] })
 
-  it('lists each fork under its parent, indented, with the fork mark', async () => {
-    const { el } = sidebar()
+  it('lists each fork under its parent, indented, with the fork mark, its name without the parent\'s', async () => {
+    const showTooltip = vi.fn()
+    const { el } = mount(SidebarWorkspaces, { workspaces: [PARENT, FORK, WEB, SUPERVISOR], showTooltip })
     await settle()
     const rows = [...el.querySelectorAll('[data-test]')].map((r) => `${r.dataset.test}:${text(r.querySelector('span.truncate'))}`)
-    expect(rows).toEqual(['sidebar-workspace:ops', 'sidebar-fork:ops-try', 'sidebar-workspace:web', 'sidebar-workspace:supervisor'])
+    expect(rows).toEqual(['sidebar-workspace:ops', 'sidebar-fork:try', 'sidebar-workspace:web', 'sidebar-workspace:supervisor'])
     const fork = el.querySelector('[data-test=sidebar-fork] a')
+    fork.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(showTooltip).toHaveBeenCalledWith(expect.anything(), 'ops try')
     expect(fork.className).toMatch(/pl-6/)
     expect(fork.querySelector('svg circle')).toBeTruthy()
   })

@@ -50,7 +50,9 @@ test('a workspace forked from the sidebar merges back into its parent, but not w
   expect(forkRes.status(), 'the fork request').toBe(201)
   const fork = (await forkRes.json()).workspace
   expect(fork.forkOfId, 'the fork names its parent').toBe(parent.id)
-  await expect(page.locator('[data-test="sidebar-fork"]').filter({ hasText: fork.name }), 'the fork is listed under its parent').toBeVisible()
+  // Under its parent, a fork is listed without the parent's name in front.
+  const forkRow = page.locator('[data-test="sidebar-fork"]').filter({ has: page.locator('span.truncate', { hasText: /^fork$/ }) })
+  await expect(forkRow, 'the fork is listed under its parent, as "fork"').toBeVisible()
 
   // An unfinished task keeps the fork from merging: the menu says why, and the
   // server refuses too when asked directly.
@@ -79,7 +81,7 @@ test('a workspace forked from the sidebar merges back into its parent, but not w
   const mergeRes = await merged
   expect(mergeRes.status(), 'the merge request').toBe(200)
   expect(await mergeRes.json(), 'the merge answer').toMatchObject({ parentId: parent.id, movedTasks: 1 })
-  await expect(page.locator('[data-test="sidebar-fork"]').filter({ hasText: fork.name }), 'the merged fork is gone from the sidebar').toHaveCount(0)
+  await expect(forkRow, 'the merged fork is gone from the sidebar').toHaveCount(0)
   expect((await getTask(page, parent.id, task.id)).status(), 'the fork\'s task, read from the parent').toBe(200)
 
   // Allowed: a fork refused for the rate limit, and the merged fork's own page

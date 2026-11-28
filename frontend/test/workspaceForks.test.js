@@ -9,6 +9,7 @@ import {
   canFork,
   defaultForkName,
   fitName,
+  forkShortName,
   isFork,
   mergeBlockedReason,
   mergeConfirmMessage,
@@ -54,6 +55,16 @@ describe('names', () => {
     const long = defaultForkName('x'.repeat(200));
     expect(long).toHaveLength(MAX_WORKSPACE_NAME);
     expect(long.endsWith('x-fork')).toBe(true);
+  });
+
+  it('drops the parent name in front of a fork name, keeping the whole name otherwise', () => {
+    expect(forkShortName({ name: 'ops try' }, parent)).toBe('try');
+    expect(forkShortName({ name: 'Billing API-fork1' }, { name: 'billing api' })).toBe('fork1');
+    expect(forkShortName({ name: 'opsy-try' }, parent)).toBe('opsy-try');
+    expect(forkShortName({ name: 'web-try' }, parent)).toBe('web-try');
+    expect(forkShortName({ name: 'ops' }, parent)).toBe('ops');
+    expect(forkShortName({ name: 'ops-' }, parent)).toBe('ops');
+    expect(forkShortName({ name: 'ops try' }, undefined)).toBe('ops-try');
   });
 
   it('names the parent from the list, then the store, then generically', () => {
